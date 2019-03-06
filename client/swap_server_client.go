@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/rpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -27,7 +27,7 @@ type swapServerClient interface {
 }
 
 type grpcSwapServerClient struct {
-	server rpc.SwapServerClient
+	server looprpc.SwapServerClient
 	conn   *grpc.ClientConn
 }
 
@@ -37,7 +37,7 @@ func newSwapServerClient(address string, insecure bool) (*grpcSwapServerClient, 
 		return nil, err
 	}
 
-	server := rpc.NewSwapServerClient(serverConn)
+	server := looprpc.NewSwapServerClient(serverConn)
 
 	return &grpcSwapServerClient{
 		conn:   serverConn,
@@ -51,7 +51,7 @@ func (s *grpcSwapServerClient) GetUnchargeTerms(ctx context.Context) (
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.UnchargeQuote(rpcCtx,
-		&rpc.ServerUnchargeQuoteRequest{},
+		&looprpc.ServerUnchargeQuoteRequest{},
 	)
 	if err != nil {
 		return nil, err
@@ -85,7 +85,7 @@ func (s *grpcSwapServerClient) NewUnchargeSwap(ctx context.Context,
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewUnchargeSwap(rpcCtx,
-		&rpc.ServerUnchargeSwapRequest{
+		&looprpc.ServerUnchargeSwapRequest{
 			SwapHash:    swapHash[:],
 			Amt:         uint64(amount),
 			ReceiverKey: receiverKey[:],

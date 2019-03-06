@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/client"
-	clientrpc "github.com/lightninglabs/loop/cmd/swapd/rpc"
+	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
@@ -56,7 +56,7 @@ func daemon(ctx *cli.Context) error {
 
 	serverOpts := []grpc.ServerOption{}
 	grpcServer := grpc.NewServer(serverOpts...)
-	clientrpc.RegisterSwapClientServer(grpcServer, &server)
+	looprpc.RegisterSwapClientServer(grpcServer, &server)
 
 	// Next, Start the gRPC server listening for HTTP/2 connections.
 	logger.Infof("Starting RPC listener")

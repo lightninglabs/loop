@@ -2,9 +2,9 @@ syntax = "proto3";
 
 import "google/api/annotations.proto";
 
-package rpc;
+package looprpc;
 
-option go_package = "github.com/lightninglabs/loop/rpc";
+option go_package = "github.com/lightninglabs/loop/looprpc";
 
 service SwapServer {
     rpc NewUnchargeSwap(ServerUnchargeSwapRequest) returns (ServerUnchargeSwapResponse);

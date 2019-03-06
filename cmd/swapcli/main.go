@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/utils"
 
 	"github.com/btcsuite/btcutil"
 
-	"github.com/lightninglabs/loop/cmd/swapd/rpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
@@ -73,7 +73,7 @@ func terms(ctx *cli.Context) error {
 	defer cleanup()
 
 	terms, err := client.GetUnchargeTerms(
-		context.Background(), &rpc.TermsRequest{},
+		context.Background(), &looprpc.TermsRequest{},
 	)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func terms(ctx *cli.Context) error {
 		return err
 	}
 
-	printTerms := func(terms *rpc.TermsResponse) {
+	printTerms := func(terms *looprpc.TermsResponse) {
 		fmt.Printf("Amount: %d - %d\n",
 			btcutil.Amount(terms.MinSwapAmount),
 			btcutil.Amount(terms.MaxSwapAmount),
@@ -116,7 +116,7 @@ func monitor(ctx *cli.Context) error {
 	defer cleanup()
 
 	stream, err := client.Monitor(
-		context.Background(), &rpc.MonitorRequest{})
+		context.Background(), &looprpc.MonitorRequest{})
 	if err != nil {
 		return err
 	}
@@ -130,14 +130,14 @@ func monitor(ctx *cli.Context) error {
 	}
 }
 
-func getClient(ctx *cli.Context) (rpc.SwapClientClient, func(), error) {
+func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
 	conn, err := getSwapCliConn(swapdAddress)
 	if err != nil {
 		return nil, nil, err
 	}
 	cleanup := func() { conn.Close() }
 
-	swapCliClient := rpc.NewSwapClientClient(conn)
+	swapCliClient := looprpc.NewSwapClientClient(conn)
 	return swapCliClient, cleanup, nil
 }
 
@@ -153,7 +153,7 @@ type limits struct {
 	maxPrepayAmt        btcutil.Amount
 }
 
-func getLimits(amt btcutil.Amount, quote *rpc.QuoteResponse) *limits {
+func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 	return &limits{
 		maxSwapRoutingFee: getMaxRoutingFee(btcutil.Amount(amt)),
 		maxPrepayRoutingFee: getMaxRoutingFee(btcutil.Amount(
@@ -239,7 +239,7 @@ func uncharge(ctx *cli.Context) error {
 
 	quote, err := client.GetUnchargeQuote(
 		context.Background(),
-		&rpc.QuoteRequest{
+		&looprpc.QuoteRequest{
 			Amt: int64(amt),
 		},
 	)
@@ -258,7 +258,7 @@ func uncharge(ctx *cli.Context) error {
 		unchargeChannel = ctx.Uint64("channel")
 	}
 
-	resp, err := client.Uncharge(context.Background(), &rpc.UnchargeRequest{
+	resp, err := client.Uncharge(context.Background(), &looprpc.UnchargeRequest{
 		Amt:                 int64(amt),
 		Dest:                destAddr,
 		MaxMinerFee:         int64(limits.maxMinerFee),
@@ -278,7 +278,7 @@ func uncharge(ctx *cli.Context) error {
 	return nil
 }
 
-func logSwap(swap *rpc.SwapStatus) {
+func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Printf("%v %v %v %v - %v\n",
 		time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
 		swap.Type, swap.State, btcutil.Amount(swap.Amt),

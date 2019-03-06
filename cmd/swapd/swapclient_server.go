@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/client"
-	clientrpc "github.com/lightninglabs/loop/cmd/swapd/rpc"
+	"github.com/lightninglabs/loop/looprpc"
 )
 
 const completedSwapsCount = 5
@@ -28,8 +28,8 @@ type swapClientServer struct {
 // onwards, progress can be tracked via the UnchargeStatus stream that is
 // returned from Monitor().
 func (s *swapClientServer) Uncharge(ctx context.Context,
-	in *clientrpc.UnchargeRequest) (
-	*clientrpc.SwapResponse, error) {
+	in *looprpc.UnchargeRequest) (
+	*looprpc.SwapResponse, error) {
 
 	logger.Infof("Uncharge request received")
 
@@ -68,25 +68,25 @@ func (s *swapClientServer) Uncharge(ctx context.Context,
 		return nil, err
 	}
 
-	return &clientrpc.SwapResponse{
+	return &looprpc.SwapResponse{
 		Id: hash.String(),
 	}, nil
 }
 
 func (s *swapClientServer) marshallSwap(swap *client.SwapInfo) (
-	*clientrpc.SwapStatus, error) {
+	*looprpc.SwapStatus, error) {
 
-	var state clientrpc.SwapState
+	var state looprpc.SwapState
 	switch swap.State {
 	case client.StateInitiated:
-		state = clientrpc.SwapState_INITIATED
+		state = looprpc.SwapState_INITIATED
 	case client.StatePreimageRevealed:
-		state = clientrpc.SwapState_PREIMAGE_REVEALED
+		state = looprpc.SwapState_PREIMAGE_REVEALED
 	case client.StateSuccess:
-		state = clientrpc.SwapState_SUCCESS
+		state = looprpc.SwapState_SUCCESS
 	default:
 		// Return less granular status over rpc.
-		state = clientrpc.SwapState_FAILED
+		state = looprpc.SwapState_FAILED
 	}
 
 	htlc, err := utils.NewHtlc(swap.CltvExpiry, swap.SenderKey,
@@ -101,20 +101,20 @@ func (s *swapClientServer) marshallSwap(swap *client.SwapInfo) (
 		return nil, err
 	}
 
-	return &clientrpc.SwapStatus{
+	return &looprpc.SwapStatus{
 		Amt:            int64(swap.AmountRequested),
 		Id:             swap.SwapHash.String(),
 		State:          state,
 		InitiationTime: swap.InitiationTime.UnixNano(),
 		LastUpdateTime: swap.LastUpdate.UnixNano(),
 		HtlcAddress:    address.EncodeAddress(),
-		Type:           clientrpc.SwapType_UNCHARGE,
+		Type:           looprpc.SwapType_UNCHARGE,
 	}, nil
 }
 
 // Monitor will return a stream of swap updates for currently active swaps.
-func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
-	server clientrpc.SwapClient_MonitorServer) error {
+func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
+	server looprpc.SwapClient_MonitorServer) error {
 
 	logger.Infof("Monitor request received")
 
@@ -207,8 +207,8 @@ func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
 }
 
 // GetTerms returns the terms that the server enforces for swaps.
-func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *clientrpc.TermsRequest) (
-	*clientrpc.TermsResponse, error) {
+func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *looprpc.TermsRequest) (
+	*looprpc.TermsResponse, error) {
 
 	logger.Infof("Terms request received")
 
@@ -218,7 +218,7 @@ func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *clientrpc.
 		return nil, err
 	}
 
-	return &clientrpc.TermsResponse{
+	return &looprpc.TermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 		PrepayAmt:     int64(terms.PrepayAmt),
@@ -230,7 +230,7 @@ func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *clientrpc.
 
 // GetQuote returns a quote for a swap with the provided parameters.
 func (s *swapClientServer) GetUnchargeQuote(ctx context.Context,
-	req *clientrpc.QuoteRequest) (*clientrpc.QuoteResponse, error) {
+	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
 	quote, err := s.impl.UnchargeQuote(ctx, &client.UnchargeQuoteRequest{
 		Amount:          btcutil.Amount(req.Amt),
@@ -239,7 +239,7 @@ func (s *swapClientServer) GetUnchargeQuote(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return &clientrpc.QuoteResponse{
+	return &looprpc.QuoteResponse{
 		MinerFee:  int64(quote.MinerFee),
 		PrepayAmt: int64(quote.PrepayAmount),
 		SwapFee:   int64(quote.SwapFee),
