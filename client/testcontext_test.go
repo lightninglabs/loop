@@ -1,0 +1,234 @@
+package client
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/nautilus/sweep"
+	"github.com/lightninglabs/nautilus/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lntypes"
+)
+
+var (
+	testPreimage = lntypes.Preimage([32]byte{
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 4,
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 4,
+	})
+	testPrepayPreimage = lntypes.Preimage([32]byte{
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 4,
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 5,
+	})
+
+	testStartingHeight = uint32(600)
+)
+
+// testContext contains functionality to support client unit tests.
+type testContext struct {
+	test.Context
+
+	serverMock *serverMock
+	swapClient *Client
+	statusChan chan SwapInfo
+	store      *storeMock
+	expiryChan chan time.Time
+	runErr     chan error
+	stop       func()
+}
+
+func newSwapClient(config *clientConfig) *Client {
+	sweeper := &sweep.Sweeper{
+		Lnd: config.LndServices,
+	}
+
+	lndServices := config.LndServices
+
+	executor := newExecutor(&executorConfig{
+		lnd:               lndServices,
+		store:             config.Store,
+		sweeper:           sweeper,
+		createExpiryTimer: config.CreateExpiryTimer,
+	})
+
+	return &Client{
+		errChan:      make(chan error),
+		clientConfig: *config,
+		lndServices:  lndServices,
+		sweeper:      sweeper,
+		executor:     executor,
+		resumeReady:  make(chan struct{}),
+	}
+}
+
+func createClientTestContext(t *testing.T,
+	pendingSwaps []*PersistentUncharge) *testContext {
+
+	serverMock := newServerMock()
+
+	clientLnd := test.NewMockLnd()
+
+	store := newStoreMock(t)
+	for _, s := range pendingSwaps {
+		store.unchargeSwaps[s.Hash] = s.Contract
+
+		updates := []SwapState{}
+		for _, e := range s.Events {
+			updates = append(updates, e.State)
+		}
+		store.unchargeUpdates[s.Hash] = updates
+	}
+
+	expiryChan := make(chan time.Time)
+	timerFactory := func(expiry time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	swapClient := newSwapClient(&clientConfig{
+		LndServices:       &clientLnd.LndServices,
+		Server:            serverMock,
+		Store:             store,
+		CreateExpiryTimer: timerFactory,
+	})
+
+	statusChan := make(chan SwapInfo)
+
+	ctx := &testContext{
+		Context: test.NewContext(
+			t,
+			clientLnd,
+		),
+		swapClient: swapClient,
+		statusChan: statusChan,
+		expiryChan: expiryChan,
+		store:      store,
+		serverMock: serverMock,
+	}
+
+	ctx.runErr = make(chan error)
+	runCtx, stop := context.WithCancel(context.Background())
+	ctx.stop = stop
+
+	go func() {
+		ctx.runErr <- swapClient.Run(
+			runCtx,
+			statusChan,
+		)
+	}()
+
+	return ctx
+}
+
+func (ctx *testContext) finish() {
+	ctx.stop()
+	select {
+	case err := <-ctx.runErr:
+		if err != nil {
+			ctx.T.Fatal(err)
+		}
+	case <-time.After(test.Timeout):
+		ctx.T.Fatal("client not stopping")
+	}
+
+	ctx.assertIsDone()
+}
+
+// notifyHeight notifies swap client of the arrival of a new block and waits for
+// the notification to be processed by selecting on a dedicated test channel.
+func (ctx *testContext) notifyHeight(height int32) {
+	ctx.T.Helper()
+
+	if err := ctx.Lnd.NotifyHeight(height); err != nil {
+		ctx.T.Fatal(err)
+	}
+}
+
+func (ctx *testContext) assertIsDone() {
+	if err := ctx.Lnd.IsDone(); err != nil {
+		ctx.T.Fatal(err)
+	}
+
+	if err := ctx.store.isDone(); err != nil {
+		ctx.T.Fatal(err)
+	}
+
+	select {
+	case <-ctx.statusChan:
+		ctx.T.Fatalf("not all status updates read")
+	default:
+	}
+}
+
+func (ctx *testContext) assertStored() {
+	ctx.T.Helper()
+
+	ctx.store.assertUnchargeStored()
+}
+
+func (ctx *testContext) assertStorePreimageReveal() {
+	ctx.T.Helper()
+
+	ctx.store.assertStorePreimageReveal()
+}
+
+func (ctx *testContext) assertStoreFinished(expectedResult SwapState) {
+	ctx.T.Helper()
+
+	ctx.store.assertStoreFinished(expectedResult)
+
+}
+
+func (ctx *testContext) assertStatus(expectedState SwapState) {
+
+	ctx.T.Helper()
+
+	for {
+		select {
+		case update := <-ctx.statusChan:
+			if update.SwapType != SwapTypeUncharge {
+				continue
+			}
+
+			if update.State == expectedState {
+				return
+			}
+		case <-time.After(test.Timeout):
+			ctx.T.Fatalf("expected status %v not "+
+				"received in time", expectedState)
+		}
+	}
+}
+
+func (ctx *testContext) publishHtlc(script []byte, amt btcutil.Amount) wire.OutPoint {
+	// Create the htlc tx.
+	htlcTx := wire.MsgTx{}
+	htlcTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{},
+	})
+	htlcTx.AddTxOut(&wire.TxOut{
+		PkScript: script,
+		Value:    int64(amt),
+	})
+
+	htlcTxHash := htlcTx.TxHash()
+
+	// Signal client that script has been published.
+	select {
+	case ctx.Lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		Tx: &htlcTx,
+	}:
+	case <-time.After(test.Timeout):
+		ctx.T.Fatalf("htlc confirmed not consumed")
+	}
+
+	return wire.OutPoint{
+		Hash:  htlcTxHash,
+		Index: 0,
+	}
+}

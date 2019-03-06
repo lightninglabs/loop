@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+
+package rpc;
+
+option go_package = "github.com/lightninglabs/nautilus/rpc";
+
+service SwapServer {
+    rpc NewUnchargeSwap(ServerUnchargeSwapRequest) returns (ServerUnchargeSwapResponse);
+    
+    rpc UnchargeQuote(ServerUnchargeQuoteRequest) returns (ServerUnchargeQuoteResponse);
+}
+
+message ServerUnchargeSwapRequest {
+    bytes receiver_key = 1;
+    bytes swap_hash = 2;
+    uint64 amt = 3;
+    
+}
+
+message ServerUnchargeSwapResponse {
+    string swap_invoice= 1;
+    string prepay_invoice = 2;
+    bytes sender_key = 3;
+    int32 expiry = 4;
+}
+
+message ServerUnchargeQuoteRequest {
+}
+
+message ServerUnchargeQuoteResponse {
+    string swap_payment_dest = 1;
+    int64 swap_fee_base = 2;
+    int64 swap_fee_rate = 3;
+    uint64 prepay_amt = 4;
+    uint64 min_swap_amount = 5;
+    uint64 max_swap_amount = 6;
+    int32 cltv_delta = 7;
+}
