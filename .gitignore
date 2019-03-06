@@ -48,12 +48,3 @@ profile.tmp
 .DS_Store
 
 .vscode
-
-nautserver
-!nautserver/
-
-nautview
-!nautview/
-
-swapd
-!swapd/
