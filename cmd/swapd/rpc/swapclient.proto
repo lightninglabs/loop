@@ -1,0 +1,259 @@
+syntax = "proto3";
+
+package rpc;
+
+message UnchargeRequest {
+    /**
+    Requested swap amount in sat. This does not include the swap and miner 
+    fee.
+    */
+    int64 amt = 1;
+
+    /**
+    Base58 encoded destination address for the swap.
+    */
+    string dest = 2;
+
+    /**
+    Maximum off-chain fee in msat that may be paid for payment to the server.
+    This limit is applied during path finding. Typically this value is taken
+    from the response of the GetQuote call.
+    */
+	int64 max_swap_routing_fee = 3;
+
+    /**
+	Maximum off-chain fee in msat that may be paid for payment to the server.
+	This limit is applied during path finding. Typically this value is taken
+	from the response of the GetQuote call.
+    */
+	int64 max_prepay_routing_fee = 4;
+
+    /**
+	Maximum we are willing to pay the server for the swap. This value is not
+	disclosed in the swap initiation call, but if the server asks for a
+	higher fee, we abort the swap. Typically this value is taken from the
+	response of the GetQuote call. It includes the prepay amount.
+    */
+	int64 max_swap_fee = 5;
+
+    /**
+	Maximum amount of the swap fee that may be charged as a prepayment.
+    */
+	int64 max_prepay_amt = 6;
+
+    /**
+	Maximum in on-chain fees that we are willing to spent. If we want to
+	sweep the on-chain htlc and the fee estimate turns out higher than this
+	value, we cancel the swap. If the fee estimate is lower, we publish the
+	sweep tx.
+	
+	If the sweep tx isn't confirmed, we are forced to ratchet up fees until
+	it is swept. Possibly even exceeding max_miner_fee if we get close to the
+	htlc timeout. Because the initial publication revealed the preimage, we
+	have no other choice. The server may already have pulled the off-chain
+	htlc. Only when the fee becomes higher than the swap amount, we can only
+	wait for fees to come down and hope - if we are past the timeout - that
+	the server isn't publishing the revocation.
+	
+	max_miner_fee is typically taken from the response of the GetQuote call.
+    */
+    int64 max_miner_fee = 7;
+    
+    /**
+    The channel to uncharge. If zero, the channel to uncharge is selected based
+    on the lowest routing fee for the swap payment to the server.
+    */
+    uint64 uncharge_channel = 8;
+}
+
+
+message SwapResponse {
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    string id = 1;
+}
+
+message MonitorRequest{
+}
+
+
+message SwapStatus {
+    /**
+    Requested swap amount in sat. This does not include the swap and miner 
+    fee.
+    */
+    int64 amt = 1;
+
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    string id = 2;
+
+    /**
+    Swap type
+    */
+    SwapType type = 3;
+
+    /**
+    State the swap is currently in, see State enum.
+    */
+    SwapState state = 4;
+
+    /**
+    Initiation time of the swap.
+    */
+    int64 initiation_time = 5;
+
+    /**
+    Initiation time of the swap.
+    */
+    int64 last_update_time = 6;
+
+    /**
+    Htlc address.
+    */
+    string htlc_address = 7;
+}
+
+enum SwapType { 
+    // UNCHARGE indicates an uncharge swap (off-chain to on-chain)
+    UNCHARGE = 0;
+
+  
+}
+
+enum SwapState {
+    /**
+    INITIATED is the initial state of a swap. At that point, the initiation
+    call to the server has been made and the payment process has been started
+    for the swap and prepayment invoices.
+    */
+    INITIATED = 0;
+
+    /**
+    PREIMAGE_REVEALED is reached when the sweep tx publication is first
+    attempted. From that point on, we should consider the preimage to no
+    longer be secret and we need to do all we can to get the sweep confirmed.
+    This state will mostly coalesce with StateHtlcConfirmed, except in the
+    case where we wait for fees to come down before we sweep.
+    */
+    PREIMAGE_REVEALED = 1;
+
+    /**
+    SUCCESS is the final swap state that is reached when the sweep tx has
+    the required confirmation depth.
+    */
+    SUCCESS = 3;
+
+    /**
+    FAILED is the final swap state for a failed swap with or without loss of
+    the swap amount.
+    */
+    FAILED = 4;
+}
+
+message TermsRequest {
+}
+
+message TermsResponse {
+    /**
+    The node pubkey where the swap payment needs to be paid
+    to. This can be used to test connectivity before initiating the swap.
+    */
+    string swap_payment_dest = 1;
+
+    /**
+    The base fee for a swap (sat)
+    */
+    int64 swap_fee_base = 2;
+
+    /**
+    The fee rate for a swap (parts per million)
+    */
+    int64 swap_fee_rate = 3;
+
+    /**
+    Required prepay amount
+    */
+    int64 prepay_amt = 4;
+
+    /**
+    Minimum swap amount (sat)
+    */
+    int64 min_swap_amount = 5;
+
+    /**
+    Maximum swap amount (sat)
+    */
+    int64 max_swap_amount = 6;
+
+    /**
+    On-chain cltv expiry delta
+    */
+    int32 cltv_delta = 7;
+
+    /**
+    Maximum cltv expiry delta
+    */
+    int32 max_cltv = 8;
+}
+
+message QuoteRequest {
+    /**
+    Requested swap amount in sat.
+    */
+    int64 amt = 1;
+}
+
+message QuoteResponse {
+    /**
+    The fee that the swap server is charging for the swap.
+    */
+    int64 swap_fee = 1;
+
+    /**
+    The part of the swap fee that is requested as a
+    prepayment.
+    */
+	int64 prepay_amt = 2;
+
+    /**
+    An estimate of the on-chain fee that needs to be paid to
+    sweep the htlc.
+    */
+	int64 miner_fee = 3;
+}
+
+/**
+SwapClient is a service that handles the client side process of onchain/offchain
+swaps. The service is designed for a single client.
+*/
+service SwapClient {
+    /**
+    Uncharge initiates an uncharge swap with the given parameters. The call
+    returns after the swap has been set up with the swap server. From that
+    point onwards, progress can be tracked via the SwapStatus stream
+    that is returned from Monitor().
+    */
+    rpc Uncharge(UnchargeRequest) returns (SwapResponse);
+
+  
+    /**
+    Monitor will return a stream of swap updates for currently active swaps.
+    */
+    rpc Monitor(MonitorRequest) returns(stream SwapStatus);
+
+    /**
+    GetTerms returns the terms that the server enforces for swaps.
+    */
+    rpc GetUnchargeTerms(TermsRequest) returns(TermsResponse);
+
+    /**
+    GetQuote returns a quote for a swap with the provided parameters.
+    */
+    rpc GetUnchargeQuote(QuoteRequest) returns(QuoteResponse);
+}
+    
