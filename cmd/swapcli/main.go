@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/utils"
 
 	"github.com/btcsuite/btcutil"
 
-	"github.com/lightninglabs/nautilus/cmd/swapd/rpc"
+	"github.com/lightninglabs/loop/cmd/swapd/rpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )

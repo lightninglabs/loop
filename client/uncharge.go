@@ -9,9 +9,9 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/sweep"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
 )

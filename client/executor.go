@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/sweep"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/queue"
 )
 

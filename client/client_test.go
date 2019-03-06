@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/test"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 

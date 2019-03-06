@@ -7,12 +7,12 @@ import (
 
 	"github.com/lightningnetwork/lnd/queue"
 
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/utils"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/nautilus/client"
-	clientrpc "github.com/lightninglabs/nautilus/cmd/swapd/rpc"
+	"github.com/lightninglabs/loop/client"
+	clientrpc "github.com/lightninglabs/loop/cmd/swapd/rpc"
 )
 
 const completedSwapsCount = 5

@@ -10,7 +10,7 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/nautilus/lndclient"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 )

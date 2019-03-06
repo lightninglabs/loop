@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/nautilus/test"
+	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 

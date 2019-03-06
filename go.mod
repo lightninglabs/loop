@@ -1,4 +1,4 @@
-module github.com/lightninglabs/nautilus
+module github.com/lightninglabs/loop
 
 require (
 	github.com/btcsuite/btcd v0.0.0-20190115013929-ed77733ec07d

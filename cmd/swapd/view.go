@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/urfave/cli"
 )
 

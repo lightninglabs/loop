@@ -13,7 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/coreos/bbolt"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 

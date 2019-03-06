@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lightninglabs/nautilus/client"
-	"github.com/lightninglabs/nautilus/lndclient"
+	"github.com/lightninglabs/loop/client"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/urfave/cli"
 )
 

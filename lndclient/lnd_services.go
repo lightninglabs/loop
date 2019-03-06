@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/utils"
 	"io/ioutil"
 	"path/filepath"
 	"time"

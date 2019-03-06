@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/nautilus/test"
+	"github.com/lightninglabs/loop/test"
 )
 
 func TestStore(t *testing.T) {

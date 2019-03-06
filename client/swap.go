@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 

@@ -3,7 +3,7 @@ package client
 import (
 	"time"
 
-	"github.com/lightninglabs/nautilus/lndclient"
+	"github.com/lightninglabs/loop/lndclient"
 )
 
 // clientConfig contains config items for the swap client.

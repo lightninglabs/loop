@@ -4,7 +4,7 @@ import "google/api/annotations.proto";
 
 package rpc;
 
-option go_package = "github.com/lightninglabs/nautilus/rpc";
+option go_package = "github.com/lightninglabs/loop/rpc";
 
 service SwapServer {
     rpc NewUnchargeSwap(ServerUnchargeSwapRequest) returns (ServerUnchargeSwapResponse);

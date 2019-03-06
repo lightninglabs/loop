@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/nautilus/utils"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"google.golang.org/grpc"

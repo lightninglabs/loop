@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/nautilus/lndclient"
-	"github.com/lightninglabs/nautilus/sweep"
-	"github.com/lightninglabs/nautilus/test"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/test"
 )
 
 // TestLateHtlcPublish tests that the client is not revealing the preimage if

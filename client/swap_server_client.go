@@ -11,7 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/nautilus/rpc"
+	"github.com/lightninglabs/loop/rpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )

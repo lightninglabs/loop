@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/nautilus/client"
+	"github.com/lightninglabs/loop/client"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/urfave/cli"
 )

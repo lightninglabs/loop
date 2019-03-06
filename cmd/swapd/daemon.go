@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightninglabs/nautilus/client"
-	clientrpc "github.com/lightninglabs/nautilus/cmd/swapd/rpc"
+	"github.com/lightninglabs/loop/client"
+	clientrpc "github.com/lightninglabs/loop/cmd/swapd/rpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
