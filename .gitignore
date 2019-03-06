@@ -26,8 +26,11 @@ _testmain.go
 
 output*.log
 
-swapcli
-!swapcli/
+loop
+!cmd/loop/
+
+loopd
+!cmd/loopd/
 
 *.key
 *.hex
