@@ -17,13 +17,13 @@ import (
 )
 
 type swapServerClient interface {
-	GetUnchargeTerms(ctx context.Context) (
-		*UnchargeTerms, error)
+	GetLoopOutTerms(ctx context.Context) (
+		*LoopOutTerms, error)
 
-	NewUnchargeSwap(ctx context.Context,
+	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
 		receiverKey [33]byte) (
-		*newUnchargeResponse, error)
+		*newLoopOutResponse, error)
 }
 
 type grpcSwapServerClient struct {
@@ -31,7 +31,9 @@ type grpcSwapServerClient struct {
 	conn   *grpc.ClientConn
 }
 
-func newSwapServerClient(address string, insecure bool) (*grpcSwapServerClient, error) {
+func newSwapServerClient(address string,
+	insecure bool) (*grpcSwapServerClient, error) {
+
 	serverConn, err := getSwapServerConn(address, insecure)
 	if err != nil {
 		return nil, err
@@ -45,13 +47,13 @@ func newSwapServerClient(address string, insecure bool) (*grpcSwapServerClient, 
 	}, nil
 }
 
-func (s *grpcSwapServerClient) GetUnchargeTerms(ctx context.Context) (
-	*UnchargeTerms, error) {
+func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
+	*LoopOutTerms, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
-	quoteResp, err := s.server.UnchargeQuote(rpcCtx,
-		&looprpc.ServerUnchargeQuoteRequest{},
+	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
+		&looprpc.ServerLoopOutQuoteRequest{},
 	)
 	if err != nil {
 		return nil, err
@@ -67,7 +69,7 @@ func (s *grpcSwapServerClient) GetUnchargeTerms(ctx context.Context) (
 	var destArray [33]byte
 	copy(destArray[:], dest)
 
-	return &UnchargeTerms{
+	return &LoopOutTerms{
 		MinSwapAmount:   btcutil.Amount(quoteResp.MinSwapAmount),
 		MaxSwapAmount:   btcutil.Amount(quoteResp.MaxSwapAmount),
 		PrepayAmt:       btcutil.Amount(quoteResp.PrepayAmt),
@@ -78,14 +80,14 @@ func (s *grpcSwapServerClient) GetUnchargeTerms(ctx context.Context) (
 	}, nil
 }
 
-func (s *grpcSwapServerClient) NewUnchargeSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount, receiverKey [33]byte) (
-	*newUnchargeResponse, error) {
+func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
+	swapHash lntypes.Hash, amount btcutil.Amount,
+	receiverKey [33]byte) (*newLoopOutResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
-	swapResp, err := s.server.NewUnchargeSwap(rpcCtx,
-		&looprpc.ServerUnchargeSwapRequest{
+	swapResp, err := s.server.NewLoopOutSwap(rpcCtx,
+		&looprpc.ServerLoopOutRequest{
 			SwapHash:    swapHash[:],
 			Amt:         uint64(amount),
 			ReceiverKey: receiverKey[:],
@@ -104,7 +106,7 @@ func (s *grpcSwapServerClient) NewUnchargeSwap(ctx context.Context,
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
 
-	return &newUnchargeResponse{
+	return &newLoopOutResponse{
 		swapInvoice:   swapResp.SwapInvoice,
 		prepayInvoice: swapResp.PrepayInvoice,
 		senderKey:     senderKey,
@@ -135,7 +137,7 @@ func getSwapServerConn(address string, insecure bool) (*grpc.ClientConn, error) 
 	return conn, nil
 }
 
-type newUnchargeResponse struct {
+type newLoopOutResponse struct {
 	swapInvoice   string
 	prepayInvoice string
 	senderKey     [33]byte

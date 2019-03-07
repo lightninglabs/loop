@@ -6,9 +6,9 @@ import (
 	"github.com/btcsuite/btclog"
 )
 
-// log is a logger that is initialized with no output filters.  This
-// means the package will not perform any logging by default until the caller
-// requests it.
+// log is a logger that is initialized with no output filters.  This means the
+// package will not perform any logging by default until the caller requests
+// it.
 var (
 	backendLog = btclog.NewBackend(logWriter{})
 	logger     = backendLog.Logger("SWAPD")

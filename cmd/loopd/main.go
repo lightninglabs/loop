@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/client"
+	"github.com/lightninglabs/loop"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/urfave/cli"
 )
@@ -20,7 +20,7 @@ var (
 	defaultListenAddr = fmt.Sprintf("localhost:%d", defaultListenPort)
 	defaultSwapletDir = btcutil.AppDataDir("swaplet", false)
 
-	swaps            = make(map[lntypes.Hash]client.SwapInfo)
+	swaps            = make(map[lntypes.Hash]loop.SwapInfo)
 	subscribers      = make(map[int]chan<- interface{})
 	nextSubscriberID int
 	swapsLock        sync.Mutex
@@ -58,9 +58,12 @@ func main() {
 			Usage: "disable tls",
 		},
 	}
+	app.Name = "loopd"
 	app.Version = "0.0.1"
-	app.Usage = "swaps execution daemon"
-	app.Commands = []cli.Command{viewCommand}
+	app.Usage = "Lightning Loop Client Daemon"
+	app.Commands = []cli.Command{
+		viewCommand,
+	}
 	app.Action = daemon
 
 	err := app.Run(os.Args)

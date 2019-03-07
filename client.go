@@ -11,8 +11,9 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
-	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -66,7 +67,7 @@ type Client struct {
 func NewClient(dbDir string, serverAddress string, insecure bool,
 	lnd *lndclient.LndServices) (*Client, func(), error) {
 
-	store, err := newBoltSwapClientStore(dbDir)
+	store, err := loopdb.NewBoltSwapStore(dbDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,9 +113,9 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 	return client, cleanup, nil
 }
 
-// GetUnchargeSwaps returns a list of all swaps currently in the database.
-func (s *Client) GetUnchargeSwaps() ([]*PersistentUncharge, error) {
-	return s.Store.getUnchargeSwaps()
+// FetchLoopOutSwaps returns a list of all swaps currently in the database.
+func (s *Client) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
+	return s.Store.FetchLoopOutSwaps()
 }
 
 // Run is a blocking call that executes all swaps. Any pending swaps are
@@ -143,7 +144,7 @@ func (s *Client) Run(ctx context.Context,
 
 	// Query store before starting event loop to prevent new swaps from
 	// being treated as swaps that need to be resumed.
-	pendingSwaps, err := s.Store.getUnchargeSwaps()
+	pendingSwaps, err := s.Store.FetchLoopOutSwaps()
 	if err != nil {
 		return err
 	}
@@ -193,17 +194,17 @@ func (s *Client) Run(ctx context.Context,
 
 // resumeSwaps restarts all pending swaps from the provided list.
 func (s *Client) resumeSwaps(ctx context.Context,
-	swaps []*PersistentUncharge) {
+	swaps []*loopdb.LoopOut) {
 
 	for _, pend := range swaps {
-		if pend.State().Type() != StateTypePending {
+		if pend.State().Type() != loopdb.StateTypePending {
 			continue
 		}
 		swapCfg := &swapConfig{
 			lnd:   s.lndServices,
 			store: s.Store,
 		}
-		swap, err := resumeUnchargeSwap(ctx, swapCfg, pend)
+		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
 		if err != nil {
 			logger.Errorf("resuming swap: %v", err)
 			continue
@@ -213,21 +214,21 @@ func (s *Client) resumeSwaps(ctx context.Context,
 	}
 }
 
-// Uncharge initiates a uncharge swap. It blocks until the swap is initiation
+// LoopOut initiates a loop out swap. It blocks until the swap is initiation
 // with the swap server is completed (typically this takes only a short amount
 // of time). From there on further status information can be acquired through
 // the status channel returned from the Run call.
 //
-// When the call returns, the swap has been persisted and will be
-// resumed automatically after restarts.
+// When the call returns, the swap has been persisted and will be resumed
+// automatically after restarts.
 //
 // The return value is a hash that uniquely identifies the new swap.
-func (s *Client) Uncharge(globalCtx context.Context,
-	request *UnchargeRequest) (*lntypes.Hash, error) {
+func (s *Client) LoopOut(globalCtx context.Context,
+	request *OutRequest) (*lntypes.Hash, error) {
 
-	logger.Infof("Uncharge %v to %v (channel: %v)",
+	logger.Infof("LoopOut %v to %v (channel: %v)",
 		request.Amount, request.DestAddr,
-		request.UnchargeChannel,
+		request.LoopOutChannel,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
@@ -241,7 +242,7 @@ func (s *Client) Uncharge(globalCtx context.Context,
 		store:  s.Store,
 		server: s.Server,
 	}
-	swap, err := newUnchargeSwap(
+	swap, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
@@ -256,13 +257,13 @@ func (s *Client) Uncharge(globalCtx context.Context,
 	return &swap.hash, nil
 }
 
-// UnchargeQuote takes a Uncharge amount and returns a break down of estimated
+// LoopOutQuote takes a LoopOut amount and returns a break down of estimated
 // costs for the client. Both the swap server and the on-chain fee estimator
 // are queried to get to build the quote response.
-func (s *Client) UnchargeQuote(ctx context.Context,
-	request *UnchargeQuoteRequest) (*UnchargeQuote, error) {
+func (s *Client) LoopOutQuote(ctx context.Context,
+	request *LoopOutQuoteRequest) (*LoopOutQuote, error) {
 
-	terms, err := s.Server.GetUnchargeTerms(ctx)
+	terms, err := s.Server.GetLoopOutTerms(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -277,30 +278,30 @@ func (s *Client) UnchargeQuote(ctx context.Context,
 
 	logger.Infof("Offchain swap destination: %x", terms.SwapPaymentDest)
 
-	swapFee := utils.CalcFee(
+	swapFee := swap.CalcFee(
 		request.Amount, terms.SwapFeeBase, terms.SwapFeeRate,
 	)
 
 	minerFee, err := s.sweeper.GetSweepFee(
-		ctx, utils.QuoteHtlc.MaxSuccessWitnessSize,
+		ctx, swap.QuoteHtlc.MaxSuccessWitnessSize,
 		request.SweepConfTarget,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return &UnchargeQuote{
+	return &LoopOutQuote{
 		SwapFee:      swapFee,
 		MinerFee:     minerFee,
 		PrepayAmount: btcutil.Amount(terms.PrepayAmt),
 	}, nil
 }
 
-// UnchargeTerms returns the terms on which the server executes swaps.
-func (s *Client) UnchargeTerms(ctx context.Context) (
-	*UnchargeTerms, error) {
+// LoopOutTerms returns the terms on which the server executes swaps.
+func (s *Client) LoopOutTerms(ctx context.Context) (
+	*LoopOutTerms, error) {
 
-	return s.Server.GetUnchargeTerms(ctx)
+	return s.Server.GetLoopOutTerms(ctx)
 }
 
 // waitForInitialized for swaps to be resumed and executor ready.

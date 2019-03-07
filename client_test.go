@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -17,7 +18,7 @@ var (
 	testAddr, _ = btcutil.DecodeAddress(
 		"rbsHiPKwAgxeo1EQYiyzJTkA8XEmWSVAKx", nil)
 
-	testRequest = &UnchargeRequest{
+	testRequest = &OutRequest{
 		Amount:              btcutil.Amount(50000),
 		DestAddr:            testAddr,
 		MaxMinerFee:         50000,
@@ -40,13 +41,13 @@ func TestSuccess(t *testing.T) {
 
 	// Initiate uncharge.
 
-	hash, err := ctx.swapClient.Uncharge(context.Background(), testRequest)
+	hash, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx.assertStored()
-	ctx.assertStatus(StateInitiated)
+	ctx.assertStatus(loopdb.StateInitiated)
 
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
@@ -67,13 +68,13 @@ func TestFailOffchain(t *testing.T) {
 
 	ctx := createClientTestContext(t, nil)
 
-	_, err := ctx.swapClient.Uncharge(context.Background(), testRequest)
+	_, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx.assertStored()
-	ctx.assertStatus(StateInitiated)
+	ctx.assertStatus(loopdb.StateInitiated)
 
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
@@ -86,9 +87,9 @@ func TestFailOffchain(t *testing.T) {
 	signalPrepaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
 	)
-	ctx.assertStatus(StateFailOffchainPayments)
+	ctx.assertStatus(loopdb.StateFailOffchainPayments)
 
-	ctx.assertStoreFinished(StateFailOffchainPayments)
+	ctx.assertStoreFinished(loopdb.StateFailOffchainPayments)
 
 	ctx.finish()
 }
@@ -105,7 +106,7 @@ func TestFailWrongAmount(t *testing.T) {
 		// Modify mock for this subtest.
 		modifier(ctx.serverMock)
 
-		_, err := ctx.swapClient.Uncharge(
+		_, err := ctx.swapClient.LoopOut(
 			context.Background(), testRequest,
 		)
 		if err != expectedErr {
@@ -175,17 +176,17 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	var receiverKey [33]byte
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
 
-	state := StateInitiated
+	state := loopdb.StateInitiated
 	if preimageRevealed {
-		state = StatePreimageRevealed
+		state = loopdb.StatePreimageRevealed
 	}
-	pendingSwap := &PersistentUncharge{
-		Contract: &UnchargeContract{
+	pendingSwap := &loopdb.LoopOut{
+		Contract: &loopdb.LoopOutContract{
 			DestAddr:          dest,
 			SwapInvoice:       swapPayReq,
 			SweepConfTarget:   2,
 			MaxSwapRoutingFee: 70000,
-			SwapContract: SwapContract{
+			SwapContract: loopdb.SwapContract{
 				Preimage:        preimage,
 				AmountRequested: amt,
 				CltvExpiry:      744,
@@ -196,7 +197,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 				MaxMinerFee:     50000,
 			},
 		},
-		Events: []*PersistentUnchargeEvent{
+		Events: []*loopdb.LoopOutEvent{
 			{
 				State: state,
 			},
@@ -210,12 +211,12 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 		pendingSwap.Contract.CltvExpiry = 610
 	}
 
-	ctx := createClientTestContext(t, []*PersistentUncharge{pendingSwap})
+	ctx := createClientTestContext(t, []*loopdb.LoopOut{pendingSwap})
 
 	if preimageRevealed {
-		ctx.assertStatus(StatePreimageRevealed)
+		ctx.assertStatus(loopdb.StatePreimageRevealed)
 	} else {
-		ctx.assertStatus(StateInitiated)
+		ctx.assertStatus(loopdb.StateInitiated)
 	}
 
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
@@ -228,8 +229,8 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	signalPrepaymentResult(nil)
 
 	if !expectSuccess {
-		ctx.assertStatus(StateFailTimeout)
-		ctx.assertStoreFinished(StateFailTimeout)
+		ctx.assertStatus(loopdb.StateFailTimeout)
+		ctx.assertStoreFinished(loopdb.StateFailTimeout)
 		ctx.finish()
 		return
 	}
@@ -259,7 +260,7 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	ctx.expiryChan <- testTime
 
 	if !preimageRevealed {
-		ctx.assertStatus(StatePreimageRevealed)
+		ctx.assertStatus(loopdb.StatePreimageRevealed)
 		ctx.assertStorePreimageReveal()
 	}
 
@@ -283,9 +284,9 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 
 	ctx.NotifySpend(sweepTx, 0)
 
-	ctx.assertStatus(StateSuccess)
+	ctx.assertStatus(loopdb.StateSuccess)
 
-	ctx.assertStoreFinished(StateSuccess)
+	ctx.assertStoreFinished(loopdb.StateSuccess)
 
 	ctx.finish()
 }

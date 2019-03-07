@@ -6,19 +6,19 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-// SwapStore is the priamry database interface used by the loopd system. It
-// houses informatino for all pending completed/failed swaps.
+// SwapStore is the primary database interface used by the loopd system. It
+// houses information for all pending completed/failed swaps.
 type SwapStore interface {
-	// FetchUnchargeSwaps returns all swaps currently in the store.
-	FetchUnchargeSwaps() ([]*PersistentUncharge, error)
+	// FetchLoopOutSwaps returns all swaps currently in the store.
+	FetchLoopOutSwaps() ([]*LoopOut, error)
 
-	// CreateUncharge adds an initiated swap to the store.
-	CreateUncharge(hash lntypes.Hash, swap *UnchargeContract) error
+	// CreateLoopOut adds an initiated swap to the store.
+	CreateLoopOut(hash lntypes.Hash, swap *LoopOutContract) error
 
-	// UpdateUncharge stores a swap updateUncharge. This appends to the
-	// event log for a particular swap as it goes through the various
-	// stages in its lifetime.
-	UpdateUncharge(hash lntypes.Hash, time time.Time, state SwapState) error
+	// UpdateLoopOut stores a new event for a target loop out swap. This
+	// appends to the event log for a particular swap as it goes through
+	// the various stages in its lifetime.
+	UpdateLoopOut(hash lntypes.Hash, time time.Time, state SwapState) error
 
 	// Close closes the underlying database.
 	Close() error

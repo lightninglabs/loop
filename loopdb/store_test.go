@@ -42,13 +42,13 @@ func TestBoltSwapStore(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
-	store, err := newBoltSwapStore(tempDirName)
+	store, err := NewBoltSwapStore(tempDirName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchUnchargeSwaps()
+	swaps, err := store.FetchLoopOutSwaps()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestBoltSwapStore(t *testing.T) {
 
 	// Next, we'll make a new pending swap that we'll insert into the
 	// database shortly.
-	pendingSwap := UnchargeContract{
+	pendingSwap := LoopOutContract{
 		SwapContract: SwapContract{
 			AmountRequested:     100,
 			Preimage:            testPreimage,
@@ -90,7 +90,7 @@ func TestBoltSwapStore(t *testing.T) {
 	checkSwap := func(expectedState SwapState) {
 		t.Helper()
 
-		swaps, err := store.FetchUnchargeSwaps()
+		swaps, err := store.FetchLoopOutSwaps()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,20 +113,20 @@ func TestBoltSwapStore(t *testing.T) {
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	if err := store.CreateUncharge(hash, &pendingSwap); err != nil {
+	if err := store.CreateLoopOut(hash, &pendingSwap); err != nil {
 		t.Fatal(err)
 	}
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	if err := store.CreateUncharge(hash, &pendingSwap); err == nil {
+	if err := store.CreateLoopOut(hash, &pendingSwap); err == nil {
 		t.Fatal("expected error on storing duplicate")
 	}
 	checkSwap(StateInitiated)
 
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
-	err = store.UpdateUncharge(
+	err = store.UpdateLoopOut(
 		hash, testTime, StatePreimageRevealed,
 	)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestBoltSwapStore(t *testing.T) {
 
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
-	err = store.UpdateUncharge(
+	err = store.UpdateLoopOut(
 		hash, testTime, StateFailInsufficientValue,
 	)
 	if err != nil {
@@ -150,7 +150,7 @@ func TestBoltSwapStore(t *testing.T) {
 
 	// If we re-open the same store, then the state of the current swap
 	// should be the same.
-	store, err = newBoltSwapStore(tempDirName)
+	store, err = NewBoltSwapStore(tempDirName)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,31 +7,32 @@ import (
 
 	"github.com/lightningnetwork/lnd/queue"
 
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/client"
 	"github.com/lightninglabs/loop/looprpc"
 )
 
 const completedSwapsCount = 5
 
-// swapClientServer implements the grpc service exposed by swapd.
+// swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
-	impl *client.Client
+	impl *loop.Client
 	lnd  *lndclient.LndServices
 }
 
-// Uncharge initiates an uncharge swap with the given parameters. The call
+// LoopOut initiates an loop out swap with the given parameters. The call
 // returns after the swap has been set up with the swap server. From that point
-// onwards, progress can be tracked via the UnchargeStatus stream that is
+// onwards, progress can be tracked via the LoopOutStatus stream that is
 // returned from Monitor().
-func (s *swapClientServer) Uncharge(ctx context.Context,
-	in *looprpc.UnchargeRequest) (
+func (s *swapClientServer) LoopOut(ctx context.Context,
+	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("Uncharge request received")
+	logger.Infof("LoopOut request received")
 
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
@@ -49,7 +50,7 @@ func (s *swapClientServer) Uncharge(ctx context.Context,
 		}
 	}
 
-	req := &client.UnchargeRequest{
+	req := &loop.OutRequest{
 		Amount:              btcutil.Amount(in.Amt),
 		DestAddr:            sweepAddr,
 		MaxMinerFee:         btcutil.Amount(in.MaxMinerFee),
@@ -59,12 +60,12 @@ func (s *swapClientServer) Uncharge(ctx context.Context,
 		MaxSwapFee:          btcutil.Amount(in.MaxSwapFee),
 		SweepConfTarget:     defaultConfTarget,
 	}
-	if in.UnchargeChannel != 0 {
-		req.UnchargeChannel = &in.UnchargeChannel
+	if in.LoopOutChannel != 0 {
+		req.LoopOutChannel = &in.LoopOutChannel
 	}
-	hash, err := s.impl.Uncharge(ctx, req)
+	hash, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
-		logger.Errorf("Uncharge: %v", err)
+		logger.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
@@ -73,24 +74,25 @@ func (s *swapClientServer) Uncharge(ctx context.Context,
 	}, nil
 }
 
-func (s *swapClientServer) marshallSwap(swap *client.SwapInfo) (
+func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	*looprpc.SwapStatus, error) {
 
 	var state looprpc.SwapState
-	switch swap.State {
-	case client.StateInitiated:
+	switch loopSwap.State {
+	case loopdb.StateInitiated:
 		state = looprpc.SwapState_INITIATED
-	case client.StatePreimageRevealed:
+	case loopdb.StatePreimageRevealed:
 		state = looprpc.SwapState_PREIMAGE_REVEALED
-	case client.StateSuccess:
+	case loopdb.StateSuccess:
 		state = looprpc.SwapState_SUCCESS
 	default:
 		// Return less granular status over rpc.
 		state = looprpc.SwapState_FAILED
 	}
 
-	htlc, err := utils.NewHtlc(swap.CltvExpiry, swap.SenderKey,
-		swap.ReceiverKey, swap.SwapHash,
+	htlc, err := swap.NewHtlc(
+		loopSwap.CltvExpiry, loopSwap.SenderKey, loopSwap.ReceiverKey,
+		loopSwap.SwapHash,
 	)
 	if err != nil {
 		return nil, err
@@ -102,13 +104,13 @@ func (s *swapClientServer) marshallSwap(swap *client.SwapInfo) (
 	}
 
 	return &looprpc.SwapStatus{
-		Amt:            int64(swap.AmountRequested),
-		Id:             swap.SwapHash.String(),
+		Amt:            int64(loopSwap.AmountRequested),
+		Id:             loopSwap.SwapHash.String(),
 		State:          state,
-		InitiationTime: swap.InitiationTime.UnixNano(),
-		LastUpdateTime: swap.LastUpdate.UnixNano(),
+		InitiationTime: loopSwap.InitiationTime.UnixNano(),
+		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:    address.EncodeAddress(),
-		Type:           looprpc.SwapType_UNCHARGE,
+		Type:           looprpc.SwapType_LOOP_OUT,
 	}, nil
 }
 
@@ -118,7 +120,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 
 	logger.Infof("Monitor request received")
 
-	send := func(info client.SwapInfo) error {
+	send := func(info loop.SwapInfo) error {
 		rpcSwap, err := s.marshallSwap(&info)
 		if err != nil {
 			return err
@@ -140,9 +142,9 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	nextSubscriberID++
 	subscribers[id] = queue.ChanIn()
 
-	var pendingSwaps, completedSwaps []client.SwapInfo
+	var pendingSwaps, completedSwaps []loop.SwapInfo
 	for _, swap := range swaps {
-		if swap.State.Type() == client.StateTypePending {
+		if swap.State.Type() == loopdb.StateTypePending {
 			pendingSwaps = append(pendingSwaps, swap)
 		} else {
 			completedSwaps = append(completedSwaps, swap)
@@ -196,7 +198,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 				return nil
 			}
 
-			swap := queueItem.(client.SwapInfo)
+			swap := queueItem.(loop.SwapInfo)
 			if err := send(swap); err != nil {
 				return err
 			}
@@ -207,12 +209,12 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 }
 
 // GetTerms returns the terms that the server enforces for swaps.
-func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *looprpc.TermsRequest) (
-	*looprpc.TermsResponse, error) {
+func (s *swapClientServer) GetLoopOutTerms(ctx context.Context,
+	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
 	logger.Infof("Terms request received")
 
-	terms, err := s.impl.UnchargeTerms(ctx)
+	terms, err := s.impl.LoopOutTerms(ctx)
 	if err != nil {
 		logger.Errorf("Terms request: %v", err)
 		return nil, err
@@ -229,10 +231,10 @@ func (s *swapClientServer) GetUnchargeTerms(ctx context.Context, req *looprpc.Te
 }
 
 // GetQuote returns a quote for a swap with the provided parameters.
-func (s *swapClientServer) GetUnchargeQuote(ctx context.Context,
+func (s *swapClientServer) GetLoopOutQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
-	quote, err := s.impl.UnchargeQuote(ctx, &client.UnchargeQuoteRequest{
+	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
 		Amount:          btcutil.Amount(req.Amt),
 		SweepConfTarget: defaultConfTarget,
 	})

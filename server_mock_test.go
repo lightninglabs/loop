@@ -18,16 +18,16 @@ import (
 var (
 	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
 
-	testUnchargeOnChainCltvDelta = int32(30)
-	testCltvDelta                = 50
-	testSwapFeeBase              = btcutil.Amount(21)
-	testSwapFeeRate              = int64(100)
-	testInvoiceExpiry            = 180 * time.Second
-	testFixedPrepayAmount        = btcutil.Amount(100)
-	testMinSwapAmount            = btcutil.Amount(10000)
-	testMaxSwapAmount            = btcutil.Amount(1000000)
-	testTxConfTarget             = 2
-	testRepublishDelay           = 10 * time.Second
+	testLoopOutOnChainCltvDelta = int32(30)
+	testCltvDelta               = 50
+	testSwapFeeBase             = btcutil.Amount(21)
+	testSwapFeeRate             = int64(100)
+	testInvoiceExpiry           = 180 * time.Second
+	testFixedPrepayAmount       = btcutil.Amount(100)
+	testMinSwapAmount           = btcutil.Amount(10000)
+	testMaxSwapAmount           = btcutil.Amount(1000000)
+	testTxConfTarget            = 2
+	testRepublishDelay          = 10 * time.Second
 )
 
 // serverMock is used in client unit tests to simulate swap server behaviour.
@@ -56,10 +56,10 @@ func newServerMock() *serverMock {
 	}
 }
 
-func (s *serverMock) NewUnchargeSwap(ctx context.Context,
+func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
 	receiverKey [33]byte) (
-	*newUnchargeResponse, error) {
+	*newLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)
 
@@ -82,24 +82,24 @@ func (s *serverMock) NewUnchargeSwap(ctx context.Context,
 	var senderKeyArray [33]byte
 	copy(senderKeyArray[:], senderKey.SerializeCompressed())
 
-	return &newUnchargeResponse{
+	return &newLoopOutResponse{
 		senderKey:     senderKeyArray,
 		swapInvoice:   swapPayReqString,
 		prepayInvoice: prePayReqString,
-		expiry:        s.height + testUnchargeOnChainCltvDelta,
+		expiry:        s.height + testLoopOutOnChainCltvDelta,
 	}, nil
 }
 
-func (s *serverMock) GetUnchargeTerms(ctx context.Context) (
-	*UnchargeTerms, error) {
+func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
+	*LoopOutTerms, error) {
 
 	dest := [33]byte{1, 2, 3}
 
-	return &UnchargeTerms{
+	return &LoopOutTerms{
 		SwapFeeBase:     testSwapFeeBase,
 		SwapFeeRate:     testSwapFeeRate,
 		SwapPaymentDest: dest,
-		CltvDelta:       testUnchargeOnChainCltvDelta,
+		CltvDelta:       testLoopOutOnChainCltvDelta,
 		MinSwapAmount:   testMinSwapAmount,
 		MaxSwapAmount:   testMaxSwapAmount,
 		PrepayAmt:       testFixedPrepayAmount,

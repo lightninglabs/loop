@@ -5,33 +5,34 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 type swapKit struct {
-	htlc *utils.Htlc
+	htlc *swap.Htlc
 	hash lntypes.Hash
 
 	height int32
 
-	log *utils.SwapLog
+	log *SwapLog
 
 	lastUpdateTime time.Time
 	cost           SwapCost
-	state          SwapState
+	state          loopdb.SwapState
 	executeConfig
 	swapConfig
 
-	contract *SwapContract
-	swapType SwapType
+	contract *loopdb.SwapContract
+	swapType Type
 }
 
-func newSwapKit(hash lntypes.Hash, swapType SwapType, cfg *swapConfig,
-	contract *SwapContract) (*swapKit, error) {
+func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
+	contract *loopdb.SwapContract) (*swapKit, error) {
 
 	// Compose expected on-chain swap script
-	htlc, err := utils.NewHtlc(
+	htlc, err := swap.NewHtlc(
 		contract.CltvExpiry, contract.SenderKey,
 		contract.ReceiverKey, hash,
 	)
@@ -45,7 +46,7 @@ func newSwapKit(hash lntypes.Hash, swapType SwapType, cfg *swapConfig,
 		return nil, err
 	}
 
-	log := &utils.SwapLog{
+	log := &SwapLog{
 		Hash:   hash,
 		Logger: logger,
 	}
@@ -57,7 +58,7 @@ func newSwapKit(hash lntypes.Hash, swapType SwapType, cfg *swapConfig,
 		hash:       hash,
 		log:        log,
 		htlc:       htlc,
-		state:      StateInitiated,
+		state:      loopdb.StateInitiated,
 		contract:   contract,
 		swapType:   swapType,
 	}, nil
@@ -91,6 +92,6 @@ type genericSwap interface {
 
 type swapConfig struct {
 	lnd    *lndclient.LndServices
-	store  swapClientStore
+	store  loopdb.SwapStore
 	server swapServerClient
 }

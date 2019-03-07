@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 )
@@ -37,7 +38,7 @@ func TestLateHtlcPublish(t *testing.T) {
 		server: server,
 	}
 
-	swap, err := newUnchargeSwap(
+	swap, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
 	)
 	if err != nil {
@@ -63,10 +64,10 @@ func TestLateHtlcPublish(t *testing.T) {
 		errChan <- err
 	}()
 
-	store.assertUnchargeStored()
+	store.assertLoopOutStored()
 
 	state := <-statusChan
-	if state.State != StateInitiated {
+	if state.State != loopdb.StateInitiated {
 		t.Fatal("unexpected state")
 	}
 
@@ -86,10 +87,10 @@ func TestLateHtlcPublish(t *testing.T) {
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
 	)
 
-	store.assertStoreFinished(StateFailTimeout)
+	store.assertStoreFinished(loopdb.StateFailTimeout)
 
 	status := <-statusChan
-	if status.State != StateFailTimeout {
+	if status.State != loopdb.StateFailTimeout {
 		t.Fatal("unexpected state")
 	}
 

@@ -5,51 +5,54 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 // storeMock implements a mock client swap store.
 type storeMock struct {
-	unchargeSwaps      map[lntypes.Hash]*UnchargeContract
-	unchargeUpdates    map[lntypes.Hash][]SwapState
-	unchargeStoreChan  chan UnchargeContract
-	unchargeUpdateChan chan SwapState
+	loopOutSwaps      map[lntypes.Hash]*loopdb.LoopOutContract
+	loopOutUpdates    map[lntypes.Hash][]loopdb.SwapState
+	loopOutStoreChan  chan loopdb.LoopOutContract
+	loopOutUpdateChan chan loopdb.SwapState
 
 	t *testing.T
 }
 
 type finishData struct {
 	preimage lntypes.Hash
-	result   SwapState
+	result   loopdb.SwapState
 }
 
 // NewStoreMock instantiates a new mock store.
 func newStoreMock(t *testing.T) *storeMock {
 	return &storeMock{
-		unchargeStoreChan:  make(chan UnchargeContract, 1),
-		unchargeUpdateChan: make(chan SwapState, 1),
-		unchargeSwaps:      make(map[lntypes.Hash]*UnchargeContract),
-		unchargeUpdates:    make(map[lntypes.Hash][]SwapState),
+		loopOutStoreChan:  make(chan loopdb.LoopOutContract, 1),
+		loopOutUpdateChan: make(chan loopdb.SwapState, 1),
+		loopOutSwaps:      make(map[lntypes.Hash]*loopdb.LoopOutContract),
+		loopOutUpdates:    make(map[lntypes.Hash][]loopdb.SwapState),
 
 		t: t,
 	}
 }
 
-// getUnchargeSwaps returns all swaps currently in the store.
-func (s *storeMock) getUnchargeSwaps() ([]*PersistentUncharge, error) {
-	result := []*PersistentUncharge{}
+// FetchLoopOutSwaps returns all swaps currently in the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
+	result := []*loopdb.LoopOut{}
 
-	for hash, contract := range s.unchargeSwaps {
-		updates := s.unchargeUpdates[hash]
-		events := make([]*PersistentUnchargeEvent, len(updates))
+	for hash, contract := range s.loopOutSwaps {
+		updates := s.loopOutUpdates[hash]
+		events := make([]*loopdb.LoopOutEvent, len(updates))
 		for i, u := range updates {
-			events[i] = &PersistentUnchargeEvent{
+			events[i] = &loopdb.LoopOutEvent{
 				State: u,
 			}
 		}
 
-		swap := &PersistentUncharge{
+		swap := &loopdb.LoopOut{
 			Hash:     hash,
 			Contract: contract,
 			Events:   events,
@@ -60,58 +63,68 @@ func (s *storeMock) getUnchargeSwaps() ([]*PersistentUncharge, error) {
 	return result, nil
 }
 
-// createUncharge adds an initiated swap to the store.
-func (s *storeMock) createUncharge(hash lntypes.Hash,
-	swap *UnchargeContract) error {
+// CreateLoopOut adds an initiated swap to the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) CreateLoopOut(hash lntypes.Hash,
+	swap *loopdb.LoopOutContract) error {
 
-	_, ok := s.unchargeSwaps[hash]
+	_, ok := s.loopOutSwaps[hash]
 	if ok {
 		return errors.New("swap already exists")
 	}
 
-	s.unchargeSwaps[hash] = swap
-	s.unchargeUpdates[hash] = []SwapState{}
-	s.unchargeStoreChan <- *swap
+	s.loopOutSwaps[hash] = swap
+	s.loopOutUpdates[hash] = []loopdb.SwapState{}
+	s.loopOutStoreChan <- *swap
 
 	return nil
 }
 
-// Finalize stores the final swap result.
-func (s *storeMock) updateUncharge(hash lntypes.Hash, time time.Time,
-	state SwapState) error {
+// UpdateLoopOut stores a new event for a target loop out swap. This appends to
+// the event log for a particular swap as it goes through the various stages in
+// its lifetime.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
+	state loopdb.SwapState) error {
 
-	updates, ok := s.unchargeUpdates[hash]
+	updates, ok := s.loopOutUpdates[hash]
 	if !ok {
 		return errors.New("swap does not exists")
 	}
 
 	updates = append(updates, state)
-	s.unchargeUpdates[hash] = updates
-	s.unchargeUpdateChan <- state
+	s.loopOutUpdates[hash] = updates
+	s.loopOutUpdateChan <- state
 
+	return nil
+}
+
+func (s *storeMock) Close() error {
 	return nil
 }
 
 func (s *storeMock) isDone() error {
 	select {
-	case <-s.unchargeStoreChan:
+	case <-s.loopOutStoreChan:
 		return errors.New("storeChan not empty")
 	default:
 	}
 
 	select {
-	case <-s.unchargeUpdateChan:
+	case <-s.loopOutUpdateChan:
 		return errors.New("updateChan not empty")
 	default:
 	}
 	return nil
 }
 
-func (s *storeMock) assertUnchargeStored() {
+func (s *storeMock) assertLoopOutStored() {
 	s.t.Helper()
 
 	select {
-	case <-s.unchargeStoreChan:
+	case <-s.loopOutStoreChan:
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap to be stored")
 	}
@@ -122,8 +135,8 @@ func (s *storeMock) assertStorePreimageReveal() {
 	s.t.Helper()
 
 	select {
-	case state := <-s.unchargeUpdateChan:
-		if state != StatePreimageRevealed {
+	case state := <-s.loopOutUpdateChan:
+		if state != loopdb.StatePreimageRevealed {
 			s.t.Fatalf("unexpected state")
 		}
 	case <-time.After(test.Timeout):
@@ -131,11 +144,11 @@ func (s *storeMock) assertStorePreimageReveal() {
 	}
 }
 
-func (s *storeMock) assertStoreFinished(expectedResult SwapState) {
+func (s *storeMock) assertStoreFinished(expectedResult loopdb.SwapState) {
 	s.t.Helper()
 
 	select {
-	case state := <-s.unchargeUpdateChan:
+	case state := <-s.loopOutUpdateChan:
 		if state != expectedResult {
 			s.t.Fatalf("expected result %v, but got %v",
 				expectedResult, state)

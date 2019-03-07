@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -68,7 +69,7 @@ func newSwapClient(config *clientConfig) *Client {
 }
 
 func createClientTestContext(t *testing.T,
-	pendingSwaps []*PersistentUncharge) *testContext {
+	pendingSwaps []*loopdb.LoopOut) *testContext {
 
 	serverMock := newServerMock()
 
@@ -76,13 +77,13 @@ func createClientTestContext(t *testing.T,
 
 	store := newStoreMock(t)
 	for _, s := range pendingSwaps {
-		store.unchargeSwaps[s.Hash] = s.Contract
+		store.loopOutSwaps[s.Hash] = s.Contract
 
-		updates := []SwapState{}
+		updates := []loopdb.SwapState{}
 		for _, e := range s.Events {
 			updates = append(updates, e.State)
 		}
-		store.unchargeUpdates[s.Hash] = updates
+		store.loopOutUpdates[s.Hash] = updates
 	}
 
 	expiryChan := make(chan time.Time)
@@ -169,7 +170,7 @@ func (ctx *testContext) assertIsDone() {
 func (ctx *testContext) assertStored() {
 	ctx.T.Helper()
 
-	ctx.store.assertUnchargeStored()
+	ctx.store.assertLoopOutStored()
 }
 
 func (ctx *testContext) assertStorePreimageReveal() {
@@ -178,21 +179,21 @@ func (ctx *testContext) assertStorePreimageReveal() {
 	ctx.store.assertStorePreimageReveal()
 }
 
-func (ctx *testContext) assertStoreFinished(expectedResult SwapState) {
+func (ctx *testContext) assertStoreFinished(expectedResult loopdb.SwapState) {
 	ctx.T.Helper()
 
 	ctx.store.assertStoreFinished(expectedResult)
 
 }
 
-func (ctx *testContext) assertStatus(expectedState SwapState) {
+func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
 
 	ctx.T.Helper()
 
 	for {
 		select {
 		case update := <-ctx.statusChan:
-			if update.SwapType != SwapTypeUncharge {
+			if update.SwapType != TypeOut {
 				continue
 			}
 

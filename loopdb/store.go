@@ -67,9 +67,8 @@ type boltSwapStore struct {
 // interface.
 var _ = (*boltSwapStore)(nil)
 
-// newBoltSwapStore creates a new client swap store.
-func newBoltSwapStore(dbPath string) (*boltSwapStore, error) {
-
+// NewBoltSwapStore creates a new client swap store.
+func NewBoltSwapStore(dbPath string) (*boltSwapStore, error) {
 	// If the target path for the swap store doesn't exist, then we'll
 	// create it now before we proceed.
 	if !fileExists(dbPath) {
@@ -119,11 +118,11 @@ func newBoltSwapStore(dbPath string) (*boltSwapStore, error) {
 	}, nil
 }
 
-// FetchUnchargeSwaps returns all swaps currently in the store.
+// FetchLoopOutSwaps returns all swaps currently in the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchUnchargeSwaps() ([]*PersistentUncharge, error) {
-	var swaps []*PersistentUncharge
+func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
+	var swaps []*LoopOut
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		// First, we'll grab our main loop out swap bucket key.
@@ -155,7 +154,7 @@ func (s *boltSwapStore) FetchUnchargeSwaps() ([]*PersistentUncharge, error) {
 			if contractBytes == nil {
 				return errors.New("contract not found")
 			}
-			contract, err := deserializeUnchargeContract(
+			contract, err := deserializeLoopOutContract(
 				contractBytes,
 			)
 			if err != nil {
@@ -171,9 +170,9 @@ func (s *boltSwapStore) FetchUnchargeSwaps() ([]*PersistentUncharge, error) {
 
 			// De serialize and collect each swap update into our
 			// slice of swap events.
-			var updates []*PersistentUnchargeEvent
+			var updates []*LoopOutEvent
 			err = stateBucket.ForEach(func(k, v []byte) error {
-				event, err := deserializeUnchargeUpdate(v)
+				event, err := deserializeLoopOutEvent(v)
 				if err != nil {
 					return err
 				}
@@ -188,7 +187,7 @@ func (s *boltSwapStore) FetchUnchargeSwaps() ([]*PersistentUncharge, error) {
 			var hash lntypes.Hash
 			copy(hash[:], swapHash)
 
-			swap := PersistentUncharge{
+			swap := LoopOut{
 				Contract: contract,
 				Hash:     hash,
 				Events:   updates,
@@ -205,11 +204,11 @@ func (s *boltSwapStore) FetchUnchargeSwaps() ([]*PersistentUncharge, error) {
 	return swaps, nil
 }
 
-// CreateUncharge adds an initiated swap to the store.
+// CreateLoopOut adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) CreateUncharge(hash lntypes.Hash,
-	swap *UnchargeContract) error {
+func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
+	swap *LoopOutContract) error {
 
 	// If the hash doesn't match the pre-image, then this is an invalid
 	// swap so we'll bail out early.
@@ -244,7 +243,7 @@ func (s *boltSwapStore) CreateUncharge(hash lntypes.Hash,
 
 		// With out swap bucket created, we'll serialize and store the
 		// swap itself.
-		contract, err := serializeUnchargeContract(swap)
+		contract, err := serializeLoopOutContract(swap)
 		if err != nil {
 			return err
 		}
@@ -259,11 +258,11 @@ func (s *boltSwapStore) CreateUncharge(hash lntypes.Hash,
 	})
 }
 
-// UpdateUncharge stores a swap updateUncharge. This appends to the event log
-// for a particular swap as it goes through the various stages in its lifetime.
+// UpdateLoopOut stores a swap updateLoopOut. This appends to the event log for
+// a particular swap as it goes through the various stages in its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) UpdateUncharge(hash lntypes.Hash, time time.Time,
+func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 	state SwapState) error {
 
 	return s.db.Update(func(tx *bbolt.Tx) error {
@@ -291,7 +290,7 @@ func (s *boltSwapStore) UpdateUncharge(hash lntypes.Hash, time time.Time,
 		}
 
 		// With the ID obtained, we'll write out this new update value.
-		updateValue, err := serializeUnchargeUpdate(time, state)
+		updateValue, err := serializeLoopOutEvent(time, state)
 		if err != nil {
 			return err
 		}

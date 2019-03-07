@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightninglabs/loop/client"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
@@ -34,13 +34,13 @@ func daemon(ctx *cli.Context) error {
 	// Before starting the client, build an in-memory view of all swaps.
 	// This view is used to update newly connected clients with the most
 	// recent swaps.
-	storedSwaps, err := swapClient.GetUnchargeSwaps()
+	storedSwaps, err := swapClient.FetchLoopOutSwaps()
 	if err != nil {
 		return err
 	}
 	for _, swap := range storedSwaps {
-		swaps[swap.Hash] = client.SwapInfo{
-			SwapType:     client.SwapTypeUncharge,
+		swaps[swap.Hash] = loop.SwapInfo{
+			SwapType:     loop.TypeOut,
 			SwapContract: swap.Contract.SwapContract,
 			State:        swap.State(),
 			SwapHash:     swap.Hash,
@@ -68,7 +68,7 @@ func daemon(ctx *cli.Context) error {
 	}
 	defer lis.Close()
 
-	statusChan := make(chan client.SwapInfo)
+	statusChan := make(chan loop.SwapInfo)
 
 	mainCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup

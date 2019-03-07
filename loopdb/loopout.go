@@ -12,13 +12,63 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-// UnchargeContract contains the data that is serialized to persistent storage
+// SwapContract contains the base data that is serialized to persistent storage
 // for pending swaps.
-type UnchargeContract struct {
+type SwapContract struct {
+	// Preimage is the preimage for the swap.
+	Preimage lntypes.Preimage
+
+	// AmountRequested is the total amount of the swap.
+	AmountRequested btcutil.Amount
+
+	// PrepayInvoice is the invoice that the client should pay to the
+	// server that will be returned if the swap is complete.
+	PrepayInvoice string
+
+	// SenderKey is the key of the sender that will be used in the on-chain
+	// HTLC.
+	SenderKey [33]byte
+
+	// ReceiverKey is the of the receiver that will be used in the on-chain
+	// HTLC.
+	ReceiverKey [33]byte
+
+	// CltvExpiry is the total absolute CLTV expiry of the swap.
+	CltvExpiry int32
+
+	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
+	// paid for the prepayment to the server.
+	MaxPrepayRoutingFee btcutil.Amount
+
+	// MaxSwapFee is the maximum we are willing to pay the server for the
+	// swap.
+	MaxSwapFee btcutil.Amount
+
+	// MaxMinerFee is the maximum in on-chain fees that we are willing to
+	// spend.
+	MaxMinerFee btcutil.Amount
+
+	// InitiationHeight is the block height at which the swap was
+	// initiated.
+	InitiationHeight int32
+
+	// InitiationTime is the time at which the swap was initiated.
+	InitiationTime time.Time
+}
+
+// LoopOutContract contains the data that is serialized to persistent storage
+// for pending swaps.
+type LoopOutContract struct {
+	// SwapContract contains basic information pertaining to this swap.
+	// Each swap type has a base contract, then swap specific information
+	// on top of it.
 	SwapContract
 
+	// DestAddr is the destination address of the loop out swap.
 	DestAddr btcutil.Address
 
+	// SwapInvoice is the invoice that is to be paid by the client to
+	// initiate the loop out swap.
 	SwapInvoice string
 
 	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
@@ -29,13 +79,13 @@ type UnchargeContract struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
-	// UnchargeChannel is the channel to uncharge. If zero, any channel may
+	// TargetChannel is the channel to loop out. If zero, any channel may
 	// be used.
 	UnchargeChannel *uint64
 }
 
-// PersistentUnchargeEvent contains the dynamic data of a swap.
-type PersistentUnchargeEvent struct {
+// LoopOutEvent contains the dynamic data of a swap.
+type LoopOutEvent struct {
 	// State is the new state for this swap as a result of this event.
 	State SwapState
 
@@ -43,22 +93,22 @@ type PersistentUnchargeEvent struct {
 	Time time.Time
 }
 
-// PersistentUncharge is a combination of the contract and the updates.
-type PersistentUncharge struct {
+// LoopOut is a combination of the contract and the updates.
+type LoopOut struct {
 	// Hash is the hash that uniquely identifies this swap.
 	Hash lntypes.Hash
 
 	// Contract is the active contract for this swap. It describes the
 	// precise details of the swap including the final fee, CLTV value,
 	// etc.
-	Contract *UnchargeContract
+	Contract *LoopOutContract
 
 	// Events are each of the state transitions that this swap underwent.
-	Events []*PersistentUnchargeEvent
+	Events []*LoopOutEvent
 }
 
 // State returns the most recent state of this swap.
-func (s *PersistentUncharge) State() SwapState {
+func (s *LoopOut) State() SwapState {
 	lastUpdate := s.LastUpdate()
 	if lastUpdate == nil {
 		return StateInitiated
@@ -68,7 +118,7 @@ func (s *PersistentUncharge) State() SwapState {
 }
 
 // LastUpdate returns the most recent update of this swap.
-func (s *PersistentUncharge) LastUpdate() *PersistentUnchargeEvent {
+func (s *LoopOut) LastUpdate() *LoopOutEvent {
 	eventCount := len(s.Events)
 
 	if eventCount == 0 {
@@ -80,7 +130,7 @@ func (s *PersistentUncharge) LastUpdate() *PersistentUnchargeEvent {
 }
 
 // LastUpdateTime returns the last update time of this swap.
-func (s *PersistentUncharge) LastUpdateTime() time.Time {
+func (s *LoopOut) LastUpdateTime() time.Time {
 	lastUpdate := s.LastUpdate()
 	if lastUpdate == nil {
 		return s.Contract.InitiationTime
@@ -89,7 +139,7 @@ func (s *PersistentUncharge) LastUpdateTime() time.Time {
 	return lastUpdate.Time
 }
 
-func deserializeUnchargeContract(value []byte) (*UnchargeContract, error) {
+func deserializeLoopOutContract(value []byte) (*LoopOutContract, error) {
 	r := bytes.NewReader(value)
 
 	contract, err := deserializeContract(r)
@@ -97,7 +147,7 @@ func deserializeUnchargeContract(value []byte) (*UnchargeContract, error) {
 		return nil, err
 	}
 
-	swap := UnchargeContract{
+	swap := LoopOutContract{
 		SwapContract: *contract,
 	}
 
@@ -134,7 +184,7 @@ func deserializeUnchargeContract(value []byte) (*UnchargeContract, error) {
 	return &swap, nil
 }
 
-func serializeUnchargeContract(swap *UnchargeContract) (
+func serializeLoopOutContract(swap *LoopOutContract) (
 	[]byte, error) {
 
 	var b bytes.Buffer
@@ -282,7 +332,7 @@ func serializeContract(swap *SwapContract, b *bytes.Buffer) error {
 	return nil
 }
 
-func serializeUnchargeUpdate(time time.Time, state SwapState) (
+func serializeLoopOutEvent(time time.Time, state SwapState) (
 	[]byte, error) {
 
 	var b bytes.Buffer
@@ -298,8 +348,8 @@ func serializeUnchargeUpdate(time time.Time, state SwapState) (
 	return b.Bytes(), nil
 }
 
-func deserializeUnchargeUpdate(value []byte) (*PersistentUnchargeEvent, error) {
-	update := &PersistentUnchargeEvent{}
+func deserializeLoopOutEvent(value []byte) (*LoopOutEvent, error) {
+	update := &LoopOutEvent{}
 
 	r := bytes.NewReader(value)
 

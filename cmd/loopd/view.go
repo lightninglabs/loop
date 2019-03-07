@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/urfave/cli"
 )
 
@@ -21,7 +21,7 @@ var viewCommand = cli.Command{
 func view(ctx *cli.Context) error {
 	network := ctx.GlobalString("network")
 
-	chainParams, err := utils.ChainParamsFromNetwork(network)
+	chainParams, err := swap.ChainParamsFromNetwork(network)
 	if err != nil {
 		return err
 	}
@@ -38,13 +38,13 @@ func view(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	swaps, err := swapClient.GetUnchargeSwaps()
+	swaps, err := swapClient.FetchLoopOutSwaps()
 	if err != nil {
 		return err
 	}
 
 	for _, s := range swaps {
-		htlc, err := utils.NewHtlc(
+		htlc, err := swap.NewHtlc(
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,

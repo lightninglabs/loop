@@ -8,15 +8,19 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/queue"
 )
 
 // executorConfig contains executor configuration data.
 type executorConfig struct {
-	lnd               *lndclient.LndServices
-	sweeper           *sweep.Sweeper
-	store             swapClientStore
+	lnd *lndclient.LndServices
+
+	sweeper *sweep.Sweeper
+
+	store loopdb.SwapStore
+
 	createExpiryTimer func(expiry time.Duration) <-chan time.Time
 }
 

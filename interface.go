@@ -4,11 +4,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-// UnchargeRequest contains the required parameters for the swap.
-type UnchargeRequest struct {
+// OutRequest contains the required parameters for a loop out swap.
+type OutRequest struct {
 	// Amount specifies the requested swap amount in sat. This does not
 	// include the swap and miner fee.
 	Amount btcutil.Amount
@@ -19,19 +20,19 @@ type UnchargeRequest struct {
 	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for payment to the server. This limit is applied during path
 	// finding. Typically this value is taken from the response of the
-	// UnchargeQuote call.
+	// LoopOutQuote call.
 	MaxSwapRoutingFee btcutil.Amount
 
 	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for payment to the server. This limit is applied during path
 	// finding. Typically this value is taken from the response of the
-	// UnchargeQuote call.
+	// LoopOutQuote call.
 	MaxPrepayRoutingFee btcutil.Amount
 
 	// MaxSwapFee is the maximum we are willing to pay the server for the
 	// swap. This value is not disclosed in the swap initiation call, but
 	// if the server asks for a higher fee, we abort the swap. Typically
-	// this value is taken from the response of the UnchargeQuote call. It
+	// this value is taken from the response of the LoopOutQuote call. It
 	// includes the prepay amount.
 	MaxSwapFee btcutil.Amount
 
@@ -54,26 +55,32 @@ type UnchargeRequest struct {
 	// revocation.
 	//
 	// MaxMinerFee is typically taken from the response of the
-	// UnchargeQuote call.
+	// LoopOutQuote call.
 	MaxMinerFee btcutil.Amount
 
 	// SweepConfTarget specifies the targeted confirmation target for the
 	// client sweep tx.
 	SweepConfTarget int32
 
-	// UnchargeChannel optionally specifies the short channel id of the
+	// LoopOutChannel optionally specifies the short channel id of the
 	// channel to uncharge.
-	UnchargeChannel *uint64
+	LoopOutChannel *uint64
 }
 
-// UnchargeSwapInfo contains status information for a uncharge swap.
-type UnchargeSwapInfo struct {
-	UnchargeContract
+// Out contains the full details of a loop out request. This includes things
+// like the payment hash, the total value, and the final CTLV delay of the
+// swap. We'll use this to track an active swap throughout that various swap
+// stages.
+type Out struct {
+	// LoopOutContract describes the details of this loop.Out. Using these
+	// details,the full swap can be executed.
+	loopdb.LoopOutContract
 
+	// State is the current state of the target swap.
+	State loopdb.SwapState
+
+	// SwapInfoKit contains shared data amongst all swap types.
 	SwapInfoKit
-
-	// State where the swap is in.
-	State SwapState
 }
 
 // SwapCost is a breakdown of the final swap costs.
@@ -85,9 +92,9 @@ type SwapCost struct {
 	Onchain btcutil.Amount
 }
 
-// UnchargeQuoteRequest specifies the swap parameters for which a quote is
+// LoopOutQuoteRequest specifies the swap parameters for which a quote is
 // requested.
-type UnchargeQuoteRequest struct {
+type LoopOutQuoteRequest struct {
 	// Amount specifies the requested swap amount in sat. This does not
 	// include the swap and miner fee.
 	Amount btcutil.Amount
@@ -107,9 +114,9 @@ type UnchargeQuoteRequest struct {
 	// final cltv delta values for the off-chain payments.
 }
 
-// UnchargeQuote contains estimates for the fees making up the total swap cost
+// LoopOutQuote contains estimates for the fees making up the total swap cost
 // for the client.
-type UnchargeQuote struct {
+type LoopOutQuote struct {
 	// SwapFee is the fee that the swap server is charging for the swap.
 	SwapFee btcutil.Amount
 
@@ -122,8 +129,8 @@ type UnchargeQuote struct {
 	MinerFee btcutil.Amount
 }
 
-// UnchargeTerms are the server terms on which it executes swaps.
-type UnchargeTerms struct {
+// LoopOutTerms are the server terms on which it executes swaps.
+type LoopOutTerms struct {
 	// SwapFeeBase is the fixed per-swap base fee.
 	SwapFeeBase btcutil.Amount
 
@@ -161,23 +168,26 @@ type SwapInfoKit struct {
 	LastUpdateTime time.Time
 }
 
-// SwapType indicates the type of swap.
-type SwapType uint8
+// Type indicates the type of swap.
+type Type uint8
 
 const (
-	// SwapTypeCharge is a charge swap.
-	SwapTypeCharge SwapType = iota
+	// TypeIn is a loop in swap.
+	TypeIn Type = iota
 
-	// SwapTypeUncharge is an uncharge swap.
-	SwapTypeUncharge
+	// TypeOut is a loop out swap.
+	TypeOut
 )
 
-// SwapInfo exposes common info fields for charge and uncharge swaps.
+// SwapInfo exposes common info fields for loop in and loop out swaps.
 type SwapInfo struct {
 	LastUpdate time.Time
-	SwapHash   lntypes.Hash
-	State      SwapState
-	SwapType   SwapType
 
-	SwapContract
+	SwapHash lntypes.Hash
+
+	State loopdb.SwapState
+
+	SwapType Type
+
+	loopdb.SwapContract
 }

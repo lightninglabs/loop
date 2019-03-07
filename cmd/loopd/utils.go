@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lightninglabs/loop/client"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/urfave/cli"
 )
@@ -20,7 +20,9 @@ func getLnd(ctx *cli.Context) (*lndclient.GrpcLndServices, error) {
 }
 
 // getClient returns an instance of the swap client.
-func getClient(ctx *cli.Context, lnd *lndclient.LndServices) (*client.Client, func(), error) {
+func getClient(ctx *cli.Context,
+	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
+
 	network := ctx.GlobalString("network")
 
 	storeDir, err := getStoreDir(network)
@@ -28,7 +30,7 @@ func getClient(ctx *cli.Context, lnd *lndclient.LndServices) (*client.Client, fu
 		return nil, nil, err
 	}
 
-	swapClient, cleanUp, err := client.NewClient(
+	swapClient, cleanUp, err := loop.NewClient(
 		storeDir, ctx.GlobalString("swapserver"),
 		ctx.GlobalBool("insecure"), lnd,
 	)

@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -22,7 +22,7 @@ type Sweeper struct {
 // CreateSweepTx creates an htlc sweep tx.
 func (s *Sweeper) CreateSweepTx(
 	globalCtx context.Context, height int32,
-	htlc *utils.Htlc, htlcOutpoint wire.OutPoint,
+	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
 	keyBytes [33]byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
 	amount, fee btcutil.Amount,

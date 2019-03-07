@@ -10,24 +10,25 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
-	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
-	// MinUnchargePreimageRevealDelta configures the minimum number of remaining
-	// blocks before htlc expiry required to reveal preimage.
-	MinUnchargePreimageRevealDelta = int32(20)
+	// MinLoopOutPreimageRevealDelta configures the minimum number of
+	// remaining blocks before htlc expiry required to reveal preimage.
+	MinLoopOutPreimageRevealDelta = int32(20)
 )
 
-// unchargeSwap contains all the in-memory state related to a pending uncharge
+// loopOutSwap contains all the in-memory state related to a pending loop out
 // swap.
-type unchargeSwap struct {
+type loopOutSwap struct {
 	swapKit
 
-	UnchargeContract
+	loopdb.LoopOutContract
 
 	swapPaymentChan chan lndclient.PaymentResult
 	prePaymentChan  chan lndclient.PaymentResult
@@ -41,10 +42,10 @@ type executeConfig struct {
 	timerFactory   func(d time.Duration) <-chan time.Time
 }
 
-// newUnchargeSwap initiates a new swap with the server and returns a
+// newLoopOutSwap initiates a new swap with the server and returns a
 // corresponding swap object.
-func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *UnchargeRequest) (*unchargeSwap, error) {
+func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
+	currentHeight int32, request *OutRequest) (*loopOutSwap, error) {
 
 	// Generate random preimage.
 	var swapPreimage [32]byte
@@ -55,7 +56,7 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Derive a receiver key for this swap.
 	keyDesc, err := cfg.lnd.WalletKit.DeriveNextKey(
-		globalCtx, utils.SwapKeyFamily,
+		globalCtx, swap.KeyFamily,
 	)
 	if err != nil {
 		return nil, err
@@ -67,14 +68,14 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 	// the server revocation key and the swap and prepay invoices.
 	logger.Infof("Initiating swap request at height %v", currentHeight)
 
-	swapResp, err := cfg.server.NewUnchargeSwap(globalCtx, swapHash,
+	swapResp, err := cfg.server.NewLoopOutSwap(globalCtx, swapHash,
 		request.Amount, receiverKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
 	}
 
-	err = validateUnchargeContract(cfg.lnd, currentHeight, request, swapResp)
+	err = validateLoopOutContract(cfg.lnd, currentHeight, request, swapResp)
 	if err != nil {
 		return nil, err
 	}
@@ -82,13 +83,13 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 	// Instantie a struct that contains all required data to start the swap.
 	initiationTime := time.Now()
 
-	contract := UnchargeContract{
+	contract := loopdb.LoopOutContract{
 		SwapInvoice:       swapResp.swapInvoice,
 		DestAddr:          request.DestAddr,
 		MaxSwapRoutingFee: request.MaxSwapRoutingFee,
 		SweepConfTarget:   request.SweepConfTarget,
-		UnchargeChannel:   request.UnchargeChannel,
-		SwapContract: SwapContract{
+		UnchargeChannel:   request.LoopOutChannel,
+		SwapContract: loopdb.SwapContract{
 			InitiationHeight:    currentHeight,
 			InitiationTime:      initiationTime,
 			PrepayInvoice:       swapResp.prepayInvoice,
@@ -104,7 +105,7 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit, err := newSwapKit(
-		swapHash, SwapTypeUncharge, cfg, &contract.SwapContract,
+		swapHash, TypeOut, cfg, &contract.SwapContract,
 	)
 	if err != nil {
 		return nil, err
@@ -112,14 +113,14 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 
 	swapKit.lastUpdateTime = initiationTime
 
-	swap := &unchargeSwap{
-		UnchargeContract: contract,
-		swapKit:          *swapKit,
+	swap := &loopOutSwap{
+		LoopOutContract: contract,
+		swapKit:         *swapKit,
 	}
 
-	// Persist the data before exiting this function, so that the caller can
-	// trust that this swap will be resumed on restart.
-	err = cfg.store.createUncharge(swapHash, &swap.UnchargeContract)
+	// Persist the data before exiting this function, so that the caller
+	// can trust that this swap will be resumed on restart.
+	err = cfg.store.CreateLoopOut(swapHash, &swap.LoopOutContract)
 	if err != nil {
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
@@ -127,25 +128,25 @@ func newUnchargeSwap(globalCtx context.Context, cfg *swapConfig,
 	return swap, nil
 }
 
-// resumeUnchargeSwap returns a swap object representing a pending swap that has
+// resumeLoopOutSwap returns a swap object representing a pending swap that has
 // been restored from the database.
-func resumeUnchargeSwap(reqContext context.Context, cfg *swapConfig,
-	pend *PersistentUncharge) (*unchargeSwap, error) {
+func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
+	pend *loopdb.LoopOut) (*loopOutSwap, error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
 	logger.Infof("Resuming swap %v", hash)
 
 	swapKit, err := newSwapKit(
-		hash, SwapTypeUncharge, cfg, &pend.Contract.SwapContract,
+		hash, TypeOut, cfg, &pend.Contract.SwapContract,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	swap := &unchargeSwap{
-		UnchargeContract: *pend.Contract,
-		swapKit:          *swapKit,
+	swap := &loopOutSwap{
+		LoopOutContract: *pend.Contract,
+		swapKit:         *swapKit,
 	}
 
 	lastUpdate := pend.LastUpdate()
@@ -161,7 +162,7 @@ func resumeUnchargeSwap(reqContext context.Context, cfg *swapConfig,
 
 // execute starts/resumes the swap. It is a thin wrapper around
 // executeAndFinalize to conveniently handle the error case.
-func (s *unchargeSwap) execute(mainCtx context.Context,
+func (s *loopOutSwap) execute(mainCtx context.Context,
 	cfg *executeConfig, height int32) error {
 
 	s.executeConfig = *cfg
@@ -170,13 +171,15 @@ func (s *unchargeSwap) execute(mainCtx context.Context,
 	err := s.executeAndFinalize(mainCtx)
 
 	// If an unexpected error happened, report a temporary failure.
-	// Otherwise for example a connection error could lead to abandoning the
-	// swap permanently and losing funds.
+	// Otherwise for example a connection error could lead to abandoning
+	// the swap permanently and losing funds.
 	if err != nil {
 		s.log.Errorf("Swap error: %v", err)
-		s.state = StateFailTemporary
 
-		// If we cannot send out this update, there is nothing we can do.
+		s.state = loopdb.StateFailTemporary
+
+		// If we cannot send out this update, there is nothing we can
+		// do.
 		_ = s.sendUpdate(mainCtx)
 	}
 
@@ -185,7 +188,7 @@ func (s *unchargeSwap) execute(mainCtx context.Context,
 
 // executeAndFinalize executes a swap and awaits the definitive outcome of the
 // offchain payments. When this method returns, the swap outcome is final.
-func (s *unchargeSwap) executeAndFinalize(globalCtx context.Context) error {
+func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(globalCtx)
 	if err != nil {
@@ -200,7 +203,7 @@ func (s *unchargeSwap) executeAndFinalize(globalCtx context.Context) error {
 	}
 
 	// Sanity check.
-	if s.state.Type() == StateTypePending {
+	if s.state.Type() == loopdb.StateTypePending {
 		return fmt.Errorf("swap in non-final state %v", s.state)
 	}
 
@@ -249,7 +252,7 @@ func (s *unchargeSwap) executeAndFinalize(globalCtx context.Context) error {
 
 // executeSwap executes the swap, but returns as soon as the swap outcome is
 // final. At that point, there may still be pending off-chain payment(s).
-func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
+func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	// We always pay both invoices (again). This is currently the only way
 	// to sort of resume payments.
 	//
@@ -277,7 +280,7 @@ func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
 	// attempt.
 
 	// Retrieve outpoint for sweep.
-	htlcOutpoint, htlcValue, err := utils.GetScriptOutput(
+	htlcOutpoint, htlcValue, err := swap.GetScriptOutput(
 		txConf.Tx, s.htlc.ScriptHash,
 	)
 	if err != nil {
@@ -287,11 +290,11 @@ func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
 	s.log.Infof("Htlc value: %v", htlcValue)
 
 	// Verify amount if preimage hasn't been revealed yet.
-	if s.state != StatePreimageRevealed && htlcValue < s.AmountRequested {
+	if s.state != loopdb.StatePreimageRevealed && htlcValue < s.AmountRequested {
 		logger.Warnf("Swap amount too low, expected %v but received %v",
 			s.AmountRequested, htlcValue)
 
-		s.state = StateFailInsufficientValue
+		s.state = loopdb.StateFailInsufficientValue
 		return nil
 	}
 
@@ -308,7 +311,7 @@ func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
 	// Inspect witness stack to see if it is a success transaction. We
 	// don't just try to match with the hash of our sweep tx, because it
 	// may be swept by a different (fee) sweep tx from a previous run.
-	htlcInput, err := getTxInputByOutpoint(
+	htlcInput, err := swap.GetTxInputByOutpoint(
 		spendDetails.SpendingTx, htlcOutpoint,
 	)
 	if err != nil {
@@ -322,22 +325,22 @@ func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
 		s.cost.Onchain = htlcValue -
 			btcutil.Amount(spendDetails.SpendingTx.TxOut[0].Value)
 
-		s.state = StateSuccess
+		s.state = loopdb.StateSuccess
 	} else {
-		s.state = StateFailSweepTimeout
+		s.state = loopdb.StateFailSweepTimeout
 	}
 
 	return nil
 }
 
 // persistState updates the swap state and sends out an update notification.
-func (s *unchargeSwap) persistState(ctx context.Context) error {
+func (s *loopOutSwap) persistState(ctx context.Context) error {
 	updateTime := time.Now()
 
 	s.lastUpdateTime = updateTime
 
 	// Update state in store.
-	err := s.store.updateUncharge(s.hash, updateTime, s.state)
+	err := s.store.UpdateLoopOut(s.hash, updateTime, s.state)
 	if err != nil {
 		return err
 	}
@@ -347,12 +350,12 @@ func (s *unchargeSwap) persistState(ctx context.Context) error {
 }
 
 // payInvoices pays both swap invoices.
-func (s *unchargeSwap) payInvoices(ctx context.Context) {
+func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
 	s.swapPaymentChan = s.lnd.Client.PayInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.UnchargeContract.UnchargeChannel,
+		s.LoopOutContract.UnchargeChannel,
 	)
 
 	// Pay the prepay invoice.
@@ -366,7 +369,7 @@ func (s *unchargeSwap) payInvoices(ctx context.Context) {
 // waitForConfirmedHtlc waits for a confirmed htlc to appear on the chain. In
 // case we haven't revealed the preimage yet, it also monitors block height and
 // off-chain payment failure.
-func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
+func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	*chainntnfs.TxConfirmation, error) {
 
 	// Wait for confirmation of the on-chain htlc by watching for a tx
@@ -388,12 +391,12 @@ func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	}
 
 	var txConf *chainntnfs.TxConfirmation
-	if s.state == StateInitiated {
+	if s.state == loopdb.StateInitiated {
 		// Check if it is already too late to start this swap. If we
 		// already revealed the preimage, this check is irrelevant and
 		// we need to sweep in any case.
 		maxPreimageRevealHeight := s.CltvExpiry -
-			MinUnchargePreimageRevealDelta
+			MinLoopOutPreimageRevealDelta
 
 		checkMaxRevealHeightExceeded := func() bool {
 			s.log.Infof("Checking preimage reveal height %v "+
@@ -408,7 +411,7 @@ func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 				"exceeded (height %v)",
 				maxPreimageRevealHeight, s.height)
 
-			s.state = StateFailTimeout
+			s.state = loopdb.StateFailTimeout
 
 			return true
 		}
@@ -429,7 +432,7 @@ func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.swapPaymentChan:
 				s.swapPaymentChan = nil
 				if result.Err != nil {
-					s.state = StateFailOffchainPayments
+					s.state = loopdb.StateFailOffchainPayments
 					s.log.Infof("Failed swap payment: %v",
 						result.Err)
 
@@ -443,7 +446,7 @@ func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.prePaymentChan:
 				s.prePaymentChan = nil
 				if result.Err != nil {
-					s.state = StateFailOffchainPayments
+					s.state = loopdb.StateFailOffchainPayments
 					s.log.Infof("Failed prepayment: %v",
 						result.Err)
 
@@ -504,7 +507,7 @@ func (s *unchargeSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 // TODO: Improve retry/fee increase mechanism. Once in the mempool, server can
 // sweep offchain. So we must make sure we sweep successfully before on-chain
 // timeout.
-func (s *unchargeSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
+func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 	spendFunc func() error) (*chainntnfs.SpendDetail, error) {
 
 	// Register the htlc spend notification.
@@ -556,7 +559,7 @@ func (s *unchargeSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 // published the tx.
 //
 // TODO: Use lnd sweeper?
-func (s *unchargeSwap) sweep(ctx context.Context,
+func (s *loopOutSwap) sweep(ctx context.Context,
 	htlcOutpoint wire.OutPoint,
 	htlcValue btcutil.Amount) error {
 
@@ -579,7 +582,7 @@ func (s *unchargeSwap) sweep(ctx context.Context,
 		s.log.Warnf("Required miner fee %v exceeds max of %v",
 			fee, s.MaxMinerFee)
 
-		if s.state == StatePreimageRevealed {
+		if s.state == loopdb.StatePreimageRevealed {
 			// The currently required fee exceeds the max, but we
 			// already revealed the preimage. The best we can do now
 			// is to republish with the max fee.
@@ -603,8 +606,8 @@ func (s *unchargeSwap) sweep(ctx context.Context,
 	// Before publishing the tx, already mark the preimage as revealed. This
 	// is a precaution in case the publish call never returns and would
 	// leave us thinking we didn't reveal yet.
-	if s.state != StatePreimageRevealed {
-		s.state = StatePreimageRevealed
+	if s.state != loopdb.StatePreimageRevealed {
+		s.state = loopdb.StatePreimageRevealed
 
 		err := s.persistState(ctx)
 		if err != nil {
@@ -624,24 +627,24 @@ func (s *unchargeSwap) sweep(ctx context.Context,
 	return nil
 }
 
-// validateUnchargeContract validates the contract parameters against our
+// validateLoopOutContract validates the contract parameters against our
 // request.
-func validateUnchargeContract(lnd *lndclient.LndServices,
+func validateLoopOutContract(lnd *lndclient.LndServices,
 	height int32,
-	request *UnchargeRequest,
-	response *newUnchargeResponse) error {
+	request *OutRequest,
+	response *newLoopOutResponse) error {
 
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams
 
-	swapInvoiceAmt, err := utils.GetInvoiceAmt(
+	swapInvoiceAmt, err := swap.GetInvoiceAmt(
 		chainParams, response.swapInvoice,
 	)
 	if err != nil {
 		return err
 	}
 
-	prepayInvoiceAmt, err := utils.GetInvoiceAmt(
+	prepayInvoiceAmt, err := swap.GetInvoiceAmt(
 		chainParams, response.prepayInvoice,
 	)
 	if err != nil {
@@ -663,7 +666,7 @@ func validateUnchargeContract(lnd *lndclient.LndServices,
 		return ErrPrepayAmountTooHigh
 	}
 
-	if response.expiry-height < MinUnchargePreimageRevealDelta {
+	if response.expiry-height < MinLoopOutPreimageRevealDelta {
 		logger.Warnf("Proposed expiry %v (delta %v) too soon",
 			response.expiry, response.expiry-height)
 
