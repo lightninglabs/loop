@@ -6,7 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -117,7 +117,7 @@ func (m *walletKitClient) NextAddr(ctx context.Context) (
 func (m *walletKitClient) PublishTransaction(ctx context.Context,
 	tx *wire.MsgTx) error {
 
-	txHex, err := utils.EncodeTx(tx)
+	txHex, err := swap.EncodeTx(tx)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func (m *walletKitClient) SendOutputs(ctx context.Context,
 		return nil, err
 	}
 
-	tx, err := utils.DecodeTx(resp.RawTx)
+	tx, err := swap.DecodeTx(resp.RawTx)
 	if err != nil {
 		return nil, err
 	}

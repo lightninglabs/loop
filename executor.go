@@ -1,4 +1,4 @@
-package client
+package loop
 
 import (
 	"context"
@@ -21,6 +21,8 @@ type executorConfig struct {
 }
 
 // executor is responsible for executing swaps.
+//
+// TODO(roasbeef): rename to SubSwapper
 type executor struct {
 	wg            sync.WaitGroup
 	newSwaps      chan genericSwap
@@ -91,6 +93,7 @@ func (s *executor) run(mainCtx context.Context,
 	nextSwapID := 0
 	for {
 		select {
+
 		case newSwap := <-s.newSwaps:
 			queue := queue.NewConcurrentQueue(10)
 			queue.Start()
@@ -115,6 +118,7 @@ func (s *executor) run(mainCtx context.Context,
 			}()
 
 			nextSwapID++
+
 		case doneID := <-swapDoneChan:
 			queue, ok := blockEpochQueues[doneID]
 			if !ok {

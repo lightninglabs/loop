@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"google.golang.org/grpc"
@@ -29,7 +29,7 @@ func newSignerClient(conn *grpc.ClientConn) *signerClient {
 func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
 
-	txRaw, err := utils.EncodeTx(tx)
+	txRaw, err := swap.EncodeTx(tx)
 	if err != nil {
 		return nil, err
 	}

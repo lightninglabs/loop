@@ -1,4 +1,4 @@
-package client
+package loop
 
 import (
 	"context"
@@ -139,8 +139,9 @@ func (ctx *testContext) finish() {
 	ctx.assertIsDone()
 }
 
-// notifyHeight notifies swap client of the arrival of a new block and waits for
-// the notification to be processed by selecting on a dedicated test channel.
+// notifyHeight notifies swap client of the arrival of a new block and
+// waits for the notification to be processed by selecting on a dedicated
+// test channel.
 func (ctx *testContext) notifyHeight(height int32) {
 	ctx.T.Helper()
 
@@ -205,7 +206,9 @@ func (ctx *testContext) assertStatus(expectedState SwapState) {
 	}
 }
 
-func (ctx *testContext) publishHtlc(script []byte, amt btcutil.Amount) wire.OutPoint {
+func (ctx *testContext) publishHtlc(script []byte,
+	amt btcutil.Amount) wire.OutPoint {
+
 	// Create the htlc tx.
 	htlcTx := wire.MsgTx{}
 	htlcTx.AddTxIn(&wire.TxIn{

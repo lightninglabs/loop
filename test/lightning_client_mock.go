@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -34,7 +34,7 @@ func (h *mockLightningClient) PayInvoice(ctx context.Context, invoice string,
 	go func() {
 		defer h.wg.Done()
 
-		amt, err := utils.GetInvoiceAmt(&chaincfg.TestNet3Params, invoice)
+		amt, err := swap.GetInvoiceAmt(&chaincfg.TestNet3Params, invoice)
 		if err != nil {
 			select {
 			case done <- lndclient.PaymentResult{

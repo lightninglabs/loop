@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/lightninglabs/loop/utils"
 	"io/ioutil"
 	"path/filepath"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -53,7 +53,7 @@ func NewLndServices(lndAddress string, application string,
 
 	logger.Infof("Connected to lnd")
 
-	chainParams, err := utils.ChainParamsFromNetwork(network)
+	chainParams, err := swap.ChainParamsFromNetwork(network)
 	if err != nil {
 		return nil, err
 	}

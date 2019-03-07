@@ -1,4 +1,4 @@
-package client
+package loop
 
 import (
 	"time"
@@ -29,9 +29,9 @@ type UnchargeRequest struct {
 	MaxPrepayRoutingFee btcutil.Amount
 
 	// MaxSwapFee is the maximum we are willing to pay the server for the
-	// swap. This value is not disclosed in the swap initiation call, but if
-	// the server asks for a higher fee, we abort the swap. Typically this
-	// value is taken from the response of the UnchargeQuote call. It
+	// swap. This value is not disclosed in the swap initiation call, but
+	// if the server asks for a higher fee, we abort the swap. Typically
+	// this value is taken from the response of the UnchargeQuote call. It
 	// includes the prepay amount.
 	MaxSwapFee btcutil.Amount
 
@@ -63,28 +63,6 @@ type UnchargeRequest struct {
 
 	// UnchargeChannel optionally specifies the short channel id of the
 	// channel to uncharge.
-	UnchargeChannel *uint64
-}
-
-// UnchargeContract contains the data that is serialized to persistent storage for
-// pending swaps.
-type UnchargeContract struct {
-	SwapContract
-
-	DestAddr btcutil.Address
-
-	SwapInvoice string
-
-	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
-	// paid for the swap payment to the server.
-	MaxSwapRoutingFee btcutil.Amount
-
-	// SweepConfTarget specifies the targeted confirmation target for the
-	// client sweep tx.
-	SweepConfTarget int32
-
-	// UnchargeChannel is the channel to uncharge. If zero, any channel may
-	// be used.
 	UnchargeChannel *uint64
 }
 
@@ -152,7 +130,8 @@ type UnchargeTerms struct {
 	// SwapFeeRate is the variable fee in parts per million.
 	SwapFeeRate int64
 
-	// PrepayAmt is the fixed part of the swap fee that needs to be prepaid.
+	// PrepayAmt is the fixed part of the swap fee that needs to be
+	// prepaid.
 	PrepayAmt btcutil.Amount
 
 	// MinSwapAmount is the minimum amount that the server requires for a
@@ -172,42 +151,10 @@ type UnchargeTerms struct {
 	SwapPaymentDest [33]byte
 }
 
-// SwapContract contains the base data that is serialized to persistent storage
-// for pending swaps.
-type SwapContract struct {
-	Preimage        lntypes.Preimage
-	AmountRequested btcutil.Amount
-
-	PrepayInvoice string
-
-	SenderKey   [33]byte
-	ReceiverKey [33]byte
-
-	CltvExpiry int32
-
-	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
-	// paid for the prepayment to the server.
-	MaxPrepayRoutingFee btcutil.Amount
-
-	// MaxSwapFee is the maximum we are willing to pay the server for the
-	// swap.
-	MaxSwapFee btcutil.Amount
-
-	// MaxMinerFee is the maximum in on-chain fees that we are willing to
-	// spend.
-	MaxMinerFee btcutil.Amount
-
-	// InitiationHeight is the block height at which the swap was initiated.
-	InitiationHeight int32
-
-	// InitiationTime is the time at which the swap was initiated.
-	InitiationTime time.Time
-}
-
 // SwapInfoKit contains common swap info fields.
 type SwapInfoKit struct {
-	// Hash is the sha256 hash of the preimage that unlocks the htlcs. It is
-	// used to uniquely identify this swap.
+	// Hash is the sha256 hash of the preimage that unlocks the htlcs. It
+	// is used to uniquely identify this swap.
 	Hash lntypes.Hash
 
 	// LastUpdateTime is the time of the last update of this swap.

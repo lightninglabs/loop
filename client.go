@@ -1,4 +1,4 @@
-package client
+package loop
 
 import (
 	"context"
@@ -46,8 +46,8 @@ var (
 	republishDelay = 10 * time.Second
 )
 
-// Client performs the client side part of swaps. This interface exists to
-// be able to implement a stub.
+// Client performs the client side part of swaps. This interface exists to be
+// able to implement a stub.
 type Client struct {
 	started uint32 // To be used atomically.
 	errChan chan error
@@ -118,9 +118,9 @@ func (s *Client) GetUnchargeSwaps() ([]*PersistentUncharge, error) {
 }
 
 // Run is a blocking call that executes all swaps. Any pending swaps are
-// restored from persistent storage and resumed.  Subsequent updates
-// will be sent through the passed in statusChan. The function can be
-// terminated by cancelling the context.
+// restored from persistent storage and resumed.  Subsequent updates will be
+// sent through the passed in statusChan. The function can be terminated by
+// cancelling the context.
 func (s *Client) Run(ctx context.Context,
 	statusChan chan<- SwapInfo) error {
 
@@ -213,11 +213,10 @@ func (s *Client) resumeSwaps(ctx context.Context,
 	}
 }
 
-// Uncharge initiates a uncharge swap. It blocks until the swap is
-// initiation with the swap server is completed (typically this takes
-// only a short amount of time). From there on further status
-// information can be acquired through the status channel returned from
-// the Run call.
+// Uncharge initiates a uncharge swap. It blocks until the swap is initiation
+// with the swap server is completed (typically this takes only a short amount
+// of time). From there on further status information can be acquired through
+// the status channel returned from the Run call.
 //
 // When the call returns, the swap has been persisted and will be
 // resumed automatically after restarts.
@@ -258,8 +257,8 @@ func (s *Client) Uncharge(globalCtx context.Context,
 }
 
 // UnchargeQuote takes a Uncharge amount and returns a break down of estimated
-// costs for the client. Both the swap server and the on-chain fee estimator are
-// queried to get to build the quote response.
+// costs for the client. Both the swap server and the on-chain fee estimator
+// are queried to get to build the quote response.
 func (s *Client) UnchargeQuote(ctx context.Context,
 	request *UnchargeQuoteRequest) (*UnchargeQuote, error) {
 

@@ -1,4 +1,4 @@
-package client
+package loop
 
 import (
 	"context"
@@ -305,10 +305,9 @@ func (s *unchargeSwap) executeSwap(globalCtx context.Context) error {
 		return err
 	}
 
-	// Inspect witness stack to see if it is a success transaction. We don't
-	// just try to match with the hash of our sweep tx, because it may be
-	// swept by a different (fee) sweep tx from a previous run.
-
+	// Inspect witness stack to see if it is a success transaction. We
+	// don't just try to match with the hash of our sweep tx, because it
+	// may be swept by a different (fee) sweep tx from a previous run.
 	htlcInput, err := getTxInputByOutpoint(
 		spendDetails.SpendingTx, htlcOutpoint,
 	)
