@@ -12,20 +12,21 @@ import (
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
 
-// daemon runs swapd in daemon mode. It will listen for grpc connections,
+// daemon runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
-func daemon(ctx *cli.Context) error {
-	lnd, err := getLnd(ctx)
+func daemon(config *config) error {
+	lnd, err := getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
 	}
 	defer lnd.Close()
 
-	swapClient, cleanup, err := getClient(ctx, &lnd.LndServices)
+	swapClient, cleanup, err := getClient(
+		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
+	)
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func daemon(ctx *cli.Context) error {
 		}
 	}
 
-	// Instantiate the swapd gRPC server.
+	// Instantiate the loopd gRPC server.
 	server := swapClientServer{
 		impl: swapClient,
 		lnd:  &lnd.LndServices,
@@ -60,10 +61,10 @@ func daemon(ctx *cli.Context) error {
 
 	// Next, Start the gRPC server listening for HTTP/2 connections.
 	logger.Infof("Starting RPC listener")
-	lis, err := net.Listen("tcp", defaultListenAddr)
+	lis, err := net.Listen("tcp", config.Listen)
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
-			defaultListenAddr)
+			config.Listen)
 
 	}
 	defer lis.Close()
@@ -134,7 +135,7 @@ func daemon(ctx *cli.Context) error {
 	interruptChannel := make(chan os.Signal, 1)
 	signal.Notify(interruptChannel, os.Interrupt)
 
-	// Run until the users terminates swapd or an error occurred.
+	// Run until the users terminates loopd or an error occurred.
 	select {
 	case <-interruptChannel:
 		logger.Infof("Received SIGINT (Ctrl+C).")

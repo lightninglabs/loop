@@ -3,22 +3,23 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
+
+	flags "github.com/jessevdk/go-flags"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/urfave/cli"
 )
 
 const (
-	defaultListenPort = 11010
 	defaultConfTarget = int32(2)
 )
 
 var (
-	defaultListenAddr = fmt.Sprintf("localhost:%d", defaultListenPort)
-	defaultSwapletDir = btcutil.AppDataDir("swaplet", false)
+	loopDirBase           = btcutil.AppDataDir("loop", false)
+	defaultConfigFilename = "loopd.conf"
 
 	swaps            = make(map[lntypes.Hash]loop.SwapInfo)
 	subscribers      = make(map[int]chan<- interface{})
@@ -27,47 +28,58 @@ var (
 )
 
 func main() {
-	app := cli.NewApp()
-
-	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:  "network",
-			Value: "mainnet",
-			Usage: "network to run on (regtest, testnet, mainnet)",
-		},
-		cli.StringFlag{
-			Name:  "lnd",
-			Value: "localhost:10009",
-			Usage: "lnd instance rpc address host:port",
-		},
-		cli.StringFlag{
-			Name:  "swapserver",
-			Value: "swap.lightning.today:11009",
-			Usage: "swap server address host:port",
-		},
-		cli.StringFlag{
-			Name:  "macaroonpath",
-			Usage: "path to lnd macaroon",
-		},
-		cli.StringFlag{
-			Name:  "tlspath",
-			Usage: "path to lnd tls certificate",
-		},
-		cli.BoolFlag{
-			Name:  "insecure",
-			Usage: "disable tls",
-		},
-	}
-	app.Name = "loopd"
-	app.Version = "0.0.1"
-	app.Usage = "Lightning Loop Client Daemon"
-	app.Commands = []cli.Command{
-		viewCommand,
-	}
-	app.Action = daemon
-
-	err := app.Run(os.Args)
+	err := start()
 	if err != nil {
 		fmt.Println(err)
 	}
+}
+
+func start() error {
+	config := defaultConfig
+
+	// Parse command line flags.
+	parser := flags.NewParser(&config, flags.Default)
+	parser.SubcommandsOptional = true
+
+	_, err := parser.Parse()
+	if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Parse ini file.
+	loopDir := filepath.Join(loopDirBase, config.Network)
+	if err := os.MkdirAll(loopDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	configFile := filepath.Join(loopDir, defaultConfigFilename)
+	if err := flags.IniParse(configFile, &config); err != nil {
+		// If it's a parsing related error, then we'll return
+		// immediately, otherwise we can proceed as possibly the config
+		// file doesn't exist which is OK.
+		if _, ok := err.(*flags.IniError); ok {
+			return err
+		}
+	}
+
+	// Parse command line flags again to restore flags overwritten by ini
+	// parse.
+	_, err = parser.Parse()
+	if err != nil {
+		return err
+	}
+
+	// Execute command.
+	if parser.Active == nil {
+		return daemon(&config)
+	}
+
+	if parser.Active.Name == "view" {
+		return view(&config)
+	}
+
+	return fmt.Errorf("unimplemented command %v", parser.Active.Name)
 }

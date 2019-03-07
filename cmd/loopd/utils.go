@@ -6,24 +6,18 @@ import (
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/urfave/cli"
 )
 
 // getLnd returns an instance of the lnd services proxy.
-func getLnd(ctx *cli.Context) (*lndclient.GrpcLndServices, error) {
-	network := ctx.GlobalString("network")
-
-	return lndclient.NewLndServices(ctx.GlobalString("lnd"),
-		"client", network, ctx.GlobalString("macaroonpath"),
-		ctx.GlobalString("tlspath"),
+func getLnd(network string, cfg *lndConfig) (*lndclient.GrpcLndServices, error) {
+	return lndclient.NewLndServices(
+		cfg.Host, "client", network, cfg.MacaroonPath, cfg.TLSPath,
 	)
 }
 
 // getClient returns an instance of the swap client.
-func getClient(ctx *cli.Context,
+func getClient(network, swapServer string, insecure bool,
 	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
-
-	network := ctx.GlobalString("network")
 
 	storeDir, err := getStoreDir(network)
 	if err != nil {
@@ -31,8 +25,7 @@ func getClient(ctx *cli.Context,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(
-		storeDir, ctx.GlobalString("swapserver"),
-		ctx.GlobalBool("insecure"), lnd,
+		storeDir, swapServer, insecure, lnd,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -42,7 +35,7 @@ func getClient(ctx *cli.Context,
 }
 
 func getStoreDir(network string) (string, error) {
-	dir := filepath.Join(defaultSwapletDir, network)
+	dir := filepath.Join(loopDirBase, network)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return "", err
 	}
