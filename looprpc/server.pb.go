@@ -24,7 +24,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
-type ServerUnchargeSwapRequest struct {
+type ServerLoopOutRequest struct {
 	ReceiverKey          []byte   `protobuf:"bytes,1,opt,name=receiver_key,json=receiverKey,proto3" json:"receiver_key,omitempty"`
 	SwapHash             []byte   `protobuf:"bytes,2,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
 	Amt                  uint64   `protobuf:"varint,3,opt,name=amt,proto3" json:"amt,omitempty"`
@@ -33,52 +33,52 @@ type ServerUnchargeSwapRequest struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ServerUnchargeSwapRequest) Reset()         { *m = ServerUnchargeSwapRequest{} }
-func (m *ServerUnchargeSwapRequest) String() string { return proto.CompactTextString(m) }
-func (*ServerUnchargeSwapRequest) ProtoMessage()    {}
-func (*ServerUnchargeSwapRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_server_9aa9f93bbf0053c2, []int{0}
+func (m *ServerLoopOutRequest) Reset()         { *m = ServerLoopOutRequest{} }
+func (m *ServerLoopOutRequest) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutRequest) ProtoMessage()    {}
+func (*ServerLoopOutRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_server_76a33eec530f39a2, []int{0}
 }
-func (m *ServerUnchargeSwapRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ServerUnchargeSwapRequest.Unmarshal(m, b)
+func (m *ServerLoopOutRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutRequest.Unmarshal(m, b)
 }
-func (m *ServerUnchargeSwapRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ServerUnchargeSwapRequest.Marshal(b, m, deterministic)
+func (m *ServerLoopOutRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutRequest.Marshal(b, m, deterministic)
 }
-func (dst *ServerUnchargeSwapRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ServerUnchargeSwapRequest.Merge(dst, src)
+func (dst *ServerLoopOutRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutRequest.Merge(dst, src)
 }
-func (m *ServerUnchargeSwapRequest) XXX_Size() int {
-	return xxx_messageInfo_ServerUnchargeSwapRequest.Size(m)
+func (m *ServerLoopOutRequest) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutRequest.Size(m)
 }
-func (m *ServerUnchargeSwapRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_ServerUnchargeSwapRequest.DiscardUnknown(m)
+func (m *ServerLoopOutRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ServerUnchargeSwapRequest proto.InternalMessageInfo
+var xxx_messageInfo_ServerLoopOutRequest proto.InternalMessageInfo
 
-func (m *ServerUnchargeSwapRequest) GetReceiverKey() []byte {
+func (m *ServerLoopOutRequest) GetReceiverKey() []byte {
 	if m != nil {
 		return m.ReceiverKey
 	}
 	return nil
 }
 
-func (m *ServerUnchargeSwapRequest) GetSwapHash() []byte {
+func (m *ServerLoopOutRequest) GetSwapHash() []byte {
 	if m != nil {
 		return m.SwapHash
 	}
 	return nil
 }
 
-func (m *ServerUnchargeSwapRequest) GetAmt() uint64 {
+func (m *ServerLoopOutRequest) GetAmt() uint64 {
 	if m != nil {
 		return m.Amt
 	}
 	return 0
 }
 
-type ServerUnchargeSwapResponse struct {
+type ServerLoopOutResponse struct {
 	SwapInvoice          string   `protobuf:"bytes,1,opt,name=swap_invoice,json=swapInvoice,proto3" json:"swap_invoice,omitempty"`
 	PrepayInvoice        string   `protobuf:"bytes,2,opt,name=prepay_invoice,json=prepayInvoice,proto3" json:"prepay_invoice,omitempty"`
 	SenderKey            []byte   `protobuf:"bytes,3,opt,name=sender_key,json=senderKey,proto3" json:"sender_key,omitempty"`
@@ -88,89 +88,89 @@ type ServerUnchargeSwapResponse struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ServerUnchargeSwapResponse) Reset()         { *m = ServerUnchargeSwapResponse{} }
-func (m *ServerUnchargeSwapResponse) String() string { return proto.CompactTextString(m) }
-func (*ServerUnchargeSwapResponse) ProtoMessage()    {}
-func (*ServerUnchargeSwapResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_server_9aa9f93bbf0053c2, []int{1}
+func (m *ServerLoopOutResponse) Reset()         { *m = ServerLoopOutResponse{} }
+func (m *ServerLoopOutResponse) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutResponse) ProtoMessage()    {}
+func (*ServerLoopOutResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_server_76a33eec530f39a2, []int{1}
 }
-func (m *ServerUnchargeSwapResponse) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ServerUnchargeSwapResponse.Unmarshal(m, b)
+func (m *ServerLoopOutResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutResponse.Unmarshal(m, b)
 }
-func (m *ServerUnchargeSwapResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ServerUnchargeSwapResponse.Marshal(b, m, deterministic)
+func (m *ServerLoopOutResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutResponse.Marshal(b, m, deterministic)
 }
-func (dst *ServerUnchargeSwapResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ServerUnchargeSwapResponse.Merge(dst, src)
+func (dst *ServerLoopOutResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutResponse.Merge(dst, src)
 }
-func (m *ServerUnchargeSwapResponse) XXX_Size() int {
-	return xxx_messageInfo_ServerUnchargeSwapResponse.Size(m)
+func (m *ServerLoopOutResponse) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutResponse.Size(m)
 }
-func (m *ServerUnchargeSwapResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_ServerUnchargeSwapResponse.DiscardUnknown(m)
+func (m *ServerLoopOutResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ServerUnchargeSwapResponse proto.InternalMessageInfo
+var xxx_messageInfo_ServerLoopOutResponse proto.InternalMessageInfo
 
-func (m *ServerUnchargeSwapResponse) GetSwapInvoice() string {
+func (m *ServerLoopOutResponse) GetSwapInvoice() string {
 	if m != nil {
 		return m.SwapInvoice
 	}
 	return ""
 }
 
-func (m *ServerUnchargeSwapResponse) GetPrepayInvoice() string {
+func (m *ServerLoopOutResponse) GetPrepayInvoice() string {
 	if m != nil {
 		return m.PrepayInvoice
 	}
 	return ""
 }
 
-func (m *ServerUnchargeSwapResponse) GetSenderKey() []byte {
+func (m *ServerLoopOutResponse) GetSenderKey() []byte {
 	if m != nil {
 		return m.SenderKey
 	}
 	return nil
 }
 
-func (m *ServerUnchargeSwapResponse) GetExpiry() int32 {
+func (m *ServerLoopOutResponse) GetExpiry() int32 {
 	if m != nil {
 		return m.Expiry
 	}
 	return 0
 }
 
-type ServerUnchargeQuoteRequest struct {
+type ServerLoopOutQuoteRequest struct {
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ServerUnchargeQuoteRequest) Reset()         { *m = ServerUnchargeQuoteRequest{} }
-func (m *ServerUnchargeQuoteRequest) String() string { return proto.CompactTextString(m) }
-func (*ServerUnchargeQuoteRequest) ProtoMessage()    {}
-func (*ServerUnchargeQuoteRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_server_9aa9f93bbf0053c2, []int{2}
+func (m *ServerLoopOutQuoteRequest) Reset()         { *m = ServerLoopOutQuoteRequest{} }
+func (m *ServerLoopOutQuoteRequest) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutQuoteRequest) ProtoMessage()    {}
+func (*ServerLoopOutQuoteRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_server_76a33eec530f39a2, []int{2}
 }
-func (m *ServerUnchargeQuoteRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ServerUnchargeQuoteRequest.Unmarshal(m, b)
+func (m *ServerLoopOutQuoteRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutQuoteRequest.Unmarshal(m, b)
 }
-func (m *ServerUnchargeQuoteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ServerUnchargeQuoteRequest.Marshal(b, m, deterministic)
+func (m *ServerLoopOutQuoteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutQuoteRequest.Marshal(b, m, deterministic)
 }
-func (dst *ServerUnchargeQuoteRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ServerUnchargeQuoteRequest.Merge(dst, src)
+func (dst *ServerLoopOutQuoteRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutQuoteRequest.Merge(dst, src)
 }
-func (m *ServerUnchargeQuoteRequest) XXX_Size() int {
-	return xxx_messageInfo_ServerUnchargeQuoteRequest.Size(m)
+func (m *ServerLoopOutQuoteRequest) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutQuoteRequest.Size(m)
 }
-func (m *ServerUnchargeQuoteRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_ServerUnchargeQuoteRequest.DiscardUnknown(m)
+func (m *ServerLoopOutQuoteRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutQuoteRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ServerUnchargeQuoteRequest proto.InternalMessageInfo
+var xxx_messageInfo_ServerLoopOutQuoteRequest proto.InternalMessageInfo
 
-type ServerUnchargeQuoteResponse struct {
+type ServerLoopOutQuote struct {
 	SwapPaymentDest      string   `protobuf:"bytes,1,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
 	SwapFeeBase          int64    `protobuf:"varint,2,opt,name=swap_fee_base,json=swapFeeBase,proto3" json:"swap_fee_base,omitempty"`
 	SwapFeeRate          int64    `protobuf:"varint,3,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"`
@@ -183,73 +183,73 @@ type ServerUnchargeQuoteResponse struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ServerUnchargeQuoteResponse) Reset()         { *m = ServerUnchargeQuoteResponse{} }
-func (m *ServerUnchargeQuoteResponse) String() string { return proto.CompactTextString(m) }
-func (*ServerUnchargeQuoteResponse) ProtoMessage()    {}
-func (*ServerUnchargeQuoteResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_server_9aa9f93bbf0053c2, []int{3}
+func (m *ServerLoopOutQuote) Reset()         { *m = ServerLoopOutQuote{} }
+func (m *ServerLoopOutQuote) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutQuote) ProtoMessage()    {}
+func (*ServerLoopOutQuote) Descriptor() ([]byte, []int) {
+	return fileDescriptor_server_76a33eec530f39a2, []int{3}
 }
-func (m *ServerUnchargeQuoteResponse) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ServerUnchargeQuoteResponse.Unmarshal(m, b)
+func (m *ServerLoopOutQuote) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutQuote.Unmarshal(m, b)
 }
-func (m *ServerUnchargeQuoteResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ServerUnchargeQuoteResponse.Marshal(b, m, deterministic)
+func (m *ServerLoopOutQuote) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutQuote.Marshal(b, m, deterministic)
 }
-func (dst *ServerUnchargeQuoteResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ServerUnchargeQuoteResponse.Merge(dst, src)
+func (dst *ServerLoopOutQuote) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutQuote.Merge(dst, src)
 }
-func (m *ServerUnchargeQuoteResponse) XXX_Size() int {
-	return xxx_messageInfo_ServerUnchargeQuoteResponse.Size(m)
+func (m *ServerLoopOutQuote) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutQuote.Size(m)
 }
-func (m *ServerUnchargeQuoteResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_ServerUnchargeQuoteResponse.DiscardUnknown(m)
+func (m *ServerLoopOutQuote) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutQuote.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ServerUnchargeQuoteResponse proto.InternalMessageInfo
+var xxx_messageInfo_ServerLoopOutQuote proto.InternalMessageInfo
 
-func (m *ServerUnchargeQuoteResponse) GetSwapPaymentDest() string {
+func (m *ServerLoopOutQuote) GetSwapPaymentDest() string {
 	if m != nil {
 		return m.SwapPaymentDest
 	}
 	return ""
 }
 
-func (m *ServerUnchargeQuoteResponse) GetSwapFeeBase() int64 {
+func (m *ServerLoopOutQuote) GetSwapFeeBase() int64 {
 	if m != nil {
 		return m.SwapFeeBase
 	}
 	return 0
 }
 
-func (m *ServerUnchargeQuoteResponse) GetSwapFeeRate() int64 {
+func (m *ServerLoopOutQuote) GetSwapFeeRate() int64 {
 	if m != nil {
 		return m.SwapFeeRate
 	}
 	return 0
 }
 
-func (m *ServerUnchargeQuoteResponse) GetPrepayAmt() uint64 {
+func (m *ServerLoopOutQuote) GetPrepayAmt() uint64 {
 	if m != nil {
 		return m.PrepayAmt
 	}
 	return 0
 }
 
-func (m *ServerUnchargeQuoteResponse) GetMinSwapAmount() uint64 {
+func (m *ServerLoopOutQuote) GetMinSwapAmount() uint64 {
 	if m != nil {
 		return m.MinSwapAmount
 	}
 	return 0
 }
 
-func (m *ServerUnchargeQuoteResponse) GetMaxSwapAmount() uint64 {
+func (m *ServerLoopOutQuote) GetMaxSwapAmount() uint64 {
 	if m != nil {
 		return m.MaxSwapAmount
 	}
 	return 0
 }
 
-func (m *ServerUnchargeQuoteResponse) GetCltvDelta() int32 {
+func (m *ServerLoopOutQuote) GetCltvDelta() int32 {
 	if m != nil {
 		return m.CltvDelta
 	}
@@ -257,10 +257,10 @@ func (m *ServerUnchargeQuoteResponse) GetCltvDelta() int32 {
 }
 
 func init() {
-	proto.RegisterType((*ServerUnchargeSwapRequest)(nil), "looprpc.ServerUnchargeSwapRequest")
-	proto.RegisterType((*ServerUnchargeSwapResponse)(nil), "looprpc.ServerUnchargeSwapResponse")
-	proto.RegisterType((*ServerUnchargeQuoteRequest)(nil), "looprpc.ServerUnchargeQuoteRequest")
-	proto.RegisterType((*ServerUnchargeQuoteResponse)(nil), "looprpc.ServerUnchargeQuoteResponse")
+	proto.RegisterType((*ServerLoopOutRequest)(nil), "looprpc.ServerLoopOutRequest")
+	proto.RegisterType((*ServerLoopOutResponse)(nil), "looprpc.ServerLoopOutResponse")
+	proto.RegisterType((*ServerLoopOutQuoteRequest)(nil), "looprpc.ServerLoopOutQuoteRequest")
+	proto.RegisterType((*ServerLoopOutQuote)(nil), "looprpc.ServerLoopOutQuote")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -275,8 +275,8 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type SwapServerClient interface {
-	NewUnchargeSwap(ctx context.Context, in *ServerUnchargeSwapRequest, opts ...grpc.CallOption) (*ServerUnchargeSwapResponse, error)
-	UnchargeQuote(ctx context.Context, in *ServerUnchargeQuoteRequest, opts ...grpc.CallOption) (*ServerUnchargeQuoteResponse, error)
+	NewLoopOutSwap(ctx context.Context, in *ServerLoopOutRequest, opts ...grpc.CallOption) (*ServerLoopOutResponse, error)
+	LoopOutQuote(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error)
 }
 
 type swapServerClient struct {
@@ -287,18 +287,18 @@ func NewSwapServerClient(cc *grpc.ClientConn) SwapServerClient {
 	return &swapServerClient{cc}
 }
 
-func (c *swapServerClient) NewUnchargeSwap(ctx context.Context, in *ServerUnchargeSwapRequest, opts ...grpc.CallOption) (*ServerUnchargeSwapResponse, error) {
-	out := new(ServerUnchargeSwapResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/NewUnchargeSwap", in, out, opts...)
+func (c *swapServerClient) NewLoopOutSwap(ctx context.Context, in *ServerLoopOutRequest, opts ...grpc.CallOption) (*ServerLoopOutResponse, error) {
+	out := new(ServerLoopOutResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/NewLoopOutSwap", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *swapServerClient) UnchargeQuote(ctx context.Context, in *ServerUnchargeQuoteRequest, opts ...grpc.CallOption) (*ServerUnchargeQuoteResponse, error) {
-	out := new(ServerUnchargeQuoteResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/UnchargeQuote", in, out, opts...)
+func (c *swapServerClient) LoopOutQuote(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error) {
+	out := new(ServerLoopOutQuote)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutQuote", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -307,46 +307,46 @@ func (c *swapServerClient) UnchargeQuote(ctx context.Context, in *ServerUncharge
 
 // SwapServerServer is the server API for SwapServer service.
 type SwapServerServer interface {
-	NewUnchargeSwap(context.Context, *ServerUnchargeSwapRequest) (*ServerUnchargeSwapResponse, error)
-	UnchargeQuote(context.Context, *ServerUnchargeQuoteRequest) (*ServerUnchargeQuoteResponse, error)
+	NewLoopOutSwap(context.Context, *ServerLoopOutRequest) (*ServerLoopOutResponse, error)
+	LoopOutQuote(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error)
 }
 
 func RegisterSwapServerServer(s *grpc.Server, srv SwapServerServer) {
 	s.RegisterService(&_SwapServer_serviceDesc, srv)
 }
 
-func _SwapServer_NewUnchargeSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ServerUnchargeSwapRequest)
+func _SwapServer_NewLoopOutSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopOutRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SwapServerServer).NewUnchargeSwap(ctx, in)
+		return srv.(SwapServerServer).NewLoopOutSwap(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/looprpc.SwapServer/NewUnchargeSwap",
+		FullMethod: "/looprpc.SwapServer/NewLoopOutSwap",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapServerServer).NewUnchargeSwap(ctx, req.(*ServerUnchargeSwapRequest))
+		return srv.(SwapServerServer).NewLoopOutSwap(ctx, req.(*ServerLoopOutRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SwapServer_UnchargeQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ServerUnchargeQuoteRequest)
+func _SwapServer_LoopOutQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopOutQuoteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SwapServerServer).UnchargeQuote(ctx, in)
+		return srv.(SwapServerServer).LoopOutQuote(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/looprpc.SwapServer/UnchargeQuote",
+		FullMethod: "/looprpc.SwapServer/LoopOutQuote",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapServerServer).UnchargeQuote(ctx, req.(*ServerUnchargeQuoteRequest))
+		return srv.(SwapServerServer).LoopOutQuote(ctx, req.(*ServerLoopOutQuoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -356,50 +356,50 @@ var _SwapServer_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*SwapServerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "NewUnchargeSwap",
-			Handler:    _SwapServer_NewUnchargeSwap_Handler,
+			MethodName: "NewLoopOutSwap",
+			Handler:    _SwapServer_NewLoopOutSwap_Handler,
 		},
 		{
-			MethodName: "UnchargeQuote",
-			Handler:    _SwapServer_UnchargeQuote_Handler,
+			MethodName: "LoopOutQuote",
+			Handler:    _SwapServer_LoopOutQuote_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "server.proto",
 }
 
-func init() { proto.RegisterFile("server.proto", fileDescriptor_server_9aa9f93bbf0053c2) }
+func init() { proto.RegisterFile("server.proto", fileDescriptor_server_76a33eec530f39a2) }
 
-var fileDescriptor_server_9aa9f93bbf0053c2 = []byte{
-	// 471 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x93, 0xdd, 0x6e, 0xd3, 0x40,
-	0x10, 0x85, 0xe5, 0x26, 0x4d, 0xc9, 0x34, 0x21, 0xe0, 0x0b, 0x64, 0xd2, 0x56, 0x0a, 0x86, 0x42,
-	0xc4, 0x45, 0x22, 0xc1, 0x13, 0xb4, 0xaa, 0x10, 0x08, 0x09, 0x81, 0x2b, 0x6e, 0x72, 0x63, 0x4d,
-	0x9c, 0xc1, 0x5e, 0x61, 0xef, 0x2e, 0xbb, 0x9b, 0xbf, 0x87, 0x41, 0xbc, 0x0c, 0x0f, 0x86, 0xf6,
-	0xa7, 0x90, 0xa0, 0xb6, 0x77, 0xc9, 0xd9, 0x6f, 0x67, 0xce, 0x9c, 0x59, 0x43, 0x4f, 0x93, 0x5a,
-	0x91, 0x9a, 0x48, 0x25, 0x8c, 0x88, 0x8f, 0x6a, 0x21, 0xa4, 0x92, 0xc5, 0xf0, 0xb4, 0x14, 0xa2,
-	0xac, 0x69, 0x8a, 0x92, 0x4d, 0x91, 0x73, 0x61, 0xd0, 0x30, 0xc1, 0xb5, 0xc7, 0xd2, 0x06, 0x9e,
-	0x5e, 0xbb, 0x6b, 0x5f, 0x79, 0x51, 0xa1, 0x2a, 0xe9, 0x7a, 0x8d, 0x32, 0xa3, 0x1f, 0x4b, 0xd2,
-	0x26, 0x7e, 0x06, 0x3d, 0x45, 0x05, 0xb1, 0x15, 0xa9, 0xfc, 0x3b, 0x6d, 0x93, 0x68, 0x14, 0x8d,
-	0x7b, 0xd9, 0xf1, 0x8d, 0xf6, 0x91, 0xb6, 0xf1, 0x09, 0x74, 0xf5, 0x1a, 0x65, 0x5e, 0xa1, 0xae,
-	0x92, 0x03, 0x77, 0xfe, 0xc0, 0x0a, 0xef, 0x51, 0x57, 0xf1, 0x23, 0x68, 0x61, 0x63, 0x92, 0xd6,
-	0x28, 0x1a, 0xb7, 0x33, 0xfb, 0x33, 0xfd, 0x19, 0xc1, 0xf0, 0xb6, 0x7e, 0x5a, 0x0a, 0xae, 0xc9,
-	0x36, 0x74, 0xd5, 0x18, 0x5f, 0x09, 0x56, 0x90, 0x6b, 0xd8, 0xcd, 0x8e, 0xad, 0xf6, 0xc1, 0x4b,
-	0xf1, 0x39, 0x3c, 0x94, 0x8a, 0x24, 0x6e, 0xff, 0x42, 0x07, 0x0e, 0xea, 0x7b, 0xf5, 0x06, 0x3b,
-	0x03, 0xd0, 0xc4, 0x17, 0xc1, 0x78, 0xcb, 0x19, 0xeb, 0x7a, 0xc5, 0xda, 0x7e, 0x02, 0x1d, 0xda,
-	0x48, 0xa6, 0xb6, 0x49, 0x7b, 0x14, 0x8d, 0x0f, 0xb3, 0xf0, 0x2f, 0x3d, 0xfd, 0xdf, 0xde, 0x97,
-	0xa5, 0x30, 0x14, 0xf2, 0x48, 0x7f, 0x1d, 0xc0, 0xc9, 0xad, 0xc7, 0xc1, 0xfe, 0x6b, 0x78, 0xec,
-	0xec, 0x4b, 0xdc, 0x36, 0xc4, 0x4d, 0xbe, 0x20, 0x6d, 0xc2, 0x0c, 0x03, 0x7b, 0xf0, 0xd9, 0xeb,
-	0x57, 0x36, 0xdb, 0x14, 0xfa, 0x8e, 0xfd, 0x46, 0x94, 0xcf, 0x51, 0xfb, 0x31, 0x5a, 0x7e, 0xd6,
-	0x77, 0x44, 0x97, 0xa8, 0x69, 0x8f, 0x51, 0x68, 0xc8, 0xcd, 0xf1, 0x8f, 0xc9, 0xd0, 0xb8, 0x41,
-	0x43, 0x1e, 0x36, 0xea, 0xb6, 0x8b, 0xba, 0xeb, 0x95, 0x8b, 0xc6, 0xc4, 0x2f, 0x61, 0xd0, 0x30,
-	0x9e, 0xbb, 0x32, 0xd8, 0x88, 0x25, 0x37, 0xc9, 0xa1, 0x63, 0xfa, 0x0d, 0xe3, 0x36, 0xfb, 0x0b,
-	0x27, 0x3a, 0x0e, 0x37, 0x7b, 0x5c, 0x27, 0x70, 0xb8, 0xd9, 0xe1, 0xce, 0x00, 0x8a, 0xda, 0xac,
-	0xf2, 0x05, 0xd5, 0x06, 0x93, 0x23, 0x17, 0x5e, 0xd7, 0x2a, 0x57, 0x56, 0x78, 0xf3, 0x3b, 0x02,
-	0xb0, 0xb4, 0x4f, 0x29, 0x9e, 0xc1, 0xe0, 0x13, 0xad, 0x77, 0x57, 0x1d, 0xa7, 0x93, 0xf0, 0x30,
-	0x27, 0x77, 0xbe, 0xbb, 0xe1, 0xf3, 0x7b, 0x99, 0x10, 0xf6, 0x0c, 0xfa, 0x7b, 0x5b, 0x88, 0xef,
-	0xba, 0xb5, 0xbb, 0xc2, 0xe1, 0x8b, 0xfb, 0x21, 0x5f, 0xfb, 0xf2, 0xd5, 0xec, 0xbc, 0x64, 0xa6,
-	0x5a, 0xce, 0x27, 0x85, 0x68, 0xa6, 0x35, 0x2b, 0x2b, 0xc3, 0x19, 0x2f, 0x6b, 0x9c, 0xeb, 0xa9,
-	0xbd, 0x3f, 0x0d, 0x45, 0xe6, 0x1d, 0xf7, 0x15, 0xbd, 0xfd, 0x13, 0x00, 0x00, 0xff, 0xff, 0x55,
-	0xfc, 0x38, 0x76, 0x7c, 0x03, 0x00, 0x00,
+var fileDescriptor_server_76a33eec530f39a2 = []byte{
+	// 467 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x93, 0xd1, 0x6e, 0xd3, 0x30,
+	0x14, 0x86, 0x95, 0xb6, 0xeb, 0xe8, 0x59, 0xbb, 0x81, 0x05, 0x28, 0xb4, 0x14, 0x95, 0x48, 0x83,
+	0x8a, 0x8b, 0x56, 0x82, 0x27, 0xd8, 0x34, 0x21, 0x10, 0x88, 0x42, 0x76, 0xc7, 0x4d, 0x74, 0xda,
+	0x1e, 0x12, 0x8b, 0xc4, 0x36, 0xb1, 0xd3, 0x36, 0x2f, 0x82, 0x78, 0x0a, 0x9e, 0x11, 0xd9, 0xf1,
+	0x60, 0x85, 0xb1, 0xbb, 0xe4, 0x3f, 0xdf, 0xf1, 0xf9, 0xfd, 0xe7, 0x04, 0xfa, 0x9a, 0xca, 0x0d,
+	0x95, 0x33, 0x55, 0x4a, 0x23, 0xd9, 0x61, 0x2e, 0xa5, 0x2a, 0xd5, 0x6a, 0xf8, 0x38, 0x95, 0x32,
+	0xcd, 0x69, 0x8e, 0x8a, 0xcf, 0x51, 0x08, 0x69, 0xd0, 0x70, 0x29, 0x74, 0x83, 0x45, 0x19, 0xdc,
+	0xbf, 0x74, 0x6d, 0xef, 0xa5, 0x54, 0x8b, 0xca, 0xc4, 0xf4, 0xad, 0x22, 0x6d, 0xd8, 0x53, 0xe8,
+	0x97, 0xb4, 0x22, 0xbe, 0xa1, 0x32, 0xf9, 0x4a, 0x75, 0x18, 0x4c, 0x82, 0x69, 0x3f, 0x3e, 0xba,
+	0xd2, 0xde, 0x51, 0xcd, 0x46, 0xd0, 0xd3, 0x5b, 0x54, 0x49, 0x86, 0x3a, 0x0b, 0x5b, 0xae, 0x7e,
+	0xc7, 0x0a, 0x6f, 0x50, 0x67, 0xec, 0x2e, 0xb4, 0xb1, 0x30, 0x61, 0x7b, 0x12, 0x4c, 0x3b, 0xb1,
+	0x7d, 0x8c, 0x7e, 0x04, 0xf0, 0xe0, 0xaf, 0x51, 0x5a, 0x49, 0xa1, 0xc9, 0xce, 0x72, 0x07, 0x71,
+	0xb1, 0x91, 0x7c, 0x45, 0x6e, 0x56, 0x2f, 0x3e, 0xb2, 0xda, 0xdb, 0x46, 0x62, 0xa7, 0x70, 0xac,
+	0x4a, 0x52, 0x58, 0xff, 0x86, 0x5a, 0x0e, 0x1a, 0x34, 0xea, 0x15, 0x36, 0x06, 0xd0, 0x24, 0xd6,
+	0xde, 0x73, 0xdb, 0x79, 0xea, 0x35, 0x8a, 0x75, 0xfc, 0x10, 0xba, 0xb4, 0x53, 0xbc, 0xac, 0xc3,
+	0xce, 0x24, 0x98, 0x1e, 0xc4, 0xfe, 0x2d, 0x1a, 0xc1, 0xa3, 0x3d, 0x67, 0x9f, 0x2a, 0x69, 0xc8,
+	0x27, 0x11, 0x7d, 0x6f, 0x01, 0xfb, 0xb7, 0xca, 0x5e, 0xc0, 0x3d, 0x67, 0x5a, 0x61, 0x5d, 0x90,
+	0x30, 0xc9, 0x9a, 0xb4, 0xf1, 0xce, 0x4f, 0x6c, 0xe1, 0x63, 0xa3, 0x5f, 0xd8, 0x30, 0x23, 0x18,
+	0x38, 0xf6, 0x0b, 0x51, 0xb2, 0x44, 0xdd, 0x98, 0x6f, 0x37, 0x37, 0x7c, 0x4d, 0x74, 0x8e, 0x9a,
+	0xf6, 0x98, 0x12, 0x0d, 0x39, 0xf7, 0x7f, 0x98, 0x18, 0x8d, 0xbb, 0x9e, 0x4f, 0xc1, 0x66, 0xdb,
+	0x71, 0xd9, 0xf6, 0x1a, 0xe5, 0xac, 0x30, 0xec, 0x19, 0x9c, 0x14, 0x5c, 0x24, 0xee, 0x18, 0x2c,
+	0x64, 0x25, 0x4c, 0x78, 0xe0, 0x98, 0x41, 0xc1, 0xc5, 0xe5, 0x16, 0xd5, 0x99, 0x13, 0x1d, 0x87,
+	0xbb, 0x3d, 0xae, 0xeb, 0x39, 0xdc, 0x5d, 0xe3, 0xc6, 0x00, 0xab, 0xdc, 0x6c, 0x92, 0x35, 0xe5,
+	0x06, 0xc3, 0x43, 0x17, 0x59, 0xcf, 0x2a, 0x17, 0x56, 0x78, 0xf9, 0x33, 0x00, 0xb0, 0x74, 0x13,
+	0x0e, 0x5b, 0xc0, 0xf1, 0x07, 0xda, 0xfa, 0x8c, 0xac, 0xce, 0xc6, 0x33, 0xbf, 0x83, 0xb3, 0x9b,
+	0x56, 0x6c, 0xf8, 0xe4, 0x7f, 0x65, 0xbf, 0x16, 0x0b, 0xe8, 0xef, 0x25, 0x1e, 0xdd, 0xcc, 0x5f,
+	0xff, 0x58, 0xc3, 0xd1, 0x2d, 0xcc, 0xf9, 0xf3, 0xcf, 0xa7, 0x29, 0x37, 0x59, 0xb5, 0x9c, 0xad,
+	0x64, 0x31, 0xcf, 0x79, 0x9a, 0x19, 0xc1, 0x45, 0x9a, 0xe3, 0x52, 0xcf, 0x6d, 0xdb, 0xdc, 0xf7,
+	0x2e, 0xbb, 0xee, 0xdf, 0x78, 0xf5, 0x2b, 0x00, 0x00, 0xff, 0xff, 0x94, 0x23, 0x1c, 0x6e, 0x52,
+	0x03, 0x00, 0x00,
 }
