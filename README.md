@@ -112,7 +112,7 @@ In order to execute a swap, LND needs to be rebuilt with sub servers enabled.
 
 ### Loopd
 - `git clone https://github.com/lightninglabs/loop.git`
-- `cd loopd/cmd`
+- `cd loop/cmd`
 - `go install ./...`
 
 ## Execute a swap
