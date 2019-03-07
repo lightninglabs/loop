@@ -1,4 +1,4 @@
-package client
+package loopdb
 
 import (
 	"errors"
@@ -82,7 +82,7 @@ func syncVersions(db *bbolt.DB) error {
 		return err
 	}
 
-	logger.Infof("Checking for schema update: latest_version=%v, "+
+	log.Infof("Checking for schema update: latest_version=%v, "+
 		"db_version=%v", latestDBVersion, currentVersion)
 
 	switch {
@@ -91,7 +91,7 @@ func syncVersions(db *bbolt.DB) error {
 	// user is probably trying to revert to a prior version of lnd. We fail
 	// here to prevent reversions and unintended corruption.
 	case currentVersion > latestDBVersion:
-		logger.Errorf("Refusing to revert from db_version=%d to "+
+		log.Errorf("Refusing to revert from db_version=%d to "+
 			"lower version=%d", currentVersion,
 			latestDBVersion)
 
@@ -103,16 +103,17 @@ func syncVersions(db *bbolt.DB) error {
 		return nil
 	}
 
-	logger.Infof("Performing database schema migration")
+	log.Infof("Performing database schema migration")
 
-	// Otherwise we execute the migrations serially within a single database
-	// transaction to ensure the migration is atomic.
+	// Otherwise we execute the migrations serially within a single
+	// database transaction to ensure the migration is atomic.
 	return db.Update(func(tx *bbolt.Tx) error {
 		for v := currentVersion; v < latestDBVersion; v++ {
-			logger.Infof("Applying migration #%v", v+1)
+			log.Infof("Applying migration #%v", v+1)
+
 			migration := migrations[v]
 			if err := migration(tx); err != nil {
-				logger.Infof("Unable to apply migration #%v",
+				log.Infof("Unable to apply migration #%v",
 					v+1)
 				return err
 			}
