@@ -104,7 +104,8 @@ In order to execute a swap, LND needs to be rebuilt with sub servers enabled.
 - Make sure there are no macaroons in the lnd dir
   `~/.lnd/data/chain/bitcoin/mainnet`. If there are, lnd has been started
   before and in that case, it could be that `admin.macaroon` doesn't contain
-  signer permission. Delete `macaroons.db` and `*.macaroon`. 
+  signer permission. Stop lnd, delete `*.macaroon` files, restart lnd to
+  regenerate them with the signer permission.
 
   DO NOT DELETE `wallet.db` !
 
