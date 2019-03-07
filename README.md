@@ -98,7 +98,7 @@ When `loopd` is terminated (or killed) for whatever reason, it will pickup
 pending swaps after a restart. 
 
 Information about pending swaps is stored persistently in the swap database.
-Its location is `~/.swaplet/<network>/loopent.db`.
+Its location is `~/.loopd/<network>/loop.db`.
 
 ## Multiple simultaneous swaps
 
