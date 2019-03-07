@@ -1,4 +1,47 @@
 # Lightning Loop
+ 
+Lightning Loop is a non-custodial service offered by
+[Lightning Labs](https://lightning.engineering/) to bridge on-chain and
+off-chain Bitcoin using submarine swaps. This repository is home to the Loop
+client and depends on the Lightning Network daemon
+[lnd](https://github.com/lightningnetwork/lnd). All of lnd’s supported chain
+backends are fully supported when using the Loop client: Neutrino, Bitcoin
+Core, and btcd.
+
+In the current iteration of the Loop software, only off-chain to on-chain
+exchanges are supported, where the Loop client sends funds off-chain in
+exchange for the funds back on-chain.
+
+The service can be used in various situations:
+
+- Acquiring inbound channel liquidity from arbitrary nodes on the Lightning
+    network
+- Depositing funds to a Bitcoin on-chain address without closing active
+    channels
+- Paying to on-chain fallback addresses in the case of insufficient route
+    liquidity
+
+Future iterations of the Loop software will also allow on-chain to off-chain
+swaps. These swaps can be useful for additional use-cases:
+
+- Refilling depleted channels with funds from cold-wallets or exchange
+    withdrawals
+- Servicing off-chain Lightning withdrawals using on-chain payments, with no
+    funds in channels required
+- As a failsafe payment method that can be used when channel liquidity along a
+    route is insufficient
+
+## Development and Support
+
+The Loop client is current in an early beta state, and offers a simple command
+line application. Future APIs will be added to support implementation or use of
+the Loop service.
+
+The [GitHub issue tracker](https://github.com/lightninglabs/loop/issues) can be
+used to request specific improvements or register and get help with any
+problems. Community support is also available in the
+[LND Slack](https://join.slack.com/t/lightningcommunity/shared_invite/enQtMzQ0OTQyNjE5NjU1LWRiMGNmOTZiNzU0MTVmYzc1ZGFkZTUyNzUwOGJjMjYwNWRkNWQzZWE3MTkwZjdjZGE5ZGNiNGVkMzI2MDU4ZTE)
+.
 
 ## Loop Out Swap (off -> on-chain)
 
