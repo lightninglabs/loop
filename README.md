@@ -130,7 +130,7 @@ In order to execute a swap, LND needs to be rebuilt with sub servers enabled.
 
 * To initiate a swap, run:
 
-  `loop uncharge <amt_msat>` 
+  `loop out <amt_sat>` 
   
   When the swap is initiated successfully, `loopd` will see the process through.
 
