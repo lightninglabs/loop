@@ -17,8 +17,6 @@ import (
 )
 
 var (
-	loopdAddress = "localhost:11010"
-
 	// Define route independent max routing fees. We have currently no way
 	// to get a reliable estimate of the routing fees. Best we can do is
 	// the minimum routing fees, which is not very indicative.
@@ -38,6 +36,13 @@ func main() {
 	app.Version = "0.0.1"
 	app.Name = "loop"
 	app.Usage = "control plane for your loopd"
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "loopd",
+			Value: "localhost:11010",
+			Usage: "loopd daemon address host:port",
+		},
+	}
 	app.Commands = []cli.Command{
 		loopOutCommand, termsCommand, monitorCommand,
 	}
@@ -49,6 +54,7 @@ func main() {
 }
 
 func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
+	loopdAddress := ctx.GlobalString("loopd")
 	conn, err := getClientConn(loopdAddress)
 	if err != nil {
 		return nil, nil, err

@@ -45,7 +45,7 @@ func NewLndServices(lndAddress string, application string,
 	*GrpcLndServices, error) {
 
 	// Setup connection with lnd
-	logger.Infof("Creating lnd connection")
+	logger.Infof("Creating lnd connection to %v", lndAddress)
 	conn, err := getClientConn(lndAddress, network, macPath, tlsPath)
 	if err != nil {
 		return nil, err

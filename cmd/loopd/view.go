@@ -5,34 +5,24 @@ import (
 	"strconv"
 
 	"github.com/lightninglabs/loop/swap"
-	"github.com/urfave/cli"
 )
 
-var viewCommand = cli.Command{
-	Name: "view",
-	Usage: `view all swaps in the database. This command can only be 
-	executed when swapd is not running.`,
-	Description: `
-		Show all pending and completed swaps.`,
-	Action: view,
-}
-
 // view prints all swaps currently in the database.
-func view(ctx *cli.Context) error {
-	network := ctx.GlobalString("network")
-
-	chainParams, err := swap.ChainParamsFromNetwork(network)
+func view(config *config) error {
+	chainParams, err := swap.ChainParamsFromNetwork(config.Network)
 	if err != nil {
 		return err
 	}
 
-	lnd, err := getLnd(ctx)
+	lnd, err := getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
 	}
 	defer lnd.Close()
 
-	swapClient, cleanup, err := getClient(ctx, &lnd.LndServices)
+	swapClient, cleanup, err := getClient(
+		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
+	)
 	if err != nil {
 		return err
 	}
@@ -41,6 +31,10 @@ func view(ctx *cli.Context) error {
 	swaps, err := swapClient.FetchLoopOutSwaps()
 	if err != nil {
 		return err
+	}
+
+	if len(swaps) == 0 {
+		fmt.Printf("No swaps\n")
 	}
 
 	for _, s := range swaps {

@@ -11,7 +11,7 @@ import (
 // it.
 var (
 	backendLog = btclog.NewBackend(logWriter{})
-	logger     = backendLog.Logger("SWAPD")
+	logger     = backendLog.Logger("LOOPD")
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
