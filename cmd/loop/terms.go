@@ -13,7 +13,7 @@ import (
 
 var termsCommand = cli.Command{
 	Name:   "terms",
-	Usage:  "show current server swap terms",
+	Usage:  "Display the current swap terms imposed by the server.",
 	Action: terms,
 }
 
@@ -24,9 +24,8 @@ func terms(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	terms, err := client.GetLoopOutTerms(
-		context.Background(), &looprpc.TermsRequest{},
-	)
+	req := &looprpc.TermsRequest{}
+	terms, err := client.LoopOutTerms(context.Background(), req)
 	if err != nil {
 		return err
 	}
