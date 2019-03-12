@@ -20,6 +20,17 @@ type SwapStore interface {
 	// the various stages in its lifetime.
 	UpdateLoopOut(hash lntypes.Hash, time time.Time, state SwapState) error
 
+	// FetchLoopInSwaps returns all swaps currently in the store.
+	FetchLoopInSwaps() ([]*LoopIn, error)
+
+	// CreateLoopIn adds an initiated swap to the store.
+	CreateLoopIn(hash lntypes.Hash, swap *LoopInContract) error
+
+	// UpdateLoopIn stores a new event for a target loop in swap. This
+	// appends to the event log for a particular swap as it goes through
+	// the various stages in its lifetime.
+	UpdateLoopIn(hash lntypes.Hash, time time.Time, state SwapState) error
+
 	// Close closes the underlying database.
 	Close() error
 }

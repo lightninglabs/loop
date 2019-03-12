@@ -188,6 +188,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 			SwapInvoice:       swapPayReq,
 			SweepConfTarget:   2,
 			MaxSwapRoutingFee: 70000,
+			PrepayInvoice:     prePayReq,
 			SwapContract: loopdb.SwapContract{
 				Preimage:        preimage,
 				AmountRequested: amt,
@@ -195,16 +196,17 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 				ReceiverKey:     receiverKey,
 				SenderKey:       senderKey,
 				MaxSwapFee:      60000,
-				PrepayInvoice:   prePayReq,
 				MaxMinerFee:     50000,
 			},
 		},
-		Events: []*loopdb.LoopOutEvent{
-			{
-				State: state,
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{
+				{
+					State: state,
+				},
 			},
+			Hash: hash,
 		},
-		Hash: hash,
 	}
 
 	if expired {

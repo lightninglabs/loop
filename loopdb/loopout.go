@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 // LoopOutContract contains the data that is serialized to persistent storage
@@ -39,20 +37,24 @@ type LoopOutContract struct {
 	// TargetChannel is the channel to loop out. If zero, any channel may
 	// be used.
 	UnchargeChannel *uint64
+
+	// PrepayInvoice is the invoice that the client should pay to the
+	// server that will be returned if the swap is complete.
+	PrepayInvoice string
+
+	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
+	// paid for the prepayment to the server.
+	MaxPrepayRoutingFee btcutil.Amount
 }
 
 // LoopOut is a combination of the contract and the updates.
 type LoopOut struct {
-	// Hash is the hash that uniquely identifies this swap.
-	Hash lntypes.Hash
+	Loop
 
 	// Contract is the active contract for this swap. It describes the
 	// precise details of the swap including the final fee, CLTV value,
 	// etc.
 	Contract *LoopOutContract
-
-	// Events are each of the state transitions that this swap underwent.
-	Events []*LoopOutEvent
 }
 
 // LastUpdateTime returns the last update time of this swap.
@@ -70,34 +72,78 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 
 	r := bytes.NewReader(value)
 
-	contract, err := deserializeContract(r)
+	contract := LoopOutContract{}
+	var err error
+	var unixNano int64
+	if err := binary.Read(r, byteOrder, &unixNano); err != nil {
+		return nil, err
+	}
+	contract.InitiationTime = time.Unix(0, unixNano)
+
+	if err := binary.Read(r, byteOrder, &contract.Preimage); err != nil {
+		return nil, err
+	}
+
+	binary.Read(r, byteOrder, &contract.AmountRequested)
+
+	contract.PrepayInvoice, err = wire.ReadVarString(r, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	swap := LoopOutContract{
-		SwapContract: *contract,
+	n, err := r.Read(contract.SenderKey[:])
+	if err != nil {
+		return nil, err
+	}
+	if n != keyLength {
+		return nil, fmt.Errorf("sender key has invalid length")
+	}
+
+	n, err = r.Read(contract.ReceiverKey[:])
+	if err != nil {
+		return nil, err
+	}
+	if n != keyLength {
+		return nil, fmt.Errorf("receiver key has invalid length")
+	}
+
+	if err := binary.Read(r, byteOrder, &contract.CltvExpiry); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, byteOrder, &contract.MaxMinerFee); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &contract.MaxSwapFee); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &contract.MaxPrepayRoutingFee); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, byteOrder, &contract.InitiationHeight); err != nil {
+		return nil, err
 	}
 
 	addr, err := wire.ReadVarString(r, 0)
 	if err != nil {
 		return nil, err
 	}
-	swap.DestAddr, err = btcutil.DecodeAddress(addr, chainParams)
+	contract.DestAddr, err = btcutil.DecodeAddress(addr, chainParams)
 	if err != nil {
 		return nil, err
 	}
 
-	swap.SwapInvoice, err = wire.ReadVarString(r, 0)
+	contract.SwapInvoice, err = wire.ReadVarString(r, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &swap.SweepConfTarget); err != nil {
+	if err := binary.Read(r, byteOrder, &contract.SweepConfTarget); err != nil {
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &swap.MaxSwapRoutingFee); err != nil {
+	if err := binary.Read(r, byteOrder, &contract.MaxSwapRoutingFee); err != nil {
 		return nil, err
 	}
 
@@ -106,10 +152,10 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 	if unchargeChannel != 0 {
-		swap.UnchargeChannel = &unchargeChannel
+		contract.UnchargeChannel = &unchargeChannel
 	}
 
-	return &swap, nil
+	return &contract, nil
 }
 
 func serializeLoopOutContract(swap *LoopOutContract) (
@@ -117,7 +163,57 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 
 	var b bytes.Buffer
 
-	serializeContract(&swap.SwapContract, &b)
+	if err := binary.Write(&b, byteOrder, swap.InitiationTime.UnixNano()); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.Preimage); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.AmountRequested); err != nil {
+		return nil, err
+	}
+
+	if err := wire.WriteVarString(&b, 0, swap.PrepayInvoice); err != nil {
+		return nil, err
+	}
+
+	n, err := b.Write(swap.SenderKey[:])
+	if err != nil {
+		return nil, err
+	}
+	if n != keyLength {
+		return nil, fmt.Errorf("sender key has invalid length")
+	}
+
+	n, err = b.Write(swap.ReceiverKey[:])
+	if err != nil {
+		return nil, err
+	}
+	if n != keyLength {
+		return nil, fmt.Errorf("receiver key has invalid length")
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.CltvExpiry); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.MaxMinerFee); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.MaxSwapFee); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.MaxPrepayRoutingFee); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.InitiationHeight); err != nil {
+		return nil, err
+	}
 
 	addr := swap.DestAddr.String()
 	if err := wire.WriteVarString(&b, 0, addr); err != nil {
@@ -145,117 +241,4 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 	}
 
 	return b.Bytes(), nil
-}
-
-func deserializeContract(r io.Reader) (*SwapContract, error) {
-	swap := SwapContract{}
-	var err error
-	var unixNano int64
-	if err := binary.Read(r, byteOrder, &unixNano); err != nil {
-		return nil, err
-	}
-	swap.InitiationTime = time.Unix(0, unixNano)
-
-	if err := binary.Read(r, byteOrder, &swap.Preimage); err != nil {
-		return nil, err
-	}
-
-	binary.Read(r, byteOrder, &swap.AmountRequested)
-
-	swap.PrepayInvoice, err = wire.ReadVarString(r, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	n, err := r.Read(swap.SenderKey[:])
-	if err != nil {
-		return nil, err
-	}
-	if n != keyLength {
-		return nil, fmt.Errorf("sender key has invalid length")
-	}
-
-	n, err = r.Read(swap.ReceiverKey[:])
-	if err != nil {
-		return nil, err
-	}
-	if n != keyLength {
-		return nil, fmt.Errorf("receiver key has invalid length")
-	}
-
-	if err := binary.Read(r, byteOrder, &swap.CltvExpiry); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(r, byteOrder, &swap.MaxMinerFee); err != nil {
-		return nil, err
-	}
-
-	if err := binary.Read(r, byteOrder, &swap.MaxSwapFee); err != nil {
-		return nil, err
-	}
-
-	if err := binary.Read(r, byteOrder, &swap.MaxPrepayRoutingFee); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(r, byteOrder, &swap.InitiationHeight); err != nil {
-		return nil, err
-	}
-
-	return &swap, nil
-}
-
-func serializeContract(swap *SwapContract, b *bytes.Buffer) error {
-	if err := binary.Write(b, byteOrder, swap.InitiationTime.UnixNano()); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.Preimage); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.AmountRequested); err != nil {
-		return err
-	}
-
-	if err := wire.WriteVarString(b, 0, swap.PrepayInvoice); err != nil {
-		return err
-	}
-
-	n, err := b.Write(swap.SenderKey[:])
-	if err != nil {
-		return err
-	}
-	if n != keyLength {
-		return fmt.Errorf("sender key has invalid length")
-	}
-
-	n, err = b.Write(swap.ReceiverKey[:])
-	if err != nil {
-		return err
-	}
-	if n != keyLength {
-		return fmt.Errorf("receiver key has invalid length")
-	}
-
-	if err := binary.Write(b, byteOrder, swap.CltvExpiry); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.MaxMinerFee); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.MaxSwapFee); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.MaxPrepayRoutingFee); err != nil {
-		return err
-	}
-
-	if err := binary.Write(b, byteOrder, swap.InitiationHeight); err != nil {
-		return err
-	}
-
-	return nil
 }

@@ -18,10 +18,6 @@ type SwapContract struct {
 	// AmountRequested is the total amount of the swap.
 	AmountRequested btcutil.Amount
 
-	// PrepayInvoice is the invoice that the client should pay to the
-	// server that will be returned if the swap is complete.
-	PrepayInvoice string
-
 	// SenderKey is the key of the sender that will be used in the on-chain
 	// HTLC.
 	SenderKey [33]byte
@@ -32,10 +28,6 @@ type SwapContract struct {
 
 	// CltvExpiry is the total absolute CLTV expiry of the swap.
 	CltvExpiry int32
-
-	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
-	// paid for the prepayment to the server.
-	MaxPrepayRoutingFee btcutil.Amount
 
 	// MaxSwapFee is the maximum we are willing to pay the server for the
 	// swap.
@@ -53,8 +45,14 @@ type SwapContract struct {
 	InitiationTime time.Time
 }
 
-// LoopOutEvent contains the dynamic data of a swap.
-type LoopOutEvent struct {
+// Loop contains fields shared between LoopIn and LoopOut
+type Loop struct {
+	Hash   lntypes.Hash
+	Events []*LoopEvent
+}
+
+// LoopEvent contains the dynamic data of a swap.
+type LoopEvent struct {
 	// State is the new state for this swap as a result of this event.
 	State SwapState
 
@@ -63,7 +61,7 @@ type LoopOutEvent struct {
 }
 
 // State returns the most recent state of this swap.
-func (s *LoopOut) State() SwapState {
+func (s *Loop) State() SwapState {
 	lastUpdate := s.LastUpdate()
 	if lastUpdate == nil {
 		return StateInitiated
@@ -73,7 +71,7 @@ func (s *LoopOut) State() SwapState {
 }
 
 // LastUpdate returns the most recent update of this swap.
-func (s *LoopOut) LastUpdate() *LoopOutEvent {
+func (s *Loop) LastUpdate() *LoopEvent {
 	eventCount := len(s.Events)
 
 	if eventCount == 0 {
@@ -84,7 +82,9 @@ func (s *LoopOut) LastUpdate() *LoopOutEvent {
 	return lastEvent
 }
 
-func serializeLoopOutEvent(time time.Time, state SwapState) (
+// serializeLoopEvent serializes a state update of a swap. This is used for both
+// in and out swaps.
+func serializeLoopEvent(time time.Time, state SwapState) (
 	[]byte, error) {
 
 	var b bytes.Buffer
@@ -100,8 +100,10 @@ func serializeLoopOutEvent(time time.Time, state SwapState) (
 	return b.Bytes(), nil
 }
 
-func deserializeLoopOutEvent(value []byte) (*LoopOutEvent, error) {
-	update := &LoopOutEvent{}
+// deserializeLoopEvent deserializes a state update of a swap. This is used for
+// both in and out swaps.
+func deserializeLoopEvent(value []byte) (*LoopEvent, error) {
+	update := &LoopEvent{}
 
 	r := bytes.NewReader(value)
 
