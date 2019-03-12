@@ -17,13 +17,19 @@ var (
 	// database.
 	dbFileName = "loop.db"
 
-	// unchargeSwapsBucketKey is a bucket that contains all swaps that are
+	// loopOutBucketKey is a bucket that contains all swaps that are
 	// currently pending or completed. This bucket is keyed by the
 	// swaphash, and leads to a nested sub-bucket that houses information
 	// for that swap.
 	//
 	// maps: swapHash -> swapBucket
-	unchargeSwapsBucketKey = []byte("uncharge-swaps")
+	loopOutBucketKey = []byte("uncharge-swaps")
+
+	// chargeSwapsBucketKey is a bucket that contains all swaps that are
+	// currently pending or completed.
+	//
+	// maps: swap_hash -> chargeContract
+	loopInBucketKey = []byte("loop-in")
 
 	// unchargeUpdatesBucketKey is a bucket that contains all updates
 	// pertaining to a swap. This is a sub-bucket of the swap bucket for a
@@ -88,11 +94,11 @@ func NewBoltSwapStore(dbPath string) (*boltSwapStore, error) {
 	// We'll create all the buckets we need if this is the first time we're
 	// starting up. If they already exist, then these calls will be noops.
 	err = bdb.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(unchargeSwapsBucketKey)
+		_, err := tx.CreateBucketIfNotExists(loopOutBucketKey)
 		if err != nil {
 			return err
 		}
-		_, err = tx.CreateBucketIfNotExists(updatesBucketKey)
+		_, err = tx.CreateBucketIfNotExists(loopInBucketKey)
 		if err != nil {
 			return err
 		}
@@ -118,15 +124,12 @@ func NewBoltSwapStore(dbPath string) (*boltSwapStore, error) {
 	}, nil
 }
 
-// FetchLoopOutSwaps returns all swaps currently in the store.
-//
-// NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
-	var swaps []*LoopOut
+func (s *boltSwapStore) fetchSwaps(bucketKey []byte,
+	callback func([]byte, Loop) error) error {
 
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		// First, we'll grab our main loop out swap bucket key.
-		rootBucket := tx.Bucket(unchargeSwapsBucketKey)
+	return s.db.View(func(tx *bbolt.Tx) error {
+		// First, we'll grab our main loop in bucket key.
+		rootBucket := tx.Bucket(bucketKey)
 		if rootBucket == nil {
 			return errors.New("bucket does not exist")
 		}
@@ -154,12 +157,6 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 			if contractBytes == nil {
 				return errors.New("contract not found")
 			}
-			contract, err := deserializeLoopOutContract(
-				contractBytes,
-			)
-			if err != nil {
-				return err
-			}
 
 			// Once we have the raw swap, we'll also need to decode
 			// each of the past updates to the swap itself.
@@ -170,9 +167,9 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 
 			// De serialize and collect each swap update into our
 			// slice of swap events.
-			var updates []*LoopOutEvent
-			err = stateBucket.ForEach(func(k, v []byte) error {
-				event, err := deserializeLoopOutEvent(v)
+			var updates []*LoopEvent
+			err := stateBucket.ForEach(func(k, v []byte) error {
+				event, err := deserializeLoopEvent(v)
 				if err != nil {
 					return err
 				}
@@ -187,21 +184,114 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 			var hash lntypes.Hash
 			copy(hash[:], swapHash)
 
-			swap := LoopOut{
-				Contract: contract,
-				Hash:     hash,
-				Events:   updates,
+			loop := Loop{
+				Hash:   hash,
+				Events: updates,
 			}
 
-			swaps = append(swaps, &swap)
-			return nil
+			return callback(contractBytes, loop)
 		})
 	})
+}
+
+// FetchLoopOutSwaps returns all loop out swaps currently in the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
+	var swaps []*LoopOut
+
+	err := s.fetchSwaps(loopOutBucketKey,
+		func(contractBytes []byte, loop Loop) error {
+			contract, err := deserializeLoopOutContract(
+				contractBytes,
+			)
+			if err != nil {
+				return err
+			}
+
+			swaps = append(swaps, &LoopOut{
+				Contract: contract,
+				Loop:     loop,
+			})
+
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	return swaps, nil
+}
+
+// FetchLoopInSwaps returns all loop in swaps currently in the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
+	var swaps []*LoopIn
+
+	err := s.fetchSwaps(loopInBucketKey,
+		func(contractBytes []byte, loop Loop) error {
+			contract, err := deserializeLoopInContract(
+				contractBytes,
+			)
+			if err != nil {
+				return err
+			}
+
+			swaps = append(swaps, &LoopIn{
+				Contract: contract,
+				Loop:     loop,
+			})
+
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return swaps, nil
+}
+
+func (s *boltSwapStore) createLoop(bucketKey []byte, hash lntypes.Hash,
+	contractBytes []byte) error {
+
+	// Otherwise, we'll create a new swap within the database.
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// First, we'll grab the root bucket that houses all of our
+		// main swaps.
+		rootBucket, err := tx.CreateBucketIfNotExists(
+			bucketKey,
+		)
+		if err != nil {
+			return err
+		}
+
+		// If the swap already exists, then we'll exit as we don't want
+		// to override a swap.
+		if rootBucket.Get(hash[:]) != nil {
+			return fmt.Errorf("swap %v already exists", hash)
+		}
+
+		// From the root bucket, we'll make a new sub swap bucket using
+		// the swap hash.
+		swapBucket, err := rootBucket.CreateBucket(hash[:])
+		if err != nil {
+			return err
+		}
+
+		// With the swap bucket created, we'll store the swap itself.
+		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Finally, we'll create an empty updates bucket for this swap
+		// to track any future updates to the swap itself.
+		_, err = swapBucket.CreateBucket(updatesBucketKey)
+		return err
+	})
 }
 
 // CreateLoopOut adds an initiated swap to the store.
@@ -216,60 +306,42 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 		return errors.New("hash and preimage do not match")
 	}
 
-	// Otherwise, we'll create a new swap within the database.
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		// First, we'll grab the root bucket that houses all of our
-		// main swaps.
-		rootBucket, err := tx.CreateBucketIfNotExists(
-			unchargeSwapsBucketKey,
-		)
-		if err != nil {
-			return err
-		}
-
-		// If the swap already exists, then we'll exit as we don't want
-		// to override a swap.
-		if rootBucket.Get(hash[:]) != nil {
-			return fmt.Errorf("swap %v already exists",
-				swap.Preimage)
-		}
-
-		// From the root bucket, we'll make a new sub swap bucket using
-		// the swap hash.
-		swapBucket, err := rootBucket.CreateBucket(hash[:])
-		if err != nil {
-			return err
-		}
-
-		// With out swap bucket created, we'll serialize and store the
-		// swap itself.
-		contract, err := serializeLoopOutContract(swap)
-		if err != nil {
-			return err
-		}
-		if err := swapBucket.Put(contractKey, contract); err != nil {
-			return err
-		}
-
-		// Finally, we'll create an empty updates bucket for this swap
-		// to track any future updates to the swap itself.
-		_, err = swapBucket.CreateBucket(updatesBucketKey)
+	contractBytes, err := serializeLoopOutContract(swap)
+	if err != nil {
 		return err
-	})
+	}
+
+	return s.createLoop(loopOutBucketKey, hash, contractBytes)
 }
 
-// UpdateLoopOut stores a swap updateLoopOut. This appends to the event log for
-// a particular swap as it goes through the various stages in its lifetime.
+// CreateLoopIn adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
-	state SwapState) error {
+func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
+	swap *LoopInContract) error {
+
+	// If the hash doesn't match the pre-image, then this is an invalid
+	// swap so we'll bail out early.
+	if hash != swap.Preimage.Hash() {
+		return errors.New("hash and preimage do not match")
+	}
+
+	contractBytes, err := serializeLoopInContract(swap)
+	if err != nil {
+		return err
+	}
+
+	return s.createLoop(loopInBucketKey, hash, contractBytes)
+}
+
+func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
+	time time.Time, state SwapState) error {
 
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// Starting from the root bucket, we'll traverse the bucket
 		// hierarchy all the way down to the swap bucket, and the
 		// update sub-bucket within that.
-		rootBucket := tx.Bucket(unchargeSwapsBucketKey)
+		rootBucket := tx.Bucket(bucketKey)
 		if rootBucket == nil {
 			return errors.New("bucket does not exist")
 		}
@@ -290,12 +362,32 @@ func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 		}
 
 		// With the ID obtained, we'll write out this new update value.
-		updateValue, err := serializeLoopOutEvent(time, state)
+		updateValue, err := serializeLoopEvent(time, state)
 		if err != nil {
 			return err
 		}
 		return updateBucket.Put(itob(id), updateValue)
 	})
+}
+
+// UpdateLoopOut stores a swap update. This appends to the event log for
+// a particular swap as it goes through the various stages in its lifetime.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
+	state SwapState) error {
+
+	return s.updateLoop(loopOutBucketKey, hash, time, state)
+}
+
+// UpdateLoopIn stores a swap update. This appends to the event log for
+// a particular swap as it goes through the various stages in its lifetime.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *boltSwapStore) UpdateLoopIn(hash lntypes.Hash, time time.Time,
+	state SwapState) error {
+
+	return s.updateLoop(loopInBucketKey, hash, time, state)
 }
 
 // Close closes the underlying database.

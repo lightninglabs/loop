@@ -90,6 +90,9 @@ func (s SwapState) String() string {
 	case StatePreimageRevealed:
 		return "PreimageRevealed"
 
+	case StateHtlcPublished:
+		return "HtlcPublished"
+
 	case StateSuccess:
 		return "Success"
 
