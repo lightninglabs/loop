@@ -29,7 +29,7 @@ func (h *mockLightningClient) PayInvoice(ctx context.Context, invoice string,
 
 	done := make(chan lndclient.PaymentResult, 1)
 
-	mockChan := make(chan error)
+	mockChan := make(chan error, 1)
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()

@@ -125,7 +125,6 @@ func (s *chainNotifierClient) RegisterConfirmationsNtfn(ctx context.Context,
 	txid *chainhash.Hash, pkScript []byte, numConfs, heightHint int32) (
 	chan *chainntnfs.TxConfirmation, chan error, error) {
 
-	// TODO: Height hint
 	var txidSlice []byte
 	if txid != nil {
 		txidSlice = txid[:]

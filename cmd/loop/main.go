@@ -61,7 +61,8 @@ func main() {
 		},
 	}
 	app.Commands = []cli.Command{
-		loopOutCommand, termsCommand, monitorCommand, quoteCommand,
+		loopOutCommand, loopInCommand, termsCommand,
+		monitorCommand, quoteCommand,
 	}
 
 	err := app.Run(os.Args)
@@ -87,7 +88,7 @@ func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
 }
 
 type limits struct {
-	maxSwapRoutingFee   btcutil.Amount
+	maxSwapRoutingFee   *btcutil.Amount
 	maxPrepayRoutingFee btcutil.Amount
 	maxMinerFee         btcutil.Amount
 	maxSwapFee          btcutil.Amount
@@ -96,7 +97,6 @@ type limits struct {
 
 func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 	return &limits{
-		maxSwapRoutingFee: getMaxRoutingFee(btcutil.Amount(amt)),
 		maxPrepayRoutingFee: getMaxRoutingFee(btcutil.Amount(
 			quote.PrepayAmt,
 		)),
@@ -111,8 +111,10 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 }
 
 func displayLimits(amt btcutil.Amount, l *limits) error {
-	totalSuccessMax := l.maxSwapRoutingFee + l.maxPrepayRoutingFee +
-		l.maxMinerFee + l.maxSwapFee
+	totalSuccessMax := l.maxPrepayRoutingFee + l.maxMinerFee + l.maxSwapFee
+	if l.maxSwapRoutingFee != nil {
+		totalSuccessMax += *l.maxSwapRoutingFee
+	}
 
 	fmt.Printf("Max swap fees for %d loop out: %d\n",
 		btcutil.Amount(amt), totalSuccessMax,
@@ -129,8 +131,12 @@ func displayLimits(amt btcutil.Amount, l *limits) error {
 	case "x":
 		fmt.Println()
 		fmt.Printf("Max on-chain fee:                 %d\n", l.maxMinerFee)
-		fmt.Printf("Max off-chain swap routing fee:   %d\n",
-			l.maxSwapRoutingFee)
+
+		if l.maxSwapRoutingFee != nil {
+			fmt.Printf("Max off-chain swap routing fee:   %d\n",
+				*l.maxSwapRoutingFee)
+		}
+
 		fmt.Printf("Max off-chain prepay routing fee: %d\n",
 			l.maxPrepayRoutingFee)
 		fmt.Printf("Max swap fee:                     %d\n", l.maxSwapFee)

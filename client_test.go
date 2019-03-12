@@ -197,12 +197,14 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 				MaxMinerFee:     50000,
 			},
 		},
-		Events: []*loopdb.LoopOutEvent{
-			{
-				State: state,
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{
+				{
+					State: state,
+				},
 			},
+			Hash: hash,
 		},
-		Hash: hash,
 	}
 
 	if expired {

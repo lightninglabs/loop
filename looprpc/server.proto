@@ -10,6 +10,10 @@ service SwapServer {
     rpc NewLoopOutSwap(ServerLoopOutRequest) returns (ServerLoopOutResponse);
     
     rpc LoopOutQuote(ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
+
+    rpc NewLoopInSwap(ServerLoopInRequest) returns (ServerLoopInResponse);
+
+    rpc LoopInQuote(ServerLoopInQuoteRequest) returns (ServerLoopInQuoteResponse);
 }
 
 message ServerLoopOutRequest {
@@ -47,4 +51,29 @@ message ServerLoopOutQuote {
     uint64 max_swap_amount = 6;
 
     int32 cltv_delta = 7;
+}
+
+message ServerLoopInRequest {
+    bytes sender_key = 1;
+    bytes swap_hash = 2;
+    uint64 amt = 3;
+    string swap_invoice = 4;
+}
+
+message ServerLoopInResponse {
+    string prepay_invoice = 1;
+    bytes receiver_key = 2;
+    int32 expiry = 3;
+}
+
+message ServerLoopInQuoteRequest {
+}
+    
+message ServerLoopInQuoteResponse {
+    int64 swap_fee_base = 1;
+    int64 swap_fee_rate = 2;
+    uint64 prepay_amt = 3;
+    uint64 min_swap_amount = 4;
+    uint64 max_swap_amount = 5;
+    int32 cltv_delta = 6;
 }

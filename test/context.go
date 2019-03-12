@@ -226,15 +226,4 @@ func (ctx *Context) NotifyServerHeight(height int32) {
 	if err := ctx.Lnd.NotifyHeight(height); err != nil {
 		ctx.T.Fatal(err)
 	}
-
-	// TODO: Fix race condition with height not processed yet.
-
-	// select {
-	// case h := <-ctx.swapServer.testEpochChan:
-	// 	if h != height {
-	// 		ctx.T.Fatal("height not set")
-	// 	}
-	// case <-time.After(test.Timeout):
-	// 	ctx.T.Fatal("no height response")
-	// }
 }

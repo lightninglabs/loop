@@ -81,7 +81,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxPrepayAmt:        int64(limits.maxPrepayAmt),
 		MaxSwapFee:          int64(limits.maxSwapFee),
 		MaxPrepayRoutingFee: int64(limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:   int64(limits.maxSwapRoutingFee),
+		MaxSwapRoutingFee:   int64(*limits.maxSwapRoutingFee),
 		LoopOutChannel:      unchargeChannel,
 	})
 	if err != nil {

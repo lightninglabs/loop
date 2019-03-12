@@ -158,6 +158,107 @@ type LoopOutTerms struct {
 	SwapPaymentDest [33]byte
 }
 
+// LoopInRequest contains the required parameters for the swap.
+type LoopInRequest struct {
+	// Amount specifies the requested swap amount in sat. This does not
+	// include the swap and miner fee.
+	Amount btcutil.Amount
+
+	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
+	// paid for payment to the server. This limit is applied during path
+	// finding. Typically this value is taken from the response of the
+	// UnchargeQuote call.
+	MaxPrepayRoutingFee btcutil.Amount
+
+	// MaxSwapFee is the maximum we are willing to pay the server for the
+	// swap. This value is not disclosed in the swap initiation call, but if
+	// the server asks for a higher fee, we abort the swap. Typically this
+	// value is taken from the response of the UnchargeQuote call. It
+	// includes the prepay amount.
+	MaxSwapFee btcutil.Amount
+
+	// MaxPrepayAmount is the maximum amount of the swap fee that may be
+	// charged as a prepayment.
+	MaxPrepayAmount btcutil.Amount
+
+	// MaxMinerFee is the maximum in on-chain fees that we are willing to
+	// spent. If we publish the on-chain htlc and the fee estimate turns out
+	// higher than this value, we cancel the swap.
+	//
+	// MaxMinerFee is typically taken from the response of the UnchargeQuote
+	// call.
+	MaxMinerFee btcutil.Amount
+
+	// HtlcConfTarget specifies the targeted confirmation target for the
+	// client htlc tx.
+	HtlcConfTarget int32
+
+	// LoopInChannel optionally specifies the short channel id of the
+	// channel to charge.
+	LoopInChannel *uint64
+}
+
+// LoopInTerms are the server terms on which it executes charge swaps.
+type LoopInTerms struct {
+	// SwapFeeBase is the fixed per-swap base fee.
+	SwapFeeBase btcutil.Amount
+
+	// SwapFeeRate is the variable fee in parts per million.
+	SwapFeeRate int64
+
+	// PrepayAmt is the fixed part of the swap fee that needs to be prepaid.
+	PrepayAmt btcutil.Amount
+
+	// MinSwapAmount is the minimum amount that the server requires for a
+	// swap.
+	MinSwapAmount btcutil.Amount
+
+	// MaxSwapAmount is the maximum amount that the server accepts for a
+	// swap.
+	MaxSwapAmount btcutil.Amount
+
+	// Time lock delta relative to current block height that swap server
+	// will accept on the swap initiation call.
+	CltvDelta int32
+}
+
+// In contains status information for a loop in swap.
+type In struct {
+	loopdb.LoopInContract
+
+	SwapInfoKit
+
+	// State where the swap is in.
+	State loopdb.SwapState
+}
+
+// LoopInQuoteRequest specifies the swap parameters for which a quote is
+// requested.
+type LoopInQuoteRequest struct {
+	// Amount specifies the requested swap amount in sat. This does not
+	// include the swap and miner fee.
+	Amount btcutil.Amount
+
+	// HtlcConfTarget specifies the targeted confirmation target for the
+	// client sweep tx.
+	HtlcConfTarget int32
+}
+
+// LoopInQuote contains estimates for the fees making up the total swap cost
+// for the client.
+type LoopInQuote struct {
+	// SwapFee is the fee that the swap server is charging for the swap.
+	SwapFee btcutil.Amount
+
+	// PrepayAmount is the part of the swap fee that is requested as a
+	// prepayment.
+	PrepayAmount btcutil.Amount
+
+	// MinerFee is an estimate of the on-chain fee that needs to be paid to
+	// sweep the htlc.
+	MinerFee btcutil.Amount
+}
+
 // SwapInfoKit contains common swap info fields.
 type SwapInfoKit struct {
 	// Hash is the sha256 hash of the preimage that unlocks the htlcs. It
@@ -190,4 +291,14 @@ type SwapInfo struct {
 	SwapType Type
 
 	loopdb.SwapContract
+}
+
+// LastUpdate returns the last update time of the swap
+func (s *In) LastUpdate() time.Time {
+	return s.LastUpdateTime
+}
+
+// SwapHash returns the swap hash.
+func (s *In) SwapHash() lntypes.Hash {
+	return s.Hash
 }

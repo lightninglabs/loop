@@ -19,6 +19,7 @@ var (
 	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
 
 	testLoopOutOnChainCltvDelta = int32(30)
+	testChargeOnChainCltvDelta  = int32(100)
 	testCltvDelta               = 50
 	testSwapFeeBase             = btcutil.Amount(21)
 	testSwapFeeRate             = int64(100)
@@ -122,4 +123,51 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 	}
 
 	return reqString, nil
+}
+
+func (s *serverMock) NewLoopInSwap(ctx context.Context,
+	swapHash lntypes.Hash, amount btcutil.Amount,
+	senderKey [33]byte, swapInvoice string) (
+	*newLoopInResponse, error) {
+
+	_, receiverKey := test.CreateKey(101)
+
+	if amount != s.expectedSwapAmt {
+		return nil, errors.New("unexpected test swap amount")
+	}
+
+	prepayHash := lntypes.Hash{1, 2, 3}
+
+	prePayReqString, err := getInvoice(prepayHash, s.prepayInvoiceAmt,
+		prepayInvoiceDesc)
+	if err != nil {
+		return nil, err
+	}
+
+	var receiverKeyArray [33]byte
+	copy(receiverKeyArray[:], receiverKey.SerializeCompressed())
+
+	s.swapInvoice = swapInvoice
+	s.swapHash = swapHash
+
+	resp := &newLoopInResponse{
+		expiry:        s.height + testChargeOnChainCltvDelta,
+		receiverKey:   receiverKeyArray,
+		prepayInvoice: prePayReqString,
+	}
+
+	return resp, nil
+}
+
+func (s *serverMock) GetLoopInTerms(ctx context.Context) (
+	*LoopInTerms, error) {
+
+	return &LoopInTerms{
+		SwapFeeBase:   testSwapFeeBase,
+		SwapFeeRate:   testSwapFeeRate,
+		CltvDelta:     testChargeOnChainCltvDelta,
+		MinSwapAmount: testMinSwapAmount,
+		MaxSwapAmount: testMaxSwapAmount,
+		PrepayAmt:     testFixedPrepayAmount,
+	}, nil
 }

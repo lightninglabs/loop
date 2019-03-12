@@ -310,11 +310,17 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 
 	rpcIn := &lnrpc.Invoice{
 		Memo:       in.Memo,
-		RHash:      in.Hash[:],
 		Value:      int64(in.Value),
 		Expiry:     in.Expiry,
 		CltvExpiry: in.CltvExpiry,
 		Private:    true,
+	}
+
+	if in.Preimage != nil {
+		rpcIn.RPreimage = in.Preimage[:]
+	}
+	if in.Hash != nil {
+		rpcIn.RHash = in.Hash[:]
 	}
 
 	resp, err := s.client.AddInvoice(rpcCtx, rpcIn)

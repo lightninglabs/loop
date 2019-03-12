@@ -135,7 +135,7 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
-	logger.Infof("Resuming swap %v", hash)
+	logger.Infof("Resuming loop out swap %v", hash)
 
 	swapKit, err := newSwapKit(
 		hash, TypeOut, cfg, &pend.Contract.SwapContract,

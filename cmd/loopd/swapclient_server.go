@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -32,7 +33,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("LoopOut request received")
+	logger.Infof("Loop out request received")
 
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
@@ -83,6 +84,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = looprpc.SwapState_INITIATED
 	case loopdb.StatePreimageRevealed:
 		state = looprpc.SwapState_PREIMAGE_REVEALED
+	case loopdb.StateHtlcPublished:
+		state = looprpc.SwapState_HTLC_PUBLISHED
 	case loopdb.StateSuccess:
 		state = looprpc.SwapState_SUCCESS
 	default:
@@ -103,6 +106,16 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		return nil, err
 	}
 
+	var swapType looprpc.SwapType
+	switch loopSwap.SwapType {
+	case loop.TypeIn:
+		swapType = looprpc.SwapType_LOOP_IN
+	case loop.TypeOut:
+		swapType = looprpc.SwapType_LOOP_OUT
+	default:
+		return nil, errors.New("unknown swap type")
+	}
+
 	return &looprpc.SwapStatus{
 		Amt:            int64(loopSwap.AmountRequested),
 		Id:             loopSwap.SwapHash.String(),
@@ -110,7 +123,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		InitiationTime: loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:    address.EncodeAddress(),
-		Type:           looprpc.SwapType_LOOP_OUT,
+		Type:           swapType,
 	}, nil
 }
 
@@ -212,7 +225,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
-	logger.Infof("Terms request received")
+	logger.Infof("Loop out terms request received")
 
 	terms, err := s.impl.LoopOutTerms(ctx)
 	if err != nil {
@@ -246,5 +259,75 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		MinerFee:  int64(quote.MinerFee),
 		PrepayAmt: int64(quote.PrepayAmount),
 		SwapFee:   int64(quote.SwapFee),
+	}, nil
+}
+
+// GetTerms returns the terms that the server enforces for swaps.
+func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.TermsRequest) (
+	*looprpc.TermsResponse, error) {
+
+	logger.Infof("Loop in terms request received")
+
+	terms, err := s.impl.LoopInTerms(ctx)
+	if err != nil {
+		logger.Errorf("Terms request: %v", err)
+		return nil, err
+	}
+
+	return &looprpc.TermsResponse{
+		MinSwapAmount: int64(terms.MinSwapAmount),
+		MaxSwapAmount: int64(terms.MaxSwapAmount),
+		PrepayAmt:     int64(terms.PrepayAmt),
+		SwapFeeBase:   int64(terms.SwapFeeBase),
+		SwapFeeRate:   int64(terms.SwapFeeRate),
+		CltvDelta:     int32(terms.CltvDelta),
+	}, nil
+}
+
+// GetQuote returns a quote for a swap with the provided parameters.
+func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
+	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+
+	logger.Infof("Loop in quote request received")
+
+	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
+		Amount:         btcutil.Amount(req.Amt),
+		HtlcConfTarget: defaultConfTarget,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &looprpc.QuoteResponse{
+		MinerFee:  int64(quote.MinerFee),
+		PrepayAmt: int64(quote.PrepayAmount),
+		SwapFee:   int64(quote.SwapFee),
+	}, nil
+}
+
+func (s *swapClientServer) LoopIn(ctx context.Context,
+	in *looprpc.LoopInRequest) (
+	*looprpc.SwapResponse, error) {
+
+	logger.Infof("Loop in request received")
+
+	req := &loop.LoopInRequest{
+		Amount:              btcutil.Amount(in.Amt),
+		MaxMinerFee:         btcutil.Amount(in.MaxMinerFee),
+		MaxPrepayAmount:     btcutil.Amount(in.MaxPrepayAmt),
+		MaxPrepayRoutingFee: btcutil.Amount(in.MaxPrepayRoutingFee),
+		MaxSwapFee:          btcutil.Amount(in.MaxSwapFee),
+		HtlcConfTarget:      defaultConfTarget,
+	}
+	if in.LoopInChannel != 0 {
+		req.LoopInChannel = &in.LoopInChannel
+	}
+	hash, err := s.impl.LoopIn(ctx, req)
+	if err != nil {
+		logger.Errorf("Loop in: %v", err)
+		return nil, err
+	}
+
+	return &looprpc.SwapResponse{
+		Id: hash.String(),
 	}, nil
 }
