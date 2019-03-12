@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime/pprof"
 	"sync"
 	"time"
 
+	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"google.golang.org/grpc"
@@ -59,15 +61,38 @@ func daemon(config *config) error {
 	grpcServer := grpc.NewServer(serverOpts...)
 	looprpc.RegisterSwapClientServer(grpcServer, &server)
 
-	// Next, Start the gRPC server listening for HTTP/2 connections.
-	logger.Infof("Starting RPC listener")
-	lis, err := net.Listen("tcp", config.Listen)
+	// Next, start the gRPC server listening for HTTP/2 connections.
+	logger.Infof("Starting gRPC listener")
+	grpcListener, err := net.Listen("tcp", config.RPCListen)
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
-			config.Listen)
+			config.RPCListen)
 
 	}
-	defer lis.Close()
+	defer grpcListener.Close()
+
+	// We'll also create and start an accompanying proxy to serve clients
+	// through REST.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mux := proxy.NewServeMux()
+	proxyOpts := []grpc.DialOption{grpc.WithInsecure()}
+	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
+		ctx, mux, config.RPCListen, proxyOpts,
+	)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("Starting REST proxy listener")
+	restListener, err := net.Listen("tcp", config.RESTListen)
+	if err != nil {
+		return fmt.Errorf("REST proxy unable to listen on %s",
+			config.RESTListen)
+	}
+	defer restListener.Close()
+	proxy := &http.Server{Handler: mux}
+	go proxy.Serve(restListener)
 
 	statusChan := make(chan loop.SwapInfo)
 
@@ -124,9 +149,10 @@ func daemon(config *config) error {
 	go func() {
 		defer wg.Done()
 
-		logger.Infof("RPC server listening on %s", lis.Addr())
+		logger.Infof("RPC server listening on %s", grpcListener.Addr())
+		logger.Infof("REST proxy listening on %s", restListener.Addr())
 
-		err = grpcServer.Serve(lis)
+		err = grpcServer.Serve(grpcListener)
 		if err != nil {
 			logger.Error(err)
 		}
