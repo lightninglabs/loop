@@ -11,8 +11,6 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // ChainNotifierClient exposes base lightning functionality.
@@ -101,9 +99,7 @@ func (s *chainNotifierClient) RegisterSpendNtfn(ctx context.Context,
 		for {
 			spendEvent, err := resp.Recv()
 			if err != nil {
-				if status.Code(err) != codes.Canceled {
-					errChan <- err
-				}
+				errChan <- err
 				return
 			}
 
@@ -125,7 +121,6 @@ func (s *chainNotifierClient) RegisterConfirmationsNtfn(ctx context.Context,
 	txid *chainhash.Hash, pkScript []byte, numConfs, heightHint int32) (
 	chan *chainntnfs.TxConfirmation, chan error, error) {
 
-	// TODO: Height hint
 	var txidSlice []byte
 	if txid != nil {
 		txidSlice = txid[:]
@@ -155,9 +150,7 @@ func (s *chainNotifierClient) RegisterConfirmationsNtfn(ctx context.Context,
 			var confEvent *chainrpc.ConfEvent
 			confEvent, err := confStream.Recv()
 			if err != nil {
-				if status.Code(err) != codes.Canceled {
-					errChan <- err
-				}
+				errChan <- err
 				return
 			}
 
@@ -226,9 +219,7 @@ func (s *chainNotifierClient) RegisterBlockEpochNtfn(ctx context.Context) (
 		for {
 			epoch, err := blockEpochClient.Recv()
 			if err != nil {
-				if status.Code(err) != codes.Canceled {
-					blockErrorChan <- err
-				}
+				blockErrorChan <- err
 				return
 			}
 

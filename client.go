@@ -118,6 +118,11 @@ func (s *Client) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
 	return s.Store.FetchLoopOutSwaps()
 }
 
+// FetchLoopInSwaps returns a list of all swaps currently in the database.
+func (s *Client) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
+	return s.Store.FetchLoopInSwaps()
+}
+
 // Run is a blocking call that executes all swaps. Any pending swaps are
 // restored from persistent storage and resumed.  Subsequent updates will be
 // sent through the passed in statusChan. The function can be terminated by
@@ -144,7 +149,12 @@ func (s *Client) Run(ctx context.Context,
 
 	// Query store before starting event loop to prevent new swaps from
 	// being treated as swaps that need to be resumed.
-	pendingSwaps, err := s.Store.FetchLoopOutSwaps()
+	pendingLoopOutSwaps, err := s.Store.FetchLoopOutSwaps()
+	if err != nil {
+		return err
+	}
+
+	pendingLoopInSwaps, err := s.Store.FetchLoopInSwaps()
 	if err != nil {
 		return err
 	}
@@ -154,7 +164,7 @@ func (s *Client) Run(ctx context.Context,
 	go func() {
 		defer s.wg.Done()
 
-		s.resumeSwaps(mainCtx, pendingSwaps)
+		s.resumeSwaps(mainCtx, pendingLoopOutSwaps, pendingLoopInSwaps)
 
 		// Signal that new requests can be accepted. Otherwise the new
 		// swap could already have been added to the store and read in
@@ -194,19 +204,33 @@ func (s *Client) Run(ctx context.Context,
 
 // resumeSwaps restarts all pending swaps from the provided list.
 func (s *Client) resumeSwaps(ctx context.Context,
-	swaps []*loopdb.LoopOut) {
+	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	for _, pend := range swaps {
+	swapCfg := &swapConfig{
+		lnd:   s.lndServices,
+		store: s.Store,
+	}
+
+	for _, pend := range loopOutSwaps {
 		if pend.State().Type() != loopdb.StateTypePending {
 			continue
 		}
-		swapCfg := &swapConfig{
-			lnd:   s.lndServices,
-			store: s.Store,
-		}
 		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
 		if err != nil {
-			logger.Errorf("resuming swap: %v", err)
+			logger.Errorf("resuming loop out swap: %v", err)
+			continue
+		}
+
+		s.executor.initiateSwap(ctx, swap)
+	}
+
+	for _, pend := range loopInSwaps {
+		if pend.State().Type() != loopdb.StateTypePending {
+			continue
+		}
+		swap, err := resumeLoopInSwap(ctx, swapCfg, pend)
+		if err != nil {
+			logger.Errorf("resuming loop in swap: %v", err)
 			continue
 		}
 
@@ -319,4 +343,86 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// LoopIn initiates a loop in swap.
+func (s *Client) LoopIn(globalCtx context.Context,
+	request *LoopInRequest) (*lntypes.Hash, error) {
+
+	logger.Infof("Loop in %v (channel: %v)",
+		request.Amount,
+		request.LoopInChannel,
+	)
+
+	if err := s.waitForInitialized(globalCtx); err != nil {
+		return nil, err
+	}
+
+	// Create a new swap object for this swap.
+	initiationHeight := s.executor.height()
+	swapCfg := swapConfig{
+		lnd:    s.lndServices,
+		store:  s.Store,
+		server: s.Server,
+	}
+	swap, err := newLoopInSwap(
+		globalCtx, &swapCfg, initiationHeight, request,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Post swap to the main loop.
+	s.executor.initiateSwap(globalCtx, swap)
+
+	// Return hash so that the caller can identify this swap in the updates
+	// stream.
+	return &swap.hash, nil
+}
+
+// LoopInQuote takes an amount and returns a break down of estimated
+// costs for the client. Both the swap server and the on-chain fee estimator are
+// queried to get to build the quote response.
+func (s *Client) LoopInQuote(ctx context.Context,
+	request *LoopInQuoteRequest) (*LoopInQuote, error) {
+
+	// Retrieve current server terms to calculate swap fee.
+	terms, err := s.Server.GetLoopInTerms(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check amount limits.
+	if request.Amount < terms.MinSwapAmount {
+		return nil, ErrSwapAmountTooLow
+	}
+
+	if request.Amount > terms.MaxSwapAmount {
+		return nil, ErrSwapAmountTooHigh
+	}
+
+	// Calculate swap fee.
+	swapFee := terms.SwapFeeBase +
+		request.Amount*btcutil.Amount(terms.SwapFeeRate)/
+			btcutil.Amount(swap.FeeRateTotalParts)
+
+	// Get estimate for miner fee.
+	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
+		ctx, request.Amount, request.HtlcConfTarget,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopInQuote{
+		SwapFee:  swapFee,
+		MinerFee: minerFee,
+	}, nil
+}
+
+// LoopInTerms returns the terms on which the server executes swaps.
+func (s *Client) LoopInTerms(ctx context.Context) (
+	*LoopInTerms, error) {
+
+	return s.Server.GetLoopInTerms(ctx)
 }

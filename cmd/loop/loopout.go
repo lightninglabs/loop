@@ -97,10 +97,10 @@ func loopOut(ctx *cli.Context) error {
 		Amt:                 int64(amt),
 		Dest:                destAddr,
 		MaxMinerFee:         int64(limits.maxMinerFee),
-		MaxPrepayAmt:        int64(limits.maxPrepayAmt),
+		MaxPrepayAmt:        int64(*limits.maxPrepayAmt),
 		MaxSwapFee:          int64(limits.maxSwapFee),
-		MaxPrepayRoutingFee: int64(limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:   int64(limits.maxSwapRoutingFee),
+		MaxPrepayRoutingFee: int64(*limits.maxPrepayRoutingFee),
+		MaxSwapRoutingFee:   int64(*limits.maxSwapRoutingFee),
 		LoopOutChannel:      unchargeChannel,
 	})
 	if err != nil {

@@ -14,7 +14,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -29,8 +28,8 @@ type LightningClient interface {
 
 	GetInfo(ctx context.Context) (*Info, error)
 
-	GetFeeEstimate(ctx context.Context, amt btcutil.Amount, dest [33]byte) (
-		lnwire.MilliSatoshi, error)
+	EstimateFeeToP2WSH(ctx context.Context, amt btcutil.Amount,
+		confTarget int32) (btcutil.Amount, error)
 
 	ConfirmedWalletBalance(ctx context.Context) (btcutil.Amount, error)
 
@@ -144,28 +143,35 @@ func (s *lightningClient) GetInfo(ctx context.Context) (*Info, error) {
 	}, nil
 }
 
-func (s *lightningClient) GetFeeEstimate(ctx context.Context, amt btcutil.Amount,
-	dest [33]byte) (lnwire.MilliSatoshi, error) {
+func (s *lightningClient) EstimateFeeToP2WSH(ctx context.Context,
+	amt btcutil.Amount, confTarget int32) (btcutil.Amount,
+	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
-	routeResp, err := s.client.QueryRoutes(
+	// Generate dummy p2wsh address for fee estimation.
+	wsh := [32]byte{}
+	p2wshAddress, err := btcutil.NewAddressWitnessScriptHash(
+		wsh[:], s.params,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := s.client.EstimateFee(
 		rpcCtx,
-		&lnrpc.QueryRoutesRequest{
-			Amt:       int64(amt),
-			NumRoutes: 1,
-			PubKey:    hex.EncodeToString(dest[:]),
+		&lnrpc.EstimateFeeRequest{
+			TargetConf: confTarget,
+			AddrToAmount: map[string]int64{
+				p2wshAddress.String(): int64(amt),
+			},
 		},
 	)
 	if err != nil {
 		return 0, err
 	}
-	if len(routeResp.Routes) == 0 {
-		return 0, ErrNoRouteToServer
-	}
-
-	return lnwire.MilliSatoshi(routeResp.Routes[0].TotalFeesMsat), nil
+	return btcutil.Amount(resp.FeeSat), nil
 }
 
 // PayInvoice pays an invoice.
@@ -310,11 +316,17 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 
 	rpcIn := &lnrpc.Invoice{
 		Memo:       in.Memo,
-		RHash:      in.Hash[:],
 		Value:      int64(in.Value),
 		Expiry:     in.Expiry,
 		CltvExpiry: in.CltvExpiry,
 		Private:    true,
+	}
+
+	if in.Preimage != nil {
+		rpcIn.RPreimage = in.Preimage[:]
+	}
+	if in.Hash != nil {
+		rpcIn.RHash = in.Hash[:]
 	}
 
 	resp, err := s.client.AddInvoice(rpcCtx, rpcIn)

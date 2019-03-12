@@ -12,7 +12,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/channeldb"
 )
 
 var testStartingHeight = int32(600)
@@ -67,13 +66,13 @@ func NewMockLnd() *LndMockServices {
 // PaymentChannelMessage is the data that passed through SendPaymentChannel.
 type PaymentChannelMessage struct {
 	PaymentRequest string
-	Done           chan error
+	Done           chan lndclient.PaymentResult
 }
 
 // SingleInvoiceSubscription contains the single invoice subscribers
 type SingleInvoiceSubscription struct {
 	Hash   lntypes.Hash
-	Update chan channeldb.ContractState
+	Update chan lndclient.InvoiceUpdate
 	Err    chan error
 }
 

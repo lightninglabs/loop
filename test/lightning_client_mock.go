@@ -1,15 +1,14 @@
 package test
 
 import (
+	"crypto/rand"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -29,44 +28,9 @@ func (h *mockLightningClient) PayInvoice(ctx context.Context, invoice string,
 
 	done := make(chan lndclient.PaymentResult, 1)
 
-	mockChan := make(chan error)
-	h.wg.Add(1)
-	go func() {
-		defer h.wg.Done()
-
-		amt, err := swap.GetInvoiceAmt(&chaincfg.TestNet3Params, invoice)
-		if err != nil {
-			select {
-			case done <- lndclient.PaymentResult{
-				Err: err,
-			}:
-			case <-ctx.Done():
-			}
-			return
-		}
-
-		var paidFee btcutil.Amount
-
-		err = <-mockChan
-		if err != nil {
-			amt = 0
-		} else {
-			paidFee = 1
-		}
-
-		select {
-		case done <- lndclient.PaymentResult{
-			Err:     err,
-			PaidFee: paidFee,
-			PaidAmt: amt,
-		}:
-		case <-ctx.Done():
-		}
-	}()
-
 	h.lnd.SendPaymentChannel <- PaymentChannelMessage{
 		PaymentRequest: invoice,
-		Done:           mockChan,
+		Done:           done,
 	}
 
 	return done
@@ -92,10 +56,11 @@ func (h *mockLightningClient) GetInfo(ctx context.Context) (*lndclient.Info,
 	}, nil
 }
 
-func (h *mockLightningClient) GetFeeEstimate(ctx context.Context, amt btcutil.Amount, dest [33]byte) (
-	lnwire.MilliSatoshi, error) {
+func (h *mockLightningClient) EstimateFeeToP2WSH(ctx context.Context,
+	amt btcutil.Amount, confTarget int32) (btcutil.Amount,
+	error) {
 
-	return 0, nil
+	return 3000, nil
 }
 
 func (h *mockLightningClient) AddInvoice(ctx context.Context,
@@ -105,10 +70,15 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 	defer h.lnd.lock.Unlock()
 
 	var hash lntypes.Hash
-	if in.Hash != nil {
+	switch {
+	case in.Hash != nil:
 		hash = *in.Hash
-	} else {
+	case in.Preimage != nil:
 		hash = (*in.Preimage).Hash()
+	default:
+		if _, err := rand.Read(hash[:]); err != nil {
+			return lntypes.Hash{}, "", err
+		}
 	}
 
 	// Create and encode the payment request as a bech32 (zpay32) string.

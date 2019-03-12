@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -140,7 +141,9 @@ func (ctx *Context) AssertPaid(
 
 		done := func(result error) {
 			select {
-			case swapPayment.Done <- result:
+			case swapPayment.Done <- lndclient.PaymentResult{
+				Err: result,
+			}:
 			case <-time.After(Timeout):
 				ctx.T.Fatalf("payment result not consumed")
 			}
@@ -206,6 +209,7 @@ func (ctx *Context) DecodeInvoice(request string) *zpay32.Invoice {
 	return payReq
 }
 
+// GetOutputIndex returns the index in the tx outs of the given script hash.
 func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
 	script []byte) int {
 
@@ -226,15 +230,4 @@ func (ctx *Context) NotifyServerHeight(height int32) {
 	if err := ctx.Lnd.NotifyHeight(height); err != nil {
 		ctx.T.Fatal(err)
 	}
-
-	// TODO: Fix race condition with height not processed yet.
-
-	// select {
-	// case h := <-ctx.swapServer.testEpochChan:
-	// 	if h != height {
-	// 		ctx.T.Fatal("height not set")
-	// 	}
-	// case <-time.After(test.Timeout):
-	// 	ctx.T.Fatal("no height response")
-	// }
 }

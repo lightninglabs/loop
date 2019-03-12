@@ -43,13 +43,27 @@ func daemon(config *config) error {
 	// Before starting the client, build an in-memory view of all swaps.
 	// This view is used to update newly connected clients with the most
 	// recent swaps.
-	storedSwaps, err := swapClient.FetchLoopOutSwaps()
+	loopOutSwaps, err := swapClient.FetchLoopOutSwaps()
 	if err != nil {
 		return err
 	}
-	for _, swap := range storedSwaps {
+	for _, swap := range loopOutSwaps {
 		swaps[swap.Hash] = loop.SwapInfo{
 			SwapType:     loop.TypeOut,
+			SwapContract: swap.Contract.SwapContract,
+			State:        swap.State(),
+			SwapHash:     swap.Hash,
+			LastUpdate:   swap.LastUpdateTime(),
+		}
+	}
+
+	loopInSwaps, err := swapClient.FetchLoopInSwaps()
+	if err != nil {
+		return err
+	}
+	for _, swap := range loopInSwaps {
+		swaps[swap.Hash] = loop.SwapInfo{
+			SwapType:     loop.TypeIn,
 			SwapContract: swap.Contract.SwapContract,
 			State:        swap.State(),
 			SwapHash:     swap.Hash,

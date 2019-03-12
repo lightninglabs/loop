@@ -117,10 +117,12 @@ func createClientTestContext(t *testing.T,
 	ctx.stop = stop
 
 	go func() {
-		ctx.runErr <- swapClient.Run(
+		err := swapClient.Run(
 			runCtx,
 			statusChan,
 		)
+		logger.Errorf("client run: %v", err)
+		ctx.runErr <- err
 	}()
 
 	return ctx
