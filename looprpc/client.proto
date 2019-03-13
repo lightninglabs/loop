@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/api/annotations.proto";
+
 package looprpc;
 
 /**
@@ -7,28 +9,43 @@ SwapClient is a service that handles the client side process of onchain/offchain
 swaps. The service is designed for a single client.
 */
 service SwapClient {
-    /**
+    /** loop: `out`
     LoopOut initiates an loop out swap with the given parameters. The call
     returns after the swap has been set up with the swap server. From that
     point onwards, progress can be tracked via the SwapStatus stream that is
     returned from Monitor().
     */
-    rpc LoopOut(LoopOutRequest) returns (SwapResponse);
-  
-    /**
+    rpc LoopOut(LoopOutRequest) returns (SwapResponse) {
+        option (google.api.http) = {
+            post: "/v1/loop/out"
+            body: "*"
+        };
+    }
+
+    /** loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
+    TODO: add MonitorSync version for REST clients.
     */
     rpc Monitor(MonitorRequest) returns(stream SwapStatus);
 
-    /**
-    GetLoopOutTerms returns the terms that the server enforces for swaps.
+    /** loop: `terms`
+    LoopOutTerms returns the terms that the server enforces for a loop out swap.
     */
-    rpc GetLoopOutTerms(TermsRequest) returns(TermsResponse);
+    rpc LoopOutTerms(TermsRequest) returns(TermsResponse) {
+        option (google.api.http) = {
+            get: "/v1/loop/out/terms"
+        };
+    }
 
-    /**
-    GetLoopOutQuote returns a quote for a swap with the provided parameters.
+    /** loop: `quote`
+    LoopOutQuote returns a quote for a loop out swap with the provided
+    parameters.
     */
-    rpc GetLoopOutQuote(QuoteRequest) returns(QuoteResponse);
+    rpc LoopOutQuote(QuoteRequest) returns(QuoteResponse) {
+        option (google.api.http) = {
+            get: "/v1/loop/out/quote/{amt}"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -74,7 +91,7 @@ message LoopOutRequest {
     sweep the on-chain htlc and the fee estimate turns out higher than this
     value, we cancel the swap. If the fee estimate is lower, we publish the
     sweep tx.
-    
+
     If the sweep tx is not confirmed, we are forced to ratchet up fees until it
     is swept. Possibly even exceeding max_miner_fee if we get close to the htlc
     timeout. Because the initial publication revealed the preimage, we have no
@@ -82,11 +99,11 @@ message LoopOutRequest {
     when the fee becomes higher than the swap amount, we can only wait for fees
     to come down and hope - if we are past the timeout - that the server is not
     publishing the revocation.
-    
+
     max_miner_fee is typically taken from the response of the GetQuote call.
     */
     int64 max_miner_fee = 7;
-    
+
     /**
     The channel to loop out, the channel to loop out is selected based on the
     lowest routing fee for the swap payment to the server.
@@ -108,7 +125,7 @@ message MonitorRequest{
 
 message SwapStatus {
     /**
-    Requested swap amount in sat. This does not include the swap and miner 
+    Requested swap amount in sat. This does not include the swap and miner
     fee.
     */
     int64 amt = 1;
@@ -145,7 +162,7 @@ message SwapStatus {
     string htlc_address = 7;
 }
 
-enum SwapType { 
+enum SwapType {
     // LOOP_OUT indicates an loop out swap (off-chain to on-chain)
     LOOP_OUT = 0;
 }
@@ -228,7 +245,7 @@ message TermsResponse {
 
 message QuoteRequest {
     /**
-    Requested swap amount in sat.
+    The amount to swap in satoshis.
     */
     int64 amt = 1;
 }
@@ -240,14 +257,12 @@ message QuoteResponse {
     int64 swap_fee = 1;
 
     /**
-    The part of the swap fee that is requested as a
-    prepayment.
+    The part of the swap fee that is requested as a prepayment.
     */
     int64 prepay_amt = 2;
 
     /**
-    An estimate of the on-chain fee that needs to be paid to
-    sweep the htlc.
+    An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
     */
     int64 miner_fee = 3;
 }

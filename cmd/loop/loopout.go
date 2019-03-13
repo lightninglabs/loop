@@ -14,11 +14,11 @@ var loopOutCommand = cli.Command{
 	ArgsUsage: "amt [addr]",
 	Description: `
 	Attempts loop out the target amount into either the backing lnd's
-	wallet, or a targeted address. 
-	
-	The amount is to be specified in satoshis. 
+	wallet, or a targeted address.
 
-	Optionally a BASE58/bech32 encoded bitcoin destination address may be 
+	The amount is to be specified in satoshis.
+
+	Optionally a BASE58/bech32 encoded bitcoin destination address may be
 	specified. If not specified, a new wallet address will be generated.`,
 	Flags: []cli.Flag{
 		cli.Uint64Flag{
@@ -55,12 +55,10 @@ func loopOut(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	quote, err := client.GetLoopOutQuote(
-		context.Background(),
-		&looprpc.QuoteRequest{
-			Amt: int64(amt),
-		},
-	)
+	quoteReq := &looprpc.QuoteRequest{
+		Amt: int64(amt),
+	}
+	quote, err := client.LoopOutQuote(context.Background(), quoteReq)
 	if err != nil {
 		return err
 	}

@@ -208,8 +208,8 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	}
 }
 
-// GetTerms returns the terms that the server enforces for swaps.
-func (s *swapClientServer) GetLoopOutTerms(ctx context.Context,
+// LoopOutTerms returns the terms that the server enforces for loop out swaps.
+func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
 	logger.Infof("Terms request received")
@@ -230,8 +230,9 @@ func (s *swapClientServer) GetLoopOutTerms(ctx context.Context,
 	}, nil
 }
 
-// GetQuote returns a quote for a swap with the provided parameters.
-func (s *swapClientServer) GetLoopOutQuote(ctx context.Context,
+// LoopOutQuote returns a quote for a loop out swap with the provided
+// parameters.
+func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{

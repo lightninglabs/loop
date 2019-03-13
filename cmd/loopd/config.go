@@ -12,7 +12,8 @@ type config struct {
 	Insecure   bool   `long:"insecure" description:"disable tls"`
 	Network    string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 	SwapServer string `long:"swapserver" description:"swap server address host:port"`
-	Listen     string `long:"listen" description:"address to listen on for rpc lcients"`
+	RPCListen  string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen string `long:"restlisten" description:"Address to listen on for REST clients"`
 
 	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
 
@@ -22,7 +23,8 @@ type config struct {
 var defaultConfig = config{
 	Network:    "mainnet",
 	SwapServer: "swap.lightning.today:11009",
-	Listen:     "localhost:11010",
+	RPCListen:  "localhost:11010",
+	RESTListen: "localhost:8081",
 	Insecure:   false,
 	Lnd: &lndConfig{
 		Host: "localhost:10009",
