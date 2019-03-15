@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultConfTarget = int32(2)
+	defaultConfTarget = int32(6)
 )
 
 var (
