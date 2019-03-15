@@ -43,56 +43,13 @@ problems. Community support is also available in the
 [LND Slack](https://join.slack.com/t/lightningcommunity/shared_invite/enQtMzQ0OTQyNjE5NjU1LWRiMGNmOTZiNzU0MTVmYzc1ZGFkZTUyNzUwOGJjMjYwNWRkNWQzZWE3MTkwZjdjZGE5ZGNiNGVkMzI2MDU4ZTE)
 .
 
-## Loop Out Swap (off -> on-chain)
+## Setup and Install
 
-```
-       loop out 500   
-                  |
-                  |
-                  v
-   .-----------------------------.
-   | Loop CLI                    |
-   | ./cmd/loop                  |
-   |                             |
-   |                             |
-   |       .-------------------. |            .--------------.                   .---------------.
-   |       | Loop Client (lib) | |            | LND node     |                   | Bitcoin node  |
-   |       | ./                |<-------------|              |-------------------|               |
-   |       |                   | |            |              |   on-chain        |               |
-   |       |                   |------------->|              |   htlc            |               |
-   |       |                   | | off-chain  |              |                   |               |
-   |       '-------------------' | htlc       '--------------'                   '---------------'
-   '-----------------|-----------'                    |                                  ^
-                     |                                |                                  |
-                     |                                v                                  |
-                     |                              .--.                               .--.               
-                     |                          _ -(    )- _                       _ -(    )- _           
-                     |                     .--,(            ),--.             .--,(            ),--.      
-             initiate|                 _.-(                       )-._    _.-(                       )-._ 
-             swap    |                (       LIGHTNING NETWORK       )  (        BITCOIN NETWORK        )
-                     |                 '-._(                     )_.-'    '-._(                     )_.-' 
-                     |                      '__,(            ),__'             '__,(            ),__'     
-                     |                           - ._(__)_. -                       - ._(__)_. -          
-                     |                                |                                  ^
-                     |                                |                                  |
-                     v                                v                                  |
-           .--------------------.  off-chain   .--------------.                  .---------------.
-           | Loop Server        |  htlc        | LND node     |                  | Bitcoin node  |
-           |                    |<-------------|              |                  |               |
-           |                    |              |              |   on-chain       |               |
-           |                    |              |              |   htlc           |               |
-           |                    |--------------|              |----------------->|               |
-           |                    |              |              |                  |               |
-           '--------------------'              '--------------'                  '---------------'
+LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
+env variable is set to `on`.
 
-```
-
-## Setup
-
-LND and the swaplet are using go modules. Make sure that the `GO111MODULE` env
-variable is set to `on`.
-
-In order to execute a swap, LND needs to be rebuilt with sub servers enabled.
+In order to execute a swap, LND will need to be rebuilt with sub servers
+enabled.
 
 ### LND
 
