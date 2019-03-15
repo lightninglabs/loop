@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 
@@ -24,6 +26,21 @@ var (
 
 	maxRoutingFeeRate = int64(50000)
 )
+
+func printRespJSON(resp proto.Message) {
+	jsonMarshaler := &jsonpb.Marshaler{
+		EmitDefaults: true,
+		Indent:       "    ",
+	}
+
+	jsonStr, err := jsonMarshaler.MarshalToString(resp)
+	if err != nil {
+		fmt.Println("unable to decode response: ", err)
+		return
+	}
+
+	fmt.Println(jsonStr)
+}
 
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "[loop] %v\n", err)
@@ -44,7 +61,7 @@ func main() {
 		},
 	}
 	app.Commands = []cli.Command{
-		loopOutCommand, termsCommand, monitorCommand,
+		loopOutCommand, termsCommand, monitorCommand, quoteCommand,
 	}
 
 	err := app.Run(os.Args)
