@@ -224,7 +224,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 		}
 
 		if outgoingChannel != nil {
-			req.OutgoingChannelID = *outgoingChannel
+			req.OutgoingChanId = *outgoingChannel
 		}
 
 		payResp, err := s.client.SendPaymentSync(ctx, req)
@@ -245,7 +245,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 				)
 
 				r := payResp.PaymentRoute
-				preimage, err := lntypes.NewPreimage(
+				preimage, err := lntypes.MakePreimage(
 					payResp.PaymentPreimage,
 				)
 				if err != nil {
@@ -256,7 +256,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 					PaidAmt: btcutil.Amount(
 						r.TotalAmt - r.TotalFees,
 					),
-					Preimage: *preimage,
+					Preimage: preimage,
 				}
 
 			// Invoice was already paid on a previous run.
@@ -321,10 +321,10 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 	if err != nil {
 		return lntypes.Hash{}, "", err
 	}
-	hash, err := lntypes.NewHash(resp.RHash)
+	hash, err := lntypes.MakeHash(resp.RHash)
 	if err != nil {
 		return lntypes.Hash{}, "", err
 	}
 
-	return *hash, resp.PaymentRequest, nil
+	return hash, resp.PaymentRequest, nil
 }

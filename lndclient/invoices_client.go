@@ -49,7 +49,7 @@ func (s *invoicesClient) SettleInvoice(ctx context.Context,
 	defer cancel()
 
 	_, err := s.client.SettleInvoice(rpcCtx, &invoicesrpc.SettleInvoiceMsg{
-		PreImage: preimage[:],
+		Preimage: preimage[:],
 	})
 
 	return err
