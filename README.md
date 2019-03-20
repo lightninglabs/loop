@@ -48,60 +48,102 @@ problems. Community support is also available in the
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
 env variable is set to `on`.
 
-In order to execute a swap, LND will need to be rebuilt with sub servers
-enabled.
+In order to execute a swap, LND will need to be rebuilt on master with sub
+servers enabled.
 
 ### LND
 
-* Checkout branch `master`
+Make sure that you are using the `master` branch of lnd. You can get this by
+git cloning the repository
 
-- `make install tags="signrpc walletrpc chainrpc"` to build and install lnd
-  with required sub-servers enabled.
+```
+git clone https://github.com/lightningnetwork/lnd.git
+```
 
-- Make sure there are no macaroons in the lnd dir
-  `~/.lnd/data/chain/bitcoin/mainnet`. If there are, lnd has been started
-  before and in that case, it could be that `admin.macaroon` doesn't contain
-  signer permission. Stop lnd, delete `*.macaroon` files, restart lnd to
-  regenerate them with the signer permission.
+Once the lnd repository is cloned, it will need to be built with special build
+tags that enable the swap. This enables the required lnd rpc services.
 
-  DO NOT DELETE `wallet.db` !
+```
+cd lnd
+make install tags="signrpc walletrpc chainrpc"
+```
 
-- Start lnd
+Check to see if you have already installed lnd. If you have, you will need to
+delete the `.macaroon` files from your lnd directory.
+
+**Do not delete any other files other than the `.macaroon` files**
+
+```
+// Example on Linux to see macaroons in the default directory:
+ls ~/.lnd/data/chain/bitcoin/mainnet
+```
+
+This should show no `.macaroon` files. If it does? Stop lnd, delete macaroons,
+restart lnd.
+
+```
+lncli stop
+```
+
+Now delete the .macaroon files and restart lnd. (don't delete any other files)
 
 ### Loopd
-- `git clone https://github.com/lightninglabs/loop.git`
-- `cd loop/cmd`
-- `go install ./...`
 
-## Execute a swap
+After lnd is installed, you will need to clone the Lightning Loop repo and 
+install the command line interface and swap client service.
 
-* Swaps are executed by a client daemon process. Run:
+```
+git clone https://github.com/lightninglabs/loop.git
+cd loop/cmd
+go install ./...
+```
 
-  `loopd`
+## Execute a Swap
 
-  By default `loopd` attempts to connect to an lnd instance running on
-  `localhost:10009` and reads the macaroon and tls certificate from `~/.lnd`.
-  This can be altered using command line flags. See `loopd --help`.
+After you have lnd and the Loop client installed, you can execute a Loop swap.
 
-  `loopd` only listens on localhost and uses an unencrypted and unauthenticated
-  connection.
+The Loop client needs its own short-lived daemon which will deal with the swaps
+in progress.
 
-* To initiate a swap, run:
+To run this:
 
-  `loop out <amt_sat>` 
-  
-  When the swap is initiated successfully, `loopd` will see the process through.
+```
+`loopd`
 
-* To query and track the swap status, run `loop` without arguments.    
+// Or if you want to do everything in the same terminal and background loopd
+`loopd &`
+```
+
+By default `loopd` attempts to connect to the lnd instance running on
+`localhost:10009` and reads the macaroon and tls certificate from `~/.lnd`.
+This can be altered using command line flags. See `loopd --help`.
+
+`loopd` only listens on localhost and uses an unencrypted and unauthenticated
+connection.
+
+Now that loopd is running, you can initiate a simple Loop Out. This will pay
+out Lightning off-chain funds and you will receive Bitcoin on-chain funds in
+return. There will be some chain and routing fees associated with this swap.
+
+```
+loop out <amt_in_satoshis>
+```
+
+This will take some time, as it requires an on-chain confirmation. When the
+swap is initiated successfully, `loopd` will see the process through.
+
+To query in-flight swap statuses, run `loop monitor`.
 
 ## Resume
+
 When `loopd` is terminated (or killed) for whatever reason, it will pickup
 pending swaps after a restart. 
 
 Information about pending swaps is stored persistently in the swap database.
 Its location is `~/.loopd/<network>/loop.db`.
 
-## Multiple simultaneous swaps
+## Multiple Simultaneous Swaps
 
-It is possible to execute multiple swaps simultaneously.
+It is possible to execute multiple swaps simultaneously. Just keep loopd 
+running.
 
