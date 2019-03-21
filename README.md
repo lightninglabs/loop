@@ -48,8 +48,8 @@ problems. Community support is also available in the
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
 env variable is set to `on`.
 
-In order to execute a swap, LND will need to be rebuilt on master with sub
-servers enabled.
+In order to execute a swap, **LND will need to be rebuilt on master with sub
+servers enabled.**
 
 ### LND
 
