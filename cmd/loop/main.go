@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 
@@ -50,7 +51,7 @@ func fatal(err error) {
 func main() {
 	app := cli.NewApp()
 
-	app.Version = "0.0.1"
+	app.Version = loop.Version()
 	app.Name = "loop"
 	app.Usage = "control plane for your loopd"
 	app.Flags = []cli.Flag{
