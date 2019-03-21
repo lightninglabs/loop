@@ -25,6 +25,12 @@ var loopOutCommand = cli.Command{
 			Name:  "channel",
 			Usage: "the 8-byte compact channel ID of the channel to loop out",
 		},
+		cli.StringFlag{
+			Name: "addr",
+			Usage: "the optional address that the looped out funds " +
+				"should be sent to, if let blank the funds " +
+				"will go to lnd's wallet",
+		},
 	},
 	Action: loopOut,
 }
@@ -44,8 +50,10 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	var destAddr string
-	args = args.Tail()
-	if args.Present() {
+	switch {
+	case ctx.IsSet("addr"):
+		destAddr = ctx.String("addr")
+	case args.Present():
 		destAddr = args.First()
 	}
 
