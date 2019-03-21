@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	flags "github.com/jessevdk/go-flags"
@@ -71,6 +72,17 @@ func start() error {
 	if err != nil {
 		return err
 	}
+
+	// Show the version and exit if the version flag was specified.
+	appName := filepath.Base(os.Args[0])
+	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
+	if config.ShowVersion {
+		fmt.Println(appName, "version", loop.Version())
+		os.Exit(0)
+	}
+
+	// Print the version before executing either primary directive.
+	logger.Infof("Version: %v", loop.Version())
 
 	// Execute command.
 	if parser.Active == nil {

@@ -9,11 +9,12 @@ type lndConfig struct {
 type viewParameters struct{}
 
 type config struct {
-	Insecure   bool   `long:"insecure" description:"disable tls"`
-	Network    string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
-	SwapServer string `long:"swapserver" description:"swap server address host:port"`
-	RPCListen  string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
-	RESTListen string `long:"restlisten" description:"Address to listen on for REST clients"`
+	ShowVersion bool   `short:"V" long:"version" description:"Display version information and exit"`
+	Insecure    bool   `long:"insecure" description:"disable tls"`
+	Network     string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	SwapServer  string `long:"swapserver" description:"swap server address host:port"`
+	RPCListen   string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen  string `long:"restlisten" description:"Address to listen on for REST clients"`
 
 	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
 
