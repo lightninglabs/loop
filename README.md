@@ -9,8 +9,8 @@ backends are fully supported when using the Loop client: Neutrino, Bitcoin
 Core, and btcd.
 
 In the current iteration of the Loop software, only off-chain to on-chain
-exchanges are supported, where the Loop client sends funds off-chain in
-exchange for the funds back on-chain.
+swaps are supported, where the Loop client sends funds off-chain in
+exchange for the funds back on-chain. This is called a **Loop Out**.
 
 The service can be used in various situations:
 
