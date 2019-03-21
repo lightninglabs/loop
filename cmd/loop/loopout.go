@@ -48,6 +48,7 @@ func loopOut(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	args = args.Tail()
 
 	var destAddr string
 	switch {
