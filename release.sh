@@ -42,7 +42,7 @@ SYS=${LOOPBUILDSYS:-"windows-386 windows-amd64 openbsd-386 openbsd-amd64 linux-3
 # (something that is totally allowed).
 PKG="github.com/lightninglabs/loop"
 COMMIT=$(git describe --abbrev=40 --dirty)
-COMMITFLAGS="-X $PKG/build.Commit=$COMMIT"
+COMMITFLAGS="-X $PKG.Commit=$COMMIT"
 
 for i in $SYS; do
     OS=$(echo $i | cut -f1 -d-)
