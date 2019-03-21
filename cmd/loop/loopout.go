@@ -50,6 +50,7 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	var destAddr string
+	args = args.Tail()
 	switch {
 	case ctx.IsSet("addr"):
 		destAddr = ctx.String("addr")
