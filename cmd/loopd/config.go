@@ -21,9 +21,14 @@ type config struct {
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
 }
 
+const (
+	mainnetServer = "swap.lightning.today:11009"
+	testnetServer = "test.swap.lightning.today:11009"
+)
+
 var defaultConfig = config{
 	Network:    "mainnet",
-	SwapServer: "swap.lightning.today:11009",
+	SwapServer: mainnetServer,
 	RPCListen:  "localhost:11010",
 	RESTListen: "localhost:8081",
 	Insecure:   false,
