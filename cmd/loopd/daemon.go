@@ -26,6 +26,12 @@ func daemon(config *config) error {
 	}
 	defer lnd.Close()
 
+	// If the user is targeting the testnet network, then we'll point
+	// towards the testnet swap server rather than the mainnet endpoint.
+	if config.Network == "testnet" {
+		config.SwapServer = testnetServer
+	}
+
 	swapClient, cleanup, err := getClient(
 		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
 	)
