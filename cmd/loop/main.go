@@ -56,7 +56,7 @@ func main() {
 	app.Usage = "control plane for your loopd"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "loopd",
+			Name:  "rpcserver",
 			Value: "localhost:11010",
 			Usage: "loopd daemon address host:port",
 		},
@@ -72,8 +72,8 @@ func main() {
 }
 
 func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
-	loopdAddress := ctx.GlobalString("loopd")
-	conn, err := getClientConn(loopdAddress)
+	rpcServer := ctx.GlobalString("rpcserver")
+	conn, err := getClientConn(rpcServer)
 	if err != nil {
 		return nil, nil, err
 	}
