@@ -105,13 +105,17 @@ After you have lnd and the Loop client installed, you can execute a Loop swap.
 The Loop client needs its own short-lived daemon which will deal with the swaps
 in progress.
 
-To run this:
+Command to start `loopd`::
 
 ```
-`loopd`
+loopd
 
 // Or if you want to do everything in the same terminal and background loopd
-`loopd &`
+loopd &
+
+// For testnet mode, you'll need to specify the network as mainnet is the
+default:
+loopd --network=testnet
 ```
 
 By default `loopd` attempts to connect to the lnd instance running on
