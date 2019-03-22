@@ -31,24 +31,34 @@ var loopOutCommand = cli.Command{
 				"should be sent to, if let blank the funds " +
 				"will go to lnd's wallet",
 		},
+		cli.Uint64Flag{
+			Name:  "amt",
+			Usage: "the amount in satoshis to loop out",
+		},
 	},
 	Action: loopOut,
 }
 
 func loopOut(ctx *cli.Context) error {
-	// Show command help if no arguments and flags were provided.
-	if ctx.NArg() < 1 {
+	args := ctx.Args()
+
+	var amtStr string
+	switch {
+	case ctx.IsSet("amt"):
+		amtStr = ctx.String("amt")
+	case ctx.NArg() > 0:
+		amtStr = args[0]
+		args = args.Tail()
+	default:
+		// Show command help if no arguments and flags were provided.
 		cli.ShowCommandHelp(ctx, "out")
 		return nil
 	}
 
-	args := ctx.Args()
-
-	amt, err := parseAmt(args[0])
+	amt, err := parseAmt(amtStr)
 	if err != nil {
 		return err
 	}
-	args = args.Tail()
 
 	var destAddr string
 	switch {
