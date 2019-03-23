@@ -48,7 +48,7 @@ func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
 
 	log := &SwapLog{
 		Hash:   hash,
-		Logger: logger,
+		Logger: log,
 	}
 
 	log.Infof("Htlc address: %v", htlcAddress)

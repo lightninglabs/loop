@@ -9,6 +9,7 @@ require (
 	github.com/golang/protobuf v1.3.1
 	github.com/grpc-ecosystem/grpc-gateway v1.8.5
 	github.com/jessevdk/go-flags v1.4.0
+	github.com/jrick/logrotate v1.0.0
 	github.com/lightninglabs/neutrino v0.0.0-20190314214430-643615b8c132 // indirect
 	github.com/lightningnetwork/lnd v0.0.0-20190314214430-b4a1024ac74fc576c65c8074288a5ffaf6bd1ec4
 	github.com/lightningnetwork/lnd/queue v1.0.1

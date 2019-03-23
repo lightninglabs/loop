@@ -50,7 +50,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	// Generate random preimage.
 	var swapPreimage [32]byte
 	if _, err := rand.Read(swapPreimage[:]); err != nil {
-		logger.Error("Cannot generate preimage")
+		log.Error("Cannot generate preimage")
 	}
 	swapHash := lntypes.Hash(sha256.Sum256(swapPreimage[:]))
 
@@ -66,7 +66,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Post the swap parameters to the swap server. The response contains
 	// the server revocation key and the swap and prepay invoices.
-	logger.Infof("Initiating swap request at height %v", currentHeight)
+	log.Infof("Initiating swap request at height %v", currentHeight)
 
 	swapResp, err := cfg.server.NewLoopOutSwap(globalCtx, swapHash,
 		request.Amount, receiverKey,
@@ -135,7 +135,7 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
-	logger.Infof("Resuming swap %v", hash)
+	log.Infof("Resuming swap %v", hash)
 
 	swapKit, err := newSwapKit(
 		hash, TypeOut, cfg, &pend.Contract.SwapContract,
@@ -291,7 +291,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	// Verify amount if preimage hasn't been revealed yet.
 	if s.state != loopdb.StatePreimageRevealed && htlcValue < s.AmountRequested {
-		logger.Warnf("Swap amount too low, expected %v but received %v",
+		log.Warnf("Swap amount too low, expected %v but received %v",
 			s.AmountRequested, htlcValue)
 
 		s.state = loopdb.StateFailInsufficientValue
@@ -468,7 +468,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case notification := <-s.blockEpochChan:
 				s.height = notification.(int32)
 
-				logger.Infof("Received block %v", s.height)
+				log.Infof("Received block %v", s.height)
 
 				if checkMaxRevealHeightExceeded() {
 					return nil, nil
@@ -653,21 +653,21 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 
 	swapFee := swapInvoiceAmt + prepayInvoiceAmt - request.Amount
 	if swapFee > request.MaxSwapFee {
-		logger.Warnf("Swap fee %v exceeding maximum of %v",
+		log.Warnf("Swap fee %v exceeding maximum of %v",
 			swapFee, request.MaxSwapFee)
 
 		return ErrSwapFeeTooHigh
 	}
 
 	if prepayInvoiceAmt > request.MaxPrepayAmount {
-		logger.Warnf("Prepay amount %v exceeding maximum of %v",
+		log.Warnf("Prepay amount %v exceeding maximum of %v",
 			prepayInvoiceAmt, request.MaxPrepayAmount)
 
 		return ErrPrepayAmountTooHigh
 	}
 
 	if response.expiry-height < MinLoopOutPreimageRevealDelta {
-		logger.Warnf("Proposed expiry %v (delta %v) too soon",
+		log.Warnf("Proposed expiry %v (delta %v) too soon",
 			response.expiry, response.expiry-height)
 
 		return ErrExpiryTooSoon

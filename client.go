@@ -134,7 +134,7 @@ func (s *Client) Run(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("GetInfo error: %v", err)
 	}
-	logger.Infof("Connected to lnd node %v with pubkey %v",
+	log.Infof("Connected to lnd node %v with pubkey %v",
 		info.Alias, hex.EncodeToString(info.IdentityPubkey[:]),
 	)
 
@@ -172,22 +172,22 @@ func (s *Client) Run(ctx context.Context,
 	}
 
 	if err != nil {
-		logger.Errorf("Swap client terminating: %v", err)
+		log.Errorf("Swap client terminating: %v", err)
 	} else {
-		logger.Info("Swap client terminating")
+		log.Info("Swap client terminating")
 	}
 
 	// Cancel all remaining active goroutines.
 	mainCancel()
 
 	// Wait for all to finish.
-	logger.Debug("Wait for executor to finish")
+	log.Debug("Wait for executor to finish")
 	s.executor.waitFinished()
 
-	logger.Debug("Wait for goroutines to finish")
+	log.Debug("Wait for goroutines to finish")
 	s.wg.Wait()
 
-	logger.Info("Swap client terminated")
+	log.Info("Swap client terminated")
 
 	return err
 }
@@ -206,7 +206,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 		}
 		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
 		if err != nil {
-			logger.Errorf("resuming swap: %v", err)
+			log.Errorf("resuming swap: %v", err)
 			continue
 		}
 
@@ -226,7 +226,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 func (s *Client) LoopOut(globalCtx context.Context,
 	request *OutRequest) (*lntypes.Hash, error) {
 
-	logger.Infof("LoopOut %v to %v (channel: %v)",
+	log.Infof("LoopOut %v to %v (channel: %v)",
 		request.Amount, request.DestAddr,
 		request.LoopOutChannel,
 	)
@@ -276,7 +276,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
-	logger.Infof("Offchain swap destination: %x", terms.SwapPaymentDest)
+	log.Infof("Offchain swap destination: %x", terms.SwapPaymentDest)
 
 	swapFee := swap.CalcFee(
 		request.Amount, terms.SwapFeeBase, terms.SwapFeeRate,
