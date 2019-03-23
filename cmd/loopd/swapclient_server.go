@@ -32,7 +32,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("LoopOut request received")
+	loopdLog.Infof("LoopOut request received")
 
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
@@ -65,7 +65,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 	hash, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
-		logger.Errorf("LoopOut: %v", err)
+		loopdLog.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
@@ -118,7 +118,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	server looprpc.SwapClient_MonitorServer) error {
 
-	logger.Infof("Monitor request received")
+	loopdLog.Infof("Monitor request received")
 
 	send := func(info loop.SwapInfo) error {
 		rpcSwap, err := s.marshallSwap(&info)
@@ -212,11 +212,11 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
-	logger.Infof("Terms request received")
+	loopdLog.Infof("Terms request received")
 
 	terms, err := s.impl.LoopOutTerms(ctx)
 	if err != nil {
-		logger.Errorf("Terms request: %v", err)
+		loopdLog.Errorf("Terms request: %v", err)
 		return nil, err
 	}
 

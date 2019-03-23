@@ -1,5 +1,25 @@
 package main
 
+import (
+	"path/filepath"
+
+	"github.com/btcsuite/btcutil"
+)
+
+var (
+	loopDirBase = btcutil.AppDataDir("loop", false)
+
+	defaultConfigFilename = "loopd.conf"
+
+	defaultLogLevel    = "info"
+	defaultLogDirname  = "logs"
+	defaultLogFilename = "loopd.log"
+	defaultLogDir      = filepath.Join(loopDirBase, defaultLogDirname)
+
+	defaultMaxLogFiles    = 3
+	defaultMaxLogFileSize = 10
+)
+
 type lndConfig struct {
 	Host         string `long:"host" description:"lnd instance rpc address"`
 	MacaroonPath string `long:"macaroonpath" description:"Path to lnd macaroon"`
@@ -19,6 +39,12 @@ type config struct {
 	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
+
+	LogDir         string `long:"logdir" description:"Directory to log output."`
+	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`
+	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB"`
+
+	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 }
 
 var defaultConfig = config{
@@ -30,4 +56,8 @@ var defaultConfig = config{
 	Lnd: &lndConfig{
 		Host: "localhost:10009",
 	},
+	MaxLogFiles:    defaultMaxLogFiles,
+	MaxLogFileSize: defaultMaxLogFileSize,
+	DebugLevel:     defaultLogLevel,
+	LogDir:         defaultLogDir,
 }
