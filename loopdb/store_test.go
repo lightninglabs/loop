@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -42,7 +43,7 @@ func TestBoltSwapStore(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
-	store, err := NewBoltSwapStore(tempDirName)
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestBoltSwapStore(t *testing.T) {
 
 	// If we re-open the same store, then the state of the current swap
 	// should be the same.
-	store, err = NewBoltSwapStore(tempDirName)
+	store, err = NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	if err != nil {
 		t.Fatal(err)
 	}

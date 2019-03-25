@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -139,7 +140,9 @@ func (s *LoopOut) LastUpdateTime() time.Time {
 	return lastUpdate.Time
 }
 
-func deserializeLoopOutContract(value []byte) (*LoopOutContract, error) {
+func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
+	*LoopOutContract, error) {
+
 	r := bytes.NewReader(value)
 
 	contract, err := deserializeContract(r)
@@ -155,7 +158,7 @@ func deserializeLoopOutContract(value []byte) (*LoopOutContract, error) {
 	if err != nil {
 		return nil, err
 	}
-	swap.DestAddr, err = btcutil.DecodeAddress(addr, nil)
+	swap.DestAddr, err = btcutil.DecodeAddress(addr, chainParams)
 	if err != nil {
 		return nil, err
 	}

@@ -67,7 +67,7 @@ type Client struct {
 func NewClient(dbDir string, serverAddress string, insecure bool,
 	lnd *lndclient.LndServices) (*Client, func(), error) {
 
-	store, err := loopdb.NewBoltSwapStore(dbDir)
+	store, err := loopdb.NewBoltSwapStore(dbDir, lnd.ChainParams)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -44,7 +44,9 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		}
 	} else {
 		var err error
-		sweepAddr, err = btcutil.DecodeAddress(in.Dest, nil)
+		sweepAddr, err = btcutil.DecodeAddress(
+			in.Dest, s.lnd.ChainParams,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("decode address: %v", err)
 		}
