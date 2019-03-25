@@ -24,6 +24,7 @@ func NewMockLnd() *LndMockServices {
 	chainNotifier := &mockChainNotifier{}
 	signer := &mockSigner{}
 	invoices := &mockInvoices{}
+	router := &mockRouter{}
 
 	lnd := LndMockServices{
 		LndServices: lndclient.LndServices{
@@ -32,6 +33,7 @@ func NewMockLnd() *LndMockServices {
 			ChainNotifier: chainNotifier,
 			Signer:        signer,
 			Invoices:      invoices,
+			Router:        router,
 			ChainParams:   &chaincfg.TestNet3Params,
 		},
 		SendPaymentChannel:           make(chan PaymentChannelMessage),
@@ -44,6 +46,9 @@ func NewMockLnd() *LndMockServices {
 		SettleInvoiceChannel:         make(chan lntypes.Preimage),
 		SingleInvoiceSubcribeChannel: make(chan *SingleInvoiceSubscription),
 
+		RouterSendPaymentChannel: make(chan RouterPaymentChannelMessage),
+		TrackPaymentChannel:      make(chan TrackPaymentMessage),
+
 		FailInvoiceChannel: make(chan lntypes.Hash, 2),
 		epochChannel:       make(chan int32),
 		Height:             testStartingHeight,
@@ -53,6 +58,7 @@ func NewMockLnd() *LndMockServices {
 	chainNotifier.lnd = &lnd
 	walletKit.lnd = &lnd
 	invoices.lnd = &lnd
+	router.lnd = &lnd
 
 	lnd.WaitForFinished = func() {
 		chainNotifier.WaitForFinished()
@@ -67,6 +73,21 @@ func NewMockLnd() *LndMockServices {
 type PaymentChannelMessage struct {
 	PaymentRequest string
 	Done           chan lndclient.PaymentResult
+}
+
+// TrackPaymentMessage is the data that passed through TrackPaymentChannel.
+type TrackPaymentMessage struct {
+	Hash lntypes.Hash
+
+	Updates chan lndclient.PaymentStatus
+	Errors  chan error
+}
+
+// RouterPaymentChannelMessage is the data that passed through RouterSendPaymentChannel.
+type RouterPaymentChannelMessage struct {
+	lndclient.SendPaymentRequest
+
+	TrackPaymentMessage
 }
 
 // SingleInvoiceSubscription contains the single invoice subscribers
@@ -93,6 +114,9 @@ type LndMockServices struct {
 	RegisterSpendChannel chan *SpendRegistration
 
 	SingleInvoiceSubcribeChannel chan *SingleInvoiceSubscription
+
+	RouterSendPaymentChannel chan RouterPaymentChannelMessage
+	TrackPaymentChannel      chan TrackPaymentMessage
 
 	Height int32
 
