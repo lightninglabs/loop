@@ -24,19 +24,6 @@ func terms(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	req := &looprpc.TermsRequest{}
-	loopOutTerms, err := client.LoopOutTerms(context.Background(), req)
-	if err != nil {
-		return err
-	}
-
-	loopInTerms, err := client.GetLoopInTerms(
-		context.Background(), &looprpc.TermsRequest{},
-	)
-	if err != nil {
-		return err
-	}
-
 	printTerms := func(terms *looprpc.TermsResponse) {
 		fmt.Printf("Amount: %d - %d\n",
 			btcutil.Amount(terms.MinSwapAmount),
@@ -53,13 +40,26 @@ func terms(ctx *cli.Context) error {
 
 	fmt.Println("Loop Out")
 	fmt.Println("--------")
-	printTerms(loopOutTerms)
+	req := &looprpc.TermsRequest{}
+	loopOutTerms, err := client.LoopOutTerms(context.Background(), req)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printTerms(loopOutTerms)
+	}
 
 	fmt.Println()
 
 	fmt.Println("Loop In")
 	fmt.Println("------")
-	printTerms(loopInTerms)
+	loopInTerms, err := client.GetLoopInTerms(
+		context.Background(), &looprpc.TermsRequest{},
+	)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printTerms(loopInTerms)
+	}
 
 	return nil
 }
