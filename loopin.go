@@ -136,6 +136,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	contract := loopdb.LoopInContract{
 		HtlcConfTarget: request.HtlcConfTarget,
 		LoopInChannel:  request.LoopInChannel,
+		ExternalHtlc:   request.ExternalHtlc,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
@@ -277,12 +278,23 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	// on-chain htlc. Only do this is we haven't already done so in a
 	// previous run.
 	if s.state == loopdb.StateInitiated {
-		published, err := s.publishOnChainHtlc(globalCtx)
-		if err != nil {
-			return err
-		}
-		if !published {
-			return nil
+		if s.ExternalHtlc {
+			// If an external htlc was indicated, we can move to the
+			// HtlcPublished state directly and wait for
+			// confirmation.
+			s.state = loopdb.StateHtlcPublished
+			err = s.persistState(globalCtx)
+			if err != nil {
+				return err
+			}
+		} else {
+			published, err := s.publishOnChainHtlc(globalCtx)
+			if err != nil {
+				return err
+			}
+			if !published {
+				return nil
+			}
 		}
 	}
 

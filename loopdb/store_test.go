@@ -207,6 +207,7 @@ func TestLoopInStore(t *testing.T) {
 		},
 		HtlcConfTarget: 2,
 		LoopInChannel:  &loopInChannel,
+		ExternalHtlc:   true,
 	}
 
 	// checkSwap is a test helper function that'll assert the state of a

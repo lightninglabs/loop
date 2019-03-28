@@ -158,6 +158,12 @@ message LoopInRequest {
     on the lowest routing fee for the swap payment from the server.
     */
     uint64 loop_in_channel = 4;
+
+    /**
+    If external_htlc is true, we expect the htlc to be published by an external
+    actor.
+    */
+    bool external_htlc = 5;
 }
 
 message SwapResponse {
@@ -166,6 +172,11 @@ message SwapResponse {
     the Start() call. Currently this is the hash that locks the htlcs.
     */
     string id = 1;
+
+    /**
+    The address of the on-chain htlc.
+    */
+    string htlc_address = 2;
 }
 
 message MonitorRequest{

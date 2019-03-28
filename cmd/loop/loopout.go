@@ -107,7 +107,10 @@ func loopOut(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("Swap initiated with id: %v\n", resp.Id[:8])
+	fmt.Printf("Swap initiated\n")
+	fmt.Printf("ID:           %v\n", resp.Id)
+	fmt.Printf("HTLC address: %v\n", resp.HtlcAddress)
+	fmt.Println()
 	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 
 	return nil

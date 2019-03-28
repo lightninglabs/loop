@@ -186,6 +186,10 @@ type LoopInRequest struct {
 	// LoopInChannel optionally specifies the short channel id of the
 	// channel to charge.
 	LoopInChannel *uint64
+
+	// ExternalHtlc specifies whether the htlc is published by an external
+	// source.
+	ExternalHtlc bool
 }
 
 // LoopInTerms are the server terms on which it executes charge swaps.

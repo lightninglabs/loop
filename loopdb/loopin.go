@@ -19,6 +19,10 @@ type LoopInContract struct {
 	// LoopInChannel is the channel to charge. If zero, any channel may
 	// be used.
 	LoopInChannel *uint64
+
+	// ExternalHtlc specifies whether the htlc is published by an external
+	// source.
+	ExternalHtlc bool
 }
 
 // LoopIn is a combination of the contract and the updates.
@@ -100,6 +104,10 @@ func serializeLoopInContract(swap *LoopInContract) (
 		return nil, err
 	}
 
+	if err := binary.Write(&b, byteOrder, swap.ExternalHtlc); err != nil {
+		return nil, err
+	}
+
 	return b.Bytes(), nil
 }
 
@@ -162,6 +170,10 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 	}
 	if loopInChannel != 0 {
 		contract.LoopInChannel = &loopInChannel
+	}
+
+	if err := binary.Read(r, byteOrder, &contract.ExternalHtlc); err != nil {
+		return nil, err
 	}
 
 	return &contract, nil

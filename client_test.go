@@ -43,7 +43,7 @@ func TestSuccess(t *testing.T) {
 
 	// Initiate uncharge.
 
-	hash, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	hash, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestFailOffchain(t *testing.T) {
 
 	ctx := createClientTestContext(t, nil)
 
-	_, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	_, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestFailWrongAmount(t *testing.T) {
 		// Modify mock for this subtest.
 		modifier(ctx.serverMock)
 
-		_, err := ctx.swapClient.LoopOut(
+		_, _, err := ctx.swapClient.LoopOut(
 			context.Background(), testRequest,
 		)
 		if err != expectedErr {

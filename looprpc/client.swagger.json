@@ -157,6 +157,10 @@
         "id": {
           "type": "string",
           "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
+        },
+        "htlc_address": {
+          "type": "string",
+          "description": "*\nThe address of the on-chain htlc."
         }
       }
     },

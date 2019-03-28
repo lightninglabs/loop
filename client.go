@@ -248,7 +248,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 //
 // The return value is a hash that uniquely identifies the new swap.
 func (s *Client) LoopOut(globalCtx context.Context,
-	request *OutRequest) (*lntypes.Hash, error) {
+	request *OutRequest) (*lntypes.Hash, btcutil.Address, error) {
 
 	logger.Infof("LoopOut %v to %v (channel: %v)",
 		request.Amount, request.DestAddr,
@@ -256,7 +256,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create a new swap object for this swap.
@@ -270,15 +270,21 @@ func (s *Client) LoopOut(globalCtx context.Context,
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
+	// Retrieve htlc address.
+	htlcAddress, err := swap.htlc.Address(s.lndServices.ChainParams)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, nil
+	return &swap.hash, htlcAddress, nil
 }
 
 // LoopOutQuote takes a LoopOut amount and returns a break down of estimated
@@ -347,7 +353,7 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 
 // LoopIn initiates a loop in swap.
 func (s *Client) LoopIn(globalCtx context.Context,
-	request *LoopInRequest) (*lntypes.Hash, error) {
+	request *LoopInRequest) (*lntypes.Hash, btcutil.Address, error) {
 
 	logger.Infof("Loop in %v (channel: %v)",
 		request.Amount,
@@ -355,7 +361,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create a new swap object for this swap.
@@ -369,15 +375,21 @@ func (s *Client) LoopIn(globalCtx context.Context,
 		globalCtx, &swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
+	// Retrieve htlc address.
+	htlcAddress, err := swap.htlc.Address(s.lndServices.ChainParams)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, nil
+	return &swap.hash, htlcAddress, nil
 }
 
 // LoopInQuote takes an amount and returns a break down of estimated

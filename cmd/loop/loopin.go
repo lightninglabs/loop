@@ -24,6 +24,10 @@ var loopInCommand = cli.Command{
 			Name:  "amt",
 			Usage: "the amount in satoshis to loop out",
 		},
+		cli.BoolFlag{
+			Name:  "external",
+			Usage: "expect htlc to be published externally",
+		},
 	},
 	Action: loopIn,
 }
@@ -81,13 +85,17 @@ func loopIn(ctx *cli.Context) error {
 		MaxMinerFee:   int64(limits.maxMinerFee),
 		MaxSwapFee:    int64(limits.maxSwapFee),
 		LoopInChannel: loopInChannel,
+		ExternalHtlc:  ctx.Bool("external"),
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Swap initiated with id: %v\n", resp.Id[:8])
-	fmt.Printf("Run swapcli without a command to monitor progress.\n")
+	fmt.Printf("Swap initiated\n")
+	fmt.Printf("ID:           %v\n", resp.Id)
+	fmt.Printf("HTLC address: %v\n", resp.HtlcAddress)
+	fmt.Println()
+	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 
 	return nil
 }

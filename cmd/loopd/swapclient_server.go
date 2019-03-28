@@ -72,14 +72,15 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	if in.LoopOutChannel != 0 {
 		req.LoopOutChannel = &in.LoopOutChannel
 	}
-	hash, err := s.impl.LoopOut(ctx, req)
+	hash, htlc, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
 		logger.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
 	return &looprpc.SwapResponse{
-		Id: hash.String(),
+		Id:          hash.String(),
+		HtlcAddress: htlc.String(),
 	}, nil
 }
 
@@ -333,17 +334,19 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
 		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),
 		HtlcConfTarget: defaultConfTarget,
+		ExternalHtlc:   in.ExternalHtlc,
 	}
 	if in.LoopInChannel != 0 {
 		req.LoopInChannel = &in.LoopInChannel
 	}
-	hash, err := s.impl.LoopIn(ctx, req)
+	hash, htlc, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
 		logger.Errorf("Loop in: %v", err)
 		return nil, err
 	}
 
 	return &looprpc.SwapResponse{
-		Id: hash.String(),
+		Id:          hash.String(),
+		HtlcAddress: htlc.String(),
 	}, nil
 }
