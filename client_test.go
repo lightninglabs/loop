@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -15,8 +16,9 @@ import (
 )
 
 var (
-	testAddr, _ = btcutil.DecodeAddress(
-		"rbsHiPKwAgxeo1EQYiyzJTkA8XEmWSVAKx", nil)
+	testAddr, _ = btcutil.NewAddressScriptHash(
+		[]byte{123}, &chaincfg.TestNet3Params,
+	)
 
 	testRequest = &OutRequest{
 		Amount:              btcutil.Amount(50000),

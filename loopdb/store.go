@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/bbolt"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -60,7 +61,8 @@ func fileExists(path string) bool {
 
 // boltSwapStore stores swap data in boltdb.
 type boltSwapStore struct {
-	db *bbolt.DB
+	db          *bbolt.DB
+	chainParams *chaincfg.Params
 }
 
 // A compile-time flag to ensure that boltSwapStore implements the SwapStore
@@ -68,7 +70,9 @@ type boltSwapStore struct {
 var _ = (*boltSwapStore)(nil)
 
 // NewBoltSwapStore creates a new client swap store.
-func NewBoltSwapStore(dbPath string) (*boltSwapStore, error) {
+func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
+	*boltSwapStore, error) {
+
 	// If the target path for the swap store doesn't exist, then we'll
 	// create it now before we proceed.
 	if !fileExists(dbPath) {
@@ -114,7 +118,8 @@ func NewBoltSwapStore(dbPath string) (*boltSwapStore, error) {
 	}
 
 	return &boltSwapStore{
-		db: bdb,
+		db:          bdb,
+		chainParams: chainParams,
 	}, nil
 }
 
@@ -155,7 +160,7 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 				return errors.New("contract not found")
 			}
 			contract, err := deserializeLoopOutContract(
-				contractBytes,
+				contractBytes, s.chainParams,
 			)
 			if err != nil {
 				return err
