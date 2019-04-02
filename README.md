@@ -65,7 +65,7 @@ tags that enable the swap. This enables the required lnd rpc services.
 
 ```
 cd lnd
-make install tags="signrpc walletrpc chainrpc"
+make install tags="signrpc walletrpc chainrpc invoicesrpc"
 ```
 
 Check to see if you have already installed lnd. If you have, you will need to
