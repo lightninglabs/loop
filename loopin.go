@@ -252,7 +252,7 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	// permanently and losing funds.
 	if err != nil {
 		s.log.Errorf("Swap error: %v", err)
-		s.state = loopdb.StateFailTemporary
+		s.setState(loopdb.StateFailTemporary)
 
 		// If we cannot send out this update, there is nothing we can do.
 		_ = s.sendUpdate(mainCtx)
@@ -282,7 +282,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 			// If an external htlc was indicated, we can move to the
 			// HtlcPublished state directly and wait for
 			// confirmation.
-			s.state = loopdb.StateHtlcPublished
+			s.setState(loopdb.StateHtlcPublished)
 			err = s.persistState(globalCtx)
 			if err != nil {
 				return err
@@ -320,41 +320,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	// invoice, receive the preimage and sweep the htlc. We are waiting for
 	// this to happen and simultaneously watch the htlc expiry height. When
 	// the htlc expires, we will publish a timeout tx to reclaim the funds.
-	spend, err := s.waitForHtlcSpend(globalCtx, htlcOutpoint)
-	if err != nil {
-		return err
-	}
-
-	// Determine the htlc input of the spending tx and inspect the witness
-	// to findout whether a success or a timeout tx spend the htlc.
-	htlcInput := spend.SpendingTx.TxIn[spend.SpenderInputIndex]
-
-	if s.htlc.IsSuccessWitness(htlcInput.Witness) {
-		s.state = loopdb.StateSuccess
-
-		// Server swept the htlc. The htlc value can be added to the
-		// server cost balance.
-		s.cost.Server += htlcValue
-	} else {
-		s.state = loopdb.StateFailTimeout
-
-		// Now that the timeout tx confirmed, we can safely cancel the
-		// swap invoice. We still need to query the final invoice state.
-		// This is not a hodl invoice, so it may be that the invoice was
-		// already settled. This means that the server didn't succeed in
-		// sweeping the htlc after paying the invoice.
-		err := s.lnd.Invoices.CancelInvoice(globalCtx, s.hash)
-		if err != nil && err != channeldb.ErrInvoiceAlreadySettled {
-			return err
-		}
-
-		// TODO: Add miner fee of timeout tx to swap cost balance.
-	}
-
-	// Wait for a final state of the swap invoice. It should either be
-	// settled because the server successfully paid it or canceled because
-	// we canceled after our timeout tx confirmed.
-	err = s.waitForSwapInvoiceResult(globalCtx)
+	err = s.waitForSwapComplete(globalCtx, htlcOutpoint, htlcValue)
 	if err != nil {
 		return err
 	}
@@ -411,7 +377,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 	// Verify whether it still makes sense to publish the htlc.
 	if blocksRemaining < MinLoopInPublishDelta {
-		s.state = loopdb.StateFailTimeout
+		s.setState(loopdb.StateFailTimeout)
 		return false, s.persistState(ctx)
 	}
 
@@ -425,7 +391,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 	// Transition to state HtlcPublished before calling SendOutputs to
 	// prevent us from ever paying multiple times after a crash.
-	s.state = loopdb.StateHtlcPublished
+	s.setState(loopdb.StateHtlcPublished)
 	err = s.persistState(ctx)
 	if err != nil {
 		return false, err
@@ -448,10 +414,11 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 }
 
-// waitForHtlcSpend waits until a spending tx of the htlc gets confirmed and
-// returns the spend details.
-func (s *loopInSwap) waitForHtlcSpend(ctx context.Context,
-	htlc *wire.OutPoint) (*chainntnfs.SpendDetail, error) {
+// waitForSwapComplete waits until a spending tx of the htlc gets confirmed and
+// the swap invoice is either settled or canceled. If the htlc times out, the
+// timeout tx will be published.
+func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
+	htlc *wire.OutPoint, htlcValue btcutil.Amount) error {
 
 	// Register the htlc spend notification.
 	rpcCtx, cancel := context.WithCancel(ctx)
@@ -460,58 +427,61 @@ func (s *loopInSwap) waitForHtlcSpend(ctx context.Context,
 		rpcCtx, nil, s.htlc.ScriptHash, s.InitiationHeight,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("register spend ntfn: %v", err)
+		return fmt.Errorf("register spend ntfn: %v", err)
 	}
 
-	for {
-		select {
-		// Spend notification error.
-		case err := <-spendErr:
-			return nil, err
-
-		case notification := <-s.blockEpochChan:
-			s.height = notification.(int32)
-
-			if s.height >= s.LoopInContract.CltvExpiry {
-				err := s.publishTimeoutTx(ctx, htlc)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-		// Htlc spend, break loop.
-		case spendDetails := <-spendChan:
-			s.log.Infof("Htlc spend by tx: %v",
-				spendDetails.SpenderTxHash)
-
-			return spendDetails, nil
-
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-}
-
-// waitForSwapPaid waits until our swap invoice gets paid by the server.
-func (s *loopInSwap) waitForSwapInvoiceResult(ctx context.Context) error {
-	// Wait for swap invoice to be paid.
-	rpcCtx, cancel := context.WithCancel(ctx)
+	// Register for swap invoice updates.
+	rpcCtx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	s.log.Infof("Subscribing to swap invoice %v", s.hash)
 	swapInvoiceChan, swapInvoiceErr, err := s.lnd.Invoices.SubscribeSingleInvoice(
 		rpcCtx, s.hash,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("subscribe to swap invoice: %v", err)
 	}
 
-	for {
+	htlcSpend := false
+	invoiceFinalized := false
+	for !htlcSpend || !invoiceFinalized {
 		select {
+		// Spend notification error.
+		case err := <-spendErr:
+			return err
+
+		// Receive block epochs and start publishing the timeout tx
+		// whenever possible.
+		case notification := <-s.blockEpochChan:
+			s.height = notification.(int32)
+
+			if s.height >= s.LoopInContract.CltvExpiry {
+				err := s.publishTimeoutTx(ctx, htlc)
+				if err != nil {
+					return err
+				}
+			}
+
+		// The htlc spend is confirmed. Inspect the spending tx to
+		// determine the final swap state.
+		case spendDetails := <-spendChan:
+			s.log.Infof("Htlc spend by tx: %v",
+				spendDetails.SpenderTxHash)
+
+			err := s.processHtlcSpend(
+				ctx, spendDetails, htlcValue,
+			)
+			if err != nil {
+				return err
+			}
+
+			htlcSpend = true
 
 		// Swap invoice ntfn error.
 		case err := <-swapInvoiceErr:
 			return err
 
+		// An update to the swap invoice occured. Check the new state
+		// and update the swap state accordingly.
 		case update := <-swapInvoiceChan:
 			s.log.Infof("Received swap invoice update: %v",
 				update.State)
@@ -521,18 +491,67 @@ func (s *loopInSwap) waitForSwapInvoiceResult(ctx context.Context) error {
 			// Swap invoice was paid, so update server cost balance.
 			case channeldb.ContractSettled:
 				s.cost.Server -= update.AmtPaid
-				return nil
+
+				// If invoice settlement and htlc spend happen
+				// in the expected order, move the swap to an
+				// intermediate state that indicates that the
+				// swap is complete from the user point of view,
+				// but still incomplete with regards to
+				// accounting data.
+				if s.state == loopdb.StateHtlcPublished {
+					s.setState(loopdb.StateInvoiceSettled)
+					err := s.persistState(ctx)
+					if err != nil {
+						return err
+					}
+				}
+
+				invoiceFinalized = true
 
 			// Canceled invoice has no effect on server cost
 			// balance.
 			case channeldb.ContractCanceled:
-				return nil
+				invoiceFinalized = true
 			}
 
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+
+	return nil
+}
+
+func (s *loopInSwap) processHtlcSpend(ctx context.Context,
+	spend *chainntnfs.SpendDetail, htlcValue btcutil.Amount) error {
+
+	// Determine the htlc input of the spending tx and inspect the witness
+	// to findout whether a success or a timeout tx spend the htlc.
+	htlcInput := spend.SpendingTx.TxIn[spend.SpenderInputIndex]
+
+	if s.htlc.IsSuccessWitness(htlcInput.Witness) {
+		s.setState(loopdb.StateSuccess)
+
+		// Server swept the htlc. The htlc value can be added to the
+		// server cost balance.
+		s.cost.Server += htlcValue
+	} else {
+		s.setState(loopdb.StateFailTimeout)
+
+		// Now that the timeout tx confirmed, we can safely cancel the
+		// swap invoice. We still need to query the final invoice state.
+		// This is not a hodl invoice, so it may be that the invoice was
+		// already settled. This means that the server didn't succeed in
+		// sweeping the htlc after paying the invoice.
+		err := s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+		if err != nil && err != channeldb.ErrInvoiceAlreadySettled {
+			return err
+		}
+
+		// TODO: Add miner fee of timeout tx to swap cost balance.
+	}
+
+	return nil
 }
 
 // publishTimeoutTx publishes a timeout tx after the on-chain htlc has expired.
@@ -582,16 +601,18 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 // persistState updates the swap state and sends out an update notification.
 func (s *loopInSwap) persistState(ctx context.Context) error {
-	updateTime := time.Now()
-
-	s.lastUpdateTime = updateTime
-
 	// Update state in store.
-	err := s.store.UpdateLoopIn(s.hash, updateTime, s.state)
+	err := s.store.UpdateLoopIn(s.hash, s.lastUpdateTime, s.state)
 	if err != nil {
 		return err
 	}
 
 	// Send out swap update
 	return s.sendUpdate(ctx)
+}
+
+// setState updates the swap state and last update timestamp.
+func (s *loopInSwap) setState(state loopdb.SwapState) {
+	s.lastUpdateTime = time.Now()
+	s.state = state
 }

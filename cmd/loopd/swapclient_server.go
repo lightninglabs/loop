@@ -95,6 +95,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = looprpc.SwapState_PREIMAGE_REVEALED
 	case loopdb.StateHtlcPublished:
 		state = looprpc.SwapState_HTLC_PUBLISHED
+	case loopdb.StateInvoiceSettled:
+		state = looprpc.SwapState_INVOICE_SETTLED
 	case loopdb.StateSuccess:
 		state = looprpc.SwapState_SUCCESS
 	default:

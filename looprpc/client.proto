@@ -265,6 +265,12 @@ enum SwapState {
     the swap amount.
     */
     FAILED = 4;
+
+     /**
+    INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
+    paid, but we are still waiting for the htlc spend to confirm.
+    */
+    INVOICE_SETTLED = 5;
 }
 
 message TermsRequest {

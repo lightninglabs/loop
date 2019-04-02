@@ -171,10 +171,11 @@
         "PREIMAGE_REVEALED",
         "HTLC_PUBLISHED",
         "SUCCESS",
-        "FAILED"
+        "FAILED",
+        "INVOICE_SETTLED"
       ],
       "default": "INITIATED",
-      "description": " - INITIATED: *\nINITIATED is the initial state of a swap. At that point, the initiation\ncall to the server has been made and the payment process has been started\nfor the swap and prepayment invoices.\n - PREIMAGE_REVEALED: *\nPREIMAGE_REVEALED is reached when the sweep tx publication is first\nattempted. From that point on, we should consider the preimage to no\nlonger be secret and we need to do all we can to get the sweep confirmed.\nThis state will mostly coalesce with StateHtlcConfirmed, except in the\ncase where we wait for fees to come down before we sweep.\n - HTLC_PUBLISHED: *\nHTLC_PUBLISHED is reached when the htlc tx has been published in a loop in\nswap.\n - SUCCESS: *\nSUCCESS is the final swap state that is reached when the sweep tx has\nthe required confirmation depth.\n - FAILED: *\nFAILED is the final swap state for a failed swap with or without loss of\nthe swap amount."
+      "description": " - INITIATED: *\nINITIATED is the initial state of a swap. At that point, the initiation\ncall to the server has been made and the payment process has been started\nfor the swap and prepayment invoices.\n - PREIMAGE_REVEALED: *\nPREIMAGE_REVEALED is reached when the sweep tx publication is first\nattempted. From that point on, we should consider the preimage to no\nlonger be secret and we need to do all we can to get the sweep confirmed.\nThis state will mostly coalesce with StateHtlcConfirmed, except in the\ncase where we wait for fees to come down before we sweep.\n - HTLC_PUBLISHED: *\nHTLC_PUBLISHED is reached when the htlc tx has been published in a loop in\nswap.\n - SUCCESS: *\nSUCCESS is the final swap state that is reached when the sweep tx has\nthe required confirmation depth.\n - FAILED: *\nFAILED is the final swap state for a failed swap with or without loss of\nthe swap amount.\n - INVOICE_SETTLED: *\nINVOICE_SETTLED is reached when the swap invoice in a loop in swap has been\npaid, but we are still waiting for the htlc spend to confirm."
     },
     "looprpcSwapStatus": {
       "type": "object",

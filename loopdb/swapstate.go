@@ -51,6 +51,10 @@ const (
 
 	// StateHtlcPublished means that the client published the on-chain htlc.
 	StateHtlcPublished = 8
+
+	// StateInvoiceSettled means that the swap invoice has been paid by the
+	// server.
+	StateInvoiceSettled = 9
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -113,6 +117,9 @@ func (s SwapState) String() string {
 
 	case StateFailTemporary:
 		return "FailTemporary"
+
+	case StateInvoiceSettled:
+		return "InvoiceSettled"
 
 	default:
 		return "Unknown"

@@ -76,17 +76,6 @@ func TestLoopInSuccess(t *testing.T) {
 	// Client starts listening for spend of htlc.
 	<-ctx.lnd.RegisterSpendChannel
 
-	// Server spends htlc.
-	successTx := wire.MsgTx{}
-	successTx.AddTxIn(&wire.TxIn{
-		Witness: [][]byte{{}, {}, {}},
-	})
-
-	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
-		SpendingTx:        &successTx,
-		SpenderInputIndex: 0,
-	}
-
 	// Client starts listening for swap invoice updates.
 	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
 	if subscription.Hash != ctx.server.swapHash {
@@ -98,6 +87,21 @@ func TestLoopInSuccess(t *testing.T) {
 	subscription.Update <- lndclient.InvoiceUpdate{
 		State:   channeldb.ContractSettled,
 		AmtPaid: 49000,
+	}
+
+	// Swap is expected to move to the state InvoiceSettled
+	ctx.assertState(loopdb.StateInvoiceSettled)
+	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+
+	// Server spends htlc.
+	successTx := wire.MsgTx{}
+	successTx.AddTxIn(&wire.TxIn{
+		Witness: [][]byte{{}, {}, {}},
+	})
+
+	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        &successTx,
+		SpenderInputIndex: 0,
 	}
 
 	ctx.assertState(loopdb.StateSuccess)
@@ -162,6 +166,12 @@ func TestLoopInTimeout(t *testing.T) {
 	// Client starts listening for spend of htlc.
 	<-ctx.lnd.RegisterSpendChannel
 
+	// Client starts listening for swap invoice updates.
+	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
+	if subscription.Hash != ctx.server.swapHash {
+		t.Fatal("client subscribing to wrong invoice")
+	}
+
 	// Let htlc expire.
 	ctx.blockEpochChan <- swap.LoopInContract.CltvExpiry
 
@@ -177,12 +187,6 @@ func TestLoopInTimeout(t *testing.T) {
 	// Now that timeout tx has confirmed, the client should be able to
 	// safely cancel the swap invoice.
 	<-ctx.lnd.FailInvoiceChannel
-
-	// Client starts listening for swap invoice updates.
-	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != ctx.server.swapHash {
-		t.Fatal("client subscribing to wrong invoice")
-	}
 
 	// Signal the the invoice was canceled.
 	subscription.Update <- lndclient.InvoiceUpdate{
@@ -340,19 +344,6 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	// Client starts listening for spend of htlc.
 	<-ctx.lnd.RegisterSpendChannel
 
-	// Server spends htlc.
-	successTx := wire.MsgTx{}
-	successTx.AddTxIn(&wire.TxIn{
-		Witness: [][]byte{{}, {}, {}},
-	})
-	successTxHash := successTx.TxHash()
-
-	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
-		SpendingTx:        &successTx,
-		SpenderTxHash:     &successTxHash,
-		SpenderInputIndex: 0,
-	}
-
 	// Client starts listening for swap invoice updates.
 	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
 	if subscription.Hash != testPreimage.Hash() {
@@ -364,6 +355,23 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	subscription.Update <- lndclient.InvoiceUpdate{
 		State:   channeldb.ContractSettled,
 		AmtPaid: 49000,
+	}
+
+	// Swap is expected to move to the state InvoiceSettled
+	ctx.assertState(loopdb.StateInvoiceSettled)
+	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+
+	// Server spends htlc.
+	successTx := wire.MsgTx{}
+	successTx.AddTxIn(&wire.TxIn{
+		Witness: [][]byte{{}, {}, {}},
+	})
+	successTxHash := successTx.TxHash()
+
+	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        &successTx,
+		SpenderTxHash:     &successTxHash,
+		SpenderInputIndex: 0,
 	}
 
 	ctx.assertState(loopdb.StateSuccess)
