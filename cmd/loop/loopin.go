@@ -17,12 +17,8 @@ var loopInCommand = cli.Command{
 		Send the amount in satoshis specified by the amt argument off-chain.`,
 	Flags: []cli.Flag{
 		cli.Uint64Flag{
-			Name:  "channel",
-			Usage: "the 8-byte compact channel ID of the channel to loop in",
-		},
-		cli.Uint64Flag{
 			Name:  "amt",
-			Usage: "the amount in satoshis to loop out",
+			Usage: "the amount in satoshis to loop in",
 		},
 		cli.BoolFlag{
 			Name:  "external",
@@ -75,17 +71,11 @@ func loopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	var loopInChannel uint64
-	if ctx.IsSet("channel") {
-		loopInChannel = ctx.Uint64("channel")
-	}
-
 	resp, err := client.LoopIn(context.Background(), &looprpc.LoopInRequest{
-		Amt:           int64(amt),
-		MaxMinerFee:   int64(limits.maxMinerFee),
-		MaxSwapFee:    int64(limits.maxSwapFee),
-		LoopInChannel: loopInChannel,
-		ExternalHtlc:  ctx.Bool("external"),
+		Amt:          int64(amt),
+		MaxMinerFee:  int64(limits.maxMinerFee),
+		MaxSwapFee:   int64(limits.maxSwapFee),
+		ExternalHtlc: ctx.Bool("external"),
 	})
 	if err != nil {
 		return err

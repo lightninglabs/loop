@@ -156,6 +156,8 @@ message LoopInRequest {
     /**
     The channel to loop in. If zero, the channel to loop in is selected based
     on the lowest routing fee for the swap payment from the server.
+
+    Note: NOT YET IMPLEMENTED
     */
     uint64 loop_in_channel = 4;
 

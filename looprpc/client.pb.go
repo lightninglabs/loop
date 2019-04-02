@@ -46,7 +46,7 @@ func (x SwapType) String() string {
 	return proto.EnumName(SwapType_name, int32(x))
 }
 func (SwapType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{0}
+	return fileDescriptor_client_e350cb39252fe551, []int{0}
 }
 
 type SwapState int32
@@ -97,7 +97,7 @@ func (x SwapState) String() string {
 	return proto.EnumName(SwapState_name, int32(x))
 }
 func (SwapState) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{1}
+	return fileDescriptor_client_e350cb39252fe551, []int{1}
 }
 
 type LoopOutRequest struct {
@@ -155,7 +155,7 @@ func (m *LoopOutRequest) Reset()         { *m = LoopOutRequest{} }
 func (m *LoopOutRequest) String() string { return proto.CompactTextString(m) }
 func (*LoopOutRequest) ProtoMessage()    {}
 func (*LoopOutRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{0}
+	return fileDescriptor_client_e350cb39252fe551, []int{0}
 }
 func (m *LoopOutRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LoopOutRequest.Unmarshal(m, b)
@@ -252,6 +252,8 @@ type LoopInRequest struct {
 	// *
 	// The channel to loop in. If zero, the channel to loop in is selected based
 	// on the lowest routing fee for the swap payment from the server.
+	//
+	// Note: NOT YET IMPLEMENTED
 	LoopInChannel uint64 `protobuf:"varint,4,opt,name=loop_in_channel,json=loopInChannel,proto3" json:"loop_in_channel,omitempty"`
 	// *
 	// If external_htlc is true, we expect the htlc to be published by an external
@@ -266,7 +268,7 @@ func (m *LoopInRequest) Reset()         { *m = LoopInRequest{} }
 func (m *LoopInRequest) String() string { return proto.CompactTextString(m) }
 func (*LoopInRequest) ProtoMessage()    {}
 func (*LoopInRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{1}
+	return fileDescriptor_client_e350cb39252fe551, []int{1}
 }
 func (m *LoopInRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LoopInRequest.Unmarshal(m, b)
@@ -338,7 +340,7 @@ func (m *SwapResponse) Reset()         { *m = SwapResponse{} }
 func (m *SwapResponse) String() string { return proto.CompactTextString(m) }
 func (*SwapResponse) ProtoMessage()    {}
 func (*SwapResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{2}
+	return fileDescriptor_client_e350cb39252fe551, []int{2}
 }
 func (m *SwapResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SwapResponse.Unmarshal(m, b)
@@ -382,7 +384,7 @@ func (m *MonitorRequest) Reset()         { *m = MonitorRequest{} }
 func (m *MonitorRequest) String() string { return proto.CompactTextString(m) }
 func (*MonitorRequest) ProtoMessage()    {}
 func (*MonitorRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{3}
+	return fileDescriptor_client_e350cb39252fe551, []int{3}
 }
 func (m *MonitorRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_MonitorRequest.Unmarshal(m, b)
@@ -435,7 +437,7 @@ func (m *SwapStatus) Reset()         { *m = SwapStatus{} }
 func (m *SwapStatus) String() string { return proto.CompactTextString(m) }
 func (*SwapStatus) ProtoMessage()    {}
 func (*SwapStatus) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{4}
+	return fileDescriptor_client_e350cb39252fe551, []int{4}
 }
 func (m *SwapStatus) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SwapStatus.Unmarshal(m, b)
@@ -514,7 +516,7 @@ func (m *TermsRequest) Reset()         { *m = TermsRequest{} }
 func (m *TermsRequest) String() string { return proto.CompactTextString(m) }
 func (*TermsRequest) ProtoMessage()    {}
 func (*TermsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{5}
+	return fileDescriptor_client_e350cb39252fe551, []int{5}
 }
 func (m *TermsRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_TermsRequest.Unmarshal(m, b)
@@ -566,7 +568,7 @@ func (m *TermsResponse) Reset()         { *m = TermsResponse{} }
 func (m *TermsResponse) String() string { return proto.CompactTextString(m) }
 func (*TermsResponse) ProtoMessage()    {}
 func (*TermsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{6}
+	return fileDescriptor_client_e350cb39252fe551, []int{6}
 }
 func (m *TermsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_TermsResponse.Unmarshal(m, b)
@@ -648,7 +650,7 @@ func (m *QuoteRequest) Reset()         { *m = QuoteRequest{} }
 func (m *QuoteRequest) String() string { return proto.CompactTextString(m) }
 func (*QuoteRequest) ProtoMessage()    {}
 func (*QuoteRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{7}
+	return fileDescriptor_client_e350cb39252fe551, []int{7}
 }
 func (m *QuoteRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_QuoteRequest.Unmarshal(m, b)
@@ -694,7 +696,7 @@ func (m *QuoteResponse) Reset()         { *m = QuoteResponse{} }
 func (m *QuoteResponse) String() string { return proto.CompactTextString(m) }
 func (*QuoteResponse) ProtoMessage()    {}
 func (*QuoteResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_3d2c5dccaa4d32eb, []int{8}
+	return fileDescriptor_client_e350cb39252fe551, []int{8}
 }
 func (m *QuoteResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_QuoteResponse.Unmarshal(m, b)
@@ -1091,9 +1093,9 @@ var _SwapClient_serviceDesc = grpc.ServiceDesc{
 	Metadata: "client.proto",
 }
 
-func init() { proto.RegisterFile("client.proto", fileDescriptor_client_3d2c5dccaa4d32eb) }
+func init() { proto.RegisterFile("client.proto", fileDescriptor_client_e350cb39252fe551) }
 
-var fileDescriptor_client_3d2c5dccaa4d32eb = []byte{
+var fileDescriptor_client_e350cb39252fe551 = []byte{
 	// 925 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x55, 0xdd, 0x8e, 0xdb, 0x44,
 	0x18, 0xad, 0x9d, 0x6c, 0x7e, 0xbe, 0x75, 0xbc, 0xce, 0xb4, 0xdd, 0x86, 0x40, 0xa5, 0x60, 0x68,
