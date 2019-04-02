@@ -267,6 +267,17 @@ const (
 	TypeOut
 )
 
+func (t Type) String() string {
+	switch t {
+	case TypeIn:
+		return "In"
+	case TypeOut:
+		return "Out"
+	default:
+		return "Unknown"
+	}
+}
+
 // SwapInfo exposes common info fields for loop in and loop out swaps.
 type SwapInfo struct {
 	LastUpdate time.Time

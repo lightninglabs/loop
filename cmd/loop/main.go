@@ -116,7 +116,7 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 	}
 }
 
-func displayLimits(amt btcutil.Amount, l *limits) error {
+func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits) error {
 	totalSuccessMax := l.maxMinerFee + l.maxSwapFee
 	if l.maxSwapRoutingFee != nil {
 		totalSuccessMax += *l.maxSwapRoutingFee
@@ -125,8 +125,8 @@ func displayLimits(amt btcutil.Amount, l *limits) error {
 		totalSuccessMax += *l.maxPrepayRoutingFee
 	}
 
-	fmt.Printf("Max swap fees for %d loop out: %d\n",
-		btcutil.Amount(amt), totalSuccessMax,
+	fmt.Printf("Max swap fees for %d Loop %v: %d\n",
+		btcutil.Amount(amt), swapType, totalSuccessMax,
 	)
 
 	fmt.Printf("CONTINUE SWAP? (y/n), expand fee detail (x): ")
