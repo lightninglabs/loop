@@ -441,6 +441,22 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		return fmt.Errorf("subscribe to swap invoice: %v", err)
 	}
 
+	// checkTimeout publishes the timeout tx if the contract has expired.
+	checkTimeout := func() error {
+		if s.height >= s.LoopInContract.CltvExpiry {
+			return s.publishTimeoutTx(ctx, htlc)
+		}
+
+		return nil
+	}
+
+	// Check timeout at current height. After a restart we may want to
+	// publish the tx immediately.
+	err = checkTimeout()
+	if err != nil {
+		return err
+	}
+
 	htlcSpend := false
 	invoiceFinalized := false
 	for !htlcSpend || !invoiceFinalized {
@@ -454,11 +470,9 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
 
-			if s.height >= s.LoopInContract.CltvExpiry {
-				err := s.publishTimeoutTx(ctx, htlc)
-				if err != nil {
-					return err
-				}
+			err := checkTimeout()
+			if err != nil {
+				return err
 			}
 
 		// The htlc spend is confirmed. Inspect the spending tx to
