@@ -276,15 +276,9 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
-	// Retrieve htlc address.
-	htlcAddress, err := swap.htlc.Address(s.lndServices.ChainParams)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, htlcAddress, nil
+	return &swap.hash, swap.htlc.Address, nil
 }
 
 // LoopOutQuote takes a LoopOut amount and returns a break down of estimated
@@ -313,7 +307,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 	)
 
 	minerFee, err := s.sweeper.GetSweepFee(
-		ctx, swap.QuoteHtlc.MaxSuccessWitnessSize,
+		ctx, swap.QuoteHtlc.AddSuccessToEstimator,
 		request.SweepConfTarget,
 	)
 	if err != nil {
@@ -381,15 +375,9 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
-	// Retrieve htlc address.
-	htlcAddress, err := swap.htlc.Address(s.lndServices.ChainParams)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, htlcAddress, nil
+	return &swap.hash, swap.htlc.Address, nil
 }
 
 // LoopInQuote takes an amount and returns a break down of estimated

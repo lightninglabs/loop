@@ -257,7 +257,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 
 	htlc, err := swap.NewHtlc(
 		contract.CltvExpiry, contract.SenderKey, contract.ReceiverKey,
-		testPreimage.Hash(),
+		testPreimage.Hash(), swap.HtlcNP2WSH, cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 		ctx.assertState(loopdb.StateHtlcPublished)
 
 		htlcTx.AddTxOut(&wire.TxOut{
-			PkScript: htlc.ScriptHash,
+			PkScript: htlc.PkScript,
 		})
 	}
 

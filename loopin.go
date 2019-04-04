@@ -151,7 +151,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit, err := newSwapKit(
-		swapHash, TypeIn, cfg, &contract.SwapContract,
+		swapHash, TypeIn, cfg, &contract.SwapContract, swap.HtlcNP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 	logger.Infof("Resuming loop in swap %v", hash)
 
 	swapKit, err := newSwapKit(
-		hash, TypeIn, cfg, &pend.Contract.SwapContract,
+		hash, TypeIn, cfg, &pend.Contract.SwapContract, swap.HtlcNP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -307,7 +307,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 
 	// Determine the htlc outpoint by inspecting the htlc tx.
 	htlcOutpoint, htlcValue, err := swap.GetScriptOutput(
-		conf.Tx, s.htlc.ScriptHash,
+		conf.Tx, s.htlc.PkScript,
 	)
 	if err != nil {
 		return err
@@ -340,7 +340,7 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 	confChan, confErr, err := s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-		ctx, nil, s.htlc.ScriptHash, 1, s.InitiationHeight,
+		ctx, nil, s.htlc.PkScript, 1, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err
@@ -400,7 +400,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	s.log.Infof("Publishing on chain HTLC with fee rate %v", feeRate)
 	tx, err := s.lnd.WalletKit.SendOutputs(ctx,
 		[]*wire.TxOut{{
-			PkScript: s.htlc.ScriptHash,
+			PkScript: s.htlc.PkScript,
 			Value:    int64(s.LoopInContract.AmountRequested),
 		}},
 		feeRate,
@@ -424,7 +424,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	rpcCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		rpcCtx, nil, s.htlc.ScriptHash, s.InitiationHeight,
+		rpcCtx, nil, s.htlc.PkScript, s.InitiationHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("register spend ntfn: %v", err)
@@ -583,7 +583,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	// Calculate sweep tx fee
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.MaxTimeoutWitnessSize, TimeoutTxConfTarget,
+		ctx, s.htlc.AddTimeoutToEstimator, TimeoutTxConfTarget,
 	)
 	if err != nil {
 		return err

@@ -289,6 +289,8 @@ type SwapInfo struct {
 	SwapType Type
 
 	loopdb.SwapContract
+
+	HtlcAddress btcutil.Address
 }
 
 // LastUpdate returns the last update time of the swap

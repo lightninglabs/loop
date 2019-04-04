@@ -36,6 +36,7 @@ func (s *Sweeper) CreateSweepTx(
 	// Add HTLC input.
 	sweepTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: htlcOutpoint,
+		SignatureScript:  htlc.SigScript,
 	})
 
 	// Add output for the destination address.
@@ -85,9 +86,12 @@ func (s *Sweeper) CreateSweepTx(
 	return sweepTx, nil
 }
 
-// GetSweepFee calculates the required tx fee.
+// GetSweepFee calculates the required tx fee to spend to P2WKH. It takes a
+// function that is expected to add the weight of the input to the weight
+// estimator.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
-	htlcSuccessWitnessSize int, sweepConfTarget int32) (
+	addInputEstimate func(*input.TxWeightEstimator),
+	sweepConfTarget int32) (
 	btcutil.Amount, error) {
 
 	// Get fee estimate from lnd.
@@ -99,7 +103,7 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	// Calculate weight for this tx.
 	var weightEstimate input.TxWeightEstimator
 	weightEstimate.AddP2WKHOutput()
-	weightEstimate.AddWitnessInput(htlcSuccessWitnessSize)
+	addInputEstimate(&weightEstimate)
 	weight := weightEstimate.Weight()
 
 	return feeRate.FeeForWeight(int64(weight)), nil

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/swap"
 )
 
@@ -28,13 +30,21 @@ func view(config *config) error {
 	}
 	defer cleanup()
 
-	swaps, err := swapClient.FetchLoopOutSwaps()
-	if err != nil {
+	if err := viewOut(swapClient, chainParams); err != nil {
 		return err
 	}
 
-	if len(swaps) == 0 {
-		fmt.Printf("No swaps\n")
+	if err := viewIn(swapClient, chainParams); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
+	swaps, err := swapClient.FetchLoopOutSwaps()
+	if err != nil {
+		return err
 	}
 
 	for _, s := range swaps {
@@ -42,23 +52,18 @@ func view(config *config) error {
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
-			s.Hash,
+			s.Hash, swap.HtlcP2WSH, chainParams,
 		)
 		if err != nil {
 			return err
 		}
 
-		htlcAddress, err := htlc.Address(chainParams)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("%v\n", s.Hash)
+		fmt.Printf("OUT %v\n", s.Hash)
 		fmt.Printf("   Created: %v (height %v)\n",
 			s.Contract.InitiationTime, s.Contract.InitiationHeight,
 		)
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
-		fmt.Printf("   Htlc address: %v\n", htlcAddress)
+		fmt.Printf("   Htlc address: %v\n", htlc.Address)
 
 		unchargeChannel := "any"
 		if s.Contract.UnchargeChannel != nil {
@@ -68,6 +73,43 @@ func view(config *config) error {
 		}
 		fmt.Printf("   Uncharge channel: %v\n", unchargeChannel)
 		fmt.Printf("   Dest: %v\n", s.Contract.DestAddr)
+		fmt.Printf("   Amt: %v, Expiry: %v\n",
+			s.Contract.AmountRequested, s.Contract.CltvExpiry,
+		)
+		for i, e := range s.Events {
+			fmt.Printf("   Update %v, Time %v, State: %v\n",
+				i, e.Time, e.State,
+			)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
+	swaps, err := swapClient.FetchLoopInSwaps()
+	if err != nil {
+		return err
+	}
+
+	for _, s := range swaps {
+		htlc, err := swap.NewHtlc(
+			s.Contract.CltvExpiry,
+			s.Contract.SenderKey,
+			s.Contract.ReceiverKey,
+			s.Hash, swap.HtlcNP2WSH, chainParams,
+		)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("IN %v\n", s.Hash)
+		fmt.Printf("   Created: %v (height %v)\n",
+			s.Contract.InitiationTime, s.Contract.InitiationHeight,
+		)
+		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
+		fmt.Printf("   Htlc address: %v\n", htlc.Address)
 		fmt.Printf("   Amt: %v, Expiry: %v\n",
 			s.Contract.AmountRequested, s.Contract.CltvExpiry,
 		)

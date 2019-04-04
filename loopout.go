@@ -105,7 +105,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit, err := newSwapKit(
-		swapHash, TypeOut, cfg, &contract.SwapContract,
+		swapHash, TypeOut, cfg, &contract.SwapContract, swap.HtlcP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -138,7 +138,7 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	logger.Infof("Resuming loop out swap %v", hash)
 
 	swapKit, err := newSwapKit(
-		hash, TypeOut, cfg, &pend.Contract.SwapContract,
+		hash, TypeOut, cfg, &pend.Contract.SwapContract, swap.HtlcP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -168,6 +168,7 @@ func (s *loopOutSwap) execute(mainCtx context.Context,
 	s.executeConfig = *cfg
 	s.height = height
 
+	// Execute swap.
 	err := s.executeAndFinalize(mainCtx)
 
 	// If an unexpected error happened, report a temporary failure.
@@ -189,6 +190,7 @@ func (s *loopOutSwap) execute(mainCtx context.Context,
 // executeAndFinalize executes a swap and awaits the definitive outcome of the
 // offchain payments. When this method returns, the swap outcome is final.
 func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
+
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(globalCtx)
 	if err != nil {
@@ -281,7 +283,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	// Retrieve outpoint for sweep.
 	htlcOutpoint, htlcValue, err := swap.GetScriptOutput(
-		txConf.Tx, s.htlc.ScriptHash,
+		txConf.Tx, s.htlc.PkScript,
 	)
 	if err != nil {
 		return err
@@ -383,7 +385,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	defer cancel()
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, s.htlc.ScriptHash, 1,
+			ctx, nil, s.htlc.PkScript, 1,
 			s.InitiationHeight,
 		)
 	if err != nil {
@@ -514,7 +516,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		ctx, nil, s.htlc.ScriptHash, s.InitiationHeight,
+		ctx, nil, s.htlc.PkScript, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("register spend ntfn: %v", err)
@@ -571,7 +573,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 
 	// Calculate sweep tx fee
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.MaxSuccessWitnessSize,
+		ctx, s.htlc.AddSuccessToEstimator,
 		s.SweepConfTarget,
 	)
 	if err != nil {

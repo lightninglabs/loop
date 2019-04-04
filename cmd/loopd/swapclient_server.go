@@ -13,7 +13,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
@@ -104,19 +103,6 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = looprpc.SwapState_FAILED
 	}
 
-	htlc, err := swap.NewHtlc(
-		loopSwap.CltvExpiry, loopSwap.SenderKey, loopSwap.ReceiverKey,
-		loopSwap.SwapHash,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	address, err := htlc.Address(s.lnd.ChainParams)
-	if err != nil {
-		return nil, err
-	}
-
 	var swapType looprpc.SwapType
 	switch loopSwap.SwapType {
 	case loop.TypeIn:
@@ -133,7 +119,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		State:          state,
 		InitiationTime: loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
-		HtlcAddress:    address.EncodeAddress(),
+		HtlcAddress:    loopSwap.HtlcAddress.EncodeAddress(),
 		Type:           swapType,
 	}, nil
 }
