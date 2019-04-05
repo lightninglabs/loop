@@ -20,10 +20,18 @@ type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
 
+	GetLoopInTerms(ctx context.Context) (
+		*LoopInTerms, error)
+
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
 		receiverKey [33]byte) (
 		*newLoopOutResponse, error)
+
+	NewLoopInSwap(ctx context.Context,
+		swapHash lntypes.Hash, amount btcutil.Amount,
+		senderKey [33]byte, swapInvoice string) (
+		*newLoopInResponse, error)
 }
 
 type grpcSwapServerClient struct {
@@ -80,6 +88,27 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	}, nil
 }
 
+func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
+	*LoopInTerms, error) {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	defer rpcCancel()
+	quoteResp, err := s.server.LoopInQuote(rpcCtx,
+		&looprpc.ServerLoopInQuoteRequest{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopInTerms{
+		MinSwapAmount: btcutil.Amount(quoteResp.MinSwapAmount),
+		MaxSwapAmount: btcutil.Amount(quoteResp.MaxSwapAmount),
+		SwapFeeBase:   btcutil.Amount(quoteResp.SwapFeeBase),
+		SwapFeeRate:   quoteResp.SwapFeeRate,
+		CltvDelta:     quoteResp.CltvDelta,
+	}, nil
+}
+
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
 	receiverKey [33]byte) (*newLoopOutResponse, error) {
@@ -114,6 +143,39 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	}, nil
 }
 
+func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
+	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
+	swapInvoice string) (*newLoopInResponse, error) {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	defer rpcCancel()
+	swapResp, err := s.server.NewLoopInSwap(rpcCtx,
+		&looprpc.ServerLoopInRequest{
+			SwapHash:    swapHash[:],
+			Amt:         uint64(amount),
+			SenderKey:   senderKey[:],
+			SwapInvoice: swapInvoice,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var receiverKey [33]byte
+	copy(receiverKey[:], swapResp.ReceiverKey)
+
+	// Validate receiver key.
+	_, err = btcec.ParsePubKey(receiverKey[:], btcec.S256())
+	if err != nil {
+		return nil, fmt.Errorf("invalid sender key: %v", err)
+	}
+
+	return &newLoopInResponse{
+		receiverKey: receiverKey,
+		expiry:      swapResp.Expiry,
+	}, nil
+}
+
 func (s *grpcSwapServerClient) Close() {
 	s.conn.Close()
 }
@@ -142,4 +204,9 @@ type newLoopOutResponse struct {
 	prepayInvoice string
 	senderKey     [33]byte
 	expiry        int32
+}
+
+type newLoopInResponse struct {
+	receiverKey [33]byte
+	expiry      int32
 }

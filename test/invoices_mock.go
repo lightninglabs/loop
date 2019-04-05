@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -43,10 +43,10 @@ func (s *mockInvoices) CancelInvoice(ctx context.Context,
 }
 
 func (s *mockInvoices) SubscribeSingleInvoice(ctx context.Context,
-	hash lntypes.Hash) (<-chan channeldb.ContractState,
+	hash lntypes.Hash) (<-chan lndclient.InvoiceUpdate,
 	<-chan error, error) {
 
-	updateChan := make(chan channeldb.ContractState, 2)
+	updateChan := make(chan lndclient.InvoiceUpdate, 2)
 	errChan := make(chan error)
 
 	select {

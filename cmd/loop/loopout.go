@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
@@ -84,7 +85,7 @@ func loopOut(ctx *cli.Context) error {
 
 	limits := getLimits(amt, quote)
 
-	if err := displayLimits(amt, limits); err != nil {
+	if err := displayLimits(loop.TypeOut, amt, limits); err != nil {
 		return err
 	}
 
@@ -97,17 +98,20 @@ func loopOut(ctx *cli.Context) error {
 		Amt:                 int64(amt),
 		Dest:                destAddr,
 		MaxMinerFee:         int64(limits.maxMinerFee),
-		MaxPrepayAmt:        int64(limits.maxPrepayAmt),
+		MaxPrepayAmt:        int64(*limits.maxPrepayAmt),
 		MaxSwapFee:          int64(limits.maxSwapFee),
-		MaxPrepayRoutingFee: int64(limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:   int64(limits.maxSwapRoutingFee),
+		MaxPrepayRoutingFee: int64(*limits.maxPrepayRoutingFee),
+		MaxSwapRoutingFee:   int64(*limits.maxSwapRoutingFee),
 		LoopOutChannel:      unchargeChannel,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Swap initiated with id: %v\n", resp.Id[:8])
+	fmt.Printf("Swap initiated\n")
+	fmt.Printf("ID:           %v\n", resp.Id)
+	fmt.Printf("HTLC address: %v\n", resp.HtlcAddress)
+	fmt.Println()
 	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 
 	return nil

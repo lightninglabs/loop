@@ -43,7 +43,7 @@ func TestSuccess(t *testing.T) {
 
 	// Initiate uncharge.
 
-	hash, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	hash, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestFailOffchain(t *testing.T) {
 
 	ctx := createClientTestContext(t, nil)
 
-	_, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	_, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestFailWrongAmount(t *testing.T) {
 		// Modify mock for this subtest.
 		modifier(ctx.serverMock)
 
-		_, err := ctx.swapClient.LoopOut(
+		_, _, err := ctx.swapClient.LoopOut(
 			context.Background(), testRequest,
 		)
 		if err != expectedErr {
@@ -188,6 +188,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 			SwapInvoice:       swapPayReq,
 			SweepConfTarget:   2,
 			MaxSwapRoutingFee: 70000,
+			PrepayInvoice:     prePayReq,
 			SwapContract: loopdb.SwapContract{
 				Preimage:        preimage,
 				AmountRequested: amt,
@@ -195,16 +196,17 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 				ReceiverKey:     receiverKey,
 				SenderKey:       senderKey,
 				MaxSwapFee:      60000,
-				PrepayInvoice:   prePayReq,
 				MaxMinerFee:     50000,
 			},
 		},
-		Events: []*loopdb.LoopOutEvent{
-			{
-				State: state,
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{
+				{
+					State: state,
+				},
 			},
+			Hash: hash,
 		},
-		Hash: hash,
 	}
 
 	if expired {

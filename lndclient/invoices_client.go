@@ -5,19 +5,18 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // InvoicesClient exposes invoice functionality.
 type InvoicesClient interface {
 	SubscribeSingleInvoice(ctx context.Context, hash lntypes.Hash) (
-		<-chan channeldb.ContractState, <-chan error, error)
+		<-chan InvoiceUpdate, <-chan error, error)
 
 	SettleInvoice(ctx context.Context, preimage lntypes.Preimage) error
 
@@ -25,6 +24,12 @@ type InvoicesClient interface {
 
 	AddHoldInvoice(ctx context.Context, in *invoicesrpc.AddInvoiceData) (
 		string, error)
+}
+
+// InvoiceUpdate contains a state update for an invoice.
+type InvoiceUpdate struct {
+	State   channeldb.ContractState
+	AmtPaid btcutil.Amount
 }
 
 type invoicesClient struct {
@@ -69,7 +74,7 @@ func (s *invoicesClient) CancelInvoice(ctx context.Context,
 }
 
 func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
-	hash lntypes.Hash) (<-chan channeldb.ContractState,
+	hash lntypes.Hash) (<-chan InvoiceUpdate,
 	<-chan error, error) {
 
 	invoiceStream, err := s.client.
@@ -81,7 +86,7 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 		return nil, nil, err
 	}
 
-	updateChan := make(chan channeldb.ContractState)
+	updateChan := make(chan InvoiceUpdate)
 	errChan := make(chan error, 1)
 
 	// Invoice updates goroutine.
@@ -91,9 +96,7 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 		for {
 			invoice, err := invoiceStream.Recv()
 			if err != nil {
-				if status.Code(err) != codes.Canceled {
-					errChan <- err
-				}
+				errChan <- err
 				return
 			}
 
@@ -104,7 +107,10 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 			}
 
 			select {
-			case updateChan <- state:
+			case updateChan <- InvoiceUpdate{
+				State:   state,
+				AmtPaid: btcutil.Amount(invoice.AmtPaidSat),
+			}:
 			case <-ctx.Done():
 				return
 			}

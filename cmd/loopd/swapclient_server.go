@@ -2,21 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/btcsuite/btcd/chaincfg"
 
 	"github.com/lightningnetwork/lnd/queue"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
 )
 
 const completedSwapsCount = 5
+
+var (
+	errNoMainnet = errors.New("function not available on mainnet")
+)
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
@@ -32,7 +38,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("LoopOut request received")
+	logger.Infof("Loop out request received")
 
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
@@ -65,14 +71,15 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	if in.LoopOutChannel != 0 {
 		req.LoopOutChannel = &in.LoopOutChannel
 	}
-	hash, err := s.impl.LoopOut(ctx, req)
+	hash, htlc, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
 		logger.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
 	return &looprpc.SwapResponse{
-		Id: hash.String(),
+		Id:          hash.String(),
+		HtlcAddress: htlc.String(),
 	}, nil
 }
 
@@ -85,6 +92,10 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = looprpc.SwapState_INITIATED
 	case loopdb.StatePreimageRevealed:
 		state = looprpc.SwapState_PREIMAGE_REVEALED
+	case loopdb.StateHtlcPublished:
+		state = looprpc.SwapState_HTLC_PUBLISHED
+	case loopdb.StateInvoiceSettled:
+		state = looprpc.SwapState_INVOICE_SETTLED
 	case loopdb.StateSuccess:
 		state = looprpc.SwapState_SUCCESS
 	default:
@@ -92,17 +103,14 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = looprpc.SwapState_FAILED
 	}
 
-	htlc, err := swap.NewHtlc(
-		loopSwap.CltvExpiry, loopSwap.SenderKey, loopSwap.ReceiverKey,
-		loopSwap.SwapHash,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	address, err := htlc.Address(s.lnd.ChainParams)
-	if err != nil {
-		return nil, err
+	var swapType looprpc.SwapType
+	switch loopSwap.SwapType {
+	case loop.TypeIn:
+		swapType = looprpc.SwapType_LOOP_IN
+	case loop.TypeOut:
+		swapType = looprpc.SwapType_LOOP_OUT
+	default:
+		return nil, errors.New("unknown swap type")
 	}
 
 	return &looprpc.SwapStatus{
@@ -111,8 +119,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		State:          state,
 		InitiationTime: loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
-		HtlcAddress:    address.EncodeAddress(),
-		Type:           looprpc.SwapType_LOOP_OUT,
+		HtlcAddress:    loopSwap.HtlcAddress.EncodeAddress(),
+		Type:           swapType,
 	}, nil
 }
 
@@ -214,7 +222,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
-	logger.Infof("Terms request received")
+	logger.Infof("Loop out terms request received")
 
 	terms, err := s.impl.LoopOutTerms(ctx)
 	if err != nil {
@@ -248,5 +256,85 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		MinerFee:  int64(quote.MinerFee),
 		PrepayAmt: int64(quote.PrepayAmount),
 		SwapFee:   int64(quote.SwapFee),
+	}, nil
+}
+
+// GetTerms returns the terms that the server enforces for swaps.
+func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.TermsRequest) (
+	*looprpc.TermsResponse, error) {
+
+	logger.Infof("Loop in terms request received")
+
+	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
+		return nil, errNoMainnet
+	}
+
+	terms, err := s.impl.LoopInTerms(ctx)
+	if err != nil {
+		logger.Errorf("Terms request: %v", err)
+		return nil, err
+	}
+
+	return &looprpc.TermsResponse{
+		MinSwapAmount: int64(terms.MinSwapAmount),
+		MaxSwapAmount: int64(terms.MaxSwapAmount),
+		SwapFeeBase:   int64(terms.SwapFeeBase),
+		SwapFeeRate:   int64(terms.SwapFeeRate),
+		CltvDelta:     int32(terms.CltvDelta),
+	}, nil
+}
+
+// GetQuote returns a quote for a swap with the provided parameters.
+func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
+	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+
+	logger.Infof("Loop in quote request received")
+
+	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
+		return nil, errNoMainnet
+	}
+
+	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
+		Amount:         btcutil.Amount(req.Amt),
+		HtlcConfTarget: defaultConfTarget,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &looprpc.QuoteResponse{
+		MinerFee: int64(quote.MinerFee),
+		SwapFee:  int64(quote.SwapFee),
+	}, nil
+}
+
+func (s *swapClientServer) LoopIn(ctx context.Context,
+	in *looprpc.LoopInRequest) (
+	*looprpc.SwapResponse, error) {
+
+	logger.Infof("Loop in request received")
+
+	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
+		return nil, errNoMainnet
+	}
+
+	req := &loop.LoopInRequest{
+		Amount:         btcutil.Amount(in.Amt),
+		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
+		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),
+		HtlcConfTarget: defaultConfTarget,
+		ExternalHtlc:   in.ExternalHtlc,
+	}
+	if in.LoopInChannel != 0 {
+		req.LoopInChannel = &in.LoopInChannel
+	}
+	hash, htlc, err := s.impl.LoopIn(ctx, req)
+	if err != nil {
+		logger.Errorf("Loop in: %v", err)
+		return nil, err
+	}
+
+	return &looprpc.SwapResponse{
+		Id:          hash.String(),
+		HtlcAddress: htlc.String(),
 	}, nil
 }

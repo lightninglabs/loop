@@ -1,6 +1,8 @@
 package loopdb
 
-// SwapState indicates the current state of a swap.
+// SwapState indicates the current state of a swap. This enumeration is the
+// union of loop in and loop out states. A single type is used for both swap
+// types to be able to reduce code duplication that would otherwise be required.
 type SwapState uint8
 
 const (
@@ -22,23 +24,24 @@ const (
 	// server pulled the off-chain htlc.
 	StateSuccess = 2
 
-	// StateFailOffchainPayments indicates that it wasn't possible to find routes
-	// for one or both of the off-chain payments to the server that
+	// StateFailOffchainPayments indicates that it wasn't possible to find
+	// routes for one or both of the off-chain payments to the server that
 	// satisfied the payment restrictions (fee and timelock limits).
 	StateFailOffchainPayments = 3
 
-	// StateFailTimeout indicates that the on-chain htlc wasn't confirmed before
-	// its expiry or confirmed too late (MinPreimageRevealDelta violated).
+	// StateFailTimeout indicates that the on-chain htlc wasn't confirmed
+	// before its expiry or confirmed too late (MinPreimageRevealDelta
+	// violated).
 	StateFailTimeout = 4
 
-	// StateFailSweepTimeout indicates that the on-chain htlc wasn't swept before
-	// the server revoked the htlc. The server didn't pull the off-chain
-	// htlc (even though it could have) and we timed out the off-chain htlc
-	// ourselves. No funds lost.
+	// StateFailSweepTimeout indicates that the on-chain htlc wasn't swept
+	// before the server revoked the htlc. The server didn't pull the
+	// off-chain htlc (even though it could have) and we timed out the
+	// off-chain htlc ourselves. No funds lost.
 	StateFailSweepTimeout = 5
 
-	// StateFailInsufficientValue indicates that the published on-chain htlc had
-	// a value lower than the requested amount.
+	// StateFailInsufficientValue indicates that the published on-chain htlc
+	// had a value lower than the requested amount.
 	StateFailInsufficientValue = 6
 
 	// StateFailTemporary indicates that the swap cannot progress because
@@ -48,6 +51,10 @@ const (
 
 	// StateHtlcPublished means that the client published the on-chain htlc.
 	StateHtlcPublished = 8
+
+	// StateInvoiceSettled means that the swap invoice has been paid by the
+	// server.
+	StateInvoiceSettled = 9
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -90,6 +97,9 @@ func (s SwapState) String() string {
 	case StatePreimageRevealed:
 		return "PreimageRevealed"
 
+	case StateHtlcPublished:
+		return "HtlcPublished"
+
 	case StateSuccess:
 		return "Success"
 
@@ -107,6 +117,9 @@ func (s SwapState) String() string {
 
 	case StateFailTemporary:
 		return "FailTemporary"
+
+	case StateInvoiceSettled:
+		return "InvoiceSettled"
 
 	default:
 		return "Unknown"

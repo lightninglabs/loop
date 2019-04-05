@@ -17,6 +17,11 @@ type storeMock struct {
 	loopOutStoreChan  chan loopdb.LoopOutContract
 	loopOutUpdateChan chan loopdb.SwapState
 
+	loopInSwaps      map[lntypes.Hash]*loopdb.LoopInContract
+	loopInUpdates    map[lntypes.Hash][]loopdb.SwapState
+	loopInStoreChan  chan loopdb.LoopInContract
+	loopInUpdateChan chan loopdb.SwapState
+
 	t *testing.T
 }
 
@@ -33,7 +38,11 @@ func newStoreMock(t *testing.T) *storeMock {
 		loopOutSwaps:      make(map[lntypes.Hash]*loopdb.LoopOutContract),
 		loopOutUpdates:    make(map[lntypes.Hash][]loopdb.SwapState),
 
-		t: t,
+		loopInStoreChan:  make(chan loopdb.LoopInContract, 1),
+		loopInUpdateChan: make(chan loopdb.SwapState, 1),
+		loopInSwaps:      make(map[lntypes.Hash]*loopdb.LoopInContract),
+		loopInUpdates:    make(map[lntypes.Hash][]loopdb.SwapState),
+		t:                t,
 	}
 }
 
@@ -45,17 +54,19 @@ func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
 
 	for hash, contract := range s.loopOutSwaps {
 		updates := s.loopOutUpdates[hash]
-		events := make([]*loopdb.LoopOutEvent, len(updates))
+		events := make([]*loopdb.LoopEvent, len(updates))
 		for i, u := range updates {
-			events[i] = &loopdb.LoopOutEvent{
+			events[i] = &loopdb.LoopEvent{
 				State: u,
 			}
 		}
 
 		swap := &loopdb.LoopOut{
-			Hash:     hash,
+			Loop: loopdb.Loop{
+				Hash:   hash,
+				Events: events,
+			},
 			Contract: contract,
-			Events:   events,
 		}
 		result = append(result, swap)
 	}
@@ -81,6 +92,50 @@ func (s *storeMock) CreateLoopOut(hash lntypes.Hash,
 	return nil
 }
 
+// FetchLoopInSwaps returns all in swaps currently in the store.
+func (s *storeMock) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
+	result := []*loopdb.LoopIn{}
+
+	for hash, contract := range s.loopInSwaps {
+		updates := s.loopInUpdates[hash]
+		events := make([]*loopdb.LoopEvent, len(updates))
+		for i, u := range updates {
+			events[i] = &loopdb.LoopEvent{
+				State: u,
+			}
+		}
+
+		swap := &loopdb.LoopIn{
+			Loop: loopdb.Loop{
+				Hash:   hash,
+				Events: events,
+			},
+			Contract: contract,
+		}
+		result = append(result, swap)
+	}
+
+	return result, nil
+}
+
+// CreateLoopIn adds an initiated loop in swap to the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) CreateLoopIn(hash lntypes.Hash,
+	swap *loopdb.LoopInContract) error {
+
+	_, ok := s.loopInSwaps[hash]
+	if ok {
+		return errors.New("swap already exists")
+	}
+
+	s.loopInSwaps[hash] = swap
+	s.loopInUpdates[hash] = []loopdb.SwapState{}
+	s.loopInStoreChan <- *swap
+
+	return nil
+}
+
 // UpdateLoopOut stores a new event for a target loop out swap. This appends to
 // the event log for a particular swap as it goes through the various stages in
 // its lifetime.
@@ -90,6 +145,26 @@ func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 	state loopdb.SwapState) error {
 
 	updates, ok := s.loopOutUpdates[hash]
+	if !ok {
+		return errors.New("swap does not exists")
+	}
+
+	updates = append(updates, state)
+	s.loopOutUpdates[hash] = updates
+	s.loopOutUpdateChan <- state
+
+	return nil
+}
+
+// UpdateLoopIn stores a new event for a target loop in swap. This appends to
+// the event log for a particular swap as it goes through the various stages in
+// its lifetime.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
+	state loopdb.SwapState) error {
+
+	updates, ok := s.loopInUpdates[hash]
 	if !ok {
 		return errors.New("swap does not exists")
 	}
@@ -127,6 +202,21 @@ func (s *storeMock) assertLoopOutStored() {
 	case <-s.loopOutStoreChan:
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap to be stored")
+	}
+}
+
+func (s *storeMock) assertLoopInStored() {
+	s.t.Helper()
+
+	<-s.loopInStoreChan
+}
+
+func (s *storeMock) assertLoopInState(expectedState loopdb.SwapState) {
+	s.t.Helper()
+
+	state := <-s.loopOutUpdateChan
+	if state != expectedState {
+		s.t.Fatalf("unexpected state")
 	}
 }
 

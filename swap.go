@@ -29,19 +29,15 @@ type swapKit struct {
 }
 
 func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
-	contract *loopdb.SwapContract) (*swapKit, error) {
+	contract *loopdb.SwapContract, outputType swap.HtlcOutputType) (
+	*swapKit, error) {
 
 	// Compose expected on-chain swap script
 	htlc, err := swap.NewHtlc(
 		contract.CltvExpiry, contract.SenderKey,
-		contract.ReceiverKey, hash,
+		contract.ReceiverKey, hash, outputType,
+		cfg.lnd.ChainParams,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Log htlc address for debugging.
-	htlcAddress, err := htlc.Address(cfg.lnd.ChainParams)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +47,8 @@ func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
 		Logger: logger,
 	}
 
-	log.Infof("Htlc address: %v", htlcAddress)
+	// Log htlc address for debugging.
+	log.Infof("Htlc address: %v", htlc.Address)
 
 	return &swapKit{
 		swapConfig: *cfg,
@@ -72,6 +69,7 @@ func (s *swapKit) sendUpdate(ctx context.Context) error {
 		SwapType:     s.swapType,
 		LastUpdate:   s.lastUpdateTime,
 		State:        s.state,
+		HtlcAddress:  s.htlc.Address,
 	}
 
 	s.log.Infof("state %v", info.State)

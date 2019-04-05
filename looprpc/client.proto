@@ -22,6 +22,14 @@ service SwapClient {
         };
     }
 
+    /**
+    LoopIn initiates a loop in swap with the given parameters. The call
+    returns after the swap has been set up with the swap server. From that
+    point onwards, progress can be tracked via the SwapStatus stream
+    that is returned from Monitor().
+    */
+    rpc LoopIn(LoopInRequest) returns (SwapResponse);
+
     /** loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
     TODO: add MonitorSync version for REST clients.
@@ -46,6 +54,16 @@ service SwapClient {
             get: "/v1/loop/out/quote/{amt}"
         };
     }
+
+    /**
+    GetTerms returns the terms that the server enforces for swaps.
+    */
+    rpc GetLoopInTerms(TermsRequest) returns(TermsResponse);
+
+    /**
+    GetQuote returns a quote for a swap with the provided parameters.
+    */
+    rpc GetLoopInQuote(QuoteRequest) returns(QuoteResponse);
 }
 
 message LoopOutRequest {
@@ -111,6 +129,44 @@ message LoopOutRequest {
     uint64 loop_out_channel = 8;
 }
 
+message LoopInRequest {
+    /**
+    Requested swap amount in sat. This does not include the swap and miner 
+    fee.
+    */
+    int64 amt = 1;
+
+    /**
+    Maximum we are willing to pay the server for the swap. This value is not
+    disclosed in the swap initiation call, but if the server asks for a
+    higher fee, we abort the swap. Typically this value is taken from the
+    response of the GetQuote call.
+    */
+    int64 max_swap_fee = 2;
+
+    /**
+    Maximum in on-chain fees that we are willing to spent. If we want to
+    publish the on-chain htlc and the fee estimate turns out higher than this
+    value, we cancel the swap. 
+
+    max_miner_fee is typically taken from the response of the GetQuote call.
+    */
+    int64 max_miner_fee = 3;
+    
+    /**
+    The channel to loop in. If zero, the channel to loop in is selected based
+    on the lowest routing fee for the swap payment from the server.
+
+    Note: NOT YET IMPLEMENTED
+    */
+    uint64 loop_in_channel = 4;
+
+    /**
+    If external_htlc is true, we expect the htlc to be published by an external
+    actor.
+    */
+    bool external_htlc = 5;
+}
 
 message SwapResponse {
     /**
@@ -118,6 +174,11 @@ message SwapResponse {
     the Start() call. Currently this is the hash that locks the htlcs.
     */
     string id = 1;
+
+    /**
+    The address of the on-chain htlc.
+    */
+    string htlc_address = 2;
 }
 
 message MonitorRequest{
@@ -165,6 +226,9 @@ message SwapStatus {
 enum SwapType {
     // LOOP_OUT indicates an loop out swap (off-chain to on-chain)
     LOOP_OUT = 0;
+
+    // LOOP_IN indicates a loop in swap (on-chain to off-chain)
+    LOOP_IN = 1;
 }
 
 enum SwapState {
@@ -185,6 +249,12 @@ enum SwapState {
     PREIMAGE_REVEALED = 1;
 
     /**
+    HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
+    swap.
+    */
+    HTLC_PUBLISHED = 2;
+
+    /**
     SUCCESS is the final swap state that is reached when the sweep tx has
     the required confirmation depth.
     */
@@ -195,6 +265,12 @@ enum SwapState {
     the swap amount.
     */
     FAILED = 4;
+
+     /**
+    INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
+    paid, but we are still waiting for the htlc spend to confirm.
+    */
+    INVOICE_SETTLED = 5;
 }
 
 message TermsRequest {
@@ -236,11 +312,6 @@ message TermsResponse {
     On-chain cltv expiry delta
     */
     int32 cltv_delta = 7;
-
-    /**
-    Maximum cltv expiry delta
-    */
-    int32 max_cltv = 8;
 }
 
 message QuoteRequest {

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/swap"
-
-	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
+
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 )
 
 var termsCommand = cli.Command{
@@ -23,20 +23,6 @@ func terms(ctx *cli.Context) error {
 		return err
 	}
 	defer cleanup()
-
-	req := &looprpc.TermsRequest{}
-	terms, err := client.LoopOutTerms(context.Background(), req)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Amount: %d - %d\n",
-		btcutil.Amount(terms.MinSwapAmount),
-		btcutil.Amount(terms.MaxSwapAmount),
-	)
-	if err != nil {
-		return err
-	}
 
 	printTerms := func(terms *looprpc.TermsResponse) {
 		fmt.Printf("Amount: %d - %d\n",
@@ -54,7 +40,26 @@ func terms(ctx *cli.Context) error {
 
 	fmt.Println("Loop Out")
 	fmt.Println("--------")
-	printTerms(terms)
+	req := &looprpc.TermsRequest{}
+	loopOutTerms, err := client.LoopOutTerms(context.Background(), req)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printTerms(loopOutTerms)
+	}
+
+	fmt.Println()
+
+	fmt.Println("Loop In")
+	fmt.Println("------")
+	loopInTerms, err := client.GetLoopInTerms(
+		context.Background(), &looprpc.TermsRequest{},
+	)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printTerms(loopInTerms)
+	}
 
 	return nil
 }

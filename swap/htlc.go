@@ -2,6 +2,7 @@ package swap
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -12,13 +13,27 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
+// HtlcOutputType defines the output type of the htlc that is published.
+type HtlcOutputType uint8
+
+const (
+	// HtlcP2WSH is a pay-to-witness-script-hash output (segwit only)
+	HtlcP2WSH HtlcOutputType = iota
+
+	// HtlcNP2WSH is a nested pay-to-witness-script-hash output that can be
+	// paid to be legacy wallets.
+	HtlcNP2WSH
+)
+
 // Htlc contains relevant htlc information from the receiver perspective.
 type Htlc struct {
-	Script                []byte
-	ScriptHash            []byte
-	Hash                  lntypes.Hash
-	MaxSuccessWitnessSize int
-	MaxTimeoutWitnessSize int
+	Script      []byte
+	PkScript    []byte
+	Hash        lntypes.Hash
+	OutputType  HtlcOutputType
+	ChainParams *chaincfg.Params
+	Address     btcutil.Address
+	SigScript   []byte
 }
 
 var (
@@ -30,13 +45,15 @@ var (
 	// the maximum value for cltv expiry to get the maximum (worst case)
 	// script size.
 	QuoteHtlc, _ = NewHtlc(
-		^int32(0), quoteKey, quoteKey, quoteHash,
+		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
+		&chaincfg.MainNetParams,
 	)
 )
 
 // NewHtlc returns a new instance.
 func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
-	hash lntypes.Hash) (*Htlc, error) {
+	hash lntypes.Hash, outputType HtlcOutputType,
+	chainParams *chaincfg.Params) (*Htlc, error) {
 
 	script, err := swapHTLCScript(
 		cltvExpiry, senderKey, receiverKey, hash,
@@ -45,39 +62,73 @@ func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 		return nil, err
 	}
 
-	scriptHash, err := input.WitnessScriptHash(script)
+	p2wshPkScript, err := input.WitnessScriptHash(script)
 	if err != nil {
 		return nil, err
 	}
 
-	// Calculate maximum success witness size
-	//
-	// - number_of_witness_elements: 1 byte
-	// - receiver_sig_length: 1 byte
-	// - receiver_sig: 73 bytes
-	// - preimage_length: 1 byte
-	// - preimage: 33 bytes
-	// - witness_script_length: 1 byte
-	// - witness_script: len(script) bytes
-	maxSuccessWitnessSize := 1 + 1 + 73 + 1 + 33 + 1 + len(script)
+	p2wshPkScriptHash := sha256.Sum256(p2wshPkScript)
 
-	// Calculate maximum timeout witness size
-	//
-	// - number_of_witness_elements: 1 byte
-	// - sender_sig_length: 1 byte
-	// - sender_sig: 73 bytes
-	// - zero_length: 1 byte
-	// - zero: 1 byte
-	// - witness_script_length: 1 byte
-	// - witness_script: len(script) bytes
-	maxTimeoutWitnessSize := 1 + 1 + 73 + 1 + 1 + 1 + len(script)
+	var pkScript, sigScript []byte
+	var address btcutil.Address
+
+	switch outputType {
+	case HtlcNP2WSH:
+		// Generate p2sh script for p2wsh (nested).
+
+		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
+
+		builder := txscript.NewScriptBuilder()
+
+		builder.AddOp(txscript.OP_HASH160)
+		builder.AddData(hash160)
+		builder.AddOp(txscript.OP_EQUAL)
+
+		pkScript, err = builder.Script()
+		if err != nil {
+			return nil, err
+		}
+
+		// Generate a valid sigScript that will allow us to spend the
+		// p2sh output. The sigScript will contain only a single push of
+		// the p2wsh witness program corresponding to the matching
+		// public key of this address.
+		sigScript, err = txscript.NewScriptBuilder().
+			AddData(p2wshPkScript).
+			Script()
+		if err != nil {
+			return nil, err
+		}
+
+		address, err = btcutil.NewAddressScriptHash(
+			p2wshPkScript, chainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+	case HtlcP2WSH:
+		pkScript = p2wshPkScript
+
+		address, err = btcutil.NewAddressWitnessScriptHash(
+			p2wshPkScriptHash[:],
+			chainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("unknown output type")
+	}
 
 	return &Htlc{
-		Hash:                  hash,
-		Script:                script,
-		ScriptHash:            scriptHash,
-		MaxSuccessWitnessSize: maxSuccessWitnessSize,
-		MaxTimeoutWitnessSize: maxTimeoutWitnessSize,
+		Hash:        hash,
+		Script:      script,
+		PkScript:    pkScript,
+		OutputType:  outputType,
+		ChainParams: chainParams,
+		Address:     address,
+		SigScript:   sigScript,
 	}, nil
 }
 
@@ -127,17 +178,6 @@ func swapHTLCScript(cltvExpiry int32, senderHtlcKey,
 	return builder.Script()
 }
 
-// Address returns the p2wsh address of the htlc.
-func (h *Htlc) Address(chainParams *chaincfg.Params) (
-	btcutil.Address, error) {
-
-	// Skip OP_0 and data length.
-	return btcutil.NewAddressWitnessScriptHash(
-		h.ScriptHash[2:],
-		chainParams,
-	)
-}
-
 // GenSuccessWitness returns the success script to spend this htlc with the
 // preimage.
 func (h *Htlc) GenSuccessWitness(receiverSig []byte,
@@ -177,4 +217,48 @@ func (h *Htlc) GenTimeoutWitness(senderSig []byte) (wire.TxWitness, error) {
 	witnessStack[2] = h.Script
 
 	return witnessStack, nil
+}
+
+// AddSuccessToEstimator adds a successful spend to a weight estimator.
+func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) {
+	// Calculate maximum success witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - receiver_sig_length: 1 byte
+	// - receiver_sig: 73 bytes
+	// - preimage_length: 1 byte
+	// - preimage: 33 bytes
+	// - witness_script_length: 1 byte
+	// - witness_script: len(script) bytes
+	maxSuccessWitnessSize := 1 + 1 + 73 + 1 + 33 + 1 + len(h.Script)
+
+	switch h.OutputType {
+	case HtlcP2WSH:
+		estimator.AddWitnessInput(maxSuccessWitnessSize)
+
+	case HtlcNP2WSH:
+		estimator.AddNestedP2WSHInput(maxSuccessWitnessSize)
+	}
+}
+
+// AddTimeoutToEstimator adds a timeout spend to a weight estimator.
+func (h *Htlc) AddTimeoutToEstimator(estimator *input.TxWeightEstimator) {
+	// Calculate maximum timeout witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - sender_sig_length: 1 byte
+	// - sender_sig: 73 bytes
+	// - zero_length: 1 byte
+	// - zero: 1 byte
+	// - witness_script_length: 1 byte
+	// - witness_script: len(script) bytes
+	maxTimeoutWitnessSize := 1 + 1 + 73 + 1 + 1 + 1 + len(h.Script)
+
+	switch h.OutputType {
+	case HtlcP2WSH:
+		estimator.AddWitnessInput(maxTimeoutWitnessSize)
+
+	case HtlcNP2WSH:
+		estimator.AddNestedP2WSHInput(maxTimeoutWitnessSize)
+	}
 }
