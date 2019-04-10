@@ -21,8 +21,11 @@ The service can be used in various situations:
 - Paying to on-chain fallback addresses in the case of insufficient route
     liquidity
 
-Future iterations of the Loop software will also allow on-chain to off-chain
-swaps. These swaps can be useful for additional use-cases:
+Loop also allow offers an experimental testnet version of on-chain to off-chain
+swaps, called **Loop In**. This allows you to use on-chain funds to increase
+the local balance of a channel.
+
+Potential uses for Loop In:
 
 - Refilling depleted channels with funds from cold-wallets or exchange
     withdrawals
