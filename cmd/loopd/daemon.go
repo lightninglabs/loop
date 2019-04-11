@@ -32,6 +32,7 @@ func daemon(config *config) error {
 		config.SwapServer = testnetServer
 	}
 
+	// Create an instance of the loop client library.
 	swapClient, cleanup, err := getClient(
 		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
 	)
@@ -40,35 +41,14 @@ func daemon(config *config) error {
 	}
 	defer cleanup()
 
-	// Before starting the client, build an in-memory view of all swaps.
-	// This view is used to update newly connected clients with the most
-	// recent swaps.
-	loopOutSwaps, err := swapClient.FetchLoopOutSwaps()
+	// Retrieve all currently existing swaps from the database.
+	swapsList, err := swapClient.FetchSwaps()
 	if err != nil {
 		return err
-	}
-	for _, swap := range loopOutSwaps {
-		swaps[swap.Hash] = loop.SwapInfo{
-			SwapType:     loop.TypeOut,
-			SwapContract: swap.Contract.SwapContract,
-			State:        swap.State(),
-			SwapHash:     swap.Hash,
-			LastUpdate:   swap.LastUpdateTime(),
-		}
 	}
 
-	loopInSwaps, err := swapClient.FetchLoopInSwaps()
-	if err != nil {
-		return err
-	}
-	for _, swap := range loopInSwaps {
-		swaps[swap.Hash] = loop.SwapInfo{
-			SwapType:     loop.TypeIn,
-			SwapContract: swap.Contract.SwapContract,
-			State:        swap.State(),
-			SwapHash:     swap.Hash,
-			LastUpdate:   swap.LastUpdateTime(),
-		}
+	for _, s := range swapsList {
+		swaps[s.SwapHash] = *s
 	}
 
 	// Instantiate the loopd gRPC server.
