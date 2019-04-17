@@ -122,11 +122,17 @@ var (
 	defaultRPCPort         = "10009"
 	defaultLndDir          = btcutil.AppDataDir("lnd", false)
 	defaultTLSCertFilename = "tls.cert"
-	defaultTLSCertPath     = filepath.Join(defaultLndDir,
-		defaultTLSCertFilename)
-	defaultDataDir          = "data"
-	defaultChainSubDir      = "chain"
-	defaultMacaroonFilename = "admin.macaroon"
+	defaultTLSCertPath     = filepath.Join(
+		defaultLndDir, defaultTLSCertFilename,
+	)
+	defaultDataDir     = "data"
+	defaultChainSubDir = "chain"
+
+	defaultAdminMacaroonFilename     = "admin.macaroon"
+	defaultInvoiceMacaroonFilename   = "invoices.macaroon"
+	defaultChainMacaroonFilename     = "chainnotifier.macaroon"
+	defaultWalletKitMacaroonFilename = "walletkit.macaroon"
+	defaultSignerFilename            = "signer.macaroon"
 )
 
 func getClientConn(address string, network string, macPath, tlsPath string) (
@@ -151,7 +157,7 @@ func getClientConn(address string, network string, macPath, tlsPath string) (
 	if macPath == "" {
 		macPath = filepath.Join(
 			defaultLndDir, defaultDataDir, defaultChainSubDir,
-			"bitcoin", network, defaultMacaroonFilename,
+			"bitcoin", network, defaultAdminMacaroonFilename,
 		)
 	}
 
