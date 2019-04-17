@@ -41,10 +41,38 @@ type GrpcLndServices struct {
 func NewLndServices(lndAddress, application, network, macaroonDir,
 	tlsPath string) (*GrpcLndServices, error) {
 
-	// If the macaroon directory isn't set, then we can't proceed as we
-	// need then to obtain the macaroons for all sub-servers.
+	// Based on the network, if the macaroon directory isn't set, then
+	// we'll use the expected default locations.
 	if macaroonDir == "" {
-		return nil, fmt.Errorf("macarooon dir must be set")
+		switch network {
+		case "testnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "testnet",
+			)
+
+		case "mainnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "mainnet",
+			)
+
+		case "simnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "simnet",
+			)
+
+		case "regtest":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "regtest",
+			)
+
+		default:
+			return nil, fmt.Errorf("unsupported network: %v",
+				network)
+		}
 	}
 
 	// Now that we've ensured our macaroon directory is set properly, we
@@ -88,7 +116,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 	}
 
 	// With the network check passed, we'll now initialize the rest of the
-	// sub-sever connections, giving each of them their specific macaroon.
+	// sub-server connections, giving each of them their specific macaroon.
 	notifierClient := newChainNotifierClient(conn, macaroons.chainMac)
 	signerClient := newSignerClient(conn, macaroons.signerMac)
 	walletKitClient := newWalletKitClient(conn, macaroons.walletKitMac)
