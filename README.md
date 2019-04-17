@@ -48,13 +48,14 @@ problems. Community support is also available in the
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
 env variable is set to `on`.
 
-In order to execute a swap, **LND will need to be rebuilt on master with sub
-servers enabled.**
+In order to execute a swap, **You need to run lnd 0.6.0+, or master built with
+sub-servers enabled.**
 
 ### LND
 
-Make sure that you are using the `master` branch of lnd. You can get this by
-git cloning the repository
+If you are building from source, and not using a 0.6.0 or higher release of
+lnd, make sure that you are using the `master` branch of lnd. You can get this
+by git cloning the repository
 
 ```
 git clone https://github.com/lightningnetwork/lnd.git
@@ -69,7 +70,7 @@ make install tags="signrpc walletrpc chainrpc invoicesrpc"
 ```
 
 Check to see if you have already installed lnd. If you have, you will need to
-delete the `.macaroon` files from your lnd directory.
+delete the `.macaroon` files from your lnd directory and restart lnd.
 
 **Do not delete any other files other than the `.macaroon` files**
 
