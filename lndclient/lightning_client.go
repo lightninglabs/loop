@@ -78,17 +78,19 @@ var (
 )
 
 type lightningClient struct {
-	client lnrpc.LightningClient
-	wg     sync.WaitGroup
-	params *chaincfg.Params
+	client   lnrpc.LightningClient
+	wg       sync.WaitGroup
+	params   *chaincfg.Params
+	adminMac serializedMacaroon
 }
 
 func newLightningClient(conn *grpc.ClientConn,
-	params *chaincfg.Params) *lightningClient {
+	params *chaincfg.Params, adminMac serializedMacaroon) *lightningClient {
 
 	return &lightningClient{
-		client: lnrpc.NewLightningClient(conn),
-		params: params,
+		client:   lnrpc.NewLightningClient(conn),
+		params:   params,
+		adminMac: adminMac,
 	}
 }
 
@@ -110,6 +112,7 @@ func (s *lightningClient) ConfirmedWalletBalance(ctx context.Context) (
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.WalletBalance(rpcCtx, &lnrpc.WalletBalanceRequest{})
 	if err != nil {
 		return 0, err
@@ -122,6 +125,7 @@ func (s *lightningClient) GetInfo(ctx context.Context) (*Info, error) {
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.GetInfo(rpcCtx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		return nil, err
@@ -159,6 +163,7 @@ func (s *lightningClient) EstimateFeeToP2WSH(ctx context.Context,
 		return 0, err
 	}
 
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.EstimateFee(
 		rpcCtx,
 		&lnrpc.EstimateFeeRequest{
@@ -216,6 +221,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 
 	hash := lntypes.Hash(*payReq.PaymentHash)
 
+	ctx = s.adminMac.WithMacaroonAuth(ctx)
 	for {
 		// Create no timeout context as this call can block for a long
 		// time.
@@ -329,6 +335,7 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 		rpcIn.RHash = in.Hash[:]
 	}
 
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.AddInvoice(rpcCtx, rpcIn)
 	if err != nil {
 		return lntypes.Hash{}, "", err

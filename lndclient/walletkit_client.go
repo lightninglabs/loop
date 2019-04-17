@@ -34,12 +34,16 @@ type WalletKitClient interface {
 }
 
 type walletKitClient struct {
-	client walletrpc.WalletKitClient
+	client       walletrpc.WalletKitClient
+	walletKitMac serializedMacaroon
 }
 
-func newWalletKitClient(conn *grpc.ClientConn) *walletKitClient {
+func newWalletKitClient(conn *grpc.ClientConn,
+	walletKitMac serializedMacaroon) *walletKitClient {
+
 	return &walletKitClient{
-		client: walletrpc.NewWalletKitClient(conn),
+		client:       walletrpc.NewWalletKitClient(conn),
+		walletKitMac: walletKitMac,
 	}
 }
 
@@ -49,6 +53,7 @@ func (m *walletKitClient) DeriveNextKey(ctx context.Context, family int32) (
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	resp, err := m.client.DeriveNextKey(rpcCtx, &walletrpc.KeyReq{
 		KeyFamily: family,
 	})
@@ -76,6 +81,7 @@ func (m *walletKitClient) DeriveKey(ctx context.Context, in *keychain.KeyLocator
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	resp, err := m.client.DeriveKey(rpcCtx, &signrpc.KeyLocator{
 		KeyFamily: int32(in.Family),
 		KeyIndex:  int32(in.Index),
@@ -101,6 +107,7 @@ func (m *walletKitClient) NextAddr(ctx context.Context) (
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	resp, err := m.client.NextAddr(rpcCtx, &walletrpc.AddrRequest{})
 	if err != nil {
 		return nil, err
@@ -125,6 +132,7 @@ func (m *walletKitClient) PublishTransaction(ctx context.Context,
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	_, err = m.client.PublishTransaction(rpcCtx, &walletrpc.Transaction{
 		TxHex: txHex,
 	})
@@ -147,6 +155,7 @@ func (m *walletKitClient) SendOutputs(ctx context.Context,
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	resp, err := m.client.SendOutputs(rpcCtx, &walletrpc.SendOutputsRequest{
 		Outputs:  rpcOutputs,
 		SatPerKw: int64(feeRate),
@@ -169,6 +178,7 @@ func (m *walletKitClient) EstimateFee(ctx context.Context, confTarget int32) (
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
 	resp, err := m.client.EstimateFee(rpcCtx, &walletrpc.EstimateFeeRequest{
 		ConfTarget: int32(confTarget),
 	})

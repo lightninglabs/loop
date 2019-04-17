@@ -28,13 +28,16 @@ type ChainNotifierClient interface {
 }
 
 type chainNotifierClient struct {
-	client chainrpc.ChainNotifierClient
-	wg     sync.WaitGroup
+	client   chainrpc.ChainNotifierClient
+	chainMac serializedMacaroon
+
+	wg sync.WaitGroup
 }
 
-func newChainNotifierClient(conn *grpc.ClientConn) *chainNotifierClient {
+func newChainNotifierClient(conn *grpc.ClientConn, chainMac serializedMacaroon) *chainNotifierClient {
 	return &chainNotifierClient{
-		client: chainrpc.NewChainNotifierClient(conn),
+		client:   chainrpc.NewChainNotifierClient(conn),
+		chainMac: chainMac,
 	}
 }
 
@@ -54,7 +57,8 @@ func (s *chainNotifierClient) RegisterSpendNtfn(ctx context.Context,
 		}
 	}
 
-	resp, err := s.client.RegisterSpendNtfn(ctx, &chainrpc.SpendRequest{
+	macaroonAuth := s.chainMac.WithMacaroonAuth(ctx)
+	resp, err := s.client.RegisterSpendNtfn(macaroonAuth, &chainrpc.SpendRequest{
 		HeightHint: uint32(heightHint),
 		Outpoint:   rpcOutpoint,
 		Script:     pkScript,
@@ -125,16 +129,15 @@ func (s *chainNotifierClient) RegisterConfirmationsNtfn(ctx context.Context,
 	if txid != nil {
 		txidSlice = txid[:]
 	}
-	confStream, err := s.client.
-		RegisterConfirmationsNtfn(
-			ctx,
-			&chainrpc.ConfRequest{
-				Script:     pkScript,
-				NumConfs:   uint32(numConfs),
-				HeightHint: uint32(heightHint),
-				Txid:       txidSlice,
-			},
-		)
+	confStream, err := s.client.RegisterConfirmationsNtfn(
+		s.chainMac.WithMacaroonAuth(ctx),
+		&chainrpc.ConfRequest{
+			Script:     pkScript,
+			NumConfs:   uint32(numConfs),
+			HeightHint: uint32(heightHint),
+			Txid:       txidSlice,
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -203,8 +206,9 @@ func (s *chainNotifierClient) RegisterConfirmationsNtfn(ctx context.Context,
 func (s *chainNotifierClient) RegisterBlockEpochNtfn(ctx context.Context) (
 	chan int32, chan error, error) {
 
-	blockEpochClient, err := s.client.
-		RegisterBlockEpochNtfn(ctx, &chainrpc.BlockEpoch{})
+	blockEpochClient, err := s.client.RegisterBlockEpochNtfn(
+		s.chainMac.WithMacaroonAuth(ctx), &chainrpc.BlockEpoch{},
+	)
 	if err != nil {
 		return nil, nil, err
 	}

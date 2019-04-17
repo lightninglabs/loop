@@ -68,12 +68,17 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 		return nil, err
 	}
 
-	lightningClient := newLightningClient(conn, chainParams)
+	lightningClient := newLightningClient(
+		conn, chainParams, macaroons.adminMac,
+	)
 
+	// With our macaroons obtained, we'll ensure that the network for lnd
+	// matches our expected network.
 	info, err := lightningClient.GetInfo(context.Background())
 	if err != nil {
 		conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("unable to get info for lnd "+
+			"node: %v", err)
 	}
 	if network != info.Network {
 		conn.Close()
@@ -82,10 +87,12 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 		)
 	}
 
-	notifierClient := newChainNotifierClient(conn)
-	signerClient := newSignerClient(conn)
-	walletKitClient := newWalletKitClient(conn)
-	invoicesClient := newInvoicesClient(conn)
+	// With the network check passed, we'll now initialize the rest of the
+	// sub-sever connections, giving each of them their specific macaroon.
+	notifierClient := newChainNotifierClient(conn, macaroons.chainMac)
+	signerClient := newSignerClient(conn, macaroons.signerMac)
+	walletKitClient := newWalletKitClient(conn, macaroons.walletKitMac)
+	invoicesClient := newInvoicesClient(conn, macaroons.invoiceMac)
 
 	cleanup := func() {
 		logger.Debugf("Closing lnd connection")
