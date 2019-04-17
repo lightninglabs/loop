@@ -113,14 +113,61 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 	return client, cleanup, nil
 }
 
-// FetchLoopOutSwaps returns a list of all swaps currently in the database.
-func (s *Client) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
-	return s.Store.FetchLoopOutSwaps()
-}
+// FetchSwaps returns all loop in and out swaps currently in the database.
+func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
+	loopOutSwaps, err := s.Store.FetchLoopOutSwaps()
+	if err != nil {
+		return nil, err
+	}
 
-// FetchLoopInSwaps returns a list of all swaps currently in the database.
-func (s *Client) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
-	return s.Store.FetchLoopInSwaps()
+	loopInSwaps, err := s.Store.FetchLoopInSwaps()
+	if err != nil {
+		return nil, err
+	}
+
+	swaps := make([]*SwapInfo, 0, len(loopInSwaps)+len(loopOutSwaps))
+
+	for _, swp := range loopOutSwaps {
+		htlc, err := swap.NewHtlc(
+			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
+			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
+			s.lndServices.ChainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		swaps = append(swaps, &SwapInfo{
+			SwapType:     TypeOut,
+			SwapContract: swp.Contract.SwapContract,
+			State:        swp.State(),
+			SwapHash:     swp.Hash,
+			LastUpdate:   swp.LastUpdateTime(),
+			HtlcAddress:  htlc.Address,
+		})
+	}
+
+	for _, swp := range loopInSwaps {
+		htlc, err := swap.NewHtlc(
+			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
+			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcNP2WSH,
+			s.lndServices.ChainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		swaps = append(swaps, &SwapInfo{
+			SwapType:     TypeIn,
+			SwapContract: swp.Contract.SwapContract,
+			State:        swp.State(),
+			SwapHash:     swp.Hash,
+			LastUpdate:   swp.LastUpdateTime(),
+			HtlcAddress:  htlc.Address,
+		})
+	}
+
+	return swaps, nil
 }
 
 // Run is a blocking call that executes all swaps. Any pending swaps are

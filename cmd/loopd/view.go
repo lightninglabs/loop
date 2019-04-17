@@ -42,7 +42,7 @@ func view(config *config) error {
 }
 
 func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
-	swaps, err := swapClient.FetchLoopOutSwaps()
+	swaps, err := swapClient.Store.FetchLoopOutSwaps()
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 }
 
 func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
-	swaps, err := swapClient.FetchLoopInSwaps()
+	swaps, err := swapClient.Store.FetchLoopInSwaps()
 	if err != nil {
 		return err
 	}
