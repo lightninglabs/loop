@@ -1,9 +1,9 @@
 package main
 
 type lndConfig struct {
-	Host         string `long:"host" description:"lnd instance rpc address"`
-	MacaroonPath string `long:"macaroonpath" description:"Path to lnd macaroon"`
-	TLSPath      string `long:"tlspath" description:"Path to lnd tls certificate"`
+	Host        string `long:"host" description:"lnd instance rpc address"`
+	MacaroonDir string `long:"macaroondir" description:"Path to the directory containing all the required lnd macaroons"`
+	TLSPath     string `long:"tlspath" description:"Path to lnd tls certificate"`
 }
 
 type viewParameters struct{}
