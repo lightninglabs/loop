@@ -25,7 +25,7 @@ var (
 	// the minimum routing fees, which is not very indicative.
 	maxRoutingFeeBase = btcutil.Amount(10)
 
-	maxRoutingFeeRate = int64(50000)
+	maxRoutingFeeRate = int64(20000)
 )
 
 func printRespJSON(resp proto.Message) {
