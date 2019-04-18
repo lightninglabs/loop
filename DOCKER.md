@@ -32,13 +32,14 @@ Docker is very flexible so you can use that information however you choose. This
 
 One way of running `loopd` is 
 ```
-docker run --rm -it --name loopd -v $HOME:/root loop:latest loopd --network=testnet --lnd.host <my-lnd-ip-address>:10009
+docker run --rm -it --name loopd -v $HOME/.lnd:/root/.lnd -v $HOME/.loop:/root/.loop loop:latest loopd --network=testnet --lnd.host <my-lnd-ip-address>:10009
 ```
 
 Things to note from this docker command:
 * You can stop the server with Control-C, and it'll clean up the associated stopped container automatically.
 * The name of the running container is 'loopd' (which you may need to know to run the `loop` command).
-* Your home directory is mapped into the container as the container user's home directory. `loopd` will look for your tls.cert and macaroon in the default locations in ~/.lnd, and will store its own data in ~/.loop. If mapping your home directory isn't appropriate for your case you can map whatever directories you choose and override where `loopd` looks for files using additional command-line parameters.
+* The '.lnd' directory in your home directory is mapped into the container, and `loopd` will look for your tls.cert and macaroon in the default locations. If this isn't appropriate for your case you can map whatever directories you choose and override where `loopd` looks for them using additional command-line parameters.
+* The '.loop' directory in your home directory is mapped into the container, and `loopd` will use that directory to store some state.
 * You probably need to specify your LND server host and port explicitly, since by default `loopd` looks for it on localhost and there is no LND server on localhost within the container.
 * No ports are mapped, so it's not possible to connect to the running `loopd` from outside the container. (This is deliberate. You can map ports 8081 and 11010 to connect from outside the container if you choose.)
 
