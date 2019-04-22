@@ -17,12 +17,16 @@ type SignerClient interface {
 }
 
 type signerClient struct {
-	client signrpc.SignerClient
+	client    signrpc.SignerClient
+	signerMac serializedMacaroon
 }
 
-func newSignerClient(conn *grpc.ClientConn) *signerClient {
+func newSignerClient(conn *grpc.ClientConn,
+	signerMac serializedMacaroon) *signerClient {
+
 	return &signerClient{
-		client: signrpc.NewSignerClient(conn),
+		client:    signrpc.NewSignerClient(conn),
+		signerMac: signerMac,
 	}
 }
 
@@ -76,6 +80,7 @@ func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.SignOutputRaw(rpcCtx,
 		&signrpc.SignReq{
 			RawTxBytes: txRaw,

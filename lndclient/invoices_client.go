@@ -33,13 +33,15 @@ type InvoiceUpdate struct {
 }
 
 type invoicesClient struct {
-	client invoicesrpc.InvoicesClient
-	wg     sync.WaitGroup
+	client     invoicesrpc.InvoicesClient
+	invoiceMac serializedMacaroon
+	wg         sync.WaitGroup
 }
 
-func newInvoicesClient(conn *grpc.ClientConn) *invoicesClient {
+func newInvoicesClient(conn *grpc.ClientConn, invoiceMac serializedMacaroon) *invoicesClient {
 	return &invoicesClient{
-		client: invoicesrpc.NewInvoicesClient(conn),
+		client:     invoicesrpc.NewInvoicesClient(conn),
+		invoiceMac: invoiceMac,
 	}
 }
 
@@ -53,6 +55,7 @@ func (s *invoicesClient) SettleInvoice(ctx context.Context,
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = s.invoiceMac.WithMacaroonAuth(ctx)
 	_, err := s.client.SettleInvoice(rpcCtx, &invoicesrpc.SettleInvoiceMsg{
 		Preimage: preimage[:],
 	})
@@ -66,6 +69,7 @@ func (s *invoicesClient) CancelInvoice(ctx context.Context,
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
+	rpcCtx = s.invoiceMac.WithMacaroonAuth(rpcCtx)
 	_, err := s.client.CancelInvoice(rpcCtx, &invoicesrpc.CancelInvoiceMsg{
 		PaymentHash: hash[:],
 	})
@@ -77,11 +81,12 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 	hash lntypes.Hash) (<-chan InvoiceUpdate,
 	<-chan error, error) {
 
-	invoiceStream, err := s.client.
-		SubscribeSingleInvoice(ctx,
-			&lnrpc.PaymentHash{
-				RHash: hash[:],
-			})
+	invoiceStream, err := s.client.SubscribeSingleInvoice(
+		s.invoiceMac.WithMacaroonAuth(ctx),
+		&lnrpc.PaymentHash{
+			RHash: hash[:],
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,6 +140,7 @@ func (s *invoicesClient) AddHoldInvoice(ctx context.Context,
 		Private:    true,
 	}
 
+	rpcCtx = s.invoiceMac.WithMacaroonAuth(rpcCtx)
 	resp, err := s.client.AddHoldInvoice(rpcCtx, rpcIn)
 	if err != nil {
 		return "", err

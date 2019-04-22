@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"path/filepath"
 	"time"
 
@@ -12,11 +11,8 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lncfg"
-	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-
-	macaroon "gopkg.in/macaroon.v2"
 )
 
 var rpcTimeout = 30 * time.Second
@@ -30,6 +26,8 @@ type LndServices struct {
 	Invoices      InvoicesClient
 
 	ChainParams *chaincfg.Params
+
+	macaroons *macaroonPouch
 }
 
 // GrpcLndServices constitutes a set of required RPC services.
@@ -40,13 +38,53 @@ type GrpcLndServices struct {
 }
 
 // NewLndServices creates a set of required RPC services.
-func NewLndServices(lndAddress string, application string,
-	network string, macPath, tlsPath string) (
-	*GrpcLndServices, error) {
+func NewLndServices(lndAddress, application, network, macaroonDir,
+	tlsPath string) (*GrpcLndServices, error) {
+
+	// Based on the network, if the macaroon directory isn't set, then
+	// we'll use the expected default locations.
+	if macaroonDir == "" {
+		switch network {
+		case "testnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "testnet",
+			)
+
+		case "mainnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "mainnet",
+			)
+
+		case "simnet":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "simnet",
+			)
+
+		case "regtest":
+			macaroonDir = filepath.Join(
+				defaultLndDir, defaultDataDir,
+				defaultChainSubDir, "bitcoin", "regtest",
+			)
+
+		default:
+			return nil, fmt.Errorf("unsupported network: %v",
+				network)
+		}
+	}
+
+	// Now that we've ensured our macaroon directory is set properly, we
+	// can retrieve our full macaroon pouch from the directory.
+	macaroons, err := newMacaroonPouch(macaroonDir)
+	if err != nil {
+		return nil, fmt.Errorf("unable to obtain macaroons: %v", err)
+	}
 
 	// Setup connection with lnd
 	logger.Infof("Creating lnd connection to %v", lndAddress)
-	conn, err := getClientConn(lndAddress, network, macPath, tlsPath)
+	conn, err := getClientConn(lndAddress, network, tlsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,12 +96,17 @@ func NewLndServices(lndAddress string, application string,
 		return nil, err
 	}
 
-	lightningClient := newLightningClient(conn, chainParams)
+	lightningClient := newLightningClient(
+		conn, chainParams, macaroons.adminMac,
+	)
 
+	// With our macaroons obtained, we'll ensure that the network for lnd
+	// matches our expected network.
 	info, err := lightningClient.GetInfo(context.Background())
 	if err != nil {
 		conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("unable to get info for lnd "+
+			"node: %v", err)
 	}
 	if network != info.Network {
 		conn.Close()
@@ -72,10 +115,12 @@ func NewLndServices(lndAddress string, application string,
 		)
 	}
 
-	notifierClient := newChainNotifierClient(conn)
-	signerClient := newSignerClient(conn)
-	walletKitClient := newWalletKitClient(conn)
-	invoicesClient := newInvoicesClient(conn)
+	// With the network check passed, we'll now initialize the rest of the
+	// sub-server connections, giving each of them their specific macaroon.
+	notifierClient := newChainNotifierClient(conn, macaroons.chainMac)
+	signerClient := newSignerClient(conn, macaroons.signerMac)
+	walletKitClient := newWalletKitClient(conn, macaroons.walletKitMac)
+	invoicesClient := newInvoicesClient(conn, macaroons.invoiceMac)
 
 	cleanup := func() {
 		logger.Debugf("Closing lnd connection")
@@ -101,6 +146,7 @@ func NewLndServices(lndAddress string, application string,
 			Signer:        signerClient,
 			Invoices:      invoicesClient,
 			ChainParams:   chainParams,
+			macaroons:     macaroons,
 		},
 		cleanup: cleanup,
 	}
@@ -122,14 +168,20 @@ var (
 	defaultRPCPort         = "10009"
 	defaultLndDir          = btcutil.AppDataDir("lnd", false)
 	defaultTLSCertFilename = "tls.cert"
-	defaultTLSCertPath     = filepath.Join(defaultLndDir,
-		defaultTLSCertFilename)
-	defaultDataDir          = "data"
-	defaultChainSubDir      = "chain"
-	defaultMacaroonFilename = "admin.macaroon"
+	defaultTLSCertPath     = filepath.Join(
+		defaultLndDir, defaultTLSCertFilename,
+	)
+	defaultDataDir     = "data"
+	defaultChainSubDir = "chain"
+
+	defaultAdminMacaroonFilename     = "admin.macaroon"
+	defaultInvoiceMacaroonFilename   = "invoices.macaroon"
+	defaultChainMacaroonFilename     = "chainnotifier.macaroon"
+	defaultWalletKitMacaroonFilename = "walletkit.macaroon"
+	defaultSignerFilename            = "signer.macaroon"
 )
 
-func getClientConn(address string, network string, macPath, tlsPath string) (
+func getClientConn(address string, network string, tlsPath string) (
 	*grpc.ClientConn, error) {
 
 	// Load the specified TLS certificate and build transport credentials
@@ -146,28 +198,6 @@ func getClientConn(address string, network string, macPath, tlsPath string) (
 	// Create a dial options array.
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
-	}
-
-	if macPath == "" {
-		macPath = filepath.Join(
-			defaultLndDir, defaultDataDir, defaultChainSubDir,
-			"bitcoin", network, defaultMacaroonFilename,
-		)
-	}
-
-	// Load the specified macaroon file.
-	macBytes, err := ioutil.ReadFile(macPath)
-	if err == nil {
-		// Only if file is found
-		mac := &macaroon.Macaroon{}
-		if err = mac.UnmarshalBinary(macBytes); err != nil {
-			return nil, fmt.Errorf("unable to decode macaroon: %v",
-				err)
-		}
-
-		// Now we append the macaroon credentials to the dial options.
-		cred := macaroons.NewMacaroonCredential(mac)
-		opts = append(opts, grpc.WithPerRPCCredentials(cred))
 	}
 
 	// We need to use a custom dialer so we can also connect to unix sockets

@@ -34,7 +34,8 @@ func daemon(config *config) error {
 
 	// Create an instance of the loop client library.
 	swapClient, cleanup, err := getClient(
-		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
+		config.Network, config.SwapServer, config.Insecure,
+		&lnd.LndServices,
 	)
 	if err != nil {
 		return err
