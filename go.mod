@@ -15,5 +15,5 @@ require (
 	golang.org/x/net v0.0.0-20190313220215-9f648a60d977
 	google.golang.org/genproto v0.0.0-20190307195333-5fe7a883aa19
 	google.golang.org/grpc v1.19.0
-	gopkg.in/macaroon.v2 v2.1.0 // indirect
+	gopkg.in/macaroon.v2 v2.1.0
 )
