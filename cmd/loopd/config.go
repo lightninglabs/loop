@@ -28,7 +28,6 @@ const (
 
 var defaultConfig = config{
 	Network:    "mainnet",
-	SwapServer: mainnetServer,
 	RPCListen:  "localhost:11010",
 	RESTListen: "localhost:8081",
 	Insecure:   false,
