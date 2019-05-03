@@ -56,45 +56,26 @@ sub-servers enabled.**
 
 ### LND
 
-If you are building from source, and not using a 0.6.0 or higher release of
-lnd, make sure that you are using the `master` branch of lnd. You can get this
-by git cloning the repository
+If you are using a binary release of lnd that is 0.6 or higher, it is
+compatible with Lightning Loop. Otherwise, you will need to build from source.
 
-```
-git clone https://github.com/lightningnetwork/lnd.git
-```
+If you are building from source make sure that your lnd is built with build
+tags `chainrpc invoicesrpc signrpc walletrpc` that enable additional lnd APIs.
 
-Once the lnd repository is cloned, it will need to be built with special build
-tags that enable the swap. This enables the required lnd rpc services.
+To build lnd using these tags:
 
 ```
 cd lnd
 make install tags="signrpc walletrpc chainrpc invoicesrpc"
 ```
 
-Check to see if you have already installed lnd. If you have, you will need to
-delete the `.macaroon` files from your lnd directory and restart lnd.
-
-**Do not delete any other files other than the `.macaroon` files**
-
-```
-// Example on Linux to see macaroons in the default directory:
-ls ~/.lnd/data/chain/bitcoin/mainnet
-```
-
-This should show no `.macaroon` files. If it does? Stop lnd, delete macaroons,
-restart lnd.
-
-```
-lncli stop
-```
-
-Now delete the .macaroon files and restart lnd. (don't delete any other files)
-
 ### Loopd
 
-After lnd is installed, you will need to clone the Lightning Loop repo and 
-install the command line interface and swap client service.
+After lnd is installed, you will need to either download a Loop binary release
+or clone the Lightning Loop repo and install the command line interface and
+swap client service.
+
+To install from source:
 
 ```
 git clone https://github.com/lightninglabs/loop.git
