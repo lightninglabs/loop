@@ -67,15 +67,13 @@ func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 		return nil, err
 	}
 
-	p2wshPkScriptHash := sha256.Sum256(p2wshPkScript)
-
 	var pkScript, sigScript []byte
 	var address btcutil.Address
 
 	switch outputType {
 	case HtlcNP2WSH:
 		// Generate p2sh script for p2wsh (nested).
-
+		p2wshPkScriptHash := sha256.Sum256(p2wshPkScript)
 		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
 
 		builder := txscript.NewScriptBuilder()
@@ -111,7 +109,7 @@ func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 		pkScript = p2wshPkScript
 
 		address, err = btcutil.NewAddressWitnessScriptHash(
-			p2wshPkScriptHash[:],
+			p2wshPkScript[2:],
 			chainParams,
 		)
 		if err != nil {

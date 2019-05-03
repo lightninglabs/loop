@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,12 +27,20 @@ func daemon(config *config) error {
 	}
 	defer lnd.Close()
 
-	// If the user is targeting the testnet network, and they haven't
-	// specified new swap server, then we'll point towards the testnet swap
-	// server rather than the mainnet endpoint.
-	if config.Network == "testnet" && config.SwapServer == "" {
-		config.SwapServer = testnetServer
+	// If no swap server is specified, use the default addresses for mainnet
+	// and testnet.
+	if config.SwapServer == "" {
+		switch config.Network {
+		case "mainnet":
+			config.SwapServer = mainnetServer
+		case "testnet":
+			config.SwapServer = testnetServer
+		default:
+			return errors.New("no swap server address specified")
+		}
 	}
+
+	logger.Infof("Swap server address: %v", config.SwapServer)
 
 	// Create an instance of the loop client library.
 	swapClient, cleanup, err := getClient(
