@@ -17,7 +17,7 @@ import (
 // "basic" as it uses a global macaroon (by default the admin macaroon) for the
 // entire connection, and falls back to expected defaults if the arguments
 // aren't provided.
-func NewBasicClient(lndHost, tlsPath, macPath, network string) (lnrpc.LightningClient, error) {
+func NewBasicClient(lndHost, tlsPath, macDir, network string) (lnrpc.LightningClient, error) {
 	if tlsPath == "" {
 		tlsPath = defaultTLSCertPath
 	}
@@ -33,12 +33,14 @@ func NewBasicClient(lndHost, tlsPath, macPath, network string) (lnrpc.LightningC
 		grpc.WithTransportCredentials(creds),
 	}
 
-	if macPath == "" {
-		macPath = filepath.Join(
+	if macDir == "" {
+		macDir = filepath.Join(
 			defaultLndDir, defaultDataDir, defaultChainSubDir,
-			"bitcoin", network, defaultAdminMacaroonFilename,
+			"bitcoin", network,
 		)
 	}
+
+	macPath := filepath.Join(macDir, defaultAdminMacaroonFilename)
 
 	// Load the specified macaroon file.
 	macBytes, err := ioutil.ReadFile(macPath)
