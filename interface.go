@@ -280,11 +280,11 @@ func (t Type) String() string {
 
 // SwapInfo exposes common info fields for loop in and loop out swaps.
 type SwapInfo struct {
+	loopdb.SwapStateData
+
 	LastUpdate time.Time
 
 	SwapHash lntypes.Hash
-
-	State loopdb.SwapState
 
 	SwapType Type
 

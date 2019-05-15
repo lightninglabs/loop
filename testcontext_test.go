@@ -79,9 +79,9 @@ func createClientTestContext(t *testing.T,
 	for _, s := range pendingSwaps {
 		store.loopOutSwaps[s.Hash] = s.Contract
 
-		updates := []loopdb.SwapState{}
+		updates := []loopdb.SwapStateData{}
 		for _, e := range s.Events {
-			updates = append(updates, e.State)
+			updates = append(updates, e.SwapStateData)
 		}
 		store.loopOutUpdates[s.Hash] = updates
 	}

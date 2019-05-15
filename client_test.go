@@ -202,7 +202,9 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 		Loop: loopdb.Loop{
 			Events: []*loopdb.LoopEvent{
 				{
-					State: state,
+					SwapStateData: loopdb.SwapStateData{
+						State: state,
+					},
 				},
 			},
 			Hash: hash,

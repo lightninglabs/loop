@@ -68,8 +68,10 @@ func (s *swapKit) sendUpdate(ctx context.Context) error {
 		SwapHash:     s.hash,
 		SwapType:     s.swapType,
 		LastUpdate:   s.lastUpdateTime,
-		State:        s.state,
-		HtlcAddress:  s.htlc.Address,
+		SwapStateData: loopdb.SwapStateData{
+			State: s.state,
+		},
+		HtlcAddress: s.htlc.Address,
 	}
 
 	s.log.Infof("state %v", info.State)

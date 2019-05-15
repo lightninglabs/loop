@@ -346,7 +346,7 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 // updateLoop saves a new swap state transition to the store. It takes in a
 // bucket key so that this function can be used for both in and out swaps.
 func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
-	time time.Time, state SwapState) error {
+	time time.Time, state SwapStateData) error {
 
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// Starting from the root bucket, we'll traverse the bucket
@@ -386,7 +386,7 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 //
 // NOTE: Part of the loopdb.SwapStore interface.
 func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
-	state SwapState) error {
+	state SwapStateData) error {
 
 	return s.updateLoop(loopOutBucketKey, hash, time, state)
 }
@@ -396,7 +396,7 @@ func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 //
 // NOTE: Part of the loopdb.SwapStore interface.
 func (s *boltSwapStore) UpdateLoopIn(hash lntypes.Hash, time time.Time,
-	state SwapState) error {
+	state SwapStateData) error {
 
 	return s.updateLoop(loopInBucketKey, hash, time, state)
 }

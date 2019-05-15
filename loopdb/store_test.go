@@ -107,7 +107,7 @@ func TestLoopOutStore(t *testing.T) {
 			t.Fatal("invalid pending swap data")
 		}
 
-		if swaps[0].State() != expectedState {
+		if swaps[0].State().State != expectedState {
 			t.Fatalf("expected state %v, but got %v",
 				expectedState, swaps[0].State(),
 			)
@@ -130,7 +130,10 @@ func TestLoopOutStore(t *testing.T) {
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopOut(
-		hash, testTime, StatePreimageRevealed,
+		hash, testTime,
+		SwapStateData{
+			State: StatePreimageRevealed,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +143,10 @@ func TestLoopOutStore(t *testing.T) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopOut(
-		hash, testTime, StateFailInsufficientValue,
+		hash, testTime,
+		SwapStateData{
+			State: StateFailInsufficientValue,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +235,7 @@ func TestLoopInStore(t *testing.T) {
 			t.Fatal("invalid pending swap data")
 		}
 
-		if swaps[0].State() != expectedState {
+		if swaps[0].State().State != expectedState {
 			t.Fatalf("expected state %v, but got %v",
 				expectedState, swaps[0].State(),
 			)
@@ -252,7 +258,10 @@ func TestLoopInStore(t *testing.T) {
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopIn(
-		hash, testTime, StatePreimageRevealed,
+		hash, testTime,
+		SwapStateData{
+			State: StatePreimageRevealed,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +271,10 @@ func TestLoopInStore(t *testing.T) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopIn(
-		hash, testTime, StateFailInsufficientValue,
+		hash, testTime,
+		SwapStateData{
+			State: StateFailInsufficientValue,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -125,3 +125,8 @@ func (s SwapState) String() string {
 		return "Unknown"
 	}
 }
+
+// SwapStateData is all persistent data to describe the current swap state.
+type SwapStateData struct {
+	State SwapState
+}

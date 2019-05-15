@@ -13,14 +13,14 @@ import (
 // storeMock implements a mock client swap store.
 type storeMock struct {
 	loopOutSwaps      map[lntypes.Hash]*loopdb.LoopOutContract
-	loopOutUpdates    map[lntypes.Hash][]loopdb.SwapState
+	loopOutUpdates    map[lntypes.Hash][]loopdb.SwapStateData
 	loopOutStoreChan  chan loopdb.LoopOutContract
-	loopOutUpdateChan chan loopdb.SwapState
+	loopOutUpdateChan chan loopdb.SwapStateData
 
 	loopInSwaps      map[lntypes.Hash]*loopdb.LoopInContract
-	loopInUpdates    map[lntypes.Hash][]loopdb.SwapState
+	loopInUpdates    map[lntypes.Hash][]loopdb.SwapStateData
 	loopInStoreChan  chan loopdb.LoopInContract
-	loopInUpdateChan chan loopdb.SwapState
+	loopInUpdateChan chan loopdb.SwapStateData
 
 	t *testing.T
 }
@@ -34,14 +34,14 @@ type finishData struct {
 func newStoreMock(t *testing.T) *storeMock {
 	return &storeMock{
 		loopOutStoreChan:  make(chan loopdb.LoopOutContract, 1),
-		loopOutUpdateChan: make(chan loopdb.SwapState, 1),
+		loopOutUpdateChan: make(chan loopdb.SwapStateData, 1),
 		loopOutSwaps:      make(map[lntypes.Hash]*loopdb.LoopOutContract),
-		loopOutUpdates:    make(map[lntypes.Hash][]loopdb.SwapState),
+		loopOutUpdates:    make(map[lntypes.Hash][]loopdb.SwapStateData),
 
 		loopInStoreChan:  make(chan loopdb.LoopInContract, 1),
-		loopInUpdateChan: make(chan loopdb.SwapState, 1),
+		loopInUpdateChan: make(chan loopdb.SwapStateData, 1),
 		loopInSwaps:      make(map[lntypes.Hash]*loopdb.LoopInContract),
-		loopInUpdates:    make(map[lntypes.Hash][]loopdb.SwapState),
+		loopInUpdates:    make(map[lntypes.Hash][]loopdb.SwapStateData),
 		t:                t,
 	}
 }
@@ -57,7 +57,7 @@ func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
 		events := make([]*loopdb.LoopEvent, len(updates))
 		for i, u := range updates {
 			events[i] = &loopdb.LoopEvent{
-				State: u,
+				SwapStateData: u,
 			}
 		}
 
@@ -86,7 +86,7 @@ func (s *storeMock) CreateLoopOut(hash lntypes.Hash,
 	}
 
 	s.loopOutSwaps[hash] = swap
-	s.loopOutUpdates[hash] = []loopdb.SwapState{}
+	s.loopOutUpdates[hash] = []loopdb.SwapStateData{}
 	s.loopOutStoreChan <- *swap
 
 	return nil
@@ -101,7 +101,7 @@ func (s *storeMock) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
 		events := make([]*loopdb.LoopEvent, len(updates))
 		for i, u := range updates {
 			events[i] = &loopdb.LoopEvent{
-				State: u,
+				SwapStateData: u,
 			}
 		}
 
@@ -130,7 +130,7 @@ func (s *storeMock) CreateLoopIn(hash lntypes.Hash,
 	}
 
 	s.loopInSwaps[hash] = swap
-	s.loopInUpdates[hash] = []loopdb.SwapState{}
+	s.loopInUpdates[hash] = []loopdb.SwapStateData{}
 	s.loopInStoreChan <- *swap
 
 	return nil
@@ -142,7 +142,7 @@ func (s *storeMock) CreateLoopIn(hash lntypes.Hash,
 //
 // NOTE: Part of the loopdb.SwapStore interface.
 func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
-	state loopdb.SwapState) error {
+	state loopdb.SwapStateData) error {
 
 	updates, ok := s.loopOutUpdates[hash]
 	if !ok {
@@ -162,7 +162,7 @@ func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 //
 // NOTE: Part of the loopdb.SwapStore interface.
 func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
-	state loopdb.SwapState) error {
+	state loopdb.SwapStateData) error {
 
 	updates, ok := s.loopInUpdates[hash]
 	if !ok {
@@ -215,7 +215,7 @@ func (s *storeMock) assertLoopInState(expectedState loopdb.SwapState) {
 	s.t.Helper()
 
 	state := <-s.loopOutUpdateChan
-	if state != expectedState {
+	if state.State != expectedState {
 		s.t.Fatalf("unexpected state")
 	}
 }
@@ -226,7 +226,7 @@ func (s *storeMock) assertStorePreimageReveal() {
 
 	select {
 	case state := <-s.loopOutUpdateChan:
-		if state != loopdb.StatePreimageRevealed {
+		if state.State != loopdb.StatePreimageRevealed {
 			s.t.Fatalf("unexpected state")
 		}
 	case <-time.After(test.Timeout):
@@ -239,7 +239,7 @@ func (s *storeMock) assertStoreFinished(expectedResult loopdb.SwapState) {
 
 	select {
 	case state := <-s.loopOutUpdateChan:
-		if state != expectedResult {
+		if state.State != expectedResult {
 			s.t.Fatalf("expected result %v, but got %v",
 				expectedResult, state)
 		}

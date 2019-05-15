@@ -342,7 +342,12 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 	s.lastUpdateTime = updateTime
 
 	// Update state in store.
-	err := s.store.UpdateLoopOut(s.hash, updateTime, s.state)
+	err := s.store.UpdateLoopOut(
+		s.hash, updateTime,
+		loopdb.SwapStateData{
+			State: s.state,
+		},
+	)
 	if err != nil {
 		return err
 	}

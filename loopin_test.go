@@ -248,7 +248,9 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 		Loop: loopdb.Loop{
 			Events: []*loopdb.LoopEvent{
 				{
-					State: state,
+					SwapStateData: loopdb.SwapStateData{
+						State: state,
+					},
 				},
 			},
 			Hash: testPreimage.Hash(),
