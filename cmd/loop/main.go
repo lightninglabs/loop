@@ -176,11 +176,22 @@ func parseAmt(text string) (btcutil.Amount, error) {
 }
 
 func logSwap(swap *looprpc.SwapStatus) {
-	fmt.Printf("%v %v %v %v - %v\n",
+	fmt.Printf("%v %v %v %v - %v",
 		time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
 		swap.Type, swap.State, btcutil.Amount(swap.Amt),
 		swap.HtlcAddress,
 	)
+
+	if swap.State != looprpc.SwapState_INITIATED &&
+		swap.State != looprpc.SwapState_HTLC_PUBLISHED &&
+		swap.State != looprpc.SwapState_PREIMAGE_REVEALED {
+
+		fmt.Printf(" (cost: server %v, onchain %v, offchain %v)",
+			swap.CostServer, swap.CostOnchain, swap.CostOffchain,
+		)
+	}
+
+	fmt.Println()
 }
 
 func getClientConn(address string) (*grpc.ClientConn, error) {

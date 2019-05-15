@@ -28,6 +28,9 @@ func monitor(ctx *cli.Context) error {
 		return err
 	}
 
+	fmt.Printf("Note: offchain cost may report as 0 after loopd restart " +
+		"during swap\n")
+
 	for {
 		swap, err := stream.Recv()
 		if err != nil {

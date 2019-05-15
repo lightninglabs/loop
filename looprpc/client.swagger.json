@@ -210,6 +210,21 @@
         "htlc_address": {
           "type": "string",
           "description": "*\nHtlc address."
+        },
+        "cost_server": {
+          "type": "string",
+          "format": "int64",
+          "title": "/ Swap server cost"
+        },
+        "cost_onchain": {
+          "type": "string",
+          "format": "int64",
+          "title": "On-chain transaction cost"
+        },
+        "cost_offchain": {
+          "type": "string",
+          "format": "int64",
+          "title": "Off-chain routing fees"
         }
       }
     },

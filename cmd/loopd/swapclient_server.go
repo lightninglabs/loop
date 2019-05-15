@@ -121,6 +121,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:    loopSwap.HtlcAddress.EncodeAddress(),
 		Type:           swapType,
+		CostServer:     int64(loopSwap.Cost.Server),
+		CostOnchain:    int64(loopSwap.Cost.Onchain),
+		CostOffchain:   int64(loopSwap.Cost.Offchain),
 	}, nil
 }
 
