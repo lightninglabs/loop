@@ -261,10 +261,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	}
 
 	s.log.Infof("Loop in swap completed: %v "+
-		"(final cost: server %v, onchain %v)",
+		"(final cost: server %v, onchain %v, offchain %v)",
 		s.state,
 		s.cost.Server,
 		s.cost.Onchain,
+		s.cost.Offchain,
 	)
 
 	return nil
@@ -620,6 +621,7 @@ func (s *loopInSwap) persistState(ctx context.Context) error {
 		s.hash, s.lastUpdateTime,
 		loopdb.SwapStateData{
 			State: s.state,
+			Cost:  s.cost,
 		},
 	)
 	if err != nil {

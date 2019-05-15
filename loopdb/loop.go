@@ -94,7 +94,19 @@ func serializeLoopEvent(time time.Time, state SwapStateData) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, state); err != nil {
+	if err := binary.Write(&b, byteOrder, state.State); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Server); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Onchain); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Offchain); err != nil {
 		return nil, err
 	}
 
@@ -115,6 +127,18 @@ func deserializeLoopEvent(value []byte) (*LoopEvent, error) {
 	update.Time = time.Unix(0, unixNano)
 
 	if err := binary.Read(r, byteOrder, &update.State); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Server); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Onchain); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Offchain); err != nil {
 		return nil, err
 	}
 

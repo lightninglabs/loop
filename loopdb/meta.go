@@ -31,7 +31,7 @@ var (
 	// of database don't match with latest version this list will be used
 	// for retrieving all migration function that are need to apply to the
 	// current db.
-	migrations = []migration{}
+	migrations = []migration{migrateCosts}
 
 	latestDBVersion = uint32(len(migrations))
 )

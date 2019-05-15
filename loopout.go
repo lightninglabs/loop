@@ -224,6 +224,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 				continue
 			}
 			s.cost.Server += result.PaidAmt
+			s.cost.Offchain += result.PaidFee
 
 		case result := <-s.prePaymentChan:
 			s.prePaymentChan = nil
@@ -235,6 +236,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 				continue
 			}
 			s.cost.Server += result.PaidAmt
+			s.cost.Offchain += result.PaidFee
 
 		case <-globalCtx.Done():
 			return globalCtx.Err()
@@ -243,10 +245,11 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 
 	// Mark swap completed in store.
 	s.log.Infof("Swap completed: %v "+
-		"(final cost: server %v, onchain %v)",
+		"(final cost: server %v, onchain %v, offchain %v)",
 		s.state,
 		s.cost.Server,
 		s.cost.Onchain,
+		s.cost.Offchain,
 	)
 
 	return s.persistState(globalCtx)
@@ -346,6 +349,7 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 		s.hash, updateTime,
 		loopdb.SwapStateData{
 			State: s.state,
+			Cost:  s.cost,
 		},
 	)
 	if err != nil {
@@ -446,6 +450,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 					return nil, nil
 				}
 				s.cost.Server += result.PaidAmt
+				s.cost.Offchain += result.PaidFee
 
 			// If the prepay fails, abandon the swap. Because we
 			// didn't reveal the preimage, the swap payment will be
@@ -460,6 +465,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 					return nil, nil
 				}
 				s.cost.Server += result.PaidAmt
+				s.cost.Offchain += result.PaidFee
 
 			// Unexpected error on the confirm channel happened,
 			// abandon the swap.

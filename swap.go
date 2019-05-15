@@ -19,7 +19,7 @@ type swapKit struct {
 	log *SwapLog
 
 	lastUpdateTime time.Time
-	cost           SwapCost
+	cost           loopdb.SwapCost
 	state          loopdb.SwapState
 	executeConfig
 	swapConfig
@@ -70,6 +70,7 @@ func (s *swapKit) sendUpdate(ctx context.Context) error {
 		LastUpdate:   s.lastUpdateTime,
 		SwapStateData: loopdb.SwapStateData{
 			State: s.state,
+			Cost:  s.cost,
 		},
 		HtlcAddress: s.htlc.Address,
 	}

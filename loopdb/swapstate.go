@@ -1,5 +1,7 @@
 package loopdb
 
+import "github.com/btcsuite/btcutil"
+
 // SwapState indicates the current state of a swap. This enumeration is the
 // union of loop in and loop out states. A single type is used for both swap
 // types to be able to reduce code duplication that would otherwise be required.
@@ -126,7 +128,23 @@ func (s SwapState) String() string {
 	}
 }
 
+// SwapCost is a breakdown of the final swap costs.
+type SwapCost struct {
+	// Swap is the amount paid to the server.
+	Server btcutil.Amount
+
+	// Onchain is the amount paid to miners for the onchain tx.
+	Onchain btcutil.Amount
+
+	// Offchain is the amount paid in routing fees.
+	Offchain btcutil.Amount
+}
+
 // SwapStateData is all persistent data to describe the current swap state.
 type SwapStateData struct {
+	// SwapState is the state the swap is in.
 	State SwapState
+
+	// Cost are the accrued (final) costs so far.
+	Cost SwapCost
 }
