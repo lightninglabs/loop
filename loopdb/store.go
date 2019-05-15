@@ -100,18 +100,33 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	// We'll create all the buckets we need if this is the first time we're
 	// starting up. If they already exist, then these calls will be noops.
 	err = bdb.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(loopOutBucketKey)
+		// Check if the meta bucket exists. If it exists, we consider
+		// the database as initialized and assume the meta bucket
+		// contains the db version.
+		metaBucket := tx.Bucket(metaBucketKey)
+		if metaBucket == nil {
+			log.Infof("Initializing new database with version %v",
+				latestDBVersion)
+
+			// Set db version to the current version.
+			err := setDBVersion(tx, latestDBVersion)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Try creating these buckets, because loop in was added without
+		// bumping the db version number.
+		_, err = tx.CreateBucketIfNotExists(loopOutBucketKey)
 		if err != nil {
 			return err
 		}
+
 		_, err = tx.CreateBucketIfNotExists(loopInBucketKey)
 		if err != nil {
 			return err
 		}
-		_, err = tx.CreateBucketIfNotExists(metaBucket)
-		if err != nil {
-			return err
-		}
+
 		return nil
 	})
 	if err != nil {
