@@ -83,15 +83,6 @@ type Out struct {
 	SwapInfoKit
 }
 
-// SwapCost is a breakdown of the final swap costs.
-type SwapCost struct {
-	// Swap is the amount paid to the server.
-	Server btcutil.Amount
-
-	// Onchain is the amount paid to miners for the onchain tx.
-	Onchain btcutil.Amount
-}
-
 // LoopOutQuoteRequest specifies the swap parameters for which a quote is
 // requested.
 type LoopOutQuoteRequest struct {
@@ -280,11 +271,11 @@ func (t Type) String() string {
 
 // SwapInfo exposes common info fields for loop in and loop out swaps.
 type SwapInfo struct {
+	loopdb.SwapStateData
+
 	LastUpdate time.Time
 
 	SwapHash lntypes.Hash
-
-	State loopdb.SwapState
 
 	SwapType Type
 

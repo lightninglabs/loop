@@ -10,7 +10,7 @@ import (
 var (
 	// metaBucket stores all the meta information concerning the state of
 	// the database.
-	metaBucket = []byte("metadata")
+	metaBucketKey = []byte("metadata")
 
 	// dbVersionKey is a boltdb key and it's used for storing/retrieving
 	// current database version.
@@ -31,7 +31,7 @@ var (
 	// of database don't match with latest version this list will be used
 	// for retrieving all migration function that are need to apply to the
 	// current db.
-	migrations = []migration{}
+	migrations = []migration{migrateCosts}
 
 	latestDBVersion = uint32(len(migrations))
 )
@@ -41,7 +41,7 @@ func getDBVersion(db *bbolt.DB) (uint32, error) {
 	var version uint32
 
 	err := db.View(func(tx *bbolt.Tx) error {
-		metaBucket := tx.Bucket(metaBucket)
+		metaBucket := tx.Bucket(metaBucketKey)
 		if metaBucket == nil {
 			return errors.New("bucket does not exist")
 		}
@@ -61,11 +61,11 @@ func getDBVersion(db *bbolt.DB) (uint32, error) {
 	return version, nil
 }
 
-// getDBVersion updates the current db version.
+// setDBVersion updates the current db version.
 func setDBVersion(tx *bbolt.Tx, version uint32) error {
-	metaBucket := tx.Bucket(metaBucket)
-	if metaBucket == nil {
-		return errors.New("bucket does not exist")
+	metaBucket, err := tx.CreateBucketIfNotExists(metaBucketKey)
+	if err != nil {
+		return fmt.Errorf("set db version: %v", err)
 	}
 
 	scratch := make([]byte, 4)

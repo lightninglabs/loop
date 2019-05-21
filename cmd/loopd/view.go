@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 )
 
@@ -77,9 +78,19 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.AmountRequested, s.Contract.CltvExpiry,
 		)
 		for i, e := range s.Events {
-			fmt.Printf("   Update %v, Time %v, State: %v\n",
+			fmt.Printf("   Update %v, Time %v, State: %v",
 				i, e.Time, e.State,
 			)
+			if e.State.Type() != loopdb.StateTypePending {
+				fmt.Printf(", Cost: server=%v, onchain=%v, "+
+					"offchain=%v",
+					e.Cost.Server,
+					e.Cost.Onchain,
+					e.Cost.Offchain,
+				)
+			}
+
+			fmt.Println()
 		}
 		fmt.Println()
 	}

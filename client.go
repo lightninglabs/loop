@@ -138,12 +138,12 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		}
 
 		swaps = append(swaps, &SwapInfo{
-			SwapType:     TypeOut,
-			SwapContract: swp.Contract.SwapContract,
-			State:        swp.State(),
-			SwapHash:     swp.Hash,
-			LastUpdate:   swp.LastUpdateTime(),
-			HtlcAddress:  htlc.Address,
+			SwapType:      TypeOut,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
+			HtlcAddress:   htlc.Address,
 		})
 	}
 
@@ -158,12 +158,12 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		}
 
 		swaps = append(swaps, &SwapInfo{
-			SwapType:     TypeIn,
-			SwapContract: swp.Contract.SwapContract,
-			State:        swp.State(),
-			SwapHash:     swp.Hash,
-			LastUpdate:   swp.LastUpdateTime(),
-			HtlcAddress:  htlc.Address,
+			SwapType:      TypeIn,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
+			HtlcAddress:   htlc.Address,
 		})
 	}
 
@@ -259,7 +259,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 	}
 
 	for _, pend := range loopOutSwaps {
-		if pend.State().Type() != loopdb.StateTypePending {
+		if pend.State().State.Type() != loopdb.StateTypePending {
 			continue
 		}
 		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
@@ -272,7 +272,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 	}
 
 	for _, pend := range loopInSwaps {
-		if pend.State().Type() != loopdb.StateTypePending {
+		if pend.State().State.Type() != loopdb.StateTypePending {
 			continue
 		}
 		swap, err := resumeLoopInSwap(ctx, swapCfg, pend)

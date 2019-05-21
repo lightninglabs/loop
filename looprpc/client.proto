@@ -221,6 +221,15 @@ message SwapStatus {
     Htlc address.
     */
     string htlc_address = 7;
+
+    /// Swap server cost
+    int64 cost_server = 8;
+
+    // On-chain transaction cost
+    int64 cost_onchain = 9;
+
+    // Off-chain routing fees
+    int64 cost_offchain = 10;
 }
 
 enum SwapType {

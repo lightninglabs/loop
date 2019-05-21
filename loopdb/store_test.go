@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -107,7 +109,7 @@ func TestLoopOutStore(t *testing.T) {
 			t.Fatal("invalid pending swap data")
 		}
 
-		if swaps[0].State() != expectedState {
+		if swaps[0].State().State != expectedState {
 			t.Fatalf("expected state %v, but got %v",
 				expectedState, swaps[0].State(),
 			)
@@ -130,7 +132,10 @@ func TestLoopOutStore(t *testing.T) {
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopOut(
-		hash, testTime, StatePreimageRevealed,
+		hash, testTime,
+		SwapStateData{
+			State: StatePreimageRevealed,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +145,10 @@ func TestLoopOutStore(t *testing.T) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopOut(
-		hash, testTime, StateFailInsufficientValue,
+		hash, testTime,
+		SwapStateData{
+			State: StateFailInsufficientValue,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +237,7 @@ func TestLoopInStore(t *testing.T) {
 			t.Fatal("invalid pending swap data")
 		}
 
-		if swaps[0].State() != expectedState {
+		if swaps[0].State().State != expectedState {
 			t.Fatalf("expected state %v, but got %v",
 				expectedState, swaps[0].State(),
 			)
@@ -252,7 +260,10 @@ func TestLoopInStore(t *testing.T) {
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopIn(
-		hash, testTime, StatePreimageRevealed,
+		hash, testTime,
+		SwapStateData{
+			State: StatePreimageRevealed,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +273,10 @@ func TestLoopInStore(t *testing.T) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopIn(
-		hash, testTime, StateFailInsufficientValue,
+		hash, testTime,
+		SwapStateData{
+			State: StateFailInsufficientValue,
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -280,4 +294,73 @@ func TestLoopInStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkSwap(StateFailInsufficientValue)
+}
+
+// TestVersionNew tests that a new database is initialized with the current
+// version.
+func TestVersionNew(t *testing.T) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ver, err := getDBVersion(store.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ver != latestDBVersion {
+		t.Fatal("db not at latest version")
+	}
+}
+
+// TestVersionNew tests that an existing version zero database is migrated to
+// the latest version.
+func TestVersionMigrated(t *testing.T) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	createVersionZeroDb(t, tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ver, err := getDBVersion(store.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ver != latestDBVersion {
+		t.Fatal("db not at latest version")
+	}
+}
+
+// createVersionZeroDb creates a database with an empty meta bucket. In version
+// zero, there was no version key specified yet.
+func createVersionZeroDb(t *testing.T, dbPath string) {
+	path := filepath.Join(dbPath, dbFileName)
+	bdb, err := bbolt.Open(path, 0600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bdb.Close()
+
+	err = bdb.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucket(metaBucketKey)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

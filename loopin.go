@@ -261,10 +261,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	}
 
 	s.log.Infof("Loop in swap completed: %v "+
-		"(final cost: server %v, onchain %v)",
+		"(final cost: server %v, onchain %v, offchain %v)",
 		s.state,
 		s.cost.Server,
 		s.cost.Onchain,
+		s.cost.Offchain,
 	)
 
 	return nil
@@ -616,7 +617,13 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 // persistState updates the swap state and sends out an update notification.
 func (s *loopInSwap) persistState(ctx context.Context) error {
 	// Update state in store.
-	err := s.store.UpdateLoopIn(s.hash, s.lastUpdateTime, s.state)
+	err := s.store.UpdateLoopIn(
+		s.hash, s.lastUpdateTime,
+		loopdb.SwapStateData{
+			State: s.state,
+			Cost:  s.cost,
+		},
+	)
 	if err != nil {
 		return err
 	}

@@ -53,21 +53,22 @@ type Loop struct {
 
 // LoopEvent contains the dynamic data of a swap.
 type LoopEvent struct {
-	// State is the new state for this swap as a result of this event.
-	State SwapState
+	SwapStateData
 
 	// Time is the time that this swap had its state changed.
 	Time time.Time
 }
 
 // State returns the most recent state of this swap.
-func (s *Loop) State() SwapState {
+func (s *Loop) State() SwapStateData {
 	lastUpdate := s.LastUpdate()
 	if lastUpdate == nil {
-		return StateInitiated
+		return SwapStateData{
+			State: StateInitiated,
+		}
 	}
 
-	return lastUpdate.State
+	return lastUpdate.SwapStateData
 }
 
 // LastUpdate returns the most recent update of this swap.
@@ -84,7 +85,7 @@ func (s *Loop) LastUpdate() *LoopEvent {
 
 // serializeLoopEvent serializes a state update of a swap. This is used for both
 // in and out swaps.
-func serializeLoopEvent(time time.Time, state SwapState) (
+func serializeLoopEvent(time time.Time, state SwapStateData) (
 	[]byte, error) {
 
 	var b bytes.Buffer
@@ -93,7 +94,19 @@ func serializeLoopEvent(time time.Time, state SwapState) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, state); err != nil {
+	if err := binary.Write(&b, byteOrder, state.State); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Server); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Onchain); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, state.Cost.Offchain); err != nil {
 		return nil, err
 	}
 
@@ -114,6 +127,18 @@ func deserializeLoopEvent(value []byte) (*LoopEvent, error) {
 	update.Time = time.Unix(0, unixNano)
 
 	if err := binary.Read(r, byteOrder, &update.State); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Server); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Onchain); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(r, byteOrder, &update.Cost.Offchain); err != nil {
 		return nil, err
 	}
 
