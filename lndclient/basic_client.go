@@ -55,6 +55,7 @@ func NewBasicClient(lndHost, tlsPath, macDir, network string) (lnrpc.LightningCl
 		// Now we append the macaroon credentials to the dial options.
 		cred := macaroons.NewMacaroonCredential(mac)
 		opts = append(opts, grpc.WithPerRPCCredentials(cred))
+		opts = append(opts, grpc.WithDefaultCallOptions(maxMsgRecvSize))
 	}
 
 	// We need to use a custom dialer so we can also connect to unix sockets
