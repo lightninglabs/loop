@@ -179,6 +179,10 @@ var (
 	defaultChainMacaroonFilename     = "chainnotifier.macaroon"
 	defaultWalletKitMacaroonFilename = "walletkit.macaroon"
 	defaultSignerFilename            = "signer.macaroon"
+
+	// maxMsgRecvSize is the largest gRPC message our client will receive.
+	// We set this to ~50Mb.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 50)
 )
 
 func getClientConn(address string, network string, tlsPath string) (
