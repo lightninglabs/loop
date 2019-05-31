@@ -13,11 +13,48 @@ import (
 	macaroon "gopkg.in/macaroon.v2"
 )
 
+// BasicClientOption is a functional option argument that allows adding arbitrary
+// lnd basic client configuration overrides, without forcing existing users of
+// NewBasicClient to update their invocation. These are always processed in
+// order, with later options overriding earlier ones.
+type BasicClientOption func(*basicClientOptions)
+
+// basicClientOptions is a set of options that can configure the lnd client
+// returned by NewBasicClient.
+type basicClientOptions struct {
+	macFilename string
+}
+
+// defaultBasicClientOptions returns a basicClientOptions set to lnd basic client
+// defaults.
+func defaultBasicClientOptions() *basicClientOptions {
+	return &basicClientOptions{
+		macFilename: defaultAdminMacaroonFilename,
+	}
+}
+
+// MacFilename is a basic client option that sets the name of the macaroon file
+// to use.
+func MacFilename(macFilename string) BasicClientOption {
+	return func(bc *basicClientOptions) {
+		bc.macFilename = macFilename
+	}
+}
+
+// applyBasicClientOptions updates a basicClientOptions set with functional
+// options.
+func (bc *basicClientOptions) applyBasicClientOptions(options ...BasicClientOption) {
+	for _, option := range options {
+		option(bc)
+	}
+}
+
 // NewBasicClient creates a new basic gRPC client to lnd. We call this client
-// "basic" as it uses a global macaroon (by default the admin macaroon) for the
-// entire connection, and falls back to expected defaults if the arguments
-// aren't provided.
-func NewBasicClient(lndHost, tlsPath, macDir, network string) (lnrpc.LightningClient, error) {
+// "basic" as it falls back to expected defaults if the arguments aren't
+// provided.
+func NewBasicClient(lndHost, tlsPath, macDir, network string, basicOptions ...BasicClientOption) (
+	lnrpc.LightningClient, error) {
+
 	if tlsPath == "" {
 		tlsPath = defaultTLSCertPath
 	}
@@ -40,7 +77,12 @@ func NewBasicClient(lndHost, tlsPath, macDir, network string) (lnrpc.LightningCl
 		)
 	}
 
-	macPath := filepath.Join(macDir, defaultAdminMacaroonFilename)
+	// Starting with the set of default options, we'll apply any specified
+	// functional options to the basic client.
+	bco := defaultBasicClientOptions()
+	bco.applyBasicClientOptions(basicOptions...)
+
+	macPath := filepath.Join(macDir, bco.macFilename)
 
 	// Load the specified macaroon file.
 	macBytes, err := ioutil.ReadFile(macPath)
