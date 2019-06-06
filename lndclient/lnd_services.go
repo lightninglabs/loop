@@ -24,6 +24,7 @@ type LndServices struct {
 	ChainNotifier ChainNotifierClient
 	Signer        SignerClient
 	Invoices      InvoicesClient
+	Router        RouterClient
 
 	ChainParams *chaincfg.Params
 
@@ -121,6 +122,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 	signerClient := newSignerClient(conn, macaroons.signerMac)
 	walletKitClient := newWalletKitClient(conn, macaroons.walletKitMac)
 	invoicesClient := newInvoicesClient(conn, macaroons.invoiceMac)
+	routerClient := newRouterClient(conn, macaroons.routerMac)
 
 	cleanup := func() {
 		logger.Debugf("Closing lnd connection")
@@ -145,6 +147,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 			ChainNotifier: notifierClient,
 			Signer:        signerClient,
 			Invoices:      invoicesClient,
+			Router:        routerClient,
 			ChainParams:   chainParams,
 			macaroons:     macaroons,
 		},
@@ -178,6 +181,7 @@ var (
 	defaultInvoiceMacaroonFilename   = "invoices.macaroon"
 	defaultChainMacaroonFilename     = "chainnotifier.macaroon"
 	defaultWalletKitMacaroonFilename = "walletkit.macaroon"
+	defaultRouterMacaroonFilename    = "router.macaroon"
 	defaultSignerFilename            = "signer.macaroon"
 
 	// maxMsgRecvSize is the largest gRPC message our client will receive.

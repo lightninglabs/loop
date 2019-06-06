@@ -48,6 +48,9 @@ type macaroonPouch struct {
 	// walletKitMac is the macaroon for the WalletKit sub-server.
 	walletKitMac serializedMacaroon
 
+	// routerMac is the macaroon for the router sub-server.
+	routerMac serializedMacaroon
+
 	// adminMac is the primary admin macaroon for lnd.
 	adminMac serializedMacaroon
 }
@@ -82,6 +85,13 @@ func newMacaroonPouch(macaroonDir string) (*macaroonPouch, error) {
 
 	m.walletKitMac, err = newSerializedMacaroon(
 		filepath.Join(macaroonDir, defaultWalletKitMacaroonFilename),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	m.routerMac, err = newSerializedMacaroon(
+		filepath.Join(macaroonDir, defaultRouterMacaroonFilename),
 	)
 	if err != nil {
 		return nil, err
