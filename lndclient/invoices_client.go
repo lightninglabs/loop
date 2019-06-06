@@ -83,7 +83,7 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 
 	invoiceStream, err := s.client.SubscribeSingleInvoice(
 		s.invoiceMac.WithMacaroonAuth(ctx),
-		&lnrpc.PaymentHash{
+		&invoicesrpc.SubscribeSingleInvoiceRequest{
 			RHash: hash[:],
 		},
 	)
