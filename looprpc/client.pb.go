@@ -3,14 +3,13 @@
 
 package looprpc
 
-import proto "github.com/golang/protobuf/proto"
-import fmt "fmt"
-import math "math"
-import _ "google.golang.org/genproto/googleapis/api/annotations"
-
 import (
-	context "golang.org/x/net/context"
+	context "context"
+	fmt "fmt"
+	proto "github.com/golang/protobuf/proto"
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
+	math "math"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -22,7 +21,7 @@ var _ = math.Inf
 // is compatible with the proto package it is being compiled against.
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
-const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
 type SwapType int32
 
@@ -37,6 +36,7 @@ var SwapType_name = map[int32]string{
 	0: "LOOP_OUT",
 	1: "LOOP_IN",
 }
+
 var SwapType_value = map[string]int32{
 	"LOOP_OUT": 0,
 	"LOOP_IN":  1,
@@ -45,40 +45,41 @@ var SwapType_value = map[string]int32{
 func (x SwapType) String() string {
 	return proto.EnumName(SwapType_name, int32(x))
 }
+
 func (SwapType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{0}
+	return fileDescriptor_014de31d7ac8c57c, []int{0}
 }
 
 type SwapState int32
 
 const (
-	// *
-	// INITIATED is the initial state of a swap. At that point, the initiation
-	// call to the server has been made and the payment process has been started
-	// for the swap and prepayment invoices.
+	//*
+	//INITIATED is the initial state of a swap. At that point, the initiation
+	//call to the server has been made and the payment process has been started
+	//for the swap and prepayment invoices.
 	SwapState_INITIATED SwapState = 0
-	// *
-	// PREIMAGE_REVEALED is reached when the sweep tx publication is first
-	// attempted. From that point on, we should consider the preimage to no
-	// longer be secret and we need to do all we can to get the sweep confirmed.
-	// This state will mostly coalesce with StateHtlcConfirmed, except in the
-	// case where we wait for fees to come down before we sweep.
+	//*
+	//PREIMAGE_REVEALED is reached when the sweep tx publication is first
+	//attempted. From that point on, we should consider the preimage to no
+	//longer be secret and we need to do all we can to get the sweep confirmed.
+	//This state will mostly coalesce with StateHtlcConfirmed, except in the
+	//case where we wait for fees to come down before we sweep.
 	SwapState_PREIMAGE_REVEALED SwapState = 1
-	// *
-	// HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
-	// swap.
+	//*
+	//HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
+	//swap.
 	SwapState_HTLC_PUBLISHED SwapState = 2
-	// *
-	// SUCCESS is the final swap state that is reached when the sweep tx has
-	// the required confirmation depth.
+	//*
+	//SUCCESS is the final swap state that is reached when the sweep tx has
+	//the required confirmation depth.
 	SwapState_SUCCESS SwapState = 3
-	// *
-	// FAILED is the final swap state for a failed swap with or without loss of
-	// the swap amount.
+	//*
+	//FAILED is the final swap state for a failed swap with or without loss of
+	//the swap amount.
 	SwapState_FAILED SwapState = 4
-	// *
-	// INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
-	// paid, but we are still waiting for the htlc spend to confirm.
+	//*
+	//INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
+	//paid, but we are still waiting for the htlc spend to confirm.
 	SwapState_INVOICE_SETTLED SwapState = 5
 )
 
@@ -90,6 +91,7 @@ var SwapState_name = map[int32]string{
 	4: "FAILED",
 	5: "INVOICE_SETTLED",
 }
+
 var SwapState_value = map[string]int32{
 	"INITIATED":         0,
 	"PREIMAGE_REVEALED": 1,
@@ -102,55 +104,56 @@ var SwapState_value = map[string]int32{
 func (x SwapState) String() string {
 	return proto.EnumName(SwapState_name, int32(x))
 }
+
 func (SwapState) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{1}
+	return fileDescriptor_014de31d7ac8c57c, []int{1}
 }
 
 type LoopOutRequest struct {
-	// *
-	// Requested swap amount in sat. This does not include the swap and miner fee.
+	//*
+	//Requested swap amount in sat. This does not include the swap and miner fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// *
-	// Base58 encoded destination address for the swap.
+	//*
+	//Base58 encoded destination address for the swap.
 	Dest string `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
-	// *
-	// Maximum off-chain fee in msat that may be paid for payment to the server.
-	// This limit is applied during path finding. Typically this value is taken
-	// from the response of the GetQuote call.
+	//*
+	//Maximum off-chain fee in msat that may be paid for payment to the server.
+	//This limit is applied during path finding. Typically this value is taken
+	//from the response of the GetQuote call.
 	MaxSwapRoutingFee int64 `protobuf:"varint,3,opt,name=max_swap_routing_fee,json=maxSwapRoutingFee,proto3" json:"max_swap_routing_fee,omitempty"`
-	// *
-	// Maximum off-chain fee in msat that may be paid for payment to the server.
-	// This limit is applied during path finding. Typically this value is taken
-	// from the response of the GetQuote call.
+	//*
+	//Maximum off-chain fee in msat that may be paid for payment to the server.
+	//This limit is applied during path finding. Typically this value is taken
+	//from the response of the GetQuote call.
 	MaxPrepayRoutingFee int64 `protobuf:"varint,4,opt,name=max_prepay_routing_fee,json=maxPrepayRoutingFee,proto3" json:"max_prepay_routing_fee,omitempty"`
-	// *
-	// Maximum we are willing to pay the server for the swap. This value is not
-	// disclosed in the swap initiation call, but if the server asks for a
-	// higher fee, we abort the swap. Typically this value is taken from the
-	// response of the GetQuote call. It includes the prepay amount.
+	//*
+	//Maximum we are willing to pay the server for the swap. This value is not
+	//disclosed in the swap initiation call, but if the server asks for a
+	//higher fee, we abort the swap. Typically this value is taken from the
+	//response of the GetQuote call. It includes the prepay amount.
 	MaxSwapFee int64 `protobuf:"varint,5,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	// *
-	// Maximum amount of the swap fee that may be charged as a prepayment.
+	//*
+	//Maximum amount of the swap fee that may be charged as a prepayment.
 	MaxPrepayAmt int64 `protobuf:"varint,6,opt,name=max_prepay_amt,json=maxPrepayAmt,proto3" json:"max_prepay_amt,omitempty"`
-	// *
-	// Maximum in on-chain fees that we are willing to spent. If we want to
-	// sweep the on-chain htlc and the fee estimate turns out higher than this
-	// value, we cancel the swap. If the fee estimate is lower, we publish the
-	// sweep tx.
+	//*
+	//Maximum in on-chain fees that we are willing to spent. If we want to
+	//sweep the on-chain htlc and the fee estimate turns out higher than this
+	//value, we cancel the swap. If the fee estimate is lower, we publish the
+	//sweep tx.
 	//
-	// If the sweep tx is not confirmed, we are forced to ratchet up fees until it
-	// is swept. Possibly even exceeding max_miner_fee if we get close to the htlc
-	// timeout. Because the initial publication revealed the preimage, we have no
-	// other choice. The server may already have pulled the off-chain htlc. Only
-	// when the fee becomes higher than the swap amount, we can only wait for fees
-	// to come down and hope - if we are past the timeout - that the server is not
-	// publishing the revocation.
+	//If the sweep tx is not confirmed, we are forced to ratchet up fees until it
+	//is swept. Possibly even exceeding max_miner_fee if we get close to the htlc
+	//timeout. Because the initial publication revealed the preimage, we have no
+	//other choice. The server may already have pulled the off-chain htlc. Only
+	//when the fee becomes higher than the swap amount, we can only wait for fees
+	//to come down and hope - if we are past the timeout - that the server is not
+	//publishing the revocation.
 	//
-	// max_miner_fee is typically taken from the response of the GetQuote call.
+	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,7,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	// *
-	// The channel to loop out, the channel to loop out is selected based on the
-	// lowest routing fee for the swap payment to the server.
+	//*
+	//The channel to loop out, the channel to loop out is selected based on the
+	//lowest routing fee for the swap payment to the server.
 	LoopOutChannel       uint64   `protobuf:"varint,8,opt,name=loop_out_channel,json=loopOutChannel,proto3" json:"loop_out_channel,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -161,16 +164,17 @@ func (m *LoopOutRequest) Reset()         { *m = LoopOutRequest{} }
 func (m *LoopOutRequest) String() string { return proto.CompactTextString(m) }
 func (*LoopOutRequest) ProtoMessage()    {}
 func (*LoopOutRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{0}
+	return fileDescriptor_014de31d7ac8c57c, []int{0}
 }
+
 func (m *LoopOutRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LoopOutRequest.Unmarshal(m, b)
 }
 func (m *LoopOutRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_LoopOutRequest.Marshal(b, m, deterministic)
 }
-func (dst *LoopOutRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoopOutRequest.Merge(dst, src)
+func (m *LoopOutRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LoopOutRequest.Merge(m, src)
 }
 func (m *LoopOutRequest) XXX_Size() int {
 	return xxx_messageInfo_LoopOutRequest.Size(m)
@@ -238,32 +242,32 @@ func (m *LoopOutRequest) GetLoopOutChannel() uint64 {
 }
 
 type LoopInRequest struct {
-	// *
-	// Requested swap amount in sat. This does not include the swap and miner
-	// fee.
+	//*
+	//Requested swap amount in sat. This does not include the swap and miner
+	//fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// *
-	// Maximum we are willing to pay the server for the swap. This value is not
-	// disclosed in the swap initiation call, but if the server asks for a
-	// higher fee, we abort the swap. Typically this value is taken from the
-	// response of the GetQuote call.
+	//*
+	//Maximum we are willing to pay the server for the swap. This value is not
+	//disclosed in the swap initiation call, but if the server asks for a
+	//higher fee, we abort the swap. Typically this value is taken from the
+	//response of the GetQuote call.
 	MaxSwapFee int64 `protobuf:"varint,2,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	// *
-	// Maximum in on-chain fees that we are willing to spent. If we want to
-	// publish the on-chain htlc and the fee estimate turns out higher than this
-	// value, we cancel the swap.
+	//*
+	//Maximum in on-chain fees that we are willing to spent. If we want to
+	//publish the on-chain htlc and the fee estimate turns out higher than this
+	//value, we cancel the swap.
 	//
-	// max_miner_fee is typically taken from the response of the GetQuote call.
+	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,3,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	// *
-	// The channel to loop in. If zero, the channel to loop in is selected based
-	// on the lowest routing fee for the swap payment from the server.
+	//*
+	//The channel to loop in. If zero, the channel to loop in is selected based
+	//on the lowest routing fee for the swap payment from the server.
 	//
-	// Note: NOT YET IMPLEMENTED
+	//Note: NOT YET IMPLEMENTED
 	LoopInChannel uint64 `protobuf:"varint,4,opt,name=loop_in_channel,json=loopInChannel,proto3" json:"loop_in_channel,omitempty"`
-	// *
-	// If external_htlc is true, we expect the htlc to be published by an external
-	// actor.
+	//*
+	//If external_htlc is true, we expect the htlc to be published by an external
+	//actor.
 	ExternalHtlc         bool     `protobuf:"varint,5,opt,name=external_htlc,json=externalHtlc,proto3" json:"external_htlc,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -274,16 +278,17 @@ func (m *LoopInRequest) Reset()         { *m = LoopInRequest{} }
 func (m *LoopInRequest) String() string { return proto.CompactTextString(m) }
 func (*LoopInRequest) ProtoMessage()    {}
 func (*LoopInRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{1}
+	return fileDescriptor_014de31d7ac8c57c, []int{1}
 }
+
 func (m *LoopInRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LoopInRequest.Unmarshal(m, b)
 }
 func (m *LoopInRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_LoopInRequest.Marshal(b, m, deterministic)
 }
-func (dst *LoopInRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoopInRequest.Merge(dst, src)
+func (m *LoopInRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LoopInRequest.Merge(m, src)
 }
 func (m *LoopInRequest) XXX_Size() int {
 	return xxx_messageInfo_LoopInRequest.Size(m)
@@ -330,12 +335,12 @@ func (m *LoopInRequest) GetExternalHtlc() bool {
 }
 
 type SwapResponse struct {
-	// *
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
+	//*
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// *
-	// The address of the on-chain htlc.
+	//*
+	//The address of the on-chain htlc.
 	HtlcAddress          string   `protobuf:"bytes,2,opt,name=htlc_address,json=htlcAddress,proto3" json:"htlc_address,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -346,16 +351,17 @@ func (m *SwapResponse) Reset()         { *m = SwapResponse{} }
 func (m *SwapResponse) String() string { return proto.CompactTextString(m) }
 func (*SwapResponse) ProtoMessage()    {}
 func (*SwapResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{2}
+	return fileDescriptor_014de31d7ac8c57c, []int{2}
 }
+
 func (m *SwapResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SwapResponse.Unmarshal(m, b)
 }
 func (m *SwapResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_SwapResponse.Marshal(b, m, deterministic)
 }
-func (dst *SwapResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SwapResponse.Merge(dst, src)
+func (m *SwapResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SwapResponse.Merge(m, src)
 }
 func (m *SwapResponse) XXX_Size() int {
 	return xxx_messageInfo_SwapResponse.Size(m)
@@ -390,16 +396,17 @@ func (m *MonitorRequest) Reset()         { *m = MonitorRequest{} }
 func (m *MonitorRequest) String() string { return proto.CompactTextString(m) }
 func (*MonitorRequest) ProtoMessage()    {}
 func (*MonitorRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{3}
+	return fileDescriptor_014de31d7ac8c57c, []int{3}
 }
+
 func (m *MonitorRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_MonitorRequest.Unmarshal(m, b)
 }
 func (m *MonitorRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_MonitorRequest.Marshal(b, m, deterministic)
 }
-func (dst *MonitorRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MonitorRequest.Merge(dst, src)
+func (m *MonitorRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MonitorRequest.Merge(m, src)
 }
 func (m *MonitorRequest) XXX_Size() int {
 	return xxx_messageInfo_MonitorRequest.Size(m)
@@ -411,30 +418,30 @@ func (m *MonitorRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_MonitorRequest proto.InternalMessageInfo
 
 type SwapStatus struct {
-	// *
-	// Requested swap amount in sat. This does not include the swap and miner
-	// fee.
+	//*
+	//Requested swap amount in sat. This does not include the swap and miner
+	//fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// *
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
+	//*
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	// *
-	// Swap type
+	//*
+	//Swap type
 	Type SwapType `protobuf:"varint,3,opt,name=type,proto3,enum=looprpc.SwapType" json:"type,omitempty"`
-	// *
-	// State the swap is currently in, see State enum.
+	//*
+	//State the swap is currently in, see State enum.
 	State SwapState `protobuf:"varint,4,opt,name=state,proto3,enum=looprpc.SwapState" json:"state,omitempty"`
-	// *
-	// Initiation time of the swap.
+	//*
+	//Initiation time of the swap.
 	InitiationTime int64 `protobuf:"varint,5,opt,name=initiation_time,json=initiationTime,proto3" json:"initiation_time,omitempty"`
-	// *
-	// Initiation time of the swap.
+	//*
+	//Initiation time of the swap.
 	LastUpdateTime int64 `protobuf:"varint,6,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
-	// *
-	// Htlc address.
+	//*
+	//Htlc address.
 	HtlcAddress string `protobuf:"bytes,7,opt,name=htlc_address,json=htlcAddress,proto3" json:"htlc_address,omitempty"`
-	// / Swap server cost
+	/// Swap server cost
 	CostServer int64 `protobuf:"varint,8,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
 	// On-chain transaction cost
 	CostOnchain int64 `protobuf:"varint,9,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
@@ -449,16 +456,17 @@ func (m *SwapStatus) Reset()         { *m = SwapStatus{} }
 func (m *SwapStatus) String() string { return proto.CompactTextString(m) }
 func (*SwapStatus) ProtoMessage()    {}
 func (*SwapStatus) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{4}
+	return fileDescriptor_014de31d7ac8c57c, []int{4}
 }
+
 func (m *SwapStatus) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SwapStatus.Unmarshal(m, b)
 }
 func (m *SwapStatus) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_SwapStatus.Marshal(b, m, deterministic)
 }
-func (dst *SwapStatus) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SwapStatus.Merge(dst, src)
+func (m *SwapStatus) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SwapStatus.Merge(m, src)
 }
 func (m *SwapStatus) XXX_Size() int {
 	return xxx_messageInfo_SwapStatus.Size(m)
@@ -549,16 +557,17 @@ func (m *TermsRequest) Reset()         { *m = TermsRequest{} }
 func (m *TermsRequest) String() string { return proto.CompactTextString(m) }
 func (*TermsRequest) ProtoMessage()    {}
 func (*TermsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{5}
+	return fileDescriptor_014de31d7ac8c57c, []int{5}
 }
+
 func (m *TermsRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_TermsRequest.Unmarshal(m, b)
 }
 func (m *TermsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_TermsRequest.Marshal(b, m, deterministic)
 }
-func (dst *TermsRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_TermsRequest.Merge(dst, src)
+func (m *TermsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TermsRequest.Merge(m, src)
 }
 func (m *TermsRequest) XXX_Size() int {
 	return xxx_messageInfo_TermsRequest.Size(m)
@@ -570,27 +579,27 @@ func (m *TermsRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_TermsRequest proto.InternalMessageInfo
 
 type TermsResponse struct {
-	// *
-	// The node pubkey where the swap payment needs to be paid
-	// to. This can be used to test connectivity before initiating the swap.
+	//*
+	//The node pubkey where the swap payment needs to be paid
+	//to. This can be used to test connectivity before initiating the swap.
 	SwapPaymentDest string `protobuf:"bytes,1,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
-	// *
-	// The base fee for a swap (sat)
+	//*
+	//The base fee for a swap (sat)
 	SwapFeeBase int64 `protobuf:"varint,2,opt,name=swap_fee_base,json=swapFeeBase,proto3" json:"swap_fee_base,omitempty"`
-	// *
-	// The fee rate for a swap (parts per million)
+	//*
+	//The fee rate for a swap (parts per million)
 	SwapFeeRate int64 `protobuf:"varint,3,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"`
-	// *
-	// Required prepay amount
+	//*
+	//Required prepay amount
 	PrepayAmt int64 `protobuf:"varint,4,opt,name=prepay_amt,json=prepayAmt,proto3" json:"prepay_amt,omitempty"`
-	// *
-	// Minimum swap amount (sat)
+	//*
+	//Minimum swap amount (sat)
 	MinSwapAmount int64 `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	// *
-	// Maximum swap amount (sat)
+	//*
+	//Maximum swap amount (sat)
 	MaxSwapAmount int64 `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
-	// *
-	// On-chain cltv expiry delta
+	//*
+	//On-chain cltv expiry delta
 	CltvDelta            int32    `protobuf:"varint,7,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -601,16 +610,17 @@ func (m *TermsResponse) Reset()         { *m = TermsResponse{} }
 func (m *TermsResponse) String() string { return proto.CompactTextString(m) }
 func (*TermsResponse) ProtoMessage()    {}
 func (*TermsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{6}
+	return fileDescriptor_014de31d7ac8c57c, []int{6}
 }
+
 func (m *TermsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_TermsResponse.Unmarshal(m, b)
 }
 func (m *TermsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_TermsResponse.Marshal(b, m, deterministic)
 }
-func (dst *TermsResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_TermsResponse.Merge(dst, src)
+func (m *TermsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TermsResponse.Merge(m, src)
 }
 func (m *TermsResponse) XXX_Size() int {
 	return xxx_messageInfo_TermsResponse.Size(m)
@@ -671,8 +681,8 @@ func (m *TermsResponse) GetCltvDelta() int32 {
 }
 
 type QuoteRequest struct {
-	// *
-	// The amount to swap in satoshis.
+	//*
+	//The amount to swap in satoshis.
 	Amt                  int64    `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -683,16 +693,17 @@ func (m *QuoteRequest) Reset()         { *m = QuoteRequest{} }
 func (m *QuoteRequest) String() string { return proto.CompactTextString(m) }
 func (*QuoteRequest) ProtoMessage()    {}
 func (*QuoteRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{7}
+	return fileDescriptor_014de31d7ac8c57c, []int{7}
 }
+
 func (m *QuoteRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_QuoteRequest.Unmarshal(m, b)
 }
 func (m *QuoteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_QuoteRequest.Marshal(b, m, deterministic)
 }
-func (dst *QuoteRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_QuoteRequest.Merge(dst, src)
+func (m *QuoteRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuoteRequest.Merge(m, src)
 }
 func (m *QuoteRequest) XXX_Size() int {
 	return xxx_messageInfo_QuoteRequest.Size(m)
@@ -711,14 +722,14 @@ func (m *QuoteRequest) GetAmt() int64 {
 }
 
 type QuoteResponse struct {
-	// *
-	// The fee that the swap server is charging for the swap.
+	//*
+	//The fee that the swap server is charging for the swap.
 	SwapFee int64 `protobuf:"varint,1,opt,name=swap_fee,json=swapFee,proto3" json:"swap_fee,omitempty"`
-	// *
-	// The part of the swap fee that is requested as a prepayment.
+	//*
+	//The part of the swap fee that is requested as a prepayment.
 	PrepayAmt int64 `protobuf:"varint,2,opt,name=prepay_amt,json=prepayAmt,proto3" json:"prepay_amt,omitempty"`
-	// *
-	// An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
+	//*
+	//An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
 	MinerFee             int64    `protobuf:"varint,3,opt,name=miner_fee,json=minerFee,proto3" json:"miner_fee,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -729,16 +740,17 @@ func (m *QuoteResponse) Reset()         { *m = QuoteResponse{} }
 func (m *QuoteResponse) String() string { return proto.CompactTextString(m) }
 func (*QuoteResponse) ProtoMessage()    {}
 func (*QuoteResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_client_cce8684ac06bdedc, []int{8}
+	return fileDescriptor_014de31d7ac8c57c, []int{8}
 }
+
 func (m *QuoteResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_QuoteResponse.Unmarshal(m, b)
 }
 func (m *QuoteResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_QuoteResponse.Marshal(b, m, deterministic)
 }
-func (dst *QuoteResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_QuoteResponse.Merge(dst, src)
+func (m *QuoteResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuoteResponse.Merge(m, src)
 }
 func (m *QuoteResponse) XXX_Size() int {
 	return xxx_messageInfo_QuoteResponse.Size(m)
@@ -771,6 +783,8 @@ func (m *QuoteResponse) GetMinerFee() int64 {
 }
 
 func init() {
+	proto.RegisterEnum("looprpc.SwapType", SwapType_name, SwapType_value)
+	proto.RegisterEnum("looprpc.SwapState", SwapState_name, SwapState_value)
 	proto.RegisterType((*LoopOutRequest)(nil), "looprpc.LoopOutRequest")
 	proto.RegisterType((*LoopInRequest)(nil), "looprpc.LoopInRequest")
 	proto.RegisterType((*SwapResponse)(nil), "looprpc.SwapResponse")
@@ -780,8 +794,74 @@ func init() {
 	proto.RegisterType((*TermsResponse)(nil), "looprpc.TermsResponse")
 	proto.RegisterType((*QuoteRequest)(nil), "looprpc.QuoteRequest")
 	proto.RegisterType((*QuoteResponse)(nil), "looprpc.QuoteResponse")
-	proto.RegisterEnum("looprpc.SwapType", SwapType_name, SwapType_value)
-	proto.RegisterEnum("looprpc.SwapState", SwapState_name, SwapState_value)
+}
+
+func init() { proto.RegisterFile("client.proto", fileDescriptor_014de31d7ac8c57c) }
+
+var fileDescriptor_014de31d7ac8c57c = []byte{
+	// 992 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x73, 0xda, 0x46,
+	0x1c, 0x0d, 0x02, 0x1b, 0xf8, 0x59, 0xc8, 0x78, 0x9d, 0x38, 0x94, 0x36, 0x53, 0xaa, 0x36, 0x29,
+	0xe3, 0x83, 0x69, 0x9d, 0x43, 0xa7, 0xbd, 0x74, 0x08, 0x28, 0xb1, 0x66, 0xb0, 0xa1, 0x02, 0x67,
+	0xa6, 0x27, 0xcd, 0x06, 0xd6, 0xb6, 0x66, 0xa4, 0x5d, 0x45, 0x5a, 0x39, 0x78, 0x3a, 0xbd, 0xf4,
+	0x1b, 0xb4, 0xfd, 0x26, 0x9d, 0x7e, 0x93, 0xde, 0x7b, 0xea, 0x07, 0xe9, 0xec, 0x1f, 0x14, 0x04,
+	0xf1, 0x25, 0x37, 0xfc, 0xf6, 0xed, 0xdb, 0xdf, 0xfe, 0x7e, 0xef, 0xad, 0x0c, 0xe6, 0x3c, 0x0c,
+	0x08, 0xe5, 0x27, 0x71, 0xc2, 0x38, 0x43, 0xd5, 0x90, 0xb1, 0x38, 0x89, 0xe7, 0xed, 0xcf, 0xae,
+	0x19, 0xbb, 0x0e, 0x49, 0x0f, 0xc7, 0x41, 0x0f, 0x53, 0xca, 0x38, 0xe6, 0x01, 0xa3, 0xa9, 0xa2,
+	0xd9, 0x7f, 0x19, 0x60, 0x8d, 0x18, 0x8b, 0xc7, 0x19, 0xf7, 0xc8, 0xdb, 0x8c, 0xa4, 0x1c, 0x35,
+	0xa1, 0x8c, 0x23, 0xde, 0x2a, 0x75, 0x4a, 0xdd, 0xb2, 0x27, 0x7e, 0x22, 0x04, 0x95, 0x05, 0x49,
+	0x79, 0xcb, 0xe8, 0x94, 0xba, 0x75, 0x4f, 0xfe, 0x46, 0x3d, 0x78, 0x18, 0xe1, 0xa5, 0x9f, 0xbe,
+	0xc3, 0xb1, 0x9f, 0xb0, 0x8c, 0x07, 0xf4, 0xda, 0xbf, 0x22, 0xa4, 0x55, 0x96, 0xdb, 0x0e, 0x22,
+	0xbc, 0x9c, 0xbe, 0xc3, 0xb1, 0xa7, 0x56, 0x5e, 0x12, 0x82, 0x9e, 0xc3, 0x91, 0xd8, 0x10, 0x27,
+	0x24, 0xc6, 0x77, 0x85, 0x2d, 0x15, 0xb9, 0xe5, 0x30, 0xc2, 0xcb, 0x89, 0x5c, 0x5c, 0xdb, 0xd4,
+	0x01, 0x33, 0x3f, 0x45, 0x50, 0x77, 0x24, 0x15, 0xb4, 0xba, 0x60, 0x7c, 0x05, 0xd6, 0x9a, 0xac,
+	0x28, 0x7c, 0x57, 0x72, 0xcc, 0x5c, 0xae, 0x1f, 0x71, 0x64, 0x43, 0x43, 0xb0, 0xa2, 0x80, 0x92,
+	0x44, 0x0a, 0x55, 0x25, 0x69, 0x2f, 0xc2, 0xcb, 0x73, 0x81, 0x09, 0xa5, 0x2e, 0x34, 0x45, 0xcf,
+	0x7c, 0x96, 0x71, 0x7f, 0x7e, 0x83, 0x29, 0x25, 0x61, 0xab, 0xd6, 0x29, 0x75, 0x2b, 0x9e, 0x15,
+	0xaa, 0x0e, 0x0d, 0x14, 0x6a, 0xff, 0x5d, 0x82, 0x86, 0x68, 0x9a, 0x4b, 0xef, 0xef, 0xd9, 0x66,
+	0xe5, 0xc6, 0x56, 0xe5, 0x5b, 0x35, 0x95, 0xb7, 0x6b, 0x7a, 0x06, 0xfb, 0xb2, 0xa6, 0x80, 0xe6,
+	0x25, 0x55, 0x64, 0x49, 0x8d, 0x50, 0x9e, 0xaf, 0x2b, 0x42, 0x5f, 0x42, 0x83, 0x2c, 0x39, 0x49,
+	0x28, 0x0e, 0xfd, 0x1b, 0x1e, 0xce, 0x65, 0xa3, 0x6a, 0x9e, 0xb9, 0x02, 0xcf, 0x78, 0x38, 0xb7,
+	0xfb, 0x60, 0xca, 0x99, 0x90, 0x34, 0x66, 0x34, 0x25, 0xc8, 0x02, 0x23, 0x58, 0xc8, 0x9a, 0xeb,
+	0x9e, 0x11, 0x2c, 0xd0, 0x17, 0x60, 0x8a, 0xbd, 0x3e, 0x5e, 0x2c, 0x12, 0x92, 0xa6, 0x7a, 0xdc,
+	0x7b, 0x02, 0xeb, 0x2b, 0xc8, 0x6e, 0x82, 0x75, 0xce, 0x68, 0xc0, 0x59, 0xa2, 0x6f, 0x6e, 0xff,
+	0x6b, 0x00, 0x08, 0xd5, 0x29, 0xc7, 0x3c, 0x4b, 0x3f, 0xd0, 0x08, 0x75, 0x8a, 0x91, 0x9f, 0xf2,
+	0x14, 0x2a, 0xfc, 0x2e, 0x56, 0xb7, 0xb5, 0x4e, 0x0f, 0x4e, 0xb4, 0x4f, 0x4f, 0x84, 0xc8, 0xec,
+	0x2e, 0x26, 0x9e, 0x5c, 0x46, 0x5d, 0xd8, 0x49, 0x39, 0xe6, 0xca, 0x1d, 0xd6, 0x29, 0x2a, 0xf0,
+	0xc4, 0x61, 0xc4, 0x53, 0x04, 0xf4, 0x35, 0xec, 0x07, 0x34, 0xe0, 0x81, 0xf4, 0xb5, 0xcf, 0x83,
+	0x68, 0x65, 0x13, 0xeb, 0x3d, 0x3c, 0x0b, 0x22, 0x35, 0x60, 0x9c, 0x72, 0x3f, 0x8b, 0x17, 0x98,
+	0x13, 0xc5, 0x54, 0x66, 0xb1, 0x04, 0x7e, 0x29, 0x61, 0xc9, 0xdc, 0xec, 0x44, 0x75, 0xab, 0x13,
+	0xe8, 0x73, 0xd8, 0x9b, 0xb3, 0x94, 0xfb, 0x29, 0x49, 0x6e, 0x49, 0x22, 0x8d, 0x52, 0xf6, 0x40,
+	0x40, 0x53, 0x89, 0x08, 0x0d, 0x49, 0x60, 0x74, 0x7e, 0x83, 0x03, 0xda, 0xaa, 0xab, 0xe9, 0x0a,
+	0x6c, 0xac, 0x20, 0x31, 0x35, 0x45, 0xb9, 0xba, 0x52, 0x1c, 0x50, 0xd6, 0x95, 0x1c, 0x8d, 0xd9,
+	0x16, 0x98, 0x33, 0x92, 0x44, 0xe9, 0xaa, 0xe1, 0xbf, 0x1b, 0xd0, 0xd0, 0x80, 0x9e, 0xe3, 0x31,
+	0x1c, 0x48, 0x9b, 0xc5, 0xf8, 0x2e, 0x22, 0x94, 0xfb, 0x32, 0xab, 0x6a, 0xac, 0xfb, 0x62, 0x61,
+	0xa2, 0xf0, 0xa1, 0x30, 0xaa, 0x0d, 0x8d, 0x95, 0x25, 0xfd, 0x37, 0x38, 0x5d, 0xf9, 0x72, 0x2f,
+	0x55, 0xa6, 0x7c, 0x81, 0x53, 0x52, 0xe0, 0x24, 0x62, 0x04, 0xe5, 0x02, 0xc7, 0x13, 0x4d, 0x7f,
+	0x02, 0xb0, 0x16, 0x39, 0x95, 0xe0, 0x7a, 0x9c, 0xe7, 0xed, 0x19, 0xec, 0x47, 0x01, 0x55, 0xee,
+	0xc7, 0x11, 0xcb, 0x28, 0xd7, 0x33, 0x69, 0x44, 0x01, 0x15, 0x13, 0xec, 0x4b, 0x50, 0xf2, 0x56,
+	0x29, 0xd1, 0xbc, 0x5d, 0xcd, 0x53, 0x41, 0xd1, 0xbc, 0x27, 0x00, 0xf3, 0x90, 0xdf, 0xfa, 0x0b,
+	0x12, 0x72, 0x2c, 0xc7, 0xb1, 0xe3, 0xd5, 0x05, 0x32, 0x14, 0x80, 0xdd, 0x01, 0xf3, 0xa7, 0x8c,
+	0x71, 0x72, 0x6f, 0x1c, 0xed, 0x2b, 0x68, 0x68, 0x86, 0x6e, 0xda, 0x27, 0x50, 0xcb, 0xb3, 0xa9,
+	0x78, 0x55, 0x7d, 0xbf, 0x8d, 0xbb, 0x19, 0x9b, 0x77, 0xfb, 0x14, 0xea, 0x9b, 0x99, 0xad, 0x45,
+	0x3a, 0xb0, 0xc7, 0x4f, 0xa1, 0xb6, 0x32, 0x32, 0x32, 0xa1, 0x36, 0x1a, 0x8f, 0x27, 0xfe, 0xf8,
+	0x72, 0xd6, 0x7c, 0x80, 0xf6, 0xa0, 0x2a, 0xff, 0x72, 0x2f, 0x9a, 0xa5, 0xe3, 0x14, 0xea, 0xb9,
+	0x8f, 0x51, 0x03, 0xea, 0xee, 0x85, 0x3b, 0x73, 0xfb, 0x33, 0x67, 0xd8, 0x7c, 0x80, 0x1e, 0xc1,
+	0xc1, 0xc4, 0x73, 0xdc, 0xf3, 0xfe, 0x2b, 0xc7, 0xf7, 0x9c, 0xd7, 0x4e, 0x7f, 0xe4, 0x0c, 0x9b,
+	0x25, 0x84, 0xc0, 0x3a, 0x9b, 0x8d, 0x06, 0xfe, 0xe4, 0xf2, 0xc5, 0xc8, 0x9d, 0x9e, 0x39, 0xc3,
+	0xa6, 0x21, 0x34, 0xa7, 0x97, 0x83, 0x81, 0x33, 0x9d, 0x36, 0xcb, 0x08, 0x60, 0xf7, 0x65, 0xdf,
+	0x15, 0xe4, 0x0a, 0x3a, 0x84, 0x7d, 0xf7, 0xe2, 0xf5, 0xd8, 0x1d, 0x38, 0xfe, 0xd4, 0x99, 0xcd,
+	0x04, 0xb8, 0x73, 0xfa, 0x47, 0x45, 0x45, 0x75, 0x20, 0xbf, 0x13, 0xc8, 0x83, 0xaa, 0x7e, 0xf9,
+	0xd1, 0xe3, 0x3c, 0x5d, 0xc5, 0x6f, 0x41, 0xfb, 0x51, 0x21, 0x76, 0xab, 0xe6, 0xd9, 0x8f, 0x7f,
+	0xfb, 0xe7, 0xbf, 0x3f, 0x8d, 0x03, 0xdb, 0xec, 0xdd, 0x7e, 0xdb, 0x13, 0x8c, 0x1e, 0xcb, 0xf8,
+	0x0f, 0xa5, 0x63, 0xf4, 0x1d, 0xec, 0xaa, 0x87, 0x11, 0x1d, 0x15, 0x24, 0xf3, 0x97, 0xf2, 0x1e,
+	0x45, 0xf4, 0x3d, 0x54, 0xf5, 0xc3, 0xb2, 0x56, 0x4c, 0xf1, 0xa9, 0x69, 0x1f, 0x6e, 0xbd, 0x01,
+	0x59, 0xfa, 0x4d, 0x09, 0xfd, 0x0c, 0xa6, 0xae, 0x5a, 0xc6, 0x02, 0xbd, 0x3f, 0x61, 0x3d, 0x37,
+	0xed, 0xa3, 0x4d, 0x58, 0xdf, 0xa5, 0x2d, 0xef, 0xf2, 0x10, 0xa1, 0xf5, 0xbb, 0xf4, 0xb8, 0x94,
+	0xf2, 0x73, 0x69, 0x69, 0x9e, 0x35, 0xe9, 0x75, 0xbb, 0xad, 0x49, 0x17, 0x3c, 0x66, 0x77, 0xa4,
+	0x74, 0x1b, 0xb5, 0x0a, 0xd2, 0x6f, 0x05, 0xa7, 0xf7, 0x0b, 0x8e, 0xf8, 0xaf, 0xe8, 0x47, 0xb0,
+	0x5e, 0x11, 0xae, 0x3a, 0xf4, 0x31, 0xd5, 0x17, 0x04, 0x3e, 0xa6, 0xc6, 0x37, 0xbb, 0xf2, 0xff,
+	0x80, 0xe7, 0xff, 0x07, 0x00, 0x00, 0xff, 0xff, 0xf8, 0xf2, 0xb9, 0x76, 0x3e, 0x08, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -796,34 +876,34 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type SwapClientClient interface {
-	// * loop: `out`
-	// LoopOut initiates an loop out swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream that is
-	// returned from Monitor().
+	//* loop: `out`
+	//LoopOut initiates an loop out swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream that is
+	//returned from Monitor().
 	LoopOut(ctx context.Context, in *LoopOutRequest, opts ...grpc.CallOption) (*SwapResponse, error)
-	// *
-	// LoopIn initiates a loop in swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream
-	// that is returned from Monitor().
+	//*
+	//LoopIn initiates a loop in swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream
+	//that is returned from Monitor().
 	LoopIn(ctx context.Context, in *LoopInRequest, opts ...grpc.CallOption) (*SwapResponse, error)
-	// * loop: `monitor`
-	// Monitor will return a stream of swap updates for currently active swaps.
-	// TODO: add MonitorSync version for REST clients.
+	//* loop: `monitor`
+	//Monitor will return a stream of swap updates for currently active swaps.
+	//TODO: add MonitorSync version for REST clients.
 	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (SwapClient_MonitorClient, error)
-	// * loop: `terms`
-	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	//* loop: `terms`
+	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*TermsResponse, error)
-	// * loop: `quote`
-	// LoopOutQuote returns a quote for a loop out swap with the provided
-	// parameters.
+	//* loop: `quote`
+	//LoopOutQuote returns a quote for a loop out swap with the provided
+	//parameters.
 	LoopOutQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*QuoteResponse, error)
-	// *
-	// GetTerms returns the terms that the server enforces for swaps.
+	//*
+	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*TermsResponse, error)
-	// *
-	// GetQuote returns a quote for a swap with the provided parameters.
+	//*
+	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*QuoteResponse, error)
 }
 
@@ -923,34 +1003,34 @@ func (c *swapClientClient) GetLoopInQuote(ctx context.Context, in *QuoteRequest,
 
 // SwapClientServer is the server API for SwapClient service.
 type SwapClientServer interface {
-	// * loop: `out`
-	// LoopOut initiates an loop out swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream that is
-	// returned from Monitor().
+	//* loop: `out`
+	//LoopOut initiates an loop out swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream that is
+	//returned from Monitor().
 	LoopOut(context.Context, *LoopOutRequest) (*SwapResponse, error)
-	// *
-	// LoopIn initiates a loop in swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream
-	// that is returned from Monitor().
+	//*
+	//LoopIn initiates a loop in swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream
+	//that is returned from Monitor().
 	LoopIn(context.Context, *LoopInRequest) (*SwapResponse, error)
-	// * loop: `monitor`
-	// Monitor will return a stream of swap updates for currently active swaps.
-	// TODO: add MonitorSync version for REST clients.
+	//* loop: `monitor`
+	//Monitor will return a stream of swap updates for currently active swaps.
+	//TODO: add MonitorSync version for REST clients.
 	Monitor(*MonitorRequest, SwapClient_MonitorServer) error
-	// * loop: `terms`
-	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	//* loop: `terms`
+	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(context.Context, *TermsRequest) (*TermsResponse, error)
-	// * loop: `quote`
-	// LoopOutQuote returns a quote for a loop out swap with the provided
-	// parameters.
+	//* loop: `quote`
+	//LoopOutQuote returns a quote for a loop out swap with the provided
+	//parameters.
 	LoopOutQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
-	// *
-	// GetTerms returns the terms that the server enforces for swaps.
+	//*
+	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(context.Context, *TermsRequest) (*TermsResponse, error)
-	// *
-	// GetQuote returns a quote for a swap with the provided parameters.
+	//*
+	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
 }
 
@@ -1124,72 +1204,4 @@ var _SwapClient_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Metadata: "client.proto",
-}
-
-func init() { proto.RegisterFile("client.proto", fileDescriptor_client_cce8684ac06bdedc) }
-
-var fileDescriptor_client_cce8684ac06bdedc = []byte{
-	// 992 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x73, 0xda, 0x46,
-	0x1c, 0x0d, 0x02, 0x1b, 0xf8, 0x59, 0xc8, 0x78, 0x9d, 0x38, 0x94, 0x36, 0x53, 0xaa, 0x36, 0x29,
-	0xe3, 0x83, 0x69, 0x9d, 0x43, 0xa7, 0xbd, 0x74, 0x08, 0x28, 0xb1, 0x66, 0xb0, 0xa1, 0x02, 0x67,
-	0xa6, 0x27, 0xcd, 0x06, 0xd6, 0xb6, 0x66, 0xa4, 0x5d, 0x45, 0x5a, 0x39, 0x78, 0x3a, 0xbd, 0xf4,
-	0x1b, 0xb4, 0xfd, 0x26, 0x9d, 0x7e, 0x93, 0xde, 0x7b, 0xea, 0x07, 0xe9, 0xec, 0x1f, 0x14, 0x04,
-	0xf1, 0x25, 0x37, 0xfc, 0xf6, 0xed, 0xdb, 0xdf, 0xfe, 0x7e, 0xef, 0xad, 0x0c, 0xe6, 0x3c, 0x0c,
-	0x08, 0xe5, 0x27, 0x71, 0xc2, 0x38, 0x43, 0xd5, 0x90, 0xb1, 0x38, 0x89, 0xe7, 0xed, 0xcf, 0xae,
-	0x19, 0xbb, 0x0e, 0x49, 0x0f, 0xc7, 0x41, 0x0f, 0x53, 0xca, 0x38, 0xe6, 0x01, 0xa3, 0xa9, 0xa2,
-	0xd9, 0x7f, 0x19, 0x60, 0x8d, 0x18, 0x8b, 0xc7, 0x19, 0xf7, 0xc8, 0xdb, 0x8c, 0xa4, 0x1c, 0x35,
-	0xa1, 0x8c, 0x23, 0xde, 0x2a, 0x75, 0x4a, 0xdd, 0xb2, 0x27, 0x7e, 0x22, 0x04, 0x95, 0x05, 0x49,
-	0x79, 0xcb, 0xe8, 0x94, 0xba, 0x75, 0x4f, 0xfe, 0x46, 0x3d, 0x78, 0x18, 0xe1, 0xa5, 0x9f, 0xbe,
-	0xc3, 0xb1, 0x9f, 0xb0, 0x8c, 0x07, 0xf4, 0xda, 0xbf, 0x22, 0xa4, 0x55, 0x96, 0xdb, 0x0e, 0x22,
-	0xbc, 0x9c, 0xbe, 0xc3, 0xb1, 0xa7, 0x56, 0x5e, 0x12, 0x82, 0x9e, 0xc3, 0x91, 0xd8, 0x10, 0x27,
-	0x24, 0xc6, 0x77, 0x85, 0x2d, 0x15, 0xb9, 0xe5, 0x30, 0xc2, 0xcb, 0x89, 0x5c, 0x5c, 0xdb, 0xd4,
-	0x01, 0x33, 0x3f, 0x45, 0x50, 0x77, 0x24, 0x15, 0xb4, 0xba, 0x60, 0x7c, 0x05, 0xd6, 0x9a, 0xac,
-	0x28, 0x7c, 0x57, 0x72, 0xcc, 0x5c, 0xae, 0x1f, 0x71, 0x64, 0x43, 0x43, 0xb0, 0xa2, 0x80, 0x92,
-	0x44, 0x0a, 0x55, 0x25, 0x69, 0x2f, 0xc2, 0xcb, 0x73, 0x81, 0x09, 0xa5, 0x2e, 0x34, 0x45, 0xcf,
-	0x7c, 0x96, 0x71, 0x7f, 0x7e, 0x83, 0x29, 0x25, 0x61, 0xab, 0xd6, 0x29, 0x75, 0x2b, 0x9e, 0x15,
-	0xaa, 0x0e, 0x0d, 0x14, 0x6a, 0xff, 0x5d, 0x82, 0x86, 0x68, 0x9a, 0x4b, 0xef, 0xef, 0xd9, 0x66,
-	0xe5, 0xc6, 0x56, 0xe5, 0x5b, 0x35, 0x95, 0xb7, 0x6b, 0x7a, 0x06, 0xfb, 0xb2, 0xa6, 0x80, 0xe6,
-	0x25, 0x55, 0x64, 0x49, 0x8d, 0x50, 0x9e, 0xaf, 0x2b, 0x42, 0x5f, 0x42, 0x83, 0x2c, 0x39, 0x49,
-	0x28, 0x0e, 0xfd, 0x1b, 0x1e, 0xce, 0x65, 0xa3, 0x6a, 0x9e, 0xb9, 0x02, 0xcf, 0x78, 0x38, 0xb7,
-	0xfb, 0x60, 0xca, 0x99, 0x90, 0x34, 0x66, 0x34, 0x25, 0xc8, 0x02, 0x23, 0x58, 0xc8, 0x9a, 0xeb,
-	0x9e, 0x11, 0x2c, 0xd0, 0x17, 0x60, 0x8a, 0xbd, 0x3e, 0x5e, 0x2c, 0x12, 0x92, 0xa6, 0x7a, 0xdc,
-	0x7b, 0x02, 0xeb, 0x2b, 0xc8, 0x6e, 0x82, 0x75, 0xce, 0x68, 0xc0, 0x59, 0xa2, 0x6f, 0x6e, 0xff,
-	0x6b, 0x00, 0x08, 0xd5, 0x29, 0xc7, 0x3c, 0x4b, 0x3f, 0xd0, 0x08, 0x75, 0x8a, 0x91, 0x9f, 0xf2,
-	0x14, 0x2a, 0xfc, 0x2e, 0x56, 0xb7, 0xb5, 0x4e, 0x0f, 0x4e, 0xb4, 0x4f, 0x4f, 0x84, 0xc8, 0xec,
-	0x2e, 0x26, 0x9e, 0x5c, 0x46, 0x5d, 0xd8, 0x49, 0x39, 0xe6, 0xca, 0x1d, 0xd6, 0x29, 0x2a, 0xf0,
-	0xc4, 0x61, 0xc4, 0x53, 0x04, 0xf4, 0x35, 0xec, 0x07, 0x34, 0xe0, 0x81, 0xf4, 0xb5, 0xcf, 0x83,
-	0x68, 0x65, 0x13, 0xeb, 0x3d, 0x3c, 0x0b, 0x22, 0x35, 0x60, 0x9c, 0x72, 0x3f, 0x8b, 0x17, 0x98,
-	0x13, 0xc5, 0x54, 0x66, 0xb1, 0x04, 0x7e, 0x29, 0x61, 0xc9, 0xdc, 0xec, 0x44, 0x75, 0xab, 0x13,
-	0xe8, 0x73, 0xd8, 0x9b, 0xb3, 0x94, 0xfb, 0x29, 0x49, 0x6e, 0x49, 0x22, 0x8d, 0x52, 0xf6, 0x40,
-	0x40, 0x53, 0x89, 0x08, 0x0d, 0x49, 0x60, 0x74, 0x7e, 0x83, 0x03, 0xda, 0xaa, 0xab, 0xe9, 0x0a,
-	0x6c, 0xac, 0x20, 0x31, 0x35, 0x45, 0xb9, 0xba, 0x52, 0x1c, 0x50, 0xd6, 0x95, 0x1c, 0x8d, 0xd9,
-	0x16, 0x98, 0x33, 0x92, 0x44, 0xe9, 0xaa, 0xe1, 0xbf, 0x1b, 0xd0, 0xd0, 0x80, 0x9e, 0xe3, 0x31,
-	0x1c, 0x48, 0x9b, 0xc5, 0xf8, 0x2e, 0x22, 0x94, 0xfb, 0x32, 0xab, 0x6a, 0xac, 0xfb, 0x62, 0x61,
-	0xa2, 0xf0, 0xa1, 0x30, 0xaa, 0x0d, 0x8d, 0x95, 0x25, 0xfd, 0x37, 0x38, 0x5d, 0xf9, 0x72, 0x2f,
-	0x55, 0xa6, 0x7c, 0x81, 0x53, 0x52, 0xe0, 0x24, 0x62, 0x04, 0xe5, 0x02, 0xc7, 0x13, 0x4d, 0x7f,
-	0x02, 0xb0, 0x16, 0x39, 0x95, 0xe0, 0x7a, 0x9c, 0xe7, 0xed, 0x19, 0xec, 0x47, 0x01, 0x55, 0xee,
-	0xc7, 0x11, 0xcb, 0x28, 0xd7, 0x33, 0x69, 0x44, 0x01, 0x15, 0x13, 0xec, 0x4b, 0x50, 0xf2, 0x56,
-	0x29, 0xd1, 0xbc, 0x5d, 0xcd, 0x53, 0x41, 0xd1, 0xbc, 0x27, 0x00, 0xf3, 0x90, 0xdf, 0xfa, 0x0b,
-	0x12, 0x72, 0x2c, 0xc7, 0xb1, 0xe3, 0xd5, 0x05, 0x32, 0x14, 0x80, 0xdd, 0x01, 0xf3, 0xa7, 0x8c,
-	0x71, 0x72, 0x6f, 0x1c, 0xed, 0x2b, 0x68, 0x68, 0x86, 0x6e, 0xda, 0x27, 0x50, 0xcb, 0xb3, 0xa9,
-	0x78, 0x55, 0x7d, 0xbf, 0x8d, 0xbb, 0x19, 0x9b, 0x77, 0xfb, 0x14, 0xea, 0x9b, 0x99, 0xad, 0x45,
-	0x3a, 0xb0, 0xc7, 0x4f, 0xa1, 0xb6, 0x32, 0x32, 0x32, 0xa1, 0x36, 0x1a, 0x8f, 0x27, 0xfe, 0xf8,
-	0x72, 0xd6, 0x7c, 0x80, 0xf6, 0xa0, 0x2a, 0xff, 0x72, 0x2f, 0x9a, 0xa5, 0xe3, 0x14, 0xea, 0xb9,
-	0x8f, 0x51, 0x03, 0xea, 0xee, 0x85, 0x3b, 0x73, 0xfb, 0x33, 0x67, 0xd8, 0x7c, 0x80, 0x1e, 0xc1,
-	0xc1, 0xc4, 0x73, 0xdc, 0xf3, 0xfe, 0x2b, 0xc7, 0xf7, 0x9c, 0xd7, 0x4e, 0x7f, 0xe4, 0x0c, 0x9b,
-	0x25, 0x84, 0xc0, 0x3a, 0x9b, 0x8d, 0x06, 0xfe, 0xe4, 0xf2, 0xc5, 0xc8, 0x9d, 0x9e, 0x39, 0xc3,
-	0xa6, 0x21, 0x34, 0xa7, 0x97, 0x83, 0x81, 0x33, 0x9d, 0x36, 0xcb, 0x08, 0x60, 0xf7, 0x65, 0xdf,
-	0x15, 0xe4, 0x0a, 0x3a, 0x84, 0x7d, 0xf7, 0xe2, 0xf5, 0xd8, 0x1d, 0x38, 0xfe, 0xd4, 0x99, 0xcd,
-	0x04, 0xb8, 0x73, 0xfa, 0x47, 0x45, 0x45, 0x75, 0x20, 0xbf, 0x13, 0xc8, 0x83, 0xaa, 0x7e, 0xf9,
-	0xd1, 0xe3, 0x3c, 0x5d, 0xc5, 0x6f, 0x41, 0xfb, 0x51, 0x21, 0x76, 0xab, 0xe6, 0xd9, 0x8f, 0x7f,
-	0xfb, 0xe7, 0xbf, 0x3f, 0x8d, 0x03, 0xdb, 0xec, 0xdd, 0x7e, 0xdb, 0x13, 0x8c, 0x1e, 0xcb, 0xf8,
-	0x0f, 0xa5, 0x63, 0xf4, 0x1d, 0xec, 0xaa, 0x87, 0x11, 0x1d, 0x15, 0x24, 0xf3, 0x97, 0xf2, 0x1e,
-	0x45, 0xf4, 0x3d, 0x54, 0xf5, 0xc3, 0xb2, 0x56, 0x4c, 0xf1, 0xa9, 0x69, 0x1f, 0x6e, 0xbd, 0x01,
-	0x59, 0xfa, 0x4d, 0x09, 0xfd, 0x0c, 0xa6, 0xae, 0x5a, 0xc6, 0x02, 0xbd, 0x3f, 0x61, 0x3d, 0x37,
-	0xed, 0xa3, 0x4d, 0x58, 0xdf, 0xa5, 0x2d, 0xef, 0xf2, 0x10, 0xa1, 0xf5, 0xbb, 0xf4, 0xb8, 0x94,
-	0xf2, 0x73, 0x69, 0x69, 0x9e, 0x35, 0xe9, 0x75, 0xbb, 0xad, 0x49, 0x17, 0x3c, 0x66, 0x77, 0xa4,
-	0x74, 0x1b, 0xb5, 0x0a, 0xd2, 0x6f, 0x05, 0xa7, 0xf7, 0x0b, 0x8e, 0xf8, 0xaf, 0xe8, 0x47, 0xb0,
-	0x5e, 0x11, 0xae, 0x3a, 0xf4, 0x31, 0xd5, 0x17, 0x04, 0x3e, 0xa6, 0xc6, 0x37, 0xbb, 0xf2, 0xff,
-	0x80, 0xe7, 0xff, 0x07, 0x00, 0x00, 0xff, 0xff, 0xf8, 0xf2, 0xb9, 0x76, 0x3e, 0x08, 0x00, 0x00,
 }
