@@ -25,6 +25,13 @@ var (
 	// DefaultSweepConfTarget is the default confirmation target we'll use
 	// when sweeping on-chain HTLCs.
 	DefaultSweepConfTarget int32 = 6
+
+	// DefaultSweepConfTargetDelta is the delta of blocks from a Loop Out
+	// swap's expiration height at which we begin to use the default sweep
+	// confirmation target.
+	//
+	// TODO(wilmer): tune?
+	DefaultSweepConfTargetDelta int32 = DefaultSweepConfTarget * 2
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -581,22 +588,29 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	htlcValue btcutil.Amount) error {
 
 	witnessFunc := func(sig []byte) (wire.TxWitness, error) {
-		return s.htlc.GenSuccessWitness(
-			sig, s.Preimage,
-		)
+		return s.htlc.GenSuccessWitness(sig, s.Preimage)
 	}
 
-	// Calculate sweep tx fee
+	// Calculate the transaction fee based on the confirmation target
+	// required to sweep the HTLC before the timeout. We'll use the
+	// confirmation target provided by the client unless we've come too
+	// close to the expiration height, in which case we'll use the default
+	// if it is better than what the client provided.
+	confTarget := s.SweepConfTarget
+	if s.CltvExpiry-s.height >= DefaultSweepConfTargetDelta &&
+		confTarget > DefaultSweepConfTarget {
+		confTarget = DefaultSweepConfTarget
+	}
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddSuccessToEstimator,
-		s.SweepConfTarget,
+		ctx, s.htlc.AddSuccessToEstimator, confTarget,
 	)
 	if err != nil {
 		return err
 	}
 
+	// Ensure it doesn't exceed our maximum fee allowed.
 	if fee > s.MaxMinerFee {
-		s.log.Warnf("Required miner fee %v exceeds max of %v",
+		s.log.Warnf("Required fee %v exceeds max miner fee of %v",
 			fee, s.MaxMinerFee)
 
 		if s.state == loopdb.StatePreimageRevealed {
@@ -612,8 +626,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, s.htlc, htlcOutpoint,
-		s.ReceiverKey, witnessFunc,
+		ctx, s.height, s.htlc, htlcOutpoint, s.ReceiverKey, witnessFunc,
 		htlcValue, fee, s.DestAddr,
 	)
 	if err != nil {
@@ -688,6 +701,12 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 			response.expiry, response.expiry-height)
 
 		return ErrExpiryTooSoon
+	}
+
+	// Ensure the client has provided a sweep confirmation target that does
+	// not exceed the height at which we revert back to using the default.
+	if height+request.SweepConfTarget >= response.expiry-DefaultSweepConfTargetDelta {
+		return ErrSweepConfTargetTooFar
 	}
 
 	return nil
