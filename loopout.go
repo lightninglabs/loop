@@ -20,7 +20,11 @@ import (
 var (
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
 	// remaining blocks before htlc expiry required to reveal preimage.
-	MinLoopOutPreimageRevealDelta = int32(20)
+	MinLoopOutPreimageRevealDelta int32 = 20
+
+	// DefaultSweepConfTarget is the default confirmation target we'll use
+	// when sweeping on-chain HTLCs.
+	DefaultSweepConfTarget int32 = 6
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out

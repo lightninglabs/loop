@@ -41,6 +41,13 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	logger.Infof("Loop out request received")
 
+	sweepConfTarget, err := validateConfTarget(
+		in.SweepConfTarget, loop.DefaultSweepConfTarget,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
 		// Generate sweep address if none specified.
@@ -67,7 +74,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		MaxPrepayRoutingFee: btcutil.Amount(in.MaxPrepayRoutingFee),
 		MaxSwapRoutingFee:   btcutil.Amount(in.MaxSwapRoutingFee),
 		MaxSwapFee:          btcutil.Amount(in.MaxSwapFee),
-		SweepConfTarget:     defaultConfTarget,
+		SweepConfTarget:     sweepConfTarget,
 	}
 	if in.LoopOutChannel != 0 {
 		req.LoopOutChannel = &in.LoopOutChannel
@@ -249,7 +256,9 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
-	confTarget, err := validateConfTarget(req.ConfTarget, defaultConfTarget)
+	confTarget, err := validateConfTarget(
+		req.ConfTarget, loop.DefaultSweepConfTarget,
+	)
 	if err != nil {
 		return nil, err
 	}

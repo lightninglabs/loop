@@ -136,6 +136,11 @@
           "type": "string",
           "format": "uint64",
           "description": "*\nThe channel to loop out, the channel to loop out is selected based on the\nlowest routing fee for the swap payment to the server."
+        },
+        "sweep_conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "*\nThe number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
         }
       }
     },

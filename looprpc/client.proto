@@ -127,6 +127,12 @@ message LoopOutRequest {
     lowest routing fee for the swap payment to the server.
     */
     uint64 loop_out_channel = 8;
+
+    /**
+    The number of blocks from the on-chain HTLC's confirmation height that it
+    should be swept within.
+    */
+    int32 sweep_conf_target = 9;
 }
 
 message LoopInRequest {
