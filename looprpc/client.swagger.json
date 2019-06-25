@@ -61,6 +61,14 @@
             "required": true,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "conf_target",
+            "description": "*\nThe confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [

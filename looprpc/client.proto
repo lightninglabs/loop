@@ -328,6 +328,14 @@ message QuoteRequest {
     The amount to swap in satoshis.
     */
     int64 amt = 1;
+
+    /**
+    The confirmation target that should be used either for the sweep of the
+    on-chain HTLC broadcast by the swap server in the case of a Loop Out, or for
+    the confirmation of the on-chain HTLC broadcast by the swap client in the
+    case of a Loop In.
+    */
+    int32 conf_target = 2;
 }
 
 message QuoteResponse {

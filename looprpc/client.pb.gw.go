@@ -50,6 +50,10 @@ func request_SwapClient_LoopOutTerms_0(ctx context.Context, marshaler runtime.Ma
 
 }
 
+var (
+	filter_SwapClient_LoopOutQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+)
+
 func request_SwapClient_LoopOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var protoReq QuoteRequest
 	var metadata runtime.ServerMetadata
@@ -70,6 +74,10 @@ func request_SwapClient_LoopOutQuote_0(ctx context.Context, marshaler runtime.Ma
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
+	}
+
+	if err := runtime.PopulateQueryParameters(&protoReq, req.URL.Query(), filter_SwapClient_LoopOutQuote_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 
 	msg, err := client.LoopOutQuote(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))

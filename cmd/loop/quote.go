@@ -12,12 +12,22 @@ var quoteCommand = cli.Command{
 	Usage:       "get a quote for the cost of a swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
-	Action:      quote,
+	Flags: []cli.Flag{
+		cli.Uint64Flag{
+			Name: "conf_target",
+			Usage: "the number of blocks from the swap " +
+				"initiation height that the on-chain HTLC " +
+				"should be swept within in a Loop Out",
+			Value: 6,
+		},
+	},
+	Action: quote,
 }
 
 func quote(ctx *cli.Context) error {
-	// Show command help if no arguments and flags were provided.
-	if ctx.NArg() < 1 {
+	// Show command help if the incorrect number arguments and/or flags were
+	// provided.
+	if ctx.NArg() != 1 || ctx.NumFlags() > 1 {
 		cli.ShowCommandHelp(ctx, "quote")
 		return nil
 	}
@@ -36,7 +46,8 @@ func quote(ctx *cli.Context) error {
 
 	ctxb := context.Background()
 	resp, err := client.LoopOutQuote(ctxb, &looprpc.QuoteRequest{
-		Amt: int64(amt),
+		Amt:        int64(amt),
+		ConfTarget: int32(ctx.Uint64("conf_target")),
 	})
 	if err != nil {
 		return err

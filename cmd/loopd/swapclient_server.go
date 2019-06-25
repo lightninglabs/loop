@@ -16,7 +16,14 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 )
 
-const completedSwapsCount = 5
+const (
+	completedSwapsCount = 5
+
+	// minConfTarget is the minimum confirmation target we'll allow clients
+	// to specify. This is driven by the minimum confirmation target allowed
+	// by the backing fee estimator.
+	minConfTarget = 2
+)
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
@@ -242,9 +249,13 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
+	confTarget, err := validateConfTarget(req.ConfTarget, defaultConfTarget)
+	if err != nil {
+		return nil, err
+	}
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
 		Amount:          btcutil.Amount(req.Amt),
-		SweepConfTarget: defaultConfTarget,
+		SweepConfTarget: confTarget,
 	})
 	if err != nil {
 		return nil, err
@@ -322,4 +333,18 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		Id:          hash.String(),
 		HtlcAddress: htlc.String(),
 	}, nil
+}
+
+// validateConfTarget ensures the given confirmation target is valid. If one
+// isn't specified (0 value), then the default target is used.
+func validateConfTarget(target, defaultTarget int32) (int32, error) {
+	switch {
+	// Ensure the target respects our minimum threshold.
+	case target < minConfTarget:
+		return 0, fmt.Errorf("a confirmation target of at least %v "+
+			"must be provided", minConfTarget)
+
+	default:
+		return target, nil
+	}
 }
