@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/btcsuite/btcd/chaincfg"
-
 	"github.com/lightningnetwork/lnd/queue"
 
 	"github.com/lightninglabs/loop"
@@ -19,10 +17,6 @@ import (
 )
 
 const completedSwapsCount = 5
-
-var (
-	errNoMainnet = errors.New("function not available on mainnet")
-)
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
@@ -268,10 +262,6 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 
 	logger.Infof("Loop in terms request received")
 
-	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
-		return nil, errNoMainnet
-	}
-
 	terms, err := s.impl.LoopInTerms(ctx)
 	if err != nil {
 		logger.Errorf("Terms request: %v", err)
@@ -293,10 +283,6 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	logger.Infof("Loop in quote request received")
 
-	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
-		return nil, errNoMainnet
-	}
-
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
 		HtlcConfTarget: defaultConfTarget,
@@ -315,10 +301,6 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	*looprpc.SwapResponse, error) {
 
 	logger.Infof("Loop in request received")
-
-	if s.lnd.ChainParams.Name == chaincfg.MainNetParams.Name {
-		return nil, errNoMainnet
-	}
 
 	req := &loop.LoopInRequest{
 		Amount:         btcutil.Amount(in.Amt),
