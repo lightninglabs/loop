@@ -129,9 +129,39 @@ This can be altered using command line flags. See `loopd --help`.
 `loopd` only listens on localhost and uses an unencrypted and unauthenticated
 connection.
 
+### Loop Out Swaps
+
 Now that loopd is running, you can initiate a simple Loop Out. This will pay
 out Lightning off-chain funds and you will receive Bitcoin on-chain funds in
 return. There will be some chain and routing fees associated with this swap.
+```
+NAME:
+   loop out - perform an off-chain to on-chain swap (looping out)
+
+USAGE:
+   loop out [command options] amt [addr]
+
+DESCRIPTION:
+
+  Attempts loop out the target amount into either the backing lnd's
+  wallet, or a targeted address.
+
+  The amount is to be specified in satoshis.
+
+  Optionally a BASE58/bech32 encoded bitcoin destination address may be
+  specified. If not specified, a new wallet address will be generated.
+
+OPTIONS:
+   --channel value  the 8-byte compact channel ID of the channel to loop out (default: 0)
+   --addr value     the optional address that the looped out funds should be sent to, if let blank the funds will go to lnd's wallet
+   --amt value      the amount in satoshis to loop out (default: 0)
+```
+
+It's possible to receive more inbound capacity on a particular channel
+(`--channel`), and also have the `loop` daemon send the coins to a target
+address (`addr`). The latter option allows ones to effectively send on-chain
+from their existing channels!
+
 
 ```
 loop out <amt_in_satoshis>
@@ -142,6 +172,35 @@ swap is initiated successfully, `loopd` will see the process through.
 
 To query in-flight swap statuses, run `loop monitor`.
 
+### Loop In Swaps
+
+Additionally, Loop In is now also supported for mainnet as well. A Loop In swap
+lets one refill their channel (ability to send more coins) by sending to a
+special script on-chain.
+```
+NAME:
+   loop in - perform an on-chain to off-chain swap (loop in)
+
+USAGE:
+   loop in [command options] amt
+
+DESCRIPTION:
+
+    Send the amount in satoshis specified by the amt argument off-chain.
+
+OPTIONS:
+   --amt value  the amount in satoshis to loop in (default: 0)
+   --external   expect htlc to be published externally
+```
+
+The `--external` argument allows the on-chain HTLC transacting to be published
+_externally_. This allows for a number of use cases like using this address to
+withdraw from an exchange _into_ your Lightning channel!
+
+A Loop In swap can be executed a follows: 
+```
+loop in <amt_in_satoshis>
+```
 ## Resume
 
 When `loopd` is terminated (or killed) for whatever reason, it will pickup
