@@ -8,11 +8,13 @@ client and depends on the Lightning Network daemon
 backends are fully supported when using the Loop client: Neutrino, Bitcoin
 Core, and btcd.
 
-In the current iteration of the Loop software, only off-chain to on-chain
-swaps are supported, where the Loop client sends funds off-chain in
-exchange for the funds back on-chain. This is called a **Loop Out**.
+In the current iteration of the Loop software, two swap types are supported:
+  * off-chain to on-chain, where the Loop client sends funds off-chain in
+  * on-chain to off-chain, where teh Loop client sends funds to an on-chain
+    address using an off-chain channel
 
-The service can be used in various situations:
+We call off-chain to on-chain swaps, a **Loop Out**.  The service can be used
+in various situations:
 
 - Acquiring inbound channel liquidity from arbitrary nodes on the Lightning
     network
@@ -21,11 +23,11 @@ The service can be used in various situations:
 - Paying to on-chain fallback addresses in the case of insufficient route
     liquidity
 
-Loop also allow offers an experimental testnet version of on-chain to off-chain
-swaps, called **Loop In**. This allows you to use on-chain funds to increase
-the local balance of a channel.
+We call our on-chain to off-chain swaps, a **Loop In**.  This allows you to use
+on-chain funds to increase the local balance of a channel, effectively
+"refilling" an existing channel.
 
-Potential uses for Loop In:
+Potential uses for **Loop In**:
 
 - Refilling depleted channels with funds from cold-wallets or exchange
     withdrawals
