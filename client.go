@@ -42,6 +42,12 @@ var (
 	// is too soon for us.
 	ErrExpiryTooFar = errors.New("swap expiry too far")
 
+	// ErrSweepConfTargetTooFar is returned when the client proposes a
+	// confirmation target to sweep the on-chain HTLC of a Loop Out that is
+	// beyond the expiration height proposed by the server.
+	ErrSweepConfTargetTooFar = errors.New("sweep confirmation target is " +
+		"beyond swap expiration height")
+
 	serverRPCTimeout = 30 * time.Second
 
 	republishDelay = 10 * time.Second

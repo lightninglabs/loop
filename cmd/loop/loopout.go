@@ -36,6 +36,13 @@ var loopOutCommand = cli.Command{
 			Name:  "amt",
 			Usage: "the amount in satoshis to loop out",
 		},
+		cli.Uint64Flag{
+			Name: "conf_target",
+			Usage: "the number of blocks from the swap " +
+				"initiation height that the on-chain HTLC " +
+				"should be swept within",
+			Value: uint64(loop.DefaultSweepConfTarget),
+		},
 	},
 	Action: loopOut,
 }
@@ -75,8 +82,10 @@ func loopOut(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
+	sweepConfTarget := int32(ctx.Uint64("conf_target"))
 	quoteReq := &looprpc.QuoteRequest{
-		Amt: int64(amt),
+		Amt:        int64(amt),
+		ConfTarget: sweepConfTarget,
 	}
 	quote, err := client.LoopOutQuote(context.Background(), quoteReq)
 	if err != nil {
@@ -103,6 +112,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxPrepayRoutingFee: int64(*limits.maxPrepayRoutingFee),
 		MaxSwapRoutingFee:   int64(*limits.maxSwapRoutingFee),
 		LoopOutChannel:      unchargeChannel,
+		SweepConfTarget:     sweepConfTarget,
 	})
 	if err != nil {
 		return err
