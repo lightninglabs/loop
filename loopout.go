@@ -31,7 +31,7 @@ var (
 	// confirmation target.
 	//
 	// TODO(wilmer): tune?
-	DefaultSweepConfTargetDelta int32 = DefaultSweepConfTarget * 2
+	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
