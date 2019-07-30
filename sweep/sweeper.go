@@ -91,7 +91,7 @@ func (s *Sweeper) CreateSweepTx(
 // estimator.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator),
-	sweepConfTarget int32) (
+	destAddr btcutil.Address, sweepConfTarget int32) (
 	btcutil.Amount, error) {
 
 	// Get fee estimate from lnd.
@@ -102,7 +102,19 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 
 	// Calculate weight for this tx.
 	var weightEstimate input.TxWeightEstimator
-	weightEstimate.AddP2WKHOutput()
+	switch destAddr.(type) {
+	case *btcutil.AddressWitnessScriptHash:
+		weightEstimate.AddP2WSHOutput()
+	case *btcutil.AddressWitnessPubKeyHash:
+		weightEstimate.AddP2WKHOutput()
+	case *btcutil.AddressScriptHash:
+		weightEstimate.AddP2SHOutput()
+	case *btcutil.AddressPubKeyHash:
+		weightEstimate.AddP2PKHOutput()
+	default:
+		return 0, fmt.Errorf("unknown adress type %T", destAddr)
+	}
+
 	addInputEstimate(&weightEstimate)
 	weight := weightEstimate.Weight()
 

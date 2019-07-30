@@ -602,7 +602,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		confTarget = DefaultSweepConfTarget
 	}
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddSuccessToEstimator, confTarget,
+		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, confTarget,
 	)
 	if err != nil {
 		return err
