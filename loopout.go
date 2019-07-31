@@ -31,7 +31,7 @@ var (
 	// confirmation target.
 	//
 	// TODO(wilmer): tune?
-	DefaultSweepConfTargetDelta int32 = DefaultSweepConfTarget * 2
+	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -602,7 +602,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		confTarget = DefaultSweepConfTarget
 	}
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddSuccessToEstimator, confTarget,
+		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, confTarget,
 	)
 	if err != nil {
 		return err

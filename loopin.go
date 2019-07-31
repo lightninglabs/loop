@@ -584,7 +584,8 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	// Calculate sweep tx fee
 	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddTimeoutToEstimator, TimeoutTxConfTarget,
+		ctx, s.htlc.AddTimeoutToEstimator, s.timeoutAddr,
+		TimeoutTxConfTarget,
 	)
 	if err != nil {
 		return err

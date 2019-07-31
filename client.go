@@ -359,9 +359,20 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		request.Amount, terms.SwapFeeBase, terms.SwapFeeRate,
 	)
 
+	// Generate dummy p2wsh address for fee estimation. The p2wsh address
+	// type is chosen because it adds the most weight of all output types
+	// and we want the quote to return a worst case value.
+	wsh := [32]byte{}
+	p2wshAddress, err := btcutil.NewAddressWitnessScriptHash(
+		wsh[:], s.lndServices.ChainParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	minerFee, err := s.sweeper.GetSweepFee(
 		ctx, swap.QuoteHtlc.AddSuccessToEstimator,
-		request.SweepConfTarget,
+		p2wshAddress, request.SweepConfTarget,
 	)
 	if err != nil {
 		return nil, err
