@@ -86,12 +86,12 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
 	}
 
-	err = validateLoopOutContract(cfg.lnd, currentHeight, request, swapResp)
+	err = validateLoopOutContract(cfg.lnd, currentHeight, request, swapHash, swapResp)
 	if err != nil {
 		return nil, err
 	}
 
-	// Instantie a struct that contains all required data to start the swap.
+	// Instantiate a struct that contains all required data to start the swap.
 	initiationTime := time.Now()
 
 	contract := loopdb.LoopOutContract{
@@ -660,21 +660,26 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 // validateLoopOutContract validates the contract parameters against our
 // request.
 func validateLoopOutContract(lnd *lndclient.LndServices,
-	height int32,
-	request *OutRequest,
+	height int32, request *OutRequest, swapHash lntypes.Hash,
 	response *newLoopOutResponse) error {
 
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams
 
-	swapInvoiceAmt, err := swap.GetInvoiceAmt(
+	swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.swapInvoice,
 	)
 	if err != nil {
 		return err
 	}
 
-	prepayInvoiceAmt, err := swap.GetInvoiceAmt(
+	if swapInvoiceHash != swapHash {
+		return fmt.Errorf(
+			"cannot initiate swap, swap invoice hash %v not equal generated swap hash %v",
+			swapInvoiceHash, swapHash)
+	}
+
+	_, prepayInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.prepayInvoice,
 	)
 	if err != nil {
