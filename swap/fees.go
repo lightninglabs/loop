@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
@@ -26,21 +27,24 @@ func FeeRateAsPercentage(feeRate int64) float64 {
 	return float64(feeRate) / (FeeRateTotalParts / 100)
 }
 
-// GetInvoiceAmt gets the invoice amount. It requires an amount to be
-// specified.
-func GetInvoiceAmt(params *chaincfg.Params,
-	payReq string) (btcutil.Amount, error) {
+// DecodeInvoice gets the hash and the amount of an invoice.
+// It requires an amount to be specified.
+func DecodeInvoice(params *chaincfg.Params,
+	payReq string) (lntypes.Hash, btcutil.Amount, error) {
 
 	swapPayReq, err := zpay32.Decode(
 		payReq, params,
 	)
 	if err != nil {
-		return 0, err
+		return lntypes.Hash{}, 0, err
 	}
 
 	if swapPayReq.MilliSat == nil {
-		return 0, errors.New("no amount in invoice")
+		return lntypes.Hash{}, 0, errors.New("no amount in invoice")
 	}
 
-	return swapPayReq.MilliSat.ToSatoshis(), nil
+	var hash lntypes.Hash
+	copy(hash[:], swapPayReq.PaymentHash[:])
+
+	return hash, swapPayReq.MilliSat.ToSatoshis(), nil
 }
