@@ -28,7 +28,12 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream
     that is returned from Monitor().
     */
-    rpc LoopIn(LoopInRequest) returns (SwapResponse);
+    rpc LoopIn(LoopInRequest) returns (SwapResponse) {
+        option (google.api.http) = {
+            post: "/v1/loop/in"
+            body: "*"
+        };
+    }
 
     /** loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
@@ -58,12 +63,20 @@ service SwapClient {
     /**
     GetTerms returns the terms that the server enforces for swaps.
     */
-    rpc GetLoopInTerms(TermsRequest) returns(TermsResponse);
+    rpc GetLoopInTerms(TermsRequest) returns(TermsResponse) {
+        option (google.api.http) = {
+            get: "/v1/loop/in/terms"
+        };
+    }
 
     /**
     GetQuote returns a quote for a swap with the provided parameters.
     */
-    rpc GetLoopInQuote(QuoteRequest) returns(QuoteResponse);
+    rpc GetLoopInQuote(QuoteRequest) returns(QuoteResponse) {
+        option (google.api.http) = {
+            get: "/v1/loop/in/quote/{amt}"
+        };
+    }
 }
 
 message LoopOutRequest {
