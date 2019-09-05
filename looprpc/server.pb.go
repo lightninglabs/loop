@@ -9,6 +9,8 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 	math "math"
 )
 
@@ -593,6 +595,23 @@ type SwapServerServer interface {
 	LoopOutQuote(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error)
 	NewLoopInSwap(context.Context, *ServerLoopInRequest) (*ServerLoopInResponse, error)
 	LoopInQuote(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error)
+}
+
+// UnimplementedSwapServerServer can be embedded to have forward compatible implementations.
+type UnimplementedSwapServerServer struct {
+}
+
+func (*UnimplementedSwapServerServer) NewLoopOutSwap(ctx context.Context, req *ServerLoopOutRequest) (*ServerLoopOutResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NewLoopOutSwap not implemented")
+}
+func (*UnimplementedSwapServerServer) LoopOutQuote(ctx context.Context, req *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopOutQuote not implemented")
+}
+func (*UnimplementedSwapServerServer) NewLoopInSwap(ctx context.Context, req *ServerLoopInRequest) (*ServerLoopInResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NewLoopInSwap not implemented")
+}
+func (*UnimplementedSwapServerServer) LoopInQuote(ctx context.Context, req *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopInQuote not implemented")
 }
 
 func RegisterSwapServerServer(s *grpc.Server, srv SwapServerServer) {

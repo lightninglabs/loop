@@ -15,13 +15,92 @@
     "application/json"
   ],
   "paths": {
+    "/v1/loop/in": {
+      "post": {
+        "summary": "*\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
+        "operationId": "LoopIn",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSwapResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcLoopInRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/loop/in/quote/{amt}": {
+      "get": {
+        "summary": "*\nGetQuote returns a quote for a swap with the provided parameters.",
+        "operationId": "GetLoopInQuote",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcQuoteResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "amt",
+            "description": "*\nThe amount to swap in satoshis.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "conf_target",
+            "description": "*\nThe confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/loop/in/terms": {
+      "get": {
+        "summary": "*\nGetTerms returns the terms that the server enforces for swaps.",
+        "operationId": "GetLoopInTerms",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcTermsResponse"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/out": {
       "post": {
         "summary": "* loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
         "operationId": "LoopOut",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcSwapResponse"
             }
@@ -48,7 +127,7 @@
         "operationId": "LoopOutQuote",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcQuoteResponse"
             }
@@ -57,6 +136,7 @@
         "parameters": [
           {
             "name": "amt",
+            "description": "*\nThe amount to swap in satoshis.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -82,7 +162,7 @@
         "operationId": "LoopOutTerms",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcTermsResponse"
             }
@@ -95,6 +175,36 @@
     }
   },
   "definitions": {
+    "looprpcLoopInRequest": {
+      "type": "object",
+      "properties": {
+        "amt": {
+          "type": "string",
+          "format": "int64",
+          "description": "*\nRequested swap amount in sat. This does not include the swap and miner \nfee."
+        },
+        "max_swap_fee": {
+          "type": "string",
+          "format": "int64",
+          "description": "*\nMaximum we are willing to pay the server for the swap. This value is not\ndisclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call."
+        },
+        "max_miner_fee": {
+          "type": "string",
+          "format": "int64",
+          "description": "*\nMaximum in on-chain fees that we are willing to spent. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+        },
+        "loop_in_channel": {
+          "type": "string",
+          "format": "uint64",
+          "description": "*\nThe channel to loop in. If zero, the channel to loop in is selected based\non the lowest routing fee for the swap payment from the server.\n\nNote: NOT YET IMPLEMENTED"
+        },
+        "external_htlc": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor."
+        }
+      }
+    },
     "looprpcLoopOutRequest": {
       "type": "object",
       "properties": {
@@ -288,6 +398,57 @@
           "title": "*\nOn-chain cltv expiry delta"
         }
       }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "type_url": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "runtimeStreamError": {
+      "type": "object",
+      "properties": {
+        "grpc_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "http_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "http_status": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  },
+  "x-stream-definitions": {
+    "looprpcSwapStatus": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/looprpcSwapStatus"
+        },
+        "error": {
+          "$ref": "#/definitions/runtimeStreamError"
+        }
+      },
+      "title": "Stream result of looprpcSwapStatus"
     }
   }
 }
