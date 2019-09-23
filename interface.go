@@ -224,6 +224,10 @@ type LoopInQuoteRequest struct {
 	// HtlcConfTarget specifies the targeted confirmation target for the
 	// client sweep tx.
 	HtlcConfTarget int32
+
+	// ExternalHtlc specifies whether the htlc is published by an external
+	// source.
+	ExternalHtlc bool
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost

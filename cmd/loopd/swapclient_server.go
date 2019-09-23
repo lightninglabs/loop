@@ -306,6 +306,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
 		HtlcConfTarget: defaultConfTarget,
+		ExternalHtlc:   req.ExternalHtlc,
 	})
 	if err != nil {
 		return nil, err
