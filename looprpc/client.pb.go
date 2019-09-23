@@ -9,8 +9,6 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 	math "math"
 )
 
@@ -1063,32 +1061,6 @@ type SwapClientServer interface {
 	//*
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
-}
-
-// UnimplementedSwapClientServer can be embedded to have forward compatible implementations.
-type UnimplementedSwapClientServer struct {
-}
-
-func (*UnimplementedSwapClientServer) LoopOut(ctx context.Context, req *LoopOutRequest) (*SwapResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LoopOut not implemented")
-}
-func (*UnimplementedSwapClientServer) LoopIn(ctx context.Context, req *LoopInRequest) (*SwapResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LoopIn not implemented")
-}
-func (*UnimplementedSwapClientServer) Monitor(req *MonitorRequest, srv SwapClient_MonitorServer) error {
-	return status.Errorf(codes.Unimplemented, "method Monitor not implemented")
-}
-func (*UnimplementedSwapClientServer) LoopOutTerms(ctx context.Context, req *TermsRequest) (*TermsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LoopOutTerms not implemented")
-}
-func (*UnimplementedSwapClientServer) LoopOutQuote(ctx context.Context, req *QuoteRequest) (*QuoteResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LoopOutQuote not implemented")
-}
-func (*UnimplementedSwapClientServer) GetLoopInTerms(ctx context.Context, req *TermsRequest) (*TermsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetLoopInTerms not implemented")
-}
-func (*UnimplementedSwapClientServer) GetLoopInQuote(ctx context.Context, req *QuoteRequest) (*QuoteResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetLoopInQuote not implemented")
 }
 
 func RegisterSwapClientServer(s *grpc.Server, srv SwapClientServer) {
