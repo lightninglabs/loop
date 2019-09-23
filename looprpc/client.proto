@@ -355,6 +355,12 @@ message QuoteRequest {
     case of a Loop In.
     */
     int32 conf_target = 2;
+
+    /**
+    If external_htlc is true, we expect the htlc to be published by an external
+    actor.
+    */
+    bool external_htlc = 3;
 }
 
 message QuoteResponse {
