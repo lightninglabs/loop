@@ -56,10 +56,12 @@ func loopIn(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
+	external := ctx.Bool("external")
 	quote, err := client.GetLoopInQuote(
 		context.Background(),
 		&looprpc.QuoteRequest{
-			Amt: int64(amt),
+			Amt:          int64(amt),
+			ExternalHtlc: external,
 		},
 	)
 	if err != nil {
@@ -67,8 +69,8 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(amt, quote)
-
-	if err := displayLimits(loop.TypeIn, amt, limits); err != nil {
+	err = displayLimits(loop.TypeIn, amt, limits, external)
+	if err != nil {
 		return err
 	}
 
@@ -76,7 +78,7 @@ func loopIn(ctx *cli.Context) error {
 		Amt:          int64(amt),
 		MaxMinerFee:  int64(limits.maxMinerFee),
 		MaxSwapFee:   int64(limits.maxSwapFee),
-		ExternalHtlc: ctx.Bool("external"),
+		ExternalHtlc: external,
 	})
 	if err != nil {
 		return err

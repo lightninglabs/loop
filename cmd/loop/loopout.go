@@ -94,7 +94,7 @@ func loopOut(ctx *cli.Context) error {
 
 	limits := getLimits(amt, quote)
 
-	if err := displayLimits(loop.TypeOut, amt, limits); err != nil {
+	if err := displayLimits(loop.TypeOut, amt, limits, false); err != nil {
 		return err
 	}
 
