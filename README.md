@@ -10,7 +10,7 @@ Core, and btcd.
 
 In the current iteration of the Loop software, two swap types are supported:
   * off-chain to on-chain, where the Loop client sends funds off-chain in
-  * on-chain to off-chain, where teh Loop client sends funds to an on-chain
+  * on-chain to off-chain, where the Loop client sends funds to an on-chain
     address using an off-chain channel
 
 We call off-chain to on-chain swaps, a **Loop Out**.  The service can be used
@@ -38,7 +38,7 @@ Potential uses for **Loop In**:
 
 ## Development and Support
 
-The Loop client is current in an early beta state, and offers a simple command
+The Loop client is currently in an early beta state, and offers a simple command
 line application. Future APIs will be added to support implementation or use of
 the Loop service.
 
@@ -159,7 +159,7 @@ DESCRIPTION:
 
 OPTIONS:
    --channel value  the 8-byte compact channel ID of the channel to loop out (default: 0)
-   --addr value     the optional address that the looped out funds should be sent to, if let blank the funds will go to lnd's wallet
+   --addr value     the optional address that the looped out funds should be sent to, if left blank the funds will go to lnd's wallet
    --amt value      the amount in satoshis to loop out (default: 0)
 ```
 
