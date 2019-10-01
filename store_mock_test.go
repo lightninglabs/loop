@@ -205,6 +205,15 @@ func (s *storeMock) assertLoopOutStored() {
 	}
 }
 
+func (s *storeMock) assertLoopOutState(expectedState loopdb.SwapState) {
+	s.t.Helper()
+
+	state := <-s.loopOutUpdateChan
+	if state.State != expectedState {
+		s.t.Fatalf("expected state %v, got %v", expectedState, state)
+	}
+}
+
 func (s *storeMock) assertLoopInStored() {
 	s.t.Helper()
 
