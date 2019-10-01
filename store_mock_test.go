@@ -170,8 +170,8 @@ func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
 	}
 
 	updates = append(updates, state)
-	s.loopOutUpdates[hash] = updates
-	s.loopOutUpdateChan <- state
+	s.loopInUpdates[hash] = updates
+	s.loopInUpdateChan <- state
 
 	return nil
 }
@@ -214,9 +214,9 @@ func (s *storeMock) assertLoopInStored() {
 func (s *storeMock) assertLoopInState(expectedState loopdb.SwapState) {
 	s.t.Helper()
 
-	state := <-s.loopOutUpdateChan
+	state := <-s.loopInUpdateChan
 	if state.State != expectedState {
-		s.t.Fatalf("unexpected state")
+		s.t.Fatalf("expected state %v, got %v", expectedState, state)
 	}
 }
 
