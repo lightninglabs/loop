@@ -470,6 +470,15 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		request.Amount*btcutil.Amount(terms.SwapFeeRate)/
 			btcutil.Amount(swap.FeeRateTotalParts)
 
+	// We don't calculate the on-chain fee if the HTLC is going to be
+	// published externally.
+	if request.ExternalHtlc {
+		return &LoopInQuote{
+			SwapFee:  swapFee,
+			MinerFee: 0,
+		}, nil
+	}
+	
 	// Get estimate for miner fee.
 	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
 		ctx, request.Amount, request.HtlcConfTarget,

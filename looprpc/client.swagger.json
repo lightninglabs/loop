@@ -21,7 +21,7 @@
         "operationId": "LoopIn",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcSwapResponse"
             }
@@ -48,7 +48,7 @@
         "operationId": "GetLoopInQuote",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcQuoteResponse"
             }
@@ -57,7 +57,6 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "*\nThe amount to swap in satoshis.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -70,6 +69,14 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          },
+          {
+            "name": "external_htlc",
+            "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
           }
         ],
         "tags": [
@@ -83,7 +90,7 @@
         "operationId": "GetLoopInTerms",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcTermsResponse"
             }
@@ -100,7 +107,7 @@
         "operationId": "LoopOut",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcSwapResponse"
             }
@@ -127,7 +134,7 @@
         "operationId": "LoopOutQuote",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcQuoteResponse"
             }
@@ -136,7 +143,6 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "*\nThe amount to swap in satoshis.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -149,6 +155,14 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          },
+          {
+            "name": "external_htlc",
+            "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
           }
         ],
         "tags": [
@@ -162,7 +176,7 @@
         "operationId": "LoopOutTerms",
         "responses": {
           "200": {
-            "description": "A successful response.",
+            "description": "",
             "schema": {
               "$ref": "#/definitions/looprpcTermsResponse"
             }
@@ -398,57 +412,6 @@
           "title": "*\nOn-chain cltv expiry delta"
         }
       }
-    },
-    "protobufAny": {
-      "type": "object",
-      "properties": {
-        "type_url": {
-          "type": "string"
-        },
-        "value": {
-          "type": "string",
-          "format": "byte"
-        }
-      }
-    },
-    "runtimeStreamError": {
-      "type": "object",
-      "properties": {
-        "grpc_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "http_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "message": {
-          "type": "string"
-        },
-        "http_status": {
-          "type": "string"
-        },
-        "details": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/protobufAny"
-          }
-        }
-      }
-    }
-  },
-  "x-stream-definitions": {
-    "looprpcSwapStatus": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "$ref": "#/definitions/looprpcSwapStatus"
-        },
-        "error": {
-          "$ref": "#/definitions/runtimeStreamError"
-        }
-      },
-      "title": "Stream result of looprpcSwapStatus"
     }
   }
 }
