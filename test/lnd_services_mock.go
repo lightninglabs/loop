@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/zpay32"
-
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/zpay32"
 )
 
 var testStartingHeight = int32(600)
@@ -20,7 +20,9 @@ var testStartingHeight = int32(600)
 // tests.
 func NewMockLnd() *LndMockServices {
 	lightningClient := &mockLightningClient{}
-	walletKit := &mockWalletKit{}
+	walletKit := &mockWalletKit{
+		feeEstimates: make(map[int32]lnwallet.SatPerKWeight),
+	}
 	chainNotifier := &mockChainNotifier{}
 	signer := &mockSigner{}
 	invoices := &mockInvoices{}
@@ -196,4 +198,10 @@ func (s *LndMockServices) DecodeInvoice(request string) (*zpay32.Invoice,
 	error) {
 
 	return zpay32.Decode(request, s.ChainParams)
+}
+
+func (s *LndMockServices) SetFeeEstimate(confTarget int32,
+	feeEstimate lnwallet.SatPerKWeight) {
+
+	s.WalletKit.(*mockWalletKit).feeEstimates[confTarget] = feeEstimate
 }

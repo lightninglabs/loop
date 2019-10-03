@@ -8,14 +8,18 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 type mockWalletKit struct {
-	lnd      *LndMockServices
-	keyIndex int32
+	lnd          *LndMockServices
+	keyIndex     int32
+	feeEstimates map[int32]lnwallet.SatPerKWeight
 }
+
+var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
 
 func (m *mockWalletKit) DeriveNextKey(ctx context.Context, family int32) (
 	*keychain.KeyDescriptor, error) {
@@ -87,9 +91,15 @@ func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
 
 func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
 	lnwallet.SatPerKWeight, error) {
+
 	if confTarget <= 1 {
 		return 0, errors.New("conf target must be greater than 1")
 	}
 
-	return 10000, nil
+	feeEstimate, ok := m.feeEstimates[confTarget]
+	if !ok {
+		return 10000, nil
+	}
+
+	return feeEstimate, nil
 }

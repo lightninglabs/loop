@@ -597,7 +597,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	// close to the expiration height, in which case we'll use the default
 	// if it is better than what the client provided.
 	confTarget := s.SweepConfTarget
-	if s.CltvExpiry-s.height >= DefaultSweepConfTargetDelta &&
+	if s.CltvExpiry-s.height <= DefaultSweepConfTargetDelta &&
 		confTarget > DefaultSweepConfTarget {
 		confTarget = DefaultSweepConfTarget
 	}
