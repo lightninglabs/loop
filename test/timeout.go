@@ -15,7 +15,10 @@ func Guard(t *testing.T) func() {
 	go func() {
 		select {
 		case <-time.After(5 * time.Second):
-			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			err := pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			if err != nil {
+				panic(err)
+			}
 
 			panic("test timeout")
 		case <-done:

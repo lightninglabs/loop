@@ -1,8 +1,9 @@
 package lndclient
 
 import (
-	"github.com/btcsuite/btclog"
 	"os"
+
+	"github.com/btcsuite/btclog"
 )
 
 // log is a logger that is initialized with no output filters.  This

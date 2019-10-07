@@ -12,9 +12,8 @@ import (
 // means the package will not perform any logging by default until the caller
 // requests it.
 var (
-	backendLog     = btclog.NewBackend(logWriter{})
-	logger         = backendLog.Logger("CLIENT")
-	servicesLogger = backendLog.Logger("SERVICES")
+	backendLog = btclog.NewBackend(logWriter{})
+	logger     = backendLog.Logger("CLIENT")
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and

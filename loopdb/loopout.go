@@ -84,7 +84,10 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 
-	binary.Read(r, byteOrder, &contract.AmountRequested)
+	err = binary.Read(r, byteOrder, &contract.AmountRequested)
+	if err != nil {
+		return nil, err
+	}
 
 	contract.PrepayInvoice, err = wire.ReadVarString(r, 0)
 	if err != nil {

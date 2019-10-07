@@ -91,5 +91,8 @@ func GetInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (
 
 // DumpGoroutines dumps all currently running goroutines.
 func DumpGoroutines() {
-	pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+	err := pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+	if err != nil {
+		panic(err)
+	}
 }

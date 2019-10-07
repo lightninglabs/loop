@@ -21,14 +21,6 @@ var (
 		1, 1, 1, 1, 2, 2, 2, 2,
 		3, 3, 3, 3, 4, 4, 4, 4,
 	})
-	testPrepayPreimage = lntypes.Preimage([32]byte{
-		1, 1, 1, 1, 2, 2, 2, 2,
-		3, 3, 3, 3, 4, 4, 4, 4,
-		1, 1, 1, 1, 2, 2, 2, 2,
-		3, 3, 3, 3, 4, 4, 4, 5,
-	})
-
-	testStartingHeight = uint32(600)
 )
 
 // testContext contains functionality to support client unit tests.

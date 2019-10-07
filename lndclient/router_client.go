@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
+
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
-	"time"
 
 	"github.com/lightningnetwork/lnd/channeldb"
 	"google.golang.org/grpc/codes"
