@@ -4,8 +4,6 @@ import "google/api/annotations.proto";
 
 package looprpc;
 
-option go_package = "github.com/lightninglabs/loop/looprpc";
-
 service SwapServer {
     rpc NewLoopOutSwap(ServerLoopOutRequest) returns (ServerLoopOutResponse);
     
