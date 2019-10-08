@@ -285,6 +285,16 @@
           "type": "string",
           "format": "int64",
           "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC."
+        },
+        "swap_payment_dest": {
+          "type": "string",
+          "format": "byte",
+          "description": "*\nThe node pubkey where the swap payment needs to be paid\nto. This can be used to test connectivity before initiating the swap."
+        },
+        "cltv_delta": {
+          "type": "integer",
+          "format": "int32",
+          "title": "*\nOn-chain cltv expiry delta"
         }
       }
     },
@@ -377,25 +387,6 @@
     "looprpcTermsResponse": {
       "type": "object",
       "properties": {
-        "swap_payment_dest": {
-          "type": "string",
-          "description": "*\nThe node pubkey where the swap payment needs to be paid\nto. This can be used to test connectivity before initiating the swap."
-        },
-        "swap_fee_base": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nThe base fee for a swap (sat)"
-        },
-        "swap_fee_rate": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nThe fee rate for a swap (parts per million)"
-        },
-        "prepay_amt": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nRequired prepay amount"
-        },
         "min_swap_amount": {
           "type": "string",
           "format": "int64",
@@ -405,11 +396,6 @@
           "type": "string",
           "format": "int64",
           "title": "*\nMaximum swap amount (sat)"
-        },
-        "cltv_delta": {
-          "type": "integer",
-          "format": "int32",
-          "title": "*\nOn-chain cltv expiry delta"
         }
       }
     }

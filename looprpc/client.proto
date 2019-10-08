@@ -305,26 +305,8 @@ message TermsRequest {
 }
 
 message TermsResponse {
-    /**
-    The node pubkey where the swap payment needs to be paid
-    to. This can be used to test connectivity before initiating the swap.
-    */
-    string swap_payment_dest = 1;
 
-    /**
-    The base fee for a swap (sat)
-    */
-    int64 swap_fee_base = 2;
-
-    /**
-    The fee rate for a swap (parts per million)
-    */
-    int64 swap_fee_rate = 3;
-
-    /**
-    Required prepay amount
-    */
-    int64 prepay_amt = 4;
+    reserved 1,2,3,4,7;
 
     /**
     Minimum swap amount (sat)
@@ -335,11 +317,6 @@ message TermsResponse {
     Maximum swap amount (sat)
     */
     int64 max_swap_amount = 6;
-
-    /**
-    On-chain cltv expiry delta
-    */
-    int32 cltv_delta = 7;
 }
 
 message QuoteRequest {
@@ -378,4 +355,15 @@ message QuoteResponse {
     An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
     */
     int64 miner_fee = 3;
+
+    /**
+    The node pubkey where the swap payment needs to be paid
+    to. This can be used to test connectivity before initiating the swap.
+    */
+    bytes swap_payment_dest = 4;
+
+    /**
+    On-chain cltv expiry delta
+    */
+    int32 cltv_delta = 5;
 }
