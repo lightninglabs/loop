@@ -267,9 +267,11 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	}
 
 	return &looprpc.QuoteResponse{
-		MinerFee:  int64(quote.MinerFee),
-		PrepayAmt: int64(quote.PrepayAmount),
-		SwapFee:   int64(quote.SwapFee),
+		MinerFee:        int64(quote.MinerFee),
+		PrepayAmt:       int64(quote.PrepayAmount),
+		SwapFee:         int64(quote.SwapFee),
+		SwapPaymentDest: quote.SwapPaymentDest[:],
+		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 

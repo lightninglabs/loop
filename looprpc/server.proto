@@ -5,9 +5,13 @@ import "google/api/annotations.proto";
 package looprpc;
 
 service SwapServer {
+    rpc LoopOutTerms(ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);
+
     rpc NewLoopOutSwap(ServerLoopOutRequest) returns (ServerLoopOutResponse);
-    
+
     rpc LoopOutQuote(ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
+
+    rpc LoopInTerms(ServerLoopInTermsRequest) returns (ServerLoopInTerms);
 
     rpc NewLoopInSwap(ServerLoopInRequest) returns (ServerLoopInResponse);
 
@@ -33,22 +37,34 @@ message ServerLoopOutResponse {
 }
 
 message ServerLoopOutQuoteRequest {
+    /// The swap amount. If zero, a quote for a maximum amt swap will be given.
+    uint64 amt = 1;
 }
 
 message ServerLoopOutQuote {
     string swap_payment_dest = 1;
 
-    int64 swap_fee_base = 2;
+    /// The total estimated swap fee given the quote amt.
+    int64 swap_fee = 2;
 
-    int64 swap_fee_rate = 3;
+    /// Deprecated, total swap fee given quote amt is calculated in swap_fee.
+    int64 swap_fee_rate = 3 [deprecated = true];
 
     uint64 prepay_amt = 4;
 
-    uint64 min_swap_amount = 5;
+    uint64 min_swap_amount = 5 [deprecated = true];
 
-    uint64 max_swap_amount = 6;
+    uint64 max_swap_amount = 6 [deprecated = true];
 
     int32 cltv_delta = 7;
+}
+
+message ServerLoopOutTermsRequest {
+}
+
+message ServerLoopOutTerms {
+    uint64 min_swap_amount = 1;
+    uint64 max_swap_amount = 2;
 }
 
 message ServerLoopInRequest {
@@ -64,12 +80,22 @@ message ServerLoopInResponse {
 }
 
 message ServerLoopInQuoteRequest {
+    /// The swap amount. If zero, a quote for a maximum amt swap will be given.
+    uint64 amt = 1;
 }
     
 message ServerLoopInQuoteResponse {
-    int64 swap_fee_base = 1;
-    int64 swap_fee_rate = 2;
-    uint64 min_swap_amount = 4;
-    uint64 max_swap_amount = 5;
+    int64 swap_fee = 1;
+    int64 swap_fee_rate = 2 [deprecated=true];
+    uint64 min_swap_amount = 4 [deprecated=true];
+    uint64 max_swap_amount = 5 [deprecated=true];
     int32 cltv_delta = 6;
+}
+
+message ServerLoopInTermsRequest {
+}
+
+message ServerLoopInTerms {
+    uint64 min_swap_amount = 1;
+    uint64 max_swap_amount = 2;
 }

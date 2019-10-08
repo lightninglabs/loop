@@ -105,6 +105,17 @@ type LoopOutQuoteRequest struct {
 	// final cltv delta values for the off-chain payments.
 }
 
+// LoopOutTerms are the server terms on which it executes swaps.
+type LoopOutTerms struct {
+	// MinSwapAmount is the minimum amount that the server requires for a
+	// swap.
+	MinSwapAmount btcutil.Amount
+
+	// MaxSwapAmount is the maximum amount that the server accepts for a
+	// swap.
+	MaxSwapAmount btcutil.Amount
+}
+
 // LoopOutQuote contains estimates for the fees making up the total swap cost
 // for the client.
 type LoopOutQuote struct {
@@ -118,27 +129,6 @@ type LoopOutQuote struct {
 	// MinerFee is an estimate of the on-chain fee that needs to be paid to
 	// sweep the htlc.
 	MinerFee btcutil.Amount
-}
-
-// LoopOutTerms are the server terms on which it executes swaps.
-type LoopOutTerms struct {
-	// SwapFeeBase is the fixed per-swap base fee.
-	SwapFeeBase btcutil.Amount
-
-	// SwapFeeRate is the variable fee in parts per million.
-	SwapFeeRate int64
-
-	// PrepayAmt is the fixed part of the swap fee that needs to be
-	// prepaid.
-	PrepayAmt btcutil.Amount
-
-	// MinSwapAmount is the minimum amount that the server requires for a
-	// swap.
-	MinSwapAmount btcutil.Amount
-
-	// MaxSwapAmount is the maximum amount that the server accepts for a
-	// swap.
-	MaxSwapAmount btcutil.Amount
 
 	// Time lock delta relative to current block height that swap server
 	// will accept on the swap initiation call.
@@ -185,12 +175,6 @@ type LoopInRequest struct {
 
 // LoopInTerms are the server terms on which it executes charge swaps.
 type LoopInTerms struct {
-	// SwapFeeBase is the fixed per-swap base fee.
-	SwapFeeBase btcutil.Amount
-
-	// SwapFeeRate is the variable fee in parts per million.
-	SwapFeeRate int64
-
 	// MinSwapAmount is the minimum amount that the server requires for a
 	// swap.
 	MinSwapAmount btcutil.Amount
@@ -198,10 +182,6 @@ type LoopInTerms struct {
 	// MaxSwapAmount is the maximum amount that the server accepts for a
 	// swap.
 	MaxSwapAmount btcutil.Amount
-
-	// Time lock delta relative to current block height that swap server
-	// will accept on the swap initiation call.
-	CltvDelta int32
 }
 
 // In contains status information for a loop in swap.
@@ -239,6 +219,10 @@ type LoopInQuote struct {
 	// MinerFee is an estimate of the on-chain fee that needs to be paid to
 	// sweep the htlc.
 	MinerFee btcutil.Amount
+
+	// Time lock delta relative to current block height that swap server
+	// will accept on the swap initiation call.
+	CltvDelta int32
 }
 
 // SwapInfoKit contains common swap info fields.

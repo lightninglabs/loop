@@ -60,14 +60,12 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
 	// request that we send to the server.
-	quote, err := cfg.server.GetLoopInTerms(globalCtx)
+	quote, err := cfg.server.GetLoopInQuote(globalCtx, request.Amount)
 	if err != nil {
 		return nil, fmt.Errorf("loop in terms: %v", err)
 	}
 
-	swapFee := swap.CalcFee(
-		request.Amount, quote.SwapFeeBase, quote.SwapFeeRate,
-	)
+	swapFee := quote.SwapFee
 
 	if swapFee > request.MaxSwapFee {
 		logger.Warnf("Swap fee %v exceeding maximum of %v",

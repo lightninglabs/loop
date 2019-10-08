@@ -20,8 +20,14 @@ type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
 
+	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount) (
+		*LoopOutQuote, error)
+
 	GetLoopInTerms(ctx context.Context) (
 		*LoopInTerms, error)
+
+	GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
+		*LoopInQuote, error)
 
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
@@ -38,6 +44,8 @@ type grpcSwapServerClient struct {
 	server looprpc.SwapServerClient
 	conn   *grpc.ClientConn
 }
+
+var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
 func newSwapServerClient(address string,
 	insecure bool) (*grpcSwapServerClient, error) {
@@ -60,8 +68,28 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
+	terms, err := s.server.LoopOutTerms(rpcCtx,
+		&looprpc.ServerLoopOutTermsRequest{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopOutTerms{
+		MinSwapAmount: btcutil.Amount(terms.MinSwapAmount),
+		MaxSwapAmount: btcutil.Amount(terms.MaxSwapAmount),
+	}, nil
+}
+
+func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
+	amt btcutil.Amount) (*LoopOutQuote, error) {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	defer rpcCancel()
 	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
-		&looprpc.ServerLoopOutQuoteRequest{},
+		&looprpc.ServerLoopOutQuoteRequest{
+			Amt: uint64(amt),
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -77,12 +105,9 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	var destArray [33]byte
 	copy(destArray[:], dest)
 
-	return &LoopOutTerms{
-		MinSwapAmount:   btcutil.Amount(quoteResp.MinSwapAmount),
-		MaxSwapAmount:   btcutil.Amount(quoteResp.MaxSwapAmount),
-		PrepayAmt:       btcutil.Amount(quoteResp.PrepayAmt),
-		SwapFeeBase:     btcutil.Amount(quoteResp.SwapFeeBase),
-		SwapFeeRate:     quoteResp.SwapFeeRate,
+	return &LoopOutQuote{
+		PrepayAmount:    btcutil.Amount(quoteResp.PrepayAmt),
+		SwapFee:         btcutil.Amount(quoteResp.SwapFee),
 		CltvDelta:       quoteResp.CltvDelta,
 		SwapPaymentDest: destArray,
 	}, nil
@@ -93,19 +118,36 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
-	quoteResp, err := s.server.LoopInQuote(rpcCtx,
-		&looprpc.ServerLoopInQuoteRequest{},
+	terms, err := s.server.LoopInTerms(rpcCtx,
+		&looprpc.ServerLoopInTermsRequest{},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &LoopInTerms{
-		MinSwapAmount: btcutil.Amount(quoteResp.MinSwapAmount),
-		MaxSwapAmount: btcutil.Amount(quoteResp.MaxSwapAmount),
-		SwapFeeBase:   btcutil.Amount(quoteResp.SwapFeeBase),
-		SwapFeeRate:   quoteResp.SwapFeeRate,
-		CltvDelta:     quoteResp.CltvDelta,
+		MinSwapAmount: btcutil.Amount(terms.MinSwapAmount),
+		MaxSwapAmount: btcutil.Amount(terms.MaxSwapAmount),
+	}, nil
+}
+
+func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
+	amt btcutil.Amount) (*LoopInQuote, error) {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	defer rpcCancel()
+	quoteResp, err := s.server.LoopInQuote(rpcCtx,
+		&looprpc.ServerLoopInQuoteRequest{
+			Amt: uint64(amt),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopInQuote{
+		SwapFee:   btcutil.Amount(quoteResp.SwapFee),
+		CltvDelta: quoteResp.CltvDelta,
 	}, nil
 }
 
