@@ -244,10 +244,6 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	return &looprpc.TermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
-		PrepayAmt:     int64(terms.PrepayAmt),
-		SwapFeeBase:   int64(terms.SwapFeeBase),
-		SwapFeeRate:   int64(terms.SwapFeeRate),
-		CltvDelta:     int32(terms.CltvDelta),
 	}, nil
 }
 
@@ -269,10 +265,13 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	return &looprpc.QuoteResponse{
-		MinerFee:  int64(quote.MinerFee),
-		PrepayAmt: int64(quote.PrepayAmount),
-		SwapFee:   int64(quote.SwapFee),
+		MinerFee:        int64(quote.MinerFee),
+		PrepayAmt:       int64(quote.PrepayAmount),
+		SwapFee:         int64(quote.SwapFee),
+		SwapPaymentDest: quote.SwapPaymentDest[:],
+		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 
@@ -291,9 +290,6 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 	return &looprpc.TermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
-		SwapFeeBase:   int64(terms.SwapFeeBase),
-		SwapFeeRate:   int64(terms.SwapFeeRate),
-		CltvDelta:     int32(terms.CltvDelta),
 	}, nil
 }
 

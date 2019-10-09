@@ -142,6 +142,8 @@ func (m *ServerLoopOutResponse) GetExpiry() int32 {
 }
 
 type ServerLoopOutQuoteRequest struct {
+	/// The swap amount. If zero, a quote for a maximum amt swap will be given.
+	Amt                  uint64   `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -172,13 +174,22 @@ func (m *ServerLoopOutQuoteRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ServerLoopOutQuoteRequest proto.InternalMessageInfo
 
+func (m *ServerLoopOutQuoteRequest) GetAmt() uint64 {
+	if m != nil {
+		return m.Amt
+	}
+	return 0
+}
+
 type ServerLoopOutQuote struct {
-	SwapPaymentDest      string   `protobuf:"bytes,1,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
-	SwapFeeBase          int64    `protobuf:"varint,2,opt,name=swap_fee_base,json=swapFeeBase,proto3" json:"swap_fee_base,omitempty"`
-	SwapFeeRate          int64    `protobuf:"varint,3,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"`
+	SwapPaymentDest string `protobuf:"bytes,1,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
+	/// The total estimated swap fee given the quote amt.
+	SwapFee int64 `protobuf:"varint,2,opt,name=swap_fee,json=swapFee,proto3" json:"swap_fee,omitempty"`
+	/// Deprecated, total swap fee given quote amt is calculated in swap_fee.
+	SwapFeeRate          int64    `protobuf:"varint,3,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"` // Deprecated: Do not use.
 	PrepayAmt            uint64   `protobuf:"varint,4,opt,name=prepay_amt,json=prepayAmt,proto3" json:"prepay_amt,omitempty"`
-	MinSwapAmount        uint64   `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	MaxSwapAmount        uint64   `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
+	MinSwapAmount        uint64   `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"` // Deprecated: Do not use.
+	MaxSwapAmount        uint64   `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"` // Deprecated: Do not use.
 	CltvDelta            int32    `protobuf:"varint,7,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -217,13 +228,14 @@ func (m *ServerLoopOutQuote) GetSwapPaymentDest() string {
 	return ""
 }
 
-func (m *ServerLoopOutQuote) GetSwapFeeBase() int64 {
+func (m *ServerLoopOutQuote) GetSwapFee() int64 {
 	if m != nil {
-		return m.SwapFeeBase
+		return m.SwapFee
 	}
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopOutQuote) GetSwapFeeRate() int64 {
 	if m != nil {
 		return m.SwapFeeRate
@@ -238,6 +250,7 @@ func (m *ServerLoopOutQuote) GetPrepayAmt() uint64 {
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopOutQuote) GetMinSwapAmount() uint64 {
 	if m != nil {
 		return m.MinSwapAmount
@@ -245,6 +258,7 @@ func (m *ServerLoopOutQuote) GetMinSwapAmount() uint64 {
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopOutQuote) GetMaxSwapAmount() uint64 {
 	if m != nil {
 		return m.MaxSwapAmount
@@ -255,6 +269,84 @@ func (m *ServerLoopOutQuote) GetMaxSwapAmount() uint64 {
 func (m *ServerLoopOutQuote) GetCltvDelta() int32 {
 	if m != nil {
 		return m.CltvDelta
+	}
+	return 0
+}
+
+type ServerLoopOutTermsRequest struct {
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ServerLoopOutTermsRequest) Reset()         { *m = ServerLoopOutTermsRequest{} }
+func (m *ServerLoopOutTermsRequest) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutTermsRequest) ProtoMessage()    {}
+func (*ServerLoopOutTermsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ad098daeda4239f7, []int{4}
+}
+
+func (m *ServerLoopOutTermsRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutTermsRequest.Unmarshal(m, b)
+}
+func (m *ServerLoopOutTermsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutTermsRequest.Marshal(b, m, deterministic)
+}
+func (m *ServerLoopOutTermsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutTermsRequest.Merge(m, src)
+}
+func (m *ServerLoopOutTermsRequest) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutTermsRequest.Size(m)
+}
+func (m *ServerLoopOutTermsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutTermsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ServerLoopOutTermsRequest proto.InternalMessageInfo
+
+type ServerLoopOutTerms struct {
+	MinSwapAmount        uint64   `protobuf:"varint,1,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
+	MaxSwapAmount        uint64   `protobuf:"varint,2,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ServerLoopOutTerms) Reset()         { *m = ServerLoopOutTerms{} }
+func (m *ServerLoopOutTerms) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopOutTerms) ProtoMessage()    {}
+func (*ServerLoopOutTerms) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ad098daeda4239f7, []int{5}
+}
+
+func (m *ServerLoopOutTerms) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopOutTerms.Unmarshal(m, b)
+}
+func (m *ServerLoopOutTerms) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopOutTerms.Marshal(b, m, deterministic)
+}
+func (m *ServerLoopOutTerms) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopOutTerms.Merge(m, src)
+}
+func (m *ServerLoopOutTerms) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopOutTerms.Size(m)
+}
+func (m *ServerLoopOutTerms) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopOutTerms.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ServerLoopOutTerms proto.InternalMessageInfo
+
+func (m *ServerLoopOutTerms) GetMinSwapAmount() uint64 {
+	if m != nil {
+		return m.MinSwapAmount
+	}
+	return 0
+}
+
+func (m *ServerLoopOutTerms) GetMaxSwapAmount() uint64 {
+	if m != nil {
+		return m.MaxSwapAmount
 	}
 	return 0
 }
@@ -273,7 +365,7 @@ func (m *ServerLoopInRequest) Reset()         { *m = ServerLoopInRequest{} }
 func (m *ServerLoopInRequest) String() string { return proto.CompactTextString(m) }
 func (*ServerLoopInRequest) ProtoMessage()    {}
 func (*ServerLoopInRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_ad098daeda4239f7, []int{4}
+	return fileDescriptor_ad098daeda4239f7, []int{6}
 }
 
 func (m *ServerLoopInRequest) XXX_Unmarshal(b []byte) error {
@@ -334,7 +426,7 @@ func (m *ServerLoopInResponse) Reset()         { *m = ServerLoopInResponse{} }
 func (m *ServerLoopInResponse) String() string { return proto.CompactTextString(m) }
 func (*ServerLoopInResponse) ProtoMessage()    {}
 func (*ServerLoopInResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_ad098daeda4239f7, []int{5}
+	return fileDescriptor_ad098daeda4239f7, []int{7}
 }
 
 func (m *ServerLoopInResponse) XXX_Unmarshal(b []byte) error {
@@ -370,6 +462,8 @@ func (m *ServerLoopInResponse) GetExpiry() int32 {
 }
 
 type ServerLoopInQuoteRequest struct {
+	/// The swap amount. If zero, a quote for a maximum amt swap will be given.
+	Amt                  uint64   `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -379,7 +473,7 @@ func (m *ServerLoopInQuoteRequest) Reset()         { *m = ServerLoopInQuoteReque
 func (m *ServerLoopInQuoteRequest) String() string { return proto.CompactTextString(m) }
 func (*ServerLoopInQuoteRequest) ProtoMessage()    {}
 func (*ServerLoopInQuoteRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_ad098daeda4239f7, []int{6}
+	return fileDescriptor_ad098daeda4239f7, []int{8}
 }
 
 func (m *ServerLoopInQuoteRequest) XXX_Unmarshal(b []byte) error {
@@ -400,11 +494,18 @@ func (m *ServerLoopInQuoteRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ServerLoopInQuoteRequest proto.InternalMessageInfo
 
+func (m *ServerLoopInQuoteRequest) GetAmt() uint64 {
+	if m != nil {
+		return m.Amt
+	}
+	return 0
+}
+
 type ServerLoopInQuoteResponse struct {
-	SwapFeeBase          int64    `protobuf:"varint,1,opt,name=swap_fee_base,json=swapFeeBase,proto3" json:"swap_fee_base,omitempty"`
-	SwapFeeRate          int64    `protobuf:"varint,2,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"`
-	MinSwapAmount        uint64   `protobuf:"varint,4,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	MaxSwapAmount        uint64   `protobuf:"varint,5,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
+	SwapFee              int64    `protobuf:"varint,1,opt,name=swap_fee,json=swapFee,proto3" json:"swap_fee,omitempty"`
+	SwapFeeRate          int64    `protobuf:"varint,2,opt,name=swap_fee_rate,json=swapFeeRate,proto3" json:"swap_fee_rate,omitempty"`       // Deprecated: Do not use.
+	MinSwapAmount        uint64   `protobuf:"varint,4,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"` // Deprecated: Do not use.
+	MaxSwapAmount        uint64   `protobuf:"varint,5,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"` // Deprecated: Do not use.
 	CltvDelta            int32    `protobuf:"varint,6,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -415,7 +516,7 @@ func (m *ServerLoopInQuoteResponse) Reset()         { *m = ServerLoopInQuoteResp
 func (m *ServerLoopInQuoteResponse) String() string { return proto.CompactTextString(m) }
 func (*ServerLoopInQuoteResponse) ProtoMessage()    {}
 func (*ServerLoopInQuoteResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_ad098daeda4239f7, []int{7}
+	return fileDescriptor_ad098daeda4239f7, []int{9}
 }
 
 func (m *ServerLoopInQuoteResponse) XXX_Unmarshal(b []byte) error {
@@ -436,13 +537,14 @@ func (m *ServerLoopInQuoteResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ServerLoopInQuoteResponse proto.InternalMessageInfo
 
-func (m *ServerLoopInQuoteResponse) GetSwapFeeBase() int64 {
+func (m *ServerLoopInQuoteResponse) GetSwapFee() int64 {
 	if m != nil {
-		return m.SwapFeeBase
+		return m.SwapFee
 	}
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopInQuoteResponse) GetSwapFeeRate() int64 {
 	if m != nil {
 		return m.SwapFeeRate
@@ -450,6 +552,7 @@ func (m *ServerLoopInQuoteResponse) GetSwapFeeRate() int64 {
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopInQuoteResponse) GetMinSwapAmount() uint64 {
 	if m != nil {
 		return m.MinSwapAmount
@@ -457,6 +560,7 @@ func (m *ServerLoopInQuoteResponse) GetMinSwapAmount() uint64 {
 	return 0
 }
 
+// Deprecated: Do not use.
 func (m *ServerLoopInQuoteResponse) GetMaxSwapAmount() uint64 {
 	if m != nil {
 		return m.MaxSwapAmount
@@ -471,58 +575,144 @@ func (m *ServerLoopInQuoteResponse) GetCltvDelta() int32 {
 	return 0
 }
 
+type ServerLoopInTermsRequest struct {
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ServerLoopInTermsRequest) Reset()         { *m = ServerLoopInTermsRequest{} }
+func (m *ServerLoopInTermsRequest) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopInTermsRequest) ProtoMessage()    {}
+func (*ServerLoopInTermsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ad098daeda4239f7, []int{10}
+}
+
+func (m *ServerLoopInTermsRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopInTermsRequest.Unmarshal(m, b)
+}
+func (m *ServerLoopInTermsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopInTermsRequest.Marshal(b, m, deterministic)
+}
+func (m *ServerLoopInTermsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopInTermsRequest.Merge(m, src)
+}
+func (m *ServerLoopInTermsRequest) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopInTermsRequest.Size(m)
+}
+func (m *ServerLoopInTermsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopInTermsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ServerLoopInTermsRequest proto.InternalMessageInfo
+
+type ServerLoopInTerms struct {
+	MinSwapAmount        uint64   `protobuf:"varint,1,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
+	MaxSwapAmount        uint64   `protobuf:"varint,2,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ServerLoopInTerms) Reset()         { *m = ServerLoopInTerms{} }
+func (m *ServerLoopInTerms) String() string { return proto.CompactTextString(m) }
+func (*ServerLoopInTerms) ProtoMessage()    {}
+func (*ServerLoopInTerms) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ad098daeda4239f7, []int{11}
+}
+
+func (m *ServerLoopInTerms) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ServerLoopInTerms.Unmarshal(m, b)
+}
+func (m *ServerLoopInTerms) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ServerLoopInTerms.Marshal(b, m, deterministic)
+}
+func (m *ServerLoopInTerms) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ServerLoopInTerms.Merge(m, src)
+}
+func (m *ServerLoopInTerms) XXX_Size() int {
+	return xxx_messageInfo_ServerLoopInTerms.Size(m)
+}
+func (m *ServerLoopInTerms) XXX_DiscardUnknown() {
+	xxx_messageInfo_ServerLoopInTerms.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ServerLoopInTerms proto.InternalMessageInfo
+
+func (m *ServerLoopInTerms) GetMinSwapAmount() uint64 {
+	if m != nil {
+		return m.MinSwapAmount
+	}
+	return 0
+}
+
+func (m *ServerLoopInTerms) GetMaxSwapAmount() uint64 {
+	if m != nil {
+		return m.MaxSwapAmount
+	}
+	return 0
+}
+
 func init() {
 	proto.RegisterType((*ServerLoopOutRequest)(nil), "looprpc.ServerLoopOutRequest")
 	proto.RegisterType((*ServerLoopOutResponse)(nil), "looprpc.ServerLoopOutResponse")
 	proto.RegisterType((*ServerLoopOutQuoteRequest)(nil), "looprpc.ServerLoopOutQuoteRequest")
 	proto.RegisterType((*ServerLoopOutQuote)(nil), "looprpc.ServerLoopOutQuote")
+	proto.RegisterType((*ServerLoopOutTermsRequest)(nil), "looprpc.ServerLoopOutTermsRequest")
+	proto.RegisterType((*ServerLoopOutTerms)(nil), "looprpc.ServerLoopOutTerms")
 	proto.RegisterType((*ServerLoopInRequest)(nil), "looprpc.ServerLoopInRequest")
 	proto.RegisterType((*ServerLoopInResponse)(nil), "looprpc.ServerLoopInResponse")
 	proto.RegisterType((*ServerLoopInQuoteRequest)(nil), "looprpc.ServerLoopInQuoteRequest")
 	proto.RegisterType((*ServerLoopInQuoteResponse)(nil), "looprpc.ServerLoopInQuoteResponse")
+	proto.RegisterType((*ServerLoopInTermsRequest)(nil), "looprpc.ServerLoopInTermsRequest")
+	proto.RegisterType((*ServerLoopInTerms)(nil), "looprpc.ServerLoopInTerms")
 }
 
 func init() { proto.RegisterFile("server.proto", fileDescriptor_ad098daeda4239f7) }
 
 var fileDescriptor_ad098daeda4239f7 = []byte{
-	// 589 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x54, 0xdd, 0x6e, 0xd3, 0x4c,
-	0x14, 0x94, 0x9d, 0x34, 0xfd, 0x72, 0x9a, 0xb4, 0x1f, 0xcb, 0x8f, 0x4c, 0xda, 0xa0, 0xd6, 0x52,
-	0xa1, 0xe2, 0x22, 0x91, 0xe0, 0x09, 0x5a, 0x55, 0x88, 0x8a, 0x8a, 0x52, 0x97, 0x2b, 0x6e, 0xac,
-	0x4d, 0x72, 0x88, 0x2d, 0xec, 0xdd, 0xc5, 0xbb, 0xf9, 0x7b, 0x01, 0x1e, 0x01, 0xf1, 0x5c, 0x7d,
-	0x22, 0xb4, 0xeb, 0x4d, 0x62, 0x27, 0xe9, 0x0f, 0x77, 0xed, 0x9c, 0xf1, 0xd9, 0xd9, 0x99, 0xc9,
-	0x42, 0x43, 0x62, 0x36, 0xc6, 0xac, 0x23, 0x32, 0xae, 0x38, 0xd9, 0x4e, 0x38, 0x17, 0x99, 0xe8,
-	0xb7, 0x0e, 0x86, 0x9c, 0x0f, 0x13, 0xec, 0x52, 0x11, 0x77, 0x29, 0x63, 0x5c, 0x51, 0x15, 0x73,
-	0x26, 0x73, 0x9a, 0x1f, 0xc1, 0xb3, 0x1b, 0xf3, 0xd9, 0x25, 0xe7, 0xe2, 0x6a, 0xa4, 0x02, 0xfc,
-	0x39, 0x42, 0xa9, 0xc8, 0x11, 0x34, 0x32, 0xec, 0x63, 0x3c, 0xc6, 0x2c, 0xfc, 0x81, 0x33, 0xcf,
-	0x39, 0x74, 0x4e, 0x1a, 0xc1, 0xce, 0x1c, 0xfb, 0x84, 0x33, 0xb2, 0x0f, 0x75, 0x39, 0xa1, 0x22,
-	0x8c, 0xa8, 0x8c, 0x3c, 0xd7, 0xcc, 0xff, 0xd3, 0xc0, 0x47, 0x2a, 0x23, 0xf2, 0x3f, 0x54, 0x68,
-	0xaa, 0xbc, 0xca, 0xa1, 0x73, 0x52, 0x0d, 0xf4, 0x9f, 0xfe, 0x1f, 0x07, 0x9e, 0xaf, 0x1c, 0x25,
-	0x05, 0x67, 0x12, 0xf5, 0x59, 0x66, 0x51, 0xcc, 0xc6, 0x3c, 0xee, 0xa3, 0x39, 0xab, 0x1e, 0xec,
-	0x68, 0xec, 0x22, 0x87, 0xc8, 0x31, 0xec, 0x8a, 0x0c, 0x05, 0x9d, 0x2d, 0x48, 0xae, 0x21, 0x35,
-	0x73, 0x74, 0x4e, 0x6b, 0x03, 0x48, 0x64, 0x03, 0xab, 0xb9, 0x62, 0x34, 0xd5, 0x73, 0x44, 0x2b,
-	0x7e, 0x01, 0x35, 0x9c, 0x8a, 0x38, 0x9b, 0x79, 0xd5, 0x43, 0xe7, 0x64, 0x2b, 0xb0, 0xff, 0xf9,
-	0xfb, 0xf0, 0xb2, 0xa4, 0xec, 0x7a, 0xc4, 0x15, 0x5a, 0x27, 0xfc, 0xdf, 0x2e, 0x90, 0xf5, 0x29,
-	0x79, 0x0b, 0x4f, 0x8c, 0x68, 0x41, 0x67, 0x29, 0x32, 0x15, 0x0e, 0x50, 0x2a, 0xab, 0x7c, 0x4f,
-	0x0f, 0xbe, 0xe4, 0xf8, 0xb9, 0x36, 0xd3, 0x87, 0xa6, 0xe1, 0x7e, 0x47, 0x0c, 0x7b, 0x54, 0xe6,
-	0xe2, 0x2b, 0xf9, 0x0d, 0x3f, 0x20, 0x9e, 0x51, 0x89, 0x25, 0x4e, 0x46, 0x15, 0x1a, 0xf5, 0x4b,
-	0x4e, 0x40, 0x95, 0xb9, 0x9e, 0x75, 0x41, 0x7b, 0x5b, 0x35, 0xde, 0xd6, 0x73, 0xe4, 0x34, 0x55,
-	0xe4, 0x35, 0xec, 0xa5, 0x31, 0x0b, 0xcd, 0x1a, 0x9a, 0xf2, 0x11, 0x53, 0xde, 0x96, 0xe1, 0x34,
-	0xd3, 0x98, 0xdd, 0x4c, 0xa8, 0x38, 0x35, 0xa0, 0xe1, 0xd1, 0x69, 0x89, 0x57, 0xb3, 0x3c, 0x3a,
-	0x2d, 0xf0, 0xda, 0x00, 0xfd, 0x44, 0x8d, 0xc3, 0x01, 0x26, 0x8a, 0x7a, 0xdb, 0xc6, 0xb2, 0xba,
-	0x46, 0xce, 0x35, 0xe0, 0xff, 0x72, 0xe0, 0xe9, 0xd2, 0x98, 0x0b, 0x36, 0xaf, 0x4e, 0x39, 0x04,
-	0x67, 0x35, 0x84, 0x7f, 0xab, 0xcd, 0x5a, 0x39, 0xaa, 0x6b, 0xe5, 0xf0, 0xaf, 0x8b, 0x1d, 0xd6,
-	0x3a, 0x96, 0xbd, 0x7a, 0xa8, 0xc3, 0xcb, 0x46, 0xb8, 0xa5, 0x46, 0xb4, 0xc0, 0x2b, 0xae, 0x2c,
-	0x15, 0xe2, 0xd6, 0x29, 0xd6, 0x65, 0x31, 0xb4, 0x87, 0xae, 0x65, 0xed, 0x3c, 0x22, 0x6b, 0x77,
-	0x3d, 0xeb, 0x0d, 0x61, 0x56, 0x1f, 0x19, 0xe6, 0xd6, 0xc3, 0x61, 0xd6, 0x56, 0xc2, 0x7c, 0x77,
-	0xeb, 0x02, 0x68, 0x76, 0x7e, 0x31, 0x72, 0x05, 0xbb, 0x9f, 0x71, 0x62, 0x0b, 0xaf, 0x71, 0xd2,
-	0xee, 0xd8, 0x07, 0xa5, 0xb3, 0xe9, 0xbd, 0x68, 0xbd, 0xba, 0x6b, 0x6c, 0x6d, 0xb9, 0x82, 0x46,
-	0xe9, 0xe7, 0xe3, 0x6f, 0xe6, 0x17, 0x8d, 0x6e, 0xed, 0xdf, 0xc3, 0x21, 0x97, 0xd0, 0xb4, 0x0a,
-	0x2f, 0x8c, 0x1d, 0xe4, 0x60, 0x03, 0x7b, 0x51, 0xca, 0x56, 0xfb, 0x8e, 0xa9, 0x95, 0xf7, 0x15,
-	0x76, 0x0a, 0x61, 0x92, 0xa3, 0x8d, 0xec, 0x92, 0x38, 0xff, 0x3e, 0x4a, 0xbe, 0xf5, 0xec, 0xcd,
-	0xb7, 0xe3, 0x61, 0xac, 0xa2, 0x51, 0xaf, 0xd3, 0xe7, 0x69, 0x37, 0x89, 0x87, 0x91, 0x62, 0x31,
-	0x1b, 0x26, 0xb4, 0x27, 0xbb, 0xfa, 0xeb, 0xae, 0x5d, 0xd1, 0xab, 0x99, 0xc7, 0xf8, 0xfd, 0xdf,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0x94, 0xad, 0x2a, 0x29, 0xc3, 0x05, 0x00, 0x00,
+	// 641 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x55, 0x6b, 0x4e, 0xdb, 0x4c,
+	0x14, 0x95, 0xed, 0x10, 0xbe, 0x5c, 0x12, 0xf8, 0x98, 0x3e, 0x64, 0x02, 0xa9, 0xc0, 0x52, 0x11,
+	0x42, 0x2d, 0x48, 0xed, 0x0a, 0xa8, 0x10, 0x2a, 0x2a, 0x2a, 0xc5, 0xf0, 0xdf, 0x9a, 0x26, 0xb7,
+	0xc4, 0x6a, 0xec, 0x99, 0xda, 0x93, 0x40, 0x36, 0xd0, 0x35, 0xb4, 0x0b, 0xeb, 0x42, 0xba, 0x83,
+	0x6a, 0x1e, 0x26, 0x7e, 0x42, 0x91, 0xfa, 0x8f, 0x39, 0xf7, 0x70, 0xef, 0xb9, 0x67, 0xce, 0x38,
+	0xd0, 0x4d, 0x31, 0x99, 0x61, 0x72, 0xc0, 0x13, 0x26, 0x18, 0x59, 0x9e, 0x30, 0xc6, 0x13, 0x3e,
+	0xec, 0x6f, 0x5d, 0x33, 0x76, 0x3d, 0xc1, 0x43, 0xca, 0xc3, 0x43, 0x1a, 0xc7, 0x4c, 0x50, 0x11,
+	0xb2, 0x38, 0xd5, 0x34, 0x6f, 0x0c, 0x4f, 0x2f, 0xd5, 0xbf, 0x9d, 0x31, 0xc6, 0xcf, 0xa7, 0xc2,
+	0xc7, 0x6f, 0x53, 0x4c, 0x05, 0xd9, 0x81, 0x6e, 0x82, 0x43, 0x0c, 0x67, 0x98, 0x04, 0x5f, 0x71,
+	0xee, 0x5a, 0xdb, 0xd6, 0x5e, 0xd7, 0x5f, 0xc9, 0xb0, 0x0f, 0x38, 0x27, 0x9b, 0xd0, 0x49, 0x6f,
+	0x28, 0x0f, 0xc6, 0x34, 0x1d, 0xbb, 0xb6, 0xaa, 0xff, 0x27, 0x81, 0xf7, 0x34, 0x1d, 0x93, 0xff,
+	0xc1, 0xa1, 0x91, 0x70, 0x9d, 0x6d, 0x6b, 0xaf, 0xe5, 0xcb, 0x3f, 0xbd, 0x1f, 0x16, 0x3c, 0x2b,
+	0x8d, 0x4a, 0x39, 0x8b, 0x53, 0x94, 0xb3, 0x54, 0xa3, 0x30, 0x9e, 0xb1, 0x70, 0x88, 0x6a, 0x56,
+	0xc7, 0x5f, 0x91, 0xd8, 0xa9, 0x86, 0xc8, 0x4b, 0x58, 0xe5, 0x09, 0x72, 0x3a, 0xbf, 0x23, 0xd9,
+	0x8a, 0xd4, 0xd3, 0x68, 0x46, 0x1b, 0x00, 0xa4, 0x18, 0x8f, 0x8c, 0x66, 0x47, 0x69, 0xea, 0x68,
+	0x44, 0x2a, 0x7e, 0x0e, 0x6d, 0xbc, 0xe5, 0x61, 0x32, 0x77, 0x5b, 0xdb, 0xd6, 0xde, 0x92, 0x6f,
+	0x4e, 0xde, 0x6b, 0xd8, 0x28, 0x28, 0xbb, 0x98, 0x32, 0x81, 0x99, 0x13, 0x66, 0x13, 0x6b, 0xb1,
+	0xc9, 0x4f, 0x1b, 0x48, 0x95, 0x4f, 0xf6, 0x61, 0x5d, 0xad, 0xc1, 0xe9, 0x3c, 0xc2, 0x58, 0x04,
+	0x23, 0x4c, 0x85, 0xd9, 0x65, 0x4d, 0x16, 0x3e, 0x69, 0xfc, 0x58, 0x36, 0xdd, 0x00, 0x65, 0x55,
+	0xf0, 0x05, 0xf5, 0x26, 0x8e, 0xbf, 0x2c, 0xcf, 0x27, 0x88, 0x64, 0x17, 0x7a, 0x59, 0x29, 0x48,
+	0xa8, 0x40, 0xb5, 0x86, 0xf3, 0xce, 0x76, 0x2d, 0x6d, 0xc9, 0x09, 0xa2, 0x4f, 0x85, 0xda, 0xd5,
+	0x58, 0x22, 0xe5, 0xb5, 0x94, 0xbc, 0x8e, 0x46, 0x8e, 0x22, 0x41, 0xf6, 0x61, 0x2d, 0x0a, 0xe3,
+	0x40, 0xb5, 0xa2, 0x11, 0x9b, 0xc6, 0xc2, 0x5d, 0x92, 0x1c, 0xd5, 0xa8, 0x17, 0x85, 0xf1, 0xe5,
+	0x0d, 0xe5, 0x47, 0xaa, 0xa0, 0xb8, 0xf4, 0xb6, 0xc0, 0x6d, 0xe7, 0xb8, 0xf4, 0x36, 0xc7, 0x1d,
+	0x00, 0x0c, 0x27, 0x62, 0x16, 0x8c, 0x70, 0x22, 0xa8, 0xbb, 0xac, 0x7c, 0xec, 0x48, 0xe4, 0x58,
+	0x02, 0xde, 0x66, 0xc9, 0xca, 0x2b, 0x4c, 0xa2, 0xd4, 0x58, 0xe9, 0x8d, 0x4a, 0xbe, 0xa9, 0x22,
+	0xd9, 0xad, 0x2a, 0xd5, 0x66, 0x97, 0x54, 0xee, 0x56, 0x55, 0xda, 0x86, 0x97, 0x57, 0xe8, 0x7d,
+	0xb7, 0xe0, 0xc9, 0x62, 0xcc, 0x69, 0x9c, 0x5d, 0x64, 0x31, 0x1c, 0x56, 0x39, 0x1c, 0x8f, 0x8b,
+	0x73, 0x25, 0xb4, 0xad, 0x4a, 0x68, 0xbd, 0x8b, 0xfc, 0xdb, 0x92, 0x3a, 0x16, 0x79, 0x7f, 0xe8,
+	0x6d, 0x2d, 0x92, 0x6a, 0x17, 0x92, 0xfa, 0x0a, 0xdc, 0x7c, 0xcb, 0x07, 0x82, 0xfa, 0xcb, 0xca,
+	0xdf, 0xc6, 0x1d, 0xdd, 0xc8, 0xc8, 0x67, 0xd0, 0x7a, 0x20, 0x83, 0x76, 0x7d, 0x06, 0x6b, 0x42,
+	0xd6, 0x7a, 0x44, 0xc8, 0x96, 0xfe, 0x2e, 0x64, 0xed, 0x72, 0xc8, 0xfa, 0x45, 0x17, 0x0a, 0x19,
+	0x1b, 0xc2, 0x7a, 0xa5, 0xf6, 0xaf, 0x23, 0xf6, 0xe6, 0xb7, 0x03, 0x20, 0x8f, 0x7a, 0x12, 0x39,
+	0x87, 0x6e, 0x21, 0xd1, 0xde, 0x81, 0xf9, 0xf8, 0x1e, 0x34, 0xbe, 0x85, 0xfe, 0xe6, 0x3d, 0x1c,
+	0x72, 0x0e, 0xab, 0x1f, 0xf1, 0xc6, 0x40, 0x72, 0x10, 0x19, 0xd4, 0xd3, 0xb3, 0x6e, 0x2f, 0x9a,
+	0xca, 0xe6, 0xae, 0x17, 0x0a, 0xf5, 0xb7, 0xaa, 0x41, 0x61, 0x3e, 0x4f, 0x4d, 0x0a, 0x75, 0x83,
+	0x33, 0x58, 0xc9, 0x1b, 0xbc, 0x53, 0xc3, 0x2d, 0x5e, 0x4c, 0xbf, 0xdf, 0x4c, 0x21, 0x67, 0xd0,
+	0x33, 0xfb, 0x9e, 0xaa, 0xeb, 0x20, 0x5b, 0xb5, 0xe4, 0xac, 0xd5, 0xa0, 0xa1, 0x6a, 0x96, 0xbd,
+	0xca, 0xb4, 0x69, 0xa9, 0xf5, 0xda, 0x0a, 0xab, 0x7a, 0xf7, 0x51, 0x74, 0xd7, 0xcf, 0x6d, 0xf5,
+	0x83, 0xf9, 0xf6, 0x4f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xf1, 0xf9, 0x2f, 0x6f, 0x67, 0x07, 0x00,
+	0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -537,8 +727,10 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type SwapServerClient interface {
+	LoopOutTerms(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error)
 	NewLoopOutSwap(ctx context.Context, in *ServerLoopOutRequest, opts ...grpc.CallOption) (*ServerLoopOutResponse, error)
 	LoopOutQuote(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error)
+	LoopInTerms(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error)
 	NewLoopInSwap(ctx context.Context, in *ServerLoopInRequest, opts ...grpc.CallOption) (*ServerLoopInResponse, error)
 	LoopInQuote(ctx context.Context, in *ServerLoopInQuoteRequest, opts ...grpc.CallOption) (*ServerLoopInQuoteResponse, error)
 }
@@ -549,6 +741,15 @@ type swapServerClient struct {
 
 func NewSwapServerClient(cc *grpc.ClientConn) SwapServerClient {
 	return &swapServerClient{cc}
+}
+
+func (c *swapServerClient) LoopOutTerms(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error) {
+	out := new(ServerLoopOutTerms)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutTerms", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *swapServerClient) NewLoopOutSwap(ctx context.Context, in *ServerLoopOutRequest, opts ...grpc.CallOption) (*ServerLoopOutResponse, error) {
@@ -563,6 +764,15 @@ func (c *swapServerClient) NewLoopOutSwap(ctx context.Context, in *ServerLoopOut
 func (c *swapServerClient) LoopOutQuote(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error) {
 	out := new(ServerLoopOutQuote)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutQuote", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapServerClient) LoopInTerms(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error) {
+	out := new(ServerLoopInTerms)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopInTerms", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -589,14 +799,34 @@ func (c *swapServerClient) LoopInQuote(ctx context.Context, in *ServerLoopInQuot
 
 // SwapServerServer is the server API for SwapServer service.
 type SwapServerServer interface {
+	LoopOutTerms(context.Context, *ServerLoopOutTermsRequest) (*ServerLoopOutTerms, error)
 	NewLoopOutSwap(context.Context, *ServerLoopOutRequest) (*ServerLoopOutResponse, error)
 	LoopOutQuote(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error)
+	LoopInTerms(context.Context, *ServerLoopInTermsRequest) (*ServerLoopInTerms, error)
 	NewLoopInSwap(context.Context, *ServerLoopInRequest) (*ServerLoopInResponse, error)
 	LoopInQuote(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error)
 }
 
 func RegisterSwapServerServer(s *grpc.Server, srv SwapServerServer) {
 	s.RegisterService(&_SwapServer_serviceDesc, srv)
+}
+
+func _SwapServer_LoopOutTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopOutTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopOutTerms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopOutTerms",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopOutTerms(ctx, req.(*ServerLoopOutTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _SwapServer_NewLoopOutSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -631,6 +861,24 @@ func _SwapServer_LoopOutQuote_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapServerServer).LoopOutQuote(ctx, req.(*ServerLoopOutQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapServer_LoopInTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopInTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopInTerms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopInTerms",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopInTerms(ctx, req.(*ServerLoopInTermsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -676,12 +924,20 @@ var _SwapServer_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*SwapServerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "LoopOutTerms",
+			Handler:    _SwapServer_LoopOutTerms_Handler,
+		},
+		{
 			MethodName: "NewLoopOutSwap",
 			Handler:    _SwapServer_NewLoopOutSwap_Handler,
 		},
 		{
 			MethodName: "LoopOutQuote",
 			Handler:    _SwapServer_LoopOutQuote_Handler,
+		},
+		{
+			MethodName: "LoopInTerms",
+			Handler:    _SwapServer_LoopInTerms_Handler,
 		},
 		{
 			MethodName: "NewLoopInSwap",

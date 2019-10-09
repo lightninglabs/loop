@@ -8,7 +8,6 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/swap"
 )
 
 var termsCommand = cli.Command{
@@ -29,13 +28,6 @@ func terms(ctx *cli.Context) error {
 			btcutil.Amount(terms.MinSwapAmount),
 			btcutil.Amount(terms.MaxSwapAmount),
 		)
-		fmt.Printf("Fee:    %d + %.4f %% (%d prepaid)\n",
-			btcutil.Amount(terms.SwapFeeBase),
-			swap.FeeRateAsPercentage(terms.SwapFeeRate),
-			btcutil.Amount(terms.PrepayAmt),
-		)
-
-		fmt.Printf("Cltv delta:   %v blocks\n", terms.CltvDelta)
 	}
 
 	fmt.Println("Loop Out")

@@ -353,11 +353,14 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
-	logger.Infof("Offchain swap destination: %x", terms.SwapPaymentDest)
+	quote, err := s.Server.GetLoopOutQuote(ctx, request.Amount)
+	if err != nil {
+		return nil, err
+	}
 
-	swapFee := swap.CalcFee(
-		request.Amount, terms.SwapFeeBase, terms.SwapFeeRate,
-	)
+	logger.Infof("Offchain swap destination: %x", quote.SwapPaymentDest)
+
+	swapFee := quote.SwapFee
 
 	// Generate dummy p2wsh address for fee estimation. The p2wsh address
 	// type is chosen because it adds the most weight of all output types
@@ -379,9 +382,11 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 	}
 
 	return &LoopOutQuote{
-		SwapFee:      swapFee,
-		MinerFee:     minerFee,
-		PrepayAmount: btcutil.Amount(terms.PrepayAmt),
+		SwapFee:         swapFee,
+		MinerFee:        minerFee,
+		PrepayAmount:    btcutil.Amount(quote.PrepayAmount),
+		SwapPaymentDest: quote.SwapPaymentDest,
+		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 
@@ -465,10 +470,12 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
-	// Calculate swap fee.
-	swapFee := terms.SwapFeeBase +
-		request.Amount*btcutil.Amount(terms.SwapFeeRate)/
-			btcutil.Amount(swap.FeeRateTotalParts)
+	quote, err := s.Server.GetLoopInQuote(ctx, request.Amount)
+	if err != nil {
+		return nil, err
+	}
+
+	swapFee := quote.SwapFee
 
 	// We don't calculate the on-chain fee if the HTLC is going to be
 	// published externally.
@@ -478,7 +485,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 			MinerFee: 0,
 		}, nil
 	}
-	
+
 	// Get estimate for miner fee.
 	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
 		ctx, request.Amount, request.HtlcConfTarget,
@@ -488,8 +495,9 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	}
 
 	return &LoopInQuote{
-		SwapFee:  swapFee,
-		MinerFee: minerFee,
+		SwapFee:   swapFee,
+		MinerFee:  minerFee,
+		CltvDelta: quote.CltvDelta,
 	}, nil
 }
 

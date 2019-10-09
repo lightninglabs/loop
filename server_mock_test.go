@@ -21,8 +21,7 @@ var (
 	testLoopOutOnChainCltvDelta = int32(30)
 	testChargeOnChainCltvDelta  = int32(100)
 	testCltvDelta               = 50
-	testSwapFeeBase             = btcutil.Amount(21)
-	testSwapFeeRate             = int64(100)
+	testSwapFee                 = btcutil.Amount(210)
 	testInvoiceExpiry           = 180 * time.Second
 	testFixedPrepayAmount       = btcutil.Amount(100)
 	testMinSwapAmount           = btcutil.Amount(10000)
@@ -44,6 +43,8 @@ type serverMock struct {
 	swapInvoice string
 	swapHash    lntypes.Hash
 }
+
+var _ swapServerClient = (*serverMock)(nil)
 
 func newServerMock() *serverMock {
 	return &serverMock{
@@ -94,16 +95,22 @@ func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
 	*LoopOutTerms, error) {
 
+	return &LoopOutTerms{
+		MinSwapAmount: testMinSwapAmount,
+		MaxSwapAmount: testMaxSwapAmount,
+	}, nil
+}
+
+func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount) (
+	*LoopOutQuote, error) {
+
 	dest := [33]byte{1, 2, 3}
 
-	return &LoopOutTerms{
-		SwapFeeBase:     testSwapFeeBase,
-		SwapFeeRate:     testSwapFeeRate,
+	return &LoopOutQuote{
+		SwapFee:         testSwapFee,
 		SwapPaymentDest: dest,
 		CltvDelta:       testLoopOutOnChainCltvDelta,
-		MinSwapAmount:   testMinSwapAmount,
-		MaxSwapAmount:   testMaxSwapAmount,
-		PrepayAmt:       testFixedPrepayAmount,
+		PrepayAmount:    testFixedPrepayAmount,
 	}, nil
 }
 
@@ -154,10 +161,16 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context) (
 	*LoopInTerms, error) {
 
 	return &LoopInTerms{
-		SwapFeeBase:   testSwapFeeBase,
-		SwapFeeRate:   testSwapFeeRate,
-		CltvDelta:     testChargeOnChainCltvDelta,
 		MinSwapAmount: testMinSwapAmount,
 		MaxSwapAmount: testMaxSwapAmount,
+	}, nil
+}
+
+func (s *serverMock) GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
+	*LoopInQuote, error) {
+
+	return &LoopInQuote{
+		SwapFee:   testSwapFee,
+		CltvDelta: testChargeOnChainCltvDelta,
 	}, nil
 }
