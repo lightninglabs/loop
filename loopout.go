@@ -116,7 +116,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit, err := newSwapKit(
-		swapHash, TypeOut, cfg, &contract.SwapContract, swap.HtlcP2WSH,
+		swapHash, swap.TypeOut, cfg, &contract.SwapContract,
+		swap.HtlcP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -149,7 +150,8 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	logger.Infof("Resuming loop out swap %v", hash)
 
 	swapKit, err := newSwapKit(
-		hash, TypeOut, cfg, &pend.Contract.SwapContract, swap.HtlcP2WSH,
+		hash, swap.TypeOut, cfg, &pend.Contract.SwapContract,
+		swap.HtlcP2WSH,
 	)
 	if err != nil {
 		return nil, err

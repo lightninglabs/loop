@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
@@ -113,9 +114,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 	var swapType looprpc.SwapType
 	switch loopSwap.SwapType {
-	case loop.TypeIn:
+	case swap.TypeIn:
 		swapType = looprpc.SwapType_LOOP_IN
-	case loop.TypeOut:
+	case swap.TypeOut:
 		swapType = looprpc.SwapType_LOOP_OUT
 	default:
 		return nil, errors.New("unknown swap type")

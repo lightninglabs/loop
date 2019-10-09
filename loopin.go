@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/loop/swap"
-
 	"github.com/btcsuite/btcutil"
 
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -19,6 +17,7 @@ import (
 
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -149,7 +148,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit, err := newSwapKit(
-		swapHash, TypeIn, cfg, &contract.SwapContract, swap.HtlcNP2WSH,
+		swapHash, swap.TypeIn, cfg, &contract.SwapContract,
+		swap.HtlcNP2WSH,
 	)
 	if err != nil {
 		return nil, err
@@ -182,7 +182,8 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 	logger.Infof("Resuming loop in swap %v", hash)
 
 	swapKit, err := newSwapKit(
-		hash, TypeIn, cfg, &pend.Contract.SwapContract, swap.HtlcNP2WSH,
+		hash, swap.TypeIn, cfg, &pend.Contract.SwapContract,
+		swap.HtlcNP2WSH,
 	)
 	if err != nil {
 		return nil, err

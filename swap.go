@@ -16,7 +16,7 @@ type swapKit struct {
 
 	height int32
 
-	log *SwapLog
+	log *swap.PrefixLog
 
 	lastUpdateTime time.Time
 	cost           loopdb.SwapCost
@@ -25,10 +25,10 @@ type swapKit struct {
 	swapConfig
 
 	contract *loopdb.SwapContract
-	swapType Type
+	swapType swap.Type
 }
 
-func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
+func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 	contract *loopdb.SwapContract, outputType swap.HtlcOutputType) (
 	*swapKit, error) {
 
@@ -42,7 +42,7 @@ func newSwapKit(hash lntypes.Hash, swapType Type, cfg *swapConfig,
 		return nil, err
 	}
 
-	log := &SwapLog{
+	log := &swap.PrefixLog{
 		Hash:   hash,
 		Logger: logger,
 	}

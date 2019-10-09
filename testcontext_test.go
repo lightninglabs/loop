@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -187,7 +188,7 @@ func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
 	for {
 		select {
 		case update := <-ctx.statusChan:
-			if update.SwapType != TypeOut {
+			if update.SwapType != swap.TypeOut {
 				continue
 			}
 

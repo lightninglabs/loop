@@ -6,6 +6,7 @@ import (
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/urfave/cli"
 )
 
@@ -93,7 +94,8 @@ func loopOut(ctx *cli.Context) error {
 
 	limits := getLimits(amt, quote)
 
-	if err := displayLimits(loop.TypeOut, amt, limits, false); err != nil {
+	err = displayLimits(swap.TypeOut, amt, limits, false)
+	if err != nil {
 		return err
 	}
 
