@@ -69,7 +69,7 @@ func (s *executor) run(mainCtx context.Context,
 
 	select {
 	case h := <-blockEpochChan:
-		setHeight(int32(h))
+		setHeight(h)
 	case err := <-blockErrorChan:
 		return err
 	case <-mainCtx.Done():
@@ -134,10 +134,10 @@ func (s *executor) run(mainCtx context.Context,
 			delete(blockEpochQueues, doneID)
 
 		case h := <-blockEpochChan:
-			setHeight(int32(h))
+			setHeight(h)
 			for _, queue := range blockEpochQueues {
 				select {
-				case queue.ChanIn() <- int32(h):
+				case queue.ChanIn() <- h:
 				case <-mainCtx.Done():
 					return mainCtx.Err()
 				}

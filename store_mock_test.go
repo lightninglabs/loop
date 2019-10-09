@@ -25,11 +25,6 @@ type storeMock struct {
 	t *testing.T
 }
 
-type finishData struct {
-	preimage lntypes.Hash
-	result   loopdb.SwapState
-}
-
 // NewStoreMock instantiates a new mock store.
 func newStoreMock(t *testing.T) *storeMock {
 	return &storeMock{

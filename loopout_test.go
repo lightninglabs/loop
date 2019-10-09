@@ -176,7 +176,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	// Notify the confirmation notification for the HTLC.
 	ctx.AssertRegisterConf()
 
-	blockEpochChan <- int32(ctx.Lnd.Height + 1)
+	blockEpochChan <- ctx.Lnd.Height + 1
 
 	htlcTx := wire.NewMsgTx(2)
 	htlcTx.AddTxOut(&wire.TxOut{
@@ -238,7 +238,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// The sweep should have a fee that corresponds to the custom
 	// confirmation target.
-	sweepTx := assertSweepTx(testRequest.SweepConfTarget)
+	_ = assertSweepTx(testRequest.SweepConfTarget)
 
 	// We'll then notify the height at which we begin using the default
 	// confirmation target.
@@ -249,7 +249,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// We should expect to see another sweep using the higher fee since the
 	// spend hasn't been confirmed yet.
-	sweepTx = assertSweepTx(DefaultSweepConfTarget)
+	sweepTx := assertSweepTx(DefaultSweepConfTarget)
 
 	// Notify the spend so that the swap reaches its final state.
 	ctx.NotifySpend(sweepTx, 0)

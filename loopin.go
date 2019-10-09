@@ -493,7 +493,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		case err := <-swapInvoiceErr:
 			return err
 
-		// An update to the swap invoice occured. Check the new state
+		// An update to the swap invoice occurred. Check the new state
 		// and update the swap state accordingly.
 		case update := <-swapInvoiceChan:
 			s.log.Infof("Received swap invoice update: %v",

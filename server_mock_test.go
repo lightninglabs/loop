@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -20,20 +19,14 @@ var (
 
 	testLoopOutOnChainCltvDelta = int32(30)
 	testChargeOnChainCltvDelta  = int32(100)
-	testCltvDelta               = 50
 	testSwapFee                 = btcutil.Amount(210)
-	testInvoiceExpiry           = 180 * time.Second
 	testFixedPrepayAmount       = btcutil.Amount(100)
 	testMinSwapAmount           = btcutil.Amount(10000)
 	testMaxSwapAmount           = btcutil.Amount(1000000)
-	testTxConfTarget            = 2
-	testRepublishDelay          = 10 * time.Second
 )
 
 // serverMock is used in client unit tests to simulate swap server behaviour.
 type serverMock struct {
-	t *testing.T
-
 	expectedSwapAmt  btcutil.Amount
 	swapInvoiceAmt   btcutil.Amount
 	prepayInvoiceAmt btcutil.Amount

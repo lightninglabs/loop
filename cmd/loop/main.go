@@ -97,7 +97,7 @@ type limits struct {
 }
 
 func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
-	maxSwapRoutingFee := getMaxRoutingFee(btcutil.Amount(amt))
+	maxSwapRoutingFee := getMaxRoutingFee(amt)
 	maxPrepayRoutingFee := getMaxRoutingFee(btcutil.Amount(
 		quote.PrepayAmt,
 	))
@@ -126,7 +126,7 @@ func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits,
 	if l.maxPrepayRoutingFee != nil {
 		totalSuccessMax += *l.maxPrepayRoutingFee
 	}
-	
+
 	if swapType == loop.TypeIn && externalHtlc {
 		fmt.Printf("On-chain fee for external loop in is not " +
 			"included.\nSufficient fees will need to be paid " +
@@ -135,7 +135,7 @@ func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits,
 	}
 
 	fmt.Printf("Max swap fees for %d Loop %v: %d\n",
-		btcutil.Amount(amt), swapType, totalSuccessMax,
+		amt, swapType, totalSuccessMax,
 	)
 
 	fmt.Printf("CONTINUE SWAP? (y/n), expand fee detail (x): ")

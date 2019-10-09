@@ -41,8 +41,7 @@ func loopIn(ctx *cli.Context) error {
 		args = args.Tail()
 	default:
 		// Show command help if no arguments and flags were provided.
-		cli.ShowCommandHelp(ctx, "in")
-		return nil
+		return cli.ShowCommandHelp(ctx, "in")
 	}
 
 	amt, err := parseAmt(amtStr)

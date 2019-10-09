@@ -127,7 +127,10 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 		return nil, err
 	}
 
-	binary.Read(r, byteOrder, &contract.AmountRequested)
+	err = binary.Read(r, byteOrder, &contract.AmountRequested)
+	if err != nil {
+		return nil, err
+	}
 
 	n, err := r.Read(contract.SenderKey[:])
 	if err != nil {

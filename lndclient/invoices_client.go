@@ -52,10 +52,10 @@ func (s *invoicesClient) WaitForFinished() {
 func (s *invoicesClient) SettleInvoice(ctx context.Context,
 	preimage lntypes.Preimage) error {
 
-	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
-	rpcCtx = s.invoiceMac.WithMacaroonAuth(ctx)
+	rpcCtx := s.invoiceMac.WithMacaroonAuth(timeoutCtx)
 	_, err := s.client.SettleInvoice(rpcCtx, &invoicesrpc.SettleInvoiceMsg{
 		Preimage: preimage[:],
 	})

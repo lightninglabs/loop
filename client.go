@@ -384,7 +384,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 	return &LoopOutQuote{
 		SwapFee:         swapFee,
 		MinerFee:        minerFee,
-		PrepayAmount:    btcutil.Amount(quote.PrepayAmount),
+		PrepayAmount:    quote.PrepayAmount,
 		SwapPaymentDest: quote.SwapPaymentDest,
 		CltvDelta:       quote.CltvDelta,
 	}, nil
