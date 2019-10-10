@@ -144,7 +144,7 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		}
 
 		swaps = append(swaps, &SwapInfo{
-			SwapType:      TypeOut,
+			SwapType:      swap.TypeOut,
 			SwapContract:  swp.Contract.SwapContract,
 			SwapStateData: swp.State(),
 			SwapHash:      swp.Hash,
@@ -164,7 +164,7 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		}
 
 		swaps = append(swaps, &SwapInfo{
-			SwapType:      TypeIn,
+			SwapType:      swap.TypeIn,
 			SwapContract:  swp.Contract.SwapContract,
 			SwapStateData: swp.State(),
 			SwapHash:      swp.Hash,

@@ -116,7 +116,7 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 	}
 }
 
-func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits,
+func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
 	externalHtlc bool) error {
 
 	totalSuccessMax := l.maxMinerFee + l.maxSwapFee
@@ -127,7 +127,7 @@ func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits,
 		totalSuccessMax += *l.maxPrepayRoutingFee
 	}
 
-	if swapType == loop.TypeIn && externalHtlc {
+	if swapType == swap.TypeIn && externalHtlc {
 		fmt.Printf("On-chain fee for external loop in is not " +
 			"included.\nSufficient fees will need to be paid " +
 			"when constructing the transaction in the external " +
@@ -148,7 +148,7 @@ func displayLimits(swapType loop.Type, amt btcutil.Amount, l *limits,
 		return nil
 	case "x":
 		fmt.Println()
-		if swapType != loop.TypeIn || !externalHtlc {
+		if swapType != swap.TypeIn || !externalHtlc {
 			fmt.Printf("Max on-chain fee:                 %d\n",
 				l.maxMinerFee)
 		}

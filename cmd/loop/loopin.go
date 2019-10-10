@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/urfave/cli"
 )
 
@@ -68,7 +68,7 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(amt, quote)
-	err = displayLimits(loop.TypeIn, amt, limits, external)
+	err = displayLimits(swap.TypeIn, amt, limits, external)
 	if err != nil {
 		return err
 	}
