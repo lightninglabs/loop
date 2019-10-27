@@ -57,12 +57,12 @@ problems. Community support is also available in the
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
 env variable is set to `on`.
 
-In order to execute a swap, **You need to run lnd 0.6.0+, or master built with
+In order to execute a swap, **You need to run lnd 0.7.1+, or master built with
 sub-servers enabled.**
 
 ### LND
 
-If you are building from source, and not using a 0.6.0 or higher release of
+If you are building from source, and not using a 0.7.1 or higher release of
 lnd, make sure that you are using the `master` branch of lnd. You can get this
 by git cloning the repository
 
