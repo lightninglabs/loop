@@ -1,24 +1,23 @@
 package loop
 
 import (
-	"os"
-
 	"github.com/btcsuite/btclog"
+	"github.com/lightningnetwork/lnd/build"
 )
 
-// log is a logger that is initialized with no output filters.  This
-// means the package will not perform any logging by default until the caller
-// requests it.
-var (
-	backendLog = btclog.NewBackend(logWriter{})
-	logger     = backendLog.Logger("CLIENT")
-)
+// log is a logger that is initialized with no output filters. This
+// means the package will not perform any logging by default until the
+// caller requests it.
+var log btclog.Logger
 
-// logWriter implements an io.Writer that outputs to both standard output and
-// the write-end pipe of an initialized log rotator.
-type logWriter struct{}
+// The default amount of logging is none.
+func init() {
+	UseLogger(build.NewSubLogger("LOOP", nil))
+}
 
-func (logWriter) Write(p []byte) (n int, err error) {
-	os.Stdout.Write(p)
-	return len(p), nil
+// UseLogger uses a specified Logger to output package logging info.
+// This should be used in preference to SetLogWriter if the caller is also
+// using btclog.
+func UseLogger(logger btclog.Logger) {
+	log = logger
 }

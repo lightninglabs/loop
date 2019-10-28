@@ -1,24 +1,40 @@
 package main
 
 import (
-	"os"
-
 	"github.com/btcsuite/btclog"
+	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd/build"
 )
 
-// log is a logger that is initialized with no output filters.  This means the
-// package will not perform any logging by default until the caller requests
-// it.
 var (
-	backendLog = btclog.NewBackend(logWriter{})
-	logger     = backendLog.Logger("LOOPD")
+	logWriter = build.NewRotatingLogWriter()
+
+	log = build.NewSubLogger("LOOPD", logWriter.GenSubLogger)
 )
 
-// logWriter implements an io.Writer that outputs to both standard output and
-// the write-end pipe of an initialized log rotator.
-type logWriter struct{}
+func init() {
+	setSubLogger("LOOPD", log, nil)
+	addSubLogger("LOOP", loop.UseLogger)
+	addSubLogger("LNDC", lndclient.UseLogger)
+	addSubLogger("STORE", loopdb.UseLogger)
+}
 
-func (logWriter) Write(p []byte) (n int, err error) {
-	os.Stdout.Write(p)
-	return len(p), nil
+// addSubLogger is a helper method to conveniently create and register the
+// logger of a sub system.
+func addSubLogger(subsystem string, useLogger func(btclog.Logger)) {
+	logger := build.NewSubLogger(subsystem, logWriter.GenSubLogger)
+	setSubLogger(subsystem, logger, useLogger)
+}
+
+// setSubLogger is a helper method to conveniently register the logger of a sub
+// system.
+func setSubLogger(subsystem string, logger btclog.Logger,
+	useLogger func(btclog.Logger)) {
+
+	logWriter.RegisterSubLogger(subsystem, logger)
+	if useLogger != nil {
+		useLogger(logger)
+	}
 }

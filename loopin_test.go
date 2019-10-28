@@ -52,7 +52,7 @@ func TestLoopInSuccess(t *testing.T) {
 	go func() {
 		err := swap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 		errChan <- err
 	}()
@@ -142,7 +142,7 @@ func TestLoopInTimeout(t *testing.T) {
 	go func() {
 		err := swap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 		errChan <- err
 	}()
@@ -289,7 +289,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	go func() {
 		err := swap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 		errChan <- err
 	}()

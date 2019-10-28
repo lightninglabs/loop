@@ -59,7 +59,7 @@ func (s *executor) run(mainCtx context.Context,
 	// Before starting, make sure we have an up to date block height.
 	// Otherwise we might reveal a preimage for a swap that is already
 	// expired.
-	logger.Infof("Wait for first block ntfn")
+	log.Infof("Wait for first block ntfn")
 
 	var height int32
 	setHeight := func(h int32) {
@@ -77,7 +77,7 @@ func (s *executor) run(mainCtx context.Context,
 	}
 
 	// Start main event loop.
-	logger.Infof("Starting event loop at height %v", height)
+	log.Infof("Starting event loop at height %v", height)
 
 	// Signal that executor being ready with an up to date block height.
 	close(s.ready)

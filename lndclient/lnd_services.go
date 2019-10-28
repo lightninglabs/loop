@@ -84,13 +84,13 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 	}
 
 	// Setup connection with lnd
-	logger.Infof("Creating lnd connection to %v", lndAddress)
+	log.Infof("Creating lnd connection to %v", lndAddress)
 	conn, err := getClientConn(lndAddress, network, tlsPath)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Infof("Connected to lnd")
+	log.Infof("Connected to lnd")
 
 	chainParams, err := swap.ChainParamsFromNetwork(network)
 	if err != nil {
@@ -125,19 +125,19 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 	routerClient := newRouterClient(conn, macaroons.routerMac)
 
 	cleanup := func() {
-		logger.Debugf("Closing lnd connection")
+		log.Debugf("Closing lnd connection")
 		conn.Close()
 
-		logger.Debugf("Wait for client to finish")
+		log.Debugf("Wait for client to finish")
 		lightningClient.WaitForFinished()
 
-		logger.Debugf("Wait for chain notifier to finish")
+		log.Debugf("Wait for chain notifier to finish")
 		notifierClient.WaitForFinished()
 
-		logger.Debugf("Wait for invoices to finish")
+		log.Debugf("Wait for invoices to finish")
 		invoicesClient.WaitForFinished()
 
-		logger.Debugf("Lnd services finished")
+		log.Debugf("Lnd services finished")
 	}
 
 	services := &GrpcLndServices{
@@ -154,7 +154,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 		cleanup: cleanup,
 	}
 
-	logger.Infof("Using network %v", network)
+	log.Infof("Using network %v", network)
 
 	return services, nil
 }
@@ -164,7 +164,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 func (s *GrpcLndServices) Close() {
 	s.cleanup()
 
-	logger.Debugf("Lnd services finished")
+	log.Debugf("Lnd services finished")
 }
 
 var (
