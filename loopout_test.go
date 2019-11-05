@@ -62,7 +62,7 @@ func TestLateHtlcPublish(t *testing.T) {
 			timerFactory:   timerFactory,
 		}, height)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 		errChan <- err
 	}()
@@ -153,7 +153,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 			sweeper:        sweeper,
 		}, ctx.Lnd.Height)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 		errChan <- err
 	}()

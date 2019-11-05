@@ -67,7 +67,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	swapFee := quote.SwapFee
 
 	if swapFee > request.MaxSwapFee {
-		logger.Warnf("Swap fee %v exceeding maximum of %v",
+		log.Warnf("Swap fee %v exceeding maximum of %v",
 			swapFee, request.MaxSwapFee)
 
 		return nil, ErrSwapFeeTooHigh
@@ -81,7 +81,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage
 	if _, err := rand.Read(swapPreimage[:]); err != nil {
-		logger.Error("Cannot generate preimage")
+		log.Error("Cannot generate preimage")
 	}
 	swapHash := lntypes.Hash(sha256.Sum256(swapPreimage[:]))
 
@@ -111,7 +111,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Post the swap parameters to the swap server. The response contains
 	// the server success key and the expiry height of the on-chain swap
 	// htlc.
-	logger.Infof("Initiating swap request at height %v", currentHeight)
+	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
 		request.Amount, senderKey, swapInvoice,
 	)
@@ -179,7 +179,7 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
-	logger.Infof("Resuming loop in swap %v", hash)
+	log.Infof("Resuming loop in swap %v", hash)
 
 	swapKit, err := newSwapKit(
 		hash, swap.TypeIn, cfg, &pend.Contract.SwapContract,

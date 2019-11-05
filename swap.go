@@ -44,7 +44,7 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 
 	log := &swap.PrefixLog{
 		Hash:   hash,
-		Logger: logger,
+		Logger: log,
 	}
 
 	// Log htlc address for debugging.

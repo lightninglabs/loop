@@ -40,7 +40,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("Loop out request received")
+	log.Infof("Loop out request received")
 
 	sweepConfTarget, err := validateConfTarget(
 		in.SweepConfTarget, loop.DefaultSweepConfTarget,
@@ -82,7 +82,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 	hash, htlc, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
-		logger.Errorf("LoopOut: %v", err)
+		log.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
@@ -140,7 +140,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	server looprpc.SwapClient_MonitorServer) error {
 
-	logger.Infof("Monitor request received")
+	log.Infof("Monitor request received")
 
 	send := func(info loop.SwapInfo) error {
 		rpcSwap, err := s.marshallSwap(&info)
@@ -234,11 +234,11 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
 
-	logger.Infof("Loop out terms request received")
+	log.Infof("Loop out terms request received")
 
 	terms, err := s.impl.LoopOutTerms(ctx)
 	if err != nil {
-		logger.Errorf("Terms request: %v", err)
+		log.Errorf("Terms request: %v", err)
 		return nil, err
 	}
 
@@ -280,11 +280,11 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.TermsRequest) (
 	*looprpc.TermsResponse, error) {
 
-	logger.Infof("Loop in terms request received")
+	log.Infof("Loop in terms request received")
 
 	terms, err := s.impl.LoopInTerms(ctx)
 	if err != nil {
-		logger.Errorf("Terms request: %v", err)
+		log.Errorf("Terms request: %v", err)
 		return nil, err
 	}
 
@@ -298,7 +298,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
 
-	logger.Infof("Loop in quote request received")
+	log.Infof("Loop in quote request received")
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
@@ -318,7 +318,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	in *looprpc.LoopInRequest) (
 	*looprpc.SwapResponse, error) {
 
-	logger.Infof("Loop in request received")
+	log.Infof("Loop in request received")
 
 	req := &loop.LoopInRequest{
 		Amount:         btcutil.Amount(in.Amt),
@@ -332,7 +332,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	}
 	hash, htlc, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
-		logger.Errorf("Loop in: %v", err)
+		log.Errorf("Loop in: %v", err)
 		return nil, err
 	}
 

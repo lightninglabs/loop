@@ -7,10 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	flags "github.com/jessevdk/go-flags"
-
-	"github.com/btcsuite/btcutil"
+	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -19,7 +18,6 @@ const (
 )
 
 var (
-	loopDirBase           = btcutil.AppDataDir("loop", false)
 	defaultConfigFilename = "loopd.conf"
 
 	swaps            = make(map[lntypes.Hash]loop.SwapInfo)
@@ -81,8 +79,32 @@ func start() error {
 		os.Exit(0)
 	}
 
+	// Special show command to list supported subsystems and exit.
+	if config.DebugLevel == "show" {
+		fmt.Printf("Supported subsystems: %v\n",
+			logWriter.SupportedSubsystems())
+		os.Exit(0)
+	}
+
+	// Append the network type to the log directory so it is
+	// "namespaced" per network in the same fashion as the data directory.
+	config.LogDir = filepath.Join(config.LogDir, config.Network)
+
+	// Initialize logging at the default logging level.
+	err = logWriter.InitLogRotator(
+		filepath.Join(config.LogDir, defaultLogFilename),
+		config.MaxLogFileSize, config.MaxLogFiles,
+	)
+	if err != nil {
+		return err
+	}
+	err = build.ParseAndSetDebugLevels(config.DebugLevel, logWriter)
+	if err != nil {
+		return err
+	}
+
 	// Print the version before executing either primary directive.
-	logger.Infof("Version: %v", loop.Version())
+	log.Infof("Version: %v", loop.Version())
 
 	// Execute command.
 	if parser.Active == nil {

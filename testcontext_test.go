@@ -114,7 +114,7 @@ func createClientTestContext(t *testing.T,
 			runCtx,
 			statusChan,
 		)
-		logger.Errorf("client run: %v", err)
+		log.Errorf("client run: %v", err)
 		ctx.runErr <- err
 	}()
 

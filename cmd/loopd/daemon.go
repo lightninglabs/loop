@@ -40,7 +40,7 @@ func daemon(config *config) error {
 		}
 	}
 
-	logger.Infof("Swap server address: %v", config.SwapServer)
+	log.Infof("Swap server address: %v", config.SwapServer)
 
 	// Create an instance of the loop client library.
 	swapClient, cleanup, err := getClient(
@@ -73,7 +73,7 @@ func daemon(config *config) error {
 	looprpc.RegisterSwapClientServer(grpcServer, &server)
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
-	logger.Infof("Starting gRPC listener")
+	log.Infof("Starting gRPC listener")
 	grpcListener, err := net.Listen("tcp", config.RPCListen)
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
@@ -95,7 +95,7 @@ func daemon(config *config) error {
 		return err
 	}
 
-	logger.Infof("Starting REST proxy listener")
+	log.Infof("Starting REST proxy listener")
 	restListener, err := net.Listen("tcp", config.RESTListen)
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s",
@@ -115,14 +115,14 @@ func daemon(config *config) error {
 	go func() {
 		defer wg.Done()
 
-		logger.Infof("Starting swap client")
+		log.Infof("Starting swap client")
 		err := swapClient.Run(mainCtx, statusChan)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
-		logger.Infof("Swap client stopped")
+		log.Infof("Swap client stopped")
 
-		logger.Infof("Stopping gRPC server")
+		log.Infof("Stopping gRPC server")
 		grpcServer.Stop()
 
 		cancel()
@@ -133,7 +133,7 @@ func daemon(config *config) error {
 	go func() {
 		defer wg.Done()
 
-		logger.Infof("Waiting for updates")
+		log.Infof("Waiting for updates")
 		for {
 			select {
 			case swap := <-statusChan:
@@ -160,12 +160,12 @@ func daemon(config *config) error {
 	go func() {
 		defer wg.Done()
 
-		logger.Infof("RPC server listening on %s", grpcListener.Addr())
-		logger.Infof("REST proxy listening on %s", restListener.Addr())
+		log.Infof("RPC server listening on %s", grpcListener.Addr())
+		log.Infof("REST proxy listening on %s", restListener.Addr())
 
 		err = grpcServer.Serve(grpcListener)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 	}()
 
@@ -175,7 +175,7 @@ func daemon(config *config) error {
 	// Run until the users terminates loopd or an error occurred.
 	select {
 	case <-interruptChannel:
-		logger.Infof("Received SIGINT (Ctrl+C).")
+		log.Infof("Received SIGINT (Ctrl+C).")
 
 		// TODO: Remove debug code.
 		// Debug code to dump goroutines on hanging exit.

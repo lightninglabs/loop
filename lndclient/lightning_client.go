@@ -253,7 +253,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 
 			// Paid successfully.
 			case PaymentResultSuccess:
-				logger.Infof(
+				log.Infof(
 					"Payment %v completed", hash,
 				)
 
@@ -274,7 +274,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 
 			// Invoice was already paid on a previous run.
 			case PaymentResultAlreadyPaid:
-				logger.Infof(
+				log.Infof(
 					"Payment %v already completed", hash,
 				)
 
@@ -294,7 +294,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 			// TODO: Improve this when lnd expose more API to
 			// tracking existing payments.
 			case PaymentResultInFlight:
-				logger.Infof(
+				log.Infof(
 					"Payment %v already in flight", hash,
 				)
 
@@ -302,7 +302,7 @@ func (s *lightningClient) payInvoice(ctx context.Context, invoice string,
 
 			// Other errors are transformed into an error struct.
 			default:
-				logger.Warnf(
+				log.Warnf(
 					"Payment %v failed: %v", hash,
 					payResp.PaymentError,
 				)
