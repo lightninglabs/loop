@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightningnetwork/lnd/lntypes"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -49,10 +48,10 @@ type grpcSwapServerClient struct {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(address string,
-	insecure bool) (*grpcSwapServerClient, error) {
+func newSwapServerClient(address string, insecure bool, tlsPath string) (
+	*grpcSwapServerClient, error) {
 
-	serverConn, err := getSwapServerConn(address, insecure)
+	serverConn, err := getSwapServerConn(address, insecure, tlsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -227,19 +226,37 @@ func (s *grpcSwapServerClient) Close() {
 }
 
 // getSwapServerConn returns a connection to the swap server.
-func getSwapServerConn(address string, insecure bool) (*grpc.ClientConn, error) {
+func getSwapServerConn(address string, insecure bool, tlsPath string) (
+	*grpc.ClientConn, error) {
+
 	// Create a dial options array.
 	opts := []grpc.DialOption{}
-	if insecure {
+
+	// There are three options to connect to a swap server, either insecure,
+	// using a self-signed certificate or with a certificate signed by a
+	// public CA.
+	switch {
+	case insecure:
 		opts = append(opts, grpc.WithInsecure())
-	} else {
+
+	case tlsPath != "":
+		// Load the specified TLS certificate and build
+		// transport credentials
+		creds, err := credentials.NewClientTLSFromFile(tlsPath, "")
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+
+	default:
 		creds := credentials.NewTLS(&tls.Config{})
 		opts = append(opts, grpc.WithTransportCredentials(creds))
 	}
 
 	conn, err := grpc.Dial(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)
+		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+			err)
 	}
 
 	return conn, nil

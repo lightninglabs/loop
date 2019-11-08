@@ -27,12 +27,13 @@ type lndConfig struct {
 type viewParameters struct{}
 
 type config struct {
-	ShowVersion bool   `short:"V" long:"version" description:"Display version information and exit"`
-	Insecure    bool   `long:"insecure" description:"disable tls"`
-	Network     string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
-	SwapServer  string `long:"swapserver" description:"swap server address host:port"`
-	RPCListen   string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
-	RESTListen  string `long:"restlisten" description:"Address to listen on for REST clients"`
+	ShowVersion    bool   `short:"V" long:"version" description:"Display version information and exit"`
+	Insecure       bool   `long:"insecure" description:"disable tls"`
+	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	SwapServer     string `long:"swapserver" description:"swap server address host:port"`
+	TLSPathSwapSrv string `long:"tlspathswapserver" description:"Path to swap server tls certificate. Only needed if the swap server uses a self-signed certificate."`
+	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen     string `long:"restlisten" description:"Address to listen on for REST clients"`
 
 	LogDir         string `long:"logdir" description:"Directory to log output."`
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`

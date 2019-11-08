@@ -71,14 +71,17 @@ type Client struct {
 
 // NewClient returns a new instance to initiate swaps with.
 func NewClient(dbDir string, serverAddress string, insecure bool,
-	lnd *lndclient.LndServices) (*Client, func(), error) {
+	tlsPathServer string, lnd *lndclient.LndServices) (*Client, func(),
+	error) {
 
 	store, err := loopdb.NewBoltSwapStore(dbDir, lnd.ChainParams)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	swapServerClient, err := newSwapServerClient(serverAddress, insecure)
+	swapServerClient, err := newSwapServerClient(
+		serverAddress, insecure, tlsPathServer,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
