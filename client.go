@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -78,9 +79,13 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 	if err != nil {
 		return nil, nil, err
 	}
+	lsatStore, err := lsat.NewFileStore(dbDir)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	swapServerClient, err := newSwapServerClient(
-		serverAddress, insecure, tlsPathServer,
+		serverAddress, insecure, tlsPathServer, lsatStore, lnd,
 	)
 	if err != nil {
 		return nil, nil, err

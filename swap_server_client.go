@@ -10,7 +10,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -48,10 +50,16 @@ type grpcSwapServerClient struct {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(address string, insecure bool, tlsPath string) (
+func newSwapServerClient(address string, insecure bool, tlsPath string,
+	lsatStore lsat.Store, lnd *lndclient.LndServices) (
 	*grpcSwapServerClient, error) {
 
-	serverConn, err := getSwapServerConn(address, insecure, tlsPath)
+	// Create the server connection with the interceptor that will handle
+	// the LSAT protocol for us.
+	clientInterceptor := lsat.NewInterceptor(lnd, lsatStore)
+	serverConn, err := getSwapServerConn(
+		address, insecure, tlsPath, clientInterceptor,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -226,11 +234,13 @@ func (s *grpcSwapServerClient) Close() {
 }
 
 // getSwapServerConn returns a connection to the swap server.
-func getSwapServerConn(address string, insecure bool, tlsPath string) (
-	*grpc.ClientConn, error) {
+func getSwapServerConn(address string, insecure bool, tlsPath string,
+	interceptor *lsat.Interceptor) (*grpc.ClientConn, error) {
 
 	// Create a dial options array.
-	opts := []grpc.DialOption{}
+	opts := []grpc.DialOption{grpc.WithUnaryInterceptor(
+		interceptor.UnaryInterceptor,
+	)}
 
 	// There are three options to connect to a swap server, either insecure,
 	// using a self-signed certificate or with a certificate signed by a
