@@ -44,6 +44,10 @@ var loopOutCommand = cli.Command{
 				"should be swept within",
 			Value: uint64(loop.DefaultSweepConfTarget),
 		},
+		cli.Uint64Flag{
+			Name: "max_swap_routing_fee",
+			Usage: "max off-chain swap routing fee",
+		},
 	},
 	Action: loopOut,
 }
@@ -103,6 +107,11 @@ func loopOut(ctx *cli.Context) error {
 	if ctx.IsSet("channel") {
 		unchargeChannel = ctx.Uint64("channel")
 	}
+
+	// var maxSwapRoutingFee uint64
+	// if ctx.IsSet("max_swap_routing_fee") {
+	// 	maxSwapRoutingFee = ctx.Uint64("max_swap_routing_fee")
+	// }
 
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                 int64(amt),

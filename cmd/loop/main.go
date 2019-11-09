@@ -23,9 +23,9 @@ var (
 	// Define route independent max routing fees. We have currently no way
 	// to get a reliable estimate of the routing fees. Best we can do is
 	// the minimum routing fees, which is not very indicative.
-	maxRoutingFeeBase = btcutil.Amount(10)
+	maxRoutingFeeBase = btcutil.Amount(2)
 
-	maxRoutingFeeRate = int64(0)
+	maxRoutingFeeRate = int64(4)
 )
 
 func printRespJSON(resp proto.Message) {
