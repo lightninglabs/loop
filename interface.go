@@ -66,6 +66,10 @@ type OutRequest struct {
 	// LoopOutChannel optionally specifies the short channel id of the
 	// channel to loop out.
 	LoopOutChannel *uint64
+
+	// SwapPublicationDeadline can be set by the client to allow the server
+	// delaying publication of the swap HTLC to save on chain fees.
+	SwapPublicationDeadline time.Time
 }
 
 // Out contains the full details of a loop out request. This includes things

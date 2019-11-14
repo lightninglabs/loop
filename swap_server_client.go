@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -31,7 +32,8 @@ type swapServerClient interface {
 
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
-		receiverKey [33]byte) (
+		receiverKey [33]byte,
+		swapPublicationDeadline time.Time) (
 		*newLoopOutResponse, error)
 
 	NewLoopInSwap(ctx context.Context,
@@ -153,15 +155,17 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
-	receiverKey [33]byte) (*newLoopOutResponse, error) {
+	receiverKey [33]byte, swapPublicationDeadline time.Time) (
+	*newLoopOutResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopOutSwap(rpcCtx,
 		&looprpc.ServerLoopOutRequest{
-			SwapHash:    swapHash[:],
-			Amt:         uint64(amount),
-			ReceiverKey: receiverKey[:],
+			SwapHash:                swapHash[:],
+			Amt:                     uint64(amount),
+			ReceiverKey:             receiverKey[:],
+			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 		},
 	)
 	if err != nil {
