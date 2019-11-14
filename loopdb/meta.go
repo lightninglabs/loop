@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/bbolt"
 )
 
@@ -24,14 +25,17 @@ var (
 // migration is a function which takes a prior outdated version of the database
 // instances and mutates the key/bucket structure to arrive at a more
 // up-to-date version of the database.
-type migration func(tx *bbolt.Tx) error
+type migration func(tx *bbolt.Tx, chainParams *chaincfg.Params) error
 
 var (
 	// dbVersions is storing all versions of database. If current version
 	// of database don't match with latest version this list will be used
 	// for retrieving all migration function that are need to apply to the
 	// current db.
-	migrations = []migration{migrateCosts}
+	migrations = []migration{
+		migrateCosts,
+		migrateSwapPublicationDeadline,
+	}
 
 	latestDBVersion = uint32(len(migrations))
 )
@@ -76,7 +80,7 @@ func setDBVersion(tx *bbolt.Tx, version uint32) error {
 // syncVersions function is used for safe db version synchronization. It
 // applies migration functions to the current database and recovers the
 // previous state of db if at least one error/panic appeared during migration.
-func syncVersions(db *bbolt.DB) error {
+func syncVersions(db *bbolt.DB, chainParams *chaincfg.Params) error {
 	currentVersion, err := getDBVersion(db)
 	if err != nil {
 		return err
@@ -112,7 +116,7 @@ func syncVersions(db *bbolt.DB) error {
 			log.Infof("Applying migration #%v", v+1)
 
 			migration := migrations[v]
-			if err := migration(tx); err != nil {
+			if err := migration(tx, chainParams); err != nil {
 				log.Infof("Unable to apply migration #%v",
 					v+1)
 				return err

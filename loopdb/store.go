@@ -135,7 +135,7 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 
 	// Finally, before we start, we'll sync the DB versions to pick up any
 	// possible DB migrations.
-	err = syncVersions(bdb)
+	err = syncVersions(bdb, chainParams)
 	if err != nil {
 		return nil, err
 	}

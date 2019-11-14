@@ -82,12 +82,13 @@ func TestLoopOutStore(t *testing.T) {
 			// doesn't interfere with DeepEqual.
 			InitiationTime: time.Unix(0, initiationTime.UnixNano()),
 		},
-		MaxPrepayRoutingFee: 40,
-		PrepayInvoice:       "prepayinvoice",
-		DestAddr:            destAddr,
-		SwapInvoice:         "swapinvoice",
-		MaxSwapRoutingFee:   30,
-		SweepConfTarget:     2,
+		MaxPrepayRoutingFee:     40,
+		PrepayInvoice:           "prepayinvoice",
+		DestAddr:                destAddr,
+		SwapInvoice:             "swapinvoice",
+		MaxSwapRoutingFee:       30,
+		SweepConfTarget:         2,
+		SwapPublicationDeadline: time.Unix(0, initiationTime.UnixNano()),
 	}
 
 	// checkSwap is a test helper function that'll assert the state of a

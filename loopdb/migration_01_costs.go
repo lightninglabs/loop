@@ -4,12 +4,13 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/bbolt"
 )
 
 // noMigrationAvailable is the fall back migration in case there is no migration
 // implemented.
-func migrateCosts(tx *bbolt.Tx) error {
+func migrateCosts(tx *bbolt.Tx, _ *chaincfg.Params) error {
 	if err := migrateCostsForBucket(tx, loopInBucketKey); err != nil {
 		return err
 	}
