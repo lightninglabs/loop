@@ -68,7 +68,7 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(amt, quote)
-	err = displayLimits(swap.TypeIn, amt, limits, external)
+	err = displayLimits(swap.TypeIn, amt, limits, external, "")
 	if err != nil {
 		return err
 	}
