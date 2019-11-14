@@ -64,7 +64,7 @@ type OutRequest struct {
 	SweepConfTarget int32
 
 	// LoopOutChannel optionally specifies the short channel id of the
-	// channel to uncharge.
+	// channel to loop out.
 	LoopOutChannel *uint64
 }
 
@@ -149,7 +149,7 @@ type LoopInRequest struct {
 	// MaxSwapFee is the maximum we are willing to pay the server for the
 	// swap. This value is not disclosed in the swap initiation call, but if
 	// the server asks for a higher fee, we abort the swap. Typically this
-	// value is taken from the response of the UnchargeQuote call. It
+	// value is taken from the response of the LoopInQuote call. It
 	// includes the prepay amount.
 	MaxSwapFee btcutil.Amount
 
@@ -157,7 +157,7 @@ type LoopInRequest struct {
 	// spent. If we publish the on-chain htlc and the fee estimate turns out
 	// higher than this value, we cancel the swap.
 	//
-	// MaxMinerFee is typically taken from the response of the UnchargeQuote
+	// MaxMinerFee is typically taken from the response of the LoopInQuote
 	// call.
 	MaxMinerFee btcutil.Amount
 
@@ -166,7 +166,7 @@ type LoopInRequest struct {
 	HtlcConfTarget int32
 
 	// LoopInChannel optionally specifies the short channel id of the
-	// channel to charge.
+	// channel to loop in.
 	LoopInChannel *uint64
 
 	// ExternalHtlc specifies whether the htlc is published by an external
@@ -174,7 +174,7 @@ type LoopInRequest struct {
 	ExternalHtlc bool
 }
 
-// LoopInTerms are the server terms on which it executes charge swaps.
+// LoopInTerms are the server terms on which it executes loop in swaps.
 type LoopInTerms struct {
 	// MinSwapAmount is the minimum amount that the server requires for a
 	// swap.
