@@ -146,6 +146,15 @@ message LoopOutRequest {
     should be swept within.
     */
     int32 sweep_conf_target = 9;
+
+    /**
+    The latest time (in unix seconds) we allow the server to wait before
+    publishing the HTLC on chain. Setting this to a larger value will give the
+    server the opportunity to batch multiple swaps together, and wait for
+    low-fee periods before publishing the HTLC, potentially resulting in a
+    lower total swap fee.
+    */
+    uint64 swap_publication_deadline = 10;
 }
 
 message LoopInRequest {

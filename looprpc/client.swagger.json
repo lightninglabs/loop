@@ -265,6 +265,11 @@
           "type": "integer",
           "format": "int32",
           "description": "*\nThe number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
+        },
+        "swap_publication_deadline": {
+          "type": "string",
+          "format": "uint64",
+          "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee."
         }
       }
     },
