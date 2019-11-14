@@ -24,6 +24,9 @@ message ServerLoopOutRequest {
     bytes swap_hash = 2;
 
     uint64 amt = 3;
+
+    /// The unix time in seconds we want the on-chain swap to be published by.
+    int64 swap_publication_deadline = 4;
 }
 
 message ServerLoopOutResponse {
