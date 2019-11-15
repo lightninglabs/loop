@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +31,21 @@ var (
 
 	defaultSwapWaitTime = 30 * time.Minute
 )
+
+func printJSON(resp interface{}) {
+	b, err := json.Marshal(resp)
+	if err != nil {
+		fatal(err)
+	}
+
+	var out bytes.Buffer
+	err = json.Indent(&out, b, "", "\t")
+	if err != nil {
+		fatal(err)
+	}
+	out.WriteString("\n")
+	_, _ = out.WriteTo(os.Stdout)
+}
 
 func printRespJSON(resp proto.Message) {
 	jsonMarshaler := &jsonpb.Marshaler{
@@ -65,7 +82,7 @@ func main() {
 	}
 	app.Commands = []cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
-		monitorCommand, quoteCommand,
+		monitorCommand, quoteCommand, listAuthCommand,
 	}
 
 	err := app.Run(os.Args)
