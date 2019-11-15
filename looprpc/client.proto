@@ -15,7 +15,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream that is
     returned from Monitor().
     */
-    rpc LoopOut(LoopOutRequest) returns (SwapResponse) {
+    rpc LoopOut (LoopOutRequest) returns (SwapResponse) {
         option (google.api.http) = {
             post: "/v1/loop/out"
             body: "*"
@@ -28,7 +28,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream
     that is returned from Monitor().
     */
-    rpc LoopIn(LoopInRequest) returns (SwapResponse) {
+    rpc LoopIn (LoopInRequest) returns (SwapResponse) {
         option (google.api.http) = {
             post: "/v1/loop/in"
             body: "*"
@@ -39,12 +39,12 @@ service SwapClient {
     Monitor will return a stream of swap updates for currently active swaps.
     TODO: add MonitorSync version for REST clients.
     */
-    rpc Monitor(MonitorRequest) returns(stream SwapStatus);
+    rpc Monitor (MonitorRequest) returns (stream SwapStatus);
 
     /** loop: `terms`
     LoopOutTerms returns the terms that the server enforces for a loop out swap.
     */
-    rpc LoopOutTerms(TermsRequest) returns(TermsResponse) {
+    rpc LoopOutTerms (TermsRequest) returns (TermsResponse) {
         option (google.api.http) = {
             get: "/v1/loop/out/terms"
         };
@@ -54,7 +54,7 @@ service SwapClient {
     LoopOutQuote returns a quote for a loop out swap with the provided
     parameters.
     */
-    rpc LoopOutQuote(QuoteRequest) returns(QuoteResponse) {
+    rpc LoopOutQuote (QuoteRequest) returns (QuoteResponse) {
         option (google.api.http) = {
             get: "/v1/loop/out/quote/{amt}"
         };
@@ -63,7 +63,7 @@ service SwapClient {
     /**
     GetTerms returns the terms that the server enforces for swaps.
     */
-    rpc GetLoopInTerms(TermsRequest) returns(TermsResponse) {
+    rpc GetLoopInTerms (TermsRequest) returns (TermsResponse) {
         option (google.api.http) = {
             get: "/v1/loop/in/terms"
         };
@@ -72,9 +72,18 @@ service SwapClient {
     /**
     GetQuote returns a quote for a swap with the provided parameters.
     */
-    rpc GetLoopInQuote(QuoteRequest) returns(QuoteResponse) {
+    rpc GetLoopInQuote (QuoteRequest) returns (QuoteResponse) {
         option (google.api.http) = {
             get: "/v1/loop/in/quote/{amt}"
+        };
+    }
+
+    /**
+    GetLsatTokens returns all LSAT tokens the daemon ever paid for.
+    */
+    rpc GetLsatTokens (TokensRequest) returns (TokensResponse) {
+        option (google.api.http) = {
+            get: "/v1/lsat/tokens"
         };
     }
 }
@@ -180,7 +189,7 @@ message LoopInRequest {
     max_miner_fee is typically taken from the response of the GetQuote call.
     */
     int64 max_miner_fee = 3;
-    
+
     /**
     The channel to loop in. If zero, the channel to loop in is selected based
     on the lowest routing fee for the swap payment from the server.
@@ -209,7 +218,7 @@ message SwapResponse {
     string htlc_address = 2;
 }
 
-message MonitorRequest{
+message MonitorRequest {
 }
 
 message SwapStatus {
@@ -303,10 +312,10 @@ enum SwapState {
     */
     FAILED = 4;
 
-     /**
-    INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
-    paid, but we are still waiting for the htlc spend to confirm.
-    */
+    /**
+   INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
+   paid, but we are still waiting for the htlc spend to confirm.
+   */
     INVOICE_SETTLED = 5;
 }
 
@@ -315,7 +324,7 @@ message TermsRequest {
 
 message TermsResponse {
 
-    reserved 1,2,3,4,7;
+    reserved 1, 2, 3, 4, 7;
 
     /**
     Minimum swap amount (sat)
@@ -375,4 +384,59 @@ message QuoteResponse {
     On-chain cltv expiry delta
     */
     int32 cltv_delta = 5;
+}
+
+message TokensRequest {
+}
+
+message TokensResponse {
+    /**
+    List of all tokens the daemon knows of, including old/expired tokens.
+    */
+    repeated LsatToken tokens = 1;
+}
+
+message LsatToken {
+    /**
+    The base macaroon that was baked by the auth server.
+    */
+    bytes base_macaroon = 1;
+
+    /**
+    The payment hash of the payment that was paid to obtain the token.
+    */
+    bytes payment_hash = 2;
+
+    /**
+    The preimage of the payment hash, knowledge of this is proof that the
+    payment has been paid. If the preimage is set to all zeros, this means the
+    payment is still pending and the token is not yet fully valid.
+    */
+    bytes payment_preimage = 3;
+
+    /**
+    The amount of millisatoshis that was paid to get the token.
+    */
+    int64 amount_paid_msat = 4;
+
+    /**
+    The amount of millisatoshis paid in routing fee to pay for the token.
+    */
+    int64 routing_fee_paid_msat = 5;
+
+    /**
+    The creation time of the token as UNIX timestamp in seconds.
+    */
+    int64 time_created = 6;
+
+    /**
+    Indicates whether the token is expired or still valid.
+    */
+    bool expired = 7;
+    
+    /**
+    Identifying attribute of this token in the store. Currently represents the
+    file name of the token where it's stored on the file system.
+    */
+    string storage_name = 8;
 }

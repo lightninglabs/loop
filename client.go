@@ -95,6 +95,7 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 		LndServices: lnd,
 		Server:      swapServerClient,
 		Store:       store,
+		LsatStore:   lsatStore,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},
