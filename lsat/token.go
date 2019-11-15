@@ -11,6 +11,12 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
+var (
+	// zeroPreimage is an empty, invalid payment preimage that is used to
+	// initialize pending tokens with.
+	zeroPreimage lntypes.Preimage
+)
+
 // Token is the main type to store an LSAT token in.
 type Token struct {
 	// PaymentHash is the hash of the LSAT invoice that needs to be paid.
@@ -19,7 +25,8 @@ type Token struct {
 	PaymentHash lntypes.Hash
 
 	// Preimage is the proof of payment indicating that the token has been
-	// paid for if set.
+	// paid for if set. If the preimage is empty, the payment might still
+	// be in transit.
 	Preimage lntypes.Preimage
 
 	// AmountPaid is the total amount in msat that the user paid to get the
@@ -39,21 +46,6 @@ type Token struct {
 	baseMac *macaroon.Macaroon
 }
 
-// NewToken creates a new token from the given base macaroon and payment
-// information.
-func NewToken(baseMac []byte, paymentHash *[32]byte, preimage lntypes.Preimage,
-	amountPaid, routingFeePaid lnwire.MilliSatoshi) (*Token, error) {
-
-	token, err := tokenFromChallenge(baseMac, paymentHash)
-	if err != nil {
-		return nil, err
-	}
-	token.Preimage = preimage
-	token.AmountPaid = amountPaid
-	token.RoutingFeePaid = routingFeePaid
-	return token, nil
-}
-
 // tokenFromChallenge parses the parts that are present in the challenge part
 // of the LSAT auth protocol which is the macaroon and the payment hash.
 func tokenFromChallenge(baseMac []byte, paymentHash *[32]byte) (*Token, error) {
@@ -67,6 +59,7 @@ func tokenFromChallenge(baseMac []byte, paymentHash *[32]byte) (*Token, error) {
 	token := &Token{
 		TimeCreated: time.Now(),
 		baseMac:     mac,
+		Preimage:    zeroPreimage,
 	}
 	hash, err := lntypes.MakeHash(paymentHash[:])
 	if err != nil {
@@ -93,6 +86,20 @@ func (t *Token) PaidMacaroon() (*macaroon.Macaroon, error) {
 		return nil, err
 	}
 	return mac, nil
+}
+
+// IsValid returns true if the timestamp contained in the base macaroon is not
+// yet expired.
+func (t *Token) IsValid() bool {
+	// TODO(guggero): Extract and validate from caveat once we add an
+	//  expiration date to the LSAT.
+	return true
+}
+
+// isPending returns true if the payment for the LSAT is still in flight and we
+// haven't received the preimage yet.
+func (t *Token) isPending() bool {
+	return t.Preimage == zeroPreimage
 }
 
 // serializeToken returns a byte-serialized representation of the token.

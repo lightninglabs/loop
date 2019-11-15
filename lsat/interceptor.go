@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -35,6 +37,15 @@ const (
 	// going to pay to acquire an LSAT token.
 	// TODO(guggero): make this configurable
 	MaxRoutingFeeSats = 10
+
+	// PaymentTimeout is the maximum time we allow a payment to take before
+	// we stop waiting for it.
+	PaymentTimeout = 60 * time.Second
+
+	// manualRetryHint is the error text we return to tell the user how a
+	// token payment can be retried if the payment fails.
+	manualRetryHint = "consider removing pending token file if error " +
+		"persists. use 'listauth' command to find out token file name"
 )
 
 var (
@@ -91,36 +102,49 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, method string,
 		return nil
 	}
 
-	// If we already have a token, let's append it.
-	if i.store.HasToken() {
-		lsat, err := i.store.Token()
-		if err != nil {
-			return err
-		}
-		if err = addLsatCredentials(lsat); err != nil {
-			return err
+	// Let's see if the store already contains a token and what state it
+	// might be in. If a previous call was aborted, we might have a pending
+	// token that needs to be handled separately.
+	token, err := i.store.CurrentToken()
+	switch {
+	// If there is no token yet, nothing to do at this point.
+	case err == ErrNoToken:
+
+	// Some other error happened that we have to surface.
+	case err != nil:
+		log.Errorf("Failed to get token from store: %v", err)
+		return fmt.Errorf("getting token from store failed: %v", err)
+
+	// Only if we have a paid token append it. We don't resume a pending
+	// payment just yet, since we don't even know if a token is required for
+	// this call. We also never send a pending payment to the server since
+	// we know it's not valid.
+	case !token.isPending():
+		if err = addLsatCredentials(token); err != nil {
+			log.Errorf("Adding macaroon to request failed: %v", err)
+			return fmt.Errorf("adding macaroon failed: %v", err)
 		}
 	}
 
-	// We need a way to extract the response headers sent by the
-	// server. This can only be done through the experimental
-	// grpc.Trailer call option.
-	// We execute the request and inspect the error. If it's the
-	// LSAT specific payment required error, we might execute the
-	// same method again later with the paid LSAT token.
+	// We need a way to extract the response headers sent by the server.
+	// This can only be done through the experimental grpc.Trailer call
+	// option. We execute the request and inspect the error. If it's the
+	// LSAT specific payment required error, we might execute the same
+	// method again later with the paid LSAT token.
 	trailerMetadata := &metadata.MD{}
 	opts = append(opts, grpc.Trailer(trailerMetadata))
-	err := invoker(ctx, method, req, reply, cc, opts...)
+	err = invoker(ctx, method, req, reply, cc, opts...)
 
 	// Only handle the LSAT error message that comes in the form of
 	// a gRPC status error.
 	if isPaymentRequired(err) {
-		lsat, err := i.payLsatToken(ctx, trailerMetadata)
+		paidToken, err := i.handlePayment(ctx, token, trailerMetadata)
 		if err != nil {
 			return err
 		}
-		if err = addLsatCredentials(lsat); err != nil {
-			return err
+		if err = addLsatCredentials(paidToken); err != nil {
+			log.Errorf("Adding macaroon to request failed: %v", err)
+			return fmt.Errorf("adding macaroon failed: %v", err)
 		}
 
 		// Execute the same request again, now with the LSAT
@@ -128,6 +152,35 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, method string,
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 	return err
+}
+
+// handlePayment tries to obtain a valid token by either tracking the payment
+// status of a pending token or paying for a new one.
+func (i *Interceptor) handlePayment(ctx context.Context, token *Token,
+	md *metadata.MD) (*Token, error) {
+
+	switch {
+	// Resume/track a pending payment if it was interrupted for some reason.
+	case token != nil && token.isPending():
+		log.Infof("Payment of LSAT token is required, resuming/" +
+			"tracking previous payment from pending LSAT token")
+		err := i.trackPayment(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		return token, nil
+
+	// We don't have a token yet, try to get a new one.
+	case token == nil:
+		// We don't have a token yet, get a new one.
+		log.Infof("Payment of LSAT token is required, paying invoice")
+		return i.payLsatToken(ctx, md)
+
+	// We have a token and it's valid, nothing more to do here.
+	default:
+		log.Debugf("Found valid LSAT token to add to request")
+		return token, nil
+	}
 }
 
 // payLsatToken reads the payment challenge from the response metadata and tries
@@ -161,31 +214,100 @@ func (i *Interceptor) payLsatToken(ctx context.Context, md *metadata.MD) (
 		return nil, fmt.Errorf("unable to decode invoice: %v", err)
 	}
 
+	// Create and store the pending token so we can resume the payment in
+	// case the payment is interrupted somehow.
+	token, err := tokenFromChallenge(macBytes, invoice.PaymentHash)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create token: %v", err)
+	}
+	err = i.store.StoreToken(token)
+	if err != nil {
+		return nil, fmt.Errorf("unable to store pending token: %v", err)
+	}
+
 	// Pay invoice now and wait for the result to arrive or the main context
 	// being canceled.
-	// TODO(guggero): Store payment information so we can track the payment
-	//  later in case the client shuts down while the payment is in flight.
+	payCtx, cancel := context.WithTimeout(ctx, PaymentTimeout)
+	defer cancel()
 	respChan := i.lnd.Client.PayInvoice(
-		ctx, invoiceStr, MaxRoutingFeeSats, nil,
+		payCtx, invoiceStr, MaxRoutingFeeSats, nil,
 	)
 	select {
 	case result := <-respChan:
 		if result.Err != nil {
 			return nil, result.Err
 		}
-		token, err := NewToken(
-			macBytes, invoice.PaymentHash, result.Preimage,
-			lnwire.NewMSatFromSatoshis(result.PaidAmt),
-			lnwire.NewMSatFromSatoshis(result.PaidFee),
+		token.Preimage = result.Preimage
+		token.AmountPaid = lnwire.NewMSatFromSatoshis(result.PaidAmt)
+		token.RoutingFeePaid = lnwire.NewMSatFromSatoshis(
+			result.PaidFee,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to create token: %v",
-				err)
-		}
 		return token, i.store.StoreToken(token)
 
+	case <-payCtx.Done():
+		return nil, fmt.Errorf("payment timed out. try again to track "+
+			"payment. %s", manualRetryHint)
+
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context canceled")
+		return nil, fmt.Errorf("parent context canceled. try again to"+
+			"track payment. %s", manualRetryHint)
+	}
+}
+
+// trackPayment tries to resume a pending payment by tracking its state and
+// waiting for a conclusive result.
+func (i *Interceptor) trackPayment(ctx context.Context, token *Token) error {
+	// Lookup state of the payment.
+	paymentStateCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	payStatusChan, payErrChan, err := i.lnd.Router.TrackPayment(
+		paymentStateCtx, token.PaymentHash,
+	)
+	if err != nil {
+		log.Errorf("Could not call TrackPayment on lnd: %v", err)
+		return fmt.Errorf("track payment call to lnd failed: %v", err)
+	}
+
+	// We can't wait forever, so we give the payment tracking the same
+	// timeout as the original payment.
+	payCtx, cancel := context.WithTimeout(ctx, PaymentTimeout)
+	defer cancel()
+
+	// We'll consume status updates until we reach a conclusive state or
+	// reach the timeout.
+	for {
+		select {
+		// If we receive a state without an error, the payment has been
+		// initiated. Loop until the payment
+		case result := <-payStatusChan:
+			switch result.State {
+			// If the payment was successful, we have all the
+			// information we need and we can return the fully paid
+			// token.
+			case routerrpc.PaymentState_SUCCEEDED:
+				extractPaymentDetails(token, result)
+				return i.store.StoreToken(token)
+
+			// The payment is still in transit, we'll give it more
+			// time to complete.
+			case routerrpc.PaymentState_IN_FLIGHT:
+
+			// Any other state means either error or timeout.
+			default:
+				return fmt.Errorf("payment tracking failed "+
+					"with state %s. %s",
+					result.State.String(), manualRetryHint)
+			}
+
+		// Abort the payment execution for any error.
+		case err := <-payErrChan:
+			return fmt.Errorf("payment tracking failed: %v. %s",
+				err, manualRetryHint)
+
+		case <-payCtx.Done():
+			return fmt.Errorf("payment tracking timed out. %s",
+				manualRetryHint)
+		}
 	}
 }
 
@@ -197,4 +319,14 @@ func isPaymentRequired(err error) bool {
 	return ok &&
 		statusErr.Message() == GRPCErrMessage &&
 		statusErr.Code() == GRPCErrCode
+}
+
+// extractPaymentDetails extracts the preimage and amounts paid for a payment
+// from the payment status and stores them in the token.
+func extractPaymentDetails(token *Token, status lndclient.PaymentStatus) {
+	token.Preimage = status.Preimage
+	total := status.Route.TotalAmount
+	fees := status.Route.TotalFees()
+	token.AmountPaid = total - fees
+	token.RoutingFeePaid = fees
 }
