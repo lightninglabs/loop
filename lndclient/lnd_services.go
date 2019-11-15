@@ -185,8 +185,8 @@ var (
 	defaultSignerFilename            = "signer.macaroon"
 
 	// maxMsgRecvSize is the largest gRPC message our client will receive.
-	// We set this to ~50Mb.
-	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 50)
+	// We set this to 200MiB.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
 func getClientConn(address string, network string, tlsPath string) (
