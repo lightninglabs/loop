@@ -10,7 +10,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
@@ -21,7 +21,7 @@ var testStartingHeight = int32(600)
 func NewMockLnd() *LndMockServices {
 	lightningClient := &mockLightningClient{}
 	walletKit := &mockWalletKit{
-		feeEstimates: make(map[int32]lnwallet.SatPerKWeight),
+		feeEstimates: make(map[int32]chainfee.SatPerKWeight),
 	}
 	chainNotifier := &mockChainNotifier{}
 	signer := &mockSigner{}
@@ -201,7 +201,7 @@ func (s *LndMockServices) DecodeInvoice(request string) (*zpay32.Invoice,
 }
 
 func (s *LndMockServices) SetFeeEstimate(confTarget int32,
-	feeEstimate lnwallet.SatPerKWeight) {
+	feeEstimate chainfee.SatPerKWeight) {
 
 	s.WalletKit.(*mockWalletKit).feeEstimates[confTarget] = feeEstimate
 }

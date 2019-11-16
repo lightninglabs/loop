@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.10.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20191025122959-1a0ab538d53c
+	github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20191115230031-4d7a151b4763
 	github.com/lightningnetwork/lnd/queue v1.0.1
 	github.com/urfave/cli v1.20.0
 	golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472 // indirect
