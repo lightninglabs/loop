@@ -10,7 +10,7 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
-	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"google.golang.org/grpc"
 )
 
@@ -27,9 +27,9 @@ type WalletKitClient interface {
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx) error
 
 	SendOutputs(ctx context.Context, outputs []*wire.TxOut,
-		feeRate lnwallet.SatPerKWeight) (*wire.MsgTx, error)
+		feeRate chainfee.SatPerKWeight) (*wire.MsgTx, error)
 
-	EstimateFee(ctx context.Context, confTarget int32) (lnwallet.SatPerKWeight,
+	EstimateFee(ctx context.Context, confTarget int32) (chainfee.SatPerKWeight,
 		error)
 }
 
@@ -141,7 +141,7 @@ func (m *walletKitClient) PublishTransaction(ctx context.Context,
 }
 
 func (m *walletKitClient) SendOutputs(ctx context.Context,
-	outputs []*wire.TxOut, feeRate lnwallet.SatPerKWeight) (
+	outputs []*wire.TxOut, feeRate chainfee.SatPerKWeight) (
 	*wire.MsgTx, error) {
 
 	rpcOutputs := make([]*signrpc.TxOut, len(outputs))
@@ -173,7 +173,7 @@ func (m *walletKitClient) SendOutputs(ctx context.Context,
 }
 
 func (m *walletKitClient) EstimateFee(ctx context.Context, confTarget int32) (
-	lnwallet.SatPerKWeight, error) {
+	chainfee.SatPerKWeight, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
@@ -186,5 +186,5 @@ func (m *walletKitClient) EstimateFee(ctx context.Context, confTarget int32) (
 		return 0, err
 	}
 
-	return lnwallet.SatPerKWeight(resp.SatPerKw), nil
+	return chainfee.SatPerKWeight(resp.SatPerKw), nil
 }

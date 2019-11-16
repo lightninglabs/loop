@@ -10,13 +10,13 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
-	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 type mockWalletKit struct {
 	lnd          *LndMockServices
 	keyIndex     int32
-	feeEstimates map[int32]lnwallet.SatPerKWeight
+	feeEstimates map[int32]chainfee.SatPerKWeight
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
@@ -65,7 +65,7 @@ func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx) 
 }
 
 func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
-	feeRate lnwallet.SatPerKWeight) (*wire.MsgTx, error) {
+	feeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
 
 	var inputTxHash chainhash.Hash
 
@@ -90,7 +90,7 @@ func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
 }
 
 func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
-	lnwallet.SatPerKWeight, error) {
+	chainfee.SatPerKWeight, error) {
 
 	if confTarget <= 1 {
 		return 0, errors.New("conf target must be greater than 1")
