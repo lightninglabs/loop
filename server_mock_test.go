@@ -53,7 +53,7 @@ func newServerMock() *serverMock {
 
 func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
-	receiverKey [33]byte) (
+	receiverKey [33]byte, _ time.Time) (
 	*newLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)

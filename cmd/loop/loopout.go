@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
@@ -43,6 +44,16 @@ var loopOutCommand = cli.Command{
 				"initiation height that the on-chain HTLC " +
 				"should be swept within",
 			Value: uint64(loop.DefaultSweepConfTarget),
+		},
+		cli.BoolFlag{
+			Name: "fast",
+			Usage: "Indicate you want to swap immediately, " +
+				"paying potentially a higher fee. If not " +
+				"set the swap server might choose to wait up " +
+				"to 30 minutes before publishing the swap " +
+				"HTLC on-chain, to save on chain fees. Not " +
+				"setting this flag might result in a lower " +
+				"swap fee.",
 		},
 	},
 	Action: loopOut,
@@ -92,9 +103,19 @@ func loopOut(ctx *cli.Context) error {
 		return err
 	}
 
-	limits := getLimits(amt, quote)
+	// Show a warning if a slow swap was requested.
+	fast := ctx.Bool("fast")
+	warning := ""
+	if fast {
+		warning = "Fast swap requested."
+	} else {
+		warning = fmt.Sprintf("Regular swap speed requested, it "+
+			"might take up to %v for the swap to be executed.",
+			defaultSwapWaitTime)
+	}
 
-	err = displayLimits(swap.TypeOut, amt, limits, false)
+	limits := getLimits(amt, quote)
+	err = displayLimits(swap.TypeOut, amt, limits, false, warning)
 	if err != nil {
 		return err
 	}
@@ -104,16 +125,24 @@ func loopOut(ctx *cli.Context) error {
 		unchargeChannel = ctx.Uint64("channel")
 	}
 
+	// Set our maximum swap wait time. If a fast swap is requested we set
+	// it to now, otherwise to 30 minutes in the future.
+	swapDeadline := time.Now()
+	if !fast {
+		swapDeadline = time.Now().Add(defaultSwapWaitTime)
+	}
+
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
-		Amt:                 int64(amt),
-		Dest:                destAddr,
-		MaxMinerFee:         int64(limits.maxMinerFee),
-		MaxPrepayAmt:        int64(*limits.maxPrepayAmt),
-		MaxSwapFee:          int64(limits.maxSwapFee),
-		MaxPrepayRoutingFee: int64(*limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:   int64(*limits.maxSwapRoutingFee),
-		LoopOutChannel:      unchargeChannel,
-		SweepConfTarget:     sweepConfTarget,
+		Amt:                     int64(amt),
+		Dest:                    destAddr,
+		MaxMinerFee:             int64(limits.maxMinerFee),
+		MaxPrepayAmt:            int64(*limits.maxPrepayAmt),
+		MaxSwapFee:              int64(limits.maxSwapFee),
+		MaxPrepayRoutingFee:     int64(*limits.maxPrepayRoutingFee),
+		MaxSwapRoutingFee:       int64(*limits.maxSwapRoutingFee),
+		LoopOutChannel:          unchargeChannel,
+		SweepConfTarget:         sweepConfTarget,
+		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 	})
 	if err != nil {
 		return err

@@ -26,6 +26,8 @@ var (
 	maxRoutingFeeBase = btcutil.Amount(10)
 
 	maxRoutingFeeRate = int64(20000)
+
+	defaultSwapWaitTime = 30 * time.Minute
 )
 
 func printRespJSON(resp proto.Message) {
@@ -117,7 +119,7 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 }
 
 func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
-	externalHtlc bool) error {
+	externalHtlc bool, warning string) error {
 
 	totalSuccessMax := l.maxMinerFee + l.maxSwapFee
 	if l.maxSwapRoutingFee != nil {
@@ -137,6 +139,10 @@ func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
 	fmt.Printf("Max swap fees for %d Loop %v: %d\n",
 		amt, swapType, totalSuccessMax,
 	)
+
+	if warning != "" {
+		fmt.Println(warning)
+	}
 
 	fmt.Printf("CONTINUE SWAP? (y/n), expand fee detail (x): ")
 

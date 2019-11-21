@@ -45,6 +45,12 @@ type LoopOutContract struct {
 	// MaxPrepayRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for the prepayment to the server.
 	MaxPrepayRoutingFee btcutil.Amount
+
+	// SwapPublicationDeadline is a timestamp that the server commits to
+	// have the on-chain swap published by. It is set by the client to
+	// allow the server to delay the publication in exchange for possibly
+	// lower fees.
+	SwapPublicationDeadline time.Time
 }
 
 // LoopOut is a combination of the contract and the updates.
@@ -158,6 +164,13 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		contract.UnchargeChannel = &unchargeChannel
 	}
 
+	var deadlineNano int64
+	err = binary.Read(r, byteOrder, &deadlineNano)
+	if err != nil {
+		return nil, err
+	}
+	contract.SwapPublicationDeadline = time.Unix(0, deadlineNano)
+
 	return &contract, nil
 }
 
@@ -240,6 +253,11 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		unchargeChannel = *swap.UnchargeChannel
 	}
 	if err := binary.Write(&b, byteOrder, unchargeChannel); err != nil {
+		return nil, err
+	}
+
+	err = binary.Write(&b, byteOrder, swap.SwapPublicationDeadline.UnixNano())
+	if err != nil {
 		return nil, err
 	}
 

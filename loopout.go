@@ -79,29 +79,36 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	// the server revocation key and the swap and prepay invoices.
 	log.Infof("Initiating swap request at height %v", currentHeight)
 
-	swapResp, err := cfg.server.NewLoopOutSwap(globalCtx, swapHash,
-		request.Amount, receiverKey,
+	// The swap deadline will be given to the server for it to use as the
+	// latest swap publication time.
+	swapResp, err := cfg.server.NewLoopOutSwap(
+		globalCtx, swapHash, request.Amount, receiverKey,
+		request.SwapPublicationDeadline,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
 	}
 
-	err = validateLoopOutContract(cfg.lnd, currentHeight, request, swapHash, swapResp)
+	err = validateLoopOutContract(
+		cfg.lnd, currentHeight, request, swapHash, swapResp,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Instantiate a struct that contains all required data to start the swap.
+	// Instantiate a struct that contains all required data to start the
+	// swap.
 	initiationTime := time.Now()
 
 	contract := loopdb.LoopOutContract{
-		SwapInvoice:         swapResp.swapInvoice,
-		DestAddr:            request.DestAddr,
-		MaxSwapRoutingFee:   request.MaxSwapRoutingFee,
-		SweepConfTarget:     request.SweepConfTarget,
-		UnchargeChannel:     request.LoopOutChannel,
-		PrepayInvoice:       swapResp.prepayInvoice,
-		MaxPrepayRoutingFee: request.MaxPrepayRoutingFee,
+		SwapInvoice:             swapResp.swapInvoice,
+		DestAddr:                request.DestAddr,
+		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
+		SweepConfTarget:         request.SweepConfTarget,
+		UnchargeChannel:         request.LoopOutChannel,
+		PrepayInvoice:           swapResp.prepayInvoice,
+		MaxPrepayRoutingFee:     request.MaxPrepayRoutingFee,
+		SwapPublicationDeadline: request.SwapPublicationDeadline,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
