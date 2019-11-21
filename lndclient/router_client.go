@@ -6,19 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/routing/route"
-
-	"github.com/lightningnetwork/lnd/channeldb"
-	"google.golang.org/grpc/codes"
-
-	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
-	"github.com/lightningnetwork/lnd/lnwire"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/status"
-
 	"github.com/btcsuite/btcutil"
+	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // RouterClient exposes payment functionality.
@@ -44,11 +42,41 @@ type PaymentStatus struct {
 
 // SendPaymentRequest defines the payment parameters for a new payment.
 type SendPaymentRequest struct {
-	Invoice         string
+	// Invoice is an encoded payment request. The individual payment
+	// parameters Target, Amount, PaymentHash, FinalCLTVDelta and RouteHints
+	// are only processed when the Invoice field is empty.
+	Invoice string
+
 	MaxFee          btcutil.Amount
 	MaxCltv         *int32
 	OutgoingChannel *uint64
 	Timeout         time.Duration
+
+	// Target is the node in which the payment should be routed towards.
+	Target route.Vertex
+
+	// Amount is the value of the payment to send through the network in
+	// satoshis.
+	Amount btcutil.Amount
+
+	// PaymentHash is the r-hash value to use within the HTLC extended to
+	// the first hop.
+	PaymentHash [32]byte
+
+	// FinalCLTVDelta is the CTLV expiry delta to use for the _final_ hop
+	// in the route. This means that the final hop will have a CLTV delta
+	// of at least: currentHeight + FinalCLTVDelta.
+	FinalCLTVDelta uint16
+
+	// RouteHints represents the different routing hints that can be used to
+	// assist a payment in reaching its destination successfully. These
+	// hints will act as intermediate hops along the route.
+	//
+	// NOTE: This is optional unless required by the payment. When providing
+	// multiple routes, ensure the hop hints within each route are chained
+	// together and sorted in forward order in order to reach the
+	// destination successfully.
+	RouteHints [][]zpay32.HopHint
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -82,6 +110,21 @@ func (r *routerClient) SendPayment(ctx context.Context,
 	}
 	if request.OutgoingChannel != nil {
 		rpcReq.OutgoingChanId = *request.OutgoingChannel
+	}
+
+	// Only if there is no payment request set, we will parse the individual
+	// payment parameters.
+	if request.Invoice == "" {
+		rpcReq.Dest = request.Target[:]
+		rpcReq.Amt = int64(request.Amount)
+		rpcReq.PaymentHash = request.PaymentHash[:]
+		rpcReq.FinalCltvDelta = int32(request.FinalCLTVDelta)
+
+		routeHints, err := marshallRouteHints(request.RouteHints)
+		if err != nil {
+			return nil, nil, err
+		}
+		rpcReq.RouteHints = routeHints
 	}
 
 	stream, err := r.client.SendPayment(rpcCtx, rpcReq)
@@ -235,5 +278,48 @@ func unmarshallHop(hop *lnrpc.Hop) (*route.Hop, error) {
 		AmtToForward:     lnwire.MilliSatoshi(hop.AmtToForwardMsat),
 		PubKeyBytes:      pubKeyBytes,
 		ChannelID:        hop.ChanId,
+	}, nil
+}
+
+// marshallRouteHints marshalls a list of route hints.
+func marshallRouteHints(routeHints [][]zpay32.HopHint) (
+	[]*lnrpc.RouteHint, error) {
+
+	rpcRouteHints := make([]*lnrpc.RouteHint, 0, len(routeHints))
+	for _, routeHint := range routeHints {
+		rpcRouteHint := make(
+			[]*lnrpc.HopHint, 0, len(routeHint),
+		)
+		for _, hint := range routeHint {
+			rpcHint, err := marshallHopHint(hint)
+			if err != nil {
+				return nil, err
+			}
+
+			rpcRouteHint = append(rpcRouteHint, rpcHint)
+		}
+		rpcRouteHints = append(rpcRouteHints, &lnrpc.RouteHint{
+			HopHints: rpcRouteHint,
+		})
+	}
+
+	return rpcRouteHints, nil
+}
+
+// marshallHopHint marshalls a single hop hint.
+func marshallHopHint(hint zpay32.HopHint) (*lnrpc.HopHint, error) {
+	nodeID, err := route.NewVertexFromBytes(
+		hint.NodeID.SerializeCompressed(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &lnrpc.HopHint{
+		ChanId:                    hint.ChannelID,
+		CltvExpiryDelta:           uint32(hint.CLTVExpiryDelta),
+		FeeBaseMsat:               hint.FeeBaseMSat,
+		FeeProportionalMillionths: hint.FeeProportionalMillionths,
+		NodeId:                    nodeID.String(),
 	}, nil
 }
