@@ -45,10 +45,12 @@ func TestInterceptor(t *testing.T) {
 	t.Parallel()
 
 	var (
-		lnd          = test.NewMockLnd()
-		store        = &mockStore{}
-		testTimeout  = 5 * time.Second
-		interceptor  = NewInterceptor(&lnd.LndServices, store)
+		lnd         = test.NewMockLnd()
+		store       = &mockStore{}
+		testTimeout = 5 * time.Second
+		interceptor = NewInterceptor(
+			&lnd.LndServices, store, testTimeout,
+		)
 		testMac      = makeMac(t)
 		testMacBytes = serializeMac(t, testMac)
 		testMacHex   = hex.EncodeToString(testMacBytes)

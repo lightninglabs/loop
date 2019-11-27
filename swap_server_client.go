@@ -56,7 +56,9 @@ func newSwapServerClient(address string, insecure bool, tlsPath string,
 
 	// Create the server connection with the interceptor that will handle
 	// the LSAT protocol for us.
-	clientInterceptor := lsat.NewInterceptor(lnd, lsatStore)
+	clientInterceptor := lsat.NewInterceptor(
+		lnd, lsatStore, serverRPCTimeout,
+	)
 	serverConn, err := getSwapServerConn(
 		address, insecure, tlsPath, clientInterceptor,
 	)
@@ -75,7 +77,7 @@ func newSwapServerClient(address string, insecure bool, tlsPath string,
 func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	*LoopOutTerms, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{},
@@ -93,7 +95,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	amt btcutil.Amount) (*LoopOutQuote, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
 		&looprpc.ServerLoopOutQuoteRequest{
@@ -125,7 +127,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 	*LoopInTerms, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{},
@@ -143,7 +145,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount) (*LoopInQuote, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopInQuote(rpcCtx,
 		&looprpc.ServerLoopInQuoteRequest{
@@ -165,7 +167,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	receiverKey [33]byte, swapPublicationDeadline time.Time) (
 	*newLoopOutResponse, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopOutSwap(rpcCtx,
 		&looprpc.ServerLoopOutRequest{
@@ -200,7 +202,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
 	swapInvoice string) (*newLoopInResponse, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopInSwap(rpcCtx,
 		&looprpc.ServerLoopInRequest{

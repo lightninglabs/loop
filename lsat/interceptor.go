@@ -60,18 +60,22 @@ var (
 // challenges with embedded payment requests. It uses a connection to lnd to
 // automatically pay for an authentication token.
 type Interceptor struct {
-	lnd   *lndclient.LndServices
-	store Store
-	lock  sync.Mutex
+	lnd         *lndclient.LndServices
+	store       Store
+	callTimeout time.Duration
+	lock        sync.Mutex
 }
 
 // NewInterceptor creates a new gRPC client interceptor that uses the provided
 // lnd connection to automatically acquire and pay for LSAT tokens, unless the
 // indicated store already contains a usable token.
-func NewInterceptor(lnd *lndclient.LndServices, store Store) *Interceptor {
+func NewInterceptor(lnd *lndclient.LndServices, store Store,
+	rpcCallTimeout time.Duration) *Interceptor {
+
 	return &Interceptor{
-		lnd:   lnd,
-		store: store,
+		lnd:         lnd,
+		store:       store,
+		callTimeout: rpcCallTimeout,
 	}
 }
 
@@ -133,7 +137,9 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, method string,
 	// method again later with the paid LSAT token.
 	trailerMetadata := &metadata.MD{}
 	opts = append(opts, grpc.Trailer(trailerMetadata))
-	err = invoker(ctx, method, req, reply, cc, opts...)
+	rpcCtx, cancel := context.WithTimeout(ctx, i.callTimeout)
+	defer cancel()
+	err = invoker(rpcCtx, method, req, reply, cc, opts...)
 
 	// Only handle the LSAT error message that comes in the form of
 	// a gRPC status error.
@@ -149,7 +155,9 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, method string,
 
 		// Execute the same request again, now with the LSAT
 		// token added as an RPC credential.
-		return invoker(ctx, method, req, reply, cc, opts...)
+		rpcCtx2, cancel2 := context.WithTimeout(ctx, i.callTimeout)
+		defer cancel2()
+		return invoker(rpcCtx2, method, req, reply, cc, opts...)
 	}
 	return err
 }

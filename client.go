@@ -49,7 +49,14 @@ var (
 	ErrSweepConfTargetTooFar = errors.New("sweep confirmation target is " +
 		"beyond swap expiration height")
 
+	// serverRPCTimeout is the maximum time a gRPC request to the server
+	// should be allowed to take.
 	serverRPCTimeout = 30 * time.Second
+
+	// globalCallTimeout is the maximum time any call of the client to the
+	// server is allowed to take, including the time it may take to get
+	// and pay for an LSAT token.
+	globalCallTimeout = serverRPCTimeout + lsat.PaymentTimeout
 
 	republishDelay = 10 * time.Second
 )
