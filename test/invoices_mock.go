@@ -10,7 +10,6 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
@@ -77,7 +76,7 @@ func (s *mockInvoices) AddHoldInvoice(ctx context.Context,
 		s.lnd.ChainParams, *hash, creationDate,
 		zpay32.Description(in.Memo),
 		zpay32.CLTVExpiry(in.CltvExpiry),
-		zpay32.Amount(lnwire.MilliSatoshi(in.Value)),
+		zpay32.Amount(in.Value),
 	)
 	if err != nil {
 		return "", err

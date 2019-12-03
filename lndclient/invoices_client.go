@@ -134,7 +134,7 @@ func (s *invoicesClient) AddHoldInvoice(ctx context.Context,
 	rpcIn := &invoicesrpc.AddHoldInvoiceRequest{
 		Memo:       in.Memo,
 		Hash:       in.Hash[:],
-		Value:      int64(in.Value),
+		ValueMsat:  int64(in.Value),
 		Expiry:     in.Expiry,
 		CltvExpiry: in.CltvExpiry,
 		Private:    true,
