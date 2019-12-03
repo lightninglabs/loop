@@ -323,7 +323,7 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 
 	rpcIn := &lnrpc.Invoice{
 		Memo:       in.Memo,
-		ValueMsat:  int64(in.Value),
+		Value:      int64(in.Value.ToSatoshis()),
 		Expiry:     in.Expiry,
 		CltvExpiry: in.CltvExpiry,
 		Private:    true,
