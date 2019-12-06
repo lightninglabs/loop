@@ -2,6 +2,7 @@ package lsat
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,31 @@ var (
 	ErrUnknownVersion = errors.New("unknown LSAT version")
 )
 
+// TokenID is the type that stores the token identifier of an LSAT token.
+type TokenID [TokenIDSize]byte
+
+// String returns the hex encoded representation of the token ID as a string.
+func (t *TokenID) String() string {
+	return hex.EncodeToString(t[:])
+}
+
+// MakeIDFromString parses the hex encoded string and parses it into a token ID.
+func MakeIDFromString(newID string) (TokenID, error) {
+	if len(newID) != hex.EncodedLen(TokenIDSize) {
+		return TokenID{}, fmt.Errorf("invalid id string length of %v, "+
+			"want %v", len(newID), hex.EncodedLen(TokenIDSize))
+	}
+
+	idBytes, err := hex.DecodeString(newID)
+	if err != nil {
+		return TokenID{}, err
+	}
+	var id TokenID
+	copy(id[:], idBytes)
+
+	return id, nil
+}
+
 // Identifier contains the static identifying details of an LSAT. This is
 // intended to be used as the identifier of the macaroon within an LSAT.
 type Identifier struct {
@@ -46,7 +72,7 @@ type Identifier struct {
 	PaymentHash lntypes.Hash
 
 	// TokenID is the unique identifier of an LSAT.
-	TokenID [TokenIDSize]byte
+	TokenID TokenID
 }
 
 // EncodeIdentifier encodes an LSAT's identifier according to its version.
@@ -85,7 +111,7 @@ func DecodeIdentifier(r io.Reader) (*Identifier, error) {
 		if _, err := r.Read(paymentHash[:]); err != nil {
 			return nil, err
 		}
-		var tokenID [TokenIDSize]byte
+		var tokenID TokenID
 		if _, err := r.Read(tokenID[:]); err != nil {
 			return nil, err
 		}
