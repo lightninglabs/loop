@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightningnetwork/lnd/lntypes"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -49,10 +50,18 @@ type grpcSwapServerClient struct {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(address string,
-	insecure bool) (*grpcSwapServerClient, error) {
+func newSwapServerClient(address string, insecure bool, tlsPath string,
+	lsatStore lsat.Store, lnd *lndclient.LndServices) (
+	*grpcSwapServerClient, error) {
 
-	serverConn, err := getSwapServerConn(address, insecure)
+	// Create the server connection with the interceptor that will handle
+	// the LSAT protocol for us.
+	clientInterceptor := lsat.NewInterceptor(
+		lnd, lsatStore, serverRPCTimeout,
+	)
+	serverConn, err := getSwapServerConn(
+		address, insecure, tlsPath, clientInterceptor,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +77,7 @@ func newSwapServerClient(address string,
 func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	*LoopOutTerms, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{},
@@ -86,7 +95,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	amt btcutil.Amount) (*LoopOutQuote, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
 		&looprpc.ServerLoopOutQuoteRequest{
@@ -118,7 +127,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 	*LoopInTerms, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{},
@@ -136,7 +145,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount) (*LoopInQuote, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopInQuote(rpcCtx,
 		&looprpc.ServerLoopInQuoteRequest{
@@ -158,7 +167,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	receiverKey [33]byte, swapPublicationDeadline time.Time) (
 	*newLoopOutResponse, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopOutSwap(rpcCtx,
 		&looprpc.ServerLoopOutRequest{
@@ -193,7 +202,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
 	swapInvoice string) (*newLoopInResponse, error) {
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, serverRPCTimeout)
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopInSwap(rpcCtx,
 		&looprpc.ServerLoopInRequest{
@@ -227,19 +236,39 @@ func (s *grpcSwapServerClient) Close() {
 }
 
 // getSwapServerConn returns a connection to the swap server.
-func getSwapServerConn(address string, insecure bool) (*grpc.ClientConn, error) {
+func getSwapServerConn(address string, insecure bool, tlsPath string,
+	interceptor *lsat.Interceptor) (*grpc.ClientConn, error) {
+
 	// Create a dial options array.
-	opts := []grpc.DialOption{}
-	if insecure {
+	opts := []grpc.DialOption{grpc.WithUnaryInterceptor(
+		interceptor.UnaryInterceptor,
+	)}
+
+	// There are three options to connect to a swap server, either insecure,
+	// using a self-signed certificate or with a certificate signed by a
+	// public CA.
+	switch {
+	case insecure:
 		opts = append(opts, grpc.WithInsecure())
-	} else {
+
+	case tlsPath != "":
+		// Load the specified TLS certificate and build
+		// transport credentials
+		creds, err := credentials.NewClientTLSFromFile(tlsPath, "")
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+
+	default:
 		creds := credentials.NewTLS(&tls.Config{})
 		opts = append(opts, grpc.WithTransportCredentials(creds))
 	}
 
 	conn, err := grpc.Dial(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)
+		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+			err)
 	}
 
 	return conn, nil

@@ -24,7 +24,8 @@ func view(config *config) error {
 	defer lnd.Close()
 
 	swapClient, cleanup, err := getClient(
-		config.Network, config.SwapServer, config.Insecure, &lnd.LndServices,
+		config.Network, config.SwapServer, config.Insecure,
+		config.TLSPathSwapSrv, &lnd.LndServices,
 	)
 	if err != nil {
 		return err

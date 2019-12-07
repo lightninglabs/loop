@@ -346,6 +346,40 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	}, nil
 }
 
+// GetLsatTokens returns all tokens that are contained in the LSAT token store.
+func (s *swapClientServer) GetLsatTokens(ctx context.Context,
+	_ *looprpc.TokensRequest) (*looprpc.TokensResponse, error) {
+
+	log.Infof("Get LSAT tokens request received")
+
+	tokens, err := s.impl.LsatStore.AllTokens()
+	if err != nil {
+		return nil, err
+	}
+
+	rpcTokens := make([]*looprpc.LsatToken, len(tokens))
+	idx := 0
+	for key, token := range tokens {
+		macBytes, err := token.BaseMacaroon().MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		rpcTokens[idx] = &looprpc.LsatToken{
+			BaseMacaroon:       macBytes,
+			PaymentHash:        token.PaymentHash[:],
+			PaymentPreimage:    token.Preimage[:],
+			AmountPaidMsat:     int64(token.AmountPaid),
+			RoutingFeePaidMsat: int64(token.RoutingFeePaid),
+			TimeCreated:        token.TimeCreated.Unix(),
+			Expired:            !token.IsValid(),
+			StorageName:        key,
+		}
+		idx++
+	}
+
+	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
 // validateConfTarget ensures the given confirmation target is valid. If one
 // isn't specified (0 value), then the default target is used.
 func validateConfTarget(target, defaultTarget int32) (int32, error) {

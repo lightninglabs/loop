@@ -16,7 +16,7 @@ func getLnd(network string, cfg *lndConfig) (*lndclient.GrpcLndServices, error) 
 }
 
 // getClient returns an instance of the swap client.
-func getClient(network, swapServer string, insecure bool,
+func getClient(network, swapServer string, insecure bool, tlsPathServer string,
 	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
 
 	storeDir, err := getStoreDir(network)
@@ -25,7 +25,7 @@ func getClient(network, swapServer string, insecure bool,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(
-		storeDir, swapServer, insecure, lnd,
+		storeDir, swapServer, insecure, tlsPathServer, lnd,
 	)
 	if err != nil {
 		return nil, nil, err

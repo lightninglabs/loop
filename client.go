@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -48,7 +49,14 @@ var (
 	ErrSweepConfTargetTooFar = errors.New("sweep confirmation target is " +
 		"beyond swap expiration height")
 
+	// serverRPCTimeout is the maximum time a gRPC request to the server
+	// should be allowed to take.
 	serverRPCTimeout = 30 * time.Second
+
+	// globalCallTimeout is the maximum time any call of the client to the
+	// server is allowed to take, including the time it may take to get
+	// and pay for an LSAT token.
+	globalCallTimeout = serverRPCTimeout + lsat.PaymentTimeout
 
 	republishDelay = 10 * time.Second
 )
@@ -71,14 +79,21 @@ type Client struct {
 
 // NewClient returns a new instance to initiate swaps with.
 func NewClient(dbDir string, serverAddress string, insecure bool,
-	lnd *lndclient.LndServices) (*Client, func(), error) {
+	tlsPathServer string, lnd *lndclient.LndServices) (*Client, func(),
+	error) {
 
 	store, err := loopdb.NewBoltSwapStore(dbDir, lnd.ChainParams)
 	if err != nil {
 		return nil, nil, err
 	}
+	lsatStore, err := lsat.NewFileStore(dbDir)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	swapServerClient, err := newSwapServerClient(serverAddress, insecure)
+	swapServerClient, err := newSwapServerClient(
+		serverAddress, insecure, tlsPathServer, lsatStore, lnd,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,6 +102,7 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 		LndServices: lnd,
 		Server:      swapServerClient,
 		Store:       store,
+		LsatStore:   lsatStore,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},
