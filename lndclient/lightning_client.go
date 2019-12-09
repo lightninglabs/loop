@@ -44,6 +44,7 @@ type Info struct {
 	IdentityPubkey [33]byte
 	Alias          string
 	Network        string
+	Uris           []string
 }
 
 var (
@@ -145,6 +146,7 @@ func (s *lightningClient) GetInfo(ctx context.Context) (*Info, error) {
 		IdentityPubkey: pubKeyArray,
 		Alias:          resp.Alias,
 		Network:        resp.Chains[0].Network,
+		Uris:           resp.Uris,
 	}, nil
 }
 
