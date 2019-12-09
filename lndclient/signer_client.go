@@ -20,6 +20,12 @@ type SignerClient interface {
 	// locator. The returned signature is fixed-size LN wire format encoded.
 	SignMessage(ctx context.Context, msg []byte,
 		locator keychain.KeyLocator) ([]byte, error)
+
+	// VerifyMessage verifies a signature over a message using the public
+	// key provided. The signature must be fixed-size LN wire format
+	// encoded.
+	VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
+		bool, error)
 }
 
 type signerClient struct {
@@ -123,4 +129,26 @@ func (s *signerClient) SignMessage(ctx context.Context, msg []byte,
 	}
 
 	return resp.Signature, nil
+}
+
+// VerifyMessage verifies a signature over a message using the public key
+// provided. The signature must be fixed-size LN wire format encoded.
+func (s *signerClient) VerifyMessage(ctx context.Context, msg, sig []byte,
+	pubkey [33]byte) (bool, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcIn := &signrpc.VerifyMessageReq{
+		Msg:       msg,
+		Signature: sig,
+		Pubkey:    pubkey[:],
+	}
+
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.VerifyMessage(rpcCtx, rpcIn)
+	if err != nil {
+		return false, err
+	}
+	return resp.Valid, nil
 }
