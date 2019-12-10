@@ -122,6 +122,8 @@ type LndMockServices struct {
 
 	Height int32
 
+	Transactions []*wire.MsgTx
+
 	WaitForFinished func()
 
 	lock sync.Mutex
@@ -137,6 +139,13 @@ func (s *LndMockServices) NotifyHeight(height int32) error {
 		return ErrTimeout
 	}
 	return nil
+}
+
+// AddRelevantTx marks the given transaction as relevant.
+func (s *LndMockServices) AddTx(tx *wire.MsgTx) {
+	s.lock.Lock()
+	s.Transactions = append(s.Transactions, tx.Copy())
+	s.lock.Unlock()
 }
 
 // IsDone checks whether all channels have been fully emptied. If not this may

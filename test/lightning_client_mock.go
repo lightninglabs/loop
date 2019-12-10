@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -118,4 +119,14 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 	}
 
 	return hash, payReqString, nil
+}
+
+// ListTransactions returns all known transactions of the backing lnd node.
+func (h *mockLightningClient) ListTransactions(
+	ctx context.Context) ([]*wire.MsgTx, error) {
+
+	h.lnd.lock.Lock()
+	txs := h.lnd.Transactions
+	h.lnd.lock.Unlock()
+	return txs, nil
 }
