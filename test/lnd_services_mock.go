@@ -14,7 +14,13 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
-var testStartingHeight = int32(600)
+var (
+	testStartingHeight = int32(600)
+	testNodePubkey     = "03f5374b16f0b1f1b49101de1b9d89e0b460bc57ce9c2f9" +
+		"132b73dfc76d3704daa"
+	testSignature    = []byte{55, 66, 77, 88, 99}
+	testSignatureMsg = "test"
+)
 
 // NewMockLnd returns a new instance of LndMockServices that can be used in unit
 // tests.
@@ -54,6 +60,9 @@ func NewMockLnd() *LndMockServices {
 		FailInvoiceChannel: make(chan lntypes.Hash, 2),
 		epochChannel:       make(chan int32),
 		Height:             testStartingHeight,
+		NodePubkey:         testNodePubkey,
+		Signature:          testSignature,
+		SignatureMsg:       testSignatureMsg,
 	}
 
 	lightningClient.lnd = &lnd
@@ -61,6 +70,7 @@ func NewMockLnd() *LndMockServices {
 	walletKit.lnd = &lnd
 	invoices.lnd = &lnd
 	router.lnd = &lnd
+	signer.lnd = &lnd
 
 	lnd.WaitForFinished = func() {
 		chainNotifier.WaitForFinished()
@@ -120,7 +130,10 @@ type LndMockServices struct {
 	RouterSendPaymentChannel chan RouterPaymentChannelMessage
 	TrackPaymentChannel      chan TrackPaymentMessage
 
-	Height int32
+	Height       int32
+	NodePubkey   string
+	Signature    []byte
+	SignatureMsg string
 
 	WaitForFinished func()
 

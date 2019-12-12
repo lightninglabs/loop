@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"google.golang.org/grpc"
 )
@@ -14,6 +15,17 @@ import (
 type SignerClient interface {
 	SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		signDescriptors []*input.SignDescriptor) ([][]byte, error)
+
+	// SignMessage signs a message with the key specified in the key
+	// locator. The returned signature is fixed-size LN wire format encoded.
+	SignMessage(ctx context.Context, msg []byte,
+		locator keychain.KeyLocator) ([]byte, error)
+
+	// VerifyMessage verifies a signature over a message using the public
+	// key provided. The signature must be fixed-size LN wire format
+	// encoded.
+	VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
+		bool, error)
 }
 
 type signerClient struct {
@@ -92,4 +104,51 @@ func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	}
 
 	return resp.RawSigs, nil
+}
+
+// SignMessage signs a message with the key specified in the key locator. The
+// returned signature is fixed-size LN wire format encoded.
+func (s *signerClient) SignMessage(ctx context.Context, msg []byte,
+	locator keychain.KeyLocator) ([]byte, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcIn := &signrpc.SignMessageReq{
+		Msg: msg,
+		KeyLoc: &signrpc.KeyLocator{
+			KeyFamily: int32(locator.Family),
+			KeyIndex:  int32(locator.Index),
+		},
+	}
+
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.SignMessage(rpcCtx, rpcIn)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Signature, nil
+}
+
+// VerifyMessage verifies a signature over a message using the public key
+// provided. The signature must be fixed-size LN wire format encoded.
+func (s *signerClient) VerifyMessage(ctx context.Context, msg, sig []byte,
+	pubkey [33]byte) (bool, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcIn := &signrpc.VerifyMessageReq{
+		Msg:       msg,
+		Signature: sig,
+		Pubkey:    pubkey[:],
+	}
+
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.VerifyMessage(rpcCtx, rpcIn)
+	if err != nil {
+		return false, err
+	}
+	return resp.Valid, nil
 }

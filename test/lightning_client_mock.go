@@ -2,6 +2,7 @@ package test
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -48,10 +49,16 @@ func (h *mockLightningClient) ConfirmedWalletBalance(ctx context.Context) (
 func (h *mockLightningClient) GetInfo(ctx context.Context) (*lndclient.Info,
 	error) {
 
+	pubKeyBytes, err := hex.DecodeString(h.lnd.NodePubkey)
+	if err != nil {
+		return nil, err
+	}
 	var pubKey [33]byte
+	copy(pubKey[:], pubKeyBytes)
 	return &lndclient.Info{
 		BlockHeight:    600,
 		IdentityPubkey: pubKey,
+		Uris:           []string{h.lnd.NodePubkey + "@127.0.0.1:9735"},
 	}, nil
 }
 
