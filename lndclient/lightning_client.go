@@ -1,6 +1,7 @@
 package lndclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -9,13 +10,13 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,6 +37,10 @@ type LightningClient interface {
 
 	AddInvoice(ctx context.Context, in *invoicesrpc.AddInvoiceData) (
 		lntypes.Hash, string, error)
+
+	// ListTransactions returns all known transactions of the backing lnd
+	// node.
+	ListTransactions(ctx context.Context) ([]*wire.MsgTx, error)
 }
 
 // Info contains info about the connected lnd node.
@@ -349,4 +354,33 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 	}
 
 	return hash, resp.PaymentRequest, nil
+}
+
+// ListTransactions returns all known transactions of the backing lnd node.
+func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, error) {
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	rpcIn := &lnrpc.GetTransactionsRequest{}
+	resp, err := s.client.GetTransactions(rpcCtx, rpcIn)
+	if err != nil {
+		return nil, err
+	}
+
+	txs := make([]*wire.MsgTx, 0, len(resp.Transactions))
+	for _, respTx := range resp.Transactions {
+		rawTx, err := hex.DecodeString(respTx.RawTxHex)
+		if err != nil {
+			return nil, err
+		}
+
+		var tx wire.MsgTx
+		if err := tx.Deserialize(bytes.NewReader(rawTx)); err != nil {
+			return nil, err
+		}
+		txs = append(txs, &tx)
+	}
+
+	return txs, nil
 }

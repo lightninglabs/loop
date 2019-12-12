@@ -60,6 +60,7 @@ func (m *mockWalletKit) NextAddr(ctx context.Context) (btcutil.Address, error) {
 }
 
 func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
+	m.lnd.AddTx(tx)
 	m.lnd.TxPublishChannel <- tx
 	return nil
 }
@@ -84,6 +85,7 @@ func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
 		})
 	}
 
+	m.lnd.AddTx(&tx)
 	m.lnd.SendOutputsChannel <- tx
 
 	return &tx, nil
