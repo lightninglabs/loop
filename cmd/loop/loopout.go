@@ -55,6 +55,10 @@ var loopOutCommand = cli.Command{
 				"setting this flag might result in a lower " +
 				"swap fee.",
 		},
+		cli.Int64Flag{
+			Name:  "max_swap_routing_fee",
+			Usage: "max off-chain swap routing fee",
+		},
 	},
 	Action: loopOut,
 }
@@ -132,6 +136,12 @@ func loopOut(ctx *cli.Context) error {
 		swapDeadline = time.Now().Add(defaultSwapWaitTime)
 	}
 
+	// If configured, set our maxium swap routing fee.
+	maxSwapRoutingFee := int64(*limits.maxSwapRoutingFee)
+	if ctx.IsSet("max_swap_routing_fee") {
+		maxSwapRoutingFee = ctx.Int64("max_swap_routing_fee")
+	}
+
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
@@ -139,7 +149,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxPrepayAmt:            int64(*limits.maxPrepayAmt),
 		MaxSwapFee:              int64(limits.maxSwapFee),
 		MaxPrepayRoutingFee:     int64(*limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:       int64(*limits.maxSwapRoutingFee),
+		MaxSwapRoutingFee:       maxSwapRoutingFee,
 		LoopOutChannel:          unchargeChannel,
 		SweepConfTarget:         sweepConfTarget,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
