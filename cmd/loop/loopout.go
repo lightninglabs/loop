@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
@@ -44,6 +45,11 @@ var loopOutCommand = cli.Command{
 				"initiation height that the on-chain HTLC " +
 				"should be swept within",
 			Value: uint64(loop.DefaultSweepConfTarget),
+		},
+		cli.Int64Flag{
+			Name: "max_swap_routing_fee",
+			Usage: "the max off-chain swap routing fee in satoshis, " +
+				"if let blank a default max fee will be used",
 		},
 		cli.BoolFlag{
 			Name: "fast",
@@ -115,6 +121,12 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	limits := getLimits(amt, quote)
+	// If configured, use the specified maximum swap routing fee.
+	if ctx.IsSet("max_swap_routing_fee") {
+		*limits.maxSwapRoutingFee = btcutil.Amount(
+			ctx.Int64("max_swap_routing_fee"),
+		)
+	}
 	err = displayLimits(swap.TypeOut, amt, limits, false, warning)
 	if err != nil {
 		return err
