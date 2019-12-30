@@ -45,6 +45,11 @@ var loopOutCommand = cli.Command{
 				"should be swept within",
 			Value: uint64(loop.DefaultSweepConfTarget),
 		},
+		cli.Int64Flag{
+			Name: "max_swap_routing_fee",
+			Usage: "the max off-chain swap routing fee in satoshis, " +
+				"if let blank a default max fee will be used",
+		},
 		cli.BoolFlag{
 			Name: "fast",
 			Usage: "Indicate you want to swap immediately, " +
@@ -54,10 +59,6 @@ var loopOutCommand = cli.Command{
 				"HTLC on-chain, to save on chain fees. Not " +
 				"setting this flag might result in a lower " +
 				"swap fee.",
-		},
-		cli.Int64Flag{
-			Name:  "max_swap_routing_fee",
-			Usage: "max off-chain swap routing fee",
 		},
 	},
 	Action: loopOut,
