@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
@@ -120,6 +121,10 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	limits := getLimits(amt, quote)
+	// If configured, use the specified maximum swap routing fee.
+	if ctx.IsSet("max_swap_routing_fee") {
+		*limits.maxSwapRoutingFee = btcutil.Amount(ctx.Int64("max_swap_routing_fee"))
+	}
 	err = displayLimits(swap.TypeOut, amt, limits, false, warning)
 	if err != nil {
 		return err
@@ -137,12 +142,6 @@ func loopOut(ctx *cli.Context) error {
 		swapDeadline = time.Now().Add(defaultSwapWaitTime)
 	}
 
-	// If configured, set our maxium swap routing fee.
-	maxSwapRoutingFee := int64(*limits.maxSwapRoutingFee)
-	if ctx.IsSet("max_swap_routing_fee") {
-		maxSwapRoutingFee = ctx.Int64("max_swap_routing_fee")
-	}
-
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
@@ -150,7 +149,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxPrepayAmt:            int64(*limits.maxPrepayAmt),
 		MaxSwapFee:              int64(limits.maxSwapFee),
 		MaxPrepayRoutingFee:     int64(*limits.maxPrepayRoutingFee),
-		MaxSwapRoutingFee:       maxSwapRoutingFee,
+		MaxSwapRoutingFee:       int64(*limits.maxSwapRoutingFee),
 		LoopOutChannel:          unchargeChannel,
 		SweepConfTarget:         sweepConfTarget,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
