@@ -26,14 +26,7 @@ var (
 	swapsLock        sync.Mutex
 )
 
-func main() {
-	err := start()
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func start() error {
+func Start() error {
 	config := defaultConfig
 
 	// Parse command line flags.
