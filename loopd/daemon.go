@@ -18,9 +18,18 @@ import (
 	"google.golang.org/grpc"
 )
 
+// listenerCfg holds closures used to retrieve listeners for the gRPC services.
+type listenerCfg struct {
+	// grpcListener returns a listener to use for the gRPC server.
+	grpcListener func() (net.Listener, error)
+
+	// restListener returns a listener to use for the REST proxy.
+	restListener func() (net.Listener, error)
+}
+
 // daemon runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
-func daemon(config *config) error {
+func daemon(config *config, lisCfg *listenerCfg) error {
 	lnd, err := getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
@@ -74,7 +83,7 @@ func daemon(config *config) error {
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
-	grpcListener, err := net.Listen("tcp", config.RPCListen)
+	grpcListener, err := lisCfg.grpcListener()
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
 			config.RPCListen)
@@ -96,7 +105,7 @@ func daemon(config *config) error {
 	}
 
 	log.Infof("Starting REST proxy listener")
-	restListener, err := net.Listen("tcp", config.RESTListen)
+	restListener, err := lisCfg.restListener()
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s",
 			config.RESTListen)

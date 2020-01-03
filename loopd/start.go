@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,18 @@ var (
 	nextSubscriberID int
 	swapsLock        sync.Mutex
 )
+
+// newListenerCfg creates and returns a new listenerCfg from the passed config.
+func newListenerCfg(config *config) *listenerCfg {
+	return &listenerCfg{
+		grpcListener: func() (net.Listener, error) {
+			return net.Listen("tcp", config.RPCListen)
+		},
+		restListener: func() (net.Listener, error) {
+			return net.Listen("tcp", config.RESTListen)
+		},
+	}
+}
 
 func Start() error {
 	config := defaultConfig
@@ -99,9 +112,11 @@ func Start() error {
 	// Print the version before executing either primary directive.
 	log.Infof("Version: %v", loop.Version())
 
+	lisCfg := newListenerCfg(&config)
+
 	// Execute command.
 	if parser.Active == nil {
-		return daemon(&config)
+		return daemon(&config, lisCfg)
 	}
 
 	if parser.Active.Name == "view" {
