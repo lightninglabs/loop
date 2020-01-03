@@ -1,6 +1,7 @@
 package loopd
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -36,6 +37,10 @@ type RPCConfig struct {
 	// listener.
 	// Note that setting this will also disable REST.
 	RPCListener net.Listener
+
+	// LndConn is an optional connection to an lnd instance. If set it will
+	// override the TCP connection created from daemon's config.
+	LndConn net.Conn
 }
 
 // newListenerCfg creates and returns a new listenerCfg from the passed config
@@ -61,6 +66,21 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 		},
 		getLnd: func(network string, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {
+
+			// If a custom lnd connection is specified we use that
+			// directly.
+			if rpcCfg.LndConn != nil {
+				dialer := func(context.Context, string) (
+					net.Conn, error) {
+					return rpcCfg.LndConn, nil
+				}
+
+				return lndclient.NewLndServicesWithDialer(
+					dialer,
+					rpcCfg.LndConn.RemoteAddr().String(),
+					network, cfg.MacaroonDir, cfg.TLSPath,
+				)
+			}
 
 			return lndclient.NewLndServices(
 				cfg.Host, network, cfg.MacaroonDir, cfg.TLSPath,
