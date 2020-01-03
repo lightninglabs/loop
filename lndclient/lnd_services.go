@@ -211,7 +211,7 @@ func getClientConn(address string, network string, tlsPath string) (
 	// We need to use a custom dialer so we can also connect to unix sockets
 	// and not just TCP addresses.
 	opts = append(
-		opts, grpc.WithDialer(
+		opts, grpc.WithContextDialer(
 			lncfg.ClientAddressDialer(defaultRPCPort),
 		),
 	)

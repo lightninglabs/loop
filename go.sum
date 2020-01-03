@@ -136,10 +136,11 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/neutrino v0.11.0 h1:lPpYFCtsfJX2W5zI4pWycPmbbBdr7zU+BafYdLoD6k0=
 github.com/lightninglabs/neutrino v0.11.0/go.mod h1:CuhF0iuzg9Sp2HO6ZgXgayviFTn1QHdSTJlMncK80wg=
-github.com/lightningnetwork/lightning-onion v0.0.0-20190909101754-850081b08b6a h1:GoWPN4i4jTKRxhVNh9a2vvBBO1Y2seiJB+SopUYoKyo=
-github.com/lightningnetwork/lightning-onion v0.0.0-20190909101754-850081b08b6a/go.mod h1:rigfi6Af/KqsF7Za0hOgcyq2PNH4AN70AaMRxcJkff4=
-github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20191212054348-dca31c2bf8be h1:CX8ScoYxJju6AcceHY6nATfRLThZpewqHcgn4sGMdZE=
-github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20191212054348-dca31c2bf8be/go.mod h1:60/zDjDYaYPmISAm3J1WWKyyt+ZiAvuET1XzglO8s70=
+github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d/go.mod h1:KDb67YMzoh4eudnzClmvs2FbiLG9vxISmLApUkCa4uI=
+github.com/lightningnetwork/lightning-onion v0.0.0-20191214001659-f34e9dc1651d h1:U50MHOOeL6gR3Ee/l0eMvZMpmRo+ydzmlQuIruCyCsA=
+github.com/lightningnetwork/lightning-onion v0.0.0-20191214001659-f34e9dc1651d/go.mod h1:rigfi6Af/KqsF7Za0hOgcyq2PNH4AN70AaMRxcJkff4=
+github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200103000305-22e1f006b194 h1:PCzjJcVWcMbkiQvzFNc3ta0JmiMprFDqzMZsSpd/km8=
+github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200103000305-22e1f006b194/go.mod h1:WHK90FD3m2n6OyWzondS7ho0Uhtgfp30Nxvj24lQYX4=
 github.com/lightningnetwork/lnd/cert v1.0.0 h1:J0gtf2UNQX2U+/j5cXnX2wIMSTuJuwrXv7m9qJr2wtw=
 github.com/lightningnetwork/lnd/cert v1.0.0/go.mod h1:fmtemlSMf5t4hsQmcprSoOykypAPp+9c+0d0iqTScMo=
 github.com/lightningnetwork/lnd/queue v1.0.1 h1:jzJKcTy3Nj5lQrooJ3aaw9Lau3I0IwvQR5sqtjdv2R0=
