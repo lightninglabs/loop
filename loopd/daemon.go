@@ -103,7 +103,15 @@ func daemon(config *config) error {
 	}
 	defer restListener.Close()
 	proxy := &http.Server{Handler: mux}
-	go proxy.Serve(restListener)
+
+	go func() {
+		err := proxy.Serve(restListener)
+		// ErrServerClosed is always returned when the proxy is shut
+		// down, so don't log it.
+		if err != nil && err != http.ErrServerClosed {
+			log.Error(err)
+		}
+	}()
 
 	statusChan := make(chan loop.SwapInfo)
 
