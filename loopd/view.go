@@ -11,13 +11,13 @@ import (
 )
 
 // view prints all swaps currently in the database.
-func view(config *config) error {
+func view(config *config, lisCfg *listenerCfg) error {
 	chainParams, err := swap.ChainParamsFromNetwork(config.Network)
 	if err != nil {
 		return err
 	}
 
-	lnd, err := getLnd(config.Network, config.Lnd)
+	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
 	}

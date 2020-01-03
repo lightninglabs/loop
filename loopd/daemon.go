@@ -14,6 +14,7 @@ import (
 
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
 	"google.golang.org/grpc"
 )
@@ -25,12 +26,15 @@ type listenerCfg struct {
 
 	// restListener returns a listener to use for the REST proxy.
 	restListener func() (net.Listener, error)
+
+	// getLnd returns a grpc connection to an lnd instance.
+	getLnd func(string, *lndConfig) (*lndclient.GrpcLndServices, error)
 }
 
 // daemon runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
 func daemon(config *config, lisCfg *listenerCfg) error {
-	lnd, err := getLnd(config.Network, config.Lnd)
+	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
 	}

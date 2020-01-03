@@ -10,6 +10,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -57,6 +58,13 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 			}
 
 			return net.Listen("tcp", config.RESTListen)
+		},
+		getLnd: func(network string, cfg *lndConfig) (
+			*lndclient.GrpcLndServices, error) {
+
+			return lndclient.NewLndServices(
+				cfg.Host, network, cfg.MacaroonDir, cfg.TLSPath,
+			)
 		},
 	}
 }
@@ -142,7 +150,7 @@ func Start(rpcCfg RPCConfig) error {
 	}
 
 	if parser.Active.Name == "view" {
-		return view(&config)
+		return view(&config, lisCfg)
 	}
 
 	return fmt.Errorf("unimplemented command %v", parser.Active.Name)
