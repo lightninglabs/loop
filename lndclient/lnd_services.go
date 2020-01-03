@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"time"
 
@@ -38,9 +39,24 @@ type GrpcLndServices struct {
 	cleanup func()
 }
 
-// NewLndServices creates a set of required RPC services.
-func NewLndServices(lndAddress, application, network, macaroonDir,
-	tlsPath string) (*GrpcLndServices, error) {
+// NewLndServices creates creates a connection to the given lnd instance and
+// creates a set of required RPC services.
+func NewLndServices(lndAddress, network, macaroonDir, tlsPath string) (
+	*GrpcLndServices, error) {
+
+	// We need to use a custom dialer so we can also connect to unix
+	// sockets and not just TCP addresses.
+	dialer := lncfg.ClientAddressDialer(defaultRPCPort)
+
+	return NewLndServicesWithDialer(
+		dialer, lndAddress, network, macaroonDir, tlsPath,
+	)
+}
+
+// NewLndServices creates a set of required RPC services by connecting to lnd
+// using the given dialer.
+func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
+	macaroonDir, tlsPath string) (*GrpcLndServices, error) {
 
 	// Based on the network, if the macaroon directory isn't set, then
 	// we'll use the expected default locations.
@@ -85,7 +101,7 @@ func NewLndServices(lndAddress, application, network, macaroonDir,
 
 	// Setup connection with lnd
 	log.Infof("Creating lnd connection to %v", lndAddress)
-	conn, err := getClientConn(lndAddress, network, tlsPath)
+	conn, err := getClientConn(dialer, lndAddress, tlsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +205,9 @@ var (
 	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
-func getClientConn(address string, network string, tlsPath string) (
+type dialerFunc func(context.Context, string) (net.Conn, error)
+
+func getClientConn(dialer dialerFunc, address string, tlsPath string) (
 	*grpc.ClientConn, error) {
 
 	// Load the specified TLS certificate and build transport credentials
@@ -206,15 +224,12 @@ func getClientConn(address string, network string, tlsPath string) (
 	// Create a dial options array.
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
+
+		// Use a custom dialer, to allow connections to unix sockets,
+		// in-memory listeners etc, and not just TCP addresses.
+		grpc.WithContextDialer(dialer),
 	}
 
-	// We need to use a custom dialer so we can also connect to unix sockets
-	// and not just TCP addresses.
-	opts = append(
-		opts, grpc.WithDialer(
-			lncfg.ClientAddressDialer(defaultRPCPort),
-		),
-	)
 	conn, err := grpc.Dial(address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)

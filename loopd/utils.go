@@ -1,4 +1,4 @@
-package main
+package loopd
 
 import (
 	"os"
@@ -7,13 +7,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 )
-
-// getLnd returns an instance of the lnd services proxy.
-func getLnd(network string, cfg *lndConfig) (*lndclient.GrpcLndServices, error) {
-	return lndclient.NewLndServices(
-		cfg.Host, "client", network, cfg.MacaroonDir, cfg.TLSPath,
-	)
-}
 
 // getClient returns an instance of the swap client.
 func getClient(network, swapServer string, insecure bool, tlsPathServer string,

@@ -1,4 +1,4 @@
-package main
+package loopd
 
 import (
 	"context"
@@ -14,14 +14,27 @@ import (
 
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
 	"google.golang.org/grpc"
 )
 
+// listenerCfg holds closures used to retrieve listeners for the gRPC services.
+type listenerCfg struct {
+	// grpcListener returns a listener to use for the gRPC server.
+	grpcListener func() (net.Listener, error)
+
+	// restListener returns a listener to use for the REST proxy.
+	restListener func() (net.Listener, error)
+
+	// getLnd returns a grpc connection to an lnd instance.
+	getLnd func(string, *lndConfig) (*lndclient.GrpcLndServices, error)
+}
+
 // daemon runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
-func daemon(config *config) error {
-	lnd, err := getLnd(config.Network, config.Lnd)
+func daemon(config *config, lisCfg *listenerCfg) error {
+	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err
 	}
@@ -74,7 +87,7 @@ func daemon(config *config) error {
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
-	grpcListener, err := net.Listen("tcp", config.RPCListen)
+	grpcListener, err := lisCfg.grpcListener()
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
 			config.RPCListen)
@@ -95,15 +108,30 @@ func daemon(config *config) error {
 		return err
 	}
 
-	log.Infof("Starting REST proxy listener")
-	restListener, err := net.Listen("tcp", config.RESTListen)
+	restListener, err := lisCfg.restListener()
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s",
 			config.RESTListen)
 	}
-	defer restListener.Close()
-	proxy := &http.Server{Handler: mux}
-	go proxy.Serve(restListener)
+
+	// A nil listener indicates REST is disabled.
+	if restListener != nil {
+		log.Infof("Starting REST proxy listener")
+
+		defer restListener.Close()
+		proxy := &http.Server{Handler: mux}
+
+		go func() {
+			err := proxy.Serve(restListener)
+			// ErrServerClosed is always returned when the proxy is
+			// shut down, so don't log it.
+			if err != nil && err != http.ErrServerClosed {
+				log.Error(err)
+			}
+		}()
+	} else {
+		log.Infof("REST proxy disabled")
+	}
 
 	statusChan := make(chan loop.SwapInfo)
 
@@ -161,7 +189,10 @@ func daemon(config *config) error {
 		defer wg.Done()
 
 		log.Infof("RPC server listening on %s", grpcListener.Addr())
-		log.Infof("REST proxy listening on %s", restListener.Addr())
+
+		if restListener != nil {
+			log.Infof("REST proxy listening on %s", restListener.Addr())
+		}
 
 		err = grpcServer.Serve(grpcListener)
 		if err != nil {

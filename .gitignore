@@ -29,9 +29,6 @@ output*.log
 loop
 !cmd/loop/
 
-loopd
-!cmd/loopd/
-
 *.key
 *.hex
 
