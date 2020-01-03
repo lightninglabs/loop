@@ -104,23 +104,30 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		return err
 	}
 
-	log.Infof("Starting REST proxy listener")
 	restListener, err := lisCfg.restListener()
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s",
 			config.RESTListen)
 	}
-	defer restListener.Close()
-	proxy := &http.Server{Handler: mux}
 
-	go func() {
-		err := proxy.Serve(restListener)
-		// ErrServerClosed is always returned when the proxy is shut
-		// down, so don't log it.
-		if err != nil && err != http.ErrServerClosed {
-			log.Error(err)
-		}
-	}()
+	// A nil listener indicates REST is disabled.
+	if restListener != nil {
+		log.Infof("Starting REST proxy listener")
+
+		defer restListener.Close()
+		proxy := &http.Server{Handler: mux}
+
+		go func() {
+			err := proxy.Serve(restListener)
+			// ErrServerClosed is always returned when the proxy is
+			// shut down, so don't log it.
+			if err != nil && err != http.ErrServerClosed {
+				log.Error(err)
+			}
+		}()
+	} else {
+		log.Infof("REST proxy disabled")
+	}
 
 	statusChan := make(chan loop.SwapInfo)
 
@@ -178,7 +185,10 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("RPC server listening on %s", grpcListener.Addr())
-		log.Infof("REST proxy listening on %s", restListener.Addr())
+
+		if restListener != nil {
+			log.Infof("REST proxy listening on %s", restListener.Addr())
+		}
 
 		err = grpcServer.Serve(grpcListener)
 		if err != nil {

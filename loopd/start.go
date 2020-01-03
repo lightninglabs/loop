@@ -27,19 +27,41 @@ var (
 	swapsLock        sync.Mutex
 )
 
-// newListenerCfg creates and returns a new listenerCfg from the passed config.
-func newListenerCfg(config *config) *listenerCfg {
+// RPCConfig holds optional options that can be used to make the loop daemon
+// communicate on custom connections.
+type RPCConfig struct {
+	// RPCListener is an optional listener that if set will override the
+	// daemon's gRPC settings, and make the gRPC server listen on this
+	// listener.
+	// Note that setting this will also disable REST.
+	RPCListener net.Listener
+}
+
+// newListenerCfg creates and returns a new listenerCfg from the passed config
+// and RPCConfig.
+func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 	return &listenerCfg{
 		grpcListener: func() (net.Listener, error) {
+			// If a custom RPC listener is set, we will listen on
+			// it instead of the regular tcp socket.
+			if rpcCfg.RPCListener != nil {
+				return rpcCfg.RPCListener, nil
+			}
+
 			return net.Listen("tcp", config.RPCListen)
 		},
 		restListener: func() (net.Listener, error) {
+			// If a custom RPC listener is set, we disable REST.
+			if rpcCfg.RPCListener != nil {
+				return nil, nil
+			}
+
 			return net.Listen("tcp", config.RESTListen)
 		},
 	}
 }
 
-func Start() error {
+func Start(rpcCfg RPCConfig) error {
 	config := defaultConfig
 
 	// Parse command line flags.
@@ -112,7 +134,7 @@ func Start() error {
 	// Print the version before executing either primary directive.
 	log.Infof("Version: %v", loop.Version())
 
-	lisCfg := newListenerCfg(&config)
+	lisCfg := newListenerCfg(&config, rpcCfg)
 
 	// Execute command.
 	if parser.Active == nil {

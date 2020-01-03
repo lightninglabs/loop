@@ -7,7 +7,8 @@ import (
 )
 
 func main() {
-	err := loopd.Start()
+	cfg := loopd.RPCConfig{}
+	err := loopd.Start(cfg)
 	if err != nil {
 		fmt.Println(err)
 	}
