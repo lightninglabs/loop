@@ -1,4 +1,4 @@
-package main
+package loopd
 
 import (
 	"github.com/btcsuite/btclog"

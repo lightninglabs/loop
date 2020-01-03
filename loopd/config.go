@@ -1,4 +1,4 @@
-package main
+package loopd
 
 import (
 	"path/filepath"
