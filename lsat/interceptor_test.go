@@ -324,6 +324,6 @@ func makeAuthHeader(macBytes []byte) string {
 		"3l2ahrqsfpp3x9et2e20v6pu37c5d9vax37wxq72un98k6vcx9fz94w0qf23" +
 		"7cm2rqv9pmn5lnexfvf5579slr4zq3u8kmczecytdx0xg9rwzngp7e6guwqp" +
 		"qlhssu04sucpnz4axcv2dstmknqq6jsk2l"
-	return fmt.Sprintf("LSAT macaroon='%s' invoice='%s'",
+	return fmt.Sprintf("LSAT macaroon=\"%s\", invoice=\"%s\"",
 		base64.StdEncoding.EncodeToString(macBytes), invoice)
 }
