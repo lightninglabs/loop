@@ -22,7 +22,8 @@ type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
 
-	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount) (
+	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
+		swapPublicationDeadline time.Time) (
 		*LoopOutQuote, error)
 
 	GetLoopInTerms(ctx context.Context) (
@@ -93,13 +94,15 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 }
 
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
-	amt btcutil.Amount) (*LoopOutQuote, error) {
+	amt btcutil.Amount, swapPublicationDeadline time.Time) (
+	*LoopOutQuote, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
 		&looprpc.ServerLoopOutQuoteRequest{
-			Amt: uint64(amt),
+			Amt:                     uint64(amt),
+			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 		},
 	)
 	if err != nil {

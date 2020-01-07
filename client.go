@@ -369,7 +369,9 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
-	quote, err := s.Server.GetLoopOutQuote(ctx, request.Amount)
+	quote, err := s.Server.GetLoopOutQuote(
+		ctx, request.Amount, request.SwapPublicationDeadline,
+	)
 	if err != nil {
 		return nil, err
 	}

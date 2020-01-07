@@ -94,8 +94,8 @@ func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
 	}, nil
 }
 
-func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount) (
-	*LoopOutQuote, error) {
+func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
+	_ time.Time) (*LoopOutQuote, error) {
 
 	dest := [33]byte{1, 2, 3}
 
