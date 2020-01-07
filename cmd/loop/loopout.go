@@ -93,10 +93,19 @@ func loopOut(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
+	// Set our maximum swap wait time. If a fast swap is requested we set
+	// it to now, otherwise to 30 minutes in the future.
+	fast := ctx.Bool("fast")
+	swapDeadline := time.Now()
+	if !fast {
+		swapDeadline = time.Now().Add(defaultSwapWaitTime)
+	}
+
 	sweepConfTarget := int32(ctx.Uint64("conf_target"))
 	quoteReq := &looprpc.QuoteRequest{
-		Amt:        int64(amt),
-		ConfTarget: sweepConfTarget,
+		Amt:                     int64(amt),
+		ConfTarget:              sweepConfTarget,
+		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 	}
 	quote, err := client.LoopOutQuote(context.Background(), quoteReq)
 	if err != nil {
@@ -104,7 +113,6 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	// Show a warning if a slow swap was requested.
-	fast := ctx.Bool("fast")
 	warning := ""
 	if fast {
 		warning = "Fast swap requested."
@@ -123,13 +131,6 @@ func loopOut(ctx *cli.Context) error {
 	var unchargeChannel uint64
 	if ctx.IsSet("channel") {
 		unchargeChannel = ctx.Uint64("channel")
-	}
-
-	// Set our maximum swap wait time. If a fast swap is requested we set
-	// it to now, otherwise to 30 minutes in the future.
-	swapDeadline := time.Now()
-	if !fast {
-		swapDeadline = time.Now().Add(defaultSwapWaitTime)
 	}
 
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
