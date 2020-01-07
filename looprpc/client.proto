@@ -356,6 +356,15 @@ message QuoteRequest {
     actor.
     */
     bool external_htlc = 3;
+
+    /**
+    The latest time (in unix seconds) we allow the server to wait before
+    publishing the HTLC on chain. Setting this to a larger value will give the
+    server the opportunity to batch multiple swaps together, and wait for
+    low-fee periods before publishing the HTLC, potentially resulting in a
+    lower total swap fee.
+    */
+    uint64 swap_publication_deadline = 4;
 }
 
 message QuoteResponse {
