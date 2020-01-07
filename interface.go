@@ -99,6 +99,10 @@ type LoopOutQuoteRequest struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
+	// SwapPublicationDeadline can be set by the client to allow the server
+	// delaying publication of the swap HTLC to save on chain fees.
+	SwapPublicationDeadline time.Time
+
 	// TODO: Add argument to specify confirmation target for server
 	// publishing htlc. This may influence the swap fee quote, because the
 	// server needs to pay more for faster confirmations.
