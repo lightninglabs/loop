@@ -42,6 +42,9 @@ message ServerLoopOutResponse {
 message ServerLoopOutQuoteRequest {
     /// The swap amount. If zero, a quote for a maximum amt swap will be given.
     uint64 amt = 1;
+
+    /// The unix time in seconds we want the on-chain swap to be published by.
+    int64 swap_publication_deadline = 2;
 }
 
 message ServerLoopOutQuote {
