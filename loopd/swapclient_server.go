@@ -266,6 +266,9 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
 		Amount:          btcutil.Amount(req.Amt),
 		SweepConfTarget: confTarget,
+		SwapPublicationDeadline: time.Unix(
+			int64(req.SwapPublicationDeadline), 0,
+		),
 	})
 	if err != nil {
 		return nil, err
