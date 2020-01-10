@@ -33,10 +33,14 @@ const (
 	// challenge.
 	AuthHeader = "WWW-Authenticate"
 
-	// MaxRoutingFee is the maximum routing fee in satoshis that we are
-	// going to pay to acquire an LSAT token.
-	// TODO(guggero): make this configurable
-	MaxRoutingFeeSats = 10
+	// DefaultMaxCostSats is the default maximum amount in satoshis that we
+	// are going to pay for an LSAT automatically. Does not include routing
+	// fees.
+	DefaultMaxCostSats = 1000
+
+	// DefaultMaxRoutingFeeSats is the default maximum routing fee in
+	// satoshis that we are going to pay to acquire an LSAT token.
+	DefaultMaxRoutingFeeSats = 10
 
 	// PaymentTimeout is the maximum time we allow a payment to take before
 	// we stop waiting for it.
@@ -238,7 +242,7 @@ func (i *Interceptor) payLsatToken(ctx context.Context, md *metadata.MD) (
 	payCtx, cancel := context.WithTimeout(ctx, PaymentTimeout)
 	defer cancel()
 	respChan := i.lnd.Client.PayInvoice(
-		payCtx, invoiceStr, MaxRoutingFeeSats, nil,
+		payCtx, invoiceStr, DefaultMaxRoutingFeeSats, nil,
 	)
 	select {
 	case result := <-respChan:
