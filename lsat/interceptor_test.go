@@ -50,6 +50,7 @@ func TestInterceptor(t *testing.T) {
 		testTimeout = 5 * time.Second
 		interceptor = NewInterceptor(
 			&lnd.LndServices, store, testTimeout,
+			DefaultMaxCostSats, DefaultMaxRoutingFeeSats,
 		)
 		testMac      = makeMac(t)
 		testMacBytes = serializeMac(t, testMac)
@@ -84,11 +85,13 @@ func TestInterceptor(t *testing.T) {
 	testCases := []struct {
 		name                string
 		initialToken        *Token
+		interceptor         *Interceptor
 		resetCb             func()
 		expectLndCall       bool
 		sendPaymentCb       func(msg test.PaymentChannelMessage)
 		trackPaymentCb      func(msg test.TrackPaymentMessage)
 		expectToken         bool
+		expectInterceptErr  string
 		expectBackendCalls  int
 		expectMacaroonCall1 bool
 		expectMacaroonCall2 bool
@@ -96,6 +99,7 @@ func TestInterceptor(t *testing.T) {
 		{
 			name:                "no auth required happy path",
 			initialToken:        nil,
+			interceptor:         interceptor,
 			resetCb:             func() { resetBackend(nil, "") },
 			expectLndCall:       false,
 			expectToken:         false,
@@ -106,6 +110,7 @@ func TestInterceptor(t *testing.T) {
 		{
 			name:         "auth required, no token yet",
 			initialToken: nil,
+			interceptor:  interceptor,
 			resetCb: func() {
 				resetBackend(
 					status.New(
@@ -140,6 +145,7 @@ func TestInterceptor(t *testing.T) {
 		{
 			name:                "auth required, has token",
 			initialToken:        paidToken,
+			interceptor:         interceptor,
 			resetCb:             func() { resetBackend(nil, "") },
 			expectLndCall:       false,
 			expectToken:         true,
@@ -150,6 +156,7 @@ func TestInterceptor(t *testing.T) {
 		{
 			name:         "auth required, has pending token",
 			initialToken: pendingToken,
+			interceptor:  interceptor,
 			resetCb: func() {
 				resetBackend(
 					status.New(
@@ -176,6 +183,30 @@ func TestInterceptor(t *testing.T) {
 			expectBackendCalls:  2,
 			expectMacaroonCall1: false,
 			expectMacaroonCall2: true,
+		},
+		{
+			name:         "auth required, no token yet, cost limit",
+			initialToken: nil,
+			interceptor: NewInterceptor(
+				&lnd.LndServices, store, testTimeout,
+				100, DefaultMaxRoutingFeeSats,
+			),
+			resetCb: func() {
+				resetBackend(
+					status.New(
+						GRPCErrCode, GRPCErrMessage,
+					).Err(),
+					makeAuthHeader(testMacBytes),
+				)
+			},
+			expectLndCall: false,
+			expectToken:   false,
+			expectInterceptErr: "cannot pay for LSAT " +
+				"automatically, cost of 500000 msat exceeds " +
+				"configured max cost of 100000 msat",
+			expectBackendCalls:  1,
+			expectMacaroonCall1: false,
+			expectMacaroonCall2: false,
 		},
 	}
 
@@ -219,11 +250,14 @@ func TestInterceptor(t *testing.T) {
 		backendWg.Add(1)
 		overallWg.Add(1)
 		go func() {
-			err := interceptor.UnaryInterceptor(
+			err := tc.interceptor.UnaryInterceptor(
 				ctx, "", nil, nil, nil, invoker, nil,
 			)
-			if err != nil {
-				panic(err)
+			if err != nil && tc.expectInterceptErr != "" &&
+				err.Error() != tc.expectInterceptErr {
+				panic(fmt.Errorf("unexpected error '%s', "+
+					"expected '%s'", err.Error(),
+					tc.expectInterceptErr))
 			}
 			overallWg.Done()
 		}()
@@ -318,12 +352,12 @@ func serializeMac(t *testing.T, mac *macaroon.Macaroon) []byte {
 }
 
 func makeAuthHeader(macBytes []byte) string {
-	// Testnet invoice, copied from lnd/zpay32/invoice_test.go
-	invoice := "lntb20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqc" +
-		"yq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy04" +
-		"3l2ahrqsfpp3x9et2e20v6pu37c5d9vax37wxq72un98k6vcx9fz94w0qf23" +
-		"7cm2rqv9pmn5lnexfvf5579slr4zq3u8kmczecytdx0xg9rwzngp7e6guwqp" +
-		"qlhssu04sucpnz4axcv2dstmknqq6jsk2l"
+	// Testnet invoice over 500 sats.
+	invoice := "lntb5u1p0pskpmpp5jzw9xvdast2g5lm5tswq6n64t2epe3f4xav43dyd" +
+		"239qr8h3yllqdqqcqzpgsp5m8sfjqgugthk66q3tr4gsqr5rh740jrq9x4l0" +
+		"kvj5e77nmwqvpnq9qy9qsq72afzu7sfuppzqg3q2pn49hlh66rv7w60h2rua" +
+		"hx857g94s066yzxcjn4yccqc79779sd232v9ewluvu0tmusvht6r99rld8xs" +
+		"k287cpyac79r"
 	return fmt.Sprintf("LSAT macaroon=\"%s\", invoice=\"%s\"",
 		base64.StdEncoding.EncodeToString(macBytes), invoice)
 }
