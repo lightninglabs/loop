@@ -4,21 +4,24 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 )
 
 // getClient returns an instance of the swap client.
-func getClient(network, swapServer string, insecure bool, tlsPathServer string,
-	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
+func getClient(config *config, lnd *lndclient.LndServices) (*loop.Client,
+	func(), error) {
 
-	storeDir, err := getStoreDir(network)
+	storeDir, err := getStoreDir(config.Network)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(
-		storeDir, swapServer, insecure, tlsPathServer, lnd,
+		storeDir, config.SwapServer, config.Insecure,
+		config.TLSPathSwapSrv, lnd, btcutil.Amount(config.MaxLSATCost),
+		btcutil.Amount(config.MaxLSATFee),
 	)
 	if err != nil {
 		return nil, nil, err

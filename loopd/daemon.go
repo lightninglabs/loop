@@ -56,10 +56,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	log.Infof("Swap server address: %v", config.SwapServer)
 
 	// Create an instance of the loop client library.
-	swapClient, cleanup, err := getClient(
-		config.Network, config.SwapServer, config.Insecure,
-		config.TLSPathSwapSrv, &lnd.LndServices,
-	)
+	swapClient, cleanup, err := getClient(config, &lnd.LndServices)
 	if err != nil {
 		return err
 	}
