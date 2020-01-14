@@ -23,10 +23,7 @@ func view(config *config, lisCfg *listenerCfg) error {
 	}
 	defer lnd.Close()
 
-	swapClient, cleanup, err := getClient(
-		config.Network, config.SwapServer, config.Insecure,
-		config.TLSPathSwapSrv, &lnd.LndServices,
-	)
+	swapClient, cleanup, err := getClient(config, &lnd.LndServices)
 	if err != nil {
 		return err
 	}

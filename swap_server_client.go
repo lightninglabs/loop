@@ -52,13 +52,13 @@ type grpcSwapServerClient struct {
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
 func newSwapServerClient(address string, insecure bool, tlsPath string,
-	lsatStore lsat.Store, lnd *lndclient.LndServices) (
-	*grpcSwapServerClient, error) {
+	lsatStore lsat.Store, lnd *lndclient.LndServices,
+	maxLSATCost, maxLSATFee btcutil.Amount) (*grpcSwapServerClient, error) {
 
 	// Create the server connection with the interceptor that will handle
 	// the LSAT protocol for us.
 	clientInterceptor := lsat.NewInterceptor(
-		lnd, lsatStore, serverRPCTimeout,
+		lnd, lsatStore, serverRPCTimeout, maxLSATCost, maxLSATFee,
 	)
 	serverConn, err := getSwapServerConn(
 		address, insecure, tlsPath, clientInterceptor,

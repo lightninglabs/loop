@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -33,10 +34,14 @@ const (
 	// challenge.
 	AuthHeader = "WWW-Authenticate"
 
-	// MaxRoutingFee is the maximum routing fee in satoshis that we are
-	// going to pay to acquire an LSAT token.
-	// TODO(guggero): make this configurable
-	MaxRoutingFeeSats = 10
+	// DefaultMaxCostSats is the default maximum amount in satoshis that we
+	// are going to pay for an LSAT automatically. Does not include routing
+	// fees.
+	DefaultMaxCostSats = 1000
+
+	// DefaultMaxRoutingFeeSats is the default maximum routing fee in
+	// satoshis that we are going to pay to acquire an LSAT token.
+	DefaultMaxRoutingFeeSats = 10
 
 	// PaymentTimeout is the maximum time we allow a payment to take before
 	// we stop waiting for it.
@@ -63,6 +68,8 @@ type Interceptor struct {
 	lnd         *lndclient.LndServices
 	store       Store
 	callTimeout time.Duration
+	maxCost     btcutil.Amount
+	maxFee      btcutil.Amount
 	lock        sync.Mutex
 }
 
@@ -70,12 +77,15 @@ type Interceptor struct {
 // lnd connection to automatically acquire and pay for LSAT tokens, unless the
 // indicated store already contains a usable token.
 func NewInterceptor(lnd *lndclient.LndServices, store Store,
-	rpcCallTimeout time.Duration) *Interceptor {
+	rpcCallTimeout time.Duration, maxCost,
+	maxFee btcutil.Amount) *Interceptor {
 
 	return &Interceptor{
 		lnd:         lnd,
 		store:       store,
 		callTimeout: rpcCallTimeout,
+		maxCost:     maxCost,
+		maxFee:      maxFee,
 	}
 }
 
@@ -222,6 +232,14 @@ func (i *Interceptor) payLsatToken(ctx context.Context, md *metadata.MD) (
 		return nil, fmt.Errorf("unable to decode invoice: %v", err)
 	}
 
+	// Check that the charged amount does not exceed our maximum cost.
+	maxCostMsat := lnwire.NewMSatFromSatoshis(i.maxCost)
+	if invoice.MilliSat != nil && *invoice.MilliSat > maxCostMsat {
+		return nil, fmt.Errorf("cannot pay for LSAT automatically, "+
+			"cost of %d msat exceeds configured max cost of %d "+
+			"msat", *invoice.MilliSat, maxCostMsat)
+	}
+
 	// Create and store the pending token so we can resume the payment in
 	// case the payment is interrupted somehow.
 	token, err := tokenFromChallenge(macBytes, invoice.PaymentHash)
@@ -238,7 +256,7 @@ func (i *Interceptor) payLsatToken(ctx context.Context, md *metadata.MD) (
 	payCtx, cancel := context.WithTimeout(ctx, PaymentTimeout)
 	defer cancel()
 	respChan := i.lnd.Client.PayInvoice(
-		payCtx, invoiceStr, MaxRoutingFeeSats, nil,
+		payCtx, invoiceStr, i.maxFee, nil,
 	)
 	select {
 	case result := <-respChan:
