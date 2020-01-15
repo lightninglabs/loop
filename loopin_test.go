@@ -175,6 +175,9 @@ func TestLoopInTimeout(t *testing.T) {
 	// Let htlc expire.
 	ctx.blockEpochChan <- swap.LoopInContract.CltvExpiry
 
+	// Expect a signing request.
+	<-ctx.lnd.SignOutputRawChannel
+
 	// Expect timeout tx to be published.
 	timeoutTx := <-ctx.lnd.TxPublishChannel
 

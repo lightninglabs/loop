@@ -265,6 +265,9 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// Publish tick.
 	ctx.expiryChan <- testTime
 
+	// Expect a signing request.
+	<-ctx.Lnd.SignOutputRawChannel
+
 	if !preimageRevealed {
 		ctx.assertStatus(loopdb.StatePreimageRevealed)
 		ctx.assertStorePreimageReveal()
