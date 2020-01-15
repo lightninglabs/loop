@@ -113,9 +113,25 @@ func TestLoopInSuccess(t *testing.T) {
 	}
 }
 
-// TestLoopInTimeout tests the scenario where the server doesn't sweep the htlc
+// TestLoopInTimeout tests scenarios where the server doesn't sweep the htlc
 // and the client is forced to reclaim the funds using the timeout tx.
 func TestLoopInTimeout(t *testing.T) {
+	testAmt := int64(testLoopInRequest.Amount)
+	t.Run("internal htlc", func(t *testing.T) {
+		testLoopInTimeout(t, 0)
+	})
+	t.Run("external htlc", func(t *testing.T) {
+		testLoopInTimeout(t, testAmt)
+	})
+	t.Run("external amount too high", func(t *testing.T) {
+		testLoopInTimeout(t, testAmt+1)
+	})
+	t.Run("external amount too low", func(t *testing.T) {
+		testLoopInTimeout(t, testAmt-1)
+	})
+}
+
+func testLoopInTimeout(t *testing.T, externalValue int64) {
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
@@ -128,9 +144,14 @@ func TestLoopInTimeout(t *testing.T) {
 		server: ctx.server,
 	}
 
+	req := testLoopInRequest
+	if externalValue != 0 {
+		req.ExternalHtlc = true
+	}
+
 	swap, err := newLoopInSwap(
 		context.Background(), cfg,
-		height, &testLoopInRequest,
+		height, &req,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -152,8 +173,21 @@ func TestLoopInTimeout(t *testing.T) {
 	ctx.assertState(loopdb.StateHtlcPublished)
 	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
 
-	// Expect htlc to be published.
-	htlcTx := <-ctx.lnd.SendOutputsChannel
+	var htlcTx wire.MsgTx
+	if externalValue == 0 {
+		// Expect htlc to be published.
+		htlcTx = <-ctx.lnd.SendOutputsChannel
+	} else {
+		// Create an external htlc publish tx.
+		htlcTx = wire.MsgTx{
+			TxOut: []*wire.TxOut{
+				{
+					PkScript: swap.htlc.PkScript,
+					Value:    externalValue,
+				},
+			},
+		}
+	}
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
@@ -175,8 +209,15 @@ func TestLoopInTimeout(t *testing.T) {
 	// Let htlc expire.
 	ctx.blockEpochChan <- swap.LoopInContract.CltvExpiry
 
-	// Expect a signing request.
-	<-ctx.lnd.SignOutputRawChannel
+	// Expect a signing request for the htlc tx output value.
+	//
+	// TODO(joostjager): FIX BUG WHERE WE ALWAYS SIGN FOR THE HTLC AMOUNT.
+	signReq := <-ctx.lnd.SignOutputRawChannel
+	if signReq.SignDescriptors[0].Output.Value !=
+		int64(testLoopInRequest.Amount) {
+
+		t.Fatal("invalid signing amount")
+	}
 
 	// Expect timeout tx to be published.
 	timeoutTx := <-ctx.lnd.TxPublishChannel
