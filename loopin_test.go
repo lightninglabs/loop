@@ -210,11 +210,8 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	ctx.blockEpochChan <- swap.LoopInContract.CltvExpiry
 
 	// Expect a signing request for the htlc tx output value.
-	//
-	// TODO(joostjager): FIX BUG WHERE WE ALWAYS SIGN FOR THE HTLC AMOUNT.
 	signReq := <-ctx.lnd.SignOutputRawChannel
-	if signReq.SignDescriptors[0].Output.Value !=
-		int64(testLoopInRequest.Amount) {
+	if signReq.SignDescriptors[0].Output.Value != htlcTx.TxOut[0].Value {
 
 		t.Fatal("invalid signing amount")
 	}
