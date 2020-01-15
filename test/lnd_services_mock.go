@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -56,6 +57,8 @@ func NewMockLnd() *LndMockServices {
 
 		RouterSendPaymentChannel: make(chan RouterPaymentChannelMessage),
 		TrackPaymentChannel:      make(chan TrackPaymentMessage),
+
+		SignOutputRawChannel: make(chan SignOutputRawRequest),
 
 		FailInvoiceChannel: make(chan lntypes.Hash, 2),
 		epochChannel:       make(chan int32),
@@ -109,6 +112,12 @@ type SingleInvoiceSubscription struct {
 	Err    chan error
 }
 
+// SignOutputRawRequest contains input data for a tx signing request.
+type SignOutputRawRequest struct {
+	Tx              *wire.MsgTx
+	SignDescriptors []*input.SignDescriptor
+}
+
 // LndMockServices provides a full set of mocked lnd services.
 type LndMockServices struct {
 	lndclient.LndServices
@@ -129,6 +138,8 @@ type LndMockServices struct {
 
 	RouterSendPaymentChannel chan RouterPaymentChannelMessage
 	TrackPaymentChannel      chan TrackPaymentMessage
+
+	SignOutputRawChannel chan SignOutputRawRequest
 
 	Height       int32
 	NodePubkey   string

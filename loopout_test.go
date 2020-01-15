@@ -192,6 +192,9 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	expiryChan <- time.Now()
 
+	// Expect a signing request for the HTLC success transaction.
+	<-ctx.Lnd.SignOutputRawChannel
+
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
 	status := <-statusChan
 	if status.State != loopdb.StatePreimageRevealed {
@@ -246,6 +249,9 @@ func TestCustomSweepConfTarget(t *testing.T) {
 		DefaultSweepConfTargetDelta
 	blockEpochChan <- int32(defaultConfTargetHeight)
 	expiryChan <- time.Now()
+
+	// Expect another signing request.
+	<-ctx.Lnd.SignOutputRawChannel
 
 	// We should expect to see another sweep using the higher fee since the
 	// spend hasn't been confirmed yet.

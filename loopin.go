@@ -419,7 +419,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 // the swap invoice is either settled or canceled. If the htlc times out, the
 // timeout tx will be published.
 func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
-	htlc *wire.OutPoint, htlcValue btcutil.Amount) error {
+	htlcOutpoint *wire.OutPoint, htlcValue btcutil.Amount) error {
 
 	// Register the htlc spend notification.
 	rpcCtx, cancel := context.WithCancel(ctx)
@@ -445,7 +445,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	// checkTimeout publishes the timeout tx if the contract has expired.
 	checkTimeout := func() error {
 		if s.height >= s.LoopInContract.CltvExpiry {
-			return s.publishTimeoutTx(ctx, htlc)
+			return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
 		}
 
 		return nil
@@ -572,7 +572,7 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 // publishTimeoutTx publishes a timeout tx after the on-chain htlc has expired.
 // The swap failed and we are reclaiming our funds.
 func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
-	htlc *wire.OutPoint) error {
+	htlcOutpoint *wire.OutPoint, htlcValue btcutil.Amount) error {
 
 	if s.timeoutAddr == nil {
 		var err error
@@ -596,8 +596,8 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	}
 
 	timeoutTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, s.htlc, *htlc, s.SenderKey, witnessFunc,
-		s.LoopInContract.AmountRequested, fee, s.timeoutAddr,
+		ctx, s.height, s.htlc, *htlcOutpoint, s.SenderKey, witnessFunc,
+		htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
 		return err

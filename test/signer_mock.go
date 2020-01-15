@@ -16,6 +16,11 @@ type mockSigner struct {
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
 
+	s.lnd.SignOutputRawChannel <- SignOutputRawRequest{
+		Tx:              tx,
+		SignDescriptors: signDescriptors,
+	}
+
 	rawSigs := [][]byte{{1, 2, 3}}
 
 	return rawSigs, nil
