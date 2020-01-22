@@ -3,6 +3,7 @@ package lndclient
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -26,6 +27,19 @@ type SignerClient interface {
 	// encoded.
 	VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
 		bool, error)
+
+	// DeriveSharedKey returns a shared secret key by performing
+	// Diffie-Hellman key derivation between the ephemeral public key and
+	// the key specified by the key locator (or the node's identity private
+	// key if no key locator is specified):
+	//
+	//     P_shared = privKeyNode * ephemeralPubkey
+	//
+	// The resulting shared public key is serialized in the compressed
+	// format and hashed with SHA256, resulting in a final key length of 256
+	// bits.
+	DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
+		keyLocator *keychain.KeyLocator) ([32]byte, error)
 }
 
 type signerClient struct {
@@ -151,4 +165,38 @@ func (s *signerClient) VerifyMessage(ctx context.Context, msg, sig []byte,
 		return false, err
 	}
 	return resp.Valid, nil
+}
+
+// DeriveSharedKey returns a shared secret key by performing Diffie-Hellman key
+// derivation between the ephemeral public key and the key specified by the key
+// locator (or the node's identity private key if no key locator is specified):
+//
+//     P_shared = privKeyNode * ephemeralPubkey
+//
+// The resulting shared public key is serialized in the compressed format and
+// hashed with SHA256, resulting in a final key length of 256 bits.
+func (s *signerClient) DeriveSharedKey(ctx context.Context,
+	ephemeralPubKey *btcec.PublicKey,
+	keyLocator *keychain.KeyLocator) ([32]byte, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcIn := &signrpc.SharedKeyRequest{
+		EphemeralPubkey: ephemeralPubKey.SerializeCompressed(),
+		KeyLoc: &signrpc.KeyLocator{
+			KeyFamily: int32(keyLocator.Family),
+			KeyIndex:  int32(keyLocator.Index),
+		},
+	}
+
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.DeriveSharedKey(rpcCtx, rpcIn)
+	if err != nil {
+		return [32]byte{}, err
+	}
+
+	var sharedKey [32]byte
+	copy(sharedKey[:], resp.SharedKey)
+	return sharedKey, nil
 }

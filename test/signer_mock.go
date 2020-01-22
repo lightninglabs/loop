@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -41,4 +42,10 @@ func (s *mockSigner) VerifyMessage(ctx context.Context, msg, sig []byte,
 		bytes.Equal(sig, s.lnd.Signature)
 
 	return mockAssertion, nil
+}
+
+func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
+	*keychain.KeyLocator) ([32]byte, error) {
+
+	return [32]byte{4, 5, 6}, nil
 }
