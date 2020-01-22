@@ -50,8 +50,8 @@ type config struct {
 }
 
 const (
-	mainnetServer = "swap.lightning.today:11009"
-	testnetServer = "test.swap.lightning.today:11009"
+	mainnetServer = "swap.lightning.today:11010"
+	testnetServer = "test.swap.lightning.today:11010"
 )
 
 var defaultConfig = config{
