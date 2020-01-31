@@ -30,6 +30,10 @@ var (
 	maxRoutingFeeRate = int64(20000)
 
 	defaultSwapWaitTime = 30 * time.Minute
+
+	// maxMsgRecvSize is the largest message our client will receive. We
+	// set this to 200MiB atm.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
 func printJSON(resp interface{}) {
@@ -233,6 +237,7 @@ func logSwap(swap *looprpc.SwapStatus) {
 func getClientConn(address string) (*grpc.ClientConn, error) {
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(),
+		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
 	conn, err := grpc.Dial(address, opts...)

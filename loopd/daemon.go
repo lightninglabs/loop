@@ -20,6 +20,12 @@ import (
 	"google.golang.org/grpc"
 )
 
+var (
+	// maxMsgRecvSize is the largest message our REST proxy will receive. We
+	// set this to 200MiB atm.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
+)
+
 // listenerCfg holds closures used to retrieve listeners for the gRPC services.
 type listenerCfg struct {
 	// grpcListener returns a listener to use for the gRPC server.
@@ -113,7 +119,10 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mux := proxy.NewServeMux(customMarshalerOption)
-	proxyOpts := []grpc.DialOption{grpc.WithInsecure()}
+	proxyOpts := []grpc.DialOption{
+		grpc.WithInsecure(),
+		grpc.WithDefaultCallOptions(maxMsgRecvSize),
+	}
 	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
 		ctx, mux, config.RPCListen, proxyOpts,
 	)
