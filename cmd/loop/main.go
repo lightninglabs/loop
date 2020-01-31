@@ -83,6 +83,7 @@ func main() {
 	app.Commands = []cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
 		monitorCommand, quoteCommand, listAuthCommand,
+		listSwapsCommand, swapInfoCommand,
 	}
 
 	err := app.Run(os.Args)
