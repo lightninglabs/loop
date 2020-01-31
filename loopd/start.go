@@ -7,26 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
-	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 const (
-	defaultConfTarget = int32(6)
-)
-
-var (
+	defaultConfTarget     = int32(6)
 	defaultConfigFilename = "loopd.conf"
-
-	swaps            = make(map[lntypes.Hash]loop.SwapInfo)
-	subscribers      = make(map[int]chan<- interface{})
-	nextSubscriberID int
-	swapsLock        sync.Mutex
 )
 
 // RPCConfig holds optional options that can be used to make the loop daemon

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 
 	"github.com/lightninglabs/loop"
@@ -29,8 +31,13 @@ const (
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
-	impl *loop.Client
-	lnd  *lndclient.LndServices
+	impl             *loop.Client
+	lnd              *lndclient.LndServices
+	swaps            map[lntypes.Hash]loop.SwapInfo
+	subscribers      map[int]chan<- interface{}
+	statusChan       chan loop.SwapInfo
+	nextSubscriberID int
+	swapsLock        sync.Mutex
 }
 
 // LoopOut initiates an loop out swap with the given parameters. The call
@@ -162,14 +169,14 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	// Add this subscriber to the global subscriber list. Also create a
 	// snapshot of all pending and completed swaps within the lock, to
 	// prevent subscribers from receiving duplicate updates.
-	swapsLock.Lock()
+	s.swapsLock.Lock()
 
-	id := nextSubscriberID
-	nextSubscriberID++
-	subscribers[id] = queue.ChanIn()
+	id := s.nextSubscriberID
+	s.nextSubscriberID++
+	s.subscribers[id] = queue.ChanIn()
 
 	var pendingSwaps, completedSwaps []loop.SwapInfo
-	for _, swap := range swaps {
+	for _, swap := range s.swaps {
 		if swap.State.Type() == loopdb.StateTypePending {
 			pendingSwaps = append(pendingSwaps, swap)
 		} else {
@@ -177,13 +184,13 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 		}
 	}
 
-	swapsLock.Unlock()
+	s.swapsLock.Unlock()
 
 	defer func() {
 		queue.Stop()
-		swapsLock.Lock()
-		delete(subscribers, id)
-		swapsLock.Unlock()
+		s.swapsLock.Lock()
+		delete(s.subscribers, id)
+		s.swapsLock.Unlock()
 	}()
 
 	// Sort completed swaps new to old.
@@ -381,6 +388,36 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	}
 
 	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
+// processStatusUpdates reads updates on the status channel and processes them.
+//
+// NOTE: This must run inside a goroutine as it blocks until the main context
+// shuts down.
+func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
+	for {
+		select {
+		// On updates, refresh the server's in-memory state and inform
+		// subscribers about the changes.
+		case swp := <-s.statusChan:
+			s.swapsLock.Lock()
+			s.swaps[swp.SwapHash] = swp
+
+			for _, subscriber := range s.subscribers {
+				select {
+				case subscriber <- swp:
+				case <-mainCtx.Done():
+					return
+				}
+			}
+
+			s.swapsLock.Unlock()
+
+		// Server is shutting down.
+		case <-mainCtx.Done():
+			return
+		}
+	}
 }
 
 // validateConfTarget ensures the given confirmation target is valid. If one

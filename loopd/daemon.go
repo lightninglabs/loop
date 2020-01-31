@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 )
 
@@ -68,14 +69,18 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		return err
 	}
 
+	swaps := make(map[lntypes.Hash]loop.SwapInfo)
 	for _, s := range swapsList {
 		swaps[s.SwapHash] = *s
 	}
 
 	// Instantiate the loopd gRPC server.
 	server := swapClientServer{
-		impl: swapClient,
-		lnd:  &lnd.LndServices,
+		impl:        swapClient,
+		lnd:         &lnd.LndServices,
+		swaps:       swaps,
+		subscribers: make(map[int]chan<- interface{}),
+		statusChan:  make(chan loop.SwapInfo),
 	}
 
 	serverOpts := []grpc.ServerOption{}
@@ -130,8 +135,6 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		log.Infof("REST proxy disabled")
 	}
 
-	statusChan := make(chan loop.SwapInfo)
-
 	mainCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
@@ -141,7 +144,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Starting swap client")
-		err := swapClient.Run(mainCtx, statusChan)
+		err := swapClient.Run(mainCtx, server.statusChan)
 		if err != nil {
 			log.Error(err)
 		}
@@ -159,25 +162,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Waiting for updates")
-		for {
-			select {
-			case swap := <-statusChan:
-				swapsLock.Lock()
-				swaps[swap.SwapHash] = swap
-
-				for _, subscriber := range subscribers {
-					select {
-					case subscriber <- swap:
-					case <-mainCtx.Done():
-						return
-					}
-				}
-
-				swapsLock.Unlock()
-			case <-mainCtx.Done():
-				return
-			}
-		}
+		server.processStatusUpdates(mainCtx)
 	}()
 
 	// Start the grpc server.
