@@ -41,6 +41,15 @@ type LightningClient interface {
 	// ListTransactions returns all known transactions of the backing lnd
 	// node.
 	ListTransactions(ctx context.Context) ([]*wire.MsgTx, error)
+
+	// ChannelBackup retrieves the backup for a particular channel. The
+	// backup is returned as an encrypted chanbackup.Single payload.
+	ChannelBackup(context.Context, wire.OutPoint) ([]byte, error)
+
+	// ChannelBackups retrieves backups for all existing pending open and
+	// open channels. The backups are returned as an encrypted
+	// chanbackup.Multi payload.
+	ChannelBackups(ctx context.Context) ([]byte, error)
 }
 
 // Info contains info about the connected lnd node.
@@ -383,4 +392,45 @@ func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, 
 	}
 
 	return txs, nil
+}
+
+// ChannelBackup retrieves the backup for a particular channel. The backup is
+// returned as an encrypted chanbackup.Single payload.
+func (s *lightningClient) ChannelBackup(ctx context.Context,
+	channelPoint wire.OutPoint) ([]byte, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	req := &lnrpc.ExportChannelBackupRequest{
+		ChanPoint: &lnrpc.ChannelPoint{
+			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
+				FundingTxidBytes: channelPoint.Hash[:],
+			},
+			OutputIndex: channelPoint.Index,
+		},
+	}
+	resp, err := s.client.ExportChannelBackup(rpcCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.ChanBackup, nil
+}
+
+// ChannelBackups retrieves backups for all existing pending open and open
+// channels. The backups are returned as an encrypted chanbackup.Multi payload.
+func (s *lightningClient) ChannelBackups(ctx context.Context) ([]byte, error) {
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	req := &lnrpc.ChanBackupExportRequest{}
+	resp, err := s.client.ExportAllChannelBackups(rpcCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.MultiChanBackup.MultiChanBackup, nil
 }
