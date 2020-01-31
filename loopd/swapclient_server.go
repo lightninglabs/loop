@@ -99,6 +99,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	return &looprpc.SwapResponse{
 		Id:          hash.String(),
+		IdBytes:     hash[:],
 		HtlcAddress: htlc.String(),
 	}, nil
 }
@@ -136,6 +137,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	return &looprpc.SwapStatus{
 		Amt:            int64(loopSwap.AmountRequested),
 		Id:             loopSwap.SwapHash.String(),
+		IdBytes:        loopSwap.SwapHash[:],
 		State:          state,
 		InitiationTime: loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
@@ -396,6 +398,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	return &looprpc.SwapResponse{
 		Id:          hash.String(),
+		IdBytes:     hash[:],
 		HtlcAddress: htlc.String(),
 	}, nil
 }

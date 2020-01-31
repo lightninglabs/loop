@@ -460,6 +460,11 @@
       "properties": {
         "id": {
           "type": "string",
+          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
+        },
+        "id_bytes": {
+          "type": "string",
+          "format": "byte",
           "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
         },
         "htlc_address": {
@@ -491,6 +496,11 @@
         },
         "id": {
           "type": "string",
+          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
+        },
+        "id_bytes": {
+          "type": "string",
+          "format": "byte",
           "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
         },
         "type": {

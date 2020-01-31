@@ -231,8 +231,16 @@ message SwapResponse {
     /**
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
+    DEPRECATED: To make the API more consistent, this field is deprecated in
+    favor of id_bytes and will be removed in a future release.
     */
-    string id = 1;
+    string id = 1 [deprecated = true];
+
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    bytes id_bytes = 3;
 
     /**
     The address of the on-chain htlc.
@@ -253,8 +261,16 @@ message SwapStatus {
     /**
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
+    DEPRECATED: To make the API more consistent, this field is deprecated in
+    favor of id_bytes and will be removed in a future release.
     */
-    string id = 2;
+    string id = 2 [deprecated = true];
+
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    bytes id_bytes = 11;
 
     /**
     Swap type
