@@ -110,6 +110,23 @@
         ]
       }
     },
+    "/v1/loop/monitor": {
+      "get": {
+        "summary": "* loop: `monitor`\nMonitor will return a stream of swap updates for currently active swaps.",
+        "operationId": "Monitor",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "$ref": "#/x-stream-definitions/looprpcSwapStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/out": {
       "post": {
         "summary": "* loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
@@ -205,6 +222,50 @@
         ]
       }
     },
+    "/v1/loop/swap/{id}": {
+      "get": {
+        "summary": "*\nSwapInfo returns all known details about a single swap.",
+        "operationId": "SwapInfo",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSwapStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "*\nThe swap identifier which currently is the hash that locks the HTLCs. When\nusing REST, this field must be encoded as base64.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/loop/swaps": {
+      "get": {
+        "summary": "*\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
+        "operationId": "ListSwaps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListSwapsResponse"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/lsat/tokens": {
       "get": {
         "summary": "*\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
@@ -224,6 +285,18 @@
     }
   },
   "definitions": {
+    "looprpcListSwapsResponse": {
+      "type": "object",
+      "properties": {
+        "swaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcSwapStatus"
+          },
+          "description": "*\nThe list of all currently known swaps and their status."
+        }
+      }
+    },
     "looprpcLoopInRequest": {
       "type": "object",
       "properties": {

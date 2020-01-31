@@ -241,6 +241,50 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	}
 }
 
+// ListSwaps returns a list of all currently known swaps and their current
+// status.
+func (s *swapClientServer) ListSwaps(_ context.Context,
+	_ *looprpc.ListSwapsRequest) (*looprpc.ListSwapsResponse, error) {
+
+	var (
+		rpcSwaps = make([]*looprpc.SwapStatus, len(s.swaps))
+		idx      = 0
+		err      error
+	)
+
+	// We can just use the server's in-memory cache as that contains the
+	// most up-to-date state including temporary failures which aren't
+	// persisted to disk. The swaps field is a map, that's why we need an
+	// additional index.
+	for _, swp := range s.swaps {
+		swp := swp
+		rpcSwaps[idx], err = s.marshallSwap(&swp)
+		if err != nil {
+			return nil, err
+		}
+		idx++
+	}
+	return &looprpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+}
+
+// SwapInfo returns all known details about a single swap.
+func (s *swapClientServer) SwapInfo(_ context.Context,
+	req *looprpc.SwapInfoRequest) (*looprpc.SwapStatus, error) {
+
+	swapHash, err := lntypes.MakeHash(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing swap hash: %v", err)
+	}
+
+	// Just return the server's in-memory cache here too as we also want to
+	// return temporary failures to the client.
+	swp, ok := s.swaps[swapHash]
+	if !ok {
+		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
+	}
+	return s.marshallSwap(&swp)
+}
+
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
