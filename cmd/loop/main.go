@@ -2,18 +2,18 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/protobuf-hex-display/json"
+	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
+	"github.com/lightninglabs/protobuf-hex-display/proto"
 
 	"github.com/btcsuite/btcutil"
 
@@ -53,6 +53,7 @@ func printJSON(resp interface{}) {
 
 func printRespJSON(resp proto.Message) {
 	jsonMarshaler := &jsonpb.Marshaler{
+		OrigName:     true,
 		EmitDefaults: true,
 		Indent:       "    ",
 	}
