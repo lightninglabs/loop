@@ -16,7 +16,14 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
+)
+
+var (
+	// maxMsgRecvSize is the largest message our REST proxy will receive. We
+	// set this to 200MiB atm.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
 // listenerCfg holds closures used to retrieve listeners for the gRPC services.
@@ -68,14 +75,18 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		return err
 	}
 
+	swaps := make(map[lntypes.Hash]loop.SwapInfo)
 	for _, s := range swapsList {
 		swaps[s.SwapHash] = *s
 	}
 
 	// Instantiate the loopd gRPC server.
 	server := swapClientServer{
-		impl: swapClient,
-		lnd:  &lnd.LndServices,
+		impl:        swapClient,
+		lnd:         &lnd.LndServices,
+		swaps:       swaps,
+		subscribers: make(map[int]chan<- interface{}),
+		statusChan:  make(chan loop.SwapInfo),
 	}
 
 	serverOpts := []grpc.ServerOption{}
@@ -92,12 +103,26 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	}
 	defer grpcListener.Close()
 
+	// The default JSON marshaler of the REST proxy only sets OrigName to
+	// true, which instructs it to use the same field names as specified in
+	// the proto file and not switch to camel case. What we also want is
+	// that the marshaler prints all values, even if they are falsey.
+	customMarshalerOption := proxy.WithMarshalerOption(
+		proxy.MIMEWildcard, &proxy.JSONPb{
+			OrigName:     true,
+			EmitDefaults: true,
+		},
+	)
+
 	// We'll also create and start an accompanying proxy to serve clients
 	// through REST.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	mux := proxy.NewServeMux()
-	proxyOpts := []grpc.DialOption{grpc.WithInsecure()}
+	mux := proxy.NewServeMux(customMarshalerOption)
+	proxyOpts := []grpc.DialOption{
+		grpc.WithInsecure(),
+		grpc.WithDefaultCallOptions(maxMsgRecvSize),
+	}
 	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
 		ctx, mux, config.RPCListen, proxyOpts,
 	)
@@ -130,8 +155,6 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		log.Infof("REST proxy disabled")
 	}
 
-	statusChan := make(chan loop.SwapInfo)
-
 	mainCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
@@ -141,7 +164,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Starting swap client")
-		err := swapClient.Run(mainCtx, statusChan)
+		err := swapClient.Run(mainCtx, server.statusChan)
 		if err != nil {
 			log.Error(err)
 		}
@@ -159,25 +182,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Waiting for updates")
-		for {
-			select {
-			case swap := <-statusChan:
-				swapsLock.Lock()
-				swaps[swap.SwapHash] = swap
-
-				for _, subscriber := range subscribers {
-					select {
-					case subscriber <- swap:
-					case <-mainCtx.Done():
-						return
-					}
-				}
-
-				swapsLock.Unlock()
-			case <-mainCtx.Done():
-				return
-			}
-		}
+		server.processStatusUpdates(mainCtx)
 	}()
 
 	// Start the grpc server.

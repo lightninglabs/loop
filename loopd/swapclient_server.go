@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 
 	"github.com/lightninglabs/loop"
@@ -29,8 +31,13 @@ const (
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
-	impl *loop.Client
-	lnd  *lndclient.LndServices
+	impl             *loop.Client
+	lnd              *lndclient.LndServices
+	swaps            map[lntypes.Hash]loop.SwapInfo
+	subscribers      map[int]chan<- interface{}
+	statusChan       chan loop.SwapInfo
+	nextSubscriberID int
+	swapsLock        sync.Mutex
 }
 
 // LoopOut initiates an loop out swap with the given parameters. The call
@@ -92,6 +99,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	return &looprpc.SwapResponse{
 		Id:          hash.String(),
+		IdBytes:     hash[:],
 		HtlcAddress: htlc.String(),
 	}, nil
 }
@@ -129,6 +137,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	return &looprpc.SwapStatus{
 		Amt:            int64(loopSwap.AmountRequested),
 		Id:             loopSwap.SwapHash.String(),
+		IdBytes:        loopSwap.SwapHash[:],
 		State:          state,
 		InitiationTime: loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
@@ -162,14 +171,14 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	// Add this subscriber to the global subscriber list. Also create a
 	// snapshot of all pending and completed swaps within the lock, to
 	// prevent subscribers from receiving duplicate updates.
-	swapsLock.Lock()
+	s.swapsLock.Lock()
 
-	id := nextSubscriberID
-	nextSubscriberID++
-	subscribers[id] = queue.ChanIn()
+	id := s.nextSubscriberID
+	s.nextSubscriberID++
+	s.subscribers[id] = queue.ChanIn()
 
 	var pendingSwaps, completedSwaps []loop.SwapInfo
-	for _, swap := range swaps {
+	for _, swap := range s.swaps {
 		if swap.State.Type() == loopdb.StateTypePending {
 			pendingSwaps = append(pendingSwaps, swap)
 		} else {
@@ -177,13 +186,13 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 		}
 	}
 
-	swapsLock.Unlock()
+	s.swapsLock.Unlock()
 
 	defer func() {
 		queue.Stop()
-		swapsLock.Lock()
-		delete(subscribers, id)
-		swapsLock.Unlock()
+		s.swapsLock.Lock()
+		delete(s.subscribers, id)
+		s.swapsLock.Unlock()
 	}()
 
 	// Sort completed swaps new to old.
@@ -232,6 +241,50 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 			return nil
 		}
 	}
+}
+
+// ListSwaps returns a list of all currently known swaps and their current
+// status.
+func (s *swapClientServer) ListSwaps(_ context.Context,
+	_ *looprpc.ListSwapsRequest) (*looprpc.ListSwapsResponse, error) {
+
+	var (
+		rpcSwaps = make([]*looprpc.SwapStatus, len(s.swaps))
+		idx      = 0
+		err      error
+	)
+
+	// We can just use the server's in-memory cache as that contains the
+	// most up-to-date state including temporary failures which aren't
+	// persisted to disk. The swaps field is a map, that's why we need an
+	// additional index.
+	for _, swp := range s.swaps {
+		swp := swp
+		rpcSwaps[idx], err = s.marshallSwap(&swp)
+		if err != nil {
+			return nil, err
+		}
+		idx++
+	}
+	return &looprpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+}
+
+// SwapInfo returns all known details about a single swap.
+func (s *swapClientServer) SwapInfo(_ context.Context,
+	req *looprpc.SwapInfoRequest) (*looprpc.SwapStatus, error) {
+
+	swapHash, err := lntypes.MakeHash(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing swap hash: %v", err)
+	}
+
+	// Just return the server's in-memory cache here too as we also want to
+	// return temporary failures to the client.
+	swp, ok := s.swaps[swapHash]
+	if !ok {
+		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
+	}
+	return s.marshallSwap(&swp)
 }
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
@@ -345,6 +398,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	return &looprpc.SwapResponse{
 		Id:          hash.String(),
+		IdBytes:     hash[:],
 		HtlcAddress: htlc.String(),
 	}, nil
 }
@@ -381,6 +435,36 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	}
 
 	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
+// processStatusUpdates reads updates on the status channel and processes them.
+//
+// NOTE: This must run inside a goroutine as it blocks until the main context
+// shuts down.
+func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
+	for {
+		select {
+		// On updates, refresh the server's in-memory state and inform
+		// subscribers about the changes.
+		case swp := <-s.statusChan:
+			s.swapsLock.Lock()
+			s.swaps[swp.SwapHash] = swp
+
+			for _, subscriber := range s.subscribers {
+				select {
+				case subscriber <- swp:
+				case <-mainCtx.Done():
+					return
+				}
+			}
+
+			s.swapsLock.Unlock()
+
+		// Server is shutting down.
+		case <-mainCtx.Done():
+			return
+		}
+	}
 }
 
 // validateConfTarget ensures the given confirmation target is valid. If one

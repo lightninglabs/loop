@@ -10,6 +10,7 @@ require (
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.10.0
 	github.com/jessevdk/go-flags v1.4.0
+	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.9.0-beta-rc3.0.20200121213302-a2977c4438b5
 	github.com/lightningnetwork/lnd/queue v1.0.2
 	github.com/urfave/cli v1.20.0

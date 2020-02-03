@@ -37,9 +37,31 @@ service SwapClient {
 
     /** loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
-    TODO: add MonitorSync version for REST clients.
     */
-    rpc Monitor (MonitorRequest) returns (stream SwapStatus);
+    rpc Monitor (MonitorRequest) returns (stream SwapStatus) {
+        option (google.api.http) = {
+            get: "/v1/loop/monitor"
+        };
+    }
+
+    /**
+    ListSwaps returns a list of all currently known swaps and their current
+    status.
+    */
+    rpc ListSwaps (ListSwapsRequest) returns (ListSwapsResponse) {
+        option (google.api.http) = {
+            get: "/v1/loop/swaps"
+        };
+    }
+
+    /**
+    SwapInfo returns all known details about a single swap.
+    */
+    rpc SwapInfo (SwapInfoRequest) returns (SwapStatus) {
+        option (google.api.http) = {
+            get: "/v1/loop/swap/{id}"
+        };
+    }
 
     /** loop: `terms`
     LoopOutTerms returns the terms that the server enforces for a loop out swap.
@@ -209,8 +231,16 @@ message SwapResponse {
     /**
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
+    DEPRECATED: To make the API more consistent, this field is deprecated in
+    favor of id_bytes and will be removed in a future release.
     */
-    string id = 1;
+    string id = 1 [deprecated = true];
+
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    bytes id_bytes = 3;
 
     /**
     The address of the on-chain htlc.
@@ -231,8 +261,16 @@ message SwapStatus {
     /**
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
+    DEPRECATED: To make the API more consistent, this field is deprecated in
+    favor of id_bytes and will be removed in a future release.
     */
-    string id = 2;
+    string id = 2 [deprecated = true];
+
+    /**
+    Swap identifier to track status in the update stream that is returned from
+    the Start() call. Currently this is the hash that locks the htlcs.
+    */
+    bytes id_bytes = 11;
 
     /**
     Swap type
@@ -317,6 +355,24 @@ enum SwapState {
    paid, but we are still waiting for the htlc spend to confirm.
    */
     INVOICE_SETTLED = 5;
+}
+
+message ListSwapsRequest {
+}
+
+message ListSwapsResponse {
+    /**
+    The list of all currently known swaps and their status.
+    */
+    repeated SwapStatus swaps = 1;
+}
+
+message SwapInfoRequest {
+    /**
+    The swap identifier which currently is the hash that locks the HTLCs. When
+    using REST, this field must be encoded as base64.
+    */
+    bytes id = 1;
 }
 
 message TermsRequest {
@@ -442,7 +498,7 @@ message LsatToken {
     Indicates whether the token is expired or still valid.
     */
     bool expired = 7;
-    
+
     /**
     Identifying attribute of this token in the store. Currently represents the
     file name of the token where it's stored on the file system.

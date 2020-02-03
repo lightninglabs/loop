@@ -2,18 +2,18 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/protobuf-hex-display/json"
+	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
+	"github.com/lightninglabs/protobuf-hex-display/proto"
 
 	"github.com/btcsuite/btcutil"
 
@@ -30,6 +30,10 @@ var (
 	maxRoutingFeeRate = int64(20000)
 
 	defaultSwapWaitTime = 30 * time.Minute
+
+	// maxMsgRecvSize is the largest message our client will receive. We
+	// set this to 200MiB atm.
+	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
 func printJSON(resp interface{}) {
@@ -49,6 +53,7 @@ func printJSON(resp interface{}) {
 
 func printRespJSON(resp proto.Message) {
 	jsonMarshaler := &jsonpb.Marshaler{
+		OrigName:     true,
 		EmitDefaults: true,
 		Indent:       "    ",
 	}
@@ -83,6 +88,7 @@ func main() {
 	app.Commands = []cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
 		monitorCommand, quoteCommand, listAuthCommand,
+		listSwapsCommand, swapInfoCommand,
 	}
 
 	err := app.Run(os.Args)
@@ -232,6 +238,7 @@ func logSwap(swap *looprpc.SwapStatus) {
 func getClientConn(address string) (*grpc.ClientConn, error) {
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(),
+		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
 	conn, err := grpc.Dial(address, opts...)
