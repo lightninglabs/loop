@@ -4,10 +4,6 @@
     "title": "client.proto",
     "version": "version not set"
   },
-  "schemes": [
-    "http",
-    "https"
-  ],
   "consumes": [
     "application/json"
   ],
@@ -17,7 +13,7 @@
   "paths": {
     "/v1/loop/in": {
       "post": {
-        "summary": "*\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
+        "summary": "* loop: `in`\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
         "operationId": "LoopIn",
         "responses": {
           "200": {
@@ -44,7 +40,7 @@
     },
     "/v1/loop/in/quote/{amt}": {
       "get": {
-        "summary": "*\nGetQuote returns a quote for a swap with the provided parameters.",
+        "summary": "* loop: `quote`\nGetQuote returns a quote for a swap with the provided parameters.",
         "operationId": "GetLoopInQuote",
         "responses": {
           "200": {
@@ -95,7 +91,7 @@
     },
     "/v1/loop/in/terms": {
       "get": {
-        "summary": "*\nGetTerms returns the terms that the server enforces for swaps.",
+        "summary": "* loop: `terms`\nGetTerms returns the terms that the server enforces for swaps.",
         "operationId": "GetLoopInTerms",
         "responses": {
           "200": {
@@ -118,7 +114,16 @@
           "200": {
             "description": "A successful response.(streaming responses)",
             "schema": {
-              "$ref": "#/x-stream-definitions/looprpcSwapStatus"
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/looprpcSwapStatus"
+                },
+                "error": {
+                  "$ref": "#/definitions/runtimeStreamError"
+                }
+              },
+              "title": "Stream result of looprpcSwapStatus"
             }
           }
         },
@@ -224,7 +229,7 @@
     },
     "/v1/loop/swap/{id}": {
       "get": {
-        "summary": "*\nSwapInfo returns all known details about a single swap.",
+        "summary": "* loop: `swapinfo`\nSwapInfo returns all known details about a single swap.",
         "operationId": "SwapInfo",
         "responses": {
           "200": {
@@ -251,7 +256,7 @@
     },
     "/v1/loop/swaps": {
       "get": {
-        "summary": "*\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
+        "summary": "* loop: `listswaps`\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
         "operationId": "ListSwaps",
         "responses": {
           "200": {
@@ -268,7 +273,7 @@
     },
     "/v1/lsat/tokens": {
       "get": {
-        "summary": "*\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
+        "summary": "* loop: `listauth`\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
         "operationId": "GetLsatTokens",
         "responses": {
           "200": {
@@ -614,20 +619,6 @@
           }
         }
       }
-    }
-  },
-  "x-stream-definitions": {
-    "looprpcSwapStatus": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "$ref": "#/definitions/looprpcSwapStatus"
-        },
-        "error": {
-          "$ref": "#/definitions/runtimeStreamError"
-        }
-      },
-      "title": "Stream result of looprpcSwapStatus"
     }
   }
 }

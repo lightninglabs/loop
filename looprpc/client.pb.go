@@ -1278,7 +1278,7 @@ type SwapClientClient interface {
 	//point onwards, progress can be tracked via the SwapStatus stream that is
 	//returned from Monitor().
 	LoopOut(ctx context.Context, in *LoopOutRequest, opts ...grpc.CallOption) (*SwapResponse, error)
-	//*
+	//* loop: `in`
 	//LoopIn initiates a loop in swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream
@@ -1287,11 +1287,11 @@ type SwapClientClient interface {
 	//* loop: `monitor`
 	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (SwapClient_MonitorClient, error)
-	//*
+	//* loop: `listswaps`
 	//ListSwaps returns a list of all currently known swaps and their current
 	//status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
-	//*
+	//* loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
 	//* loop: `terms`
@@ -1301,13 +1301,13 @@ type SwapClientClient interface {
 	//LoopOutQuote returns a quote for a loop out swap with the provided
 	//parameters.
 	LoopOutQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*QuoteResponse, error)
-	//*
+	//* loop: `terms`
 	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*TermsResponse, error)
-	//*
+	//* loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*QuoteResponse, error)
-	//*
+	//* loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 }
@@ -1441,7 +1441,7 @@ type SwapClientServer interface {
 	//point onwards, progress can be tracked via the SwapStatus stream that is
 	//returned from Monitor().
 	LoopOut(context.Context, *LoopOutRequest) (*SwapResponse, error)
-	//*
+	//* loop: `in`
 	//LoopIn initiates a loop in swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream
@@ -1450,11 +1450,11 @@ type SwapClientServer interface {
 	//* loop: `monitor`
 	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(*MonitorRequest, SwapClient_MonitorServer) error
-	//*
+	//* loop: `listswaps`
 	//ListSwaps returns a list of all currently known swaps and their current
 	//status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
-	//*
+	//* loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
 	//* loop: `terms`
@@ -1464,13 +1464,13 @@ type SwapClientServer interface {
 	//LoopOutQuote returns a quote for a loop out swap with the provided
 	//parameters.
 	LoopOutQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
-	//*
+	//* loop: `terms`
 	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(context.Context, *TermsRequest) (*TermsResponse, error)
-	//*
+	//* loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
-	//*
+	//* loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
 }
