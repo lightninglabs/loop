@@ -22,7 +22,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `in`
     LoopIn initiates a loop in swap with the given parameters. The call
     returns after the swap has been set up with the swap server. From that
     point onwards, progress can be tracked via the SwapStatus stream
@@ -44,7 +44,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `listswaps`
     ListSwaps returns a list of all currently known swaps and their current
     status.
     */
@@ -54,7 +54,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `swapinfo`
     SwapInfo returns all known details about a single swap.
     */
     rpc SwapInfo (SwapInfoRequest) returns (SwapStatus) {
@@ -82,7 +82,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `terms`
     GetTerms returns the terms that the server enforces for swaps.
     */
     rpc GetLoopInTerms (TermsRequest) returns (TermsResponse) {
@@ -91,7 +91,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `quote`
     GetQuote returns a quote for a swap with the provided parameters.
     */
     rpc GetLoopInQuote (QuoteRequest) returns (QuoteResponse) {
@@ -100,7 +100,7 @@ service SwapClient {
         };
     }
 
-    /**
+    /** loop: `listauth`
     GetLsatTokens returns all LSAT tokens the daemon ever paid for.
     */
     rpc GetLsatTokens (TokensRequest) returns (TokensResponse) {
