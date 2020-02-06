@@ -36,9 +36,8 @@ var quoteCommand = cli.Command{
 }
 
 func quote(ctx *cli.Context) error {
-	// Show command help if the incorrect number arguments and/or flags were
-	// provided.
-	if ctx.NArg() != 1 || ctx.NumFlags() > 1 {
+	// Show command help if the incorrect number arguments was provided.
+	if ctx.NArg() != 1 {
 		return cli.ShowCommandHelp(ctx, "quote")
 	}
 
