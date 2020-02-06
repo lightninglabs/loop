@@ -145,6 +145,52 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, method string,
 	return invoker(rpcCtx2, method, req, reply, cc, iCtx.opts...)
 }
 
+// StreamInterceptor is an interceptor method that can be used directly by gRPC
+// for streaming calls. If the store contains a token, it is attached as
+// credentials to every stream establishment call before patching it through.
+// The response error is also intercepted for every initial stream initiation.
+// If there is an error returned and it is indicating a payment challenge, a
+// token is acquired and paid for automatically. The original request is then
+// repeated back to the server, now with the new token attached.
+func (i *Interceptor) StreamInterceptor(ctx context.Context,
+	desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
+	streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream,
+	error) {
+
+	// To avoid paying for a token twice if two parallel requests are
+	// happening, we require an exclusive lock here.
+	i.lock.Lock()
+	defer i.lock.Unlock()
+
+	// Create the context that we'll use to initiate the real request. This
+	// contains the means to extract response headers and possibly also an
+	// auth token, if we already have paid for one.
+	iCtx, err := i.newInterceptContext(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Try establishing the stream now. If anything goes wrong, we only
+	// handle the LSAT error message that comes in the form of a gRPC status
+	// error. The context of a stream will be used for the whole lifetime of
+	// it, so we can't really clamp down on the initial call with a timeout.
+	stream, err := streamer(ctx, desc, cc, method, iCtx.opts...)
+	if !isPaymentRequired(err) {
+		return stream, err
+	}
+
+	// Find out if we need to pay for a new token or perhaps resume
+	// a previously aborted payment.
+	err = i.handlePayment(iCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute the same request again, now with the LSAT token added
+	// as an RPC credential.
+	return streamer(ctx, desc, cc, method, iCtx.opts...)
+}
+
 // newInterceptContext creates the initial intercept context that can capture
 // metadata from the server and sends the local token to the server if one
 // already exists.
