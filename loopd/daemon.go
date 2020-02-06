@@ -218,7 +218,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		// Debug code to dump goroutines on hanging exit.
 		go func() {
 			time.Sleep(5 * time.Second)
-			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		}()
 
 		cancel()
