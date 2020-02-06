@@ -35,6 +35,7 @@ type config struct {
 	TLSPathSwapSrv string `long:"tlspathswapserver" description:"Path to swap server tls certificate. Only needed if the swap server uses a self-signed certificate."`
 	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
 	RESTListen     string `long:"restlisten" description:"Address to listen on for REST clients"`
+	CORSOrigin     string `long:"corsorigin" description:"The value to send in the Access-Control-Allow-Origin header. Header will be omitted if empty."`
 
 	LogDir         string `long:"logdir" description:"Directory to log output."`
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`

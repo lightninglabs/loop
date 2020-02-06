@@ -119,6 +119,10 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mux := proxy.NewServeMux(customMarshalerOption)
+	var restHandler http.Handler = mux
+	if config.CORSOrigin != "" {
+		restHandler = allowCORS(restHandler, config.CORSOrigin)
+	}
 	proxyOpts := []grpc.DialOption{
 		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
@@ -141,7 +145,7 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 		log.Infof("Starting REST proxy listener")
 
 		defer restListener.Close()
-		proxy := &http.Server{Handler: mux}
+		proxy := &http.Server{Handler: restHandler}
 
 		go func() {
 			err := proxy.Serve(restListener)
@@ -224,4 +228,13 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	wg.Wait()
 
 	return nil
+}
+
+// allowCORS wraps the given http.Handler with a function that adds the
+// Access-Control-Allow-Origin header to the response.
+func allowCORS(handler http.Handler, origin string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		handler.ServeHTTP(w, r)
+	})
 }
