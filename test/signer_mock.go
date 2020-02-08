@@ -3,6 +3,7 @@ package test
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -25,6 +26,12 @@ func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	rawSigs := [][]byte{{1, 2, 3}}
 
 	return rawSigs, nil
+}
+
+func (s *mockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
+	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
+
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (s *mockSigner) SignMessage(ctx context.Context, msg []byte,
