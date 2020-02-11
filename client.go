@@ -437,9 +437,9 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 func (s *Client) LoopIn(globalCtx context.Context,
 	request *LoopInRequest) (*lntypes.Hash, btcutil.Address, error) {
 
-	log.Infof("Loop in %v (channel: %v)",
+	log.Infof("Loop in %v (last hop: %v)",
 		request.Amount,
-		request.LoopInChannel,
+		request.LastHop,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {

@@ -213,12 +213,10 @@ message LoopInRequest {
     int64 max_miner_fee = 3;
 
     /**
-    The channel to loop in. If zero, the channel to loop in is selected based
-    on the lowest routing fee for the swap payment from the server.
-
-    Note: NOT YET IMPLEMENTED
+    The last hop to use for the loop in swap. If empty, the last hop is selected
+    based on the lowest routing fee for the swap payment from the server.
     */
-    uint64 loop_in_channel = 4;
+    bytes last_hop = 4;
 
     /**
     If external_htlc is true, we expect the htlc to be published by an external

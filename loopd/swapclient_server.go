@@ -10,6 +10,7 @@ import (
 
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
+	"github.com/lightningnetwork/lnd/routing/route"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
@@ -387,8 +388,12 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		HtlcConfTarget: defaultConfTarget,
 		ExternalHtlc:   in.ExternalHtlc,
 	}
-	if in.LoopInChannel != 0 {
-		req.LoopInChannel = &in.LoopInChannel
+	if in.LastHop != nil {
+		lastHop, err := route.NewVertexFromBytes(in.LastHop)
+		if err != nil {
+			return nil, err
+		}
+		req.LastHop = &lastHop
 	}
 	hash, htlc, err := s.impl.LoopIn(ctx, req)
 	if err != nil {

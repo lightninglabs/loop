@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"time"
+
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 // LoopInContract contains the data that is serialized to persistent storage for
@@ -16,9 +18,8 @@ type LoopInContract struct {
 	// client sweep tx.
 	HtlcConfTarget int32
 
-	// LoopInChannel is the channel to charge. If zero, any channel may
-	// be used.
-	LoopInChannel *uint64
+	// LastHop is the last hop to use for the loop in swap (optional).
+	LastHop *route.Vertex
 
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
@@ -96,11 +97,11 @@ func serializeLoopInContract(swap *LoopInContract) (
 		return nil, err
 	}
 
-	var chargeChannel uint64
-	if swap.LoopInChannel != nil {
-		chargeChannel = *swap.LoopInChannel
+	var lastHop route.Vertex
+	if swap.LastHop != nil {
+		lastHop = *swap.LastHop
 	}
-	if err := binary.Write(&b, byteOrder, chargeChannel); err != nil {
+	if err := binary.Write(&b, byteOrder, lastHop[:]); err != nil {
 		return nil, err
 	}
 
@@ -167,12 +168,13 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 		return nil, err
 	}
 
-	var loopInChannel uint64
-	if err := binary.Read(r, byteOrder, &loopInChannel); err != nil {
+	var lastHop route.Vertex
+	if err := binary.Read(r, byteOrder, lastHop[:]); err != nil {
 		return nil, err
 	}
-	if loopInChannel != 0 {
-		contract.LoopInChannel = &loopInChannel
+	var noLastHop route.Vertex
+	if lastHop != noLastHop {
+		contract.LastHop = &lastHop
 	}
 
 	if err := binary.Read(r, byteOrder, &contract.ExternalHtlc); err != nil {

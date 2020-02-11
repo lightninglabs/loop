@@ -35,6 +35,7 @@ var (
 	migrations = []migration{
 		migrateCosts,
 		migrateSwapPublicationDeadline,
+		migrateLastHop,
 	}
 
 	latestDBVersion = uint32(len(migrations))

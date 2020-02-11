@@ -13,6 +13,7 @@ import (
 	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 var (
@@ -197,7 +198,7 @@ func TestLoopInStore(t *testing.T) {
 
 	// Next, we'll make a new pending swap that we'll insert into the
 	// database shortly.
-	loopInChannel := uint64(123)
+	lastHop := route.Vertex{1, 2, 3}
 
 	pendingSwap := LoopInContract{
 		SwapContract: SwapContract{
@@ -215,7 +216,7 @@ func TestLoopInStore(t *testing.T) {
 			InitiationTime: time.Unix(0, initiationTime.UnixNano()),
 		},
 		HtlcConfTarget: 2,
-		LoopInChannel:  &loopInChannel,
+		LastHop:        &lastHop,
 		ExternalHtlc:   true,
 	}
 
