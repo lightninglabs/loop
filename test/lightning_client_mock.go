@@ -137,3 +137,16 @@ func (h *mockLightningClient) ListTransactions(
 	h.lnd.lock.Unlock()
 	return txs, nil
 }
+
+// ChannelBackup retrieves the backup for a particular channel. The
+// backup is returned as an encrypted chanbackup.Single payload.
+func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {
+	return nil, nil
+}
+
+// ChannelBackups retrieves backups for all existing pending open and
+// open channels. The backups are returned as an encrypted
+// chanbackup.Multi payload.
+func (h *mockLightningClient) ChannelBackups(ctx context.Context) ([]byte, error) {
+	return nil, nil
+}
