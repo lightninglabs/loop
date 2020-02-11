@@ -77,6 +77,10 @@ type SendPaymentRequest struct {
 	// together and sorted in forward order in order to reach the
 	// destination successfully.
 	RouteHints [][]zpay32.HopHint
+
+	// LastHopPubkey is the pubkey of the last hop of the route taken
+	// for this payment. If empty, any hop may be used.
+	LastHopPubkey *route.Vertex
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -110,6 +114,9 @@ func (r *routerClient) SendPayment(ctx context.Context,
 	}
 	if request.OutgoingChannel != nil {
 		rpcReq.OutgoingChanId = *request.OutgoingChannel
+	}
+	if request.LastHopPubkey != nil {
+		rpcReq.LastHopPubkey = request.LastHopPubkey[:]
 	}
 
 	// Only if there is no payment request set, we will parse the individual
