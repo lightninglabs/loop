@@ -7,27 +7,36 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
 
-var loopInCommand = cli.Command{
-	Name:      "in",
-	Usage:     "perform an on-chain to off-chain swap (loop in)",
-	ArgsUsage: "amt",
-	Description: `
+var (
+	lastHopFlag = cli.StringFlag{
+		Name:  "last_hop",
+		Usage: "the pubkey of the last hop to use for this swap",
+	}
+
+	loopInCommand = cli.Command{
+		Name:      "in",
+		Usage:     "perform an on-chain to off-chain swap (loop in)",
+		ArgsUsage: "amt",
+		Description: `
 		Send the amount in satoshis specified by the amt argument off-chain.`,
-	Flags: []cli.Flag{
-		cli.Uint64Flag{
-			Name:  "amt",
-			Usage: "the amount in satoshis to loop in",
+		Flags: []cli.Flag{
+			cli.Uint64Flag{
+				Name:  "amt",
+				Usage: "the amount in satoshis to loop in",
+			},
+			cli.BoolFlag{
+				Name:  "external",
+				Usage: "expect htlc to be published externally",
+			},
+			lastHopFlag,
 		},
-		cli.BoolFlag{
-			Name:  "external",
-			Usage: "expect htlc to be published externally",
-		},
-	},
-	Action: loopIn,
-}
+		Action: loopIn,
+	}
+)
 
 func loopIn(ctx *cli.Context) error {
 	args := ctx.Args()
@@ -73,12 +82,25 @@ func loopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	resp, err := client.LoopIn(context.Background(), &looprpc.LoopInRequest{
+	req := &looprpc.LoopInRequest{
 		Amt:          int64(amt),
 		MaxMinerFee:  int64(limits.maxMinerFee),
 		MaxSwapFee:   int64(limits.maxSwapFee),
 		ExternalHtlc: external,
-	})
+	}
+
+	if ctx.IsSet(lastHopFlag.Name) {
+		lastHop, err := route.NewVertexFromStr(
+			ctx.String(lastHopFlag.Name),
+		)
+		if err != nil {
+			return err
+		}
+
+		req.LastHop = lastHop[:]
+	}
+
+	resp, err := client.LoopIn(context.Background(), req)
 	if err != nil {
 		return err
 	}

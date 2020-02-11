@@ -114,7 +114,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// htlc.
 	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
-		request.Amount, senderKey, swapInvoice,
+		request.Amount, senderKey, swapInvoice, request.LastHop,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
