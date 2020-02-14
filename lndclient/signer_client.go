@@ -17,6 +17,13 @@ type SignerClient interface {
 	SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		signDescriptors []*input.SignDescriptor) ([][]byte, error)
 
+	// ComputeInputScript generates the proper input script for P2WPKH
+	// output and NP2WPKH outputs. This method only requires that the
+	// `Output`, `HashType`, `SigHashes` and `InputIndex` fields are
+	// populated within the sign descriptors.
+	ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
+		signDescriptors []*input.SignDescriptor) ([]*input.Script, error)
+
 	// SignMessage signs a message with the key specified in the key
 	// locator. The returned signature is fixed-size LN wire format encoded.
 	SignMessage(ctx context.Context, msg []byte,
@@ -56,13 +63,8 @@ func newSignerClient(conn *grpc.ClientConn,
 	}
 }
 
-func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
-
-	txRaw, err := swap.EncodeTx(tx)
-	if err != nil {
-		return nil, err
-	}
+func marshallSignDescriptors(signDescriptors []*input.SignDescriptor,
+) []*signrpc.SignDescriptor {
 
 	rpcSignDescs := make([]*signrpc.SignDescriptor, len(signDescriptors))
 	for i, signDesc := range signDescriptors {
@@ -103,6 +105,18 @@ func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		}
 	}
 
+	return rpcSignDescs
+}
+
+func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
+	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
+
+	txRaw, err := swap.EncodeTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	rpcSignDescs := marshallSignDescriptors(signDescriptors)
+
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
@@ -118,6 +132,44 @@ func (s *signerClient) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	}
 
 	return resp.RawSigs, nil
+}
+
+// ComputeInputScript generates the proper input script for P2WPKH output and
+// NP2WPKH outputs. This method only requires that the `Output`, `HashType`,
+// `SigHashes` and `InputIndex` fields are populated within the sign
+// descriptors.
+func (s *signerClient) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
+	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
+
+	txRaw, err := swap.EncodeTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	rpcSignDescs := marshallSignDescriptors(signDescriptors)
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = s.signerMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.ComputeInputScript(
+		rpcCtx, &signrpc.SignReq{
+			RawTxBytes: txRaw,
+			SignDescs:  rpcSignDescs,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	inputScripts := make([]*input.Script, 0, len(resp.InputScripts))
+	for _, inputScript := range resp.InputScripts {
+		inputScripts = append(inputScripts, &input.Script{
+			SigScript: inputScript.SigScript,
+			Witness:   inputScript.Witness,
+		})
+	}
+
+	return inputScripts, nil
 }
 
 // SignMessage signs a message with the key specified in the key locator. The
