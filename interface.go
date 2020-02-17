@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 // OutRequest contains the required parameters for a loop out swap.
@@ -173,9 +174,9 @@ type LoopInRequest struct {
 	// client htlc tx.
 	HtlcConfTarget int32
 
-	// LoopInChannel optionally specifies the short channel id of the
-	// channel to loop in.
-	LoopInChannel *uint64
+	// LastHop optionally specifies the last hop to use for the loop in
+	// payment.
+	LastHop *route.Vertex
 
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.

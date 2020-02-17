@@ -78,6 +78,7 @@ message ServerLoopInRequest {
     bytes swap_hash = 2;
     uint64 amt = 3;
     string swap_invoice = 4;
+    bytes last_hop = 5;
 }
 
 message ServerLoopInResponse {

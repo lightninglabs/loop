@@ -4,6 +4,10 @@
     "title": "client.proto",
     "version": "version not set"
   },
+  "schemes": [
+    "http",
+    "https"
+  ],
   "consumes": [
     "application/json"
   ],
@@ -114,16 +118,7 @@
           "200": {
             "description": "A successful response.(streaming responses)",
             "schema": {
-              "type": "object",
-              "properties": {
-                "result": {
-                  "$ref": "#/definitions/looprpcSwapStatus"
-                },
-                "error": {
-                  "$ref": "#/definitions/runtimeStreamError"
-                }
-              },
-              "title": "Stream result of looprpcSwapStatus"
+              "$ref": "#/x-stream-definitions/looprpcSwapStatus"
             }
           }
         },
@@ -320,10 +315,10 @@
           "format": "int64",
           "description": "*\nMaximum in on-chain fees that we are willing to spent. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
-        "loop_in_channel": {
+        "last_hop": {
           "type": "string",
-          "format": "uint64",
-          "description": "*\nThe channel to loop in. If zero, the channel to loop in is selected based\non the lowest routing fee for the swap payment from the server.\n\nNote: NOT YET IMPLEMENTED"
+          "format": "byte",
+          "description": "*\nThe last hop to use for the loop in swap. If empty, the last hop is selected\nbased on the lowest routing fee for the swap payment from the server."
         },
         "external_htlc": {
           "type": "boolean",
@@ -619,6 +614,20 @@
           }
         }
       }
+    }
+  },
+  "x-stream-definitions": {
+    "looprpcSwapStatus": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/looprpcSwapStatus"
+        },
+        "error": {
+          "$ref": "#/definitions/runtimeStreamError"
+        }
+      },
+      "title": "Stream result of looprpcSwapStatus"
     }
   }
 }

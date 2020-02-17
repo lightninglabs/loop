@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -40,7 +41,7 @@ type swapServerClient interface {
 
 	NewLoopInSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
-		senderKey [33]byte, swapInvoice string) (
+		senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
 		*newLoopInResponse, error)
 }
 
@@ -203,18 +204,22 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
-	swapInvoice string) (*newLoopInResponse, error) {
+	swapInvoice string, lastHop *route.Vertex) (*newLoopInResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	swapResp, err := s.server.NewLoopInSwap(rpcCtx,
-		&looprpc.ServerLoopInRequest{
-			SwapHash:    swapHash[:],
-			Amt:         uint64(amount),
-			SenderKey:   senderKey[:],
-			SwapInvoice: swapInvoice,
-		},
-	)
+
+	req := &looprpc.ServerLoopInRequest{
+		SwapHash:    swapHash[:],
+		Amt:         uint64(amount),
+		SenderKey:   senderKey[:],
+		SwapInvoice: swapInvoice,
+	}
+	if lastHop != nil {
+		req.LastHop = lastHop[:]
+	}
+
+	swapResp, err := s.server.NewLoopInSwap(rpcCtx, req)
 	if err != nil {
 		return nil, err
 	}

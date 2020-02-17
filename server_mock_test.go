@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
@@ -127,7 +128,7 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 
 func (s *serverMock) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
-	senderKey [33]byte, swapInvoice string) (
+	senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
 	*newLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
