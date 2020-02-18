@@ -23,11 +23,11 @@ func TestFileStore(t *testing.T) {
 		paidPreimage = lntypes.Preimage{1, 2, 3, 4, 5}
 		paidToken    = &Token{
 			Preimage: paidPreimage,
-			baseMac:  makeMac(t),
+			baseMac:  makeMac(),
 		}
 		pendingToken = &Token{
 			Preimage: zeroPreimage,
-			baseMac:  makeMac(t),
+			baseMac:  makeMac(),
 		}
 	)
 
