@@ -38,11 +38,7 @@ service SwapClient {
     /** loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
     */
-    rpc Monitor (MonitorRequest) returns (stream SwapStatus) {
-        option (google.api.http) = {
-            get: "/v1/loop/monitor"
-        };
-    }
+    rpc Monitor (MonitorRequest) returns (stream SwapStatus);
 
     /** loop: `listswaps`
     ListSwaps returns a list of all currently known swaps and their current
@@ -368,7 +364,7 @@ message ListSwapsResponse {
 message SwapInfoRequest {
     /**
     The swap identifier which currently is the hash that locks the HTLCs. When
-    using REST, this field must be encoded as base64.
+    using REST, this field must be encoded as URL safe base64.
     */
     bytes id = 1;
 }

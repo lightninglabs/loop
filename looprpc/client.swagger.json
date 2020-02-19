@@ -110,23 +110,6 @@
         ]
       }
     },
-    "/v1/loop/monitor": {
-      "get": {
-        "summary": "* loop: `monitor`\nMonitor will return a stream of swap updates for currently active swaps.",
-        "operationId": "Monitor",
-        "responses": {
-          "200": {
-            "description": "A successful response.(streaming responses)",
-            "schema": {
-              "$ref": "#/x-stream-definitions/looprpcSwapStatus"
-            }
-          }
-        },
-        "tags": [
-          "SwapClient"
-        ]
-      }
-    },
     "/v1/loop/out": {
       "post": {
         "summary": "* loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
@@ -237,7 +220,7 @@
         "parameters": [
           {
             "name": "id",
-            "description": "*\nThe swap identifier which currently is the hash that locks the HTLCs. When\nusing REST, this field must be encoded as base64.",
+            "description": "*\nThe swap identifier which currently is the hash that locks the HTLCs. When\nusing REST, this field must be encoded as URL safe base64.",
             "in": "path",
             "required": true,
             "type": "string",
