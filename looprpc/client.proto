@@ -412,7 +412,7 @@ message QuoteRequest {
     publishing the HTLC on chain. Setting this to a larger value will give the
     server the opportunity to batch multiple swaps together, and wait for
     low-fee periods before publishing the HTLC, potentially resulting in a
-    lower total swap fee.
+    lower total swap fee. This only has an effect on loop out quotes.
     */
     uint64 swap_publication_deadline = 4;
 }
@@ -429,7 +429,13 @@ message QuoteResponse {
     int64 prepay_amt = 2;
 
     /**
-    An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
+    An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
+    a loop out or to pay to the HTLC for loop in. If a miner fee of 0 is
+    returned, it means the external_htlc flag was set for a loop in and the fee
+    estimation was skipped. If a miner fee of -1 is returned, it means lnd's
+    wallet tried to estimate the fee but was unable to create a sample
+    estimation transaction because not enough funds are available. An
+    information message should be shown to the user in this case.
     */
     int64 miner_fee = 3;
 
