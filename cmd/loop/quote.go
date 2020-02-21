@@ -11,6 +11,61 @@ import (
 var quoteCommand = cli.Command{
 	Name:        "quote",
 	Usage:       "get a quote for the cost of a swap",
+	Subcommands: []cli.Command{quoteInCommand, quoteOutCommand},
+}
+
+var quoteInCommand = cli.Command{
+	Name:        "in",
+	Usage:       "get a quote for the cost of a loop in swap",
+	ArgsUsage:   "amt",
+	Description: "Allows to determine the cost of a swap up front",
+	Flags: []cli.Flag{
+		cli.Uint64Flag{
+			Name: "conf_target",
+			Usage: "the number of blocks from the swap " +
+				"initiation height that the on-chain HTLC " +
+				"should be swept within in a Loop Out",
+			Value: 6,
+		},
+	},
+	Action: quoteIn,
+}
+
+func quoteIn(ctx *cli.Context) error {
+	// Show command help if the incorrect number arguments was provided.
+	if ctx.NArg() != 1 {
+		return cli.ShowCommandHelp(ctx, "in")
+	}
+
+	args := ctx.Args()
+	amt, err := parseAmt(args[0])
+	if err != nil {
+		return err
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	ctxb := context.Background()
+	quoteReq := &looprpc.QuoteRequest{
+		Amt:        int64(amt),
+		ConfTarget: int32(ctx.Uint64("conf_target")),
+	}
+	quoteResp, err := client.GetLoopInQuote(ctxb, quoteReq)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(quoteResp)
+	return nil
+}
+
+var quoteOutCommand = cli.Command{
+	Name:        "out",
+	Usage:       "get a quote for the cost of a loop out swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
 	Flags: []cli.Flag{
@@ -32,13 +87,13 @@ var quoteCommand = cli.Command{
 				"swap fee.",
 		},
 	},
-	Action: quote,
+	Action: quoteOut,
 }
 
-func quote(ctx *cli.Context) error {
+func quoteOut(ctx *cli.Context) error {
 	// Show command help if the incorrect number arguments was provided.
 	if ctx.NArg() != 1 {
-		return cli.ShowCommandHelp(ctx, "quote")
+		return cli.ShowCommandHelp(ctx, "out")
 	}
 
 	args := ctx.Args()
@@ -60,15 +115,16 @@ func quote(ctx *cli.Context) error {
 	}
 
 	ctxb := context.Background()
-	resp, err := client.LoopOutQuote(ctxb, &looprpc.QuoteRequest{
+	quoteReq := &looprpc.QuoteRequest{
 		Amt:                     int64(amt),
 		ConfTarget:              int32(ctx.Uint64("conf_target")),
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
-	})
+	}
+	quoteResp, err := client.LoopOutQuote(ctxb, quoteReq)
 	if err != nil {
 		return err
 	}
 
-	printRespJSON(resp)
+	printRespJSON(quoteResp)
 	return nil
 }
