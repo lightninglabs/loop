@@ -159,9 +159,8 @@ func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
 			"wallet.\n\n")
 	}
 
-	fmt.Printf("Max swap fees for %d Loop %v: %d\n",
-		amt, swapType, totalSuccessMax,
-	)
+	fmt.Printf("Max swap fees for %d Loop %v: %d\n", amt, swapType,
+		totalSuccessMax)
 
 	if warning != "" {
 		fmt.Println(warning)

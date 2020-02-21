@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
 
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
@@ -57,6 +60,18 @@ func quoteIn(ctx *cli.Context) error {
 	quoteResp, err := client.GetLoopInQuote(ctxb, quoteReq)
 	if err != nil {
 		return err
+	}
+
+	// For loop in, the fee estimation is handed to lnd which tries to
+	// construct a real transaction to sample realistic fees to pay to the
+	// HTLC. If the wallet doesn't have enough funds to create this TX, we
+	// don't want to fail the quote. But the user should still be informed
+	// why the fee shows as -1.
+	if quoteResp.MinerFee == int64(loop.MinerFeeEstimationFailed) {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: Miner fee estimation "+
+			"not possible, lnd has insufficient funds to "+
+			"create a sample transaction for selected "+
+			"amount.\n")
 	}
 
 	printRespJSON(quoteResp)
