@@ -19,7 +19,7 @@ func getClient(config *config, lnd *lndclient.LndServices) (*loop.Client,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(
-		storeDir, config.SwapServer, config.Insecure,
+		storeDir, config.SwapServer, config.Proxy, config.Insecure,
 		config.TLSPathSwapSrv, lnd, btcutil.Amount(config.MaxLSATCost),
 		btcutil.Amount(config.MaxLSATFee),
 	)

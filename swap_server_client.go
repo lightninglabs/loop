@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -15,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/tor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -52,8 +54,8 @@ type grpcSwapServerClient struct {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(address string, insecure bool, tlsPath string,
-	lsatStore lsat.Store, lnd *lndclient.LndServices,
+func newSwapServerClient(address, proxyAddress string, insecure bool,
+	tlsPath string, lsatStore lsat.Store, lnd *lndclient.LndServices,
 	maxLSATCost, maxLSATFee btcutil.Amount) (*grpcSwapServerClient, error) {
 
 	// Create the server connection with the interceptor that will handle
@@ -62,7 +64,7 @@ func newSwapServerClient(address string, insecure bool, tlsPath string,
 		lnd, lsatStore, serverRPCTimeout, maxLSATCost, maxLSATFee,
 	)
 	serverConn, err := getSwapServerConn(
-		address, insecure, tlsPath, clientInterceptor,
+		address, proxyAddress, insecure, tlsPath, clientInterceptor,
 	)
 	if err != nil {
 		return nil, err
@@ -243,9 +245,11 @@ func (s *grpcSwapServerClient) Close() {
 	s.conn.Close()
 }
 
-// getSwapServerConn returns a connection to the swap server.
-func getSwapServerConn(address string, insecure bool, tlsPath string,
-	interceptor *lsat.Interceptor) (*grpc.ClientConn, error) {
+// getSwapServerConn returns a connection to the swap server. A non-empty
+// proxyAddr indicates that a SOCKS proxy found at the address should be used to
+// establish the connection.
+func getSwapServerConn(address, proxyAddress string, insecure bool,
+	tlsPath string, interceptor *lsat.Interceptor) (*grpc.ClientConn, error) {
 
 	// Create a dial options array.
 	opts := []grpc.DialOption{grpc.WithUnaryInterceptor(
@@ -271,6 +275,17 @@ func getSwapServerConn(address string, insecure bool, tlsPath string,
 	default:
 		creds := credentials.NewTLS(&tls.Config{})
 		opts = append(opts, grpc.WithTransportCredentials(creds))
+	}
+
+	// If a SOCKS proxy address was specified, then we should dial through
+	// it.
+	if proxyAddress != "" {
+		log.Infof("Proxying connection to %v over Tor SOCKS proxy %v",
+			address, proxyAddress)
+		torDialer := func(_ context.Context, addr string) (net.Conn, error) {
+			return tor.Dial(addr, proxyAddress, false)
+		}
+		opts = append(opts, grpc.WithContextDialer(torDialer))
 	}
 
 	conn, err := grpc.Dial(address, opts...)

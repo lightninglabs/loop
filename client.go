@@ -78,7 +78,7 @@ type Client struct {
 }
 
 // NewClient returns a new instance to initiate swaps with.
-func NewClient(dbDir string, serverAddress string, insecure bool,
+func NewClient(dbDir string, serverAddress, proxyAddress string, insecure bool,
 	tlsPathServer string, lnd *lndclient.LndServices, maxLSATCost,
 	maxLSATFee btcutil.Amount) (*Client, func(), error) {
 
@@ -92,8 +92,8 @@ func NewClient(dbDir string, serverAddress string, insecure bool,
 	}
 
 	swapServerClient, err := newSwapServerClient(
-		serverAddress, insecure, tlsPathServer, lsatStore, lnd,
-		maxLSATCost, maxLSATFee,
+		serverAddress, proxyAddress, insecure, tlsPathServer, lsatStore,
+		lnd, maxLSATCost, maxLSATFee,
 	)
 	if err != nil {
 		return nil, nil, err
