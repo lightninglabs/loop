@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,6 +60,11 @@ var (
 	globalCallTimeout = serverRPCTimeout + lsat.PaymentTimeout
 
 	republishDelay = 10 * time.Second
+
+	// MinerFeeEstimationFailed is a magic number that is returned in a
+	// quote call as the miner fee if the fee estimation in lnd's wallet
+	// failed because of insufficient funds.
+	MinerFeeEstimationFailed btcutil.Amount = -1
 )
 
 // Client performs the client side part of swaps. This interface exists to be
@@ -505,10 +511,24 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		}, nil
 	}
 
-	// Get estimate for miner fee.
+	// Get estimate for miner fee. If estimating the miner fee for the
+	// requested amount is not possible because lnd's wallet cannot
+	// construct a sample TX, we just return zero instead of failing the
+	// quote. The user interface should inform the user that fee estimation
+	// was not possible.
+	//
+	// TODO(guggero): Thread through error code from lnd to avoid string
+	// matching.
 	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
 		ctx, request.Amount, request.HtlcConfTarget,
 	)
+	if err != nil && strings.Contains(err.Error(), "insufficient funds") {
+		return &LoopInQuote{
+			SwapFee:   swapFee,
+			MinerFee:  MinerFeeEstimationFailed,
+			CltvDelta: quote.CltvDelta,
+		}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

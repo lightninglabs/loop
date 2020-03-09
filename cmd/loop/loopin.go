@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -74,6 +75,18 @@ func loopIn(ctx *cli.Context) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	// For loop in, the fee estimation is handed to lnd which tries to
+	// construct a real transaction to sample realistic fees to pay to the
+	// HTLC. If the wallet doesn't have enough funds to create this TX, we
+	// know it won't have enough to pay the real transaction either. It
+	// makes sense to abort the loop in this case.
+	if !external && quote.MinerFee == int64(loop.MinerFeeEstimationFailed) {
+		return fmt.Errorf("miner fee estimation not " +
+			"possible, lnd has insufficient funds to " +
+			"create a sample transaction for selected " +
+			"amount")
 	}
 
 	limits := getInLimits(amt, quote)

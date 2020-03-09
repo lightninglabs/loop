@@ -81,7 +81,7 @@
           },
           {
             "name": "swap_publication_deadline",
-            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee.",
+            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
             "in": "query",
             "required": false,
             "type": "string",
@@ -176,7 +176,7 @@
           },
           {
             "name": "swap_publication_deadline",
-            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee.",
+            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
             "in": "query",
             "required": false,
             "type": "string",
@@ -424,7 +424,7 @@
         "miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC."
+          "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC for\na loop out or to pay to the HTLC for loop in. If a miner fee of 0 is\nreturned, it means the external_htlc flag was set for a loop in and the fee\nestimation was skipped. If a miner fee of -1 is returned, it means lnd's\nwallet tried to estimate the fee but was unable to create a sample\nestimation transaction because not enough funds are available. An\ninformation message should be shown to the user in this case."
         },
         "swap_payment_dest": {
           "type": "string",

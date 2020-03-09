@@ -813,7 +813,7 @@ type QuoteRequest struct {
 	//publishing the HTLC on chain. Setting this to a larger value will give the
 	//server the opportunity to batch multiple swaps together, and wait for
 	//low-fee periods before publishing the HTLC, potentially resulting in a
-	//lower total swap fee.
+	//lower total swap fee. This only has an effect on loop out quotes.
 	SwapPublicationDeadline uint64   `protobuf:"varint,4,opt,name=swap_publication_deadline,json=swapPublicationDeadline,proto3" json:"swap_publication_deadline,omitempty"`
 	XXX_NoUnkeyedLiteral    struct{} `json:"-"`
 	XXX_unrecognized        []byte   `json:"-"`
@@ -881,7 +881,13 @@ type QuoteResponse struct {
 	//The part of the swap fee that is requested as a prepayment.
 	PrepayAmt int64 `protobuf:"varint,2,opt,name=prepay_amt,json=prepayAmt,proto3" json:"prepay_amt,omitempty"`
 	//*
-	//An estimate of the on-chain fee that needs to be paid to sweep the HTLC.
+	//An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
+	//a loop out or to pay to the HTLC for loop in. If a miner fee of 0 is
+	//returned, it means the external_htlc flag was set for a loop in and the fee
+	//estimation was skipped. If a miner fee of -1 is returned, it means lnd's
+	//wallet tried to estimate the fee but was unable to create a sample
+	//estimation transaction because not enough funds are available. An
+	//information message should be shown to the user in this case.
 	MinerFee int64 `protobuf:"varint,3,opt,name=miner_fee,json=minerFee,proto3" json:"miner_fee,omitempty"`
 	//*
 	//The node pubkey where the swap payment needs to be paid
