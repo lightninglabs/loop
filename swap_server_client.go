@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -56,11 +57,18 @@ var _ swapServerClient = (*grpcSwapServerClient)(nil)
 func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 	*grpcSwapServerClient, error) {
 
+	// If a proxy address is set and the destination is an onion service, we
+	// know tor is being used to secure the transport of our credentials. We
+	// need to set the flag accordingly, otherwise gRPC won't add the LSAT
+	// macaroon to the request.
+	allowInsecure := cfg.ProxyAddress != "" &&
+		strings.HasSuffix(cfg.ServerAddress, tor.OnionSuffix)
+
 	// Create the server connection with the interceptor that will handle
 	// the LSAT protocol for us.
 	clientInterceptor := lsat.NewInterceptor(
 		cfg.Lnd, lsatStore, serverRPCTimeout, cfg.MaxLsatCost,
-		cfg.MaxLsatFee,
+		cfg.MaxLsatFee, allowInsecure,
 	)
 	serverConn, err := getSwapServerConn(
 		cfg.ServerAddress, cfg.ProxyAddress, cfg.Insecure,

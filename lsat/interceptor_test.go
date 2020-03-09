@@ -59,7 +59,7 @@ var (
 	testTimeout = 5 * time.Second
 	interceptor = NewInterceptor(
 		&lnd.LndServices, store, testTimeout,
-		DefaultMaxCostSats, DefaultMaxRoutingFeeSats,
+		DefaultMaxCostSats, DefaultMaxRoutingFeeSats, false,
 	)
 	testMac         = makeMac()
 	testMacBytes    = serializeMac(testMac)
@@ -173,7 +173,7 @@ var (
 			initialPreimage: nil,
 			interceptor: NewInterceptor(
 				&lnd.LndServices, store, testTimeout,
-				100, DefaultMaxRoutingFeeSats,
+				100, DefaultMaxRoutingFeeSats, false,
 			),
 			resetCb: func() {
 				resetBackend(

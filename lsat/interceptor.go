@@ -12,7 +12,6 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
-	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -65,12 +64,13 @@ var (
 // challenges with embedded payment requests. It uses a connection to lnd to
 // automatically pay for an authentication token.
 type Interceptor struct {
-	lnd         *lndclient.LndServices
-	store       Store
-	callTimeout time.Duration
-	maxCost     btcutil.Amount
-	maxFee      btcutil.Amount
-	lock        sync.Mutex
+	lnd           *lndclient.LndServices
+	store         Store
+	callTimeout   time.Duration
+	maxCost       btcutil.Amount
+	maxFee        btcutil.Amount
+	lock          sync.Mutex
+	allowInsecure bool
 }
 
 // NewInterceptor creates a new gRPC client interceptor that uses the provided
@@ -78,14 +78,15 @@ type Interceptor struct {
 // indicated store already contains a usable token.
 func NewInterceptor(lnd *lndclient.LndServices, store Store,
 	rpcCallTimeout time.Duration, maxCost,
-	maxFee btcutil.Amount) *Interceptor {
+	maxFee btcutil.Amount, allowInsecure bool) *Interceptor {
 
 	return &Interceptor{
-		lnd:         lnd,
-		store:       store,
-		callTimeout: rpcCallTimeout,
-		maxCost:     maxCost,
-		maxFee:      maxFee,
+		lnd:           lnd,
+		store:         store,
+		callTimeout:   rpcCallTimeout,
+		maxCost:       maxCost,
+		maxFee:        maxFee,
+		allowInsecure: allowInsecure,
 	}
 }
 
@@ -285,7 +286,7 @@ func (i *Interceptor) addLsatCredentials(iCtx *interceptContext) error {
 		return err
 	}
 	iCtx.opts = append(iCtx.opts, grpc.PerRPCCredentials(
-		macaroons.NewMacaroonCredential(macaroon),
+		NewMacaroonCredential(macaroon, i.allowInsecure),
 	))
 	return nil
 }
