@@ -134,7 +134,7 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 
 		// Apply a multiplier to the estimated miner fee, to not get
 		// the swap canceled because fees increased in the mean time.
-		maxMinerFee: btcutil.Amount(quote.MinerFee) * 3,
+		maxMinerFee: btcutil.Amount(quote.MinerFee) * 100,
 
 		maxSwapFee:   btcutil.Amount(quote.SwapFee),
 		maxPrepayAmt: &maxPrepayAmt,
