@@ -50,6 +50,8 @@ func daemon(config *config, lisCfg *listenerCfg) error {
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
 	if config.SwapServer == "" {
+		// TODO(wilmer): Use onion service addresses when proxy is
+		// active.
 		switch config.Network {
 		case "mainnet":
 			config.SwapServer = mainnetServer
