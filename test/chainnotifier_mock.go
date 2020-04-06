@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"sync"
 	"time"
 
@@ -111,9 +112,11 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 
 		select {
 		case m := <-c.lnd.ConfChannel:
-			select {
-			case confChan <- m:
-			case <-ctx.Done():
+			if bytes.Equal(m.Tx.TxOut[0].PkScript, pkScript) {
+				select {
+				case confChan <- m:
+				case <-ctx.Done():
+				}
 			}
 		case <-ctx.Done():
 		}
