@@ -34,10 +34,10 @@ type RouterClient interface {
 
 // PaymentStatus describe the state of a payment.
 type PaymentStatus struct {
-	State    routerrpc.PaymentState
+	State    lnrpc.Payment_PaymentStatus
 	Preimage lntypes.Preimage
 	Fee      lnwire.MilliSatoshi
-	Route    *route.Route
+	Value    lnwire.MilliSatoshi
 }
 
 // SendPaymentRequest defines the payment parameters for a new payment.
@@ -170,7 +170,7 @@ func (r *routerClient) trackPayment(ctx context.Context,
 	errorChan := make(chan error, 1)
 	go func() {
 		for {
-			rpcStatus, err := stream.Recv()
+			payment, err := stream.Recv()
 			if err != nil {
 				switch status.Convert(err).Code() {
 
@@ -189,7 +189,7 @@ func (r *routerClient) trackPayment(ctx context.Context,
 				return
 			}
 
-			status, err := unmarshallPaymentStatus(rpcStatus)
+			status, err := unmarshallPaymentStatus(payment)
 			if err != nil {
 				errorChan <- err
 				return
@@ -208,33 +208,23 @@ func (r *routerClient) trackPayment(ctx context.Context,
 
 // unmarshallPaymentStatus converts an rpc status update to the PaymentStatus
 // type that is used throughout the application.
-func unmarshallPaymentStatus(rpcStatus *routerrpc.PaymentStatus) (
+func unmarshallPaymentStatus(rpcPayment *lnrpc.Payment) (
 	*PaymentStatus, error) {
 
 	status := PaymentStatus{
-		State: rpcStatus.State,
+		State: rpcPayment.Status,
 	}
 
-	if status.State == routerrpc.PaymentState_SUCCEEDED {
-		preimage, err := lntypes.MakePreimage(
-			rpcStatus.Preimage,
+	if status.State == lnrpc.Payment_SUCCEEDED {
+		preimage, err := lntypes.MakePreimageFromStr(
+			rpcPayment.PaymentPreimage,
 		)
 		if err != nil {
 			return nil, err
 		}
 		status.Preimage = preimage
-
-		status.Fee = lnwire.MilliSatoshi(
-			rpcStatus.Route.TotalFeesMsat,
-		)
-
-		if rpcStatus.Route != nil {
-			route, err := unmarshallRoute(rpcStatus.Route)
-			if err != nil {
-				return nil, err
-			}
-			status.Route = route
-		}
+		status.Fee = lnwire.MilliSatoshi(rpcPayment.FeeMsat)
+		status.Value = lnwire.MilliSatoshi(rpcPayment.ValueMsat)
 	}
 
 	return &status, nil
