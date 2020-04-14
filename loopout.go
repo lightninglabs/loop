@@ -41,6 +41,12 @@ var (
 	paymentTimeout = time.Minute
 )
 
+const (
+	// loopOutMaxShards defines that maximum number of shards that may be
+	// used for a loop out swap.
+	loopOutMaxShards = 5
+)
+
 // loopOutSwap contains all the in-memory state related to a pending loop out
 // swap.
 type loopOutSwap struct {
@@ -452,6 +458,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		Invoice:         invoice,
 		OutgoingChannel: outgoingChannel,
 		Timeout:         paymentTimeout,
+		MaxShards:       loopOutMaxShards,
 	}
 
 	// Lookup state of the swap payment.
