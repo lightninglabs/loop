@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -32,6 +35,10 @@ var (
 	//
 	// TODO(wilmer): tune?
 	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
+
+	// paymentTimeout is the timeout for the loop out payment loop as
+	// communicated to lnd.
+	paymentTimeout = time.Minute
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -384,17 +391,118 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
-	s.swapPaymentChan = s.lnd.Client.PayInvoice(
+	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
 		s.LoopOutContract.UnchargeChannel,
 	)
 
 	// Pay the prepay invoice.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
-	s.prePaymentChan = s.lnd.Client.PayInvoice(
+	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
 		nil,
 	)
+}
+
+// payInvoice pays a single invoice.
+func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
+	maxFee btcutil.Amount,
+	outgoingChannel *uint64) chan lndclient.PaymentResult {
+
+	resultChan := make(chan lndclient.PaymentResult)
+
+	go func() {
+		var result lndclient.PaymentResult
+
+		status, err := s.payInvoiceAsync(
+			ctx, invoice, maxFee, outgoingChannel,
+		)
+		if err != nil {
+			result.Err = err
+		} else {
+			result.Preimage = status.Preimage
+			result.PaidFee = status.Fee.ToSatoshis()
+			result.PaidAmt = status.Value.ToSatoshis()
+		}
+
+		select {
+		case resultChan <- result:
+		case <-ctx.Done():
+		}
+	}()
+
+	return resultChan
+}
+
+// payInvoiceAsync is the asynchronously executed part of paying an invoice.
+func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
+	invoice string, maxFee btcutil.Amount, outgoingChannel *uint64) (
+	*lndclient.PaymentStatus, error) {
+
+	// Extract hash from payment request. Unfortunately the request
+	// components aren't available directly.
+	chainParams := s.lnd.ChainParams
+	hash, _, err := swap.DecodeInvoice(chainParams, invoice)
+	if err != nil {
+		return nil, err
+	}
+
+	req := lndclient.SendPaymentRequest{
+		MaxFee:          maxFee,
+		Invoice:         invoice,
+		OutgoingChannel: outgoingChannel,
+		Timeout:         paymentTimeout,
+	}
+
+	// Lookup state of the swap payment.
+	paymentStateCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	payStatusChan, payErrChan, err := s.lnd.Router.SendPayment(
+		paymentStateCtx, req,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		// Payment advanced to the next state.
+		case payState := <-payStatusChan:
+			s.log.Infof("Payment %v: state=%v",
+				hash, payState.State)
+
+			switch payState.State {
+			case lnrpc.Payment_SUCCEEDED:
+				return &payState, nil
+
+			case lnrpc.Payment_FAILED:
+				return nil, errors.New("payment failed")
+
+			case lnrpc.Payment_IN_FLIGHT:
+				// Continue waiting for final state.
+
+			default:
+				return nil, errors.New("unknown payment state")
+			}
+
+		// Abort the swap in case of an error. An unknown payment error
+		// from TrackPayment is no longer expected here.
+		case err := <-payErrChan:
+			if err != channeldb.ErrAlreadyPaid {
+				return nil, err
+			}
+
+			payStatusChan, payErrChan, err =
+				s.lnd.Router.TrackPayment(paymentStateCtx, hash)
+			if err != nil {
+				return nil, err
+			}
+
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 // waitForConfirmedHtlc waits for a confirmed htlc to appear on the chain. In
