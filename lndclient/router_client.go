@@ -34,10 +34,22 @@ type RouterClient interface {
 
 // PaymentStatus describe the state of a payment.
 type PaymentStatus struct {
-	State    lnrpc.Payment_PaymentStatus
-	Preimage lntypes.Preimage
-	Fee      lnwire.MilliSatoshi
-	Value    lnwire.MilliSatoshi
+	State         lnrpc.Payment_PaymentStatus
+	Preimage      lntypes.Preimage
+	Fee           lnwire.MilliSatoshi
+	Value         lnwire.MilliSatoshi
+	InFlightAmt   lnwire.MilliSatoshi
+	InFlightHtlcs int
+}
+
+func (p PaymentStatus) String() string {
+	text := fmt.Sprintf("state=%v", p.State)
+	if p.State == lnrpc.Payment_IN_FLIGHT {
+		text += fmt.Sprintf(", inflight_htlcs=%v, inflight_amt=%v",
+			p.InFlightHtlcs, p.InFlightAmt)
+	}
+
+	return text
 }
 
 // SendPaymentRequest defines the payment parameters for a new payment.
@@ -225,6 +237,19 @@ func unmarshallPaymentStatus(rpcPayment *lnrpc.Payment) (
 		status.Preimage = preimage
 		status.Fee = lnwire.MilliSatoshi(rpcPayment.FeeMsat)
 		status.Value = lnwire.MilliSatoshi(rpcPayment.ValueMsat)
+	}
+
+	for _, htlc := range rpcPayment.Htlcs {
+		if htlc.Status != lnrpc.HTLCAttempt_IN_FLIGHT {
+			continue
+		}
+
+		status.InFlightHtlcs++
+
+		lastHop := htlc.Route.Hops[len(htlc.Route.Hops)-1]
+		status.InFlightAmt += lnwire.MilliSatoshi(
+			lastHop.AmtToForwardMsat,
+		)
 	}
 
 	return &status, nil

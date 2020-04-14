@@ -469,8 +469,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		select {
 		// Payment advanced to the next state.
 		case payState := <-payStatusChan:
-			s.log.Infof("Payment %v: state=%v",
-				hash, payState.State)
+			s.log.Infof("Payment %v: %v", hash, payState)
 
 			switch payState.State {
 			case lnrpc.Payment_SUCCEEDED:
