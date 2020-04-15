@@ -26,6 +26,10 @@ var (
 	// when sweeping on-chain HTLCs.
 	DefaultSweepConfTarget int32 = 6
 
+	// DefaultHtlcConfTarget is the default confirmation target we'll use
+	// for on-chain htlcs published by the swap client for Loop In.
+	DefaultHtlcConfTarget int32 = 6
+
 	// DefaultSweepConfTargetDelta is the delta of blocks from a Loop Out
 	// swap's expiration height at which we begin to use the default sweep
 	// confirmation target.

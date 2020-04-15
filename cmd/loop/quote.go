@@ -88,7 +88,7 @@ var quoteOutCommand = cli.Command{
 			Usage: "the number of blocks from the swap " +
 				"initiation height that the on-chain HTLC " +
 				"should be swept within in a Loop Out",
-			Value: 6,
+			Value: uint64(loop.DefaultSweepConfTarget),
 		},
 		cli.BoolFlag{
 			Name: "fast",

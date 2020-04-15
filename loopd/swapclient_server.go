@@ -363,7 +363,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
-		HtlcConfTarget: defaultConfTarget,
+		HtlcConfTarget: loop.DefaultHtlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
 	})
 	if err != nil {
@@ -385,7 +385,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		Amount:         btcutil.Amount(in.Amt),
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
 		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),
-		HtlcConfTarget: defaultConfTarget,
+		HtlcConfTarget: loop.DefaultHtlcConfTarget,
 		ExternalHtlc:   in.ExternalHtlc,
 	}
 	if in.LastHop != nil {
