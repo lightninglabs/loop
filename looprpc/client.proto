@@ -219,6 +219,11 @@ message LoopInRequest {
     actor.
     */
     bool external_htlc = 5;
+
+    /**
+    The number of blocks that the on chain htlc should confirm within.
+    */
+    int32 htlc_conf_target = 6;
 }
 
 message SwapResponse {

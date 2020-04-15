@@ -22,15 +22,8 @@ var quoteInCommand = cli.Command{
 	Usage:       "get a quote for the cost of a loop in swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
-	Flags: []cli.Flag{
-		cli.Uint64Flag{
-			Name: "conf_target",
-			Usage: "the target number of blocks the on-chain " +
-				"htlc broadcast by the swap client should " +
-				"confirm within",
-		},
-	},
-	Action: quoteIn,
+	Flags:       []cli.Flag{confTargetFlag},
+	Action:      quoteIn,
 }
 
 func quoteIn(ctx *cli.Context) error {
