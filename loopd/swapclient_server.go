@@ -477,6 +477,9 @@ func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
 // isn't specified (0 value), then the default target is used.
 func validateConfTarget(target, defaultTarget int32) (int32, error) {
 	switch {
+	case target == 0:
+		return defaultTarget, nil
+
 	// Ensure the target respects our minimum threshold.
 	case target < minConfTarget:
 		return 0, fmt.Errorf("a confirmation target of at least %v "+
