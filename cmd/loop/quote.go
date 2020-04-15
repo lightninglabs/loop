@@ -25,10 +25,9 @@ var quoteInCommand = cli.Command{
 	Flags: []cli.Flag{
 		cli.Uint64Flag{
 			Name: "conf_target",
-			Usage: "the number of blocks from the swap " +
-				"initiation height that the on-chain HTLC " +
-				"should be swept within in a Loop Out",
-			Value: 6,
+			Usage: "the target number of blocks the on-chain " +
+				"htlc broadcast by the swap client should " +
+				"confirm within",
 		},
 	},
 	Action: quoteIn,
