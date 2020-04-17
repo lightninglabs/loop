@@ -105,7 +105,7 @@ install the command line interface and swap client service.
 ```
 git clone https://github.com/lightninglabs/loop.git
 cd loop/cmd
-go install ./...
+go install ./... # Note this is a `...` wildcard
 ```
 
 ## Execute a Swap
