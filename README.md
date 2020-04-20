@@ -149,7 +149,7 @@ USAGE:
 
 DESCRIPTION:
 
-  Attempts loop out the target amount into either the backing lnd's
+  Attempts to loop out the target amount into either the backing lnd's
   wallet, or a targeted address.
 
   The amount is to be specified in satoshis.
@@ -158,9 +158,12 @@ DESCRIPTION:
   specified. If not specified, a new wallet address will be generated.
 
 OPTIONS:
-   --channel value  the 8-byte compact channel ID of the channel to loop out (default: 0)
-   --addr value     the optional address that the looped out funds should be sent to, if left blank the funds will go to lnd's wallet
-   --amt value      the amount in satoshis to loop out (default: 0)
+   --channel value               the 8-byte compact channel ID of the channel to loop out (default: 0)
+   --addr value                  the optional address that the looped out funds should be sent to, if let blank the funds will go to lnd's wallet
+   --amt value                   the amount in satoshis to loop out (default: 0)
+   --conf_target value           the number of blocks from the swap initiation height that the on-chain HTLC should be swept within (default: 6)
+   --max_swap_routing_fee value  the max off-chain swap routing fee in satoshis, if not specified, a default max fee will be used (default: 0)
+   --fast                        Indicate you want to swap immediately, paying potentially a higher fee. If not set the swap server might choose to wait up to 30 minutes before publishing the swap HTLC on-chain, to save on its chain fees. Not setting this flag therefore might result in a lower swap fee.
 ```
 
 It's possible to receive more inbound capacity on a particular channel
@@ -177,6 +180,79 @@ This will take some time, as it requires an on-chain confirmation. When the
 swap is initiated successfully, `loopd` will see the process through.
 
 To query in-flight swap statuses, run `loop monitor`.
+
+### Fees explained
+
+The following is an example output of a 0.01 BTC fast (non-batched) Loop Out
+swap from `testnet`:
+
+```bash
+$ loop out --amt 1000000 --fast
+Max swap fees for 1000000 sat Loop Out: 36046 sat
+Fast swap requested.
+CONTINUE SWAP? (y/n), expand fee detail (x): x
+
+Estimated on-chain sweep fee:        149 sat
+Max on-chain sweep fee:              14900 sat
+Max off-chain swap routing fee:      20010 sat
+Max off-chain prepay routing fee:    36 sat
+Max no show penalty (prepay):        1337 sat
+Max swap fee:                        1100 sat
+CONTINUE SWAP? (y/n):
+```
+
+Explanation:
+
+- **Max swap fees for <x> sat Loop Out** (36046 sat): The absolute maximum in
+  fees that need to be paid. This includes on-chain and off-chain fees. This
+  represents the ceiling or worst-case scenario. The actual fees will likely be
+  lower. This is the sum of `14900 + 20010 + 36 + 1100` (see below).
+- **Estimated on-chain sweep fee** (149 sat): The estimated cost to sweep the
+  HTLC in case of success, calculated based on the _current_ on-chain fees.
+  This value is called `miner_fee` in the gRPC/REST responses.
+- **Max on-chain sweep fee** (14900 sat): The maximum on-chain fee the daemon
+  is going to allow for sweeping the HTLC in case of success. A fee estimation
+  based on the `--conf_target` flag is always performed before sweeping. The
+  factor of `100` times the estimated fee is applied in case the fees spike
+  between the time the swap is initiated and the time the HTLC can be swept. But
+  that is the absolute worst-case fee that will be paid. If there is no fee
+  spike, a normal, much lower fee will be used.
+- **Max off-chain swap routing fee** (20010 sat): The maximum off-chain
+  routing fee that the daemon should pay when finding a route to pay the
+  Lightning invoice. This is a hard limit. If no route with a lower or equal fee
+  is found, the payment (and the swap) is aborted. This value is calculated
+  statically based on the swap amount (see `maxRoutingFeeBase` and
+  `maxRoutingFeeRate` in `cmd/loop/main.go`).
+- **Max off-chain prepay routing fee** (36 sat): The maximum off-chain routing
+  fee that the daemon should pay when finding a route to pay the prepay fee.
+  This is a hard limit. If no route with a lower or equal fee is found, the
+  payment (and the swap) is aborted. This value is calculated statically based
+  on the prepay amount (see `maxRoutingFeeBase` and `maxRoutingFeeRate` in
+  `cmd/loop/main.go`).
+- **Max no show penalty (prepay)** (1337 sat): This is the amount that has to be
+  pre-paid (off-chain) before the server publishes the HTLC on-chain. This is
+  necessary to ensure the server's on-chain fees are paid if the client aborts
+  and never completes the swap _after_ the HTLC has been published on-chain.
+  If the swap completes normally, this amount is counted towards the full swap
+  amount and therefore is actually a pre-payment and not a fee. This value is
+  called `prepay_amt` in the gRPC/REST responses.
+- **Max swap fee** (1100 sat): The maximum amount of service fees we allow the
+  server to charge for executing the swap. The client aborts the swap if the
+  fee proposed by the server exceeds this maximum. It is therefore recommended
+  to obtain the maximum by asking the server for a quote first. The actual fees
+  might be lower than this maximum if user specific discounts are applied. This
+  value is called `swap_fee` in the gRPC/REST responses.
+
+#### Fast vs. batched swaps
+
+By default, Loop Outs are executed as normal speed swaps. This means the server
+will wait up to 30 minutes until it publishes the HTLC on-chain to improve the
+chances that it can be batched together with other user's swaps to reduce the
+on-chain footprint and fees. The server offers a reduced swap fee for slow swaps
+to incentivize users to batch more.
+
+If a swap should be executed immediately, the `--fast` flag can be used. Fast
+swaps won't benefit from a reduced swap fee.
 
 ### Loop In Swaps
 
@@ -195,9 +271,10 @@ DESCRIPTION:
     Send the amount in satoshis specified by the amt argument off-chain.
 
 OPTIONS:
-   --amt value    the amount in satoshis to loop in (default: 0)
-   --external     expect htlc to be published externally
-   --conf_target  the confirmation target for the on chain htlc, if not being published externally  
+   --amt value          the amount in satoshis to loop in (default: 0)
+   --external           expect htlc to be published externally
+   --conf_target value  the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
+   --last_hop value     the pubkey of the last hop to use for this swap
 ```
 
 The `--external` argument allows the on-chain HTLC transacting to be published
@@ -208,6 +285,34 @@ A Loop In swap can be executed a follows:
 ```
 loop in <amt_in_satoshis>
 ```
+
+#### Fees explained
+
+The following is an example output of a 0.01 BTC Loop In swap from `testnet`:
+
+```bash
+$ loop in --amt 1000000
+Max swap fees for 1000000 sat Loop In: 1562 sat
+CONTINUE SWAP? (y/n), expand fee detail (x): x
+
+Estimated on-chain HTLC fee:         154 sat
+Max swap fee:                        1100 sat
+CONTINUE SWAP? (y/n):
+```
+
+Explanation:
+
+- **Estimated on-chain HTLC fee** (154 sat): The estimated on-chain fee that the
+  daemon has to pay to publish the HTLC. This is an estimation from `lnd`'s
+  wallet based on the available UTXOs and current network fees. This value is
+  called `miner_fee` in the gRPC/REST responses.
+- **Max swap fee** (1100 sat): The maximum amount of service fees we allow the
+  server to charge for executing the swap. The client aborts the swap if the
+  fee proposed by the server exceeds this maximum. It is therefore recommended
+  to obtain the maximum by asking the server for a quote first. The actual fees
+  might be lower than this maximum if user specific discounts are applied. This
+  value is called `swap_fee` in the gRPC/REST responses.
+
 ## Resume
 
 When `loopd` is terminated (or killed) for whatever reason, it will pickup
@@ -220,4 +325,3 @@ Its location is `~/.loopd/<network>/loop.db`.
 
 It is possible to execute multiple swaps simultaneously. Just keep loopd 
 running.
-
