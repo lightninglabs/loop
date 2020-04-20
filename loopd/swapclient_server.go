@@ -361,9 +361,16 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	log.Infof("Loop in quote request received")
 
+	htlcConfTarget, err := validateLoopInRequest(
+		req.ConfTarget, req.ExternalHtlc,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
-		HtlcConfTarget: defaultConfTarget,
+		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
 	})
 	if err != nil {
@@ -381,11 +388,18 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	log.Infof("Loop in request received")
 
+	htlcConfTarget, err := validateLoopInRequest(
+		in.HtlcConfTarget, in.ExternalHtlc,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	req := &loop.LoopInRequest{
 		Amount:         btcutil.Amount(in.Amt),
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
 		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),
-		HtlcConfTarget: defaultConfTarget,
+		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   in.ExternalHtlc,
 	}
 	if in.LastHop != nil {
@@ -477,6 +491,9 @@ func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
 // isn't specified (0 value), then the default target is used.
 func validateConfTarget(target, defaultTarget int32) (int32, error) {
 	switch {
+	case target == 0:
+		return defaultTarget, nil
+
 	// Ensure the target respects our minimum threshold.
 	case target < minConfTarget:
 		return 0, fmt.Errorf("a confirmation target of at least %v "+
@@ -485,4 +502,23 @@ func validateConfTarget(target, defaultTarget int32) (int32, error) {
 	default:
 		return target, nil
 	}
+}
+
+// validateLoopInRequest fails if the mutually exclusive conf target and
+// external parameters are both set.
+func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
+	// If the htlc is going to be externally set, the htlcConfTarget should
+	// not be set, because it has no relevance when the htlc is external.
+	if external && htlcConfTarget != 0 {
+		return 0, errors.New("external and htlc conf target cannot " +
+			"both be set")
+	}
+
+	// If the htlc is being externally published, we do not need to set a
+	// confirmation target.
+	if external {
+		return 0, nil
+	}
+
+	return validateConfTarget(htlcConfTarget, loop.DefaultHtlcConfTarget)
 }

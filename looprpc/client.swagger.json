@@ -307,6 +307,11 @@
           "type": "boolean",
           "format": "boolean",
           "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor."
+        },
+        "htlc_conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "*\nThe number of blocks that the on chain htlc should confirm within."
         }
       }
     },

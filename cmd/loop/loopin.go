@@ -18,12 +18,29 @@ var (
 		Usage: "the pubkey of the last hop to use for this swap",
 	}
 
+	confTargetFlag = cli.Uint64Flag{
+		Name: "conf_target",
+		Usage: "the target number of blocks the on-chain " +
+			"htlc broadcast by the swap client should " +
+			"confirm within",
+	}
+
 	loopInCommand = cli.Command{
 		Name:      "in",
 		Usage:     "perform an on-chain to off-chain swap (loop in)",
 		ArgsUsage: "amt",
 		Description: `
-		Send the amount in satoshis specified by the amt argument off-chain.`,
+		Send the amount in satoshis specified by the amt argument 
+		off-chain.
+		
+		By default the swap client will create and broadcast the 
+		on-chain htlc. The fee priority of this transaction can 
+		optionally be set using the conf_target flag. 
+
+		The external flag can be set to publish the on chain htlc 
+		independently. Note that this flag cannot be set with the 
+		conf_target flag.
+		`,
 		Flags: []cli.Flag{
 			cli.Uint64Flag{
 				Name:  "amt",
@@ -33,6 +50,7 @@ var (
 				Name:  "external",
 				Usage: "expect htlc to be published externally",
 			},
+			confTargetFlag,
 			lastHopFlag,
 		},
 		Action: loopIn,
@@ -66,10 +84,21 @@ func loopIn(ctx *cli.Context) error {
 	defer cleanup()
 
 	external := ctx.Bool("external")
+	htlcConfTarget := int32(ctx.Uint64(confTargetFlag.Name))
+
+	// External and confirmation target are mutually exclusive; either the
+	// on chain htlc is being externally broadcast, or we are creating the
+	// on chain htlc with a desired confirmation target. Fail if both are
+	// set.
+	if external && htlcConfTarget != 0 {
+		return fmt.Errorf("external and conf_target both set")
+	}
+
 	quote, err := client.GetLoopInQuote(
 		context.Background(),
 		&looprpc.QuoteRequest{
 			Amt:          int64(amt),
+			ConfTarget:   htlcConfTarget,
 			ExternalHtlc: external,
 		},
 	)
@@ -96,10 +125,11 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	req := &looprpc.LoopInRequest{
-		Amt:          int64(amt),
-		MaxMinerFee:  int64(limits.maxMinerFee),
-		MaxSwapFee:   int64(limits.maxSwapFee),
-		ExternalHtlc: external,
+		Amt:            int64(amt),
+		MaxMinerFee:    int64(limits.maxMinerFee),
+		MaxSwapFee:     int64(limits.maxSwapFee),
+		ExternalHtlc:   external,
+		HtlcConfTarget: htlcConfTarget,
 	}
 
 	if ctx.IsSet(lastHopFlag.Name) {

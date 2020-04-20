@@ -14,10 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 )
 
-const (
-	defaultConfTarget     = int32(6)
-	defaultConfigFilename = "loopd.conf"
-)
+const defaultConfigFilename = "loopd.conf"
 
 // RPCConfig holds optional options that can be used to make the loop daemon
 // communicate on custom connections.

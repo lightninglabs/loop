@@ -22,16 +22,8 @@ var quoteInCommand = cli.Command{
 	Usage:       "get a quote for the cost of a loop in swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
-	Flags: []cli.Flag{
-		cli.Uint64Flag{
-			Name: "conf_target",
-			Usage: "the number of blocks from the swap " +
-				"initiation height that the on-chain HTLC " +
-				"should be swept within in a Loop Out",
-			Value: 6,
-		},
-	},
-	Action: quoteIn,
+	Flags:       []cli.Flag{confTargetFlag},
+	Action:      quoteIn,
 }
 
 func quoteIn(ctx *cli.Context) error {
@@ -89,7 +81,7 @@ var quoteOutCommand = cli.Command{
 			Usage: "the number of blocks from the swap " +
 				"initiation height that the on-chain HTLC " +
 				"should be swept within in a Loop Out",
-			Value: 6,
+			Value: uint64(loop.DefaultSweepConfTarget),
 		},
 		cli.BoolFlag{
 			Name: "fast",

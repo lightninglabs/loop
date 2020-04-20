@@ -195,8 +195,9 @@ DESCRIPTION:
     Send the amount in satoshis specified by the amt argument off-chain.
 
 OPTIONS:
-   --amt value  the amount in satoshis to loop in (default: 0)
-   --external   expect htlc to be published externally
+   --amt value    the amount in satoshis to loop in (default: 0)
+   --external     expect htlc to be published externally
+   --conf_target  the confirmation target for the on chain htlc, if not being published externally  
 ```
 
 The `--external` argument allows the on-chain HTLC transacting to be published

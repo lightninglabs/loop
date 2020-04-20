@@ -3,6 +3,11 @@ PKG := github.com/lightninglabs/loop
 GOTEST := GO111MODULE=on go test -v
 
 GO_BIN := ${GOPATH}/bin
+GOBUILD := GO111MODULE=on go build -v
+GOINSTALL := GO111MODULE=on go install -v
+
+COMMIT := $(shell git describe --abbrev=40 --dirty)
+LDFLAGS := -ldflags "-X $(PKG)/build.Commit=$(COMMIT)"
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
@@ -34,3 +39,17 @@ fmt:
 lint: $(LINT_BIN)
 	@$(call print, "Linting source.")
 	$(LINT)
+
+# ============
+# INSTALLATION
+# ============
+
+build:
+	@$(call print, "Building debug loop and loopd.")
+	$(GOBUILD) -o loop-debug $(LDFLAGS) $(PKG)/cmd/loop
+	$(GOBUILD) -o loopd-debug $(LDFLAGS) $(PKG)/cmd/loopd
+
+install:
+	@$(call print, "Installing loop and loopd.")
+	$(GOINSTALL) $(LDFLAGS) $(PKG)/cmd/loop
+	$(GOINSTALL) $(LDFLAGS) $(PKG)/cmd/loopd
