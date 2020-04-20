@@ -135,7 +135,10 @@ func loopOut(ctx *cli.Context) error {
 			ctx.Int64("max_swap_routing_fee"),
 		)
 	}
-	err = displayLimits(swap.TypeOut, amt, limits, false, warning)
+	err = displayLimits(
+		swap.TypeOut, amt, btcutil.Amount(quote.MinerFee), limits,
+		false, warning,
+	)
 	if err != nil {
 		return err
 	}
