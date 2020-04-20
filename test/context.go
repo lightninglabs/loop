@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
@@ -124,15 +125,15 @@ func (ctx *Context) AssertPaid(
 
 	// Assert that client pays swap invoice.
 	for {
-		var swapPayment PaymentChannelMessage
+		var swapPayment RouterPaymentChannelMessage
 		select {
-		case swapPayment = <-ctx.Lnd.SendPaymentChannel:
+		case swapPayment = <-ctx.Lnd.RouterSendPaymentChannel:
 		case <-time.After(Timeout):
 			ctx.T.Fatalf("no payment sent for invoice: %v",
 				expectedMemo)
 		}
 
-		payReq := ctx.DecodeInvoice(swapPayment.PaymentRequest)
+		payReq := ctx.DecodeInvoice(swapPayment.Invoice)
 
 		if _, ok := ctx.PaidInvoices[*payReq.Description]; ok {
 			ctx.T.Fatalf("duplicate invoice paid: %v",
@@ -140,12 +141,12 @@ func (ctx *Context) AssertPaid(
 		}
 
 		done := func(result error) {
-			select {
-			case swapPayment.Done <- lndclient.PaymentResult{
-				Err: result,
-			}:
-			case <-time.After(Timeout):
-				ctx.T.Fatalf("payment result not consumed")
+			if result != nil {
+				swapPayment.Errors <- result
+				return
+			}
+			swapPayment.Updates <- lndclient.PaymentStatus{
+				State: lnrpc.Payment_SUCCEEDED,
 			}
 		}
 

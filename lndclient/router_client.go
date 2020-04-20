@@ -34,10 +34,22 @@ type RouterClient interface {
 
 // PaymentStatus describe the state of a payment.
 type PaymentStatus struct {
-	State    routerrpc.PaymentState
-	Preimage lntypes.Preimage
-	Fee      lnwire.MilliSatoshi
-	Route    *route.Route
+	State         lnrpc.Payment_PaymentStatus
+	Preimage      lntypes.Preimage
+	Fee           lnwire.MilliSatoshi
+	Value         lnwire.MilliSatoshi
+	InFlightAmt   lnwire.MilliSatoshi
+	InFlightHtlcs int
+}
+
+func (p PaymentStatus) String() string {
+	text := fmt.Sprintf("state=%v", p.State)
+	if p.State == lnrpc.Payment_IN_FLIGHT {
+		text += fmt.Sprintf(", inflight_htlcs=%v, inflight_amt=%v",
+			p.InFlightHtlcs, p.InFlightAmt)
+	}
+
+	return text
 }
 
 // SendPaymentRequest defines the payment parameters for a new payment.
@@ -81,6 +93,10 @@ type SendPaymentRequest struct {
 	// LastHopPubkey is the pubkey of the last hop of the route taken
 	// for this payment. If empty, any hop may be used.
 	LastHopPubkey *route.Vertex
+
+	// The maximum number of partial payments that may be used to complete
+	// the full amount.
+	MaxShards uint32
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -108,6 +124,7 @@ func (r *routerClient) SendPayment(ctx context.Context,
 		FeeLimitSat:    int64(request.MaxFee),
 		PaymentRequest: request.Invoice,
 		TimeoutSeconds: int32(request.Timeout.Seconds()),
+		MaxShards:      request.MaxShards,
 	}
 	if request.MaxCltv != nil {
 		rpcReq.CltvLimit = *request.MaxCltv
@@ -170,7 +187,7 @@ func (r *routerClient) trackPayment(ctx context.Context,
 	errorChan := make(chan error, 1)
 	go func() {
 		for {
-			rpcStatus, err := stream.Recv()
+			payment, err := stream.Recv()
 			if err != nil {
 				switch status.Convert(err).Code() {
 
@@ -189,7 +206,7 @@ func (r *routerClient) trackPayment(ctx context.Context,
 				return
 			}
 
-			status, err := unmarshallPaymentStatus(rpcStatus)
+			status, err := unmarshallPaymentStatus(payment)
 			if err != nil {
 				errorChan <- err
 				return
@@ -208,33 +225,36 @@ func (r *routerClient) trackPayment(ctx context.Context,
 
 // unmarshallPaymentStatus converts an rpc status update to the PaymentStatus
 // type that is used throughout the application.
-func unmarshallPaymentStatus(rpcStatus *routerrpc.PaymentStatus) (
+func unmarshallPaymentStatus(rpcPayment *lnrpc.Payment) (
 	*PaymentStatus, error) {
 
 	status := PaymentStatus{
-		State: rpcStatus.State,
+		State: rpcPayment.Status,
 	}
 
-	if status.State == routerrpc.PaymentState_SUCCEEDED {
-		preimage, err := lntypes.MakePreimage(
-			rpcStatus.Preimage,
+	if status.State == lnrpc.Payment_SUCCEEDED {
+		preimage, err := lntypes.MakePreimageFromStr(
+			rpcPayment.PaymentPreimage,
 		)
 		if err != nil {
 			return nil, err
 		}
 		status.Preimage = preimage
+		status.Fee = lnwire.MilliSatoshi(rpcPayment.FeeMsat)
+		status.Value = lnwire.MilliSatoshi(rpcPayment.ValueMsat)
+	}
 
-		status.Fee = lnwire.MilliSatoshi(
-			rpcStatus.Route.TotalFeesMsat,
-		)
-
-		if rpcStatus.Route != nil {
-			route, err := unmarshallRoute(rpcStatus.Route)
-			if err != nil {
-				return nil, err
-			}
-			status.Route = route
+	for _, htlc := range rpcPayment.Htlcs {
+		if htlc.Status != lnrpc.HTLCAttempt_IN_FLIGHT {
+			continue
 		}
+
+		status.InFlightHtlcs++
+
+		lastHop := htlc.Route.Hops[len(htlc.Route.Hops)-1]
+		status.InFlightAmt += lnwire.MilliSatoshi(
+			lastHop.AmtToForwardMsat,
+		)
 	}
 
 	return &status, nil

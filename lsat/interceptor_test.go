@@ -11,9 +11,8 @@ import (
 
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/test"
-	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"gopkg.in/macaroon.v2"
@@ -160,9 +159,8 @@ var (
 				// return an error.
 				resetBackend(nil, "")
 				msg.Updates <- lndclient.PaymentStatus{
-					State:    routerrpc.PaymentState_SUCCEEDED,
+					State:    lnrpc.Payment_SUCCEEDED,
 					Preimage: paidPreimage,
-					Route:    &route.Route{},
 				}
 			},
 			expectToken:         true,
