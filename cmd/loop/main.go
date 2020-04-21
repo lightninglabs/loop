@@ -141,7 +141,7 @@ func getLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
 	}
 }
 
-func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
+func displayLimits(swapType swap.Type, amt, minerFees btcutil.Amount, l *limits,
 	externalHtlc bool, warning string) error {
 
 	totalSuccessMax := l.maxMinerFee + l.maxSwapFee
@@ -159,7 +159,7 @@ func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
 			"wallet.\n\n")
 	}
 
-	fmt.Printf("Max swap fees for %d Loop %v: %d\n", amt, swapType,
+	fmt.Printf("Max swap fees for %d sat Loop %v: %d sat\n", amt, swapType,
 		totalSuccessMax)
 
 	if warning != "" {
@@ -176,26 +176,35 @@ func displayLimits(swapType swap.Type, amt btcutil.Amount, l *limits,
 		return nil
 	case "x":
 		fmt.Println()
-		if swapType != swap.TypeIn || !externalHtlc {
-			fmt.Printf("Max on-chain fee:                 %d\n",
-				l.maxMinerFee)
+		f := "%-36s %d sat\n"
+
+		switch swapType {
+		case swap.TypeOut:
+			fmt.Printf(f, "Estimated on-chain sweep fee:",
+				minerFees)
+			fmt.Printf(f, "Max on-chain sweep fee:", l.maxMinerFee)
+
+		case swap.TypeIn:
+			if !externalHtlc {
+				fmt.Printf(f, "Estimated on-chain HTLC fee:",
+					minerFees)
+			}
 		}
 
 		if l.maxSwapRoutingFee != nil {
-			fmt.Printf("Max off-chain swap routing fee:   %d\n",
+			fmt.Printf(f, "Max off-chain swap routing fee:",
 				*l.maxSwapRoutingFee)
 		}
 
-		if l.maxPrepayRoutingFee != nil {
-			fmt.Printf("Max off-chain prepay routing fee: %d\n",
-				*l.maxPrepayRoutingFee)
-		}
-		fmt.Printf("Max swap fee:                     %d\n", l.maxSwapFee)
-
 		if l.maxPrepayAmt != nil {
-			fmt.Printf("Max no show penalty:              %d\n",
+			fmt.Printf(f, "Max no show penalty (prepay):",
 				*l.maxPrepayAmt)
 		}
+		if l.maxPrepayRoutingFee != nil {
+			fmt.Printf(f, "Max off-chain prepay routing fee:",
+				*l.maxPrepayRoutingFee)
+		}
+		fmt.Printf(f, "Max swap fee:", l.maxSwapFee)
 
 		fmt.Printf("CONTINUE SWAP? (y/n): ")
 		fmt.Scanln(&answer)

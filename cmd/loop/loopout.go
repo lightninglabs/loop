@@ -17,7 +17,7 @@ var loopOutCommand = cli.Command{
 	Usage:     "perform an off-chain to on-chain swap (looping out)",
 	ArgsUsage: "amt [addr]",
 	Description: `
-	Attempts loop out the target amount into either the backing lnd's
+	Attempts to loop out the target amount into either the backing lnd's
 	wallet, or a targeted address.
 
 	The amount is to be specified in satoshis.
@@ -26,8 +26,9 @@ var loopOutCommand = cli.Command{
 	specified. If not specified, a new wallet address will be generated.`,
 	Flags: []cli.Flag{
 		cli.Uint64Flag{
-			Name:  "channel",
-			Usage: "the 8-byte compact channel ID of the channel to loop out",
+			Name: "channel",
+			Usage: "the 8-byte compact channel ID of the channel " +
+				"to loop out",
 		},
 		cli.StringFlag{
 			Name: "addr",
@@ -48,8 +49,9 @@ var loopOutCommand = cli.Command{
 		},
 		cli.Int64Flag{
 			Name: "max_swap_routing_fee",
-			Usage: "the max off-chain swap routing fee in satoshis, " +
-				"if let blank a default max fee will be used",
+			Usage: "the max off-chain swap routing fee in " +
+				"satoshis, if not specified, a default max " +
+				"fee will be used",
 		},
 		cli.BoolFlag{
 			Name: "fast",
@@ -57,9 +59,9 @@ var loopOutCommand = cli.Command{
 				"paying potentially a higher fee. If not " +
 				"set the swap server might choose to wait up " +
 				"to 30 minutes before publishing the swap " +
-				"HTLC on-chain, to save on chain fees. Not " +
-				"setting this flag might result in a lower " +
-				"swap fee.",
+				"HTLC on-chain, to save on its chain fees. " +
+				"Not setting this flag therefore might " +
+				"result in a lower swap fee.",
 		},
 	},
 	Action: loopOut,
@@ -135,7 +137,10 @@ func loopOut(ctx *cli.Context) error {
 			ctx.Int64("max_swap_routing_fee"),
 		)
 	}
-	err = displayLimits(swap.TypeOut, amt, limits, false, warning)
+	err = displayLimits(
+		swap.TypeOut, amt, btcutil.Amount(quote.MinerFee), limits,
+		false, warning,
+	)
 	if err != nil {
 		return err
 	}
