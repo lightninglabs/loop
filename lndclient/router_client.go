@@ -151,7 +151,7 @@ func (r *routerClient) SendPayment(ctx context.Context,
 		rpcReq.RouteHints = routeHints
 	}
 
-	stream, err := r.client.SendPayment(rpcCtx, rpcReq)
+	stream, err := r.client.SendPaymentV2(rpcCtx, rpcReq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -165,7 +165,7 @@ func (r *routerClient) TrackPayment(ctx context.Context,
 	hash lntypes.Hash) (chan PaymentStatus, chan error, error) {
 
 	ctx = r.routerKitMac.WithMacaroonAuth(ctx)
-	stream, err := r.client.TrackPayment(
+	stream, err := r.client.TrackPaymentV2(
 		ctx, &routerrpc.TrackPaymentRequest{
 			PaymentHash: hash[:],
 		},
@@ -180,7 +180,7 @@ func (r *routerClient) TrackPayment(ctx context.Context,
 // trackPayment takes an update stream from either a SendPayment or a
 // TrackPayment rpc call and converts it into distinct update and error streams.
 func (r *routerClient) trackPayment(ctx context.Context,
-	stream routerrpc.Router_TrackPaymentClient) (chan PaymentStatus,
+	stream routerrpc.Router_TrackPaymentV2Client) (chan PaymentStatus,
 	chan error, error) {
 
 	statusChan := make(chan PaymentStatus)

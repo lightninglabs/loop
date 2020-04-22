@@ -148,10 +148,9 @@ github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce7
 github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d/go.mod h1:KDb67YMzoh4eudnzClmvs2FbiLG9vxISmLApUkCa4uI=
 github.com/lightningnetwork/lightning-onion v1.0.1 h1:qChGgS5+aPxFeR6JiUsGvanei1bn6WJpYbvosw/1604=
 github.com/lightningnetwork/lightning-onion v1.0.1/go.mod h1:rigfi6Af/KqsF7Za0hOgcyq2PNH4AN70AaMRxcJkff4=
-github.com/lightningnetwork/lnd v0.10.0-beta.rc1 h1:eCLOYu+Erw+GIxMJHbkTRn23eBVN3s7u188iyw3747Y=
-github.com/lightningnetwork/lnd v0.10.0-beta.rc1/go.mod h1:UNd+jGvZbtHFAR4syN6ab2euqh5DNzbVjjomZZFlCEY=
-github.com/lightningnetwork/lnd/cert v1.0.1 h1:D+FOL2J/MzoolaWSEZJZc5Qb7vqy6P8IX1HGzqHWnQM=
-github.com/lightningnetwork/lnd/cert v1.0.1/go.mod h1:fmtemlSMf5t4hsQmcprSoOykypAPp+9c+0d0iqTScMo=
+github.com/lightningnetwork/lnd v0.10.0-beta.rc4 h1:gFdGWc+1nQDJj3nQZadsJL6Vsl8E6J2UxJUpSWLztug=
+github.com/lightningnetwork/lnd v0.10.0-beta.rc4/go.mod h1:vyc0duSWZi+xwk4hC2JqyTOKhVAS3I2/8AArCUdaau4=
+github.com/lightningnetwork/lnd/cert v1.0.2/go.mod h1:fmtemlSMf5t4hsQmcprSoOykypAPp+9c+0d0iqTScMo=
 github.com/lightningnetwork/lnd/queue v1.0.1 h1:jzJKcTy3Nj5lQrooJ3aaw9Lau3I0IwvQR5sqtjdv2R0=
 github.com/lightningnetwork/lnd/queue v1.0.1/go.mod h1:vaQwexir73flPW43Mrm7JOgJHmcEFBWWSl9HlyASoms=
 github.com/lightningnetwork/lnd/queue v1.0.3 h1:5ufYVE7lh9GJnL1wOoeO3bZ3aAHWNnkNFHP7W1+NiJ8=
