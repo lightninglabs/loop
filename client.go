@@ -2,9 +2,7 @@ package loop
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -211,13 +209,9 @@ func (s *Client) Run(ctx context.Context,
 	}
 
 	// Log connected node.
-	info, err := s.lndServices.Client.GetInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("GetInfo error: %v", err)
-	}
-	log.Infof("Connected to lnd node %v with pubkey %v",
-		info.Alias, hex.EncodeToString(info.IdentityPubkey[:]),
-	)
+	log.Infof("Connected to lnd node '%v' with pubkey %x (version %s)",
+		s.lndServices.NodeAlias, s.lndServices.NodePubkey,
+		lndclient.VersionString(s.lndServices.Version))
 
 	// Setup main context used for cancelation.
 	mainCtx, mainCancel := context.WithCancel(ctx)
