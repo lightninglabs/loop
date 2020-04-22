@@ -57,25 +57,36 @@ problems. Community support is also available in the
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
 env variable is set to `on`.
 
-In order to execute a swap, **You need to run lnd 0.7.1+, or master built with
-sub-servers enabled.**
+In order to execute a swap, **you need to run a compatible lnd version built
+with the correct sub-servers enabled.**
 
 ### LND
 
-If you are building from source, and not using a 0.7.1 or higher release of
-lnd, make sure that you are using the `master` branch of lnd. You can get this
-by git cloning the repository
+To run loop, you need a compatible version of `lnd` running. It is generally
+recommended to always keep both `lnd` and `loop` updated to the most recent
+released version. If you need to run an older version of `lnd`, please consult
+the following table for supported versions.
+
+Loop Version | Compatible LND Version(s)
+------------------|------------------
+`>= v0.6.0-beta`  | `v0.10.x-beta`
+`<= 0.5.1-beta`   | `v0.7.1-beta` - `v0.10.x-beta`
+
+If you are building from source make sure you are using the latest tagged
+version of lnd. You can get this by git cloning the repository and checking out
+a specific tag:
 
 ```
 git clone https://github.com/lightningnetwork/lnd.git
+cd lnd
+git checkout v0.10.0-beta
 ```
 
 Once the lnd repository is cloned, it will need to be built with special build
 tags that enable the swap. This enables the required lnd rpc services.
 
 ```
-cd lnd
-make install tags="signrpc walletrpc chainrpc invoicesrpc routerrpc"
+make install tags="signrpc walletrpc chainrpc invoicesrpc"
 ```
 
 Check to see if you have already installed lnd. If you have, you will need to
