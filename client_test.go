@@ -35,14 +35,13 @@ var (
 	prepayInvoiceDesc = "prepay"
 )
 
-// TestSuccess tests the uncharge happy flow.
+// TestSuccess tests the loop out happy flow.
 func TestSuccess(t *testing.T) {
 	defer test.Guard(t)()
 
 	ctx := createClientTestContext(t, nil)
 
-	// Initiate uncharge.
-
+	// Initiate loop out.
 	hash, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +53,7 @@ func TestSuccess(t *testing.T) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	// Expect client to register for conf
+	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf()
 
 	testSuccess(ctx, testRequest.Amount, *hash,
@@ -228,7 +227,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	// Expect client to register for conf
+	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf()
 
 	signalSwapPaymentResult(nil)
