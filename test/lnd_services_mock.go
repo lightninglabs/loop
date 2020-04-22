@@ -80,8 +80,10 @@ func NewMockLnd() *LndMockServices {
 
 	// Also simulate the cached info that is loaded on startup.
 	info, _ := lightningClient.GetInfo(context.Background())
+	version, _ := versioner.GetVersion(context.Background())
 	lnd.LndServices.NodeAlias = info.Alias
 	lnd.LndServices.NodePubkey = info.IdentityPubkey
+	lnd.LndServices.Version = version
 
 	lnd.WaitForFinished = func() {
 		chainNotifier.WaitForFinished()
