@@ -11,7 +11,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.12.2
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.10.0-beta.rc1
+	github.com/lightningnetwork/lnd v0.10.0-beta.rc4
 	github.com/lightningnetwork/lnd/queue v1.0.3
 	github.com/urfave/cli v1.20.0
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0
