@@ -53,6 +53,9 @@ type macaroonPouch struct {
 
 	// adminMac is the primary admin macaroon for lnd.
 	adminMac serializedMacaroon
+
+	// readonlyMac is the primary read-only macaroon for lnd.
+	readonlyMac serializedMacaroon
 }
 
 // newMacaroonPouch returns a new instance of a fully populated macaroonPouch
@@ -99,6 +102,13 @@ func newMacaroonPouch(macaroonDir string) (*macaroonPouch, error) {
 
 	m.adminMac, err = newSerializedMacaroon(
 		filepath.Join(macaroonDir, defaultAdminMacaroonFilename),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	m.readonlyMac, err = newSerializedMacaroon(
+		filepath.Join(macaroonDir, defaultReadonlyFilename),
 	)
 	if err != nil {
 		return nil, err
