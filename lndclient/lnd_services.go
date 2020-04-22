@@ -2,7 +2,6 @@ package lndclient
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -92,13 +91,6 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 		}
 	}
 
-	// Now that we've ensured our macaroon directory is set properly, we
-	// can retrieve our full macaroon pouch from the directory.
-	macaroons, err := newMacaroonPouch(macaroonDir)
-	if err != nil {
-		return nil, fmt.Errorf("unable to obtain macaroons: %v", err)
-	}
-
 	// Setup connection with lnd
 	log.Infof("Creating lnd connection to %v", lndAddress)
 	conn, err := getClientConn(dialer, lndAddress, tlsPath)
@@ -113,24 +105,35 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 		return nil, err
 	}
 
+	// We are going to check that the connected lnd is on the same network
+	// and is a compatible version with all the required subservers enabled.
+	// For this, we make two calls, both of which only need the readonly
+	// macaroon. We don't use the pouch yet because if not all subservers
+	// are enabled, then not all macaroons might be there and the user would
+	// get a more cryptic error message.
+	readonlyMac, err := newSerializedMacaroon(
+		filepath.Join(macaroonDir, defaultReadonlyFilename),
+	)
+	if err != nil {
+		return nil, err
+	}
+	err = checkLndCompatibility(conn, chainParams, readonlyMac, network)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now that we've ensured our macaroon directory is set properly, we
+	// can retrieve our full macaroon pouch from the directory.
+	macaroons, err := newMacaroonPouch(macaroonDir)
+	if err != nil {
+		return nil, fmt.Errorf("unable to obtain macaroons: %v", err)
+	}
+
+	// With the macaroons loaded and the version checked, we can now create
+	// the real lightning client which uses the admin macaroon.
 	lightningClient := newLightningClient(
 		conn, chainParams, macaroons.adminMac,
 	)
-
-	// With our macaroons obtained, we'll ensure that the network for lnd
-	// matches our expected network.
-	info, err := lightningClient.GetInfo(context.Background())
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("unable to get info for lnd "+
-			"node: %v", err)
-	}
-	if network != info.Network {
-		conn.Close()
-		return nil, errors.New(
-			"network mismatch with connected lnd instance",
-		)
-	}
 
 	// With the network check passed, we'll now initialize the rest of the
 	// sub-server connections, giving each of them their specific macaroon.
@@ -142,7 +145,10 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 
 	cleanup := func() {
 		log.Debugf("Closing lnd connection")
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			log.Errorf("Error closing client connection: %v", err)
+		}
 
 		log.Debugf("Wait for client to finish")
 		lightningClient.WaitForFinished()
@@ -183,6 +189,32 @@ func (s *GrpcLndServices) Close() {
 	log.Debugf("Lnd services finished")
 }
 
+// checkLndCompatibility makes sure the connected lnd instance is running on the
+// correct network.
+func checkLndCompatibility(conn *grpc.ClientConn, chainParams *chaincfg.Params,
+	readonlyMac serializedMacaroon, network string) error {
+
+	// We use our own client with a readonly macaroon here, because we know
+	// that's all we need for the checks.
+	lightningClient := newLightningClient(conn, chainParams, readonlyMac)
+
+	// With our readonly macaroon obtained, we'll ensure that the network
+	// for lnd matches our expected network.
+	info, err := lightningClient.GetInfo(context.Background())
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("unable to get info for lnd "+
+			"node: %v", err)
+	}
+	if network != info.Network {
+		conn.Close()
+		return fmt.Errorf("network mismatch with connected lnd "+
+			"node, got '%s', wanted '%s'", info.Network, network)
+
+	}
+	return nil
+}
+
 var (
 	defaultRPCPort         = "10009"
 	defaultLndDir          = btcutil.AppDataDir("lnd", false)
@@ -199,6 +231,7 @@ var (
 	defaultWalletKitMacaroonFilename = "walletkit.macaroon"
 	defaultRouterMacaroonFilename    = "router.macaroon"
 	defaultSignerFilename            = "signer.macaroon"
+	defaultReadonlyFilename          = "readonly.macaroon"
 
 	// maxMsgRecvSize is the largest gRPC message our client will receive.
 	// We set this to 200MiB.
