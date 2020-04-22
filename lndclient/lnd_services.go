@@ -17,6 +17,30 @@ import (
 
 var rpcTimeout = 30 * time.Second
 
+// LndServicesConfig holds all configuration settings that are needed to connect
+// to an lnd node.
+type LndServicesConfig struct {
+	// LndAddress is the network address (host:port) of the lnd node to
+	// connect to.
+	LndAddress string
+
+	// Network is the bitcoin network we expect the lnd node to operate on.
+	Network string
+
+	// MacaroonDir is the directory where all lnd macaroons can be found.
+	MacaroonDir string
+
+	// TLSPath is the path to lnd's TLS certificate file.
+	TLSPath string
+
+	// Dialer is an optional dial function that can be passed in if the
+	// default lncfg.ClientAddressDialer should not be used.
+	Dialer DialerFunc
+}
+
+// DialerFunc is a function that is used as grpc.WithContextDialer().
+type DialerFunc func(context.Context, string) (net.Conn, error)
+
 // LndServices constitutes a set of required services.
 type LndServices struct {
 	Client        LightningClient
@@ -40,27 +64,18 @@ type GrpcLndServices struct {
 
 // NewLndServices creates creates a connection to the given lnd instance and
 // creates a set of required RPC services.
-func NewLndServices(lndAddress, network, macaroonDir, tlsPath string) (
-	*GrpcLndServices, error) {
-
+func NewLndServices(cfg *LndServicesConfig) (*GrpcLndServices, error) {
 	// We need to use a custom dialer so we can also connect to unix
 	// sockets and not just TCP addresses.
-	dialer := lncfg.ClientAddressDialer(defaultRPCPort)
-
-	return NewLndServicesWithDialer(
-		dialer, lndAddress, network, macaroonDir, tlsPath,
-	)
-}
-
-// NewLndServices creates a set of required RPC services by connecting to lnd
-// using the given dialer.
-func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
-	macaroonDir, tlsPath string) (*GrpcLndServices, error) {
+	if cfg.Dialer == nil {
+		cfg.Dialer = lncfg.ClientAddressDialer(defaultRPCPort)
+	}
 
 	// Based on the network, if the macaroon directory isn't set, then
 	// we'll use the expected default locations.
+	macaroonDir := cfg.MacaroonDir
 	if macaroonDir == "" {
-		switch network {
+		switch cfg.Network {
 		case "testnet":
 			macaroonDir = filepath.Join(
 				defaultLndDir, defaultDataDir,
@@ -87,20 +102,20 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 
 		default:
 			return nil, fmt.Errorf("unsupported network: %v",
-				network)
+				cfg.Network)
 		}
 	}
 
 	// Setup connection with lnd
-	log.Infof("Creating lnd connection to %v", lndAddress)
-	conn, err := getClientConn(dialer, lndAddress, tlsPath)
+	log.Infof("Creating lnd connection to %v", cfg.LndAddress)
+	conn, err := getClientConn(cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	log.Infof("Connected to lnd")
 
-	chainParams, err := swap.ChainParamsFromNetwork(network)
+	chainParams, err := swap.ChainParamsFromNetwork(cfg.Network)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +132,7 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 	if err != nil {
 		return nil, err
 	}
-	err = checkLndCompatibility(conn, chainParams, readonlyMac, network)
+	err = checkLndCompatibility(conn, chainParams, readonlyMac, cfg.Network)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +191,7 @@ func NewLndServicesWithDialer(dialer dialerFunc, lndAddress, network,
 		cleanup: cleanup,
 	}
 
-	log.Infof("Using network %v", network)
+	log.Infof("Using network %v", cfg.Network)
 
 	return services, nil
 }
@@ -238,13 +253,11 @@ var (
 	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 )
 
-type dialerFunc func(context.Context, string) (net.Conn, error)
-
-func getClientConn(dialer dialerFunc, address string, tlsPath string) (
-	*grpc.ClientConn, error) {
+func getClientConn(cfg *LndServicesConfig) (*grpc.ClientConn, error) {
 
 	// Load the specified TLS certificate and build transport credentials
 	// with it.
+	tlsPath := cfg.TLSPath
 	if tlsPath == "" {
 		tlsPath = defaultTLSCertPath
 	}
@@ -260,12 +273,13 @@ func getClientConn(dialer dialerFunc, address string, tlsPath string) (
 
 		// Use a custom dialer, to allow connections to unix sockets,
 		// in-memory listeners etc, and not just TCP addresses.
-		grpc.WithContextDialer(dialer),
+		grpc.WithContextDialer(cfg.Dialer),
 	}
 
-	conn, err := grpc.Dial(address, opts...)
+	conn, err := grpc.Dial(cfg.LndAddress, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)
+		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+			err)
 	}
 
 	return conn, nil

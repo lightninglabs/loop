@@ -54,24 +54,23 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 		getLnd: func(network string, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {
 
+			svcCfg := &lndclient.LndServicesConfig{
+				LndAddress:  cfg.Host,
+				Network:     network,
+				MacaroonDir: cfg.MacaroonDir,
+				TLSPath:     cfg.TLSPath,
+			}
+
 			// If a custom lnd connection is specified we use that
 			// directly.
 			if rpcCfg.LndConn != nil {
-				dialer := func(context.Context, string) (
+				svcCfg.Dialer = func(context.Context, string) (
 					net.Conn, error) {
 					return rpcCfg.LndConn, nil
 				}
-
-				return lndclient.NewLndServicesWithDialer(
-					dialer,
-					rpcCfg.LndConn.RemoteAddr().String(),
-					network, cfg.MacaroonDir, cfg.TLSPath,
-				)
 			}
 
-			return lndclient.NewLndServices(
-				cfg.Host, network, cfg.MacaroonDir, cfg.TLSPath,
-			)
+			return lndclient.NewLndServices(svcCfg)
 		},
 	}
 }
