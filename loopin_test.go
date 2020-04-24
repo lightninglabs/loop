@@ -67,6 +67,7 @@ func TestLoopInSuccess(t *testing.T) {
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
+	<-ctx.lnd.RegisterConfChannel
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -118,20 +119,32 @@ func TestLoopInSuccess(t *testing.T) {
 func TestLoopInTimeout(t *testing.T) {
 	testAmt := int64(testLoopInRequest.Amount)
 	t.Run("internal htlc", func(t *testing.T) {
-		testLoopInTimeout(t, 0)
+		testLoopInTimeout(t, swap.HtlcNP2WSH, 0)
 	})
-	t.Run("external htlc", func(t *testing.T) {
-		testLoopInTimeout(t, testAmt)
-	})
-	t.Run("external amount too high", func(t *testing.T) {
-		testLoopInTimeout(t, testAmt+1)
-	})
-	t.Run("external amount too low", func(t *testing.T) {
-		testLoopInTimeout(t, testAmt-1)
-	})
+
+	outputTypes := []swap.HtlcOutputType{swap.HtlcP2WSH, swap.HtlcNP2WSH}
+
+	for _, outputType := range outputTypes {
+		outputType := outputType
+		t.Run(outputType.String(), func(t *testing.T) {
+			t.Run("external htlc", func(t *testing.T) {
+				testLoopInTimeout(t, outputType, testAmt)
+			})
+
+			t.Run("external amount too high", func(t *testing.T) {
+				testLoopInTimeout(t, outputType, testAmt+1)
+			})
+
+			t.Run("external amount too low", func(t *testing.T) {
+				testLoopInTimeout(t, outputType, testAmt-1)
+			})
+		})
+	}
 }
 
-func testLoopInTimeout(t *testing.T, externalValue int64) {
+func testLoopInTimeout(t *testing.T,
+	outputType swap.HtlcOutputType, externalValue int64) {
+
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
@@ -149,7 +162,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 		req.ExternalHtlc = true
 	}
 
-	swap, err := newLoopInSwap(
+	s, err := newLoopInSwap(
 		context.Background(), cfg,
 		height, &req,
 	)
@@ -161,7 +174,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), ctx.cfg, height)
+		err := s.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -179,10 +192,16 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 		htlcTx = <-ctx.lnd.SendOutputsChannel
 	} else {
 		// Create an external htlc publish tx.
+		var pkScript []byte
+		if outputType == swap.HtlcNP2WSH {
+			pkScript = s.htlcNP2WSH.PkScript
+		} else {
+			pkScript = s.htlcP2WSH.PkScript
+		}
 		htlcTx = wire.MsgTx{
 			TxOut: []*wire.TxOut{
 				{
-					PkScript: swap.htlc.PkScript,
+					PkScript: pkScript,
 					Value:    externalValue,
 				},
 			},
@@ -190,6 +209,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	}
 
 	// Expect register for htlc conf.
+	<-ctx.lnd.RegisterConfChannel
 	<-ctx.lnd.RegisterConfChannel
 
 	// Confirm htlc.
@@ -207,7 +227,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	}
 
 	// Let htlc expire.
-	ctx.blockEpochChan <- swap.LoopInContract.CltvExpiry
+	ctx.blockEpochChan <- s.LoopInContract.CltvExpiry
 
 	// Expect a signing request for the htlc tx output value.
 	signReq := <-ctx.lnd.SignOutputRawChannel
@@ -377,6 +397,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	}
 
 	// Expect register for htlc conf.
+	<-ctx.lnd.RegisterConfChannel
 	<-ctx.lnd.RegisterConfChannel
 
 	// Confirm htlc.

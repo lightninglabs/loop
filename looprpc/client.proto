@@ -242,9 +242,28 @@ message SwapResponse {
     bytes id_bytes = 3;
 
     /**
-    The address of the on-chain htlc.
+    DEPRECATED. This field stores the address of the onchain htlc, but
+    depending on the request, the semantics are different.
+    - For internal loop-in htlc_address contains the address of the
+    native segwit (P2WSH) htlc.
+    - For external loop-in htlc_address contains the address of the
+    nested segwit (NP2WSH) htlc.
+    - For loop-out htlc_address always contains the native segwit (P2WSH)
+    htlc address.
     */
-    string htlc_address = 2;
+    string htlc_address = 2 [deprecated = true];
+
+    /**
+    The nested segwit address of the on-chain htlc.
+    This field remains empty for loop-out.
+    */
+    string htlc_address_np2wsh = 4;
+
+    /**
+    The native segwit address of the on-chain htlc.
+    Used for both loop-in and loop-out.
+    */
+    string htlc_address_p2wsh = 5;
 }
 
 message MonitorRequest {
@@ -292,9 +311,21 @@ message SwapStatus {
     int64 last_update_time = 6;
 
     /**
-    Htlc address.
+    DEPRECATED:  This field stores the address of the onchain htlc.
+    - For internal loop-in htlc_address contains the address of the
+    native segwit (P2WSH) htlc.
+    - For external loop-in htlc_address contains the nested segwit (NP2WSH)
+    address.
+    - For loop-out htlc_address always contains the native segwit (P2WSH)
+    htlc address.
     */
-    string htlc_address = 7;
+    string htlc_address = 7 [deprecated = true];
+
+    // HTLC address (native segwit), used in loop-in and loop-out swaps.
+    string htlc_address_p2wsh = 12;
+
+    // HTLC address (nested segwit), used in loop-in swaps only.
+    string htlc_address_np2wsh = 13;
 
     /// Swap server cost
     int64 cost_server = 8;

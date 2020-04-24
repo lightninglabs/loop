@@ -241,9 +241,13 @@ type LoopInSwapInfo struct { // nolint
 	// SwapHash contains the sha256 hash of the swap preimage.
 	SwapHash lntypes.Hash
 
-	// HtlcAddress contains the swap htlc address, where the loop-in
-	// funds will be paid.
-	HtlcAddress btcutil.Address
+	// HtlcAddressP2WSH contains the native segwit swap htlc address,
+	// where the loop-in funds may be paid.
+	HtlcAddressP2WSH btcutil.Address
+
+	// HtlcAddressNP2WSH contains the nested segwit swap htlc address,
+	// where the loop-in funds may be paid.
+	HtlcAddressNP2WSH btcutil.Address
 }
 
 // SwapInfoKit contains common swap info fields.
@@ -271,8 +275,13 @@ type SwapInfo struct {
 	// SwapType describes whether this is a loop in or loop out swap.
 	SwapType swap.Type
 
-	// HtlcAddress holds the HTLC address of the swap.
-	HtlcAddress btcutil.Address
+	// HtlcAddressP2WSH stores the address of the P2WSH (native segwit)
+	// swap htlc. This is used for both loop-in and loop-out.
+	HtlcAddressP2WSH btcutil.Address
+
+	// HtlcAddressNP2WSH stores the address of the NP2WSH (nested segwit)
+	// swap htlc. This is only used for external loop-in.
+	HtlcAddressNP2WSH btcutil.Address
 
 	// ExternalHtlc is set to true for external loop-in swaps.
 	ExternalHtlc bool

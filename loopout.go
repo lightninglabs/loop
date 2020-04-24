@@ -214,7 +214,7 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 	info := s.swapInfo()
 	s.log.Infof("Loop out swap state: %v", info.State)
 
-	info.HtlcAddress = s.htlc.Address
+	info.HtlcAddressP2WSH = s.htlc.Address
 
 	select {
 	case s.statusChan <- *info:
