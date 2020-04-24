@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -76,6 +77,11 @@ func NewMockLnd() *LndMockServices {
 	invoices.lnd = &lnd
 	router.lnd = &lnd
 	signer.lnd = &lnd
+
+	// Also simulate the cached info that is loaded on startup.
+	info, _ := lightningClient.GetInfo(context.Background())
+	lnd.LndServices.NodeAlias = info.Alias
+	lnd.LndServices.NodePubkey = info.IdentityPubkey
 
 	lnd.WaitForFinished = func() {
 		chainNotifier.WaitForFinished()
