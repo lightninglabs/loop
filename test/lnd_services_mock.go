@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ func NewMockLnd() *LndMockServices {
 	signer := &mockSigner{}
 	invoices := &mockInvoices{}
 	router := &mockRouter{}
+	versioner := newMockVersioner()
 
 	lnd := LndMockServices{
 		LndServices: lndclient.LndServices{
@@ -44,6 +46,7 @@ func NewMockLnd() *LndMockServices {
 			Invoices:      invoices,
 			Router:        router,
 			ChainParams:   &chaincfg.TestNet3Params,
+			Versioner:     versioner,
 		},
 		SendPaymentChannel:           make(chan PaymentChannelMessage),
 		ConfChannel:                  make(chan *chainntnfs.TxConfirmation),
@@ -74,6 +77,13 @@ func NewMockLnd() *LndMockServices {
 	invoices.lnd = &lnd
 	router.lnd = &lnd
 	signer.lnd = &lnd
+
+	// Also simulate the cached info that is loaded on startup.
+	info, _ := lightningClient.GetInfo(context.Background())
+	version, _ := versioner.GetVersion(context.Background())
+	lnd.LndServices.NodeAlias = info.Alias
+	lnd.LndServices.NodePubkey = info.IdentityPubkey
+	lnd.LndServices.Version = version
 
 	lnd.WaitForFinished = func() {
 		chainNotifier.WaitForFinished()

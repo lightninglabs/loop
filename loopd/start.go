@@ -12,9 +12,24 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 )
 
 const defaultConfigFilename = "loopd.conf"
+
+var (
+	// LoopMinRequiredLndVersion is the minimum required version of lnd that
+	// is compatible with the current version of the loop client. Also all
+	// listed build tags/subservers need to be enabled.
+	LoopMinRequiredLndVersion = &verrpc.Version{
+		AppMajor: 0,
+		AppMinor: 10,
+		AppPatch: 0,
+		BuildTags: []string{
+			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
+		},
+	}
+)
 
 // RPCConfig holds optional options that can be used to make the loop daemon
 // communicate on custom connections.
@@ -54,24 +69,24 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 		getLnd: func(network string, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {
 
+			svcCfg := &lndclient.LndServicesConfig{
+				LndAddress:   cfg.Host,
+				Network:      network,
+				MacaroonDir:  cfg.MacaroonDir,
+				TLSPath:      cfg.TLSPath,
+				CheckVersion: LoopMinRequiredLndVersion,
+			}
+
 			// If a custom lnd connection is specified we use that
 			// directly.
 			if rpcCfg.LndConn != nil {
-				dialer := func(context.Context, string) (
+				svcCfg.Dialer = func(context.Context, string) (
 					net.Conn, error) {
 					return rpcCfg.LndConn, nil
 				}
-
-				return lndclient.NewLndServicesWithDialer(
-					dialer,
-					rpcCfg.LndConn.RemoteAddr().String(),
-					network, cfg.MacaroonDir, cfg.TLSPath,
-				)
 			}
 
-			return lndclient.NewLndServices(
-				cfg.Host, network, cfg.MacaroonDir, cfg.TLSPath,
-			)
+			return lndclient.NewLndServices(svcCfg)
 		},
 	}
 }
