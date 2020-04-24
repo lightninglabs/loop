@@ -34,6 +34,7 @@ func NewMockLnd() *LndMockServices {
 	signer := &mockSigner{}
 	invoices := &mockInvoices{}
 	router := &mockRouter{}
+	versioner := newMockVersioner()
 
 	lnd := LndMockServices{
 		LndServices: lndclient.LndServices{
@@ -44,6 +45,7 @@ func NewMockLnd() *LndMockServices {
 			Invoices:      invoices,
 			Router:        router,
 			ChainParams:   &chaincfg.TestNet3Params,
+			Versioner:     versioner,
 		},
 		SendPaymentChannel:           make(chan PaymentChannelMessage),
 		ConfChannel:                  make(chan *chainntnfs.TxConfirmation),

@@ -49,6 +49,7 @@ type LndServices struct {
 	Signer        SignerClient
 	Invoices      InvoicesClient
 	Router        RouterClient
+	Versioner     VersionerClient
 
 	ChainParams *chaincfg.Params
 
@@ -157,6 +158,7 @@ func NewLndServices(cfg *LndServicesConfig) (*GrpcLndServices, error) {
 	walletKitClient := newWalletKitClient(conn, macaroons.walletKitMac)
 	invoicesClient := newInvoicesClient(conn, macaroons.invoiceMac)
 	routerClient := newRouterClient(conn, macaroons.routerMac)
+	versionerClient := newVersionerClient(conn, macaroons.readonlyMac)
 
 	cleanup := func() {
 		log.Debugf("Closing lnd connection")
@@ -185,6 +187,7 @@ func NewLndServices(cfg *LndServicesConfig) (*GrpcLndServices, error) {
 			Signer:        signerClient,
 			Invoices:      invoicesClient,
 			Router:        routerClient,
+			Versioner:     versionerClient,
 			ChainParams:   chainParams,
 			macaroons:     macaroons,
 		},
