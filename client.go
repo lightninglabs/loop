@@ -108,6 +108,11 @@ type ClientConfig struct {
 	// MaxLsatFee is the maximum that we are willing to pay in routing fees
 	// to obtain the token.
 	MaxLsatFee btcutil.Amount
+
+	// LoopOutMaxParts defines the maximum number of parts that may be used
+	// for a loop out swap. When greater than one, a multi-part payment may
+	// be attempted.
+	LoopOutMaxParts uint32
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -145,6 +150,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		store:             store,
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
+		loopOutMaxParts:   cfg.LoopOutMaxParts,
 	})
 
 	client := &Client{

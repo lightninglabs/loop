@@ -15,8 +15,9 @@ var (
 	defaultLogFilename = "loopd.log"
 	defaultLogDir      = filepath.Join(loopDirBase, defaultLogDirname)
 
-	defaultMaxLogFiles    = 3
-	defaultMaxLogFileSize = 10
+	defaultMaxLogFiles     = 3
+	defaultMaxLogFileSize  = 10
+	defaultLoopOutMaxParts = uint32(5)
 )
 
 type lndConfig struct {
@@ -45,6 +46,8 @@ type config struct {
 	MaxLSATCost uint32 `long:"maxlsatcost" description:"Maximum cost in satoshis that loopd is going to pay for an LSAT token automatically. Does not include routing fees."`
 	MaxLSATFee  uint32 `long:"maxlsatfee" description:"Maximum routing fee in satoshis that we are willing to pay while paying for an LSAT token."`
 
+	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
+
 	Lnd   *lndConfig `group:"lnd" namespace:"lnd"`
 	Proxy string     `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the swap server will be established over."`
 
@@ -57,16 +60,17 @@ const (
 )
 
 var defaultConfig = config{
-	Network:        "mainnet",
-	RPCListen:      "localhost:11010",
-	RESTListen:     "localhost:8081",
-	Insecure:       false,
-	LogDir:         defaultLogDir,
-	MaxLogFiles:    defaultMaxLogFiles,
-	MaxLogFileSize: defaultMaxLogFileSize,
-	DebugLevel:     defaultLogLevel,
-	MaxLSATCost:    lsat.DefaultMaxCostSats,
-	MaxLSATFee:     lsat.DefaultMaxRoutingFeeSats,
+	Network:         "mainnet",
+	RPCListen:       "localhost:11010",
+	RESTListen:      "localhost:8081",
+	Insecure:        false,
+	LogDir:          defaultLogDir,
+	MaxLogFiles:     defaultMaxLogFiles,
+	MaxLogFileSize:  defaultMaxLogFileSize,
+	DebugLevel:      defaultLogLevel,
+	MaxLSATCost:     lsat.DefaultMaxCostSats,
+	MaxLSATFee:      lsat.DefaultMaxRoutingFeeSats,
+	LoopOutMaxParts: defaultLoopOutMaxParts,
 	Lnd: &lndConfig{
 		Host: "localhost:10009",
 	},

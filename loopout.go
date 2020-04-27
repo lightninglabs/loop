@@ -45,12 +45,6 @@ var (
 	paymentTimeout = time.Minute
 )
 
-const (
-	// loopOutMaxShards defines that maximum number of shards that may be
-	// used for a loop out swap.
-	loopOutMaxShards = 5
-)
-
 // loopOutSwap contains all the in-memory state related to a pending loop out
 // swap.
 type loopOutSwap struct {
@@ -64,10 +58,11 @@ type loopOutSwap struct {
 
 // executeConfig contains extra configuration to execute the swap.
 type executeConfig struct {
-	sweeper        *sweep.Sweeper
-	statusChan     chan<- SwapInfo
-	blockEpochChan <-chan interface{}
-	timerFactory   func(d time.Duration) <-chan time.Time
+	sweeper         *sweep.Sweeper
+	statusChan      chan<- SwapInfo
+	blockEpochChan  <-chan interface{}
+	timerFactory    func(d time.Duration) <-chan time.Time
+	loopOutMaxParts uint32
 }
 
 // newLoopOutSwap initiates a new swap with the server and returns a
@@ -462,7 +457,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		Invoice:         invoice,
 		OutgoingChannel: outgoingChannel,
 		Timeout:         paymentTimeout,
-		MaxParts:        loopOutMaxShards,
+		MaxParts:        s.executeConfig.loopOutMaxParts,
 	}
 
 	// Lookup state of the swap payment.
