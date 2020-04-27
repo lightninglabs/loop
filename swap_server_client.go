@@ -21,6 +21,10 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// protocolVersion defines the version of the protocol that is currently
+// supported by the loop client.
+const protocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_OUT
+
 type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
@@ -84,7 +88,9 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
-		&looprpc.ServerLoopOutTermsRequest{},
+		&looprpc.ServerLoopOutTermsRequest{
+			ProtocolVersion: protocolVersion,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -106,6 +112,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 		&looprpc.ServerLoopOutQuoteRequest{
 			Amt:                     uint64(amt),
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
+			ProtocolVersion:         protocolVersion,
 		},
 	)
 	if err != nil {
@@ -136,7 +143,9 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
-		&looprpc.ServerLoopInTermsRequest{},
+		&looprpc.ServerLoopInTermsRequest{
+			ProtocolVersion: protocolVersion,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -155,7 +164,8 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	defer rpcCancel()
 	quoteResp, err := s.server.LoopInQuote(rpcCtx,
 		&looprpc.ServerLoopInQuoteRequest{
-			Amt: uint64(amt),
+			Amt:             uint64(amt),
+			ProtocolVersion: protocolVersion,
 		},
 	)
 	if err != nil {
@@ -181,6 +191,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			Amt:                     uint64(amount),
 			ReceiverKey:             receiverKey[:],
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
+			ProtocolVersion:         protocolVersion,
 		},
 	)
 	if err != nil {
@@ -212,10 +223,11 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	defer rpcCancel()
 
 	req := &looprpc.ServerLoopInRequest{
-		SwapHash:    swapHash[:],
-		Amt:         uint64(amount),
-		SenderKey:   senderKey[:],
-		SwapInvoice: swapInvoice,
+		SwapHash:        swapHash[:],
+		Amt:             uint64(amount),
+		SenderKey:       senderKey[:],
+		SwapInvoice:     swapInvoice,
+		ProtocolVersion: protocolVersion,
 	}
 	if lastHop != nil {
 		req.LastHop = lastHop[:]
