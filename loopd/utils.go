@@ -18,11 +18,17 @@ func getClient(config *config, lnd *lndclient.LndServices) (*loop.Client,
 		return nil, nil, err
 	}
 
-	swapClient, cleanUp, err := loop.NewClient(
-		storeDir, config.SwapServer, config.Proxy, config.Insecure,
-		config.TLSPathSwapSrv, lnd, btcutil.Amount(config.MaxLSATCost),
-		btcutil.Amount(config.MaxLSATFee),
-	)
+	clientConfig := &loop.ClientConfig{
+		ServerAddress: config.SwapServer,
+		ProxyAddress:  config.Proxy,
+		Insecure:      config.Insecure,
+		TLSPathServer: config.TLSPathSwapSrv,
+		Lnd:           lnd,
+		MaxLsatCost:   btcutil.Amount(config.MaxLSATCost),
+		MaxLsatFee:    btcutil.Amount(config.MaxLSATFee),
+	}
+
+	swapClient, cleanUp, err := loop.NewClient(storeDir, clientConfig)
 	if err != nil {
 		return nil, nil, err
 	}
