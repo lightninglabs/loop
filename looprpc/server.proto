@@ -5,17 +5,18 @@ import "google/api/annotations.proto";
 package looprpc;
 
 service SwapServer {
-    rpc LoopOutTerms(ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);
+    rpc LoopOutTerms (ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);
 
-    rpc NewLoopOutSwap(ServerLoopOutRequest) returns (ServerLoopOutResponse);
+    rpc NewLoopOutSwap (ServerLoopOutRequest) returns (ServerLoopOutResponse);
 
-    rpc LoopOutQuote(ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
+    rpc LoopOutQuote (ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
 
-    rpc LoopInTerms(ServerLoopInTermsRequest) returns (ServerLoopInTerms);
+    rpc LoopInTerms (ServerLoopInTermsRequest) returns (ServerLoopInTerms);
 
-    rpc NewLoopInSwap(ServerLoopInRequest) returns (ServerLoopInResponse);
+    rpc NewLoopInSwap (ServerLoopInRequest) returns (ServerLoopInResponse);
 
-    rpc LoopInQuote(ServerLoopInQuoteRequest) returns (ServerLoopInQuoteResponse);
+    rpc LoopInQuote (ServerLoopInQuoteRequest)
+        returns (ServerLoopInQuoteResponse);
 }
 
 message ServerLoopOutRequest {
@@ -30,7 +31,7 @@ message ServerLoopOutRequest {
 }
 
 message ServerLoopOutResponse {
-    string swap_invoice= 1;
+    string swap_invoice = 1;
 
     string prepay_invoice = 2;
 
@@ -90,12 +91,12 @@ message ServerLoopInQuoteRequest {
     /// The swap amount. If zero, a quote for a maximum amt swap will be given.
     uint64 amt = 1;
 }
-    
+
 message ServerLoopInQuoteResponse {
     int64 swap_fee = 1;
-    int64 swap_fee_rate = 2 [deprecated=true];
-    uint64 min_swap_amount = 4 [deprecated=true];
-    uint64 max_swap_amount = 5 [deprecated=true];
+    int64 swap_fee_rate = 2 [deprecated = true];
+    uint64 min_swap_amount = 4 [deprecated = true];
+    uint64 max_swap_amount = 5 [deprecated = true];
     int32 cltv_delta = 6;
 }
 
