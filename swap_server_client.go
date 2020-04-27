@@ -11,7 +11,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -54,17 +53,18 @@ type grpcSwapServerClient struct {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(address, proxyAddress string, insecure bool,
-	tlsPath string, lsatStore lsat.Store, lnd *lndclient.LndServices,
-	maxLSATCost, maxLSATFee btcutil.Amount) (*grpcSwapServerClient, error) {
+func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
+	*grpcSwapServerClient, error) {
 
 	// Create the server connection with the interceptor that will handle
 	// the LSAT protocol for us.
 	clientInterceptor := lsat.NewInterceptor(
-		lnd, lsatStore, serverRPCTimeout, maxLSATCost, maxLSATFee,
+		cfg.Lnd, lsatStore, serverRPCTimeout, cfg.MaxLsatCost,
+		cfg.MaxLsatFee,
 	)
 	serverConn, err := getSwapServerConn(
-		address, proxyAddress, insecure, tlsPath, clientInterceptor,
+		cfg.ServerAddress, cfg.ProxyAddress, cfg.Insecure,
+		cfg.TLSPathServer, clientInterceptor,
 	)
 	if err != nil {
 		return nil, err

@@ -22,6 +22,8 @@ type executorConfig struct {
 	store loopdb.SwapStore
 
 	createExpiryTimer func(expiry time.Duration) <-chan time.Time
+
+	loopOutMaxParts uint32
 }
 
 // executor is responsible for executing swaps.
@@ -109,10 +111,11 @@ func (s *executor) run(mainCtx context.Context,
 				defer s.wg.Done()
 
 				newSwap.execute(mainCtx, &executeConfig{
-					statusChan:     statusChan,
-					sweeper:        s.sweeper,
-					blockEpochChan: queue.ChanOut(),
-					timerFactory:   s.executorConfig.createExpiryTimer,
+					statusChan:      statusChan,
+					sweeper:         s.sweeper,
+					blockEpochChan:  queue.ChanOut(),
+					timerFactory:    s.executorConfig.createExpiryTimer,
+					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
 				}, height)
 
 				select {

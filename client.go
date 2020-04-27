@@ -81,12 +81,43 @@ type Client struct {
 	clientConfig
 }
 
-// NewClient returns a new instance to initiate swaps with.
-func NewClient(dbDir string, serverAddress, proxyAddress string, insecure bool,
-	tlsPathServer string, lnd *lndclient.LndServices, maxLSATCost,
-	maxLSATFee btcutil.Amount) (*Client, func(), error) {
+// ClientConfig is the exported configuration structure that is required to
+// instantiate the loop client.
+type ClientConfig struct {
+	// ServerAddress is the loop server to connect to.
+	ServerAddress string
 
-	store, err := loopdb.NewBoltSwapStore(dbDir, lnd.ChainParams)
+	// ProxyAddress is the SOCKS proxy that should be used to establish the
+	// connection.
+	ProxyAddress string
+
+	// Insecure skips TLS when set.
+	Insecure bool
+
+	// TLSPathServer is the path to the TLS certificate that is required to
+	// connect to the server.
+	TLSPathServer string
+
+	// Lnd is an instance of the lnd proxy.
+	Lnd *lndclient.LndServices
+
+	// MaxLsatCost is the maximum price we are willing to pay to the server
+	// for the token.
+	MaxLsatCost btcutil.Amount
+
+	// MaxLsatFee is the maximum that we are willing to pay in routing fees
+	// to obtain the token.
+	MaxLsatFee btcutil.Amount
+
+	// LoopOutMaxParts defines the maximum number of parts that may be used
+	// for a loop out swap. When greater than one, a multi-part payment may
+	// be attempted.
+	LoopOutMaxParts uint32
+}
+
+// NewClient returns a new instance to initiate swaps with.
+func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
+	store, err := loopdb.NewBoltSwapStore(dbDir, cfg.Lnd.ChainParams)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,16 +126,13 @@ func NewClient(dbDir string, serverAddress, proxyAddress string, insecure bool,
 		return nil, nil, err
 	}
 
-	swapServerClient, err := newSwapServerClient(
-		serverAddress, proxyAddress, insecure, tlsPathServer, lsatStore,
-		lnd, maxLSATCost, maxLSATFee,
-	)
+	swapServerClient, err := newSwapServerClient(cfg, lsatStore)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	config := &clientConfig{
-		LndServices: lnd,
+		LndServices: cfg.Lnd,
 		Server:      swapServerClient,
 		Store:       store,
 		LsatStore:   lsatStore,
@@ -114,20 +142,21 @@ func NewClient(dbDir string, serverAddress, proxyAddress string, insecure bool,
 	}
 
 	sweeper := &sweep.Sweeper{
-		Lnd: lnd,
+		Lnd: cfg.Lnd,
 	}
 
 	executor := newExecutor(&executorConfig{
-		lnd:               lnd,
+		lnd:               cfg.Lnd,
 		store:             store,
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
+		loopOutMaxParts:   cfg.LoopOutMaxParts,
 	})
 
 	client := &Client{
 		errChan:      make(chan error),
 		clientConfig: *config,
-		lndServices:  lnd,
+		lndServices:  cfg.Lnd,
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
