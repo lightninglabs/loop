@@ -462,7 +462,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		Invoice:         invoice,
 		OutgoingChannel: outgoingChannel,
 		Timeout:         paymentTimeout,
-		MaxShards:       loopOutMaxShards,
+		MaxParts:        loopOutMaxShards,
 	}
 
 	// Lookup state of the swap payment.

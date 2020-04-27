@@ -94,9 +94,9 @@ type SendPaymentRequest struct {
 	// for this payment. If empty, any hop may be used.
 	LastHopPubkey *route.Vertex
 
-	// The maximum number of partial payments that may be used to complete
-	// the full amount.
-	MaxShards uint32
+	// MaxParts is the maximum number of partial payments that may be used
+	// to complete the full amount.
+	MaxParts uint32
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -124,7 +124,7 @@ func (r *routerClient) SendPayment(ctx context.Context,
 		FeeLimitSat:    int64(request.MaxFee),
 		PaymentRequest: request.Invoice,
 		TimeoutSeconds: int32(request.Timeout.Seconds()),
-		MaxShards:      request.MaxShards,
+		MaxParts:       request.MaxParts,
 	}
 	if request.MaxCltv != nil {
 		rpcReq.CltvLimit = *request.MaxCltv
