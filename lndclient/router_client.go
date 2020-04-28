@@ -34,7 +34,12 @@ type RouterClient interface {
 
 // PaymentStatus describe the state of a payment.
 type PaymentStatus struct {
-	State         lnrpc.Payment_PaymentStatus
+	State lnrpc.Payment_PaymentStatus
+
+	// FailureReason is the reason why the payment failed. Only set when
+	// State is Failed.
+	FailureReason lnrpc.PaymentFailureReason
+
 	Preimage      lntypes.Preimage
 	Fee           lnwire.MilliSatoshi
 	Value         lnwire.MilliSatoshi
@@ -232,7 +237,8 @@ func unmarshallPaymentStatus(rpcPayment *lnrpc.Payment) (
 		State: rpcPayment.Status,
 	}
 
-	if status.State == lnrpc.Payment_SUCCEEDED {
+	switch status.State {
+	case lnrpc.Payment_SUCCEEDED:
 		preimage, err := lntypes.MakePreimageFromStr(
 			rpcPayment.PaymentPreimage,
 		)
@@ -242,6 +248,9 @@ func unmarshallPaymentStatus(rpcPayment *lnrpc.Payment) (
 		status.Preimage = preimage
 		status.Fee = lnwire.MilliSatoshi(rpcPayment.FeeMsat)
 		status.Value = lnwire.MilliSatoshi(rpcPayment.ValueMsat)
+
+	case lnrpc.Payment_FAILED:
+		status.FailureReason = rpcPayment.FailureReason
 	}
 
 	for _, htlc := range rpcPayment.Htlcs {
