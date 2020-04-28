@@ -472,9 +472,10 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 	s.log.Infof("Publishing on chain HTLC with fee rate %v", feeRate)
 
+	// Internal loop-in is always P2WSH.
 	tx, err := s.lnd.WalletKit.SendOutputs(ctx,
 		[]*wire.TxOut{{
-			PkScript: s.htlcNP2WSH.PkScript,
+			PkScript: s.htlcP2WSH.PkScript,
 			Value:    int64(s.LoopInContract.AmountRequested),
 		}},
 		feeRate,

@@ -119,7 +119,7 @@ func TestLoopInSuccess(t *testing.T) {
 func TestLoopInTimeout(t *testing.T) {
 	testAmt := int64(testLoopInRequest.Amount)
 	t.Run("internal htlc", func(t *testing.T) {
-		testLoopInTimeout(t, swap.HtlcNP2WSH, 0)
+		testLoopInTimeout(t, swap.HtlcP2WSH, 0)
 	})
 
 	outputTypes := []swap.HtlcOutputType{swap.HtlcP2WSH, swap.HtlcNP2WSH}

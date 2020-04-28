@@ -131,11 +131,14 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
 		swapType = looprpc.SwapType_LOOP_IN
+		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+
 		if loopSwap.ExternalHtlc {
-			htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+			htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
+			htlcAddress = htlcAddressNP2WSH
+		} else {
+			htlcAddress = htlcAddressP2WSH
 		}
-		htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
-		htlcAddress = htlcAddressNP2WSH
 
 	case swap.TypeOut:
 		swapType = looprpc.SwapType_LOOP_OUT
