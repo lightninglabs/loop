@@ -48,7 +48,11 @@ var (
 type loopInSwap struct {
 	swapKit
 
+	executeConfig
+
 	loopdb.LoopInContract
+
+	htlc *swap.Htlc
 
 	timeoutAddr btcutil.Address
 }
@@ -148,19 +152,25 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		},
 	}
 
-	swapKit, err := newSwapKit(
+	swapKit := newSwapKit(
 		swapHash, swap.TypeIn, cfg, &contract.SwapContract,
-		swap.HtlcNP2WSH,
 	)
+
+	swapKit.lastUpdateTime = initiationTime
+
+	// Create the htlc.
+	htlc, err := swapKit.getHtlc(swap.HtlcNP2WSH)
 	if err != nil {
 		return nil, err
 	}
 
-	swapKit.lastUpdateTime = initiationTime
+	// Log htlc address for debugging.
+	swapKit.log.Infof("Htlc address: %v", htlc.Address)
 
 	swap := &loopInSwap{
 		LoopInContract: contract,
 		swapKit:        *swapKit,
+		htlc:           htlc,
 	}
 
 	// Persist the data before exiting this function, so that the caller can
@@ -182,17 +192,23 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 
 	log.Infof("Resuming loop in swap %v", hash)
 
-	swapKit, err := newSwapKit(
+	swapKit := newSwapKit(
 		hash, swap.TypeIn, cfg, &pend.Contract.SwapContract,
-		swap.HtlcNP2WSH,
 	)
+
+	// Create the htlc.
+	htlc, err := swapKit.getHtlc(swap.HtlcNP2WSH)
 	if err != nil {
 		return nil, err
 	}
 
+	// Log htlc address for debugging.
+	swapKit.log.Infof("Htlc address: %v", htlc.Address)
+
 	swap := &loopInSwap{
 		LoopInContract: *pend.Contract,
 		swapKit:        *swapKit,
+		htlc:           htlc,
 	}
 
 	lastUpdate := pend.LastUpdate()
@@ -217,6 +233,22 @@ func validateLoopInContract(lnd *lndclient.LndServices,
 	// funds for too long in case the server doesn't follow through.
 	if response.expiry-height > MaxLoopInAcceptDelta {
 		return ErrExpiryTooFar
+	}
+
+	return nil
+}
+
+// sendUpdate reports an update to the swap state.
+func (s *loopInSwap) sendUpdate(ctx context.Context) error {
+	info := s.swapInfo()
+	s.log.Infof("Loop in swap state: %v", info.State)
+
+	info.HtlcAddress = s.htlc.Address
+
+	select {
+	case s.statusChan <- *info:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	return nil

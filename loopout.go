@@ -52,6 +52,10 @@ type loopOutSwap struct {
 
 	loopdb.LoopOutContract
 
+	executeConfig
+
+	htlc *swap.Htlc
+
 	swapPaymentChan chan lndclient.PaymentResult
 	prePaymentChan  chan lndclient.PaymentResult
 }
@@ -134,19 +138,25 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		},
 	}
 
-	swapKit, err := newSwapKit(
+	swapKit := newSwapKit(
 		swapHash, swap.TypeOut, cfg, &contract.SwapContract,
-		swap.HtlcP2WSH,
 	)
+
+	swapKit.lastUpdateTime = initiationTime
+
+	// Create the htlc.
+	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
 	if err != nil {
 		return nil, err
 	}
 
-	swapKit.lastUpdateTime = initiationTime
+	// Log htlc address for debugging.
+	swapKit.log.Infof("Htlc address: %v", htlc.Address)
 
 	swap := &loopOutSwap{
 		LoopOutContract: contract,
 		swapKit:         *swapKit,
+		htlc:            htlc,
 	}
 
 	// Persist the data before exiting this function, so that the caller
@@ -168,17 +178,24 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 
 	log.Infof("Resuming loop out swap %v", hash)
 
-	swapKit, err := newSwapKit(
+	swapKit := newSwapKit(
 		hash, swap.TypeOut, cfg, &pend.Contract.SwapContract,
-		swap.HtlcP2WSH,
 	)
+
+	// Create the htlc.
+	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
 	if err != nil {
 		return nil, err
 	}
 
+	// Log htlc address for debugging.
+	swapKit.log.Infof("Htlc address: %v", htlc.Address)
+
+	// Create the swap.
 	swap := &loopOutSwap{
 		LoopOutContract: *pend.Contract,
 		swapKit:         *swapKit,
+		htlc:            htlc,
 	}
 
 	lastUpdate := pend.LastUpdate()
@@ -190,6 +207,22 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	}
 
 	return swap, nil
+}
+
+// sendUpdate reports an update to the swap state.
+func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
+	info := s.swapInfo()
+	s.log.Infof("Loop out swap state: %v", info.State)
+
+	info.HtlcAddress = s.htlc.Address
+
+	select {
+	case s.statusChan <- *info:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	return nil
 }
 
 // execute starts/resumes the swap. It is a thin wrapper around
