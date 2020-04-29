@@ -409,16 +409,16 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		}
 		req.LastHop = &lastHop
 	}
-	hash, htlc, err := s.impl.LoopIn(ctx, req)
+	swapInfo, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
 		log.Errorf("Loop in: %v", err)
 		return nil, err
 	}
 
 	return &looprpc.SwapResponse{
-		Id:          hash.String(),
-		IdBytes:     hash[:],
-		HtlcAddress: htlc.String(),
+		Id:          swapInfo.SwapHash.String(),
+		IdBytes:     swapInfo.SwapHash[:],
+		HtlcAddress: swapInfo.HtlcAddress.String(),
 	}, nil
 }
 

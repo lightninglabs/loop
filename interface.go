@@ -235,6 +235,17 @@ type LoopInQuote struct {
 	CltvDelta int32
 }
 
+// LoopInSwapInfo contains essential information of a loop-in swap after the
+// swap is initiated.
+type LoopInSwapInfo struct { // nolint
+	// SwapHash contains the sha256 hash of the swap preimage.
+	SwapHash lntypes.Hash
+
+	// HtlcAddress contains the swap htlc address, where the loop-in
+	// funds will be paid.
+	HtlcAddress btcutil.Address
+}
+
 // SwapInfoKit contains common swap info fields.
 type SwapInfoKit struct {
 	// Hash is the sha256 hash of the preimage that unlocks the htlcs. It

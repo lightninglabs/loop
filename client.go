@@ -464,7 +464,7 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 
 // LoopIn initiates a loop in swap.
 func (s *Client) LoopIn(globalCtx context.Context,
-	request *LoopInRequest) (*lntypes.Hash, btcutil.Address, error) {
+	request *LoopInRequest) (*LoopInSwapInfo, error) {
 
 	log.Infof("Loop in %v (last hop: %v)",
 		request.Amount,
@@ -472,7 +472,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Create a new swap object for this swap.
@@ -486,7 +486,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 		globalCtx, &swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Post swap to the main loop.
@@ -494,7 +494,11 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, swap.htlc.Address, nil
+	swapInfo := &LoopInSwapInfo{
+		SwapHash:    swap.hash,
+		HtlcAddress: swap.htlc.Address,
+	}
+	return swapInfo, nil
 }
 
 // LoopInQuote takes an amount and returns a break down of estimated
