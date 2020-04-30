@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/lntypes"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -82,11 +83,17 @@ func TestLoopInSuccess(t *testing.T) {
 		t.Fatal("client subscribing to wrong invoice")
 	}
 
+	typedPreimage, err := lntypes.MakePreimage(testPreimage[:])
+	if err != nil {
+		t.Fatalf("could not make preimage: %v", err)
+	}
+
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
 	subscription.Update <- lndclient.InvoiceUpdate{
-		State:   channeldb.ContractSettled,
-		AmtPaid: 49000,
+		State:    channeldb.ContractSettled,
+		AmtPaid:  49000,
+		Preimage: &typedPreimage,
 	}
 
 	// Swap is expected to move to the state InvoiceSettled
@@ -393,11 +400,17 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 		t.Fatal("client subscribing to wrong invoice")
 	}
 
+	typedPreimage, err := lntypes.MakePreimage(testPreimage[:])
+	if err != nil {
+		t.Fatalf("could not make preimage: %v", err)
+	}
+
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
 	subscription.Update <- lndclient.InvoiceUpdate{
-		State:   channeldb.ContractSettled,
-		AmtPaid: 49000,
+		State:    channeldb.ContractSettled,
+		AmtPaid:  49000,
+		Preimage: &typedPreimage,
 	}
 
 	// Swap is expected to move to the state InvoiceSettled

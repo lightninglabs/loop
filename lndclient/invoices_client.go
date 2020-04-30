@@ -30,6 +30,10 @@ type InvoicesClient interface {
 type InvoiceUpdate struct {
 	State   channeldb.ContractState
 	AmtPaid btcutil.Amount
+
+	// Preimage is the preimage for the invoice that has just been
+	// paid. This field will be nil for updates that are not settles.
+	Preimage *lntypes.Preimage
 }
 
 type invoicesClient struct {
@@ -111,11 +115,26 @@ func (s *invoicesClient) SubscribeSingleInvoice(ctx context.Context,
 				return
 			}
 
-			select {
-			case updateChan <- InvoiceUpdate{
+			update := InvoiceUpdate{
 				State:   state,
 				AmtPaid: btcutil.Amount(invoice.AmtPaidSat),
-			}:
+			}
+
+			// If the invoice is settled, we expect the preimage
+			// to be present so we include it.
+			if state == channeldb.ContractSettled {
+				preimage, err := lntypes.MakePreimage(
+					invoice.RPreimage,
+				)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				update.Preimage = &preimage
+			}
+
+			select {
+			case updateChan <- update:
 			case <-ctx.Done():
 				return
 			}
