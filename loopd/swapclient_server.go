@@ -255,6 +255,9 @@ func (s *swapClientServer) ListSwaps(_ context.Context,
 		err      error
 	)
 
+	s.swapsLock.Lock()
+	defer s.swapsLock.Unlock()
+
 	// We can just use the server's in-memory cache as that contains the
 	// most up-to-date state including temporary failures which aren't
 	// persisted to disk. The swaps field is a map, that's why we need an
