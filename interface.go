@@ -260,15 +260,22 @@ type SwapInfoKit struct {
 type SwapInfo struct {
 	loopdb.SwapStateData
 
-	LastUpdate time.Time
-
-	SwapHash lntypes.Hash
-
-	SwapType swap.Type
-
 	loopdb.SwapContract
 
+	// LastUpdateTime is the time of the last state change.
+	LastUpdate time.Time
+
+	// SwapHash stores the swap preimage hash.
+	SwapHash lntypes.Hash
+
+	// SwapType describes whether this is a loop in or loop out swap.
+	SwapType swap.Type
+
+	// HtlcAddress holds the HTLC address of the swap.
 	HtlcAddress btcutil.Address
+
+	// ExternalHtlc is set to true for external loop-in swaps.
+	ExternalHtlc bool
 }
 
 // LastUpdate returns the last update time of the swap

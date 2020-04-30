@@ -244,6 +244,7 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 	s.log.Infof("Loop in swap state: %v", info.State)
 
 	info.HtlcAddress = s.htlc.Address
+	info.ExternalHtlc = s.ExternalHtlc
 
 	select {
 	case s.statusChan <- *info:
