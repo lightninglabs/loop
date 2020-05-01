@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lightningnetwork/lnd/channeldb"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -125,7 +127,37 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 		return lntypes.Hash{}, "", err
 	}
 
+	// Add the invoice we have created to our mock's set of invoices.
+	h.lnd.Invoices[hash.String()] = &lndclient.Invoice{
+		Preiamge:       nil,
+		Hash:           hash,
+		PaymentRequest: payReqString,
+		Amount:         in.Value,
+		CreationDate:   time.Now(),
+		State:          channeldb.ContractOpen,
+		IsKeysend:      false,
+	}
+
 	return hash, payReqString, nil
+}
+
+// LookupInvoice looks up an invoice in the mock's set of stored invoices.
+// If it is not found, this call will fail. Note that these invoices should
+// be settled using settleInvoice to have a preimage, settled state and settled
+// date set.
+func (h *mockLightningClient) LookupInvoice(_ context.Context,
+	// nolint: interfacer
+	hash lntypes.Hash) (*lndclient.Invoice, error) {
+
+	h.lnd.lock.Lock()
+	defer h.lnd.lock.Unlock()
+
+	inv, ok := h.lnd.Invoices[hash.String()]
+	if !ok {
+		return nil, fmt.Errorf("invoice: %x not found", hash)
+	}
+
+	return inv, nil
 }
 
 // ListTransactions returns all known transactions of the backing lnd node.
