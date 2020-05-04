@@ -43,4 +43,9 @@ linters:
 
 issues:
   # Only show newly introduced problems.
-  new-from-rev: 36838cf7f464cf73b0201798063b2caffeae4250
+  # Note that travis only clones the last 50 commits by default. If the repo
+  # progresses to a point where we are >50 commits from this point, travis will
+  # fail with exit status 128: "Can't process result by diff processor". To fix
+  # this, the commit should be updated to the latest commit. An alternative fix
+  # is to remove travis's depth limitation.
+  new-from-rev: ac096132b0afaf2abf63061c8112e712cb9fac16
