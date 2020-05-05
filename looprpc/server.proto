@@ -31,6 +31,12 @@ enum ProtocolVersion {
 
     /// Client may attempt to send the loop out payment in multiple parts.
     MULTI_LOOP_OUT = 1;
+
+    /**
+    Loop will use native segwit (P2WSH) htlcs by default, while externally
+    published htlcs may use native (P2WSH) or nested (NP2WSH) segwit as well.
+    */
+    NATIVE_SEGWIT_LOOP_IN = 2;
 }
 
 message ServerLoopOutRequest {
