@@ -11,7 +11,6 @@ import (
 )
 
 type swapKit struct {
-	htlc *swap.Htlc
 	hash lntypes.Hash
 
 	height int32
@@ -19,51 +18,49 @@ type swapKit struct {
 	log *swap.PrefixLog
 
 	lastUpdateTime time.Time
-	cost           loopdb.SwapCost
-	state          loopdb.SwapState
-	executeConfig
-	swapConfig
+
+	cost loopdb.SwapCost
+
+	state loopdb.SwapState
 
 	contract *loopdb.SwapContract
+
 	swapType swap.Type
+
+	swapConfig
 }
 
 func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
-	contract *loopdb.SwapContract, outputType swap.HtlcOutputType) (
-	*swapKit, error) {
-
-	// Compose expected on-chain swap script
-	htlc, err := swap.NewHtlc(
-		contract.CltvExpiry, contract.SenderKey,
-		contract.ReceiverKey, hash, outputType,
-		cfg.lnd.ChainParams,
-	)
-	if err != nil {
-		return nil, err
-	}
+	contract *loopdb.SwapContract) *swapKit {
 
 	log := &swap.PrefixLog{
 		Hash:   hash,
 		Logger: log,
 	}
 
-	// Log htlc address for debugging.
-	log.Infof("Htlc address: %v", htlc.Address)
-
 	return &swapKit{
 		swapConfig: *cfg,
 		hash:       hash,
 		log:        log,
-		htlc:       htlc,
 		state:      loopdb.StateInitiated,
 		contract:   contract,
 		swapType:   swapType,
-	}, nil
+	}
 }
 
-// sendUpdate reports an update to the swap state.
-func (s *swapKit) sendUpdate(ctx context.Context) error {
-	info := &SwapInfo{
+// getHtlc composes and returns the on-chain swap script.
+func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
+	return swap.NewHtlc(
+		s.contract.CltvExpiry, s.contract.SenderKey,
+		s.contract.ReceiverKey, s.hash, outputType,
+		s.swapConfig.lnd.ChainParams,
+	)
+}
+
+// swapInfo constructs and returns a filled SwapInfo from
+// the swapKit.
+func (s *swapKit) swapInfo() *SwapInfo {
+	return &SwapInfo{
 		SwapContract: *s.contract,
 		SwapHash:     s.hash,
 		SwapType:     s.swapType,
@@ -72,18 +69,7 @@ func (s *swapKit) sendUpdate(ctx context.Context) error {
 			State: s.state,
 			Cost:  s.cost,
 		},
-		HtlcAddress: s.htlc.Address,
 	}
-
-	s.log.Infof("state %v", info.State)
-
-	select {
-	case s.statusChan <- *info:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	return nil
 }
 
 type genericSwap interface {

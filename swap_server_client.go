@@ -22,7 +22,7 @@ import (
 
 // protocolVersion defines the version of the protocol that is currently
 // supported by the loop client.
-const protocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_OUT
+const protocolVersion = looprpc.ProtocolVersion_NATIVE_SEGWIT_LOOP_IN
 
 type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (

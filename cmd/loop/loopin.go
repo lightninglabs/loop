@@ -153,7 +153,10 @@ func loopIn(ctx *cli.Context) error {
 
 	fmt.Printf("Swap initiated\n")
 	fmt.Printf("ID:           %v\n", resp.Id)
-	fmt.Printf("HTLC address: %v\n", resp.HtlcAddress)
+	if external {
+		fmt.Printf("HTLC address (NP2WSH): %v\n", resp.HtlcAddressNp2Wsh)
+	}
+	fmt.Printf("HTLC address (P2WSH): %v\n", resp.HtlcAddressP2Wsh)
 	fmt.Println()
 	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 

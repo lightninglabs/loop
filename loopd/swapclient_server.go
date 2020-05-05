@@ -126,27 +126,43 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	}
 
 	var swapType looprpc.SwapType
+	var htlcAddress, htlcAddressP2WSH, htlcAddressNP2WSH string
+
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
 		swapType = looprpc.SwapType_LOOP_IN
+		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+
+		if loopSwap.ExternalHtlc {
+			htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
+			htlcAddress = htlcAddressNP2WSH
+		} else {
+			htlcAddress = htlcAddressP2WSH
+		}
+
 	case swap.TypeOut:
 		swapType = looprpc.SwapType_LOOP_OUT
+		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+		htlcAddress = htlcAddressP2WSH
+
 	default:
 		return nil, errors.New("unknown swap type")
 	}
 
 	return &looprpc.SwapStatus{
-		Amt:            int64(loopSwap.AmountRequested),
-		Id:             loopSwap.SwapHash.String(),
-		IdBytes:        loopSwap.SwapHash[:],
-		State:          state,
-		InitiationTime: loopSwap.InitiationTime.UnixNano(),
-		LastUpdateTime: loopSwap.LastUpdate.UnixNano(),
-		HtlcAddress:    loopSwap.HtlcAddress.EncodeAddress(),
-		Type:           swapType,
-		CostServer:     int64(loopSwap.Cost.Server),
-		CostOnchain:    int64(loopSwap.Cost.Onchain),
-		CostOffchain:   int64(loopSwap.Cost.Offchain),
+		Amt:               int64(loopSwap.AmountRequested),
+		Id:                loopSwap.SwapHash.String(),
+		IdBytes:           loopSwap.SwapHash[:],
+		State:             state,
+		InitiationTime:    loopSwap.InitiationTime.UnixNano(),
+		LastUpdateTime:    loopSwap.LastUpdate.UnixNano(),
+		HtlcAddress:       htlcAddress,
+		HtlcAddressP2Wsh:  htlcAddressP2WSH,
+		HtlcAddressNp2Wsh: htlcAddressNP2WSH,
+		Type:              swapType,
+		CostServer:        int64(loopSwap.Cost.Server),
+		CostOnchain:       int64(loopSwap.Cost.Onchain),
+		CostOffchain:      int64(loopSwap.Cost.Offchain),
 	}, nil
 }
 
@@ -254,6 +270,9 @@ func (s *swapClientServer) ListSwaps(_ context.Context,
 		idx      = 0
 		err      error
 	)
+
+	s.swapsLock.Lock()
+	defer s.swapsLock.Unlock()
 
 	// We can just use the server's in-memory cache as that contains the
 	// most up-to-date state including temporary failures which aren't
@@ -409,17 +428,25 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		}
 		req.LastHop = &lastHop
 	}
-	hash, htlc, err := s.impl.LoopIn(ctx, req)
+	swapInfo, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
 		log.Errorf("Loop in: %v", err)
 		return nil, err
 	}
 
-	return &looprpc.SwapResponse{
-		Id:          hash.String(),
-		IdBytes:     hash[:],
-		HtlcAddress: htlc.String(),
-	}, nil
+	np2wshAddress := swapInfo.HtlcAddressNP2WSH.String()
+	response := &looprpc.SwapResponse{
+		Id:                swapInfo.SwapHash.String(),
+		IdBytes:           swapInfo.SwapHash[:],
+		HtlcAddress:       np2wshAddress,
+		HtlcAddressNp2Wsh: np2wshAddress,
+	}
+
+	if req.ExternalHtlc {
+		response.HtlcAddressP2Wsh = swapInfo.HtlcAddressP2WSH.String()
+	}
+
+	return response, nil
 }
 
 // GetLsatTokens returns all tokens that are contained in the LSAT token store.

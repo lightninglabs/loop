@@ -50,6 +50,20 @@ var (
 	)
 )
 
+// String returns the string value of HtlcOutputType.
+func (h HtlcOutputType) String() string {
+	switch h {
+	case HtlcP2WSH:
+		return "P2WSH"
+
+	case HtlcNP2WSH:
+		return "NP2WSH"
+
+	default:
+		return "unknown"
+	}
+}
+
 // NewHtlc returns a new instance.
 func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 	hash lntypes.Hash, outputType HtlcOutputType,

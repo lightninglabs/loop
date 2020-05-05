@@ -194,17 +194,17 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		}
 
 		swaps = append(swaps, &SwapInfo{
-			SwapType:      swap.TypeOut,
-			SwapContract:  swp.Contract.SwapContract,
-			SwapStateData: swp.State(),
-			SwapHash:      swp.Hash,
-			LastUpdate:    swp.LastUpdateTime(),
-			HtlcAddress:   htlc.Address,
+			SwapType:         swap.TypeOut,
+			SwapContract:     swp.Contract.SwapContract,
+			SwapStateData:    swp.State(),
+			SwapHash:         swp.Hash,
+			LastUpdate:       swp.LastUpdateTime(),
+			HtlcAddressP2WSH: htlc.Address,
 		})
 	}
 
 	for _, swp := range loopInSwaps {
-		htlc, err := swap.NewHtlc(
+		htlcNP2WSH, err := swap.NewHtlc(
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
 			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcNP2WSH,
 			s.lndServices.ChainParams,
@@ -213,13 +213,23 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 			return nil, err
 		}
 
+		htlcP2WSH, err := swap.NewHtlc(
+			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
+			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
+			s.lndServices.ChainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		swaps = append(swaps, &SwapInfo{
-			SwapType:      swap.TypeIn,
-			SwapContract:  swp.Contract.SwapContract,
-			SwapStateData: swp.State(),
-			SwapHash:      swp.Hash,
-			LastUpdate:    swp.LastUpdateTime(),
-			HtlcAddress:   htlc.Address,
+			SwapType:          swap.TypeIn,
+			SwapContract:      swp.Contract.SwapContract,
+			SwapStateData:     swp.State(),
+			SwapHash:          swp.Hash,
+			LastUpdate:        swp.LastUpdateTime(),
+			HtlcAddressP2WSH:  htlcP2WSH.Address,
+			HtlcAddressNP2WSH: htlcNP2WSH.Address,
 		})
 	}
 
@@ -464,7 +474,7 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 
 // LoopIn initiates a loop in swap.
 func (s *Client) LoopIn(globalCtx context.Context,
-	request *LoopInRequest) (*lntypes.Hash, btcutil.Address, error) {
+	request *LoopInRequest) (*LoopInSwapInfo, error) {
 
 	log.Infof("Loop in %v (last hop: %v)",
 		request.Amount,
@@ -472,7 +482,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Create a new swap object for this swap.
@@ -486,7 +496,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 		globalCtx, &swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Post swap to the main loop.
@@ -494,7 +504,12 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, swap.htlc.Address, nil
+	swapInfo := &LoopInSwapInfo{
+		SwapHash:          swap.hash,
+		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
+		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
+	}
+	return swapInfo, nil
 }
 
 // LoopInQuote takes an amount and returns a break down of estimated
