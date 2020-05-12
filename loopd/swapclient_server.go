@@ -434,16 +434,17 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		return nil, err
 	}
 
-	np2wshAddress := swapInfo.HtlcAddressNP2WSH.String()
 	response := &looprpc.SwapResponse{
-		Id:                swapInfo.SwapHash.String(),
-		IdBytes:           swapInfo.SwapHash[:],
-		HtlcAddress:       np2wshAddress,
-		HtlcAddressNp2Wsh: np2wshAddress,
+		Id:               swapInfo.SwapHash.String(),
+		IdBytes:          swapInfo.SwapHash[:],
+		HtlcAddressP2Wsh: swapInfo.HtlcAddressP2WSH.String(),
 	}
 
 	if req.ExternalHtlc {
-		response.HtlcAddressP2Wsh = swapInfo.HtlcAddressP2WSH.String()
+		response.HtlcAddressNp2Wsh = swapInfo.HtlcAddressNP2WSH.String()
+		response.HtlcAddress = response.HtlcAddressNp2Wsh
+	} else {
+		response.HtlcAddress = response.HtlcAddressP2Wsh
 	}
 
 	return response, nil
