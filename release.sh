@@ -4,9 +4,11 @@
 # we support with the golang cross-compiler.
 #
 # Copyright (c) 2016 Company 0, LLC.
-# Copyright (c) 2019 Lightning Labs
 # Use of this source code is governed by the ISC
 # license.
+
+# Exit on errors.
+set -e
 
 # If no tag specified, use date + version otherwise use tag.
 if [[ $1x = x ]]; then
@@ -15,6 +17,41 @@ if [[ $1x = x ]]; then
     TAG=$DATE-$VERSION
 else
     TAG=$1
+
+    # If a tag is specified, ensure that that tag is present and checked out.
+    if [[ $TAG != $(git describe) ]]; then
+        echo "tag $TAG not checked out"
+        exit 1
+    fi
+
+    # Verify that it is signed.
+    if ! git verify-tag $TAG; then 
+        echo "tag $TAG not signed"
+        exit 1
+    fi
+
+    # Build loop to extract version.
+    make
+
+    # Extract version command output.
+    LOOP_VERSION_OUTPUT=`./loopd-debug --version`
+
+    # Use a regex to isolate the version string.
+    LOOP_VERSION_REGEX="version (.+) "
+    if [[ $LOOP_VERSION_OUTPUT =~ $LOOP_VERSION_REGEX ]]; then
+        # Prepend 'v' to match git tag naming scheme.
+        LOOP_VERSION="v${BASH_REMATCH[1]}"
+        echo "version: $LOOP_VERSION"
+
+        # Match git tag with loop version.
+        if [[ $TAG != $LOOP_VERSION ]]; then
+            echo "loop version $LOOP_VERSION does not match tag $TAG"
+            exit 1
+        fi
+    else
+        echo "malformed loop version output"
+        exit 1
+    fi
 fi
 
 go mod vendor
