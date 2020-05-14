@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := build
+
 PKG := github.com/lightninglabs/loop
 
 GOTEST := GO111MODULE=on go test -v
