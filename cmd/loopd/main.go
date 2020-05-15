@@ -8,7 +8,7 @@ import (
 
 func main() {
 	cfg := loopd.RPCConfig{}
-	err := loopd.Start(cfg)
+	err := loopd.Run(cfg)
 	if err != nil {
 		fmt.Printf("loopd exited with an error: %v\n", err)
 	}

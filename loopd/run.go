@@ -92,7 +92,8 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 	}
 }
 
-func Start(rpcCfg RPCConfig) error {
+// Run starts the loop daemon and blocks until it's shut down again.
+func Run(rpcCfg RPCConfig) error {
 	config := DefaultConfig()
 
 	// Parse command line flags.
