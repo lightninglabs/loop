@@ -59,19 +59,22 @@ const (
 	testnetServer = "test.swap.lightning.today:11010"
 )
 
-var defaultConfig = config{
-	Network:         "mainnet",
-	RPCListen:       "localhost:11010",
-	RESTListen:      "localhost:8081",
-	Insecure:        false,
-	LogDir:          defaultLogDir,
-	MaxLogFiles:     defaultMaxLogFiles,
-	MaxLogFileSize:  defaultMaxLogFileSize,
-	DebugLevel:      defaultLogLevel,
-	MaxLSATCost:     lsat.DefaultMaxCostSats,
-	MaxLSATFee:      lsat.DefaultMaxRoutingFeeSats,
-	LoopOutMaxParts: defaultLoopOutMaxParts,
-	Lnd: &lndConfig{
-		Host: "localhost:10009",
-	},
+// DefaultConfig returns all default values for the Config struct.
+func DefaultConfig() config {
+	return config{
+		Network:         "mainnet",
+		RPCListen:       "localhost:11010",
+		RESTListen:      "localhost:8081",
+		Insecure:        false,
+		LogDir:          defaultLogDir,
+		MaxLogFiles:     defaultMaxLogFiles,
+		MaxLogFileSize:  defaultMaxLogFileSize,
+		DebugLevel:      defaultLogLevel,
+		MaxLSATCost:     lsat.DefaultMaxCostSats,
+		MaxLSATFee:      lsat.DefaultMaxRoutingFeeSats,
+		LoopOutMaxParts: defaultLoopOutMaxParts,
+		Lnd: &lndConfig{
+			Host: "localhost:10009",
+		},
+	}
 }

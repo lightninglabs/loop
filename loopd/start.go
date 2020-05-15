@@ -92,7 +92,7 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 }
 
 func Start(rpcCfg RPCConfig) error {
-	config := defaultConfig
+	config := DefaultConfig()
 
 	// Parse command line flags.
 	parser := flags.NewParser(&config, flags.Default)
