@@ -100,7 +100,8 @@ func New(config *Config, lisCfg *listenerCfg) *Daemon {
 // execute commands and pass back swap status information.
 func (d *Daemon) Start() error {
 	// There should be no reason to start the daemon twice. Therefore return
-	// an error if that's tried.
+	// an error if that's tried. This is mostly to guard against Start and
+	// StartAsSubserver both being called.
 	if atomic.AddInt32(&d.started, 1) != 1 {
 		return errOnlyStartOnce
 	}
@@ -134,6 +135,29 @@ func (d *Daemon) Start() error {
 	}
 
 	return nil
+}
+
+// StartAsSubserver is an alternative to Start where the RPC server does not
+// create its own gRPC server but registers to an existing one. The same goes
+// for REST (if enabled), instead of creating an own mux and HTTP server, we
+// register to an existing one.
+func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices) error {
+	// There should be no reason to start the daemon twice. Therefore return
+	// an error if that's tried. This is mostly to guard against Start and
+	// StartAsSubserver both being called.
+	if atomic.AddInt32(&d.started, 1) != 1 {
+		return errOnlyStartOnce
+	}
+
+	// When starting as a subserver, we get passed in an already established
+	// connection to lnd that might be shared among other subservers.
+	d.lnd = lndGrpc
+
+	// With lnd already pre-connected, initialize everything else, such as
+	// the swap server client, the RPC server instance and our main swap
+	// handlers. If this fails, then nothing has been started yet and we can
+	// just return the error.
+	return d.initialize()
 }
 
 // startWebServers starts the gRPC and REST servers in goroutines.
