@@ -40,7 +40,7 @@ type listenerCfg struct {
 
 // daemon runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
-func daemon(config *config, lisCfg *listenerCfg) error {
+func daemon(config *Config, lisCfg *listenerCfg) error {
 	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
 	if err != nil {
 		return err

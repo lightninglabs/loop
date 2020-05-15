@@ -10,7 +10,7 @@ import (
 )
 
 // view prints all swaps currently in the database.
-func view(config *config, lisCfg *listenerCfg) error {
+func view(config *Config, lisCfg *listenerCfg) error {
 	chainParams, err := swap.ChainParamsFromNetwork(config.Network)
 	if err != nil {
 		return err

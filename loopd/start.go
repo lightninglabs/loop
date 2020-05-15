@@ -47,7 +47,7 @@ type RPCConfig struct {
 
 // newListenerCfg creates and returns a new listenerCfg from the passed config
 // and RPCConfig.
-func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
+func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 	return &listenerCfg{
 		grpcListener: func() (net.Listener, error) {
 			// If a custom RPC listener is set, we will listen on

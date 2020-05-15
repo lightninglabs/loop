@@ -28,7 +28,7 @@ type lndConfig struct {
 
 type viewParameters struct{}
 
-type config struct {
+type Config struct {
 	ShowVersion    bool   `short:"V" long:"version" description:"Display version information and exit"`
 	Insecure       bool   `long:"insecure" description:"disable tls"`
 	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
@@ -60,8 +60,8 @@ const (
 )
 
 // DefaultConfig returns all default values for the Config struct.
-func DefaultConfig() config {
-	return config{
+func DefaultConfig() Config {
+	return Config{
 		Network:         "mainnet",
 		RPCListen:       "localhost:11010",
 		RESTListen:      "localhost:8081",
