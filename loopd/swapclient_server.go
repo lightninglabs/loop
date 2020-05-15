@@ -39,6 +39,7 @@ type swapClientServer struct {
 	statusChan       chan loop.SwapInfo
 	nextSubscriberID int
 	swapsLock        sync.Mutex
+	mainCtx          context.Context
 }
 
 // LoopOut initiates an loop out swap with the given parameters. The call
@@ -264,8 +265,14 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 			if err := send(swap); err != nil {
 				return err
 			}
+
+		// The client cancels the subscription.
 		case <-server.Context().Done():
 			return nil
+
+		// The server is shutting down.
+		case <-s.mainCtx.Done():
+			return fmt.Errorf("server is shutting down")
 		}
 	}
 }

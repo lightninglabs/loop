@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
+	"github.com/lightningnetwork/lnd/signal"
 )
 
 const defaultConfigFilename = "loopd.conf"
@@ -168,8 +169,26 @@ func Start(rpcCfg RPCConfig) error {
 
 	// Execute command.
 	if parser.Active == nil {
+		signal.Intercept()
+
 		daemon := New(&config, lisCfg)
-		return daemon.Run()
+		if err := daemon.Start(); err != nil {
+			return err
+		}
+
+		select {
+		case <-signal.ShutdownChannel():
+			log.Infof("Received SIGINT (Ctrl+C).")
+			daemon.Stop()
+
+			// The above stop will return immediately. But we'll be
+			// notified on the error channel once the process is
+			// complete.
+			return <-daemon.ErrChan
+
+		case err := <-daemon.ErrChan:
+			return err
+		}
 	}
 
 	if parser.Active.Name == "view" {
