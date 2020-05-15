@@ -168,7 +168,8 @@ func Start(rpcCfg RPCConfig) error {
 
 	// Execute command.
 	if parser.Active == nil {
-		return daemon(&config, lisCfg)
+		daemon := New(&config, lisCfg)
+		return daemon.Run()
 	}
 
 	if parser.Active.Name == "view" {

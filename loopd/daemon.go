@@ -38,34 +38,57 @@ type listenerCfg struct {
 	getLnd func(string, *lndConfig) (*lndclient.GrpcLndServices, error)
 }
 
-// daemon runs loopd in daemon mode. It will listen for grpc connections,
+// Daemon is the struct that holds one instance of the loop client daemon.
+type Daemon struct {
+	// swapClientServer is the embedded RPC server that satisfies the client
+	// RPC interface. We embed this struct so the Daemon itself can be
+	// registered to an existing grpc.Server to run as a subserver in the
+	// same process.
+	swapClientServer
+
+	cfg         *Config
+	listenerCfg *listenerCfg
+
+	lnd *lndclient.GrpcLndServices
+}
+
+// New creates a new instance of the loop client daemon.
+func New(config *Config, lisCfg *listenerCfg) *Daemon {
+	return &Daemon{
+		cfg:         config,
+		listenerCfg: lisCfg,
+	}
+}
+
+// Run runs loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
-func daemon(config *Config, lisCfg *listenerCfg) error {
-	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
+func (d *Daemon) Run() error {
+	var err error
+	d.lnd, err = d.listenerCfg.getLnd(d.cfg.Network, d.cfg.Lnd)
 	if err != nil {
 		return err
 	}
-	defer lnd.Close()
+	defer d.lnd.Close()
 
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
-	if config.SwapServer == "" {
+	if d.cfg.SwapServer == "" {
 		// TODO(wilmer): Use onion service addresses when proxy is
 		// active.
-		switch config.Network {
+		switch d.cfg.Network {
 		case "mainnet":
-			config.SwapServer = mainnetServer
+			d.cfg.SwapServer = mainnetServer
 		case "testnet":
-			config.SwapServer = testnetServer
+			d.cfg.SwapServer = testnetServer
 		default:
 			return errors.New("no swap server address specified")
 		}
 	}
 
-	log.Infof("Swap server address: %v", config.SwapServer)
+	log.Infof("Swap server address: %v", d.cfg.SwapServer)
 
 	// Create an instance of the loop client library.
-	swapClient, cleanup, err := getClient(config, &lnd.LndServices)
+	swapClient, cleanup, err := getClient(d.cfg, &d.lnd.LndServices)
 	if err != nil {
 		return err
 	}
@@ -83,9 +106,9 @@ func daemon(config *Config, lisCfg *listenerCfg) error {
 	}
 
 	// Instantiate the loopd gRPC server.
-	server := swapClientServer{
+	d.swapClientServer = swapClientServer{
 		impl:        swapClient,
-		lnd:         &lnd.LndServices,
+		lnd:         &d.lnd.LndServices,
 		swaps:       swaps,
 		subscribers: make(map[int]chan<- interface{}),
 		statusChan:  make(chan loop.SwapInfo),
@@ -93,14 +116,14 @@ func daemon(config *Config, lisCfg *listenerCfg) error {
 
 	serverOpts := []grpc.ServerOption{}
 	grpcServer := grpc.NewServer(serverOpts...)
-	looprpc.RegisterSwapClientServer(grpcServer, &server)
+	looprpc.RegisterSwapClientServer(grpcServer, d)
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
-	grpcListener, err := lisCfg.grpcListener()
+	grpcListener, err := d.listenerCfg.grpcListener()
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s",
-			config.RPCListen)
+			d.cfg.RPCListen)
 
 	}
 	defer grpcListener.Close()
@@ -122,24 +145,24 @@ func daemon(config *Config, lisCfg *listenerCfg) error {
 	defer cancel()
 	mux := proxy.NewServeMux(customMarshalerOption)
 	var restHandler http.Handler = mux
-	if config.CORSOrigin != "" {
-		restHandler = allowCORS(restHandler, config.CORSOrigin)
+	if d.cfg.CORSOrigin != "" {
+		restHandler = allowCORS(restHandler, d.cfg.CORSOrigin)
 	}
 	proxyOpts := []grpc.DialOption{
 		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
-		ctx, mux, config.RPCListen, proxyOpts,
+		ctx, mux, d.cfg.RPCListen, proxyOpts,
 	)
 	if err != nil {
 		return err
 	}
 
-	restListener, err := lisCfg.restListener()
+	restListener, err := d.listenerCfg.restListener()
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s",
-			config.RESTListen)
+			d.cfg.RESTListen)
 	}
 
 	// A nil listener indicates REST is disabled.
@@ -170,7 +193,7 @@ func daemon(config *Config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Starting swap client")
-		err := swapClient.Run(mainCtx, server.statusChan)
+		err := swapClient.Run(mainCtx, d.statusChan)
 		if err != nil {
 			log.Error(err)
 		}
@@ -188,7 +211,7 @@ func daemon(config *Config, lisCfg *listenerCfg) error {
 		defer wg.Done()
 
 		log.Infof("Waiting for updates")
-		server.processStatusUpdates(mainCtx)
+		d.processStatusUpdates(mainCtx)
 	}()
 
 	// Start the grpc server.
