@@ -168,6 +168,13 @@ func (h *mockLightningClient) ListTransactions(
 	return txs, nil
 }
 
+// ListChannels retrieves all channels of the backing lnd node.
+func (h *mockLightningClient) ListChannels(ctx context.Context) (
+	[]lndclient.ChannelInfo, error) {
+
+	return h.lnd.Channels, nil
+}
+
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
 func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {

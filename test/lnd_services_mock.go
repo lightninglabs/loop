@@ -163,6 +163,8 @@ type LndMockServices struct {
 	// keyed by hash string.
 	Invoices map[lntypes.Hash]*lndclient.Invoice
 
+	Channels []lndclient.ChannelInfo
+
 	WaitForFinished func()
 
 	lock sync.Mutex

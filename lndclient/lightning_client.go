@@ -17,6 +17,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -46,6 +47,9 @@ type LightningClient interface {
 	// node.
 	ListTransactions(ctx context.Context) ([]*wire.MsgTx, error)
 
+	// ListChannels retrieves all channels of the backing lnd node.
+	ListChannels(ctx context.Context) ([]ChannelInfo, error)
+
 	// ChannelBackup retrieves the backup for a particular channel. The
 	// backup is returned as an encrypted chanbackup.Single payload.
 	ChannelBackup(context.Context, wire.OutPoint) ([]byte, error)
@@ -63,6 +67,29 @@ type Info struct {
 	Alias          string
 	Network        string
 	Uris           []string
+}
+
+// ChannelInfo stores unpacked per-channel info.
+type ChannelInfo struct {
+	// Active indecates whether the channel is active.
+	Active bool
+
+	// ChannelID holds the unique channel ID for the channel. The first 3 bytes
+	// are the block height, the next 3 the index within the block, and the last
+	// 2 bytes are the /output index for the channel.
+	ChannelID uint64
+
+	// PubKeyBytes is the raw bytes of the public key of the remote node.
+	PubKeyBytes route.Vertex
+
+	// Capacity is the total amount of funds held in this channel.
+	Capacity btcutil.Amount
+
+	// LocalBalance is the current balance of this node in this channel.
+	LocalBalance btcutil.Amount
+
+	// RemoteBalance is the counterparty's current balance in this channel.
+	RemoteBalance btcutil.Amount
 }
 
 var (
@@ -493,6 +520,41 @@ func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, 
 	}
 
 	return txs, nil
+}
+
+// ListChannels retrieves all channels of the backing lnd node.
+func (s *lightningClient) ListChannels(ctx context.Context) (
+	[]ChannelInfo, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	response, err := s.client.ListChannels(
+		s.adminMac.WithMacaroonAuth(rpcCtx),
+		&lnrpc.ListChannelsRequest{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ChannelInfo, len(response.Channels))
+	for i, channel := range response.Channels {
+		remoteVertex, err := route.NewVertexFromStr(channel.RemotePubkey)
+		if err != nil {
+			return nil, err
+		}
+
+		result[i] = ChannelInfo{
+			Active:        channel.Active,
+			ChannelID:     channel.ChanId,
+			PubKeyBytes:   remoteVertex,
+			Capacity:      btcutil.Amount(channel.Capacity),
+			LocalBalance:  btcutil.Amount(channel.LocalBalance),
+			RemoteBalance: btcutil.Amount(channel.RemoteBalance),
+		}
+	}
+
+	return result, nil
 }
 
 // ChannelBackup retrieves the backup for a particular channel. The backup is
