@@ -448,6 +448,7 @@ func getClientConn(cfg *LndServicesConfig) (*grpc.ClientConn, error) {
 		// Use a custom dialer, to allow connections to unix sockets,
 		// in-memory listeners etc, and not just TCP addresses.
 		grpc.WithContextDialer(cfg.Dialer),
+		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
 	conn, err := grpc.Dial(cfg.LndAddress, opts...)
