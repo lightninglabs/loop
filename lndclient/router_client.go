@@ -2,6 +2,7 @@ package lndclient
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
@@ -88,7 +90,7 @@ type SendPaymentRequest struct {
 
 	// PaymentHash is the r-hash value to use within the HTLC extended to
 	// the first hop.
-	PaymentHash [32]byte
+	PaymentHash *lntypes.Hash
 
 	// FinalCLTVDelta is the CTLV expiry delta to use for the _final_ hop
 	// in the route. This means that the final hop will have a CLTV delta
@@ -112,6 +114,9 @@ type SendPaymentRequest struct {
 	// MaxParts is the maximum number of partial payments that may be used
 	// to complete the full amount.
 	MaxParts uint32
+
+	// KeySend is set to true if the tlv payload will include the preimage.
+	KeySend bool
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -148,6 +153,24 @@ func (r *routerClient) SendPayment(ctx context.Context,
 
 	if request.LastHopPubkey != nil {
 		rpcReq.LastHopPubkey = request.LastHopPubkey[:]
+	}
+	if request.KeySend {
+		if request.PaymentHash != nil {
+			return nil, nil, fmt.Errorf(
+				"keysend payment must not include a preset payment hash")
+		}
+
+		var preimage lntypes.Preimage
+		if _, err := rand.Read(preimage[:]); err != nil {
+			return nil, nil, err
+		}
+
+		// Override the payment hash.
+		rpcReq.DestCustomRecords = map[uint64][]byte{
+			record.KeySendType: preimage[:],
+		}
+		hash := preimage.Hash()
+		request.PaymentHash = &hash
 	}
 
 	// Only if there is no payment request set, we will parse the individual
