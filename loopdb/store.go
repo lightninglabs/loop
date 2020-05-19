@@ -276,46 +276,26 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 	return swaps, nil
 }
 
-// createLoop creates a swap in the store. It requires that the contract is
-// already serialized to be able to use this function for both in and out swaps.
-func (s *boltSwapStore) createLoop(bucketKey []byte, hash lntypes.Hash,
-	contractBytes []byte) error {
+// createLoopBucket creates the bucket for a particular swap.
+func createLoopBucket(tx *bbolt.Tx, swapTypeKey []byte, hash lntypes.Hash) (
+	*bbolt.Bucket, error) {
 
-	// Otherwise, we'll create a new swap within the database.
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		// First, we'll grab the root bucket that houses all of our
-		// main swaps.
-		rootBucket, err := tx.CreateBucketIfNotExists(
-			bucketKey,
-		)
-		if err != nil {
-			return err
-		}
+	// First, we'll grab the root bucket that houses all of our
+	// swaps of this type.
+	swapTypeBucket, err := tx.CreateBucketIfNotExists(swapTypeKey)
+	if err != nil {
+		return nil, err
+	}
 
-		// If the swap already exists, then we'll exit as we don't want
-		// to override a swap.
-		if rootBucket.Get(hash[:]) != nil {
-			return fmt.Errorf("swap %v already exists", hash)
-		}
+	// If the swap already exists, then we'll exit as we don't want
+	// to override a swap.
+	if swapTypeBucket.Get(hash[:]) != nil {
+		return nil, fmt.Errorf("swap %v already exists", hash)
+	}
 
-		// From the root bucket, we'll make a new sub swap bucket using
-		// the swap hash.
-		swapBucket, err := rootBucket.CreateBucket(hash[:])
-		if err != nil {
-			return err
-		}
-
-		// With the swap bucket created, we'll store the swap itself.
-		err = swapBucket.Put(contractKey, contractBytes)
-		if err != nil {
-			return err
-		}
-
-		// Finally, we'll create an empty updates bucket for this swap
-		// to track any future updates to the swap itself.
-		_, err = swapBucket.CreateBucket(updatesBucketKey)
-		return err
-	})
+	// From the swap type bucket, we'll make a new sub swap bucket using the
+	// swap hash to store the individual swap.
+	return swapTypeBucket.CreateBucket(hash[:])
 }
 
 // CreateLoopOut adds an initiated swap to the store.
@@ -330,12 +310,30 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 		return errors.New("hash and preimage do not match")
 	}
 
-	contractBytes, err := serializeLoopOutContract(swap)
-	if err != nil {
-		return err
-	}
+	// Otherwise, we'll create a new swap within the database.
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Create the swap bucket.
+		swapBucket, err := createLoopBucket(tx, loopOutBucketKey, hash)
+		if err != nil {
+			return err
+		}
 
-	return s.createLoop(loopOutBucketKey, hash, contractBytes)
+		// With the swap bucket created, we'll store the swap itself.
+		contractBytes, err := serializeLoopOutContract(swap)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Finally, we'll create an empty updates bucket for this swap
+		// to track any future updates to the swap itself.
+		_, err = swapBucket.CreateBucket(updatesBucketKey)
+		return err
+	})
 }
 
 // CreateLoopIn adds an initiated swap to the store.
@@ -350,12 +348,30 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 		return errors.New("hash and preimage do not match")
 	}
 
-	contractBytes, err := serializeLoopInContract(swap)
-	if err != nil {
-		return err
-	}
+	// Otherwise, we'll create a new swap within the database.
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Create the swap bucket.
+		swapBucket, err := createLoopBucket(tx, loopInBucketKey, hash)
+		if err != nil {
+			return err
+		}
 
-	return s.createLoop(loopInBucketKey, hash, contractBytes)
+		// With the swap bucket created, we'll store the swap itself.
+		contractBytes, err := serializeLoopInContract(swap)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Finally, we'll create an empty updates bucket for this swap
+		// to track any future updates to the swap itself.
+		_, err = swapBucket.CreateBucket(updatesBucketKey)
+		return err
+	})
 }
 
 // updateLoop saves a new swap state transition to the store. It takes in a
