@@ -180,25 +180,7 @@ func (s *boltSwapStore) fetchSwaps(bucketKey []byte,
 				return errors.New("contract not found")
 			}
 
-			// Once we have the raw swap, we'll also need to decode
-			// each of the past updates to the swap itself.
-			stateBucket := swapBucket.Bucket(updatesBucketKey)
-			if stateBucket == nil {
-				return errors.New("updates bucket not found")
-			}
-
-			// De serialize and collect each swap update into our
-			// slice of swap events.
-			var updates []*LoopEvent
-			err := stateBucket.ForEach(func(k, v []byte) error {
-				event, err := deserializeLoopEvent(v)
-				if err != nil {
-					return err
-				}
-
-				updates = append(updates, event)
-				return nil
-			})
+			updates, err := deserializeUpdates(swapBucket)
 			if err != nil {
 				return err
 			}
@@ -214,6 +196,35 @@ func (s *boltSwapStore) fetchSwaps(bucketKey []byte,
 			return callback(contractBytes, loop)
 		})
 	})
+}
+
+// deserializeUpdates deserializes the list of swap updates that are stored as a
+// key of the given bucket.
+func deserializeUpdates(swapBucket *bbolt.Bucket) ([]*LoopEvent, error) {
+	// Once we have the raw swap, we'll also need to decode
+	// each of the past updates to the swap itself.
+	stateBucket := swapBucket.Bucket(updatesBucketKey)
+	if stateBucket == nil {
+		return nil, errors.New("updates bucket not found")
+	}
+
+	// Deserialize and collect each swap update into our slice of swap
+	// events.
+	var updates []*LoopEvent
+	err := stateBucket.ForEach(func(_, v []byte) error {
+		event, err := deserializeLoopEvent(v)
+		if err != nil {
+			return err
+		}
+
+		updates = append(updates, event)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return updates, nil
 }
 
 // FetchLoopOutSwaps returns all loop out swaps currently in the store.
