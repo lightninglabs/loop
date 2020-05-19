@@ -40,28 +40,7 @@ var (
 // TestLoopOutStore tests all the basic functionality of the current bbolt
 // swap store.
 func TestLoopOutStore(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchLoopOutSwaps()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(swaps) != 0 {
-		t.Fatal("expected empty store")
-	}
-
 	destAddr := test.GetDestAddr(t, 0)
-	hash := sha256.Sum256(testPreimage[:])
 	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	// Next, we'll make a new pending swap that we'll insert into the
@@ -92,6 +71,32 @@ func TestLoopOutStore(t *testing.T) {
 		SwapPublicationDeadline: time.Unix(0, initiationTime.UnixNano()),
 	}
 
+	testLoopOutStore(t, &pendingSwap)
+}
+
+// testLoopOutStore tests the basic functionality of the current bbolt
+// swap store for specific swap parameters.
+func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First, verify that an empty database has no active swaps.
+	swaps, err := store.FetchLoopOutSwaps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(swaps) != 0 {
+		t.Fatal("expected empty store")
+	}
+
 	// checkSwap is a test helper function that'll assert the state of a
 	// swap.
 	checkSwap := func(expectedState SwapState) {
@@ -107,7 +112,7 @@ func TestLoopOutStore(t *testing.T) {
 		}
 
 		swap := swaps[0].Contract
-		if !reflect.DeepEqual(swap, &pendingSwap) {
+		if !reflect.DeepEqual(swap, pendingSwap) {
 			t.Fatal("invalid pending swap data")
 		}
 
@@ -118,15 +123,17 @@ func TestLoopOutStore(t *testing.T) {
 		}
 	}
 
+	hash := pendingSwap.Preimage.Hash()
+
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	if err := store.CreateLoopOut(hash, &pendingSwap); err != nil {
+	if err := store.CreateLoopOut(hash, pendingSwap); err != nil {
 		t.Fatal(err)
 	}
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	if err := store.CreateLoopOut(hash, &pendingSwap); err == nil {
+	if err := store.CreateLoopOut(hash, pendingSwap); err == nil {
 		t.Fatal("expected error on storing duplicate")
 	}
 	checkSwap(StateInitiated)
