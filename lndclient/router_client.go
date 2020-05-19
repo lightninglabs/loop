@@ -64,10 +64,14 @@ type SendPaymentRequest struct {
 	// are only processed when the Invoice field is empty.
 	Invoice string
 
-	MaxFee          btcutil.Amount
-	MaxCltv         *int32
-	OutgoingChannel *uint64
-	Timeout         time.Duration
+	MaxFee  btcutil.Amount
+	MaxCltv *int32
+
+	// OutgoingChanIds is a restriction on the set of possible outgoing
+	// channels. If nil or empty, there is no restriction.
+	OutgoingChanIds []uint64
+
+	Timeout time.Duration
 
 	// Target is the node in which the payment should be routed towards.
 	Target route.Vertex
@@ -126,17 +130,16 @@ func (r *routerClient) SendPayment(ctx context.Context,
 
 	rpcCtx := r.routerKitMac.WithMacaroonAuth(ctx)
 	rpcReq := &routerrpc.SendPaymentRequest{
-		FeeLimitSat:    int64(request.MaxFee),
-		PaymentRequest: request.Invoice,
-		TimeoutSeconds: int32(request.Timeout.Seconds()),
-		MaxParts:       request.MaxParts,
+		FeeLimitSat:     int64(request.MaxFee),
+		PaymentRequest:  request.Invoice,
+		TimeoutSeconds:  int32(request.Timeout.Seconds()),
+		MaxParts:        request.MaxParts,
+		OutgoingChanIds: request.OutgoingChanIds,
 	}
 	if request.MaxCltv != nil {
 		rpcReq.CltvLimit = *request.MaxCltv
 	}
-	if request.OutgoingChannel != nil {
-		rpcReq.OutgoingChanId = *request.OutgoingChannel
-	}
+
 	if request.LastHopPubkey != nil {
 		rpcReq.LastHopPubkey = request.LastHopPubkey[:]
 	}

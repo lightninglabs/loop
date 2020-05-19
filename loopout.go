@@ -429,9 +429,16 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
+
+	var outgoingChanIds []uint64
+	if s.LoopOutContract.UnchargeChannel != nil {
+		outgoingChanIds = append(
+			outgoingChanIds, *s.LoopOutContract.UnchargeChannel,
+		)
+	}
+
 	s.swapPaymentChan = s.payInvoice(
-		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.LoopOutContract.UnchargeChannel,
+		ctx, s.SwapInvoice, s.MaxSwapRoutingFee, outgoingChanIds,
 	)
 
 	// Pay the prepay invoice.
@@ -445,7 +452,7 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount,
-	outgoingChannel *uint64) chan lndclient.PaymentResult {
+	outgoingChanIds []uint64) chan lndclient.PaymentResult {
 
 	resultChan := make(chan lndclient.PaymentResult)
 
@@ -453,7 +460,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 		var result lndclient.PaymentResult
 
 		status, err := s.payInvoiceAsync(
-			ctx, invoice, maxFee, outgoingChannel,
+			ctx, invoice, maxFee, outgoingChanIds,
 		)
 		if err != nil {
 			result.Err = err
@@ -474,7 +481,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
-	invoice string, maxFee btcutil.Amount, outgoingChannel *uint64) (
+	invoice string, maxFee btcutil.Amount, outgoingChanIds []uint64) (
 	*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
@@ -488,7 +495,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	req := lndclient.SendPaymentRequest{
 		MaxFee:          maxFee,
 		Invoice:         invoice,
-		OutgoingChannel: outgoingChannel,
+		OutgoingChanIds: outgoingChanIds,
 		Timeout:         paymentTimeout,
 		MaxParts:        s.executeConfig.loopOutMaxParts,
 	}
