@@ -90,7 +90,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		),
 	}
 	if in.LoopOutChannel != 0 {
-		req.LoopOutChannel = &in.LoopOutChannel
+		req.OutgoingChanSet = loopdb.ChannelSet{in.LoopOutChannel}
 	}
 	hash, htlc, err := s.impl.LoopOut(ctx, req)
 	if err != nil {

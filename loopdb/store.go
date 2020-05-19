@@ -1,9 +1,11 @@
 package loopdb
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,6 +52,14 @@ var (
 	//
 	// value: time || rawSwapState
 	contractKey = []byte("contract")
+
+	// outgoingChanSetKey is the key that stores a list of channel ids that
+	// restrict the loop out swap payment.
+	//
+	// path: loopOutBucket -> swapBucket[hash] -> outgoingChanSetKey
+	//
+	// value: concatenation of uint64 channel ids
+	outgoingChanSetKey = []byte("outgoing-chan-set")
 
 	byteOrder = binary.BigEndian
 
@@ -188,6 +198,29 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 			)
 			if err != nil {
 				return err
+			}
+
+			// Read the list of concatenated outgoing channel ids
+			// that form the outgoing set.
+			setBytes := swapBucket.Get(outgoingChanSetKey)
+			if outgoingChanSetKey != nil {
+				r := bytes.NewReader(setBytes)
+			readLoop:
+				for {
+					var chanID uint64
+					err := binary.Read(r, byteOrder, &chanID)
+					switch {
+					case err == io.EOF:
+						break readLoop
+					case err != nil:
+						return err
+					}
+
+					contract.OutgoingChanSet = append(
+						contract.OutgoingChanSet,
+						chanID,
+					)
+				}
 			}
 
 			updates, err := deserializeUpdates(swapBucket)
@@ -370,6 +403,19 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 		}
 
 		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Write the outgoing channel set.
+		var b bytes.Buffer
+		for _, chanID := range swap.OutgoingChanSet {
+			err := binary.Write(&b, byteOrder, chanID)
+			if err != nil {
+				return err
+			}
+		}
+		err = swapBucket.Put(outgoingChanSetKey, b.Bytes())
 		if err != nil {
 			return err
 		}

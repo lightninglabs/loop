@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -47,8 +48,11 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	const maxParts = 5
 
 	// Initiate the swap.
+	req := *testRequest
+	req.OutgoingChanSet = loopdb.ChannelSet{2, 3}
+
 	swap, err := newLoopOutSwap(
-		context.Background(), cfg, height, testRequest,
+		context.Background(), cfg, height, &req,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +101,13 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	if swapPayment.MaxParts != maxParts {
 		t.Fatalf("Expected %v parts, but got %v",
 			maxParts, swapPayment.MaxParts)
+	}
+
+	// Verify the outgoing channel set restriction.
+	if !reflect.DeepEqual(
+		[]uint64(req.OutgoingChanSet), swapPayment.OutgoingChanIds,
+	) {
+		t.Fatalf("Unexpected outgoing channel set")
 	}
 
 	// Swap is expected to register for confirmation of the htlc. Assert

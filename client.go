@@ -359,9 +359,8 @@ func (s *Client) resumeSwaps(ctx context.Context,
 func (s *Client) LoopOut(globalCtx context.Context,
 	request *OutRequest) (*lntypes.Hash, btcutil.Address, error) {
 
-	log.Infof("LoopOut %v to %v (channel: %v)",
-		request.Amount, request.DestAddr,
-		request.LoopOutChannel,
+	log.Infof("LoopOut %v to %v (channels: %v)",
+		request.Amount, request.DestAddr, request.OutgoingChanSet,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
