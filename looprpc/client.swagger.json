@@ -355,7 +355,15 @@
         "loop_out_channel": {
           "type": "string",
           "format": "uint64",
-          "description": "*\nThe channel to loop out, the channel to loop out is selected based on the\nlowest routing fee for the swap payment to the server."
+          "description": "*\nDeprecated, use outgoing_chan_set. The channel to loop out, the channel\nto loop out is selected based on the lowest routing fee for the swap\npayment to the server."
+        },
+        "outgoing_chan_set": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "*\nA restriction on the channel set that may be used to loop out. The actual\nchannel(s) that will be used are selected based on the lowest routing fee\nfor the swap payment to the server."
         },
         "sweep_conf_target": {
           "type": "integer",

@@ -163,10 +163,18 @@ message LoopOutRequest {
     int64 max_miner_fee = 7;
 
     /**
-    The channel to loop out, the channel to loop out is selected based on the
-    lowest routing fee for the swap payment to the server.
+    Deprecated, use outgoing_chan_set. The channel to loop out, the channel
+    to loop out is selected based on the lowest routing fee for the swap
+    payment to the server.
     */
-    uint64 loop_out_channel = 8;
+    uint64 loop_out_channel = 8 [deprecated = true];
+
+    /**
+    A restriction on the channel set that may be used to loop out. The actual
+    channel(s) that will be used are selected based on the lowest routing fee
+    for the swap payment to the server.
+    */
+    repeated uint64 outgoing_chan_set = 11;
 
     /**
     The number of blocks from the on-chain HTLC's confirmation height that it
