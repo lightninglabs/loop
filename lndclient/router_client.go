@@ -64,13 +64,19 @@ type SendPaymentRequest struct {
 	// are only processed when the Invoice field is empty.
 	Invoice string
 
-	MaxFee  btcutil.Amount
+	// MaxFee is the fee limit for this payment.
+	MaxFee btcutil.Amount
+
+	// MaxCltv is the maximum timelock for this payment. If nil, there is no
+	// maximum.
 	MaxCltv *int32
 
 	// OutgoingChanIds is a restriction on the set of possible outgoing
 	// channels. If nil or empty, there is no restriction.
 	OutgoingChanIds []uint64
 
+	// Timeout is the payment loop timeout. After this time, no new payment
+	// attempts will be started.
 	Timeout time.Duration
 
 	// Target is the node in which the payment should be routed towards.
