@@ -15,6 +15,105 @@ import (
 	"github.com/lightninglabs/loop/test"
 )
 
+// TestLoopOutPaymentParameters tests the first part of the loop out process up
+// to the point where the off-chain payments are made.
+func TestLoopOutPaymentParameters(t *testing.T) {
+	defer test.Guard(t)()
+
+	// Set up test context objects.
+	lnd := test.NewMockLnd()
+	ctx := test.NewContext(t, lnd)
+	server := newServerMock()
+	store := newStoreMock(t)
+
+	expiryChan := make(chan time.Time)
+	timerFactory := func(_ time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	height := int32(600)
+
+	cfg := &swapConfig{
+		lnd:    &lnd.LndServices,
+		store:  store,
+		server: server,
+	}
+
+	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
+
+	blockEpochChan := make(chan interface{})
+	statusChan := make(chan SwapInfo)
+
+	const maxParts = 5
+
+	// Initiate the swap.
+	swap, err := newLoopOutSwap(
+		context.Background(), cfg, height, testRequest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Execute the swap in its own goroutine.
+	errChan := make(chan error)
+	swapCtx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		err := swap.execute(swapCtx, &executeConfig{
+			statusChan:      statusChan,
+			sweeper:         sweeper,
+			blockEpochChan:  blockEpochChan,
+			timerFactory:    timerFactory,
+			loopOutMaxParts: maxParts,
+		}, height)
+		if err != nil {
+			log.Error(err)
+		}
+		errChan <- err
+	}()
+
+	store.assertLoopOutStored()
+
+	state := <-statusChan
+	if state.State != loopdb.StateInitiated {
+		t.Fatal("unexpected state")
+	}
+
+	// Intercept the swap and prepay payments. Order is undefined.
+	payments := []test.RouterPaymentChannelMessage{
+		<-ctx.Lnd.RouterSendPaymentChannel,
+		<-ctx.Lnd.RouterSendPaymentChannel,
+	}
+
+	// Find the swap payment.
+	var swapPayment test.RouterPaymentChannelMessage
+	for _, p := range payments {
+		if p.Invoice == swap.SwapInvoice {
+			swapPayment = p
+		}
+	}
+
+	// Assert that it is sent as a multi-part payment.
+	if swapPayment.MaxParts != maxParts {
+		t.Fatalf("Expected %v parts, but got %v",
+			maxParts, swapPayment.MaxParts)
+	}
+
+	// Swap is expected to register for confirmation of the htlc. Assert
+	// this to prevent a blocked channel in the mock.
+	ctx.AssertRegisterConf()
+
+	// Cancel the swap. There is nothing else we need to assert. The payment
+	// parameters don't play a role in the remainder of the swap process.
+	cancel()
+
+	// Expect the swap to signal that it was cancelled.
+	err = <-errChan
+	if err != context.Canceled {
+		t.Fatal(err)
+	}
+}
+
 // TestLateHtlcPublish tests that the client is not revealing the preimage if
 // there are not enough blocks left.
 func TestLateHtlcPublish(t *testing.T) {
