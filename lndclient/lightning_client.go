@@ -39,6 +39,9 @@ type LightningClient interface {
 	AddInvoice(ctx context.Context, in *invoicesrpc.AddInvoiceData) (
 		lntypes.Hash, string, error)
 
+	// LookupInvoice looks up an invoice by hash.
+	LookupInvoice(ctx context.Context, hash lntypes.Hash) (*Invoice, error)
+
 	// ListTransactions returns all known transactions of the backing lnd
 	// node.
 	ListTransactions(ctx context.Context) ([]*wire.MsgTx, error)
