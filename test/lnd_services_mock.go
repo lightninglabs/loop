@@ -69,6 +69,7 @@ func NewMockLnd() *LndMockServices {
 		NodePubkey:         testNodePubkey,
 		Signature:          testSignature,
 		SignatureMsg:       testSignatureMsg,
+		Invoices:           make(map[lntypes.Hash]*lndclient.Invoice),
 	}
 
 	lightningClient.lnd = &lnd
@@ -157,6 +158,10 @@ type LndMockServices struct {
 	SignatureMsg string
 
 	Transactions []*wire.MsgTx
+
+	// Invoices is a set of invoices that have been created by the mock,
+	// keyed by hash string.
+	Invoices map[lntypes.Hash]*lndclient.Invoice
 
 	WaitForFinished func()
 
