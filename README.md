@@ -336,3 +336,16 @@ Its location is `~/.loopd/<network>/loop.db`.
 
 It is possible to execute multiple swaps simultaneously. Just keep loopd 
 running.
+
+## API Support Level
+
+### Server
+
+The Loop server API and on-chain scripts are kept backwards compatible as long
+as reasonably possible.
+
+### Client
+
+When breaking changes to the Loop client daemon API are made, old fields will be
+marked as deprecated. Deprecated fields will remain supported until the next
+minor release. 
