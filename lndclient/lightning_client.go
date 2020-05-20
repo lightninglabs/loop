@@ -16,6 +16,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -363,6 +364,103 @@ func (s *lightningClient) AddInvoice(ctx context.Context,
 	}
 
 	return hash, resp.PaymentRequest, nil
+}
+
+// Invoice represents an invoice in lnd.
+type Invoice struct {
+	// Preimage is the invoice's preimage, which is set if the invoice
+	// is settled.
+	Preimage *lntypes.Preimage
+
+	// Hash is the invoice hash.
+	Hash lntypes.Hash
+
+	// Memo is an optional memo field for hte invoice.
+	Memo string
+
+	// PaymentRequest is the invoice's payment request.
+	PaymentRequest string
+
+	// Amount is the amount of the invoice in millisatoshis.
+	Amount lnwire.MilliSatoshi
+
+	// AmountPaid is the amount that was paid for the invoice. This field
+	// will only be set if the invoice is settled.
+	AmountPaid lnwire.MilliSatoshi
+
+	// CreationDate is the time the invoice was created.
+	CreationDate time.Time
+
+	// SettleDate is the time the invoice was settled.
+	SettleDate time.Time
+
+	// State is the invoice's current state.
+	State channeldb.ContractState
+
+	// IsKeysend indicates whether the invoice was a spontaneous payment.
+	IsKeysend bool
+}
+
+// LookupInvoice looks up an invoice in lnd, it will error if the invoice is
+// not known to lnd.
+func (s *lightningClient) LookupInvoice(ctx context.Context,
+	hash lntypes.Hash) (*Invoice, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcIn := &lnrpc.PaymentHash{
+		RHash: hash[:],
+	}
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	resp, err := s.client.LookupInvoice(rpcCtx, rpcIn)
+	if err != nil {
+		return nil, err
+	}
+
+	invoice := &Invoice{
+		Preimage:       nil,
+		Hash:           hash,
+		Memo:           resp.Memo,
+		PaymentRequest: resp.PaymentRequest,
+		Amount:         lnwire.MilliSatoshi(resp.ValueMsat),
+		AmountPaid:     lnwire.MilliSatoshi(resp.AmtPaidMsat),
+		CreationDate:   time.Unix(resp.CreationDate, 0),
+		IsKeysend:      resp.IsKeysend,
+	}
+
+	switch resp.State {
+	case lnrpc.Invoice_OPEN:
+		invoice.State = channeldb.ContractOpen
+
+	case lnrpc.Invoice_ACCEPTED:
+		invoice.State = channeldb.ContractAccepted
+
+	// If the invoice is settled, it also has a non-nil preimage, which we
+	// can set on our invoice.
+	case lnrpc.Invoice_SETTLED:
+		invoice.State = channeldb.ContractSettled
+		preimage, err := lntypes.MakePreimage(resp.RPreimage)
+		if err != nil {
+			return nil, err
+		}
+		invoice.Preimage = &preimage
+
+	case lnrpc.Invoice_CANCELED:
+		invoice.State = channeldb.ContractCanceled
+
+	default:
+		return nil, fmt.Errorf("unknown invoice state: %v", resp.State)
+	}
+
+	// Only set settle date if it is non-zero, because 0 unix time is
+	// not the same as a zero time struct.
+	if resp.SettleDate != 0 {
+		invoice.SettleDate = time.Unix(resp.SettleDate, 0)
+	}
+
+	return invoice, nil
 }
 
 // ListTransactions returns all known transactions of the backing lnd node.
