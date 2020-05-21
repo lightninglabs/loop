@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -34,9 +36,9 @@ type LoopOutContract struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
-	// TargetChannel is the channel to loop out. If zero, any channel may
-	// be used.
-	UnchargeChannel *uint64
+	// OutgoingChanSet is the set of short ids of channels that may be used.
+	// If empty, any channel may be used.
+	OutgoingChanSet ChannelSet
 
 	// PrepayInvoice is the invoice that the client should pay to the
 	// server that will be returned if the swap is complete.
@@ -51,6 +53,34 @@ type LoopOutContract struct {
 	// allow the server to delay the publication in exchange for possibly
 	// lower fees.
 	SwapPublicationDeadline time.Time
+}
+
+// ChannelSet stores a set of channels.
+type ChannelSet []uint64
+
+// String returns the human-readable representation of a channel set.
+func (c ChannelSet) String() string {
+	channelStrings := make([]string, len(c))
+	for i, chanID := range c {
+		channelStrings[i] = strconv.FormatUint(chanID, 10)
+	}
+	return strings.Join(channelStrings, ",")
+}
+
+// NewChannelSet instantiates a new channel set and verifies that there are no
+// duplicates present.
+func NewChannelSet(set []uint64) (ChannelSet, error) {
+	// Check channel set for duplicates.
+	chanSet := make(map[uint64]struct{})
+	for _, chanID := range set {
+		if _, exists := chanSet[chanID]; exists {
+			return nil, fmt.Errorf("duplicate chan in set: id=%v",
+				chanID)
+		}
+		chanSet[chanID] = struct{}{}
+	}
+
+	return ChannelSet(set), nil
 }
 
 // LoopOut is a combination of the contract and the updates.
@@ -161,7 +191,7 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 	if unchargeChannel != 0 {
-		contract.UnchargeChannel = &unchargeChannel
+		contract.OutgoingChanSet = ChannelSet{unchargeChannel}
 	}
 
 	var deadlineNano int64
@@ -248,10 +278,9 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	var unchargeChannel uint64
-	if swap.UnchargeChannel != nil {
-		unchargeChannel = *swap.UnchargeChannel
-	}
+	// Always write no outgoing channel. This field is replaced by an
+	// outgoing channel set.
+	unchargeChannel := uint64(0)
 	if err := binary.Write(&b, byteOrder, unchargeChannel); err != nil {
 		return nil, err
 	}

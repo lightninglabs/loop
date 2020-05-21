@@ -2,7 +2,6 @@ package loopd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/loop"
@@ -64,13 +63,8 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
 		fmt.Printf("   Htlc address: %v\n", htlc.Address)
 
-		unchargeChannel := "any"
-		if s.Contract.UnchargeChannel != nil {
-			unchargeChannel = strconv.FormatUint(
-				*s.Contract.UnchargeChannel, 10,
-			)
-		}
-		fmt.Printf("   Uncharge channel: %v\n", unchargeChannel)
+		fmt.Printf("   Uncharge channels: %v\n",
+			s.Contract.OutgoingChanSet)
 		fmt.Printf("   Dest: %v\n", s.Contract.DestAddr)
 		fmt.Printf("   Amt: %v, Expiry: %v\n",
 			s.Contract.AmountRequested, s.Contract.CltvExpiry,

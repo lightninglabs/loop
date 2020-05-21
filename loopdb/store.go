@@ -1,9 +1,11 @@
 package loopdb
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,6 +52,14 @@ var (
 	//
 	// value: time || rawSwapState
 	contractKey = []byte("contract")
+
+	// outgoingChanSetKey is the key that stores a list of channel ids that
+	// restrict the loop out swap payment.
+	//
+	// path: loopOutBucket -> swapBucket[hash] -> outgoingChanSetKey
+	//
+	// value: concatenation of uint64 channel ids
+	outgoingChanSetKey = []byte("outgoing-chan-set")
 
 	byteOrder = binary.BigEndian
 
@@ -146,12 +156,15 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	}, nil
 }
 
-func (s *boltSwapStore) fetchSwaps(bucketKey []byte,
-	callback func([]byte, Loop) error) error {
+// FetchLoopOutSwaps returns all loop out swaps currently in the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
+	var swaps []*LoopOut
 
-	return s.db.View(func(tx *bbolt.Tx) error {
+	err := s.db.View(func(tx *bbolt.Tx) error {
 		// First, we'll grab our main loop in bucket key.
-		rootBucket := tx.Bucket(bucketKey)
+		rootBucket := tx.Bucket(loopOutBucketKey)
 		if rootBucket == nil {
 			return errors.New("bucket does not exist")
 		}
@@ -180,50 +193,6 @@ func (s *boltSwapStore) fetchSwaps(bucketKey []byte,
 				return errors.New("contract not found")
 			}
 
-			// Once we have the raw swap, we'll also need to decode
-			// each of the past updates to the swap itself.
-			stateBucket := swapBucket.Bucket(updatesBucketKey)
-			if stateBucket == nil {
-				return errors.New("updates bucket not found")
-			}
-
-			// De serialize and collect each swap update into our
-			// slice of swap events.
-			var updates []*LoopEvent
-			err := stateBucket.ForEach(func(k, v []byte) error {
-				event, err := deserializeLoopEvent(v)
-				if err != nil {
-					return err
-				}
-
-				updates = append(updates, event)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-
-			var hash lntypes.Hash
-			copy(hash[:], swapHash)
-
-			loop := Loop{
-				Hash:   hash,
-				Events: updates,
-			}
-
-			return callback(contractBytes, loop)
-		})
-	})
-}
-
-// FetchLoopOutSwaps returns all loop out swaps currently in the store.
-//
-// NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
-	var swaps []*LoopOut
-
-	err := s.fetchSwaps(loopOutBucketKey,
-		func(contractBytes []byte, loop Loop) error {
 			contract, err := deserializeLoopOutContract(
 				contractBytes, s.chainParams,
 			)
@@ -231,19 +200,85 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 				return err
 			}
 
-			swaps = append(swaps, &LoopOut{
+			// Read the list of concatenated outgoing channel ids
+			// that form the outgoing set.
+			setBytes := swapBucket.Get(outgoingChanSetKey)
+			if outgoingChanSetKey != nil {
+				r := bytes.NewReader(setBytes)
+			readLoop:
+				for {
+					var chanID uint64
+					err := binary.Read(r, byteOrder, &chanID)
+					switch {
+					case err == io.EOF:
+						break readLoop
+					case err != nil:
+						return err
+					}
+
+					contract.OutgoingChanSet = append(
+						contract.OutgoingChanSet,
+						chanID,
+					)
+				}
+			}
+
+			updates, err := deserializeUpdates(swapBucket)
+			if err != nil {
+				return err
+			}
+
+			loop := LoopOut{
+				Loop: Loop{
+					Events: updates,
+				},
 				Contract: contract,
-				Loop:     loop,
-			})
+			}
+
+			loop.Hash, err = lntypes.MakeHash(swapHash)
+			if err != nil {
+				return err
+			}
+
+			swaps = append(swaps, &loop)
 
 			return nil
-		},
-	)
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return swaps, nil
+}
+
+// deserializeUpdates deserializes the list of swap updates that are stored as a
+// key of the given bucket.
+func deserializeUpdates(swapBucket *bbolt.Bucket) ([]*LoopEvent, error) {
+	// Once we have the raw swap, we'll also need to decode
+	// each of the past updates to the swap itself.
+	stateBucket := swapBucket.Bucket(updatesBucketKey)
+	if stateBucket == nil {
+		return nil, errors.New("updates bucket not found")
+	}
+
+	// Deserialize and collect each swap update into our slice of swap
+	// events.
+	var updates []*LoopEvent
+	err := stateBucket.ForEach(func(_, v []byte) error {
+		event, err := deserializeLoopEvent(v)
+		if err != nil {
+			return err
+		}
+
+		updates = append(updates, event)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return updates, nil
 }
 
 // FetchLoopInSwaps returns all loop in swaps currently in the store.
@@ -252,8 +287,37 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 	var swaps []*LoopIn
 
-	err := s.fetchSwaps(loopInBucketKey,
-		func(contractBytes []byte, loop Loop) error {
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		// First, we'll grab our main loop in bucket key.
+		rootBucket := tx.Bucket(loopInBucketKey)
+		if rootBucket == nil {
+			return errors.New("bucket does not exist")
+		}
+
+		// We'll now traverse the root bucket for all active swaps. The
+		// primary key is the swap hash itself.
+		return rootBucket.ForEach(func(swapHash, v []byte) error {
+			// Only go into things that we know are sub-bucket
+			// keys.
+			if v != nil {
+				return nil
+			}
+
+			// From the root bucket, we'll grab the next swap
+			// bucket for this swap from its swaphash.
+			swapBucket := rootBucket.Bucket(swapHash)
+			if swapBucket == nil {
+				return fmt.Errorf("swap bucket %x not found",
+					swapHash)
+			}
+
+			// With the main swap bucket obtained, we'll grab the
+			// raw swap contract bytes and decode it.
+			contractBytes := swapBucket.Get(contractKey)
+			if contractBytes == nil {
+				return errors.New("contract not found")
+			}
+
 			contract, err := deserializeLoopInContract(
 				contractBytes,
 			)
@@ -261,14 +325,28 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 				return err
 			}
 
-			swaps = append(swaps, &LoopIn{
+			updates, err := deserializeUpdates(swapBucket)
+			if err != nil {
+				return err
+			}
+
+			loop := LoopIn{
+				Loop: Loop{
+					Events: updates,
+				},
 				Contract: contract,
-				Loop:     loop,
-			})
+			}
+
+			loop.Hash, err = lntypes.MakeHash(swapHash)
+			if err != nil {
+				return err
+			}
+
+			swaps = append(swaps, &loop)
 
 			return nil
-		},
-	)
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -276,46 +354,26 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 	return swaps, nil
 }
 
-// createLoop creates a swap in the store. It requires that the contract is
-// already serialized to be able to use this function for both in and out swaps.
-func (s *boltSwapStore) createLoop(bucketKey []byte, hash lntypes.Hash,
-	contractBytes []byte) error {
+// createLoopBucket creates the bucket for a particular swap.
+func createLoopBucket(tx *bbolt.Tx, swapTypeKey []byte, hash lntypes.Hash) (
+	*bbolt.Bucket, error) {
 
-	// Otherwise, we'll create a new swap within the database.
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		// First, we'll grab the root bucket that houses all of our
-		// main swaps.
-		rootBucket, err := tx.CreateBucketIfNotExists(
-			bucketKey,
-		)
-		if err != nil {
-			return err
-		}
+	// First, we'll grab the root bucket that houses all of our
+	// swaps of this type.
+	swapTypeBucket, err := tx.CreateBucketIfNotExists(swapTypeKey)
+	if err != nil {
+		return nil, err
+	}
 
-		// If the swap already exists, then we'll exit as we don't want
-		// to override a swap.
-		if rootBucket.Get(hash[:]) != nil {
-			return fmt.Errorf("swap %v already exists", hash)
-		}
+	// If the swap already exists, then we'll exit as we don't want
+	// to override a swap.
+	if swapTypeBucket.Get(hash[:]) != nil {
+		return nil, fmt.Errorf("swap %v already exists", hash)
+	}
 
-		// From the root bucket, we'll make a new sub swap bucket using
-		// the swap hash.
-		swapBucket, err := rootBucket.CreateBucket(hash[:])
-		if err != nil {
-			return err
-		}
-
-		// With the swap bucket created, we'll store the swap itself.
-		err = swapBucket.Put(contractKey, contractBytes)
-		if err != nil {
-			return err
-		}
-
-		// Finally, we'll create an empty updates bucket for this swap
-		// to track any future updates to the swap itself.
-		_, err = swapBucket.CreateBucket(updatesBucketKey)
-		return err
-	})
+	// From the swap type bucket, we'll make a new sub swap bucket using the
+	// swap hash to store the individual swap.
+	return swapTypeBucket.CreateBucket(hash[:])
 }
 
 // CreateLoopOut adds an initiated swap to the store.
@@ -330,12 +388,43 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 		return errors.New("hash and preimage do not match")
 	}
 
-	contractBytes, err := serializeLoopOutContract(swap)
-	if err != nil {
-		return err
-	}
+	// Otherwise, we'll create a new swap within the database.
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Create the swap bucket.
+		swapBucket, err := createLoopBucket(tx, loopOutBucketKey, hash)
+		if err != nil {
+			return err
+		}
 
-	return s.createLoop(loopOutBucketKey, hash, contractBytes)
+		// With the swap bucket created, we'll store the swap itself.
+		contractBytes, err := serializeLoopOutContract(swap)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Write the outgoing channel set.
+		var b bytes.Buffer
+		for _, chanID := range swap.OutgoingChanSet {
+			err := binary.Write(&b, byteOrder, chanID)
+			if err != nil {
+				return err
+			}
+		}
+		err = swapBucket.Put(outgoingChanSetKey, b.Bytes())
+		if err != nil {
+			return err
+		}
+
+		// Finally, we'll create an empty updates bucket for this swap
+		// to track any future updates to the swap itself.
+		_, err = swapBucket.CreateBucket(updatesBucketKey)
+		return err
+	})
 }
 
 // CreateLoopIn adds an initiated swap to the store.
@@ -350,12 +439,30 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 		return errors.New("hash and preimage do not match")
 	}
 
-	contractBytes, err := serializeLoopInContract(swap)
-	if err != nil {
-		return err
-	}
+	// Otherwise, we'll create a new swap within the database.
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Create the swap bucket.
+		swapBucket, err := createLoopBucket(tx, loopInBucketKey, hash)
+		if err != nil {
+			return err
+		}
 
-	return s.createLoop(loopInBucketKey, hash, contractBytes)
+		// With the swap bucket created, we'll store the swap itself.
+		contractBytes, err := serializeLoopInContract(swap)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Finally, we'll create an empty updates bucket for this swap
+		// to track any future updates to the swap itself.
+		_, err = swapBucket.CreateBucket(updatesBucketKey)
+		return err
+	})
 }
 
 // updateLoop saves a new swap state transition to the store. It takes in a

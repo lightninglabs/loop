@@ -64,9 +64,9 @@ type OutRequest struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
-	// LoopOutChannel optionally specifies the short channel id of the
-	// channel to loop out.
-	LoopOutChannel *uint64
+	// OutgoingChanSet optionally specifies the short channel ids of the
+	// channels that may be used to loop out.
+	OutgoingChanSet loopdb.ChannelSet
 
 	// SwapPublicationDeadline can be set by the client to allow the server
 	// delaying publication of the swap HTLC to save on chain fees.

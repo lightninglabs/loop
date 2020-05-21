@@ -89,9 +89,19 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 			int64(in.SwapPublicationDeadline), 0,
 		),
 	}
-	if in.LoopOutChannel != 0 {
-		req.LoopOutChannel = &in.LoopOutChannel
+
+	switch {
+	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0:
+		return nil, errors.New("loop_out_channel and outgoing_" +
+			"chan_ids are mutually exclusive")
+
+	case in.LoopOutChannel != 0:
+		req.OutgoingChanSet = loopdb.ChannelSet{in.LoopOutChannel}
+
+	default:
+		req.OutgoingChanSet = in.OutgoingChanSet
 	}
+
 	hash, htlc, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
 		log.Errorf("LoopOut: %v", err)

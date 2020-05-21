@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcutil"
@@ -25,10 +27,10 @@ var loopOutCommand = cli.Command{
 	Optionally a BASE58/bech32 encoded bitcoin destination address may be
 	specified. If not specified, a new wallet address will be generated.`,
 	Flags: []cli.Flag{
-		cli.Uint64Flag{
+		cli.StringFlag{
 			Name: "channel",
-			Usage: "the 8-byte compact channel ID of the channel " +
-				"to loop out",
+			Usage: "the comma-separated list of short " +
+				"channel IDs of the channels to loop out",
 		},
 		cli.StringFlag{
 			Name: "addr",
@@ -85,6 +87,17 @@ func loopOut(ctx *cli.Context) error {
 	amt, err := parseAmt(amtStr)
 	if err != nil {
 		return err
+	}
+
+	// Parse outgoing channel set.
+	chanStrings := strings.Split(ctx.String("channel"), ",")
+	var outgoingChanSet []uint64
+	for _, chanString := range chanStrings {
+		chanID, err := strconv.ParseUint(chanString, 10, 64)
+		if err != nil {
+			return err
+		}
+		outgoingChanSet = append(outgoingChanSet, chanID)
 	}
 
 	var destAddr string
@@ -145,11 +158,6 @@ func loopOut(ctx *cli.Context) error {
 		return err
 	}
 
-	var unchargeChannel uint64
-	if ctx.IsSet("channel") {
-		unchargeChannel = ctx.Uint64("channel")
-	}
-
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
@@ -158,7 +166,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxSwapFee:              int64(limits.maxSwapFee),
 		MaxPrepayRoutingFee:     int64(*limits.maxPrepayRoutingFee),
 		MaxSwapRoutingFee:       int64(*limits.maxSwapRoutingFee),
-		LoopOutChannel:          unchargeChannel,
+		OutgoingChanSet:         outgoingChanSet,
 		SweepConfTarget:         sweepConfTarget,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 	})

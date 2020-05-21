@@ -112,6 +112,12 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// Check channel set for duplicates.
+	chanSet, err := loopdb.NewChannelSet(request.OutgoingChanSet)
+	if err != nil {
+		return nil, err
+	}
+
 	// Instantiate a struct that contains all required data to start the
 	// swap.
 	initiationTime := time.Now()
@@ -121,7 +127,6 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		DestAddr:                request.DestAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
-		UnchargeChannel:         request.LoopOutChannel,
 		PrepayInvoice:           swapResp.prepayInvoice,
 		MaxPrepayRoutingFee:     request.MaxPrepayRoutingFee,
 		SwapPublicationDeadline: request.SwapPublicationDeadline,
@@ -136,6 +141,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 		},
+		OutgoingChanSet: chanSet,
 	}
 
 	swapKit := newSwapKit(
@@ -429,9 +435,10 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
+
 	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.LoopOutContract.UnchargeChannel,
+		s.LoopOutContract.OutgoingChanSet,
 	)
 
 	// Pay the prepay invoice.
@@ -445,7 +452,7 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount,
-	outgoingChannel *uint64) chan lndclient.PaymentResult {
+	outgoingChanIds loopdb.ChannelSet) chan lndclient.PaymentResult {
 
 	resultChan := make(chan lndclient.PaymentResult)
 
@@ -453,7 +460,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 		var result lndclient.PaymentResult
 
 		status, err := s.payInvoiceAsync(
-			ctx, invoice, maxFee, outgoingChannel,
+			ctx, invoice, maxFee, outgoingChanIds,
 		)
 		if err != nil {
 			result.Err = err
@@ -474,8 +481,8 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
-	invoice string, maxFee btcutil.Amount, outgoingChannel *uint64) (
-	*lndclient.PaymentStatus, error) {
+	invoice string, maxFee btcutil.Amount,
+	outgoingChanIds loopdb.ChannelSet) (*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
@@ -488,7 +495,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	req := lndclient.SendPaymentRequest{
 		MaxFee:          maxFee,
 		Invoice:         invoice,
-		OutgoingChannel: outgoingChannel,
+		OutgoingChanIds: outgoingChanIds,
 		Timeout:         paymentTimeout,
 		MaxParts:        s.executeConfig.loopOutMaxParts,
 	}

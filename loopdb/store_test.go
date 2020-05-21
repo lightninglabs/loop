@@ -40,33 +40,12 @@ var (
 // TestLoopOutStore tests all the basic functionality of the current bbolt
 // swap store.
 func TestLoopOutStore(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchLoopOutSwaps()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(swaps) != 0 {
-		t.Fatal("expected empty store")
-	}
-
 	destAddr := test.GetDestAddr(t, 0)
-	hash := sha256.Sum256(testPreimage[:])
 	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	// Next, we'll make a new pending swap that we'll insert into the
 	// database shortly.
-	pendingSwap := LoopOutContract{
+	unrestrictedSwap := LoopOutContract{
 		SwapContract: SwapContract{
 			AmountRequested: 100,
 			Preimage:        testPreimage,
@@ -92,6 +71,41 @@ func TestLoopOutStore(t *testing.T) {
 		SwapPublicationDeadline: time.Unix(0, initiationTime.UnixNano()),
 	}
 
+	t.Run("no outgoing set", func(t *testing.T) {
+		testLoopOutStore(t, &unrestrictedSwap)
+	})
+
+	restrictedSwap := unrestrictedSwap
+	restrictedSwap.OutgoingChanSet = ChannelSet{1, 2}
+
+	t.Run("two channel outgoing set", func(t *testing.T) {
+		testLoopOutStore(t, &restrictedSwap)
+	})
+}
+
+// testLoopOutStore tests the basic functionality of the current bbolt
+// swap store for specific swap parameters.
+func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First, verify that an empty database has no active swaps.
+	swaps, err := store.FetchLoopOutSwaps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(swaps) != 0 {
+		t.Fatal("expected empty store")
+	}
+
 	// checkSwap is a test helper function that'll assert the state of a
 	// swap.
 	checkSwap := func(expectedState SwapState) {
@@ -107,7 +121,7 @@ func TestLoopOutStore(t *testing.T) {
 		}
 
 		swap := swaps[0].Contract
-		if !reflect.DeepEqual(swap, &pendingSwap) {
+		if !reflect.DeepEqual(swap, pendingSwap) {
 			t.Fatal("invalid pending swap data")
 		}
 
@@ -118,15 +132,17 @@ func TestLoopOutStore(t *testing.T) {
 		}
 	}
 
+	hash := pendingSwap.Preimage.Hash()
+
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	if err := store.CreateLoopOut(hash, &pendingSwap); err != nil {
+	if err := store.CreateLoopOut(hash, pendingSwap); err != nil {
 		t.Fatal(err)
 	}
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	if err := store.CreateLoopOut(hash, &pendingSwap); err == nil {
+	if err := store.CreateLoopOut(hash, pendingSwap); err == nil {
 		t.Fatal("expected error on storing duplicate")
 	}
 	checkSwap(StateInitiated)
@@ -364,5 +380,67 @@ func createVersionZeroDb(t *testing.T, dbPath string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLegacyOutgoingChannel asserts that a legacy channel restriction is
+// properly mapped onto the newer channel set.
+func TestLegacyOutgoingChannel(t *testing.T) {
+	var (
+		legacyDbVersion       = Hex("00000003")
+		legacyOutgoingChannel = Hex("0000000000000005")
+	)
+
+	legacyDb := map[string]interface{}{
+		"loop-in": map[string]interface{}{},
+		"metadata": map[string]interface{}{
+			"dbp": legacyDbVersion,
+		},
+		"uncharge-swaps": map[string]interface{}{
+			Hex("2a595d79a55168970532805ae20c9b5fac98f04db79ba4c6ae9b9ac0f206359e"): map[string]interface{}{
+				"contract": Hex("1562d6fbec140000010101010202020203030303040404040101010102020202030303030404040400000000000000640d707265706179696e766f69636501010101010101010101010101010101010101010101010101010101010101010201010101010101010101010101010101010101010101010101010101010101010300000090000000000000000a0000000000000014000000000000002800000063223347454e556d6e4552745766516374344e65676f6d557171745a757a5947507742530b73776170696e766f69636500000002000000000000001e") + legacyOutgoingChannel + Hex("1562d6fbec140000"),
+				"updates": map[string]interface{}{
+					Hex("0000000000000001"): Hex("1508290a92d4c00001000000000000000000000000000000000000000000000000"),
+					Hex("0000000000000002"): Hex("1508290a92d4c00006000000000000000000000000000000000000000000000000"),
+				},
+			},
+		},
+	}
+
+	// Restore a legacy database.
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	tempPath := filepath.Join(tempDirName, dbFileName)
+	db, err := bbolt.Open(tempPath, 0600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Update(func(tx *bbolt.Tx) error {
+		return RestoreDB(tx, legacyDb)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	// Fetch the legacy swap.
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	swaps, err := store.FetchLoopOutSwaps()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Assert that the outgoing channel is read properly.
+	expectedChannelSet := ChannelSet{5}
+	if !reflect.DeepEqual(swaps[0].Contract.OutgoingChanSet, expectedChannelSet) {
+		t.Fatal("invalid outgoing channel")
 	}
 }
