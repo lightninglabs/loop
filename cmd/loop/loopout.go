@@ -89,15 +89,20 @@ func loopOut(ctx *cli.Context) error {
 		return err
 	}
 
-	// Parse outgoing channel set.
-	chanStrings := strings.Split(ctx.String("channel"), ",")
+	// Parse outgoing channel set. Don't string split if the flag is empty.
+	// Otherwise strings.Split returns a slice of length one with an empty
+	// element.
 	var outgoingChanSet []uint64
-	for _, chanString := range chanStrings {
-		chanID, err := strconv.ParseUint(chanString, 10, 64)
-		if err != nil {
-			return err
+	if ctx.IsSet("channel") {
+		chanStrings := strings.Split(ctx.String("channel"), ",")
+		for _, chanString := range chanStrings {
+			chanID, err := strconv.ParseUint(chanString, 10, 64)
+			if err != nil {
+				return fmt.Errorf("error parsing channel id "+
+					"\"%v\"", chanString)
+			}
+			outgoingChanSet = append(outgoingChanSet, chanID)
 		}
-		outgoingChanSet = append(outgoingChanSet, chanID)
 	}
 
 	var destAddr string
