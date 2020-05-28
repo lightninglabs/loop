@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
+	"github.com/lightningnetwork/lnd/signal"
 )
 
 const defaultConfigFilename = "loopd.conf"
@@ -47,7 +48,7 @@ type RPCConfig struct {
 
 // newListenerCfg creates and returns a new listenerCfg from the passed config
 // and RPCConfig.
-func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
+func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 	return &listenerCfg{
 		grpcListener: func() (net.Listener, error) {
 			// If a custom RPC listener is set, we will listen on
@@ -91,8 +92,9 @@ func newListenerCfg(config *config, rpcCfg RPCConfig) *listenerCfg {
 	}
 }
 
-func Start(rpcCfg RPCConfig) error {
-	config := defaultConfig
+// Run starts the loop daemon and blocks until it's shut down again.
+func Run(rpcCfg RPCConfig) error {
+	config := DefaultConfig()
 
 	// Parse command line flags.
 	parser := flags.NewParser(&config, flags.Default)
@@ -168,7 +170,26 @@ func Start(rpcCfg RPCConfig) error {
 
 	// Execute command.
 	if parser.Active == nil {
-		return daemon(&config, lisCfg)
+		signal.Intercept()
+
+		daemon := New(&config, lisCfg)
+		if err := daemon.Start(); err != nil {
+			return err
+		}
+
+		select {
+		case <-signal.ShutdownChannel():
+			log.Infof("Received SIGINT (Ctrl+C).")
+			daemon.Stop()
+
+			// The above stop will return immediately. But we'll be
+			// notified on the error channel once the process is
+			// complete.
+			return <-daemon.ErrChan
+
+		case err := <-daemon.ErrChan:
+			return err
+		}
 	}
 
 	if parser.Active.Name == "view" {

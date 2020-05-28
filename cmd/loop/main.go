@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"time"
@@ -14,11 +15,14 @@ import (
 	"github.com/lightninglabs/protobuf-hex-display/json"
 	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
+	"github.com/lightningnetwork/lnd/macaroons"
 
 	"github.com/btcsuite/btcutil"
 
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"gopkg.in/macaroon.v2"
 )
 
 var (
@@ -34,6 +38,21 @@ var (
 	// maxMsgRecvSize is the largest message our client will receive. We
 	// set this to 200MiB atm.
 	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
+
+	// defaultMacaroonTimeout is the default macaroon timeout in seconds
+	// that we set when sending it over the line.
+	defaultMacaroonTimeout int64 = 60
+
+	tlsCertFlag = cli.StringFlag{
+		Name: "tlscertpath",
+		Usage: "path to loop's TLS certificate, only needed if loop " +
+			"runs in the same process as lnd",
+	}
+	macaroonPathFlag = cli.StringFlag{
+		Name: "macaroonpath",
+		Usage: "path to macaroon file, only needed if loop runs " +
+			"in the same process as lnd",
+	}
 )
 
 func printJSON(resp interface{}) {
@@ -84,6 +103,8 @@ func main() {
 			Value: "localhost:11010",
 			Usage: "loopd daemon address host:port",
 		},
+		tlsCertFlag,
+		macaroonPathFlag,
 	}
 	app.Commands = []cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
@@ -99,7 +120,9 @@ func main() {
 
 func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
 	rpcServer := ctx.GlobalString("rpcserver")
-	conn, err := getClientConn(rpcServer)
+	tlsCertPath := ctx.GlobalString(tlsCertFlag.Name)
+	macaroonPath := ctx.GlobalString(macaroonPathFlag.Name)
+	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -256,10 +279,34 @@ func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Println()
 }
 
-func getClientConn(address string) (*grpc.ClientConn, error) {
+func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
+	error) {
+
 	opts := []grpc.DialOption{
-		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
+	}
+
+	switch {
+	// If a TLS certificate file is specified, we need to load it and build
+	// transport credentials with it.
+	case tlsCertPath != "":
+		creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
+		if err != nil {
+			fatal(err)
+		}
+
+		// Macaroons are only allowed to be transmitted over a TLS
+		// enabled connection.
+		if macaroonPath != "" {
+			opts = append(opts, readMacaroon(macaroonPath))
+		}
+
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+
+	// By default, if no certificate is supplied, we assume the RPC server
+	// runs without TLS.
+	default:
+		opts = append(opts, grpc.WithInsecure())
 	}
 
 	conn, err := grpc.Dial(address, opts...)
@@ -268,4 +315,43 @@ func getClientConn(address string) (*grpc.ClientConn, error) {
 	}
 
 	return conn, nil
+}
+
+// readMacaroon tries to read the macaroon file at the specified path and create
+// gRPC dial options from it.
+func readMacaroon(macPath string) grpc.DialOption {
+	// Load the specified macaroon file.
+	macBytes, err := ioutil.ReadFile(macPath)
+	if err != nil {
+		fatal(fmt.Errorf("unable to read macaroon path : %v", err))
+	}
+
+	mac := &macaroon.Macaroon{}
+	if err = mac.UnmarshalBinary(macBytes); err != nil {
+		fatal(fmt.Errorf("unable to decode macaroon: %v", err))
+	}
+
+	macConstraints := []macaroons.Constraint{
+		// We add a time-based constraint to prevent replay of the
+		// macaroon. It's good for 60 seconds by default to make up for
+		// any discrepancy between client and server clocks, but leaking
+		// the macaroon before it becomes invalid makes it possible for
+		// an attacker to reuse the macaroon. In addition, the validity
+		// time of the macaroon is extended by the time the server clock
+		// is behind the client clock, or shortened by the time the
+		// server clock is ahead of the client clock (or invalid
+		// altogether if, in the latter case, this time is more than 60
+		// seconds).
+		macaroons.TimeoutConstraint(defaultMacaroonTimeout),
+	}
+
+	// Apply constraints to the macaroon.
+	constrainedMac, err := macaroons.AddConstraints(mac, macConstraints...)
+	if err != nil {
+		fatal(err)
+	}
+
+	// Now we append the macaroon credentials to the dial options.
+	cred := macaroons.NewMacaroonCredential(constrainedMac)
+	return grpc.WithPerRPCCredentials(cred)
 }

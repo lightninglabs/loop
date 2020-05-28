@@ -10,7 +10,7 @@ import (
 )
 
 // getClient returns an instance of the swap client.
-func getClient(config *config, lnd *lndclient.LndServices) (*loop.Client,
+func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 	func(), error) {
 
 	storeDir, err := getStoreDir(config.Network)
