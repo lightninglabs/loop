@@ -64,8 +64,8 @@ type swapServerClient interface {
 
 	NewLoopInSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
-		senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
-		*newLoopInResponse, error)
+		senderKey [33]byte, swapInvoice, probeInvoice string,
+		lastHop *route.Vertex) (*newLoopInResponse, error)
 
 	// SubscribeLoopOutUpdates subscribes to loop out server state.
 	SubscribeLoopOutUpdates(ctx context.Context,
@@ -275,7 +275,7 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
-	swapInvoice string, lastHop *route.Vertex) (*newLoopInResponse, error) {
+	swapInvoice, probeInvoice string, lastHop *route.Vertex) (*newLoopInResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -286,6 +286,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		SenderKey:       senderKey[:],
 		SwapInvoice:     swapInvoice,
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProbeInvoice:    probeInvoice,
 	}
 	if lastHop != nil {
 		req.LastHop = lastHop[:]

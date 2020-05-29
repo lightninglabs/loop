@@ -55,7 +55,7 @@ func NewMockLnd() *LndMockServices {
 		TxPublishChannel:             make(chan *wire.MsgTx),
 		SendOutputsChannel:           make(chan wire.MsgTx),
 		SettleInvoiceChannel:         make(chan lntypes.Preimage),
-		SingleInvoiceSubcribeChannel: make(chan *SingleInvoiceSubscription),
+		SingleInvoiceSubcribeChannel: make(chan *SingleInvoiceSubscription, 1),
 
 		RouterSendPaymentChannel: make(chan RouterPaymentChannelMessage),
 		TrackPaymentChannel:      make(chan TrackPaymentMessage),

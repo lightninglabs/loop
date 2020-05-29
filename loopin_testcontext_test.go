@@ -22,7 +22,7 @@ type loopInTestContext struct {
 
 func newLoopInTestContext(t *testing.T) *loopInTestContext {
 	lnd := test.NewMockLnd()
-	server := newServerMock()
+	server := newServerMock(lnd)
 	store := newStoreMock(t)
 	sweeper := sweep.Sweeper{Lnd: &lnd.LndServices}
 

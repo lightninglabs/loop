@@ -67,9 +67,8 @@ func newSwapClient(config *clientConfig) *Client {
 func createClientTestContext(t *testing.T,
 	pendingSwaps []*loopdb.LoopOut) *testContext {
 
-	serverMock := newServerMock()
-
 	clientLnd := test.NewMockLnd()
+	serverMock := newServerMock(clientLnd)
 
 	store := newStoreMock(t)
 	for _, s := range pendingSwaps {

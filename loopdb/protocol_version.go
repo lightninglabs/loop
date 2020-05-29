@@ -35,16 +35,20 @@ const (
 	// HTLC v2 scrips for swaps.
 	ProtocolVersionHtlcV2 ProtocolVersion = 5
 
+	// ProtocolVersionMultiLoopIn indicates that the client creates a probe
+	// invoice so that the server can perform a multi-path probe.
+	ProtocolVersionMultiLoopIn ProtocolVersion = 6
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
-	// CurrentRpcProtocolVersion defines the version of the RPC protocol
+	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V2
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_IN
 
-	// CurrentInteranlProtocolVersionInternal defines the RPC current
-	// protocol in the internal representation.
+	// CurrentInternalProtocolVersion defines the RPC current protocol in
+	// the internal representation.
 	CurrentInternalProtocolVersion = ProtocolVersion(CurrentRPCProtocolVersion)
 )
 

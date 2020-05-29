@@ -21,10 +21,10 @@ service SwapServer {
     rpc LoopInQuote (ServerLoopInQuoteRequest)
         returns (ServerLoopInQuoteResponse);
 
-    rpc SubscribeLoopOutUpdates(SubscribeUpdatesRequest)
+    rpc SubscribeLoopOutUpdates (SubscribeUpdatesRequest)
         returns (stream SubscribeLoopOutUpdatesResponse);
 
-    rpc SubscribeLoopInUpdates(SubscribeUpdatesRequest)
+    rpc SubscribeLoopInUpdates (SubscribeUpdatesRequest)
         returns (stream SubscribeLoopInUpdatesResponse);
 }
 
@@ -60,6 +60,10 @@ enum ProtocolVersion {
 
     // The client will use the new v2 HTLC scripts.
     HTLC_V2 = 5;
+
+    // The client creates a probe invoice so that the server can perform a
+    // multi-path probe.
+    MULTI_LOOP_IN = 6;
 }
 
 message ServerLoopOutRequest {
@@ -157,6 +161,8 @@ message ServerLoopInRequest {
 
     /// The protocol version that the client adheres to.
     ProtocolVersion protocol_version = 6;
+
+    string probe_invoice = 7;
 }
 
 message ServerLoopInResponse {
@@ -270,7 +276,7 @@ enum ServerSwapState {
     HTLC_CONFIRMED = 12;
 }
 
-message SubscribeLoopOutUpdatesResponse {
+message SubscribeLoopOutUpdatesResponse{
     // The unix timestamp in nanoseconds when the swap was updated.
     int64 timestamp_ns = 1;
 
@@ -278,7 +284,7 @@ message SubscribeLoopOutUpdatesResponse {
     ServerSwapState state = 2;
 }
 
-message SubscribeLoopInUpdatesResponse {
+message SubscribeLoopInUpdatesResponse{
     // The unix timestamp in nanoseconds when the swap was updated.
     int64 timestamp_ns = 1;
 

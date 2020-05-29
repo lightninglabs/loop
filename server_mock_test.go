@@ -8,7 +8,9 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -40,11 +42,13 @@ type serverMock struct {
 
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
+
+	lnd *test.LndMockServices
 }
 
 var _ swapServerClient = (*serverMock)(nil)
 
-func newServerMock() *serverMock {
+func newServerMock(lnd *test.LndMockServices) *serverMock {
 	return &serverMock{
 		expectedSwapAmt: 50000,
 
@@ -55,6 +59,8 @@ func newServerMock() *serverMock {
 		height: 600,
 
 		preimagePush: make(chan lntypes.Preimage),
+
+		lnd: lnd,
 	}
 }
 
@@ -134,8 +140,8 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 
 func (s *serverMock) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
-	senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
-	*newLoopInResponse, error) {
+	senderKey [33]byte, swapInvoice, probeInvoice string,
+	lastHop *route.Vertex) (*newLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
 
@@ -148,6 +154,14 @@ func (s *serverMock) NewLoopInSwap(ctx context.Context,
 
 	s.swapInvoice = swapInvoice
 	s.swapHash = swapHash
+
+	// Simulate the server paying the probe invoice and expect the client to
+	// cancel the probe payment.
+	probeSub := <-s.lnd.SingleInvoiceSubcribeChannel
+	probeSub.Update <- lndclient.InvoiceUpdate{
+		State: channeldb.ContractAccepted,
+	}
+	<-s.lnd.FailInvoiceChannel
 
 	resp := &newLoopInResponse{
 		expiry:      s.height + testChargeOnChainCltvDelta,
