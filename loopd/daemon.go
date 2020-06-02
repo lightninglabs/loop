@@ -374,6 +374,9 @@ func (d *Daemon) initialize() error {
 		// The caller expects exactly one message. So we send the error
 		// even if it's nil because we cleanly shut down.
 		d.ErrChan <- runtimeErr
+
+		// Make sure all further reads on the channel return instantly.
+		close(d.ErrChan)
 	}()
 
 	return nil
