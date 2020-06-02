@@ -706,6 +706,20 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 		return nil, fmt.Errorf("register spend ntfn: %v", err)
 	}
 
+	// Track our payment status so that we can detect whether our off chain
+	// htlc is settled. We track this information to determine whether it is
+	// necessary to continue trying to push our preimage to the server.
+	trackChan, trackErrChan, err := s.lnd.Router.TrackPayment(
+		ctx, s.hash,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("track payment: %v", err)
+	}
+
+	// paymentComplete tracks whether our payment is complete, and is used
+	// to decide whether we need to push our preimage to the server.
+	var paymentComplete bool
+
 	timerChan := s.timerFactory(republishDelay)
 	for {
 		select {
@@ -718,6 +732,45 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 		// Spend notification error.
 		case err := <-spendErr:
 			return nil, err
+
+		// Receive status updates for our payment so that we can detect
+		// whether we've successfully pushed our preimage.
+		case status, ok := <-trackChan:
+			// If our channel has been closed, indicating that the
+			// server is finished providing updates because the
+			// payment has reached a terminal state, we replace
+			// the closed channel with nil so that we will no longer
+			// listen on it.
+			if !ok {
+				trackChan = nil
+				continue
+			}
+
+			if status.State == lnrpc.Payment_SUCCEEDED {
+				s.log.Infof("Off chain payment succeeded")
+
+				paymentComplete = true
+			}
+
+		// If we receive a track payment error that indicates that the
+		// server stream is complete, we ignore it because we want to
+		// continue this loop beyond the completion of the payment.
+		case err, ok := <-trackErrChan:
+			// If our channel has been closed, indicating that the
+			// server is finished providing updates because the
+			// payment has reached a terminal state, we replace
+			// the closed channel with nil so that we will no longer
+			// listen on it.
+			if !ok {
+				trackErrChan = nil
+				continue
+			}
+
+			// Otherwise, if we receive a non-nil error, we return
+			// it.
+			if err != nil {
+				return nil, err
+			}
 
 		// New block arrived, update height and restart the republish
 		// timer.
@@ -733,10 +786,36 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 				return nil, err
 			}
 
+			// If our off chain payment is not yet complete, we
+			// try to push our preimage to the server.
+			if !paymentComplete {
+				s.pushPreimage(ctx)
+			}
+
 		// Context canceled.
 		case <-globalCtx.Done():
 			return nil, globalCtx.Err()
 		}
+	}
+}
+
+// pushPreimage pushes our preimage to the server if we have already revealed
+// our preimage on chain with a sweep attempt.
+func (s *loopOutSwap) pushPreimage(ctx context.Context) {
+	// If we have not yet revealed our preimage through a sweep, we do not
+	// push the preimage because we may choose to never sweep if fees are
+	// too high.
+	if s.state != loopdb.StatePreimageRevealed {
+		return
+	}
+
+	s.log.Infof("Pushing preimage to server")
+
+	// Push the preimage to the server, just log server errors since we rely
+	// on our payment state rather than the server response to judge the
+	// outcome of our preimage push.
+	if err := s.server.PushLoopOutPreimage(ctx, s.Preimage); err != nil {
+		s.log.Warnf("Could not push preimage: %v", err)
 	}
 }
 

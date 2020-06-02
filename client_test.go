@@ -12,7 +12,9 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -261,6 +263,10 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 
 	ctx.AssertRegisterSpendNtfn(confIntent.PkScript)
 
+	// Assert that a call to track payment was sent, and respond with status
+	// in flight so that our swap will push its preimage to the server.
+	ctx.trackPayment(lnrpc.Payment_IN_FLIGHT)
+
 	// Publish tick.
 	ctx.expiryChan <- testTime
 
@@ -286,6 +292,13 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	if clientPreImageHash != hash {
 		ctx.T.Fatalf("incorrect preimage")
 	}
+
+	// Since we successfully published our sweep, we expect the preimage to
+	// have been pushed to our mock server.
+	preimage, err := lntypes.MakePreimage(clientPreImage)
+	require.NoError(ctx.T, err)
+
+	ctx.assertPreimagePush(preimage)
 
 	// Simulate server pulling payment.
 	signalSwapPaymentResult(nil)
