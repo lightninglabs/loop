@@ -7,6 +7,7 @@ GOTEST := GO111MODULE=on go test -v
 GO_BIN := ${GOPATH}/bin
 GOBUILD := GO111MODULE=on go build -v
 GOINSTALL := GO111MODULE=on go install -v
+GOMOD := GO111MODULE=on go mod
 
 COMMIT := $(shell git describe --abbrev=40 --dirty)
 LDFLAGS := -ldflags "-X $(PKG)/build.Commit=$(COMMIT)"
@@ -26,6 +27,12 @@ TEST_FLAGS = -test.timeout=20m
 
 UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) $(TEST_FLAGS)
 
+GREEN := "\\033[0;32m"
+NC := "\\033[0m"
+define print
+	echo $(GREEN)$1$(NC)
+endef
+
 $(LINT_BIN):
 	@$(call print, "Fetching linter")
 	$(DEPGET) $(LINT_PKG)@$(LINT_COMMIT)
@@ -41,6 +48,15 @@ fmt:
 lint: $(LINT_BIN)
 	@$(call print, "Linting source.")
 	$(LINT)
+
+mod-tidy:
+	@$(call print, "Tidying modules.")
+	$(GOMOD) tidy
+
+mod-check:
+	@$(call print, "Checking modules.")
+	$(GOMOD) tidy
+	if test -n "$$(git status | grep -e "go.mod\|go.sum")"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
 # ============
 # INSTALLATION
