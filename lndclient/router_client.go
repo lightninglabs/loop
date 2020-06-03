@@ -117,6 +117,10 @@ type SendPaymentRequest struct {
 
 	// KeySend is set to true if the tlv payload will include the preimage.
 	KeySend bool
+
+	// CustomRecords holds the custom TLV records that will be added to the
+	// payment.
+	CustomRecords map[uint64][]byte
 }
 
 // routerClient is a wrapper around the generated routerrpc proxy.
@@ -154,6 +158,9 @@ func (r *routerClient) SendPayment(ctx context.Context,
 	if request.LastHopPubkey != nil {
 		rpcReq.LastHopPubkey = request.LastHopPubkey[:]
 	}
+
+	rpcReq.DestCustomRecords = request.CustomRecords
+
 	if request.KeySend {
 		if request.PaymentHash != nil {
 			return nil, nil, fmt.Errorf(
@@ -165,10 +172,12 @@ func (r *routerClient) SendPayment(ctx context.Context,
 			return nil, nil, err
 		}
 
-		// Override the payment hash.
-		rpcReq.DestCustomRecords = map[uint64][]byte{
-			record.KeySendType: preimage[:],
+		if rpcReq.DestCustomRecords == nil {
+			rpcReq.DestCustomRecords = make(map[uint64][]byte)
 		}
+
+		// Override the payment hash.
+		rpcReq.DestCustomRecords[record.KeySendType] = preimage[:]
 		hash := preimage.Hash()
 		request.PaymentHash = &hash
 	}
