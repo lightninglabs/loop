@@ -3,13 +3,16 @@ package test
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -20,6 +23,24 @@ type mockWalletKit struct {
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
+
+func (m *mockWalletKit) ListUnspent(ctx context.Context, minConfs,
+	maxConfs int32) ([]*lnwallet.Utxo, error) {
+
+	return nil, nil
+}
+
+func (m *mockWalletKit) LeaseOutput(ctx context.Context, lockID wtxmgr.LockID,
+	op wire.OutPoint) (time.Time, error) {
+
+	return time.Now(), nil
+}
+
+func (m *mockWalletKit) ReleaseOutput(ctx context.Context,
+	lockID wtxmgr.LockID, op wire.OutPoint) error {
+
+	return nil
+}
 
 func (m *mockWalletKit) DeriveNextKey(ctx context.Context, family int32) (
 	*keychain.KeyDescriptor, error) {
