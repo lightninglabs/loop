@@ -13,6 +13,7 @@ require (
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200603030653-09bb9db78246
 	github.com/lightningnetwork/lnd/queue v1.0.4
+	github.com/stretchr/testify v1.4.0
 	github.com/urfave/cli v1.20.0
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0
 	golang.org/x/text v0.3.2 // indirect

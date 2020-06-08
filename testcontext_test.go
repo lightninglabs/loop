@@ -7,12 +7,15 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -229,5 +232,32 @@ func (ctx *testContext) publishHtlc(script []byte,
 	return wire.OutPoint{
 		Hash:  htlcTxHash,
 		Index: 0,
+	}
+}
+
+// trackPayment asserts that a call to track payment was sent and sends the
+// status provided into the updates channel.
+func (ctx *testContext) trackPayment(status lnrpc.Payment_PaymentStatus) {
+	trackPayment := ctx.Context.AssertTrackPayment()
+
+	select {
+	case trackPayment.Updates <- lndclient.PaymentStatus{
+		State: status,
+	}:
+
+	case <-time.After(test.Timeout):
+		ctx.T.Fatalf("could not send payment update")
+	}
+}
+
+// assertPreimagePush asserts that we made an attempt to push our preimage to
+// the server.
+func (ctx *testContext) assertPreimagePush(preimage lntypes.Preimage) {
+	select {
+	case pushedPreimage := <-ctx.serverMock.preimagePush:
+		require.Equal(ctx.T, preimage, pushedPreimage)
+
+	case <-time.After(test.Timeout):
+		ctx.T.Fatalf("preimage not pushed")
 	}
 }

@@ -22,7 +22,7 @@ import (
 
 // protocolVersion defines the version of the protocol that is currently
 // supported by the loop client.
-const protocolVersion = looprpc.ProtocolVersion_NATIVE_SEGWIT_LOOP_IN
+const protocolVersion = looprpc.ProtocolVersion_PREIMAGE_PUSH_LOOP_OUT
 
 type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
@@ -43,6 +43,9 @@ type swapServerClient interface {
 		receiverKey [33]byte,
 		swapPublicationDeadline time.Time) (
 		*newLoopOutResponse, error)
+
+	PushLoopOutPreimage(ctx context.Context,
+		preimage lntypes.Preimage) error
 
 	NewLoopInSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
@@ -213,6 +216,23 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		senderKey:     senderKey,
 		expiry:        swapResp.Expiry,
 	}, nil
+}
+
+// PushLoopOutPreimage pushes a preimage to the server.
+func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
+	preimage lntypes.Preimage) error {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	_, err := s.server.LoopOutPushPreimage(rpcCtx,
+		&looprpc.ServerLoopOutPushPreimageRequest{
+			ProtocolVersion: protocolVersion,
+			Preimage:        preimage[:],
+		},
+	)
+
+	return err
 }
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,

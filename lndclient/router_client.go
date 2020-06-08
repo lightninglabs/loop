@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/btcsuite/btcutil"
@@ -225,6 +226,8 @@ func (r *routerClient) TrackPayment(ctx context.Context,
 
 // trackPayment takes an update stream from either a SendPayment or a
 // TrackPayment rpc call and converts it into distinct update and error streams.
+// Once the payment reaches a final state, the status and error channels will
+// be closed to signal that we are finished sending into them.
 func (r *routerClient) trackPayment(ctx context.Context,
 	stream routerrpc.Router_TrackPaymentV2Client) (chan PaymentStatus,
 	chan error, error) {
@@ -235,6 +238,17 @@ func (r *routerClient) trackPayment(ctx context.Context,
 		for {
 			payment, err := stream.Recv()
 			if err != nil {
+				// If we get an EOF error, the payment has
+				// reached a final state and the server is
+				// finished sending us updates. We close both
+				// channels to signal that we are done sending
+				// values on them and return.
+				if err == io.EOF {
+					close(statusChan)
+					close(errorChan)
+					return
+				}
+
 				switch status.Convert(err).Code() {
 
 				// NotFound is only expected as a response to

@@ -14,6 +14,9 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
@@ -145,11 +148,7 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := &swapConfig{
-		lnd:    &lnd.LndServices,
-		store:  store,
-		server: server,
-	}
+	cfg := newSwapConfig(&lnd.LndServices, store, server)
 
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
@@ -220,6 +219,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
+	server := newServerMock()
 
 	// Use the highest sweep confirmation target before we attempt to use
 	// the default.
@@ -231,11 +231,10 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(testRequest.SweepConfTarget, 250)
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
-	cfg := &swapConfig{
-		lnd:    &lnd.LndServices,
-		store:  newStoreMock(t),
-		server: newServerMock(),
-	}
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), server,
+	)
+
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
 	)
@@ -300,6 +299,10 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	// to sweep it using the custom confirmation target.
 	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
 
+	// Assert that we made a query to track our payment, as required for
+	// preimage push tracking.
+	trackPayment := ctx.AssertTrackPayment()
+
 	expiryChan <- time.Now()
 
 	// Expect a signing request for the HTLC success transaction.
@@ -353,6 +356,19 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	// confirmation target.
 	_ = assertSweepTx(testRequest.SweepConfTarget)
 
+	// Once we have published an on chain sweep, we expect a preimage to
+	// have been pushed to our server.
+	preimage := <-server.preimagePush
+	require.Equal(t, swap.Preimage, preimage)
+
+	// Now that we have pushed our preimage to the sever, we send an update
+	// indicating that our off chain htlc is settled. We do this so that
+	// we don't have to keep consuming preimage pushes from our server mock
+	// for every sweep attempt.
+	trackPayment.Updates <- lndclient.PaymentStatus{
+		State: lnrpc.Payment_SUCCEEDED,
+	}
+
 	// We'll then notify the height at which we begin using the default
 	// confirmation target.
 	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
@@ -380,4 +396,190 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	if err := <-errChan; err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestPreimagePush tests or logic that decides whether to push our preimage to
+// the server. First, we test the case where we have not yet disclosed our
+// preimage with a sweep, so we do not want to push our preimage yet. Next, we
+// broadcast a sweep attempt and push our preimage to the server. In this stage
+// we mock a server failure by not sending a settle update for our payment.
+// Finally, we make a last sweep attempt, push the preimage (because we have
+// not detected our settle) and settle the off chain htlc, indicating that the
+// server successfully settled using the preimage push. In this test, we need
+// to start with a fee rate that will be too high, then progress to an
+// acceptable one. We do this by starting with a high confirmation target with
+// a high fee, and setting the default confirmation fee (which our swap will
+// drop down to if it is not confirming in time) to a lower fee. This is not
+// intuitive (lower confs having lower fees), but it allows up to mock fee
+// changes.
+func TestPreimagePush(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx := test.NewContext(t, lnd)
+	server := newServerMock()
+
+	// Start with a high confirmation delta which will have a very high fee
+	// attached to it.
+	testRequest.SweepConfTarget = testLoopOutOnChainCltvDelta -
+		DefaultSweepConfTargetDelta - 1
+
+	// We set our mock fee estimate for our target sweep confs to be our
+	// max miner fee *2, so that our fee will definitely be above what we
+	// are willing to pay, and we will not sweep.
+	ctx.Lnd.SetFeeEstimate(
+		testRequest.SweepConfTarget, chainfee.SatPerKWeight(
+			testRequest.MaxMinerFee*2,
+		),
+	)
+
+	// We set the fee estimate for our default confirmation target very
+	// low, so that once we drop down to our default confs we will start
+	// trying to sweep the preimage.
+	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 1)
+
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), server,
+	)
+
+	swap, err := newLoopOutSwap(
+		context.Background(), cfg, ctx.Lnd.Height, testRequest,
+	)
+	require.NoError(t, err)
+
+	// Set up the required dependencies to execute the swap.
+	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
+	blockEpochChan := make(chan interface{})
+	statusChan := make(chan SwapInfo)
+	expiryChan := make(chan time.Time)
+	timerFactory := func(_ time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	errChan := make(chan error)
+	go func() {
+		err := swap.execute(context.Background(), &executeConfig{
+			statusChan:     statusChan,
+			blockEpochChan: blockEpochChan,
+			timerFactory:   timerFactory,
+			sweeper:        sweeper,
+		}, ctx.Lnd.Height)
+		if err != nil {
+			log.Error(err)
+		}
+		errChan <- err
+	}()
+
+	// The swap should be found in its initial state.
+	cfg.store.(*storeMock).assertLoopOutStored()
+	state := <-statusChan
+	require.Equal(t, loopdb.StateInitiated, state.State)
+
+	// We'll then pay both the swap and prepay invoice, which should trigger
+	// the server to publish the on-chain HTLC.
+	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+
+	signalSwapPaymentResult(nil)
+	signalPrepaymentResult(nil)
+
+	// Notify the confirmation notification for the HTLC.
+	ctx.AssertRegisterConf()
+
+	blockEpochChan <- ctx.Lnd.Height + 1
+
+	htlcTx := wire.NewMsgTx(2)
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    int64(swap.AmountRequested),
+		PkScript: swap.htlc.PkScript,
+	})
+
+	ctx.NotifyConf(htlcTx)
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	// Assert that we made a query to track our payment, as required for
+	// preimage push tracking.
+	trackPayment := ctx.AssertTrackPayment()
+
+	// Tick the expiry channel, we are still using our client confirmation
+	// target at this stage which has fees higher than our max acceptable
+	// fee. We do not expect a sweep attempt at this point. Since our
+	// preimage is not revealed, we also do not expect a preimage push.
+	expiryChan <- testTime
+
+	// Now, we notify the height at which the client will start using the
+	// default confirmation target. This has the effect of lowering our fees
+	// so that the client still start sweeping.
+	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
+		DefaultSweepConfTargetDelta
+	blockEpochChan <- defaultConfTargetHeight
+
+	// This time when we tick the expiry chan, our fees are lower than the
+	// swap max, so we expect it to prompt a sweep.
+	expiryChan <- testTime
+
+	// Expect a signing request for the HTLC success transaction.
+	<-ctx.Lnd.SignOutputRawChannel
+
+	// This is the first time we have swept, so we expect our preimage
+	// revealed state to be set.
+	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
+	status := <-statusChan
+	require.Equal(
+		t, status.State, loopdb.SwapState(loopdb.StatePreimageRevealed),
+	)
+
+	// We expect the sweep tx to have been published.
+	ctx.ReceiveTx()
+
+	// Once we have published an on chain sweep, we expect a preimage to
+	// have been pushed to the server after the sweep.
+	preimage := <-server.preimagePush
+	require.Equal(t, swap.Preimage, preimage)
+
+	// To mock a server failure, we do not send a payment settled update
+	// for our off chain payment yet. We also do not confirm our sweep on
+	// chain yet so we can test our preimage push retry logic. Instead, we
+	// tick the expiry chan again to prompt another sweep.
+	expiryChan <- testTime
+
+	// We expect another signing request for out sweep, and publish of our
+	// sweep transaction.
+	<-ctx.Lnd.SignOutputRawChannel
+	ctx.ReceiveTx()
+
+	// Since we have not yet been notified of an off chain settle, and we
+	// have attempted to sweep again, we expect another preimage push
+	// attempt.
+	preimage = <-server.preimagePush
+	require.Equal(t, swap.Preimage, preimage)
+
+	// This time, we send a payment succeeded update into our payment stream
+	// to reflect that the server received our preimage push and settled off
+	// chain.
+	trackPayment.Updates <- lndclient.PaymentStatus{
+		State: lnrpc.Payment_SUCCEEDED,
+	}
+
+	// We tick one last time, this time expecting a sweep but no preimage
+	// push. The test's mocked preimage channel is un-buffered, so our test
+	// would hang if we pushed the preimage here.
+	expiryChan <- testTime
+	<-ctx.Lnd.SignOutputRawChannel
+	sweepTx := ctx.ReceiveTx()
+
+	// Finally, we put this swap out of its misery and notify a successful
+	// spend our our sweepTx and assert that the swap succeeds.
+	ctx.NotifySpend(sweepTx, 0)
+
+	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
+	status = <-statusChan
+	require.Equal(
+		t, status.State, loopdb.SwapState(loopdb.StateSuccess),
+	)
+
+	require.NoError(t, <-errChan)
 }

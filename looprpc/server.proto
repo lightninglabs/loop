@@ -9,6 +9,9 @@ service SwapServer {
 
     rpc NewLoopOutSwap (ServerLoopOutRequest) returns (ServerLoopOutResponse);
 
+    rpc LoopOutPushPreimage (ServerLoopOutPushPreimageRequest)
+        returns (ServerLoopOutPushPreimageResponse);
+
     rpc LoopOutQuote (ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
 
     rpc LoopInTerms (ServerLoopInTermsRequest) returns (ServerLoopInTerms);
@@ -37,6 +40,14 @@ enum ProtocolVersion {
     published htlcs may use native (P2WSH) or nested (NP2WSH) segwit as well.
     */
     NATIVE_SEGWIT_LOOP_IN = 2;
+
+    /*
+    Once the on chain loop out htlc is confirmed, the client can push the swap
+    preimage to the server to speed up claim of their off chain htlc (acquiring
+    incoming liquidity more quickly than if the server waited for the on chain
+    claim tx).
+    */
+    PREIMAGE_PUSH_LOOP_OUT = 3;
 }
 
 message ServerLoopOutRequest {
@@ -142,4 +153,21 @@ message ServerLoopInTermsRequest {
 message ServerLoopInTerms {
     uint64 min_swap_amount = 1;
     uint64 max_swap_amount = 2;
+}
+
+// ServerLoopOutPushPreimageRequest pushes a preimage to the server. Note that
+// this call returns with no error after the server acknowledges the preimage
+// and does not block until the invoice is settled.
+message ServerLoopOutPushPreimageRequest {
+    // The protocol version that the client adheres to.
+    ProtocolVersion protocol_version = 1;
+
+    /*
+    Preimage is the preimage of the loop out swap that we wish to push to the
+    server to speed up off-chain claim once the on-chain htlc has confirmed.
+    */
+    bytes preimage = 2;
+}
+
+message ServerLoopOutPushPreimageResponse {
 }

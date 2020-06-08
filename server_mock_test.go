@@ -36,6 +36,9 @@ type serverMock struct {
 
 	swapInvoice string
 	swapHash    lntypes.Hash
+
+	// preimagePush is a channel that preimage pushes are sent into.
+	preimagePush chan lntypes.Preimage
 }
 
 var _ swapServerClient = (*serverMock)(nil)
@@ -49,6 +52,8 @@ func newServerMock() *serverMock {
 		prepayInvoiceAmt: 100,
 
 		height: 600,
+
+		preimagePush: make(chan lntypes.Preimage),
 	}
 }
 
@@ -149,6 +154,15 @@ func (s *serverMock) NewLoopInSwap(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+func (s *serverMock) PushLoopOutPreimage(_ context.Context,
+	preimage lntypes.Preimage) error {
+
+	// Push the preimage into the mock's preimage channel.
+	s.preimagePush <- preimage
+
+	return nil
 }
 
 func (s *serverMock) GetLoopInTerms(ctx context.Context) (

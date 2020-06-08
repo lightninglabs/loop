@@ -82,3 +82,13 @@ type swapConfig struct {
 	store  loopdb.SwapStore
 	server swapServerClient
 }
+
+func newSwapConfig(lnd *lndclient.LndServices, store loopdb.SwapStore,
+	server swapServerClient) *swapConfig {
+
+	return &swapConfig{
+		lnd:    lnd,
+		store:  store,
+		server: server,
+	}
+}

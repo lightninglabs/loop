@@ -94,6 +94,24 @@ func (ctx *Context) AssertRegisterSpendNtfn(script []byte) {
 	}
 }
 
+// AssertTrackPayment asserts that a call was made to track payment, and
+// returns the track payment message so that it can be used to send updates
+// to the test.
+func (ctx *Context) AssertTrackPayment() TrackPaymentMessage {
+	ctx.T.Helper()
+
+	var msg TrackPaymentMessage
+	select {
+	case msg = <-ctx.Lnd.TrackPaymentChannel:
+
+	case <-time.After(Timeout):
+		DumpGoroutines()
+		ctx.T.Fatalf("payment not tracked")
+	}
+
+	return msg
+}
+
 // AssertRegisterConf asserts that a register for conf has been received.
 func (ctx *Context) AssertRegisterConf() *ConfRegistration {
 	ctx.T.Helper()

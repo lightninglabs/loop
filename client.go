@@ -315,10 +315,7 @@ func (s *Client) Run(ctx context.Context,
 func (s *Client) resumeSwaps(ctx context.Context,
 	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	swapCfg := &swapConfig{
-		lnd:   s.lndServices,
-		store: s.Store,
-	}
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
 
 	for _, pend := range loopOutSwaps {
 		if pend.State().State.Type() != loopdb.StateTypePending {
@@ -369,11 +366,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := &swapConfig{
-		lnd:    s.lndServices,
-		store:  s.Store,
-		server: s.Server,
-	}
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
 	swap, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
@@ -486,13 +479,9 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := swapConfig{
-		lnd:    s.lndServices,
-		store:  s.Store,
-		server: s.Server,
-	}
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
 	swap, err := newLoopInSwap(
-		globalCtx, &swapCfg, initiationHeight, request,
+		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
 		return nil, err
