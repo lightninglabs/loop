@@ -32,11 +32,7 @@ func TestLoopInSuccess(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := &swapConfig{
-		lnd:    &ctx.lnd.LndServices,
-		store:  ctx.store,
-		server: ctx.server,
-	}
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
 	swap, err := newLoopInSwap(
 		context.Background(), cfg,
@@ -151,11 +147,7 @@ func testLoopInTimeout(t *testing.T,
 
 	height := int32(600)
 
-	cfg := &swapConfig{
-		lnd:    &ctx.lnd.LndServices,
-		store:  ctx.store,
-		server: ctx.server,
-	}
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
 	req := testLoopInRequest
 	if externalValue != 0 {
@@ -282,12 +274,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
-
-	cfg := &swapConfig{
-		lnd:    &ctx.lnd.LndServices,
-		store:  ctx.store,
-		server: ctx.server,
-	}
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
 	senderKey := [33]byte{4}
 	receiverKey := [33]byte{5}

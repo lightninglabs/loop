@@ -145,11 +145,7 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := &swapConfig{
-		lnd:    &lnd.LndServices,
-		store:  store,
-		server: server,
-	}
+	cfg := newSwapConfig(&lnd.LndServices, store, server)
 
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
@@ -231,11 +227,10 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(testRequest.SweepConfTarget, 250)
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
-	cfg := &swapConfig{
-		lnd:    &lnd.LndServices,
-		store:  newStoreMock(t),
-		server: newServerMock(),
-	}
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), newServerMock(),
+	)
+
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
 	)
