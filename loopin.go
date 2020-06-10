@@ -393,14 +393,16 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 	notifier := s.lnd.ChainNotifier
 
 	confChanP2WSH, confErrP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, nil, s.htlcP2WSH.PkScript, 1, s.InitiationHeight,
+		ctx, nil, s.htlcP2WSH.PkScript,
+		int32(s.executeConfig.htlcConfirmations), s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	confChanNP2WSH, confErrNP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, nil, s.htlcNP2WSH.PkScript, 1, s.InitiationHeight,
+		ctx, nil, s.htlcNP2WSH.PkScript,
+		int32(s.executeConfig.htlcConfirmations), s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err

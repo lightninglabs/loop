@@ -19,7 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testLoopOutMaxParts uint32 = 5
+var (
+	testLoopOutMaxParts uint32 = 5
+	testHtlcConfs       uint32 = 1
+)
 
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
 // to the point where the off-chain payments are made.
@@ -68,7 +71,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	go func() {
 		cfg := newExecuteConfig(
 			sweeper, statusChan, timerFactory, blockEpochChan,
-			testLoopOutMaxParts,
+			testLoopOutMaxParts, testHtlcConfs,
 		)
 
 		err := swap.execute(swapCtx, cfg, height)
@@ -114,7 +117,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 
 	// Swap is expected to register for confirmation of the htlc. Assert
 	// this to prevent a blocked channel in the mock.
-	ctx.AssertRegisterConf()
+	ctx.AssertRegisterConf(testHtlcConfs)
 
 	// Cancel the swap. There is nothing else we need to assert. The payment
 	// parameters don't play a role in the remainder of the swap process.
@@ -165,7 +168,7 @@ func TestLateHtlcPublish(t *testing.T) {
 	go func() {
 		cfg := newExecuteConfig(
 			sweeper, statusChan, timerFactory, blockEpochChan,
-			testLoopOutMaxParts,
+			testLoopOutMaxParts, testHtlcConfs,
 		)
 
 		err := swap.execute(context.Background(), cfg, height)
@@ -186,10 +189,10 @@ func TestLateHtlcPublish(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf
-	ctx.AssertRegisterConf()
+	ctx.AssertRegisterConf(testHtlcConfs)
 
 	// // Wait too long before publishing htlc.
-	blockEpochChan <- int32(swap.CltvExpiry - 10)
+	blockEpochChan <- swap.CltvExpiry - 10
 
 	signalSwapPaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
@@ -256,7 +259,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	go func() {
 		cfg := newExecuteConfig(
 			sweeper, statusChan, timerFactory, blockEpochChan,
-			testLoopOutMaxParts,
+			testLoopOutMaxParts, testHtlcConfs,
 		)
 
 		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
@@ -282,7 +285,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf()
+	ctx.AssertRegisterConf(testHtlcConfs)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 
@@ -459,7 +462,7 @@ func TestPreimagePush(t *testing.T) {
 	go func() {
 		cfg := newExecuteConfig(
 			sweeper, statusChan, timerFactory, blockEpochChan,
-			testLoopOutMaxParts,
+			testLoopOutMaxParts, testHtlcConfs,
 		)
 
 		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
@@ -483,7 +486,7 @@ func TestPreimagePush(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf()
+	ctx.AssertRegisterConf(testHtlcConfs)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 

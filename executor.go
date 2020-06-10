@@ -24,6 +24,10 @@ type executorConfig struct {
 	createExpiryTimer func(expiry time.Duration) <-chan time.Time
 
 	loopOutMaxParts uint32
+
+	// htlcConfirmations is the number of confirmations we wait for an
+	// on chain htlc.
+	htlcConfirmations uint32
 }
 
 // executor is responsible for executing swaps.
@@ -115,6 +119,7 @@ func (s *executor) run(mainCtx context.Context,
 					s.executorConfig.createExpiryTimer,
 					queue.ChanOut(),
 					s.executorConfig.loopOutMaxParts,
+					s.executorConfig.htlcConfirmations,
 				)
 
 				newSwap.execute(mainCtx, cfg, height)

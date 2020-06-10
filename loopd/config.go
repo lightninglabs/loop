@@ -18,6 +18,7 @@ var (
 	defaultMaxLogFiles     = 3
 	defaultMaxLogFileSize  = 10
 	defaultLoopOutMaxParts = uint32(5)
+	defaultHtlcConfs       = uint32(1)
 )
 
 type lndConfig struct {
@@ -48,6 +49,8 @@ type Config struct {
 
 	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
 
+	HtlcConfirmations uint32 `long:"htlcconfs" description:"Confirmation target for on chain htlcs (blocks)."`
+
 	Lnd   *lndConfig `group:"lnd" namespace:"lnd"`
 	Proxy string     `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the swap server will be established over."`
 
@@ -62,17 +65,18 @@ const (
 // DefaultConfig returns all default values for the Config struct.
 func DefaultConfig() Config {
 	return Config{
-		Network:         "mainnet",
-		RPCListen:       "localhost:11010",
-		RESTListen:      "localhost:8081",
-		Insecure:        false,
-		LogDir:          defaultLogDir,
-		MaxLogFiles:     defaultMaxLogFiles,
-		MaxLogFileSize:  defaultMaxLogFileSize,
-		DebugLevel:      defaultLogLevel,
-		MaxLSATCost:     lsat.DefaultMaxCostSats,
-		MaxLSATFee:      lsat.DefaultMaxRoutingFeeSats,
-		LoopOutMaxParts: defaultLoopOutMaxParts,
+		Network:           "mainnet",
+		RPCListen:         "localhost:11010",
+		RESTListen:        "localhost:8081",
+		Insecure:          false,
+		LogDir:            defaultLogDir,
+		MaxLogFiles:       defaultMaxLogFiles,
+		MaxLogFileSize:    defaultMaxLogFileSize,
+		DebugLevel:        defaultLogLevel,
+		MaxLSATCost:       lsat.DefaultMaxCostSats,
+		MaxLSATFee:        lsat.DefaultMaxRoutingFeeSats,
+		LoopOutMaxParts:   defaultLoopOutMaxParts,
+		HtlcConfirmations: defaultHtlcConfs,
 		Lnd: &lndConfig{
 			Host: "localhost:10009",
 		},

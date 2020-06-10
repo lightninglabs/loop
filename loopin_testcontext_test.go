@@ -36,7 +36,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 
 	cfg := newExecuteConfig(
 		&sweeper, statusChan, timerFactory, blockEpochChan,
-		testLoopOutMaxParts,
+		testLoopOutMaxParts, testHtlcConfs,
 	)
 
 	return &loopInTestContext{

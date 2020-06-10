@@ -12,6 +12,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
+	"github.com/stretchr/testify/require"
 )
 
 // Context contains shared test context functions.
@@ -113,7 +114,7 @@ func (ctx *Context) AssertTrackPayment() TrackPaymentMessage {
 }
 
 // AssertRegisterConf asserts that a register for conf has been received.
-func (ctx *Context) AssertRegisterConf() *ConfRegistration {
+func (ctx *Context) AssertRegisterConf(confs uint32) *ConfRegistration {
 	ctx.T.Helper()
 
 	// Expect client to register for conf
@@ -123,6 +124,8 @@ func (ctx *Context) AssertRegisterConf() *ConfRegistration {
 		if confIntent.TxID != nil {
 			ctx.T.Fatalf("expected script only registration")
 		}
+		require.Equal(ctx.T, confs, uint32(confIntent.NumConfs))
+
 	case <-time.After(Timeout):
 		ctx.T.Fatalf("htlc confirmed not subscribed to")
 	}

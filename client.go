@@ -113,6 +113,10 @@ type ClientConfig struct {
 	// for a loop out swap. When greater than one, a multi-part payment may
 	// be attempted.
 	LoopOutMaxParts uint32
+
+	// HtlcConfirmations is the number of confirmations we wait for an on
+	// chain htlc.
+	HtlcConfirmations uint32
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -151,6 +155,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
 		loopOutMaxParts:   cfg.LoopOutMaxParts,
+		htlcConfirmations: cfg.HtlcConfirmations,
 	})
 
 	client := &Client{

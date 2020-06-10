@@ -62,25 +62,27 @@ type loopOutSwap struct {
 
 // executeConfig contains extra configuration to execute the swap.
 type executeConfig struct {
-	sweeper         *sweep.Sweeper
-	statusChan      chan<- SwapInfo
-	blockEpochChan  <-chan interface{}
-	timerFactory    func(d time.Duration) <-chan time.Time
-	loopOutMaxParts uint32
+	sweeper           *sweep.Sweeper
+	statusChan        chan<- SwapInfo
+	blockEpochChan    <-chan interface{}
+	timerFactory      func(d time.Duration) <-chan time.Time
+	loopOutMaxParts   uint32
+	htlcConfirmations uint32
 }
 
 // newExecuteConfig creates an execute config.
 func newExecuteConfig(sweeper *sweep.Sweeper, statusChan chan<- SwapInfo,
 	timerFactory func(d time.Duration) <-chan time.Time,
 	blockEpochChan <-chan interface{},
-	loopOutMaxParts uint32) *executeConfig {
+	loopOutMaxParts, htlcConfirmations uint32) *executeConfig {
 
 	return &executeConfig{
-		sweeper:         sweeper,
-		statusChan:      statusChan,
-		blockEpochChan:  blockEpochChan,
-		timerFactory:    timerFactory,
-		loopOutMaxParts: loopOutMaxParts,
+		sweeper:           sweeper,
+		statusChan:        statusChan,
+		blockEpochChan:    blockEpochChan,
+		timerFactory:      timerFactory,
+		loopOutMaxParts:   loopOutMaxParts,
+		htlcConfirmations: htlcConfirmations,
 	}
 }
 
@@ -582,7 +584,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	defer cancel()
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, s.htlc.PkScript, 1,
+			ctx, nil, s.htlc.PkScript,
+			int32(s.executeConfig.htlcConfirmations),
 			s.InitiationHeight,
 		)
 	if err != nil {
