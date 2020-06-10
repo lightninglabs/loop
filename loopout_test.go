@@ -22,6 +22,9 @@ import (
 var (
 	testLoopOutMaxParts uint32 = 5
 	testHtlcConfs       uint32 = 1
+	testLoopOutParams          = newConfirmationParams(
+		btcutil.Amount(40000), 3,
+	)
 )
 
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
@@ -58,7 +61,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	req.OutgoingChanSet = loopdb.ChannelSet{2, 3}
 
 	swap, err := newLoopOutSwap(
-		context.Background(), cfg, height, &req,
+		context.Background(), cfg, height, &req, testLoopOutParams,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +120,10 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 
 	// Swap is expected to register for confirmation of the htlc. Assert
 	// this to prevent a blocked channel in the mock.
-	ctx.AssertRegisterConf(testHtlcConfs)
+	confs := testLoopOutParams.confirmations(
+		swap.AmountRequested, swap.executeConfig.htlcConfirmations,
+	)
+	ctx.AssertRegisterConf(confs)
 
 	// Cancel the swap. There is nothing else we need to assert. The payment
 	// parameters don't play a role in the remainder of the swap process.
@@ -154,6 +160,7 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
+		testLoopOutParams,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +196,10 @@ func TestLateHtlcPublish(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf
-	ctx.AssertRegisterConf(testHtlcConfs)
+	confs := testLoopOutParams.confirmations(
+		swap.AmountRequested, swap.executeConfig.htlcConfirmations,
+	)
+	ctx.AssertRegisterConf(confs)
 
 	// // Wait too long before publishing htlc.
 	blockEpochChan <- swap.CltvExpiry - 10
@@ -239,6 +249,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
+		testLoopOutParams,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +296,10 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf(testHtlcConfs)
+	confs := testLoopOutParams.confirmations(
+		swap.AmountRequested, swap.executeConfig.htlcConfirmations,
+	)
+	ctx.AssertRegisterConf(confs)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 
@@ -446,6 +460,7 @@ func TestPreimagePush(t *testing.T) {
 
 	swap, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
+		testLoopOutParams,
 	)
 	require.NoError(t, err)
 
@@ -486,7 +501,10 @@ func TestPreimagePush(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf(testHtlcConfs)
+	confs := testLoopOutParams.confirmations(
+		swap.AmountRequested, swap.executeConfig.htlcConfirmations,
+	)
+	ctx.AssertRegisterConf(confs)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
@@ -28,6 +29,15 @@ type executorConfig struct {
 	// htlcConfirmations is the number of confirmations we wait for an
 	// on chain htlc.
 	htlcConfirmations uint32
+
+	// loopOutConfirmationThreshold is the amount at which we scale loop
+	// out confirmations up to loopOutThresholdConfirmations.
+	loopOutConfirmationThreshold btcutil.Amount
+
+	// loopOutThresholdConfirmations is the number of confirmations we
+	// require for loop out on chain transactions when the amount is greater
+	// than or equal to loopOutConfirmationThreshold.
+	loopOutThresholdConfirmations uint32
 }
 
 // executor is responsible for executing swaps.
@@ -122,7 +132,7 @@ func (s *executor) run(mainCtx context.Context,
 					s.executorConfig.htlcConfirmations,
 				)
 
-				newSwap.execute(mainCtx, cfg, height)
+				_ = newSwap.execute(mainCtx, cfg, height)
 
 				select {
 				case swapDoneChan <- swapID:

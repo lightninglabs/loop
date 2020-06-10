@@ -19,6 +19,15 @@ var (
 	defaultMaxLogFileSize  = 10
 	defaultLoopOutMaxParts = uint32(5)
 	defaultHtlcConfs       = uint32(1)
+
+	// defaultThresholdConfs is the number of confirmations we scale loop
+	// out on chain transactions to require if our swap is greater than or
+	// equal to our confirmation threshold.
+	defaultThresholdConfs = uint32(3)
+
+	// defaultConfThreshold is the default threshold at which we require
+	// more confirmations for on chain loop out transactions.
+	defaultConfThreshold int64 = 4294967
 )
 
 type lndConfig struct {
@@ -49,7 +58,9 @@ type Config struct {
 
 	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
 
-	HtlcConfirmations uint32 `long:"htlcconfs" description:"Confirmation target for on chain htlcs (blocks)."`
+	HtlcConfirmations     uint32 `long:"htlcconfs" description:"Confirmation target for on chain htlcs (blocks)."`
+	LoopOutConfThreshold  int64  `long:"outconfthreshold" description:"The swap amount at which we scale confirmations to outthresholdconfs (sats)."`
+	LoopOutThresholdConfs uint32 `long:"outthresholdconfs" description:"Confirmations required for loop out swaps with outconfthreshold amount or higher (blocks)."`
 
 	Lnd   *lndConfig `group:"lnd" namespace:"lnd"`
 	Proxy string     `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the swap server will be established over."`
@@ -65,18 +76,20 @@ const (
 // DefaultConfig returns all default values for the Config struct.
 func DefaultConfig() Config {
 	return Config{
-		Network:           "mainnet",
-		RPCListen:         "localhost:11010",
-		RESTListen:        "localhost:8081",
-		Insecure:          false,
-		LogDir:            defaultLogDir,
-		MaxLogFiles:       defaultMaxLogFiles,
-		MaxLogFileSize:    defaultMaxLogFileSize,
-		DebugLevel:        defaultLogLevel,
-		MaxLSATCost:       lsat.DefaultMaxCostSats,
-		MaxLSATFee:        lsat.DefaultMaxRoutingFeeSats,
-		LoopOutMaxParts:   defaultLoopOutMaxParts,
-		HtlcConfirmations: defaultHtlcConfs,
+		Network:               "mainnet",
+		RPCListen:             "localhost:11010",
+		RESTListen:            "localhost:8081",
+		Insecure:              false,
+		LogDir:                defaultLogDir,
+		MaxLogFiles:           defaultMaxLogFiles,
+		MaxLogFileSize:        defaultMaxLogFileSize,
+		DebugLevel:            defaultLogLevel,
+		MaxLSATCost:           lsat.DefaultMaxCostSats,
+		MaxLSATFee:            lsat.DefaultMaxRoutingFeeSats,
+		LoopOutMaxParts:       defaultLoopOutMaxParts,
+		HtlcConfirmations:     defaultHtlcConfs,
+		LoopOutThresholdConfs: defaultThresholdConfs,
+		LoopOutConfThreshold:  defaultConfThreshold,
 		Lnd: &lndConfig{
 			Host: "localhost:10009",
 		},

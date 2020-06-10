@@ -57,7 +57,7 @@ func TestSuccess(t *testing.T) {
 
 	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf(
-		ctx.swapClient.executor.executorConfig.htlcConfirmations,
+		ctx.loopOutConfirmations(testRequest.Amount),
 	)
 
 	testSuccess(ctx, testRequest.Amount, *hash,
@@ -85,7 +85,7 @@ func TestFailOffchain(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	ctx.AssertRegisterConf(
-		ctx.swapClient.executor.executorConfig.htlcConfirmations,
+		ctx.loopOutConfirmations(testRequest.Amount),
 	)
 
 	signalSwapPaymentResult(
@@ -235,7 +235,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 
 	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf(
-		ctx.swapClient.executor.executorConfig.htlcConfirmations,
+		ctx.loopOutConfirmations(testRequest.Amount),
 	)
 
 	signalSwapPaymentResult(nil)

@@ -25,6 +25,9 @@ var (
 		1, 1, 1, 1, 2, 2, 2, 2,
 		3, 3, 3, 3, 4, 4, 4, 4,
 	})
+
+	testLoopOutConfirmationThreshold         = btcutil.Amount(40000)
+	testLoopOutThresholdConfirmations uint32 = 3
 )
 
 // testContext contains functionality to support client unit tests.
@@ -48,11 +51,13 @@ func newSwapClient(config *clientConfig) *Client {
 	lndServices := config.LndServices
 
 	executor := newExecutor(&executorConfig{
-		lnd:               lndServices,
-		store:             config.Store,
-		sweeper:           sweeper,
-		createExpiryTimer: config.CreateExpiryTimer,
-		htlcConfirmations: 1,
+		lnd:                           lndServices,
+		store:                         config.Store,
+		sweeper:                       sweeper,
+		createExpiryTimer:             config.CreateExpiryTimer,
+		htlcConfirmations:             1,
+		loopOutConfirmationThreshold:  testLoopOutConfirmationThreshold,
+		loopOutThresholdConfirmations: testLoopOutThresholdConfirmations,
 	})
 
 	return &Client{
@@ -261,4 +266,17 @@ func (ctx *testContext) assertPreimagePush(preimage lntypes.Preimage) {
 	case <-time.After(test.Timeout):
 		ctx.T.Fatalf("preimage not pushed")
 	}
+}
+
+// loopOutConfirmations returns the number of confirmations that our
+// server will assign to a loop out swap of the amount provided.
+func (ctx *testContext) loopOutConfirmations(amt btcutil.Amount) uint32 {
+	params := newConfirmationParams(
+		ctx.swapClient.executor.loopOutConfirmationThreshold,
+		ctx.swapClient.executor.loopOutThresholdConfirmations,
+	)
+
+	return params.confirmations(
+		amt, ctx.swapClient.executor.htlcConfirmations,
+	)
 }

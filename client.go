@@ -117,6 +117,15 @@ type ClientConfig struct {
 	// HtlcConfirmations is the number of confirmations we wait for an on
 	// chain htlc.
 	HtlcConfirmations uint32
+
+	// LoopOutConfirmationThreshold is the amount at which we scale loop
+	// out confirmations up to loopOutThresholdConfirmations.
+	LoopOutConfirmationThreshold btcutil.Amount
+
+	// LoopOutThresholdConfirmations is the number of confirmations we
+	// require for loop out on chain transactions when the amount is greater
+	// than or equal to loopOutConfirmationThreshold.
+	LoopOutThresholdConfirmations uint32
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -150,12 +159,14 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 	}
 
 	executor := newExecutor(&executorConfig{
-		lnd:               cfg.Lnd,
-		store:             store,
-		sweeper:           sweeper,
-		createExpiryTimer: config.CreateExpiryTimer,
-		loopOutMaxParts:   cfg.LoopOutMaxParts,
-		htlcConfirmations: cfg.HtlcConfirmations,
+		lnd:                           cfg.Lnd,
+		store:                         store,
+		sweeper:                       sweeper,
+		createExpiryTimer:             config.CreateExpiryTimer,
+		loopOutMaxParts:               cfg.LoopOutMaxParts,
+		htlcConfirmations:             cfg.HtlcConfirmations,
+		loopOutConfirmationThreshold:  cfg.LoopOutConfirmationThreshold,
+		loopOutThresholdConfirmations: cfg.LoopOutThresholdConfirmations,
 	})
 
 	client := &Client{
@@ -326,7 +337,13 @@ func (s *Client) resumeSwaps(ctx context.Context,
 		if pend.State().State.Type() != loopdb.StateTypePending {
 			continue
 		}
-		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
+
+		params := newConfirmationParams(
+			s.executor.loopOutConfirmationThreshold,
+			s.executor.loopOutThresholdConfirmations,
+		)
+
+		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend, params)
 		if err != nil {
 			log.Errorf("resuming loop out swap: %v", err)
 			continue
@@ -372,8 +389,12 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	params := newConfirmationParams(
+		s.executor.loopOutConfirmationThreshold,
+		s.executor.loopOutThresholdConfirmations,
+	)
 	swap, err := newLoopOutSwap(
-		globalCtx, swapCfg, initiationHeight, request,
+		globalCtx, swapCfg, initiationHeight, request, params,
 	)
 	if err != nil {
 		return nil, nil, err

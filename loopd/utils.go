@@ -19,15 +19,17 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 	}
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:     config.SwapServer,
-		ProxyAddress:      config.Proxy,
-		Insecure:          config.Insecure,
-		TLSPathServer:     config.TLSPathSwapSrv,
-		Lnd:               lnd,
-		MaxLsatCost:       btcutil.Amount(config.MaxLSATCost),
-		MaxLsatFee:        btcutil.Amount(config.MaxLSATFee),
-		LoopOutMaxParts:   config.LoopOutMaxParts,
-		HtlcConfirmations: config.HtlcConfirmations,
+		ServerAddress:                 config.SwapServer,
+		ProxyAddress:                  config.Proxy,
+		Insecure:                      config.Insecure,
+		TLSPathServer:                 config.TLSPathSwapSrv,
+		Lnd:                           lnd,
+		MaxLsatCost:                   btcutil.Amount(config.MaxLSATCost),
+		MaxLsatFee:                    btcutil.Amount(config.MaxLSATFee),
+		LoopOutMaxParts:               config.LoopOutMaxParts,
+		HtlcConfirmations:             config.HtlcConfirmations,
+		LoopOutConfirmationThreshold:  btcutil.Amount(config.LoopOutConfThreshold),
+		LoopOutThresholdConfirmations: config.LoopOutThresholdConfs,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(storeDir, clientConfig)

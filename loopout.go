@@ -58,6 +58,44 @@ type loopOutSwap struct {
 
 	swapPaymentChan chan lndclient.PaymentResult
 	prePaymentChan  chan lndclient.PaymentResult
+
+	// confirmationParams contains additional information required for
+	// scaling loop out confirmations.
+	confirmationParams
+}
+
+// confirmationParams contains the values we need to scale a swap's
+// confirmations after a set threshold.
+type confirmationParams struct {
+	// threshold is the amount at which we scale up our confirmations.
+	threshold btcutil.Amount
+
+	// thresholdConfs is the number of confirmations we scale to if at
+	// the threshold amount.
+	thresholdConfs uint32
+}
+
+// newConfirmationParams returns a set of confirmation parameters.
+func newConfirmationParams(threshold btcutil.Amount,
+	confirmations uint32) confirmationParams {
+
+	return confirmationParams{
+		threshold:      threshold,
+		thresholdConfs: confirmations,
+	}
+}
+
+// confirmations returns the number of confirmations a swap should have based on
+// the amount of the swap. If it is below our threshold, we return the default
+// confirmation amount. Otherwise we return our threshold confirmations.
+func (c confirmationParams) confirmations(amt btcutil.Amount,
+	defaultConf uint32) uint32 {
+
+	if amt < c.threshold {
+		return defaultConf
+	}
+
+	return c.thresholdConfs
 }
 
 // executeConfig contains extra configuration to execute the swap.
@@ -89,7 +127,8 @@ func newExecuteConfig(sweeper *sweep.Sweeper, statusChan chan<- SwapInfo,
 // newLoopOutSwap initiates a new swap with the server and returns a
 // corresponding swap object.
 func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *OutRequest) (*loopOutSwap, error) {
+	currentHeight int32, request *OutRequest,
+	params confirmationParams) (*loopOutSwap, error) {
 
 	// Generate random preimage.
 	var swapPreimage [32]byte
@@ -177,9 +216,10 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	swapKit.log.Infof("Htlc address: %v", htlc.Address)
 
 	swap := &loopOutSwap{
-		LoopOutContract: contract,
-		swapKit:         *swapKit,
-		htlc:            htlc,
+		LoopOutContract:    contract,
+		swapKit:            *swapKit,
+		htlc:               htlc,
+		confirmationParams: params,
 	}
 
 	// Persist the data before exiting this function, so that the caller
@@ -195,7 +235,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 // resumeLoopOutSwap returns a swap object representing a pending swap that has
 // been restored from the database.
 func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
-	pend *loopdb.LoopOut) (*loopOutSwap, error) {
+	pend *loopdb.LoopOut, params confirmationParams) (*loopOutSwap,
+	error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
@@ -216,9 +257,10 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 
 	// Create the swap.
 	swap := &loopOutSwap{
-		LoopOutContract: *pend.Contract,
-		swapKit:         *swapKit,
-		htlc:            htlc,
+		LoopOutContract:    *pend.Contract,
+		swapKit:            *swapKit,
+		htlc:               htlc,
+		confirmationParams: params,
 	}
 
 	lastUpdate := pend.LastUpdate()
@@ -573,19 +615,24 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	*chainntnfs.TxConfirmation, error) {
 
+	// Get the number of confirmations we require for this amount.
+	confs := s.confirmations(
+		s.AmountRequested, s.executeConfig.htlcConfirmations,
+	)
+
 	// Wait for confirmation of the on-chain htlc by watching for a tx
 	// producing the swap script output.
 	s.log.Infof(
-		"Register conf ntfn for swap script on chain (hh=%v)",
-		s.InitiationHeight,
+		"Register conf ntfn for %v confs for swap script on chain "+
+			"(hh=%v)", confs, s.InitiationHeight,
 	)
 
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
+
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, s.htlc.PkScript,
-			int32(s.executeConfig.htlcConfirmations),
+			ctx, nil, s.htlc.PkScript, int32(confs),
 			s.InitiationHeight,
 		)
 	if err != nil {
