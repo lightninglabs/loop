@@ -110,13 +110,14 @@ func (s *executor) run(mainCtx context.Context,
 			go func() {
 				defer s.wg.Done()
 
-				newSwap.execute(mainCtx, &executeConfig{
-					statusChan:      statusChan,
-					sweeper:         s.sweeper,
-					blockEpochChan:  queue.ChanOut(),
-					timerFactory:    s.executorConfig.createExpiryTimer,
-					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
-				}, height)
+				cfg := newExecuteConfig(
+					s.sweeper, statusChan,
+					s.executorConfig.createExpiryTimer,
+					queue.ChanOut(),
+					s.executorConfig.loopOutMaxParts,
+				)
+
+				newSwap.execute(mainCtx, cfg, height)
 
 				select {
 				case swapDoneChan <- swapID:

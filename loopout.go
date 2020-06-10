@@ -69,6 +69,21 @@ type executeConfig struct {
 	loopOutMaxParts uint32
 }
 
+// newExecuteConfig creates an execute config.
+func newExecuteConfig(sweeper *sweep.Sweeper, statusChan chan<- SwapInfo,
+	timerFactory func(d time.Duration) <-chan time.Time,
+	blockEpochChan <-chan interface{},
+	loopOutMaxParts uint32) *executeConfig {
+
+	return &executeConfig{
+		sweeper:         sweeper,
+		statusChan:      statusChan,
+		blockEpochChan:  blockEpochChan,
+		timerFactory:    timerFactory,
+		loopOutMaxParts: loopOutMaxParts,
+	}
+}
+
 // newLoopOutSwap initiates a new swap with the server and returns a
 // corresponding swap object.
 func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,

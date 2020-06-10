@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testLoopOutMaxParts uint32 = 5
+
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
 // to the point where the off-chain payments are made.
 func TestLoopOutPaymentParameters(t *testing.T) {
@@ -48,8 +50,6 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	blockEpochChan := make(chan interface{})
 	statusChan := make(chan SwapInfo)
 
-	const maxParts = 5
-
 	// Initiate the swap.
 	req := *testRequest
 	req.OutgoingChanSet = loopdb.ChannelSet{2, 3}
@@ -66,13 +66,12 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	swapCtx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		err := swap.execute(swapCtx, &executeConfig{
-			statusChan:      statusChan,
-			sweeper:         sweeper,
-			blockEpochChan:  blockEpochChan,
-			timerFactory:    timerFactory,
-			loopOutMaxParts: maxParts,
-		}, height)
+		cfg := newExecuteConfig(
+			sweeper, statusChan, timerFactory, blockEpochChan,
+			testLoopOutMaxParts,
+		)
+
+		err := swap.execute(swapCtx, cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -101,9 +100,9 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	}
 
 	// Assert that it is sent as a multi-part payment.
-	if swapPayment.MaxParts != maxParts {
+	if swapPayment.MaxParts != testLoopOutMaxParts {
 		t.Fatalf("Expected %v parts, but got %v",
-			maxParts, swapPayment.MaxParts)
+			testLoopOutMaxParts, swapPayment.MaxParts)
 	}
 
 	// Verify the outgoing channel set restriction.
@@ -164,12 +163,12 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			sweeper:        sweeper,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-		}, height)
+		cfg := newExecuteConfig(
+			sweeper, statusChan, timerFactory, blockEpochChan,
+			testLoopOutMaxParts,
+		)
+
+		err := swap.execute(context.Background(), cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -255,12 +254,12 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			sweeper:        sweeper,
-		}, ctx.Lnd.Height)
+		cfg := newExecuteConfig(
+			sweeper, statusChan, timerFactory, blockEpochChan,
+			testLoopOutMaxParts,
+		)
+
+		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -458,12 +457,12 @@ func TestPreimagePush(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			sweeper:        sweeper,
-		}, ctx.Lnd.Height)
+		cfg := newExecuteConfig(
+			sweeper, statusChan, timerFactory, blockEpochChan,
+			testLoopOutMaxParts,
+		)
+
+		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
 		}

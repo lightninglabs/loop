@@ -34,12 +34,10 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 		return expiryChan
 	}
 
-	cfg := executeConfig{
-		statusChan:     statusChan,
-		sweeper:        &sweeper,
-		blockEpochChan: blockEpochChan,
-		timerFactory:   timerFactory,
-	}
+	cfg := newExecuteConfig(
+		&sweeper, statusChan, timerFactory, blockEpochChan,
+		testLoopOutMaxParts,
+	)
 
 	return &loopInTestContext{
 		t:              t,
@@ -47,7 +45,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 		server:         server,
 		store:          store,
 		sweeper:        &sweeper,
-		cfg:            &cfg,
+		cfg:            cfg,
 		statusChan:     statusChan,
 		blockEpochChan: blockEpochChan,
 	}
