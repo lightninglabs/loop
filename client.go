@@ -91,8 +91,8 @@ type ClientConfig struct {
 	// connection.
 	ProxyAddress string
 
-	// Insecure skips TLS when set.
-	Insecure bool
+	// SwapServerNoTLS skips TLS for the swap server connection when set.
+	SwapServerNoTLS bool
 
 	// TLSPathServer is the path to the TLS certificate that is required to
 	// connect to the server.

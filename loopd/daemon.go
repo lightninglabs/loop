@@ -269,20 +269,20 @@ func (d *Daemon) startWebServers() error {
 func (d *Daemon) initialize() error {
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
-	if d.cfg.SwapServer == "" {
+	if d.cfg.Server.Host == "" {
 		// TODO(wilmer): Use onion service addresses when proxy is
 		// active.
 		switch d.cfg.Network {
 		case "mainnet":
-			d.cfg.SwapServer = mainnetServer
+			d.cfg.Server.Host = mainnetServer
 		case "testnet":
-			d.cfg.SwapServer = testnetServer
+			d.cfg.Server.Host = testnetServer
 		default:
 			return errors.New("no swap server address specified")
 		}
 	}
 
-	log.Infof("Swap server address: %v", d.cfg.SwapServer)
+	log.Infof("Swap server address: %v", d.cfg.Server.Host)
 
 	// Create an instance of the loop client library.
 	swapclient, clientCleanup, err := getClient(d.cfg, &d.lnd.LndServices)

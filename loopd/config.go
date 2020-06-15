@@ -26,17 +26,22 @@ type lndConfig struct {
 	TLSPath     string `long:"tlspath" description:"Path to lnd tls certificate"`
 }
 
+type loopServerConfig struct {
+	Host  string `long:"host" description:"Loop server address host:port"`
+	Proxy string `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the loop server will be established over"`
+
+	NoTLS   bool   `long:"notls" description:"Disable tls for communication to the loop server [testing only]"`
+	TLSPath string `long:"tlspath" description:"Path to loop server tls certificate [testing only]"`
+}
+
 type viewParameters struct{}
 
 type Config struct {
-	ShowVersion    bool   `long:"version" description:"Display version information and exit"`
-	Insecure       bool   `long:"insecure" description:"disable tls"`
-	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
-	SwapServer     string `long:"swapserver" description:"swap server address host:port"`
-	TLSPathSwapSrv string `long:"tlspathswapserver" description:"Path to swap server tls certificate. Only needed if the swap server uses a self-signed certificate."`
-	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
-	RESTListen     string `long:"restlisten" description:"Address to listen on for REST clients"`
-	CORSOrigin     string `long:"corsorigin" description:"The value to send in the Access-Control-Allow-Origin header. Header will be omitted if empty."`
+	ShowVersion bool   `long:"version" description:"Display version information and exit"`
+	Network     string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	RPCListen   string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen  string `long:"restlisten" description:"Address to listen on for REST clients"`
+	CORSOrigin  string `long:"corsorigin" description:"The value to send in the Access-Control-Allow-Origin header. Header will be omitted if empty."`
 
 	LogDir         string `long:"logdir" description:"Directory to log output."`
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`
@@ -48,8 +53,9 @@ type Config struct {
 
 	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
 
-	Lnd   *lndConfig `group:"lnd" namespace:"lnd"`
-	Proxy string     `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the swap server will be established over."`
+	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
+
+	Server *loopServerConfig `group:"server" namespace:"server"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
 }
@@ -62,10 +68,12 @@ const (
 // DefaultConfig returns all default values for the Config struct.
 func DefaultConfig() Config {
 	return Config{
-		Network:         "mainnet",
-		RPCListen:       "localhost:11010",
-		RESTListen:      "localhost:8081",
-		Insecure:        false,
+		Network:    "mainnet",
+		RPCListen:  "localhost:11010",
+		RESTListen: "localhost:8081",
+		Server: &loopServerConfig{
+			NoTLS: false,
+		},
 		LogDir:          defaultLogDir,
 		MaxLogFiles:     defaultMaxLogFiles,
 		MaxLogFileSize:  defaultMaxLogFileSize,
