@@ -340,6 +340,8 @@ func checkVersionCompatibility(client VersionerClient,
 		return nil, fmt.Errorf("GetVersion error: %v", err)
 	}
 
+	log.Infof("lnd version: %v", VersionString(version))
+
 	// Now check the version and make sure all required build tags are set.
 	err = assertVersionCompatible(version, expected)
 	if err != nil {
