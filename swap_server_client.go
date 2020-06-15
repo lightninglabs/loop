@@ -70,7 +70,7 @@ func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 		cfg.MaxLsatFee,
 	)
 	serverConn, err := getSwapServerConn(
-		cfg.ServerAddress, cfg.ProxyAddress, cfg.Insecure,
+		cfg.ServerAddress, cfg.ProxyAddress, cfg.SwapServerNoTLS,
 		cfg.TLSPathServer, clientInterceptor,
 	)
 	if err != nil {

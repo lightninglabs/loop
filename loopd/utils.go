@@ -19,10 +19,10 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 	}
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:   config.SwapServer,
-		ProxyAddress:    config.Proxy,
-		Insecure:        config.Insecure,
-		TLSPathServer:   config.TLSPathSwapSrv,
+		ServerAddress:   config.Server.Host,
+		ProxyAddress:    config.Server.Proxy,
+		SwapServerNoTLS: config.Server.NoTLS,
+		TLSPathServer:   config.Server.TLSPath,
 		Lnd:             lnd,
 		MaxLsatCost:     btcutil.Amount(config.MaxLSATCost),
 		MaxLsatFee:      btcutil.Amount(config.MaxLSATFee),
