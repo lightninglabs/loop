@@ -119,12 +119,12 @@ type LoopOutRequest struct {
 	//Base58 encoded destination address for the swap.
 	Dest string `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
 	//*
-	//Maximum off-chain fee in msat that may be paid for payment to the server.
+	//Maximum off-chain fee in sat that may be paid for swap payment to the server.
 	//This limit is applied during path finding. Typically this value is taken
 	//from the response of the GetQuote call.
 	MaxSwapRoutingFee int64 `protobuf:"varint,3,opt,name=max_swap_routing_fee,json=maxSwapRoutingFee,proto3" json:"max_swap_routing_fee,omitempty"`
 	//*
-	//Maximum off-chain fee in msat that may be paid for payment to the server.
+	//Maximum off-chain fee in sat that may be paid for the prepay to the server.
 	//This limit is applied during path finding. Typically this value is taken
 	//from the response of the GetQuote call.
 	MaxPrepayRoutingFee int64 `protobuf:"varint,4,opt,name=max_prepay_routing_fee,json=maxPrepayRoutingFee,proto3" json:"max_prepay_routing_fee,omitempty"`

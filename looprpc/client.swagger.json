@@ -380,12 +380,12 @@
         "max_swap_routing_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum off-chain fee in msat that may be paid for payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
+          "description": "*\nMaximum off-chain fee in sat that may be paid for swap payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
         },
         "max_prepay_routing_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum off-chain fee in msat that may be paid for payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
+          "description": "*\nMaximum off-chain fee in sat that may be paid for the prepay to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
         },
         "max_swap_fee": {
           "type": "string",
