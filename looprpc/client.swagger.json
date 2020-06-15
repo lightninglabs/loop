@@ -4,10 +4,6 @@
     "title": "client.proto",
     "version": "version not set"
   },
-  "schemes": [
-    "http",
-    "https"
-  ],
   "consumes": [
     "application/json"
   ],
@@ -24,6 +20,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcSwapResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -51,6 +53,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcQuoteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -103,6 +111,12 @@
             "schema": {
               "$ref": "#/definitions/looprpcTermsResponse"
             }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
           }
         },
         "tags": [
@@ -119,6 +133,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcSwapResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -146,6 +166,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcQuoteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -198,6 +224,12 @@
             "schema": {
               "$ref": "#/definitions/looprpcTermsResponse"
             }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
           }
         },
         "tags": [
@@ -214,6 +246,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcSwapStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -242,6 +280,12 @@
             "schema": {
               "$ref": "#/definitions/looprpcListSwapsResponse"
             }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
           }
         },
         "tags": [
@@ -258,6 +302,12 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/looprpcTokensResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
             }
           }
         },
@@ -602,6 +652,27 @@
         }
       }
     },
+    "runtimeError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
     "runtimeStreamError": {
       "type": "object",
       "properties": {
@@ -626,20 +697,6 @@
           }
         }
       }
-    }
-  },
-  "x-stream-definitions": {
-    "looprpcSwapStatus": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "$ref": "#/definitions/looprpcSwapStatus"
-        },
-        "error": {
-          "$ref": "#/definitions/runtimeStreamError"
-        }
-      },
-      "title": "Stream result of looprpcSwapStatus"
     }
   }
 }
