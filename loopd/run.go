@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
@@ -67,7 +67,7 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 
 			return net.Listen("tcp", config.RESTListen)
 		},
-		getLnd: func(network string, cfg *lndConfig) (
+		getLnd: func(network lndclient.Network, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {
 
 			svcCfg := &lndclient.LndServicesConfig{

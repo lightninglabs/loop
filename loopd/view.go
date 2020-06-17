@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -11,12 +12,9 @@ import (
 
 // view prints all swaps currently in the database.
 func view(config *Config, lisCfg *listenerCfg) error {
-	chainParams, err := swap.ChainParamsFromNetwork(config.Network)
-	if err != nil {
-		return err
-	}
+	network := lndclient.Network(config.Network)
 
-	lnd, err := lisCfg.getLnd(config.Network, config.Lnd)
+	lnd, err := lisCfg.getLnd(network, config.Lnd)
 	if err != nil {
 		return err
 	}
@@ -27,6 +25,11 @@ func view(config *Config, lisCfg *listenerCfg) error {
 		return err
 	}
 	defer cleanup()
+
+	chainParams, err := network.ChainParams()
+	if err != nil {
+		return err
+	}
 
 	if err := viewOut(swapClient, chainParams); err != nil {
 		return err

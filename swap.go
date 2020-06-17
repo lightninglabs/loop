@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"

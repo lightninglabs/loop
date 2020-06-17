@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/lndclient"
 )
 
 // getClient returns an instance of the swap client.
