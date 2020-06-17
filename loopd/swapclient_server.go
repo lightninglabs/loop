@@ -110,9 +110,10 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	return &looprpc.SwapResponse{
-		Id:          hash.String(),
-		IdBytes:     hash[:],
-		HtlcAddress: htlc.String(),
+		Id:               hash.String(),
+		IdBytes:          hash[:],
+		HtlcAddress:      htlc.String(),
+		HtlcAddressP2Wsh: htlc.String(),
 	}, nil
 }
 
