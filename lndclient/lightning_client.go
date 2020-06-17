@@ -53,6 +53,11 @@ type LightningClient interface {
 	// ClosedChannels returns all closed channels of the backing lnd node.
 	ClosedChannels(ctx context.Context) ([]ClosedChannel, error)
 
+	// ForwardingHistory makes a paginated call to our forwarding history
+	// endpoint.
+	ForwardingHistory(ctx context.Context,
+		req ForwardingHistoryRequest) (*ForwardingHistoryResponse, error)
+
 	// ChannelBackup retrieves the backup for a particular channel. The
 	// backup is returned as an encrypted chanbackup.Single payload.
 	ChannelBackup(context.Context, wire.OutPoint) ([]byte, error)
@@ -840,6 +845,95 @@ func getInitiator(initiator lnrpc.Initiator) (Initiator, error) {
 		return InitiatorUnrecorded, fmt.Errorf("unknown "+
 			"initiator: %v", initiator)
 	}
+}
+
+// ForwardingHistoryRequest contains the request parameters for a paginated
+// forwarding history call.
+type ForwardingHistoryRequest struct {
+	// StartTime is the beginning of the query period.
+	StartTime time.Time
+
+	// EndTime is the end of the query period.
+	EndTime time.Time
+
+	// MaxEvents is the maximum number of events to return.
+	MaxEvents uint32
+
+	// Offset is the index from which to start querying.
+	Offset uint32
+}
+
+// ForwardingHistoryResponse contains the response to a forwarding history
+// query, including last index offset required for paginated queries.
+type ForwardingHistoryResponse struct {
+	// LastIndexOffset is the index offset of the last item in our set.
+	LastIndexOffset uint32
+
+	// Events is the set of events that were found in the interval queried.
+	Events []ForwardingEvent
+}
+
+// ForwardingEvent represents a htlc that was forwarded through our node.
+type ForwardingEvent struct {
+	// Timestamp is the time that we processed the forwarding event.
+	Timestamp time.Time
+
+	// ChannelIn is the id of the channel the htlc arrived at our node on.
+	ChannelIn uint64
+
+	// ChannelOut is the id of the channel the htlc left our node on.
+	ChannelOut uint64
+
+	// AmountMsatIn is the amount that was forwarded into our node in
+	// millisatoshis.
+	AmountMsatIn lnwire.MilliSatoshi
+
+	// AmountMsatOut is the amount that was forwarded out of our node in
+	// millisatoshis.
+	AmountMsatOut lnwire.MilliSatoshi
+
+	// FeeMsat is the amount of fees earned in millisatoshis,
+	FeeMsat lnwire.MilliSatoshi
+}
+
+// ForwardingHistory returns a set of forwarding events for the period queried.
+// Note that this call is paginated, and the information required to make
+// subsequent calls is provided in the response.
+func (s *lightningClient) ForwardingHistory(ctx context.Context,
+	req ForwardingHistoryRequest) (*ForwardingHistoryResponse, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	response, err := s.client.ForwardingHistory(
+		s.adminMac.WithMacaroonAuth(rpcCtx),
+		&lnrpc.ForwardingHistoryRequest{
+			StartTime:    uint64(req.StartTime.Unix()),
+			EndTime:      uint64(req.EndTime.Unix()),
+			IndexOffset:  req.Offset,
+			NumMaxEvents: req.MaxEvents,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]ForwardingEvent, len(response.ForwardingEvents))
+	for i, event := range response.ForwardingEvents {
+		events[i] = ForwardingEvent{
+			Timestamp:     time.Unix(int64(event.Timestamp), 0),
+			ChannelIn:     event.ChanIdIn,
+			ChannelOut:    event.ChanIdOut,
+			AmountMsatIn:  lnwire.MilliSatoshi(event.AmtIn),
+			AmountMsatOut: lnwire.MilliSatoshi(event.AmtOut),
+			FeeMsat:       lnwire.MilliSatoshi(event.FeeMsat),
+		}
+	}
+
+	return &ForwardingHistoryResponse{
+		LastIndexOffset: response.LastOffsetIndex,
+		Events:          events,
+	}, nil
 }
 
 // ChannelBackup retrieves the backup for a particular channel. The backup is

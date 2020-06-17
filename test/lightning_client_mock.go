@@ -182,6 +182,17 @@ func (h *mockLightningClient) ClosedChannels(_ context.Context) ([]lndclient.Clo
 	return h.lnd.ClosedChannels, nil
 }
 
+// ForwardingHistory returns the mock's set of forwarding events.
+func (h *mockLightningClient) ForwardingHistory(_ context.Context,
+	_ lndclient.ForwardingHistoryRequest) (*lndclient.ForwardingHistoryResponse,
+	error) {
+
+	return &lndclient.ForwardingHistoryResponse{
+		LastIndexOffset: 0,
+		Events:          h.lnd.ForwardingEvents,
+	}, nil
+}
+
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
 func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {
