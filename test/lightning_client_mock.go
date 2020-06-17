@@ -208,6 +208,16 @@ func (h *mockLightningClient) ListInvoices(_ context.Context,
 	}, nil
 }
 
+// ListPayments makes a paginated call to our list payments endpoint.
+func (h *mockLightningClient) ListPayments(_ context.Context,
+	_ lndclient.ListPaymentsRequest) (*lndclient.ListPaymentsResponse,
+	error) {
+
+	return &lndclient.ListPaymentsResponse{
+		Payments: h.lnd.Payments,
+	}, nil
+}
+
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
 func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {

@@ -166,6 +166,7 @@ type LndMockServices struct {
 	Channels         []lndclient.ChannelInfo
 	ClosedChannels   []lndclient.ClosedChannel
 	ForwardingEvents []lndclient.ForwardingEvent
+	Payments         []lndclient.Payment
 
 	WaitForFinished func()
 

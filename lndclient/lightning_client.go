@@ -62,6 +62,10 @@ type LightningClient interface {
 	ListInvoices(ctx context.Context, req ListInvoicesRequest) (
 		*ListInvoicesResponse, error)
 
+	// ListPayments makes a paginated call to our list payments endpoint.
+	ListPayments(ctx context.Context,
+		req ListPaymentsRequest) (*ListPaymentsResponse, error)
+
 	// ChannelBackup retrieves the backup for a particular channel. The
 	// backup is returned as an encrypted chanbackup.Single payload.
 	ChannelBackup(context.Context, wire.OutPoint) ([]byte, error)
@@ -1019,6 +1023,121 @@ func (s *lightningClient) ListInvoices(ctx context.Context,
 		FirstIndexOffset: resp.FirstIndexOffset,
 		LastIndexOffset:  resp.LastIndexOffset,
 		Invoices:         invoices,
+	}, nil
+}
+
+// Payment represents a payment made by our node.
+type Payment struct {
+	// Hash is the payment hash used.
+	Hash lntypes.Hash
+
+	// Preimage is the preimage of the payment. It will have a non-nil value
+	// if the payment is settled.
+	Preimage *lntypes.Preimage
+
+	// Amount is the amount in millisatoshis of the payment.
+	Amount lnwire.MilliSatoshi
+
+	// Fee is the amount in millisatoshis that was paid in fees.
+	Fee lnwire.MilliSatoshi
+
+	// Status describes the state of a payment.
+	Status *PaymentStatus
+
+	// Htlcs is the set of htlc attempts made by the payment.
+	Htlcs []*lnrpc.HTLCAttempt
+
+	// SequenceNumber is a unique id for each payment.
+	SequenceNumber uint64
+}
+
+// ListPaymentsRequest contains the request parameters for a paginated
+// list payments call.
+type ListPaymentsRequest struct {
+	// MaxPayments is the maximum number of payments to return.
+	MaxPayments uint64
+
+	// Offset is the index from which to start querying.
+	Offset uint64
+
+	// Reversed is set to query our payments backwards.
+	Reversed bool
+
+	// IncludeIncomplete is set if we want to include incomplete payments.
+	IncludeIncomplete bool
+}
+
+// ListPaymentsResponse contains the response to a list payments query,
+// including the index offsets required for paginated queries.
+type ListPaymentsResponse struct {
+	// FirstIndexOffset is the index offset of the first item in our set.
+	FirstIndexOffset uint64
+
+	// LastIndexOffset is the index offset of the last item in our set.
+	LastIndexOffset uint64
+
+	// Payments is the set of invoices that were returned.
+	Payments []Payment
+}
+
+// ListPayments makes a paginated call to our listpayments endpoint.
+func (s *lightningClient) ListPayments(ctx context.Context,
+	req ListPaymentsRequest) (*ListPaymentsResponse, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	resp, err := s.client.ListPayments(
+		s.adminMac.WithMacaroonAuth(rpcCtx),
+		&lnrpc.ListPaymentsRequest{
+			IncludeIncomplete: req.IncludeIncomplete,
+			IndexOffset:       req.Offset,
+			MaxPayments:       req.MaxPayments,
+			Reversed:          req.Reversed,
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	payments := make([]Payment, len(resp.Payments))
+	for i, payment := range resp.Payments {
+		hash, err := lntypes.MakeHashFromStr(payment.PaymentHash)
+		if err != nil {
+			return nil, err
+		}
+
+		status, err := unmarshallPaymentStatus(payment)
+		if err != nil {
+			return nil, err
+		}
+
+		pmt := Payment{
+			Hash:           hash,
+			Status:         status,
+			Htlcs:          payment.Htlcs,
+			Amount:         lnwire.MilliSatoshi(payment.ValueMsat),
+			Fee:            lnwire.MilliSatoshi(payment.FeeMsat),
+			SequenceNumber: payment.PaymentIndex,
+		}
+
+		// Add our preimage if it is known.
+		if payment.PaymentPreimage != "" {
+			preimage, err := lntypes.MakePreimageFromStr(
+				payment.PaymentPreimage,
+			)
+			if err != nil {
+				return nil, err
+			}
+			pmt.Preimage = &preimage
+		}
+
+		payments[i] = pmt
+	}
+
+	return &ListPaymentsResponse{
+		FirstIndexOffset: resp.FirstIndexOffset,
+		LastIndexOffset:  resp.LastIndexOffset,
+		Payments:         payments,
 	}, nil
 }
 
