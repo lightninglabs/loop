@@ -157,13 +157,17 @@ type LndMockServices struct {
 	Signature    []byte
 	SignatureMsg string
 
-	Transactions []*wire.MsgTx
+	Transactions []lndclient.Transaction
+	Sweeps       []string
 
 	// Invoices is a set of invoices that have been created by the mock,
 	// keyed by hash string.
 	Invoices map[lntypes.Hash]*lndclient.Invoice
 
-	Channels []lndclient.ChannelInfo
+	Channels         []lndclient.ChannelInfo
+	ClosedChannels   []lndclient.ClosedChannel
+	ForwardingEvents []lndclient.ForwardingEvent
+	Payments         []lndclient.Payment
 
 	WaitForFinished func()
 
@@ -185,7 +189,9 @@ func (s *LndMockServices) NotifyHeight(height int32) error {
 // AddRelevantTx marks the given transaction as relevant.
 func (s *LndMockServices) AddTx(tx *wire.MsgTx) {
 	s.lock.Lock()
-	s.Transactions = append(s.Transactions, tx.Copy())
+	s.Transactions = append(s.Transactions, lndclient.Transaction{
+		Tx: tx.Copy(),
+	})
 	s.lock.Unlock()
 }
 

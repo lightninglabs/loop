@@ -160,11 +160,12 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 
 // ListTransactions returns all known transactions of the backing lnd node.
 func (h *mockLightningClient) ListTransactions(
-	ctx context.Context) ([]*wire.MsgTx, error) {
+	_ context.Context) ([]lndclient.Transaction, error) {
 
 	h.lnd.lock.Lock()
 	txs := h.lnd.Transactions
 	h.lnd.lock.Unlock()
+
 	return txs, nil
 }
 
@@ -173,6 +174,49 @@ func (h *mockLightningClient) ListChannels(ctx context.Context) (
 	[]lndclient.ChannelInfo, error) {
 
 	return h.lnd.Channels, nil
+}
+
+// ClosedChannels returns a list of our closed channels.
+func (h *mockLightningClient) ClosedChannels(_ context.Context) ([]lndclient.ClosedChannel,
+	error) {
+
+	return h.lnd.ClosedChannels, nil
+}
+
+// ForwardingHistory returns the mock's set of forwarding events.
+func (h *mockLightningClient) ForwardingHistory(_ context.Context,
+	_ lndclient.ForwardingHistoryRequest) (*lndclient.ForwardingHistoryResponse,
+	error) {
+
+	return &lndclient.ForwardingHistoryResponse{
+		LastIndexOffset: 0,
+		Events:          h.lnd.ForwardingEvents,
+	}, nil
+}
+
+// ListInvoices returns our mock's invoices.
+func (h *mockLightningClient) ListInvoices(_ context.Context,
+	_ lndclient.ListInvoicesRequest) (*lndclient.ListInvoicesResponse,
+	error) {
+
+	invoices := make([]lndclient.Invoice, 0, len(h.lnd.Invoices))
+	for _, invoice := range h.lnd.Invoices {
+		invoices = append(invoices, *invoice)
+	}
+
+	return &lndclient.ListInvoicesResponse{
+		Invoices: invoices,
+	}, nil
+}
+
+// ListPayments makes a paginated call to our list payments endpoint.
+func (h *mockLightningClient) ListPayments(_ context.Context,
+	_ lndclient.ListPaymentsRequest) (*lndclient.ListPaymentsResponse,
+	error) {
+
+	return &lndclient.ListPaymentsResponse{
+		Payments: h.lnd.Payments,
+	}, nil
 }
 
 // ChannelBackup retrieves the backup for a particular channel. The
