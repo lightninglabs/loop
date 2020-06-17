@@ -2,20 +2,46 @@ package lndclient
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"google.golang.org/grpc"
 )
 
 // WalletKitClient exposes wallet functionality.
 type WalletKitClient interface {
+	// ListUnspent returns a list of all utxos spendable by the wallet with
+	// a number of confirmations between the specified minimum and maximum.
+	ListUnspent(ctx context.Context, minConfs, maxConfs int32) (
+		[]*lnwallet.Utxo, error)
+
+	// LeaseOutput locks an output to the given ID, preventing it from being
+	// available for any future coin selection attempts. The absolute time
+	// of the lock's expiration is returned. The expiration of the lock can
+	// be extended by successive invocations of this call. Outputs can be
+	// unlocked before their expiration through `ReleaseOutput`.
+	LeaseOutput(ctx context.Context, lockID wtxmgr.LockID,
+		op wire.OutPoint) (time.Time, error)
+
+	// ReleaseOutput unlocks an output, allowing it to be available for coin
+	// selection if it remains unspent. The ID should match the one used to
+	// originally lock the output.
+	ReleaseOutput(ctx context.Context, lockID wtxmgr.LockID,
+		op wire.OutPoint) error
+
 	DeriveNextKey(ctx context.Context, family int32) (
 		*keychain.KeyDescriptor, error)
 
@@ -38,6 +64,10 @@ type walletKitClient struct {
 	walletKitMac serializedMacaroon
 }
 
+// A compile-time constraint to ensure walletKitclient satisfies the
+// WalletKitClient interface.
+var _ WalletKitClient = (*walletKitClient)(nil)
+
 func newWalletKitClient(conn *grpc.ClientConn,
 	walletKitMac serializedMacaroon) *walletKitClient {
 
@@ -45,6 +75,107 @@ func newWalletKitClient(conn *grpc.ClientConn,
 		client:       walletrpc.NewWalletKitClient(conn),
 		walletKitMac: walletKitMac,
 	}
+}
+
+// ListUnspent returns a list of all utxos spendable by the wallet with a number
+// of confirmations between the specified minimum and maximum.
+func (m *walletKitClient) ListUnspent(ctx context.Context, minConfs,
+	maxConfs int32) ([]*lnwallet.Utxo, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
+	resp, err := m.client.ListUnspent(rpcCtx, &walletrpc.ListUnspentRequest{
+		MinConfs: minConfs,
+		MaxConfs: maxConfs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	utxos := make([]*lnwallet.Utxo, 0, len(resp.Utxos))
+	for _, utxo := range resp.Utxos {
+		var addrType lnwallet.AddressType
+		switch utxo.AddressType {
+		case lnrpc.AddressType_WITNESS_PUBKEY_HASH:
+			addrType = lnwallet.WitnessPubKey
+		case lnrpc.AddressType_NESTED_PUBKEY_HASH:
+			addrType = lnwallet.NestedWitnessPubKey
+		default:
+			return nil, fmt.Errorf("invalid utxo address type %v",
+				utxo.AddressType)
+		}
+
+		pkScript, err := hex.DecodeString(utxo.PkScript)
+		if err != nil {
+			return nil, err
+		}
+
+		opHash, err := chainhash.NewHash(utxo.Outpoint.TxidBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		utxos = append(utxos, &lnwallet.Utxo{
+			AddressType:   addrType,
+			Value:         btcutil.Amount(utxo.AmountSat),
+			Confirmations: utxo.Confirmations,
+			PkScript:      pkScript,
+			OutPoint: wire.OutPoint{
+				Hash:  *opHash,
+				Index: utxo.Outpoint.OutputIndex,
+			},
+		})
+	}
+
+	return utxos, nil
+}
+
+// LeaseOutput locks an output to the given ID, preventing it from being
+// available for any future coin selection attempts. The absolute time of the
+// lock's expiration is returned. The expiration of the lock can be extended by
+// successive invocations of this call. Outputs can be unlocked before their
+// expiration through `ReleaseOutput`.
+func (m *walletKitClient) LeaseOutput(ctx context.Context, lockID wtxmgr.LockID,
+	op wire.OutPoint) (time.Time, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
+	resp, err := m.client.LeaseOutput(rpcCtx, &walletrpc.LeaseOutputRequest{
+		Id: lockID[:],
+		Outpoint: &lnrpc.OutPoint{
+			TxidBytes:   op.Hash[:],
+			OutputIndex: op.Index,
+		},
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return time.Unix(int64(resp.Expiration), 0), nil
+}
+
+// ReleaseOutput unlocks an output, allowing it to be available for coin
+// selection if it remains unspent. The ID should match the one used to
+// originally lock the output.
+func (m *walletKitClient) ReleaseOutput(ctx context.Context,
+	lockID wtxmgr.LockID, op wire.OutPoint) error {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	rpcCtx = m.walletKitMac.WithMacaroonAuth(rpcCtx)
+	_, err := m.client.ReleaseOutput(rpcCtx, &walletrpc.ReleaseOutputRequest{
+		Id: lockID[:],
+		Outpoint: &lnrpc.OutPoint{
+			TxidBytes:   op.Hash[:],
+			OutputIndex: op.Index,
+		},
+	})
+	return err
 }
 
 func (m *walletKitClient) DeriveNextKey(ctx context.Context, family int32) (
