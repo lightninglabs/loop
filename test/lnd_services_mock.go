@@ -158,6 +158,7 @@ type LndMockServices struct {
 	SignatureMsg string
 
 	Transactions []lndclient.Transaction
+	Sweeps       []string
 
 	// Invoices is a set of invoices that have been created by the mock,
 	// keyed by hash string.

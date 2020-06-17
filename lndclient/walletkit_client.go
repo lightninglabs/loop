@@ -57,6 +57,11 @@ type WalletKitClient interface {
 
 	EstimateFee(ctx context.Context, confTarget int32) (chainfee.SatPerKWeight,
 		error)
+
+	// ListSweeps returns a list of sweep transaction ids known to our node.
+	// Note that this function only looks up transaction ids, and does not
+	// query our wallet for the full set of transactions.
+	ListSweeps(ctx context.Context) ([]string, error)
 }
 
 type walletKitClient struct {
@@ -318,4 +323,27 @@ func (m *walletKitClient) EstimateFee(ctx context.Context, confTarget int32) (
 	}
 
 	return chainfee.SatPerKWeight(resp.SatPerKw), nil
+}
+
+// ListSweeps returns a list of sweep transaction ids known to our node.
+// Note that this function only looks up transaction ids (Verbose=false), and
+// does not query our wallet for the full set of transactions.
+func (m *walletKitClient) ListSweeps(ctx context.Context) ([]string, error) {
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	resp, err := m.client.ListSweeps(
+		m.walletKitMac.WithMacaroonAuth(rpcCtx),
+		&walletrpc.ListSweepsRequest{
+			Verbose: false,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since we have requested the abbreviated response from lnd, we can
+	// just get our response to a list of sweeps and return it.
+	sweeps := resp.GetTransactionIds()
+	return sweeps.TransactionIds, nil
 }
