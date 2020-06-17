@@ -45,7 +45,7 @@ type LightningClient interface {
 
 	// ListTransactions returns all known transactions of the backing lnd
 	// node.
-	ListTransactions(ctx context.Context) ([]*wire.MsgTx, error)
+	ListTransactions(ctx context.Context) ([]Transaction, error)
 
 	// ListChannels retrieves all channels of the backing lnd node.
 	ListChannels(ctx context.Context) ([]ChannelInfo, error)
@@ -255,6 +255,35 @@ func (c Initiator) String() string {
 	default:
 		return fmt.Sprintf("unknown initiator: %d", c)
 	}
+}
+
+// Transaction represents an on chain transaction.
+type Transaction struct {
+	// Tx is the on chain transaction.
+	Tx *wire.MsgTx
+
+	// TxHash is the transaction hash string.
+	TxHash string
+
+	// Timestamp is the timestamp our wallet has for the transaction.
+	Timestamp time.Time
+
+	// Amount is the balance change that this transaction had on addresses
+	// controlled by our wallet.
+	Amount btcutil.Amount
+
+	// Fee is the amount of fees our wallet committed to this transaction.
+	// Note that this field is not exhaustive, as it does not account for
+	// fees taken from inputs that that wallet doesn't know it owns (for
+	// example, the fees taken from our channel balance when we close a
+	// channel).
+	Fee btcutil.Amount
+
+	// Confirmations is the number of confirmations the transaction has.
+	Confirmations int32
+
+	// Label is an optional label set for on chain transactions.
+	Label string
 }
 
 var (
@@ -675,7 +704,7 @@ func unmarshalInvoice(resp *lnrpc.Invoice) (*Invoice, error) {
 }
 
 // ListTransactions returns all known transactions of the backing lnd node.
-func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, error) {
+func (s *lightningClient) ListTransactions(ctx context.Context) ([]Transaction, error) {
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 
@@ -686,8 +715,8 @@ func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, 
 		return nil, err
 	}
 
-	txs := make([]*wire.MsgTx, 0, len(resp.Transactions))
-	for _, respTx := range resp.Transactions {
+	txs := make([]Transaction, len(resp.Transactions))
+	for i, respTx := range resp.Transactions {
 		rawTx, err := hex.DecodeString(respTx.RawTxHex)
 		if err != nil {
 			return nil, err
@@ -697,7 +726,16 @@ func (s *lightningClient) ListTransactions(ctx context.Context) ([]*wire.MsgTx, 
 		if err := tx.Deserialize(bytes.NewReader(rawTx)); err != nil {
 			return nil, err
 		}
-		txs = append(txs, &tx)
+
+		txs[i] = Transaction{
+			Tx:            &tx,
+			TxHash:        tx.TxHash().String(),
+			Timestamp:     time.Unix(respTx.TimeStamp, 0),
+			Amount:        btcutil.Amount(respTx.Amount),
+			Fee:           btcutil.Amount(respTx.TotalFees),
+			Confirmations: respTx.NumConfirmations,
+			Label:         respTx.Label,
+		}
 	}
 
 	return txs, nil

@@ -160,11 +160,12 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 
 // ListTransactions returns all known transactions of the backing lnd node.
 func (h *mockLightningClient) ListTransactions(
-	ctx context.Context) ([]*wire.MsgTx, error) {
+	_ context.Context) ([]lndclient.Transaction, error) {
 
 	h.lnd.lock.Lock()
 	txs := h.lnd.Transactions
 	h.lnd.lock.Unlock()
+
 	return txs, nil
 }
 
