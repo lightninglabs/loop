@@ -52,8 +52,28 @@ func (bc *basicClientOptions) applyBasicClientOptions(options ...BasicClientOpti
 // NewBasicClient creates a new basic gRPC client to lnd. We call this client
 // "basic" as it falls back to expected defaults if the arguments aren't
 // provided.
-func NewBasicClient(lndHost, tlsPath, macDir, network string, basicOptions ...BasicClientOption) (
+func NewBasicClient(lndHost, tlsPath, macDir, network string,
+	basicOptions ...BasicClientOption) (
+
 	lnrpc.LightningClient, error) {
+
+	conn, err := NewBasicConn(
+		lndHost, tlsPath, macDir, network, basicOptions...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return lnrpc.NewLightningClient(conn), nil
+}
+
+// NewBasicConn creates a new basic gRPC connection to lnd. We call this
+// connection "basic" as it falls back to expected defaults if the arguments
+// aren't provided.
+func NewBasicConn(lndHost, tlsPath, macDir, network string,
+	basicOptions ...BasicClientOption) (
+
+	*grpc.ClientConn, error) {
 
 	if tlsPath == "" {
 		tlsPath = defaultTLSCertPath
@@ -112,5 +132,5 @@ func NewBasicClient(lndHost, tlsPath, macDir, network string, basicOptions ...Ba
 		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)
 	}
 
-	return lnrpc.NewLightningClient(conn), nil
+	return conn, nil
 }
