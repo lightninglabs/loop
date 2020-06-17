@@ -175,6 +175,13 @@ func (h *mockLightningClient) ListChannels(ctx context.Context) (
 	return h.lnd.Channels, nil
 }
 
+// ClosedChannels returns a list of our closed channels.
+func (h *mockLightningClient) ClosedChannels(_ context.Context) ([]lndclient.ClosedChannel,
+	error) {
+
+	return h.lnd.ClosedChannels, nil
+}
+
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
 func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {

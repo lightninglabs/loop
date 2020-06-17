@@ -163,7 +163,8 @@ type LndMockServices struct {
 	// keyed by hash string.
 	Invoices map[lntypes.Hash]*lndclient.Invoice
 
-	Channels []lndclient.ChannelInfo
+	Channels       []lndclient.ChannelInfo
+	ClosedChannels []lndclient.ClosedChannel
 
 	WaitForFinished func()
 
