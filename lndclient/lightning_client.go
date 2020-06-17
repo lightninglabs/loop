@@ -71,7 +71,10 @@ type Info struct {
 
 // ChannelInfo stores unpacked per-channel info.
 type ChannelInfo struct {
-	// Active indecates whether the channel is active.
+	// ChannelPoint is the funding outpoint of the channel.
+	ChannelPoint string
+
+	// Active indicates whether the channel is active.
 	Active bool
 
 	// ChannelID holds the unique channel ID for the channel. The first 3 bytes
@@ -90,6 +93,20 @@ type ChannelInfo struct {
 
 	// RemoteBalance is the counterparty's current balance in this channel.
 	RemoteBalance btcutil.Amount
+
+	// Initiator indicates whether we opened the channel or not.
+	Initiator bool
+
+	// Private indicates that the channel is private.
+	Private bool
+
+	// LifeTime is the total amount of time we have monitored the peer's
+	// online status for.
+	LifeTime time.Duration
+
+	// Uptime is the total amount of time the peer has been observed as
+	// online over its lifetime.
+	Uptime time.Duration
 }
 
 var (
@@ -545,12 +562,21 @@ func (s *lightningClient) ListChannels(ctx context.Context) (
 		}
 
 		result[i] = ChannelInfo{
+			ChannelPoint:  channel.ChannelPoint,
 			Active:        channel.Active,
 			ChannelID:     channel.ChanId,
 			PubKeyBytes:   remoteVertex,
 			Capacity:      btcutil.Amount(channel.Capacity),
 			LocalBalance:  btcutil.Amount(channel.LocalBalance),
 			RemoteBalance: btcutil.Amount(channel.RemoteBalance),
+			Initiator:     channel.Initiator,
+			Private:       channel.Private,
+			LifeTime: time.Second * time.Duration(
+				channel.Lifetime,
+			),
+			Uptime: time.Second * time.Duration(
+				channel.Uptime,
+			),
 		}
 	}
 
