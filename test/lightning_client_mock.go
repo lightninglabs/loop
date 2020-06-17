@@ -193,6 +193,21 @@ func (h *mockLightningClient) ForwardingHistory(_ context.Context,
 	}, nil
 }
 
+// ListInvoices returns our mock's invoices.
+func (h *mockLightningClient) ListInvoices(_ context.Context,
+	_ lndclient.ListInvoicesRequest) (*lndclient.ListInvoicesResponse,
+	error) {
+
+	invoices := make([]lndclient.Invoice, 0, len(h.lnd.Invoices))
+	for _, invoice := range h.lnd.Invoices {
+		invoices = append(invoices, *invoice)
+	}
+
+	return &lndclient.ListInvoicesResponse{
+		Invoices: invoices,
+	}, nil
+}
+
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
 func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {

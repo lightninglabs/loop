@@ -58,6 +58,10 @@ type LightningClient interface {
 	ForwardingHistory(ctx context.Context,
 		req ForwardingHistoryRequest) (*ForwardingHistoryResponse, error)
 
+	// ListInvoices makes a paginated call to our list invoices endpoint.
+	ListInvoices(ctx context.Context, req ListInvoicesRequest) (
+		*ListInvoicesResponse, error)
+
 	// ChannelBackup retrieves the backup for a particular channel. The
 	// backup is returned as an encrypted chanbackup.Single payload.
 	ChannelBackup(context.Context, wire.OutPoint) ([]byte, error)
@@ -606,6 +610,21 @@ func (s *lightningClient) LookupInvoice(ctx context.Context,
 		return nil, err
 	}
 
+	invoice, err := unmarshalInvoice(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return invoice, nil
+}
+
+// unmarshalInvoice creates an invoice from the rpc response provided.
+func unmarshalInvoice(resp *lnrpc.Invoice) (*Invoice, error) {
+	hash, err := lntypes.MakeHash(resp.RHash)
+	if err != nil {
+		return nil, err
+	}
+
 	invoice := &Invoice{
 		Preimage:       nil,
 		Hash:           hash,
@@ -638,7 +657,8 @@ func (s *lightningClient) LookupInvoice(ctx context.Context,
 		invoice.State = channeldb.ContractCanceled
 
 	default:
-		return nil, fmt.Errorf("unknown invoice state: %v", resp.State)
+		return nil, fmt.Errorf("unknown invoice state: %v",
+			resp.State)
 	}
 
 	// Only set settle date if it is non-zero, because 0 unix time is
@@ -933,6 +953,72 @@ func (s *lightningClient) ForwardingHistory(ctx context.Context,
 	return &ForwardingHistoryResponse{
 		LastIndexOffset: response.LastOffsetIndex,
 		Events:          events,
+	}, nil
+}
+
+// ListInvoicesRequest contains the request parameters for a paginated
+// list invoices call.
+type ListInvoicesRequest struct {
+	// MaxInvoices is the maximum number of invoices to return.
+	MaxInvoices uint64
+
+	// Offset is the index from which to start querying.
+	Offset uint64
+
+	// Reversed is set to query our invoices backwards.
+	Reversed bool
+
+	// PendingOnly is set if we only want pending invoices.
+	PendingOnly bool
+}
+
+// ListInvoicesResponse contains the response to a list invoices query,
+// including the index offsets required for paginated queries.
+type ListInvoicesResponse struct {
+	// FirstIndexOffset is the index offset of the first item in our set.
+	FirstIndexOffset uint64
+
+	// LastIndexOffset is the index offset of the last item in our set.
+	LastIndexOffset uint64
+
+	// Invoices is the set of invoices that were returned.
+	Invoices []Invoice
+}
+
+// ListInvoices returns a list of invoices from our node.
+func (s *lightningClient) ListInvoices(ctx context.Context,
+	req ListInvoicesRequest) (*ListInvoicesResponse, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+
+	resp, err := s.client.ListInvoices(
+		s.adminMac.WithMacaroonAuth(rpcCtx),
+		&lnrpc.ListInvoiceRequest{
+			PendingOnly:    false,
+			IndexOffset:    req.Offset,
+			NumMaxInvoices: req.MaxInvoices,
+			Reversed:       req.Reversed,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	invoices := make([]Invoice, len(resp.Invoices))
+	for i, invoice := range resp.Invoices {
+		inv, err := unmarshalInvoice(invoice)
+		if err != nil {
+			return nil, err
+		}
+
+		invoices[i] = *inv
+	}
+
+	return &ListInvoicesResponse{
+		FirstIndexOffset: resp.FirstIndexOffset,
+		LastIndexOffset:  resp.LastIndexOffset,
+		Invoices:         invoices,
 	}, nil
 }
 
