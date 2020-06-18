@@ -3,7 +3,7 @@ package test
 import (
 	"context"
 
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 )
 

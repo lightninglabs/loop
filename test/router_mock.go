@@ -1,7 +1,7 @@
 package test
 
 import (
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"golang.org/x/net/context"
 )

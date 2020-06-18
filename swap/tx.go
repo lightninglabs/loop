@@ -9,30 +9,6 @@ import (
 	"github.com/btcsuite/btcutil"
 )
 
-// EncodeTx encodes a tx to raw bytes.
-func EncodeTx(tx *wire.MsgTx) ([]byte, error) {
-	var buffer bytes.Buffer
-	err := tx.BtcEncode(&buffer, 0, wire.WitnessEncoding)
-	if err != nil {
-		return nil, err
-	}
-	rawTx := buffer.Bytes()
-
-	return rawTx, nil
-}
-
-// DecodeTx decodes raw tx bytes.
-func DecodeTx(rawTx []byte) (*wire.MsgTx, error) {
-	tx := wire.MsgTx{}
-	r := bytes.NewReader(rawTx)
-	err := tx.BtcDecode(r, 0, wire.WitnessEncoding)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tx, nil
-}
-
 // GetScriptOutput locates the given script in the outputs of a transaction and
 // returns its outpoint and value.
 func GetScriptOutput(htlcTx *wire.MsgTx, scriptHash []byte) (

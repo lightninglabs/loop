@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
@@ -36,7 +36,8 @@ type listenerCfg struct {
 	restListener func() (net.Listener, error)
 
 	// getLnd returns a grpc connection to an lnd instance.
-	getLnd func(string, *lndConfig) (*lndclient.GrpcLndServices, error)
+	getLnd func(lndclient.Network, *lndConfig) (*lndclient.GrpcLndServices,
+		error)
 }
 
 // Daemon is the struct that holds one instance of the loop client daemon.
@@ -106,8 +107,10 @@ func (d *Daemon) Start() error {
 		return errOnlyStartOnce
 	}
 
+	network := lndclient.Network(d.cfg.Network)
+
 	var err error
-	d.lnd, err = d.listenerCfg.getLnd(d.cfg.Network, d.cfg.Lnd)
+	d.lnd, err = d.listenerCfg.getLnd(network, d.cfg.Lnd)
 	if err != nil {
 		return err
 	}

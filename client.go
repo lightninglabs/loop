@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/swap"
