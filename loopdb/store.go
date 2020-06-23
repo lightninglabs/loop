@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/coreos/bbolt"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -47,6 +48,9 @@ var (
 
 	// basicStateKey contains the serialized basic swap state.
 	basicStateKey = []byte{0}
+
+	// htlcTxHashKey contains the confirmed htlc tx id.
+	htlcTxHashKey = []byte{1}
 
 	// contractKey is the key that stores the serialized swap contract. It
 	// is nested within the sub-bucket for each active swap.
@@ -284,6 +288,16 @@ func deserializeUpdates(swapBucket *bbolt.Bucket) ([]*LoopEvent, error) {
 			return err
 		}
 
+		// Deserialize htlc tx hash if this updates contains one.
+		htlcTxHashBytes := updateBucket.Get(htlcTxHashKey)
+		if htlcTxHashBytes != nil {
+			htlcTxHash, err := chainhash.NewHash(htlcTxHashBytes)
+			if err != nil {
+				return err
+			}
+			event.HtlcTxHash = htlcTxHash
+		}
+
 		updates = append(updates, event)
 		return nil
 	})
@@ -518,7 +532,22 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 			return err
 		}
 
-		return nextUpdateBucket.Put(basicStateKey, updateValue)
+		err = nextUpdateBucket.Put(basicStateKey, updateValue)
+		if err != nil {
+			return err
+		}
+
+		// Write the htlc tx hash if available.
+		if state.HtlcTxHash != nil {
+			err := nextUpdateBucket.Put(
+				htlcTxHashKey, state.HtlcTxHash[:],
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 }
 
