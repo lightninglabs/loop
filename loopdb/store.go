@@ -45,6 +45,9 @@ var (
 	// maps: updateNumber -> time || state
 	updatesBucketKey = []byte("updates")
 
+	// basicStateKey contains the serialized basic swap state.
+	basicStateKey = []byte{0}
+
 	// contractKey is the key that stores the serialized swap contract. It
 	// is nested within the sub-bucket for each active swap.
 	//
@@ -265,8 +268,18 @@ func deserializeUpdates(swapBucket *bbolt.Bucket) ([]*LoopEvent, error) {
 	// Deserialize and collect each swap update into our slice of swap
 	// events.
 	var updates []*LoopEvent
-	err := stateBucket.ForEach(func(_, v []byte) error {
-		event, err := deserializeLoopEvent(v)
+	err := stateBucket.ForEach(func(k, v []byte) error {
+		updateBucket := stateBucket.Bucket(k)
+		if updateBucket == nil {
+			return fmt.Errorf("expected state sub-bucket for %x", k)
+		}
+
+		basicState := updateBucket.Get(basicStateKey)
+		if basicState == nil {
+			return errors.New("no basic state for update")
+		}
+
+		event, err := deserializeLoopEvent(basicState)
 		if err != nil {
 			return err
 		}
@@ -482,16 +495,21 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 		if swapBucket == nil {
 			return errors.New("swap not found")
 		}
-		updateBucket := swapBucket.Bucket(updatesBucketKey)
-		if updateBucket == nil {
+		updatesBucket := swapBucket.Bucket(updatesBucketKey)
+		if updatesBucket == nil {
 			return errors.New("udpate bucket not found")
 		}
 
 		// Each update for this swap will get a new monotonically
 		// increasing ID number that we'll obtain now.
-		id, err := updateBucket.NextSequence()
+		id, err := updatesBucket.NextSequence()
 		if err != nil {
 			return err
+		}
+
+		nextUpdateBucket, err := updatesBucket.CreateBucket(itob(id))
+		if err != nil {
+			return fmt.Errorf("cannot create update bucket")
 		}
 
 		// With the ID obtained, we'll write out this new update value.
@@ -499,7 +517,8 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 		if err != nil {
 			return err
 		}
-		return updateBucket.Put(itob(id), updateValue)
+
+		return nextUpdateBucket.Put(basicStateKey, updateValue)
 	})
 }
 
