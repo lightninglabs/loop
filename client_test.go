@@ -179,10 +179,16 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	var receiverKey [33]byte
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
 
-	state := loopdb.StateInitiated
-	if preimageRevealed {
-		state = loopdb.StatePreimageRevealed
+	update := loopdb.LoopEvent{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+		},
 	}
+
+	if preimageRevealed {
+		update.State = loopdb.StatePreimageRevealed
+	}
+
 	pendingSwap := &loopdb.LoopOut{
 		Contract: &loopdb.LoopOutContract{
 			DestAddr:          dest,
@@ -201,14 +207,8 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 			},
 		},
 		Loop: loopdb.Loop{
-			Events: []*loopdb.LoopEvent{
-				{
-					SwapStateData: loopdb.SwapStateData{
-						State: state,
-					},
-				},
-			},
-			Hash: hash,
+			Events: []*loopdb.LoopEvent{&update},
+			Hash:   hash,
 		},
 	}
 
