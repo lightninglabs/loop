@@ -529,7 +529,7 @@ func TestPreimagePush(t *testing.T) {
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
 	status := <-statusChan
 	require.Equal(
-		t, status.State, loopdb.SwapState(loopdb.StatePreimageRevealed),
+		t, status.State, loopdb.StatePreimageRevealed,
 	)
 
 	// We expect the sweep tx to have been published.
@@ -578,7 +578,7 @@ func TestPreimagePush(t *testing.T) {
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
 	require.Equal(
-		t, status.State, loopdb.SwapState(loopdb.StateSuccess),
+		t, status.State, loopdb.StateSuccess,
 	)
 
 	require.NoError(t, <-errChan)

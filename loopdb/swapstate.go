@@ -19,44 +19,44 @@ const (
 	// confirmed. This state will mostly coalesce with StateHtlcConfirmed,
 	// except in the case where we wait for fees to come down before we
 	// sweep.
-	StatePreimageRevealed = 1
+	StatePreimageRevealed SwapState = 1
 
 	// StateSuccess is the final swap state that is reached when the sweep
 	// tx has the required confirmation depth (SweepConfDepth) and the
 	// server pulled the off-chain htlc.
-	StateSuccess = 2
+	StateSuccess SwapState = 2
 
 	// StateFailOffchainPayments indicates that it wasn't possible to find
 	// routes for one or both of the off-chain payments to the server that
 	// satisfied the payment restrictions (fee and timelock limits).
-	StateFailOffchainPayments = 3
+	StateFailOffchainPayments SwapState = 3
 
 	// StateFailTimeout indicates that the on-chain htlc wasn't confirmed
 	// before its expiry or confirmed too late (MinPreimageRevealDelta
 	// violated).
-	StateFailTimeout = 4
+	StateFailTimeout SwapState = 4
 
 	// StateFailSweepTimeout indicates that the on-chain htlc wasn't swept
 	// before the server revoked the htlc. The server didn't pull the
 	// off-chain htlc (even though it could have) and we timed out the
 	// off-chain htlc ourselves. No funds lost.
-	StateFailSweepTimeout = 5
+	StateFailSweepTimeout SwapState = 5
 
 	// StateFailInsufficientValue indicates that the published on-chain htlc
 	// had a value lower than the requested amount.
-	StateFailInsufficientValue = 6
+	StateFailInsufficientValue SwapState = 6
 
 	// StateFailTemporary indicates that the swap cannot progress because
 	// of an internal error. This is not a final state. Manual intervention
 	// (like a restart) is required to solve this problem.
-	StateFailTemporary = 7
+	StateFailTemporary SwapState = 7
 
 	// StateHtlcPublished means that the client published the on-chain htlc.
-	StateHtlcPublished = 8
+	StateHtlcPublished SwapState = 8
 
 	// StateInvoiceSettled means that the swap invoice has been paid by the
 	// server.
-	StateInvoiceSettled = 9
+	StateInvoiceSettled SwapState = 9
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
