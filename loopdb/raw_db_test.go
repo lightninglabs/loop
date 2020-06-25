@@ -2,7 +2,6 @@ package loopdb
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -88,6 +87,15 @@ func restoreDB(bucket *bbolt.Bucket, data map[string]interface{}) error {
 	for k, v := range data {
 		key := []byte(k)
 
+		// Store nil values.
+		if v == nil {
+			err := bucket.Put(key, nil)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
 		switch value := v.(type) {
 
 		// Key contains value.
@@ -109,7 +117,7 @@ func restoreDB(bucket *bbolt.Bucket, data map[string]interface{}) error {
 			}
 
 		default:
-			return errors.New("invalid type")
+			return fmt.Errorf("invalid type %T", value)
 		}
 	}
 

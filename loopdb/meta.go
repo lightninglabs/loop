@@ -36,6 +36,7 @@ var (
 		migrateCosts,
 		migrateSwapPublicationDeadline,
 		migrateLastHop,
+		migrateUpdates,
 	}
 
 	latestDBVersion = uint32(len(migrations))

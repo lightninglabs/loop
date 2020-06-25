@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -130,6 +132,10 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 				expectedState, swaps[0].State(),
 			)
 		}
+
+		if expectedState == StatePreimageRevealed {
+			require.NotNil(t, swaps[0].State().HtlcTxHash)
+		}
 	}
 
 	hash := pendingSwap.Preimage.Hash()
@@ -152,7 +158,8 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 	err = store.UpdateLoopOut(
 		hash, testTime,
 		SwapStateData{
-			State: StatePreimageRevealed,
+			State:      StatePreimageRevealed,
+			HtlcTxHash: &chainhash.Hash{1, 6, 2},
 		},
 	)
 	if err != nil {

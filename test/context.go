@@ -113,14 +113,18 @@ func (ctx *Context) AssertTrackPayment() TrackPaymentMessage {
 }
 
 // AssertRegisterConf asserts that a register for conf has been received.
-func (ctx *Context) AssertRegisterConf() *ConfRegistration {
+func (ctx *Context) AssertRegisterConf(expectTxHash bool) *ConfRegistration {
 	ctx.T.Helper()
 
 	// Expect client to register for conf
 	var confIntent *ConfRegistration
 	select {
 	case confIntent = <-ctx.Lnd.RegisterConfChannel:
-		if confIntent.TxID != nil {
+		switch {
+		case expectTxHash && confIntent.TxID == nil:
+			ctx.T.Fatalf("expected tx id for registration")
+
+		case !expectTxHash && confIntent.TxID != nil:
 			ctx.T.Fatalf("expected script only registration")
 		}
 	case <-time.After(Timeout):

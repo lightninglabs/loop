@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
@@ -55,6 +56,9 @@ type loopOutSwap struct {
 	executeConfig
 
 	htlc *swap.Htlc
+
+	// htlcTxHash is the confirmed htlc tx id.
+	htlcTxHash *chainhash.Hash
 
 	swapPaymentChan chan lndclient.PaymentResult
 	prePaymentChan  chan lndclient.PaymentResult
@@ -210,6 +214,7 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	} else {
 		swap.state = lastUpdate.State
 		swap.lastUpdateTime = lastUpdate.Time
+		swap.htlcTxHash = lastUpdate.HtlcTxHash
 	}
 
 	return swap, nil
@@ -376,6 +381,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	// Try to spend htlc and continue (rbf) until a spend has confirmed.
 	spendDetails, err := s.waitForHtlcSpendConfirmed(globalCtx,
+		*htlcOutpoint,
 		func() error {
 			return s.sweep(globalCtx, *htlcOutpoint, htlcValue)
 		},
@@ -419,8 +425,9 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 	err := s.store.UpdateLoopOut(
 		s.hash, updateTime,
 		loopdb.SwapStateData{
-			State: s.state,
-			Cost:  s.cost,
+			State:      s.state,
+			Cost:       s.cost,
+			HtlcTxHash: s.htlcTxHash,
 		},
 	)
 	if err != nil {
@@ -563,11 +570,21 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 		s.InitiationHeight,
 	)
 
+	// If we've revealed the preimage in a previous run, we expect to have
+	// recorded the htlc tx hash. We use this to re-register for
+	// confirmation, to be sure that we'll keep tracking the same htlc. For
+	// older swaps, this field may not be populated even though the preimage
+	// has already been revealed.
+	if s.state == loopdb.StatePreimageRevealed && s.htlcTxHash == nil {
+		s.log.Warnf("No htlc tx hash available, registering with " +
+			"just the pkscript")
+	}
+
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, s.htlc.PkScript, 1,
+			ctx, s.htlcTxHash, s.htlc.PkScript, 1,
 			s.InitiationHeight,
 		)
 	if err != nil {
@@ -680,8 +697,10 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 		}
 	}
 
-	s.log.Infof("Htlc tx %v at height %v", txConf.Tx.TxHash(),
-		txConf.BlockHeight)
+	htlcTxHash := txConf.Tx.TxHash()
+	s.log.Infof("Htlc tx %v at height %v", htlcTxHash, txConf.BlockHeight)
+
+	s.htlcTxHash = &htlcTxHash
 
 	return txConf, nil
 }
@@ -694,13 +713,14 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 // sweep offchain. So we must make sure we sweep successfully before on-chain
 // timeout.
 func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
-	spendFunc func() error) (*chainntnfs.SpendDetail, error) {
+	htlc wire.OutPoint, spendFunc func() error) (*chainntnfs.SpendDetail,
+	error) {
 
 	// Register the htlc spend notification.
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		ctx, nil, s.htlc.PkScript, s.InitiationHeight,
+		ctx, &htlc, s.htlc.PkScript, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("register spend ntfn: %v", err)

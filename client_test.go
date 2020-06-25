@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -56,7 +57,7 @@ func TestSuccess(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf.
-	confIntent := ctx.AssertRegisterConf()
+	confIntent := ctx.AssertRegisterConf(false)
 
 	testSuccess(ctx, testRequest.Amount, *hash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
@@ -82,7 +83,7 @@ func TestFailOffchain(t *testing.T) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	ctx.AssertRegisterConf()
+	ctx.AssertRegisterConf(false)
 
 	signalSwapPaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
@@ -179,10 +180,17 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	var receiverKey [33]byte
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
 
-	state := loopdb.StateInitiated
-	if preimageRevealed {
-		state = loopdb.StatePreimageRevealed
+	update := loopdb.LoopEvent{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+		},
 	}
+
+	if preimageRevealed {
+		update.State = loopdb.StatePreimageRevealed
+		update.HtlcTxHash = &chainhash.Hash{1, 2, 6}
+	}
+
 	pendingSwap := &loopdb.LoopOut{
 		Contract: &loopdb.LoopOutContract{
 			DestAddr:          dest,
@@ -201,14 +209,8 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 			},
 		},
 		Loop: loopdb.Loop{
-			Events: []*loopdb.LoopEvent{
-				{
-					SwapStateData: loopdb.SwapStateData{
-						State: state,
-					},
-				},
-			},
-			Hash: hash,
+			Events: []*loopdb.LoopEvent{&update},
+			Hash:   hash,
 		},
 	}
 
@@ -230,7 +232,7 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf.
-	confIntent := ctx.AssertRegisterConf()
+	confIntent := ctx.AssertRegisterConf(preimageRevealed)
 
 	signalSwapPaymentResult(nil)
 	signalPrepaymentResult(nil)
