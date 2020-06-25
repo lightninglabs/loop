@@ -406,20 +406,19 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 		return nil, err
 	}
 
-	for {
+	var conf *chainntnfs.TxConfirmation
+	for conf == nil {
 		select {
 
 		// P2WSH htlc confirmed.
-		case conf := <-confChanP2WSH:
+		case conf = <-confChanP2WSH:
 			s.htlc = s.htlcP2WSH
 			s.log.Infof("P2WSH htlc confirmed")
-			return conf, nil
 
 		// NP2WSH htlc confirmed.
-		case conf := <-confChanNP2WSH:
+		case conf = <-confChanNP2WSH:
 			s.htlc = s.htlcNP2WSH
 			s.log.Infof("NP2WSH htlc confirmed")
-			return conf, nil
 
 		// Conf ntfn error.
 		case err := <-confErrP2WSH:
@@ -438,6 +437,8 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 			return nil, globalCtx.Err()
 		}
 	}
+
+	return conf, nil
 }
 
 // publishOnChainHtlc checks whether there are still enough blocks left and if
