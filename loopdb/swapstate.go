@@ -81,7 +81,8 @@ const (
 // Type returns the type of the SwapState it is called on.
 func (s SwapState) Type() SwapStateType {
 	if s == StateInitiated || s == StateHtlcPublished ||
-		s == StatePreimageRevealed || s == StateFailTemporary {
+		s == StatePreimageRevealed || s == StateFailTemporary ||
+		s == StateInvoiceSettled {
 
 		return StateTypePending
 	}
