@@ -363,6 +363,13 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 		return err
 	}
 
+	// Verify that the confirmed (external) htlc value matches the swap
+	// amount. Otherwise fail the swap immediately.
+	if htlcValue != s.LoopInContract.AmountRequested {
+		s.setState(loopdb.StateFailIncorrectHtlcAmt)
+		return s.persistAndAnnounceState(globalCtx)
+	}
+
 	// TODO: Add miner fee of htlc tx to swap cost balance.
 
 	// The server is expected to see the htlc on-chain and knowing that it

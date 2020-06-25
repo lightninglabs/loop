@@ -209,6 +209,20 @@ func testLoopInTimeout(t *testing.T,
 		Tx: &htlcTx,
 	}
 
+	// Assert that the swap is failed in case of an invalid amount.
+	invalidAmt := externalValue != 0 && externalValue != int64(req.Amount)
+	if invalidAmt {
+		ctx.assertState(loopdb.StateFailIncorrectHtlcAmt)
+		ctx.store.assertLoopInState(loopdb.StateFailIncorrectHtlcAmt)
+
+		err = <-errChan
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return
+	}
+
 	// Client starts listening for spend of htlc.
 	<-ctx.lnd.RegisterSpendChannel
 
@@ -380,6 +394,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 
 		htlcTx.AddTxOut(&wire.TxOut{
 			PkScript: htlc.PkScript,
+			Value:    int64(contract.AmountRequested),
 		})
 	}
 

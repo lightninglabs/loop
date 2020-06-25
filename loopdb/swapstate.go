@@ -60,6 +60,10 @@ const (
 	// StateInvoiceSettled means that the swap invoice has been paid by the
 	// server.
 	StateInvoiceSettled SwapState = 9
+
+	// StateFailIncorrectHtlcAmt indicates that the amount of an externally
+	// published loop in htlc didn't match the swap amount.
+	StateFailIncorrectHtlcAmt SwapState = 10
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -126,6 +130,9 @@ func (s SwapState) String() string {
 
 	case StateInvoiceSettled:
 		return "InvoiceSettled"
+
+	case StateFailIncorrectHtlcAmt:
+		return "IncorrectHtlcAmt"
 
 	default:
 		return "Unknown"
