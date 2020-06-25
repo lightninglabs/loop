@@ -333,7 +333,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 			// HtlcPublished state directly and wait for
 			// confirmation.
 			s.setState(loopdb.StateHtlcPublished)
-			err = s.persistState(globalCtx)
+			err = s.persistAndAnnounceState(globalCtx)
 			if err != nil {
 				return err
 			}
@@ -376,7 +376,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	}
 
 	// Persist swap outcome.
-	if err := s.persistState(globalCtx); err != nil {
+	if err := s.persistAndAnnounceState(globalCtx); err != nil {
 		return err
 	}
 
@@ -452,7 +452,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// Verify whether it still makes sense to publish the htlc.
 	if blocksRemaining < MinLoopInPublishDelta {
 		s.setState(loopdb.StateFailTimeout)
-		return false, s.persistState(ctx)
+		return false, s.persistAndAnnounceState(ctx)
 	}
 
 	// Get fee estimate from lnd.
@@ -466,7 +466,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// Transition to state HtlcPublished before calling SendOutputs to
 	// prevent us from ever paying multiple times after a crash.
 	s.setState(loopdb.StateHtlcPublished)
-	err = s.persistState(ctx)
+	err = s.persistAndAnnounceState(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -590,7 +590,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				// accounting data.
 				if s.state == loopdb.StateHtlcPublished {
 					s.setState(loopdb.StateInvoiceSettled)
-					err := s.persistState(ctx)
+					err := s.persistAndAnnounceState(ctx)
 					if err != nil {
 						return err
 					}
@@ -690,8 +690,9 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	return nil
 }
 
-// persistState updates the swap state and sends out an update notification.
-func (s *loopInSwap) persistState(ctx context.Context) error {
+// persistAndAnnounceState updates the swap state on disk and sends out an
+// update notification.
+func (s *loopInSwap) persistAndAnnounceState(ctx context.Context) error {
 	// Update state in store.
 	err := s.store.UpdateLoopIn(
 		s.hash, s.lastUpdateTime,
