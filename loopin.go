@@ -9,17 +9,16 @@ import (
 
 	"github.com/btcsuite/btcutil"
 
-	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/channeldb"
-	"github.com/lightningnetwork/lnd/lnwire"
-
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
-
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 var (
@@ -57,6 +56,9 @@ type loopInSwap struct {
 	htlcP2WSH *swap.Htlc
 
 	htlcNP2WSH *swap.Htlc
+
+	// htlcTxHash is the confirmed htlc tx id.
+	htlcTxHash *chainhash.Hash
 
 	timeoutAddr btcutil.Address
 }
@@ -209,6 +211,7 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 	} else {
 		swap.state = lastUpdate.State
 		swap.lastUpdateTime = lastUpdate.Time
+		swap.htlcTxHash = lastUpdate.HtlcTxHash
 	}
 
 	return swap, nil
@@ -394,20 +397,35 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 	*chainntnfs.TxConfirmation, error) {
 
+	// Register for confirmation of the htlc. It is essential to specify not
+	// just the pk script, because an attacker may publish the same htlc
+	// with a lower value and we don't want to follow through with that tx.
+	// In the unlikely event that our call to SendOutputs crashes and we
+	// restart, htlcTxHash will be nil at this point. Then only register
+	// with PkScript and accept the risk that the call triggers on a
+	// different htlc outpoint.
+	s.log.Infof("Register for htlc conf (hh=%v, txid=%v)",
+		s.InitiationHeight, s.htlcTxHash)
+
+	if s.htlcTxHash == nil {
+		s.log.Warnf("No htlc tx hash available, registering with " +
+			"just the pkscript")
+	}
+
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 
 	notifier := s.lnd.ChainNotifier
 
 	confChanP2WSH, confErrP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, nil, s.htlcP2WSH.PkScript, 1, s.InitiationHeight,
+		ctx, s.htlcTxHash, s.htlcP2WSH.PkScript, 1, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	confChanNP2WSH, confErrNP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, nil, s.htlcNP2WSH.PkScript, 1, s.InitiationHeight,
+		ctx, s.htlcTxHash, s.htlcNP2WSH.PkScript, 1, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err
@@ -444,6 +462,17 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 			return nil, globalCtx.Err()
 		}
 	}
+
+	// Store htlc tx hash for accounting purposes. Usually this call is a
+	// no-op because the htlc tx hash was already known. Exceptions are:
+	//
+	// - Old pending swaps that were initiated before we persisted the htlc
+	//   tx hash directly after publish.
+	//
+	// - Swaps that experienced a crash during their call to SendOutputs. In
+	//   that case, we weren't able to record the tx hash.
+	txHash := conf.Tx.TxHash()
+	s.htlcTxHash = &txHash
 
 	return conf, nil
 }
@@ -491,7 +520,20 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("send outputs: %v", err)
 	}
-	s.log.Infof("Published on chain HTLC tx %v", tx.TxHash())
+	txHash := tx.TxHash()
+	s.log.Infof("Published on chain HTLC tx %v", txHash)
+
+	// Persist the htlc hash so that after a restart we are still waiting
+	// for our own htlc. We don't need to announce to clients, because the
+	// state remains unchanged.
+	//
+	// TODO(joostjager): Store tx hash before calling SendOutputs. This is
+	// not yet possible with the current lnd api.
+	s.htlcTxHash = &txHash
+	s.lastUpdateTime = time.Now()
+	if err := s.persistState(); err != nil {
+		return false, fmt.Errorf("persist htlc tx: %v", err)
+	}
 
 	return true, nil
 
@@ -507,7 +549,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	rpcCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		rpcCtx, nil, s.htlc.PkScript, s.InitiationHeight,
+		rpcCtx, htlcOutpoint, s.htlc.PkScript, s.InitiationHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("register spend ntfn: %v", err)
@@ -714,8 +756,9 @@ func (s *loopInSwap) persistState() error {
 	return s.store.UpdateLoopIn(
 		s.hash, s.lastUpdateTime,
 		loopdb.SwapStateData{
-			State: s.state,
-			Cost:  s.cost,
+			State:      s.state,
+			Cost:       s.cost,
+			HtlcTxHash: s.htlcTxHash,
 		},
 	)
 }

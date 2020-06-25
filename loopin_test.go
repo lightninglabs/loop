@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/stretchr/testify/require"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -60,6 +61,10 @@ func TestLoopInSuccess(t *testing.T) {
 
 	// Expect htlc to be published.
 	htlcTx := <-ctx.lnd.SendOutputsChannel
+
+	// Expect the same state to be written again with the htlc tx hash.
+	state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	require.NotNil(t, state.HtlcTxHash)
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
@@ -182,6 +187,10 @@ func testLoopInTimeout(t *testing.T,
 	if externalValue == 0 {
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
+
+		// Expect the same state to be written again with the htlc tx hash.
+		state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+		require.NotNil(t, state.HtlcTxHash)
 	} else {
 		// Create an external htlc publish tx.
 		var pkScript []byte
@@ -389,6 +398,11 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
+
+		// Expect the same state to be written again with the htlc tx
+		// hash.
+		state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+		require.NotNil(t, state.HtlcTxHash)
 	} else {
 		ctx.assertState(loopdb.StateHtlcPublished)
 
