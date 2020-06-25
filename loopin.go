@@ -694,19 +694,23 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 // update notification.
 func (s *loopInSwap) persistAndAnnounceState(ctx context.Context) error {
 	// Update state in store.
-	err := s.store.UpdateLoopIn(
+	if err := s.persistState(); err != nil {
+		return err
+	}
+
+	// Send out swap update
+	return s.sendUpdate(ctx)
+}
+
+// persistState updates the swap state on disk.
+func (s *loopInSwap) persistState() error {
+	return s.store.UpdateLoopIn(
 		s.hash, s.lastUpdateTime,
 		loopdb.SwapStateData{
 			State: s.state,
 			Cost:  s.cost,
 		},
 	)
-	if err != nil {
-		return err
-	}
-
-	// Send out swap update
-	return s.sendUpdate(ctx)
 }
 
 // setState updates the swap state and last update timestamp.
