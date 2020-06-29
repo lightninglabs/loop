@@ -215,13 +215,19 @@ func (s *storeMock) assertLoopInStored() {
 	<-s.loopInStoreChan
 }
 
-func (s *storeMock) assertLoopInState(expectedState loopdb.SwapState) {
+// assertLoopInState asserts that a specified state transition is persisted to
+// disk.
+func (s *storeMock) assertLoopInState(
+	expectedState loopdb.SwapState) loopdb.SwapStateData {
+
 	s.t.Helper()
 
 	state := <-s.loopInUpdateChan
 	if state.State != expectedState {
 		s.t.Fatalf("expected state %v, got %v", expectedState, state)
 	}
+
+	return state
 }
 
 func (s *storeMock) assertStorePreimageReveal() {
