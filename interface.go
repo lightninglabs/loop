@@ -248,6 +248,25 @@ type LoopInSwapInfo struct { // nolint
 	// HtlcAddressNP2WSH contains the nested segwit swap htlc address,
 	// where the loop-in funds may be paid.
 	HtlcAddressNP2WSH btcutil.Address
+
+	// ServerMessages is the human-readable message received from the loop
+	// server.
+	ServerMessage string
+}
+
+// LoopOutSwapInfo contains essential information of a loop-out swap after the
+// swap is initiated.
+type LoopOutSwapInfo struct { // nolint:golint
+	// SwapHash contains the sha256 hash of the swap preimage.
+	SwapHash lntypes.Hash
+
+	// HtlcAddressP2WSH contains the native segwit swap htlc address that
+	// the server will publish to.
+	HtlcAddressP2WSH btcutil.Address
+
+	// ServerMessages is the human-readable message received from the loop
+	// server.
+	ServerMessage string
 }
 
 // SwapInfoKit contains common swap info fields.

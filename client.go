@@ -14,7 +14,6 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
-	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -354,32 +353,37 @@ func (s *Client) resumeSwaps(ctx context.Context,
 //
 // The return value is a hash that uniquely identifies the new swap.
 func (s *Client) LoopOut(globalCtx context.Context,
-	request *OutRequest) (*lntypes.Hash, btcutil.Address, error) {
+	request *OutRequest) (*LoopOutSwapInfo, error) {
 
 	log.Infof("LoopOut %v to %v (channels: %v)",
 		request.Amount, request.DestAddr, request.OutgoingChanSet,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	swap := initResult.swap
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, swap.htlc.Address, nil
+	return &LoopOutSwapInfo{
+		SwapHash:         swap.hash,
+		HtlcAddressP2WSH: swap.htlc.Address,
+		ServerMessage:    initResult.serverMessage,
+	}, nil
 }
 
 // LoopOutQuote takes a LoopOut amount and returns a break down of estimated
@@ -480,12 +484,13 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
-	swap, err := newLoopInSwap(
+	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
 		return nil, err
 	}
+	swap := initResult.swap
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
@@ -496,6 +501,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 		SwapHash:          swap.hash,
 		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
 		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
+		ServerMessage:     initResult.serverMessage,
 	}
 	return swapInfo, nil
 }

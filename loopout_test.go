@@ -54,12 +54,13 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	req := *testRequest
 	req.OutgoingChanSet = loopdb.ChannelSet{2, 3}
 
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, &req,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	swap := initResult.swap
 
 	// Execute the swap in its own goroutine.
 	errChan := make(chan error)
@@ -150,12 +151,13 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	cfg := newSwapConfig(&lnd.LndServices, store, server)
 
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	swap := initResult.swap
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
 
@@ -235,12 +237,13 @@ func TestCustomSweepConfTarget(t *testing.T) {
 		&lnd.LndServices, newStoreMock(t), server,
 	)
 
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	swap := initResult.swap
 
 	// Set up the required dependencies to execute the swap.
 	//
@@ -442,10 +445,11 @@ func TestPreimagePush(t *testing.T) {
 		&lnd.LndServices, newStoreMock(t), server,
 	)
 
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, testRequest,
 	)
 	require.NoError(t, err)
+	swap := initResult.swap
 
 	// Set up the required dependencies to execute the swap.
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}

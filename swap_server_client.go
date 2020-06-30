@@ -215,6 +215,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		prepayInvoice: swapResp.PrepayInvoice,
 		senderKey:     senderKey,
 		expiry:        swapResp.Expiry,
+		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
 
@@ -268,8 +269,9 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	}
 
 	return &newLoopInResponse{
-		receiverKey: receiverKey,
-		expiry:      swapResp.Expiry,
+		receiverKey:   receiverKey,
+		expiry:        swapResp.Expiry,
+		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
 
@@ -334,9 +336,11 @@ type newLoopOutResponse struct {
 	prepayInvoice string
 	senderKey     [33]byte
 	expiry        int32
+	serverMessage string
 }
 
 type newLoopInResponse struct {
-	receiverKey [33]byte
-	expiry      int32
+	receiverKey   [33]byte
+	expiry        int32
+	serverMessage string
 }

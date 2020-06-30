@@ -103,17 +103,18 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		req.OutgoingChanSet = in.OutgoingChanSet
 	}
 
-	hash, htlc, err := s.impl.LoopOut(ctx, req)
+	info, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
 		log.Errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
 	return &looprpc.SwapResponse{
-		Id:               hash.String(),
-		IdBytes:          hash[:],
-		HtlcAddress:      htlc.String(),
-		HtlcAddressP2Wsh: htlc.String(),
+		Id:               info.SwapHash.String(),
+		IdBytes:          info.SwapHash[:],
+		HtlcAddress:      info.HtlcAddressP2WSH.String(),
+		HtlcAddressP2Wsh: info.HtlcAddressP2WSH.String(),
+		ServerMessage:    info.ServerMessage,
 	}, nil
 }
 
@@ -456,6 +457,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		Id:               swapInfo.SwapHash.String(),
 		IdBytes:          swapInfo.SwapHash[:],
 		HtlcAddressP2Wsh: swapInfo.HtlcAddressP2WSH.String(),
+		ServerMessage:    swapInfo.ServerMessage,
 	}
 
 	if req.ExternalHtlc {

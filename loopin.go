@@ -63,9 +63,16 @@ type loopInSwap struct {
 	timeoutAddr btcutil.Address
 }
 
+// loopInInitResult contains information about a just-initiated loop in swap.
+type loopInInitResult struct {
+	swap          *loopInSwap
+	serverMessage string
+}
+
 // newLoopInSwap initiates a new loop in swap.
 func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *LoopInRequest) (*loopInSwap, error) {
+	currentHeight int32, request *LoopInRequest) (*loopInInitResult,
+	error) {
 
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
@@ -180,7 +187,14 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
 
-	return swap, nil
+	if swapResp.serverMessage != "" {
+		swap.log.Infof("Server message: %v", swapResp.serverMessage)
+	}
+
+	return &loopInInitResult{
+		swap:          swap,
+		serverMessage: swapResp.serverMessage,
+	}, nil
 }
 
 // resumeLoopInSwap returns a swap object representing a pending swap that has
