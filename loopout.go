@@ -176,6 +176,10 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
 
+	if swapResp.serverMessage != "" {
+		swap.log.Infof("Server message: %v", swapResp.serverMessage)
+	}
+
 	return swap, nil
 }
 
