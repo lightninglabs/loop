@@ -272,6 +272,9 @@ message SwapResponse {
     Used for both loop-in and loop-out.
     */
     string htlc_address_p2wsh = 5;
+
+    // A human-readable message received from the loop server.
+    string server_message = 6;
 }
 
 message MonitorRequest {

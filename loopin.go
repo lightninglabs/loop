@@ -65,7 +65,8 @@ type loopInSwap struct {
 
 // loopInInitResult contains information about a just-initiated loop in swap.
 type loopInInitResult struct {
-	swap *loopInSwap
+	swap          *loopInSwap
+	serverMessage string
 }
 
 // newLoopInSwap initiates a new loop in swap.
@@ -191,7 +192,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	return &loopInInitResult{
-		swap: swap,
+		swap:          swap,
+		serverMessage: swapResp.serverMessage,
 	}, nil
 }
 

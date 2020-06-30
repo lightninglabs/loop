@@ -114,6 +114,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		IdBytes:          info.SwapHash[:],
 		HtlcAddress:      info.HtlcAddressP2WSH.String(),
 		HtlcAddressP2Wsh: info.HtlcAddressP2WSH.String(),
+		ServerMessage:    info.ServerMessage,
 	}, nil
 }
 
@@ -456,6 +457,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		Id:               swapInfo.SwapHash.String(),
 		IdBytes:          swapInfo.SwapHash[:],
 		HtlcAddressP2Wsh: swapInfo.HtlcAddressP2WSH.String(),
+		ServerMessage:    swapInfo.ServerMessage,
 	}
 
 	if req.ExternalHtlc {

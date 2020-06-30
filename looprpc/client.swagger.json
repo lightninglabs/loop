@@ -524,6 +524,10 @@
         "htlc_address_p2wsh": {
           "type": "string",
           "description": "*\nThe native segwit address of the on-chain htlc.\nUsed for both loop-in and loop-out."
+        },
+        "server_message": {
+          "type": "string",
+          "description": "A human-readable message received from the loop server."
         }
       }
     },

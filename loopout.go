@@ -75,7 +75,8 @@ type executeConfig struct {
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
 type loopOutInitResult struct {
-	swap *loopOutSwap
+	swap          *loopOutSwap
+	serverMessage string
 }
 
 // newLoopOutSwap initiates a new swap with the server and returns a
@@ -186,7 +187,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	return &loopOutInitResult{
-		swap: swap,
+		swap:          swap,
+		serverMessage: swapResp.serverMessage,
 	}, nil
 }
 

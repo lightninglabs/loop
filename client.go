@@ -382,6 +382,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	return &LoopOutSwapInfo{
 		SwapHash:         swap.hash,
 		HtlcAddressP2WSH: swap.htlc.Address,
+		ServerMessage:    initResult.serverMessage,
 	}, nil
 }
 
@@ -500,6 +501,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 		SwapHash:          swap.hash,
 		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
 		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
+		ServerMessage:     initResult.serverMessage,
 	}
 	return swapInfo, nil
 }
