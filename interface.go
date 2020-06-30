@@ -250,6 +250,17 @@ type LoopInSwapInfo struct { // nolint
 	HtlcAddressNP2WSH btcutil.Address
 }
 
+// LoopOutSwapInfo contains essential information of a loop-out swap after the
+// swap is initiated.
+type LoopOutSwapInfo struct { // nolint:golint
+	// SwapHash contains the sha256 hash of the swap preimage.
+	SwapHash lntypes.Hash
+
+	// HtlcAddressP2WSH contains the native segwit swap htlc address that
+	// the server will publish to.
+	HtlcAddressP2WSH btcutil.Address
+}
+
 // SwapInfoKit contains common swap info fields.
 type SwapInfoKit struct {
 	// Hash is the sha256 hash of the preimage that unlocks the htlcs. It

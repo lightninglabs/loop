@@ -14,7 +14,6 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
-	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -354,14 +353,14 @@ func (s *Client) resumeSwaps(ctx context.Context,
 //
 // The return value is a hash that uniquely identifies the new swap.
 func (s *Client) LoopOut(globalCtx context.Context,
-	request *OutRequest) (*lntypes.Hash, btcutil.Address, error) {
+	request *OutRequest) (*LoopOutSwapInfo, error) {
 
 	log.Infof("LoopOut %v to %v (channels: %v)",
 		request.Amount, request.DestAddr, request.OutgoingChanSet,
 	)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Create a new swap object for this swap.
@@ -371,7 +370,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Post swap to the main loop.
@@ -379,7 +378,10 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &swap.hash, swap.htlc.Address, nil
+	return &LoopOutSwapInfo{
+		SwapHash:         swap.hash,
+		HtlcAddressP2WSH: swap.htlc.Address,
+	}, nil
 }
 
 // LoopOutQuote takes a LoopOut amount and returns a break down of estimated

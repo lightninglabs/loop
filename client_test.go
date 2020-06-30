@@ -45,7 +45,7 @@ func TestSuccess(t *testing.T) {
 	ctx := createClientTestContext(t, nil)
 
 	// Initiate loop out.
-	hash, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	info, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestSuccess(t *testing.T) {
 	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf(false)
 
-	testSuccess(ctx, testRequest.Amount, *hash,
+	testSuccess(ctx, testRequest.Amount, info.SwapHash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
 		confIntent,
 	)
@@ -72,7 +72,7 @@ func TestFailOffchain(t *testing.T) {
 
 	ctx := createClientTestContext(t, nil)
 
-	_, _, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	_, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestFailWrongAmount(t *testing.T) {
 		// Modify mock for this subtest.
 		modifier(ctx.serverMock)
 
-		_, _, err := ctx.swapClient.LoopOut(
+		_, err := ctx.swapClient.LoopOut(
 			context.Background(), testRequest,
 		)
 		if err != expectedErr {
