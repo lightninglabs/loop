@@ -73,10 +73,15 @@ type executeConfig struct {
 	loopOutMaxParts uint32
 }
 
+// loopOutInitResult contains information about a just-initiated loop out swap.
+type loopOutInitResult struct {
+	swap *loopOutSwap
+}
+
 // newLoopOutSwap initiates a new swap with the server and returns a
 // corresponding swap object.
 func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *OutRequest) (*loopOutSwap, error) {
+	currentHeight int32, request *OutRequest) (*loopOutInitResult, error) {
 
 	// Generate random preimage.
 	var swapPreimage [32]byte
@@ -180,7 +185,9 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		swap.log.Infof("Server message: %v", swapResp.serverMessage)
 	}
 
-	return swap, nil
+	return &loopOutInitResult{
+		swap: swap,
+	}, nil
 }
 
 // resumeLoopOutSwap returns a swap object representing a pending swap that has

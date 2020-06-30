@@ -35,13 +35,14 @@ func TestLoopInSuccess(t *testing.T) {
 
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
-	swap, err := newLoopInSwap(
+	initResult, err := newLoopInSwap(
 		context.Background(), cfg,
 		height, &testLoopInRequest,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	swap := initResult.swap
 
 	ctx.store.assertLoopInStored()
 
@@ -159,13 +160,14 @@ func testLoopInTimeout(t *testing.T,
 		req.ExternalHtlc = true
 	}
 
-	s, err := newLoopInSwap(
+	initResult, err := newLoopInSwap(
 		context.Background(), cfg,
 		height, &req,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := initResult.swap
 
 	ctx.store.assertLoopInStored()
 

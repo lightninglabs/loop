@@ -366,12 +366,13 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
-	swap, err := newLoopOutSwap(
+	initResult, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
 		return nil, err
 	}
+	swap := initResult.swap
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
@@ -482,12 +483,13 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
-	swap, err := newLoopInSwap(
+	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
 	if err != nil {
 		return nil, err
 	}
+	swap := initResult.swap
 
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
