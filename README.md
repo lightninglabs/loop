@@ -49,7 +49,7 @@ The Loop daemon exposes a [gRPC API](https://lightning.engineering/loop/#lightni
 The [GitHub issue tracker](https://github.com/lightninglabs/loop/issues) can be
 used to request specific improvements or register and get help with any
 problems. Community support is also available in the
-[LND Slack](https://join.slack.com/t/lightningcommunity/shared_invite/enQtMzQ0OTQyNjE5NjU1LThmOGJkZDIzY2U2ODI5ODhmOWMzM2FkOTY5ZTdkYTc5NDYyN2U1YTJkZTE1MWU2OTZlZTAyOWY4NGY2M2M1NTM)
+[LND Slack](https://lightning.engineering/slack.html)
 .
 
 ## Setup and Install
