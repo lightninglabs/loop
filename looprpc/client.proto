@@ -62,7 +62,7 @@ service SwapClient {
     /** loop: `terms`
     LoopOutTerms returns the terms that the server enforces for a loop out swap.
     */
-    rpc LoopOutTerms (TermsRequest) returns (TermsResponse) {
+    rpc LoopOutTerms (TermsRequest) returns (OutTermsResponse) {
         option (google.api.http) = {
             get: "/v1/loop/out/terms"
         };
@@ -81,7 +81,7 @@ service SwapClient {
     /** loop: `terms`
     GetTerms returns the terms that the server enforces for swaps.
     */
-    rpc GetLoopInTerms (TermsRequest) returns (TermsResponse) {
+    rpc GetLoopInTerms (TermsRequest) returns (InTermsResponse) {
         option (google.api.http) = {
             get: "/v1/loop/in/terms"
         };
@@ -419,7 +419,22 @@ message SwapInfoRequest {
 message TermsRequest {
 }
 
-message TermsResponse {
+message InTermsResponse {
+
+    reserved 1, 2, 3, 4, 7;
+
+    /**
+    Minimum swap amount (sat)
+    */
+    int64 min_swap_amount = 5;
+
+    /**
+    Maximum swap amount (sat)
+    */
+    int64 max_swap_amount = 6;
+}
+
+message OutTermsResponse {
 
     reserved 1, 2, 3, 4, 7;
 

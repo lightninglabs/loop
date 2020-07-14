@@ -109,7 +109,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcTermsResponse"
+              "$ref": "#/definitions/looprpcInTermsResponse"
             }
           },
           "default": {
@@ -222,7 +222,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcTermsResponse"
+              "$ref": "#/definitions/looprpcOutTermsResponse"
             }
           },
           "default": {
@@ -318,6 +318,21 @@
     }
   },
   "definitions": {
+    "looprpcInTermsResponse": {
+      "type": "object",
+      "properties": {
+        "min_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMinimum swap amount (sat)"
+        },
+        "max_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMaximum swap amount (sat)"
+        }
+      }
+    },
     "looprpcListSwapsResponse": {
       "type": "object",
       "properties": {
@@ -471,6 +486,21 @@
         }
       }
     },
+    "looprpcOutTermsResponse": {
+      "type": "object",
+      "properties": {
+        "min_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMinimum swap amount (sat)"
+        },
+        "max_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMaximum swap amount (sat)"
+        }
+      }
+    },
     "looprpcQuoteResponse": {
       "type": "object",
       "properties": {
@@ -616,21 +646,6 @@
       ],
       "default": "LOOP_OUT",
       "title": "- LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)"
-    },
-    "looprpcTermsResponse": {
-      "type": "object",
-      "properties": {
-        "min_swap_amount": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nMinimum swap amount (sat)"
-        },
-        "max_swap_amount": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nMaximum swap amount (sat)"
-        }
-      }
     },
     "looprpcTokensResponse": {
       "type": "object",

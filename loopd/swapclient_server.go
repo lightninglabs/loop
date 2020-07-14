@@ -328,7 +328,7 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
-	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
+	req *looprpc.TermsRequest) (*looprpc.OutTermsResponse, error) {
 
 	log.Infof("Loop out terms request received")
 
@@ -338,7 +338,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.TermsResponse{
+	return &looprpc.OutTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 	}, nil
@@ -376,8 +376,8 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 }
 
 // GetTerms returns the terms that the server enforces for swaps.
-func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.TermsRequest) (
-	*looprpc.TermsResponse, error) {
+func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
+	req *looprpc.TermsRequest) (*looprpc.InTermsResponse, error) {
 
 	log.Infof("Loop in terms request received")
 
@@ -387,7 +387,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 		return nil, err
 	}
 
-	return &looprpc.TermsResponse{
+	return &looprpc.InTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 	}, nil
