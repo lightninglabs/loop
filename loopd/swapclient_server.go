@@ -373,7 +373,6 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		PrepayAmtSat:    int64(quote.PrepayAmount),
 		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
-		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 

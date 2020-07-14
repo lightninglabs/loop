@@ -71,6 +71,9 @@ type OutRequest struct {
 	// SwapPublicationDeadline can be set by the client to allow the server
 	// delaying publication of the swap HTLC to save on chain fees.
 	SwapPublicationDeadline time.Time
+
+	// Expiry is the absolute expiry height of the on-chain htlc.
+	Expiry int32
 }
 
 // Out contains the full details of a loop out request. This includes things
@@ -145,10 +148,6 @@ type LoopOutQuote struct {
 	// MinerFee is an estimate of the on-chain fee that needs to be paid to
 	// sweep the htlc.
 	MinerFee btcutil.Amount
-
-	// Time lock delta relative to current block height that swap server
-	// will accept on the swap initiation call.
-	CltvDelta int32
 
 	// SwapPaymentDest is the node pubkey where to swap payment needs to be
 	// sent to.

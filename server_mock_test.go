@@ -18,12 +18,13 @@ import (
 var (
 	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
 
-	testLoopOutOnChainCltvDelta = int32(30)
-	testChargeOnChainCltvDelta  = int32(100)
-	testSwapFee                 = btcutil.Amount(210)
-	testFixedPrepayAmount       = btcutil.Amount(100)
-	testMinSwapAmount           = btcutil.Amount(10000)
-	testMaxSwapAmount           = btcutil.Amount(1000000)
+	testLoopOutMinOnChainCltvDelta = int32(30)
+	testLoopOutMaxOnChainCltvDelta = int32(40)
+	testChargeOnChainCltvDelta     = int32(100)
+	testSwapFee                    = btcutil.Amount(210)
+	testFixedPrepayAmount          = btcutil.Amount(100)
+	testMinSwapAmount              = btcutil.Amount(10000)
+	testMaxSwapAmount              = btcutil.Amount(1000000)
 )
 
 // serverMock is used in client unit tests to simulate swap server behaviour.
@@ -58,7 +59,7 @@ func newServerMock() *serverMock {
 }
 
 func (s *serverMock) NewLoopOutSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount,
+	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
 	receiverKey [33]byte, _ time.Time) (
 	*newLoopOutResponse, error) {
 
@@ -87,7 +88,6 @@ func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 		senderKey:     senderKeyArray,
 		swapInvoice:   swapPayReqString,
 		prepayInvoice: prePayReqString,
-		expiry:        s.height + testLoopOutOnChainCltvDelta,
 	}, nil
 }
 
@@ -97,18 +97,19 @@ func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
 	return &LoopOutTerms{
 		MinSwapAmount: testMinSwapAmount,
 		MaxSwapAmount: testMaxSwapAmount,
+		MinCltvDelta:  testLoopOutMinOnChainCltvDelta,
+		MaxCltvDelta:  testLoopOutMaxOnChainCltvDelta,
 	}, nil
 }
 
 func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
-	_ time.Time) (*LoopOutQuote, error) {
+	expiry int32, _ time.Time) (*LoopOutQuote, error) {
 
 	dest := [33]byte{1, 2, 3}
 
 	return &LoopOutQuote{
 		SwapFee:         testSwapFee,
 		SwapPaymentDest: dest,
-		CltvDelta:       testLoopOutOnChainCltvDelta,
 		PrepayAmount:    testFixedPrepayAmount,
 	}, nil
 }

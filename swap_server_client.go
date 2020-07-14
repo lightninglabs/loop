@@ -25,7 +25,7 @@ import (
 
 // protocolVersion defines the version of the protocol that is currently
 // supported by the loop client.
-const protocolVersion = looprpc.ProtocolVersion_PREIMAGE_PUSH_LOOP_OUT
+const protocolVersion = looprpc.ProtocolVersion_USER_EXPIRY_LOOP_OUT
 
 var (
 	// errServerSubscriptionComplete is returned when our subscription to
@@ -46,7 +46,7 @@ type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
 
-	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
+	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount, expiry int32,
 		swapPublicationDeadline time.Time) (
 		*LoopOutQuote, error)
 
@@ -57,7 +57,7 @@ type swapServerClient interface {
 		*LoopInQuote, error)
 
 	NewLoopOutSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount,
+		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
 		receiverKey [33]byte,
 		swapPublicationDeadline time.Time) (
 		*newLoopOutResponse, error)
@@ -146,7 +146,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 }
 
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
-	amt btcutil.Amount, swapPublicationDeadline time.Time) (
+	amt btcutil.Amount, expiry int32, swapPublicationDeadline time.Time) (
 	*LoopOutQuote, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
@@ -156,6 +156,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 			Amt:                     uint64(amt),
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         protocolVersion,
+			Expiry:                  expiry,
 		},
 	)
 	if err != nil {
@@ -175,7 +176,6 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	return &LoopOutQuote{
 		PrepayAmount:    btcutil.Amount(quoteResp.PrepayAmt),
 		SwapFee:         btcutil.Amount(quoteResp.SwapFee),
-		CltvDelta:       quoteResp.CltvDelta,
 		SwapPaymentDest: destArray,
 	}, nil
 }
@@ -222,7 +222,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 }
 
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount,
+	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
 	receiverKey [33]byte, swapPublicationDeadline time.Time) (
 	*newLoopOutResponse, error) {
 
@@ -235,6 +235,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			ReceiverKey:             receiverKey[:],
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         protocolVersion,
+			Expiry:                  expiry,
 		},
 	)
 	if err != nil {
@@ -254,7 +255,6 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		swapInvoice:   swapResp.SwapInvoice,
 		prepayInvoice: swapResp.PrepayInvoice,
 		senderKey:     senderKey,
-		expiry:        swapResp.Expiry,
 		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
@@ -528,7 +528,6 @@ type newLoopOutResponse struct {
 	swapInvoice   string
 	prepayInvoice string
 	senderKey     [33]byte
-	expiry        int32
 	serverMessage string
 }
 

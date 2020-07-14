@@ -151,6 +151,8 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	cfg := newSwapConfig(&lnd.LndServices, store, server)
 
+	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
+
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
 	)
@@ -227,7 +229,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	// the default.
 	testReq := *testRequest
 
-	testReq.SweepConfTarget = testLoopOutOnChainCltvDelta -
+	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
 
 	// Set up custom fee estimates such that the lower confirmation target
@@ -376,8 +378,8 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// We'll then notify the height at which we begin using the default
 	// confirmation target.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
-		DefaultSweepConfTargetDelta
+	defaultConfTargetHeight := ctx.Lnd.Height +
+		testLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
 	blockEpochChan <- int32(defaultConfTargetHeight)
 	expiryChan <- time.Now()
 
@@ -427,8 +429,9 @@ func TestPreimagePush(t *testing.T) {
 	// Start with a high confirmation delta which will have a very high fee
 	// attached to it.
 	testReq := *testRequest
-	testReq.SweepConfTarget = testLoopOutOnChainCltvDelta -
+	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
+	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
 
 	// We set our mock fee estimate for our target sweep confs to be our
 	// max miner fee *2, so that our fee will definitely be above what we
@@ -520,7 +523,7 @@ func TestPreimagePush(t *testing.T) {
 	// Now, we notify the height at which the client will start using the
 	// default confirmation target. This has the effect of lowering our fees
 	// so that the client still start sweeping.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
+	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta
 	blockEpochChan <- defaultConfTargetHeight
 
