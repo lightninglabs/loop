@@ -72,7 +72,7 @@ service SwapClient {
     LoopOutQuote returns a quote for a loop out swap with the provided
     parameters.
     */
-    rpc LoopOutQuote (QuoteRequest) returns (QuoteResponse) {
+    rpc LoopOutQuote (QuoteRequest) returns (OutQuoteResponse) {
         option (google.api.http) = {
             get: "/v1/loop/out/quote/{amt}"
         };
@@ -90,7 +90,7 @@ service SwapClient {
     /** loop: `quote`
     GetQuote returns a quote for a swap with the provided parameters.
     */
-    rpc GetLoopInQuote (QuoteRequest) returns (QuoteResponse) {
+    rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse) {
         option (google.api.http) = {
             get: "/v1/loop/in/quote/{amt}"
         };
@@ -479,27 +479,46 @@ message QuoteRequest {
     uint64 swap_publication_deadline = 4;
 }
 
-message QuoteResponse {
+message InQuoteResponse {
+    reserved 2, 4;
+
     /**
     The fee that the swap server is charging for the swap.
     */
-    int64 swap_fee = 1;
+    int64 swap_fee_sat = 1;
+
+    /*
+    An estimate of the on-chain fee that needs to be paid to publish the HTLC
+    If a miner fee of 0 is returned, it means the external_htlc flag was set for
+    a loop in and the fee estimation was skipped. If a miner fee of -1 is
+    returned, it means lnd's wallet tried to estimate the fee but was unable to
+    create a sample estimation transaction because not enough funds are
+    available. An information message should be shown to the user in this case.
+    */
+    int64 htlc_publish_fee_sat = 3;
+
+    /**
+    On-chain cltv expiry delta
+    */
+    int32 cltv_delta = 5;
+}
+
+message OutQuoteResponse {
+    /**
+    The fee that the swap server is charging for the swap.
+    */
+    int64 swap_fee_sat = 1;
 
     /**
     The part of the swap fee that is requested as a prepayment.
     */
-    int64 prepay_amt = 2;
+    int64 prepay_amt_sat = 2;
 
     /**
     An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
-    a loop out or to pay to the HTLC for loop in. If a miner fee of 0 is
-    returned, it means the external_htlc flag was set for a loop in and the fee
-    estimation was skipped. If a miner fee of -1 is returned, it means lnd's
-    wallet tried to estimate the fee but was unable to create a sample
-    estimation transaction because not enough funds are available. An
-    information message should be shown to the user in this case.
+    a loop out.
     */
-    int64 miner_fee = 3;
+    int64 htlc_sweep_fee_sat = 3;
 
     /**
     The node pubkey where the swap payment needs to be paid

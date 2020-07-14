@@ -347,7 +347,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 // LoopOutQuote returns a quote for a loop out swap with the provided
 // parameters.
 func (s *swapClientServer) LoopOutQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+	req *looprpc.QuoteRequest) (*looprpc.OutQuoteResponse, error) {
 
 	confTarget, err := validateConfTarget(
 		req.ConfTarget, loop.DefaultSweepConfTarget,
@@ -366,10 +366,10 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.QuoteResponse{
-		MinerFee:        int64(quote.MinerFee),
-		PrepayAmt:       int64(quote.PrepayAmount),
-		SwapFee:         int64(quote.SwapFee),
+	return &looprpc.OutQuoteResponse{
+		HtlcSweepFeeSat: int64(quote.MinerFee),
+		PrepayAmtSat:    int64(quote.PrepayAmount),
+		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
 		CltvDelta:       quote.CltvDelta,
 	}, nil
@@ -395,7 +395,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 
 // GetQuote returns a quote for a swap with the provided parameters.
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+	req *looprpc.QuoteRequest) (*looprpc.InQuoteResponse, error) {
 
 	log.Infof("Loop in quote request received")
 
@@ -414,9 +414,9 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return &looprpc.QuoteResponse{
-		MinerFee: int64(quote.MinerFee),
-		SwapFee:  int64(quote.SwapFee),
+	return &looprpc.InQuoteResponse{
+		HtlcPublishFeeSat: int64(quote.MinerFee),
+		SwapFeeSat:        int64(quote.SwapFee),
 	}, nil
 }
 

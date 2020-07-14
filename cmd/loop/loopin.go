@@ -7,7 +7,6 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
@@ -111,17 +110,18 @@ func loopIn(ctx *cli.Context) error {
 	// HTLC. If the wallet doesn't have enough funds to create this TX, we
 	// know it won't have enough to pay the real transaction either. It
 	// makes sense to abort the loop in this case.
-	if !external && quote.MinerFee == int64(loop.MinerFeeEstimationFailed) {
+	if !external && quote.HtlcPublishFeeSat ==
+		int64(loop.MinerFeeEstimationFailed) {
+
 		return fmt.Errorf("miner fee estimation not " +
 			"possible, lnd has insufficient funds to " +
 			"create a sample transaction for selected " +
 			"amount")
 	}
 
-	limits := getInLimits(amt, quote)
-	err = displayLimits(
-		swap.TypeIn, amt, btcutil.Amount(quote.MinerFee), limits,
-		external, "",
+	limits := getInLimits(quote)
+	err = displayInLimits(
+		amt, btcutil.Amount(quote.HtlcPublishFeeSat), limits, external,
 	)
 	if err != nil {
 		return err
@@ -164,13 +164,4 @@ func loopIn(ctx *cli.Context) error {
 	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 
 	return nil
-}
-
-func getInLimits(amt btcutil.Amount, quote *looprpc.QuoteResponse) *limits {
-	return &limits{
-		// Apply a multiplier to the estimated miner fee, to not get
-		// the swap canceled because fees increased in the mean time.
-		maxMinerFee: btcutil.Amount(quote.MinerFee) * 3,
-		maxSwapFee:  btcutil.Amount(quote.SwapFee),
-	}
 }
