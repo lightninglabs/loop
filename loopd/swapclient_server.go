@@ -328,7 +328,7 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
-	req *looprpc.TermsRequest) (*looprpc.TermsResponse, error) {
+	req *looprpc.TermsRequest) (*looprpc.OutTermsResponse, error) {
 
 	log.Infof("Loop out terms request received")
 
@@ -338,7 +338,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.TermsResponse{
+	return &looprpc.OutTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 	}, nil
@@ -347,7 +347,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 // LoopOutQuote returns a quote for a loop out swap with the provided
 // parameters.
 func (s *swapClientServer) LoopOutQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+	req *looprpc.QuoteRequest) (*looprpc.OutQuoteResponse, error) {
 
 	confTarget, err := validateConfTarget(
 		req.ConfTarget, loop.DefaultSweepConfTarget,
@@ -366,18 +366,18 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.QuoteResponse{
-		MinerFee:        int64(quote.MinerFee),
-		PrepayAmt:       int64(quote.PrepayAmount),
-		SwapFee:         int64(quote.SwapFee),
+	return &looprpc.OutQuoteResponse{
+		HtlcSweepFeeSat: int64(quote.MinerFee),
+		PrepayAmtSat:    int64(quote.PrepayAmount),
+		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
 		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 
 // GetTerms returns the terms that the server enforces for swaps.
-func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.TermsRequest) (
-	*looprpc.TermsResponse, error) {
+func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
+	req *looprpc.TermsRequest) (*looprpc.InTermsResponse, error) {
 
 	log.Infof("Loop in terms request received")
 
@@ -387,7 +387,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 		return nil, err
 	}
 
-	return &looprpc.TermsResponse{
+	return &looprpc.InTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 	}, nil
@@ -395,7 +395,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context, req *looprpc.Term
 
 // GetQuote returns a quote for a swap with the provided parameters.
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.QuoteResponse, error) {
+	req *looprpc.QuoteRequest) (*looprpc.InQuoteResponse, error) {
 
 	log.Infof("Loop in quote request received")
 
@@ -414,9 +414,9 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return &looprpc.QuoteResponse{
-		MinerFee: int64(quote.MinerFee),
-		SwapFee:  int64(quote.SwapFee),
+	return &looprpc.InQuoteResponse{
+		HtlcPublishFeeSat: int64(quote.MinerFee),
+		SwapFeeSat:        int64(quote.SwapFee),
 	}, nil
 }
 

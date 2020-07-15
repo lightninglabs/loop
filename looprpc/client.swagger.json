@@ -52,7 +52,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcQuoteResponse"
+              "$ref": "#/definitions/looprpcInQuoteResponse"
             }
           },
           "default": {
@@ -109,7 +109,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcTermsResponse"
+              "$ref": "#/definitions/looprpcInTermsResponse"
             }
           },
           "default": {
@@ -165,7 +165,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcQuoteResponse"
+              "$ref": "#/definitions/looprpcOutQuoteResponse"
             }
           },
           "default": {
@@ -222,7 +222,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcTermsResponse"
+              "$ref": "#/definitions/looprpcOutTermsResponse"
             }
           },
           "default": {
@@ -318,6 +318,41 @@
     }
   },
   "definitions": {
+    "looprpcInQuoteResponse": {
+      "type": "object",
+      "properties": {
+        "swap_fee_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "*\nThe fee that the swap server is charging for the swap."
+        },
+        "htlc_publish_fee_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "An estimate of the on-chain fee that needs to be paid to publish the HTLC\nIf a miner fee of 0 is returned, it means the external_htlc flag was set for\na loop in and the fee estimation was skipped. If a miner fee of -1 is\nreturned, it means lnd's wallet tried to estimate the fee but was unable to\ncreate a sample estimation transaction because not enough funds are\navailable. An information message should be shown to the user in this case."
+        },
+        "cltv_delta": {
+          "type": "integer",
+          "format": "int32",
+          "title": "*\nOn-chain cltv expiry delta"
+        }
+      }
+    },
+    "looprpcInTermsResponse": {
+      "type": "object",
+      "properties": {
+        "min_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMinimum swap amount (sat)"
+        },
+        "max_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMaximum swap amount (sat)"
+        }
+      }
+    },
     "looprpcListSwapsResponse": {
       "type": "object",
       "properties": {
@@ -471,23 +506,23 @@
         }
       }
     },
-    "looprpcQuoteResponse": {
+    "looprpcOutQuoteResponse": {
       "type": "object",
       "properties": {
-        "swap_fee": {
+        "swap_fee_sat": {
           "type": "string",
           "format": "int64",
           "description": "*\nThe fee that the swap server is charging for the swap."
         },
-        "prepay_amt": {
+        "prepay_amt_sat": {
           "type": "string",
           "format": "int64",
           "description": "*\nThe part of the swap fee that is requested as a prepayment."
         },
-        "miner_fee": {
+        "htlc_sweep_fee_sat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC for\na loop out or to pay to the HTLC for loop in. If a miner fee of 0 is\nreturned, it means the external_htlc flag was set for a loop in and the fee\nestimation was skipped. If a miner fee of -1 is returned, it means lnd's\nwallet tried to estimate the fee but was unable to create a sample\nestimation transaction because not enough funds are available. An\ninformation message should be shown to the user in this case."
+          "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC for\na loop out."
         },
         "swap_payment_dest": {
           "type": "string",
@@ -498,6 +533,21 @@
           "type": "integer",
           "format": "int32",
           "title": "*\nOn-chain cltv expiry delta"
+        }
+      }
+    },
+    "looprpcOutTermsResponse": {
+      "type": "object",
+      "properties": {
+        "min_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMinimum swap amount (sat)"
+        },
+        "max_swap_amount": {
+          "type": "string",
+          "format": "int64",
+          "title": "*\nMaximum swap amount (sat)"
         }
       }
     },
@@ -616,21 +666,6 @@
       ],
       "default": "LOOP_OUT",
       "title": "- LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)"
-    },
-    "looprpcTermsResponse": {
-      "type": "object",
-      "properties": {
-        "min_swap_amount": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nMinimum swap amount (sat)"
-        },
-        "max_swap_amount": {
-          "type": "string",
-          "format": "int64",
-          "title": "*\nMaximum swap amount (sat)"
-        }
-      }
     },
     "looprpcTokensResponse": {
       "type": "object",

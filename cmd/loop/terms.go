@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/urfave/cli"
-
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/urfave/cli"
 )
 
 var termsCommand = cli.Command{
@@ -23,10 +22,9 @@ func terms(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	printTerms := func(terms *looprpc.TermsResponse) {
+	printAmountRange := func(min, max int64) {
 		fmt.Printf("Amount: %d - %d\n",
-			btcutil.Amount(terms.MinSwapAmount),
-			btcutil.Amount(terms.MaxSwapAmount),
+			btcutil.Amount(min), btcutil.Amount(max),
 		)
 	}
 
@@ -37,7 +35,10 @@ func terms(ctx *cli.Context) error {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		printTerms(loopOutTerms)
+		printAmountRange(
+			loopOutTerms.MinSwapAmount,
+			loopOutTerms.MaxSwapAmount,
+		)
 	}
 
 	fmt.Println()
@@ -50,7 +51,10 @@ func terms(ctx *cli.Context) error {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		printTerms(loopInTerms)
+		printAmountRange(
+			loopInTerms.MinSwapAmount,
+			loopInTerms.MaxSwapAmount,
+		)
 	}
 
 	return nil
