@@ -124,6 +124,12 @@ type LoopOutTerms struct {
 	// MaxSwapAmount is the maximum amount that the server accepts for a
 	// swap.
 	MaxSwapAmount btcutil.Amount
+
+	// MinCltvDelta is the minimum expiry delta for loop out swaps.
+	MinCltvDelta int32
+
+	// MaxCltvDelta is the maximum expiry delta for loop out swaps.
+	MaxCltvDelta int32
 }
 
 // LoopOutQuote contains estimates for the fees making up the total swap cost

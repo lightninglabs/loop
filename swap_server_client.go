@@ -140,6 +140,8 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	return &LoopOutTerms{
 		MinSwapAmount: btcutil.Amount(terms.MinSwapAmount),
 		MaxSwapAmount: btcutil.Amount(terms.MaxSwapAmount),
+		MinCltvDelta:  terms.MinCltvDelta,
+		MaxCltvDelta:  terms.MaxCltvDelta,
 	}, nil
 }
 
