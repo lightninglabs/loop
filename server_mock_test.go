@@ -182,3 +182,18 @@ func (s *serverMock) GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
 		CltvDelta: testChargeOnChainCltvDelta,
 	}, nil
 }
+
+// SubscribeLoopOutUpdates provides a mocked implementation of state
+// subscriptions.
+func (s *serverMock) SubscribeLoopOutUpdates(_ context.Context,
+	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+
+	return nil, nil, nil
+}
+
+// SubscribeLoopInUpdates provides a mocked implementation of state subscriptions.
+func (s *serverMock) SubscribeLoopInUpdates(_ context.Context,
+	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+
+	return nil, nil, nil
+}

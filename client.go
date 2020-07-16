@@ -162,7 +162,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 	}
 
 	cleanup := func() {
-		swapServerClient.Close()
+		swapServerClient.stop()
 	}
 
 	return client, cleanup, nil

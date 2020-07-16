@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcutil"
@@ -61,6 +62,8 @@ type loopInSwap struct {
 	htlcTxHash *chainhash.Hash
 
 	timeoutAddr btcutil.Address
+
+	wg sync.WaitGroup
 }
 
 // loopInInitResult contains information about a just-initiated loop in swap.
@@ -293,8 +296,24 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 func (s *loopInSwap) execute(mainCtx context.Context,
 	cfg *executeConfig, height int32) error {
 
+	defer s.wg.Wait()
+
 	s.executeConfig = *cfg
 	s.height = height
+
+	// Create context for our state subscription which we will cancel once
+	// swap execution has completed, ensuring that we kill the subscribe
+	// goroutine.
+	subCtx, cancel := context.WithCancel(mainCtx)
+	defer cancel()
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		subscribeAndLogUpdates(
+			subCtx, s.hash, s.log, s.server.SubscribeLoopInUpdates,
+		)
+	}()
 
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(mainCtx)

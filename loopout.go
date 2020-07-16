@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -62,6 +63,8 @@ type loopOutSwap struct {
 
 	swapPaymentChan chan lndclient.PaymentResult
 	prePaymentChan  chan lndclient.PaymentResult
+
+	wg sync.WaitGroup
 }
 
 // executeConfig contains extra configuration to execute the swap.
@@ -254,8 +257,24 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 func (s *loopOutSwap) execute(mainCtx context.Context,
 	cfg *executeConfig, height int32) error {
 
+	defer s.wg.Wait()
+
 	s.executeConfig = *cfg
 	s.height = height
+
+	// Create context for our state subscription which we will cancel once
+	// swap execution has completed, ensuring that we kill the subscribe
+	// goroutine.
+	subCtx, cancel := context.WithCancel(mainCtx)
+	defer cancel()
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		subscribeAndLogUpdates(
+			subCtx, s.hash, s.log, s.server.SubscribeLoopOutUpdates,
+		)
+	}()
 
 	// Execute swap.
 	err := s.executeAndFinalize(mainCtx)
