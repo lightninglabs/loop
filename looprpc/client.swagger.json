@@ -381,7 +381,7 @@
         "max_miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum in on-chain fees that we are willing to spent. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+          "description": "*\nMaximum in on-chain fees that we are willing to spend. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
         "last_hop": {
           "type": "string",
@@ -435,7 +435,7 @@
         "max_miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum in on-chain fees that we are willing to spent. If we want to\nsweep the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. If the fee estimate is lower, we publish the\nsweep tx.\n\nIf the sweep tx is not confirmed, we are forced to ratchet up fees until it\nis swept. Possibly even exceeding max_miner_fee if we get close to the htlc\ntimeout. Because the initial publication revealed the preimage, we have no\nother choice. The server may already have pulled the off-chain htlc. Only\nwhen the fee becomes higher than the swap amount, we can only wait for fees\nto come down and hope - if we are past the timeout - that the server is not\npublishing the revocation.\n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+          "description": "*\nMaximum in on-chain fees that we are willing to spend. If we want to\nsweep the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. If the fee estimate is lower, we publish the\nsweep tx.\n\nIf the sweep tx is not confirmed, we are forced to ratchet up fees until it\nis swept. Possibly even exceeding max_miner_fee if we get close to the htlc\ntimeout. Because the initial publication revealed the preimage, we have no\nother choice. The server may already have pulled the off-chain htlc. Only\nwhen the fee becomes higher than the swap amount, we can only wait for fees\nto come down and hope - if we are past the timeout - that the server is not\npublishing the revocation.\n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
         "loop_out_channel": {
           "type": "string",

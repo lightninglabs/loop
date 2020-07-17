@@ -138,7 +138,7 @@ type LoopOutRequest struct {
 	//Maximum amount of the swap fee that may be charged as a prepayment.
 	MaxPrepayAmt int64 `protobuf:"varint,6,opt,name=max_prepay_amt,json=maxPrepayAmt,proto3" json:"max_prepay_amt,omitempty"`
 	//*
-	//Maximum in on-chain fees that we are willing to spent. If we want to
+	//Maximum in on-chain fees that we are willing to spend. If we want to
 	//sweep the on-chain htlc and the fee estimate turns out higher than this
 	//value, we cancel the swap. If the fee estimate is lower, we publish the
 	//sweep tx.
@@ -294,7 +294,7 @@ type LoopInRequest struct {
 	//response of the GetQuote call.
 	MaxSwapFee int64 `protobuf:"varint,2,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
 	//*
-	//Maximum in on-chain fees that we are willing to spent. If we want to
+	//Maximum in on-chain fees that we are willing to spend. If we want to
 	//publish the on-chain htlc and the fee estimate turns out higher than this
 	//value, we cancel the swap.
 	//

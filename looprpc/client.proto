@@ -145,7 +145,7 @@ message LoopOutRequest {
     int64 max_prepay_amt = 6;
 
     /**
-    Maximum in on-chain fees that we are willing to spent. If we want to
+    Maximum in on-chain fees that we are willing to spend. If we want to
     sweep the on-chain htlc and the fee estimate turns out higher than this
     value, we cancel the swap. If the fee estimate is lower, we publish the
     sweep tx.
@@ -208,7 +208,7 @@ message LoopInRequest {
     int64 max_swap_fee = 2;
 
     /**
-    Maximum in on-chain fees that we are willing to spent. If we want to
+    Maximum in on-chain fees that we are willing to spend. If we want to
     publish the on-chain htlc and the fee estimate turns out higher than this
     value, we cancel the swap. 
 
