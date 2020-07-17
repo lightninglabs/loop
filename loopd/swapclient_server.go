@@ -341,6 +341,8 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	return &looprpc.OutTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
+		MinCltvDelta:  terms.MinCltvDelta,
+		MaxCltvDelta:  terms.MaxCltvDelta,
 	}, nil
 }
 
@@ -371,7 +373,6 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		PrepayAmtSat:    int64(quote.PrepayAmount),
 		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
-		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 

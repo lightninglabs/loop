@@ -447,6 +447,12 @@ message OutTermsResponse {
     Maximum swap amount (sat)
     */
     int64 max_swap_amount = 6;
+
+    // The minimally accepted cltv delta of the on-chain htlc.
+    int32 min_cltv_delta = 8;
+
+    // The maximally accepted cltv delta of the on-chain htlc.
+    int32 max_cltv_delta = 9;
 }
 
 message QuoteRequest {

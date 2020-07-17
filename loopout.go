@@ -106,13 +106,14 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Post the swap parameters to the swap server. The response contains
 	// the server revocation key and the swap and prepay invoices.
-	log.Infof("Initiating swap request at height %v", currentHeight)
+	log.Infof("Initiating swap request at height %v: amt=%v, expiry=%v",
+		currentHeight, request.Amount, request.Expiry)
 
 	// The swap deadline will be given to the server for it to use as the
 	// latest swap publication time.
 	swapResp, err := cfg.server.NewLoopOutSwap(
-		globalCtx, swapHash, request.Amount, receiverKey,
-		request.SwapPublicationDeadline,
+		globalCtx, swapHash, request.Amount, request.Expiry,
+		receiverKey, request.SwapPublicationDeadline,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
@@ -150,7 +151,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			SenderKey:        swapResp.senderKey,
 			Preimage:         swapPreimage,
 			AmountRequested:  request.Amount,
-			CltvExpiry:       swapResp.expiry,
+			CltvExpiry:       request.Expiry,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 		},
@@ -992,19 +993,6 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 			prepayInvoiceAmt, request.MaxPrepayAmount)
 
 		return ErrPrepayAmountTooHigh
-	}
-
-	if response.expiry-height < MinLoopOutPreimageRevealDelta {
-		log.Warnf("Proposed expiry %v (delta %v) too soon",
-			response.expiry, response.expiry-height)
-
-		return ErrExpiryTooSoon
-	}
-
-	// Ensure the client has provided a sweep confirmation target that does
-	// not exceed the height at which we revert back to using the default.
-	if height+request.SweepConfTarget >= response.expiry-DefaultSweepConfTargetDelta {
-		return ErrSweepConfTargetTooFar
 	}
 
 	return nil

@@ -151,6 +151,8 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	cfg := newSwapConfig(&lnd.LndServices, store, server)
 
+	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
+
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
 	)
@@ -225,12 +227,14 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// Use the highest sweep confirmation target before we attempt to use
 	// the default.
-	testRequest.SweepConfTarget = testLoopOutOnChainCltvDelta -
+	testReq := *testRequest
+
+	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
 
 	// Set up custom fee estimates such that the lower confirmation target
 	// yields a much higher fee rate.
-	ctx.Lnd.SetFeeEstimate(testRequest.SweepConfTarget, 250)
+	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, 250)
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
 	cfg := newSwapConfig(
@@ -238,7 +242,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	)
 
 	initResult, err := newLoopOutSwap(
-		context.Background(), cfg, ctx.Lnd.Height, testRequest,
+		context.Background(), cfg, ctx.Lnd.Height, &testReq,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +361,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// The sweep should have a fee that corresponds to the custom
 	// confirmation target.
-	_ = assertSweepTx(testRequest.SweepConfTarget)
+	_ = assertSweepTx(testReq.SweepConfTarget)
 
 	// Once we have published an on chain sweep, we expect a preimage to
 	// have been pushed to our server.
@@ -374,8 +378,8 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// We'll then notify the height at which we begin using the default
 	// confirmation target.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
-		DefaultSweepConfTargetDelta
+	defaultConfTargetHeight := ctx.Lnd.Height +
+		testLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
 	blockEpochChan <- int32(defaultConfTargetHeight)
 	expiryChan <- time.Now()
 
@@ -424,15 +428,17 @@ func TestPreimagePush(t *testing.T) {
 
 	// Start with a high confirmation delta which will have a very high fee
 	// attached to it.
-	testRequest.SweepConfTarget = testLoopOutOnChainCltvDelta -
+	testReq := *testRequest
+	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
+	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
 
 	// We set our mock fee estimate for our target sweep confs to be our
 	// max miner fee *2, so that our fee will definitely be above what we
 	// are willing to pay, and we will not sweep.
 	ctx.Lnd.SetFeeEstimate(
-		testRequest.SweepConfTarget, chainfee.SatPerKWeight(
-			testRequest.MaxMinerFee*2,
+		testReq.SweepConfTarget, chainfee.SatPerKWeight(
+			testReq.MaxMinerFee*2,
 		),
 	)
 
@@ -446,7 +452,7 @@ func TestPreimagePush(t *testing.T) {
 	)
 
 	initResult, err := newLoopOutSwap(
-		context.Background(), cfg, ctx.Lnd.Height, testRequest,
+		context.Background(), cfg, ctx.Lnd.Height, &testReq,
 	)
 	require.NoError(t, err)
 	swap := initResult.swap
@@ -517,7 +523,7 @@ func TestPreimagePush(t *testing.T) {
 	// Now, we notify the height at which the client will start using the
 	// default confirmation target. This has the effect of lowering our fees
 	// so that the client still start sweeping.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutOnChainCltvDelta -
+	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta
 	blockEpochChan <- defaultConfTargetHeight
 

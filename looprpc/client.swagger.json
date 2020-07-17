@@ -548,6 +548,16 @@
           "type": "string",
           "format": "int64",
           "title": "*\nMaximum swap amount (sat)"
+        },
+        "min_cltv_delta": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The minimally accepted cltv delta of the on-chain htlc."
+        },
+        "max_cltv_delta": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The maximally accepted cltv delta of the on-chain htlc."
         }
       }
     },

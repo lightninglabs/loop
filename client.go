@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,19 +34,9 @@ var (
 	// more than the server maximum.
 	ErrSwapAmountTooHigh = errors.New("swap amount too high")
 
-	// ErrExpiryTooSoon is returned when the server proposes an expiry that
-	// is too soon for us.
-	ErrExpiryTooSoon = errors.New("swap expiry too soon")
-
 	// ErrExpiryTooFar is returned when the server proposes an expiry that
 	// is too soon for us.
 	ErrExpiryTooFar = errors.New("swap expiry too far")
-
-	// ErrSweepConfTargetTooFar is returned when the client proposes a
-	// confirmation target to sweep the on-chain HTLC of a Loop Out that is
-	// beyond the expiration height proposed by the server.
-	ErrSweepConfTargetTooFar = errors.New("sweep confirmation target is " +
-		"beyond swap expiration height")
 
 	// serverRPCTimeout is the maximum time a gRPC request to the server
 	// should be allowed to take.
@@ -363,8 +354,21 @@ func (s *Client) LoopOut(globalCtx context.Context,
 		return nil, err
 	}
 
-	// Create a new swap object for this swap.
+	// Calculate htlc expiry height.
+	terms, err := s.Server.GetLoopOutTerms(globalCtx)
+	if err != nil {
+		return nil, err
+	}
+
 	initiationHeight := s.executor.height()
+	request.Expiry, err = s.getExpiry(
+		initiationHeight, terms, request.SweepConfTarget,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new swap object for this swap.
 	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
 	initResult, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
@@ -386,6 +390,24 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	}, nil
 }
 
+// getExpiry returns an absolute expiry height based on the sweep confirmation
+// target, constrained by the server terms.
+func (s *Client) getExpiry(height int32, terms *LoopOutTerms,
+	confTarget int32) (int32, error) {
+
+	switch {
+	case confTarget < terms.MinCltvDelta:
+		return height + terms.MinCltvDelta, nil
+
+	case confTarget > terms.MaxCltvDelta:
+		return 0, fmt.Errorf("confirmation target %v exceeds maximum "+
+			"server cltv delta of %v", confTarget,
+			terms.MaxCltvDelta)
+	}
+
+	return height + confTarget, nil
+}
+
 // LoopOutQuote takes a LoopOut amount and returns a break down of estimated
 // costs for the client. Both the swap server and the on-chain fee estimator
 // are queried to get to build the quote response.
@@ -405,8 +427,14 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
+	height := s.executor.height()
+	expiry, err := s.getExpiry(height, terms, request.SweepConfTarget)
+	if err != nil {
+		return nil, err
+	}
+
 	quote, err := s.Server.GetLoopOutQuote(
-		ctx, request.Amount, request.SwapPublicationDeadline,
+		ctx, request.Amount, expiry, request.SwapPublicationDeadline,
 	)
 	if err != nil {
 		return nil, err
@@ -440,7 +468,6 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		MinerFee:        minerFee,
 		PrepayAmount:    quote.PrepayAmount,
 		SwapPaymentDest: quote.SwapPaymentDest,
-		CltvDelta:       quote.CltvDelta,
 	}, nil
 }
 

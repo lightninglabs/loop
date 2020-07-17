@@ -39,6 +39,9 @@ func terms(ctx *cli.Context) error {
 			loopOutTerms.MinSwapAmount,
 			loopOutTerms.MaxSwapAmount,
 		)
+		fmt.Printf("Cltv delta: %d - %d\n",
+			loopOutTerms.MinCltvDelta, loopOutTerms.MaxCltvDelta,
+		)
 	}
 
 	fmt.Println()
