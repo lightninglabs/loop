@@ -756,7 +756,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	}
 
 	witnessFunc := func(sig []byte) (wire.TxWitness, error) {
-		return s.htlc.GenTimeoutWitness(sig)
+		return s.htlc.GenTimeoutWitness(sig), nil
 	}
 
 	timeoutTx, err := s.sweeper.CreateSweepTx(

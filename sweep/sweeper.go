@@ -58,7 +58,7 @@ func (s *Sweeper) CreateSweepTx(
 	}
 
 	signDesc := lndclient.SignDescriptor{
-		WitnessScript: htlc.Script,
+		WitnessScript: htlc.Script(),
 		Output: &wire.TxOut{
 			Value: int64(amount),
 		},
