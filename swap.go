@@ -51,7 +51,7 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 // getHtlc composes and returns the on-chain swap script.
 func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
 	return swap.NewHtlc(
-		s.contract.CltvExpiry, s.contract.SenderKey,
+		swap.HtlcV1, s.contract.CltvExpiry, s.contract.SenderKey,
 		s.contract.ReceiverKey, s.hash, outputType,
 		s.swapConfig.lnd.ChainParams,
 	)

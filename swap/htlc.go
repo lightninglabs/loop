@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
@@ -25,8 +26,17 @@ const (
 	HtlcNP2WSH
 )
 
+// ScriptVersion defines the HTLC script version.
+type ScriptVersion uint8
+
+const (
+	// HtlcV1 refers to the original version of the HTLC script.
+	HtlcV1 ScriptVersion = iota
+)
+
 // Htlc contains relevant htlc information from the receiver perspective.
 type Htlc struct {
+	Version     ScriptVersion
 	Script      []byte
 	PkScript    []byte
 	Hash        lntypes.Hash
@@ -45,6 +55,7 @@ var (
 	// the maximum value for cltv expiry to get the maximum (worst case)
 	// script size.
 	QuoteHtlc, _ = NewHtlc(
+		HtlcV1,
 		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
 		&chaincfg.MainNetParams,
 	)
@@ -65,13 +76,26 @@ func (h HtlcOutputType) String() string {
 }
 
 // NewHtlc returns a new instance.
-func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
+func NewHtlc(version ScriptVersion, cltvExpiry int32,
+	senderKey, receiverKey [33]byte,
 	hash lntypes.Hash, outputType HtlcOutputType,
 	chainParams *chaincfg.Params) (*Htlc, error) {
 
-	script, err := swapHTLCScript(
-		cltvExpiry, senderKey, receiverKey, hash,
+	var (
+		err    error
+		script []byte
 	)
+
+	switch version {
+	case HtlcV1:
+		script, err = swapHTLCScriptV1(
+			cltvExpiry, senderKey, receiverKey, hash,
+		)
+
+	default:
+		return nil, fmt.Errorf("unknown script version: %v", version)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +159,7 @@ func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 
 	return &Htlc{
 		Hash:        hash,
+		Version:     version,
 		Script:      script,
 		PkScript:    pkScript,
 		OutputType:  outputType,
@@ -144,19 +169,19 @@ func NewHtlc(cltvExpiry int32, senderKey, receiverKey [33]byte,
 	}, nil
 }
 
-// SwapHTLCScript returns the on-chain HTLC witness script.
+// SwapHTLCScriptV1 returns the on-chain HTLC witness script.
 //
 // OP_SIZE 32 OP_EQUAL
 // OP_IF
-//    OP_HASH160 <ripemd160(swap_hash)> OP_EQUALVERIFY
-//    <recvr key>
+//    OP_HASH160 <ripemd160(swapHash)> OP_EQUALVERIFY
+//    <receiverHtlcKey>
 // OP_ELSE
 //    OP_DROP
 //    <cltv timeout> OP_CHECKLOCKTIMEVERIFY OP_DROP
-//    <sender key>
+//    <senderHtlcKey>
 // OP_ENDIF
 // OP_CHECKSIG
-func swapHTLCScript(cltvExpiry int32, senderHtlcKey,
+func swapHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
 	receiverHtlcKey [33]byte, swapHash lntypes.Hash) ([]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
