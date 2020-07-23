@@ -46,6 +46,10 @@ type SwapContract struct {
 
 	// Label contains an optional label for the swap.
 	Label string
+
+	// ProtocolVersion stores the protocol version when the swap was
+	// created.
+	ProtocolVersion ProtocolVersion
 }
 
 // Loop contains fields shared between LoopIn and LoopOut

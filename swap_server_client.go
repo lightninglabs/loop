@@ -14,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -22,10 +23,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
-
-// protocolVersion defines the version of the protocol that is currently
-// supported by the loop client.
-const protocolVersion = looprpc.ProtocolVersion_USER_EXPIRY_LOOP_OUT
 
 var (
 	// errServerSubscriptionComplete is returned when our subscription to
@@ -130,7 +127,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 		},
 	)
 	if err != nil {
@@ -155,7 +152,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 		&looprpc.ServerLoopOutQuoteRequest{
 			Amt:                     uint64(amt),
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
-			ProtocolVersion:         protocolVersion,
+			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
 			Expiry:                  expiry,
 		},
 	)
@@ -187,7 +184,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 		},
 	)
 	if err != nil {
@@ -208,7 +205,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	quoteResp, err := s.server.LoopInQuote(rpcCtx,
 		&looprpc.ServerLoopInQuoteRequest{
 			Amt:             uint64(amt),
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 		},
 	)
 	if err != nil {
@@ -234,7 +231,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			Amt:                     uint64(amount),
 			ReceiverKey:             receiverKey[:],
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
-			ProtocolVersion:         protocolVersion,
+			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
 			Expiry:                  expiry,
 		},
 	)
@@ -268,7 +265,7 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 
 	_, err := s.server.LoopOutPushPreimage(rpcCtx,
 		&looprpc.ServerLoopOutPushPreimageRequest{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 			Preimage:        preimage[:],
 		},
 	)
@@ -288,7 +285,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		Amt:             uint64(amount),
 		SenderKey:       senderKey[:],
 		SwapInvoice:     swapInvoice,
-		ProtocolVersion: protocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 	}
 	if lastHop != nil {
 		req.LastHop = lastHop[:]
@@ -331,7 +328,7 @@ func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
 
 	resp, err := s.server.SubscribeLoopInUpdates(
 		ctx, &looprpc.SubscribeUpdatesRequest{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 			SwapHash:        hash[:],
 		},
 	)
@@ -362,7 +359,7 @@ func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
 
 	resp, err := s.server.SubscribeLoopOutUpdates(
 		ctx, &looprpc.SubscribeUpdatesRequest{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 			SwapHash:        hash[:],
 		},
 	)
