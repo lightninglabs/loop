@@ -69,6 +69,15 @@ var (
 	// value: string label
 	labelKey = []byte("label")
 
+	// protocolVersionKey is used to optionally store the protocol version
+	// for the serialized swap contract. It is nested within the sub-bucket
+	// for each active swap.
+	//
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash] -> protocolVersionKey
+	//
+	// value: protocol version as specified in server.proto
+	protocolVersionKey = []byte("protocol-version")
+
 	// outgoingChanSetKey is the key that stores a list of channel ids that
 	// restrict the loop out swap payment.
 	//
@@ -276,6 +285,18 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 				return err
 			}
 
+			// Try to unmarshal the protocol version for the swap.
+			// If the protocol version is not stored (which is
+			// the case for old clients), we'll assume the
+			// ProtocolVersionUnrecorded instead.
+			contract.ProtocolVersion, err =
+				UnmarshalProtocolVersion(
+					swapBucket.Get(protocolVersionKey),
+				)
+			if err != nil {
+				return err
+			}
+
 			loop := LoopOut{
 				Loop: Loop{
 					Events: updates,
@@ -401,6 +422,18 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 				return err
 			}
 
+			// Try to unmarshal the protocol version for the swap.
+			// If the protocol version is not stored (which is
+			// the case for old clients), we'll assume the
+			// ProtocolVersionUnrecorded instead.
+			contract.ProtocolVersion, err =
+				UnmarshalProtocolVersion(
+					swapBucket.Get(protocolVersionKey),
+				)
+			if err != nil {
+				return err
+			}
+
 			loop := LoopIn{
 				Loop: Loop{
 					Events: updates,
@@ -512,6 +545,14 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 			return err
 		}
 
+		// Store the current protocol version.
+		err = swapBucket.Put(protocolVersionKey,
+			MarshalProtocolVersion(swap.ProtocolVersion),
+		)
+		if err != nil {
+			return err
+		}
+
 		// Finally, we'll create an empty updates bucket for this swap
 		// to track any future updates to the swap itself.
 		_, err = swapBucket.CreateBucket(updatesBucketKey)
@@ -546,6 +587,14 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 		}
 
 		err = swapBucket.Put(contractKey, contractBytes)
+		if err != nil {
+			return err
+		}
+
+		// Store the current protocol version.
+		err = swapBucket.Put(protocolVersionKey,
+			MarshalProtocolVersion(swap.ProtocolVersion),
+		)
 		if err != nil {
 			return err
 		}
