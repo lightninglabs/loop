@@ -48,10 +48,30 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 	}
 }
 
+// GetHtlcScriptVersion returns the correct HTLC script version for the passed
+// protocol version.
+func GetHtlcScriptVersion(
+	protocolVersion loopdb.ProtocolVersion) swap.ScriptVersion {
+
+	if protocolVersion != loopdb.ProtocolVersionUnrecorded &&
+		protocolVersion >= loopdb.ProtocolVersionHtlcV2 {
+
+		// Use HTLC v2 script only if we know the swap was initiated
+		// with a client that supports HTLC v2. Unrecorded protocol
+		// version implies that there was no protocol version stored
+		// along side a serialized swap that we're resuming in which
+		// case the swap was initiated with HTLC v1 script.
+		return swap.HtlcV2
+	}
+
+	return swap.HtlcV1
+}
+
 // getHtlc composes and returns the on-chain swap script.
 func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
 	return swap.NewHtlc(
-		swap.HtlcV1, s.contract.CltvExpiry, s.contract.SenderKey,
+		GetHtlcScriptVersion(s.contract.ProtocolVersion),
+		s.contract.CltvExpiry, s.contract.SenderKey,
 		s.contract.ReceiverKey, s.hash, outputType,
 		s.swapConfig.lnd.ChainParams,
 	)

@@ -172,11 +172,13 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 			Label:            request.Label,
+			ProtocolVersion:  loopdb.CurrentInternalProtocolVersion,
 		},
 	}
 
 	swapKit := newSwapKit(
-		swapHash, swap.TypeIn, cfg, &contract.SwapContract,
+		swapHash, swap.TypeIn,
+		cfg, &contract.SwapContract,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
@@ -217,7 +219,8 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 	log.Infof("Resuming loop in swap %v", hash)
 
 	swapKit := newSwapKit(
-		hash, swap.TypeIn, cfg, &pend.Contract.SwapContract,
+		hash, swap.TypeIn, cfg,
+		&pend.Contract.SwapContract,
 	)
 
 	swap := &loopInSwap{

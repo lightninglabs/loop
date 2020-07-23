@@ -57,6 +57,9 @@ enum ProtocolVersion {
 
     // The client will propose a cltv expiry height for loop out.
     USER_EXPIRY_LOOP_OUT = 4;
+
+    // The client will use the new v2 HTLC scripts.
+    HTLC_V2 = 5;
 }
 
 message ServerLoopOutRequest {

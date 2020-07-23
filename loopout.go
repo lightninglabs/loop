@@ -171,12 +171,14 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 			Label:            request.Label,
+			ProtocolVersion:  loopdb.CurrentInternalProtocolVersion,
 		},
 		OutgoingChanSet: chanSet,
 	}
 
 	swapKit := newSwapKit(
-		swapHash, swap.TypeOut, cfg, &contract.SwapContract,
+		swapHash, swap.TypeOut,
+		cfg, &contract.SwapContract,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
@@ -223,7 +225,8 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	log.Infof("Resuming loop out swap %v", hash)
 
 	swapKit := newSwapKit(
-		hash, swap.TypeOut, cfg, &pend.Contract.SwapContract,
+		hash, swap.TypeOut, cfg,
+		&pend.Contract.SwapContract,
 	)
 
 	// Create the htlc.
