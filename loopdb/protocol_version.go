@@ -31,13 +31,17 @@ const (
 	// propose a cltv expiry height for loop out.
 	ProtocolVersionUserExpiryLoopOut ProtocolVersion = 4
 
+	// ProtocolVersionHtlcV2 indicates that the client will use the new
+	// HTLC v2 scrips for swaps.
+	ProtocolVersionHtlcV2 ProtocolVersion = 5
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRpcProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_USER_EXPIRY_LOOP_OUT
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V2
 
 	// CurrentInteranlProtocolVersionInternal defines the RPC current
 	// protocol in the internal representation.
@@ -69,6 +73,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionUserExpiryLoopOut:
 		return "User Expiry Loop Out"
+
+	case ProtocolVersionHtlcV2:
+		return "HTLC V2"
 
 	default:
 		return "Unknown"
