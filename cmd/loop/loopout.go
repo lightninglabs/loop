@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
@@ -41,6 +42,13 @@ var loopOutCommand = cli.Command{
 		cli.Uint64Flag{
 			Name:  "amt",
 			Usage: "the amount in satoshis to loop out",
+		},
+		cli.Uint64Flag{
+			Name: "htlc_confs",
+			Usage: "the number of of confirmations, in blocks " +
+				"that we require for the htlc extended by " +
+				"the server before we reveal the preimage.",
+			Value: uint64(loopdb.DefaultLoopOutHtlcConfirmations),
 		},
 		cli.Uint64Flag{
 			Name: "conf_target",
@@ -135,6 +143,11 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	sweepConfTarget := int32(ctx.Uint64("conf_target"))
+	htlcConfs := int32(ctx.Uint64("htlc_confs"))
+	if htlcConfs == 0 {
+		return fmt.Errorf("at least 1 confirmation required for htlcs")
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:                     int64(amt),
 		ConfTarget:              sweepConfTarget,
@@ -179,6 +192,7 @@ func loopOut(ctx *cli.Context) error {
 		MaxSwapRoutingFee:       int64(limits.maxSwapRoutingFee),
 		OutgoingChanSet:         outgoingChanSet,
 		SweepConfTarget:         sweepConfTarget,
+		HtlcConfirmations:       htlcConfs,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 		Label:                   label,
 	})
