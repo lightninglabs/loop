@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
@@ -64,6 +65,7 @@ var loopOutCommand = cli.Command{
 				"Not setting this flag therefore might " +
 				"result in a lower swap fee.",
 		},
+		labelFlag,
 	},
 	Action: loopOut,
 }
@@ -102,6 +104,12 @@ func loopOut(ctx *cli.Context) error {
 			}
 			outgoingChanSet = append(outgoingChanSet, chanID)
 		}
+	}
+
+	// Validate our label early so that we can fail before getting a quote.
+	label := ctx.String(labelFlag.Name)
+	if err := labels.Validate(label); err != nil {
+		return err
 	}
 
 	var destAddr string
@@ -172,6 +180,7 @@ func loopOut(ctx *cli.Context) error {
 		OutgoingChanSet:         outgoingChanSet,
 		SweepConfTarget:         sweepConfTarget,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
+		Label:                   label,
 	})
 	if err != nil {
 		return err

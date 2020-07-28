@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
@@ -22,6 +23,14 @@ var (
 		Usage: "the target number of blocks the on-chain " +
 			"htlc broadcast by the swap client should " +
 			"confirm within",
+	}
+
+	labelFlag = cli.StringFlag{
+		Name: "label",
+		Usage: fmt.Sprintf("an optional label for this swap,"+
+			"limited to %v characters. The label may not start "+
+			"with our reserved prefix: %v.",
+			labels.MaxLength, labels.Reserved),
 	}
 
 	loopInCommand = cli.Command{
@@ -51,6 +60,7 @@ var (
 			},
 			confTargetFlag,
 			lastHopFlag,
+			labelFlag,
 		},
 		Action: loopIn,
 	}
@@ -93,6 +103,12 @@ func loopIn(ctx *cli.Context) error {
 		return fmt.Errorf("external and conf_target both set")
 	}
 
+	// Validate our label early so that we can fail before getting a quote.
+	label := ctx.String(labelFlag.Name)
+	if err := labels.Validate(label); err != nil {
+		return err
+	}
+
 	quote, err := client.GetLoopInQuote(
 		context.Background(),
 		&looprpc.QuoteRequest{
@@ -133,6 +149,7 @@ func loopIn(ctx *cli.Context) error {
 		MaxSwapFee:     int64(limits.maxSwapFee),
 		ExternalHtlc:   external,
 		HtlcConfTarget: htlcConfTarget,
+		Label:          label,
 	}
 
 	if ctx.IsSet(lastHopFlag.Name) {
