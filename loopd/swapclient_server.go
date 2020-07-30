@@ -121,20 +121,57 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	*looprpc.SwapStatus, error) {
 
-	var state looprpc.SwapState
+	var (
+		state         looprpc.SwapState
+		failureReason = looprpc.FailureReason_FAILURE_REASON_NONE
+	)
+
+	// Set our state var for non-failure states. If we get a failure, we
+	// will update our failure reason. To remain backwards compatible with
+	// previous versions where we squashed all failure reasons to a single
+	// failure state, we set a failure reason for all our different failure
+	// states, and set our failed state for all of them.
 	switch loopSwap.State {
 	case loopdb.StateInitiated:
 		state = looprpc.SwapState_INITIATED
+
 	case loopdb.StatePreimageRevealed:
 		state = looprpc.SwapState_PREIMAGE_REVEALED
+
 	case loopdb.StateHtlcPublished:
 		state = looprpc.SwapState_HTLC_PUBLISHED
+
 	case loopdb.StateInvoiceSettled:
 		state = looprpc.SwapState_INVOICE_SETTLED
+
 	case loopdb.StateSuccess:
 		state = looprpc.SwapState_SUCCESS
+
+	case loopdb.StateFailOffchainPayments:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_OFFCHAIN
+
+	case loopdb.StateFailTimeout:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_TIMEOUT
+
+	case loopdb.StateFailSweepTimeout:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_SWEEP_TIMEOUT
+
+	case loopdb.StateFailInsufficientValue:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_INSUFFICIENT_VALUE
+
+	case loopdb.StateFailTemporary:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_TEMPORARY
+
+	case loopdb.StateFailIncorrectHtlcAmt:
+		failureReason = looprpc.FailureReason_FAILURE_REASON_INCORRECT_AMOUNT
+
 	default:
-		// Return less granular status over rpc.
+		return nil, fmt.Errorf("unknown swap state: %v", loopSwap.State)
+	}
+
+	// If we have a failure reason, we have a failure state, so should use
+	// our catchall failed state.
+	if failureReason != looprpc.FailureReason_FAILURE_REASON_NONE {
 		state = looprpc.SwapState_FAILED
 	}
 
@@ -167,6 +204,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		Id:                loopSwap.SwapHash.String(),
 		IdBytes:           loopSwap.SwapHash[:],
 		State:             state,
+		FailureReason:     failureReason,
 		InitiationTime:    loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime:    loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:       htlcAddress,
