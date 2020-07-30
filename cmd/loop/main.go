@@ -277,16 +277,22 @@ func parseAmt(text string) (btcutil.Amount, error) {
 }
 
 func logSwap(swap *looprpc.SwapStatus) {
+	// If our swap failed, we add our failure reason to the state.
+	swapState := fmt.Sprintf("%v", swap.State)
+	if swap.State == looprpc.SwapState_FAILED {
+		swapState = fmt.Sprintf("%v (%v)", swapState, swap.FailureReason)
+	}
+
 	if swap.Type == looprpc.SwapType_LOOP_OUT {
 		fmt.Printf("%v %v %v %v - %v",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
-			swap.Type, swap.State, btcutil.Amount(swap.Amt),
+			swap.Type, swapState, btcutil.Amount(swap.Amt),
 			swap.HtlcAddressP2Wsh,
 		)
 	} else {
 		fmt.Printf("%v %v %v %v -",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
-			swap.Type, swap.State, btcutil.Amount(swap.Amt))
+			swap.Type, swapState, btcutil.Amount(swap.Amt))
 		if swap.HtlcAddressP2Wsh != "" {
 			fmt.Printf(" P2WSH: %v", swap.HtlcAddressP2Wsh)
 		}
