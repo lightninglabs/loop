@@ -60,6 +60,15 @@ var (
 	// value: time || rawSwapState
 	contractKey = []byte("contract")
 
+	// labelKey is the key that stores an optional label for the swap. If
+	// a swap was created before we started adding labels, or was created
+	// without a label, this key will not be present.
+	//
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash] -> labelKey
+	//
+	// value: string label
+	labelKey = []byte("label")
+
 	// outgoingChanSetKey is the key that stores a list of channel ids that
 	// restrict the loop out swap payment.
 	//
@@ -207,6 +216,9 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 				return err
 			}
 
+			// Get our label for this swap, if it is present.
+			contract.Label = getLabel(swapBucket)
+
 			// Read the list of concatenated outgoing channel ids
 			// that form the outgoing set.
 			setBytes := swapBucket.Get(outgoingChanSetKey)
@@ -352,6 +364,9 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 				return err
 			}
 
+			// Get our label for this swap, if it is present.
+			contract.Label = getLabel(swapBucket)
+
 			updates, err := deserializeUpdates(swapBucket)
 			if err != nil {
 				return err
@@ -434,6 +449,10 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 			return err
 		}
 
+		if err := putLabel(swapBucket, swap.Label); err != nil {
+			return err
+		}
+
 		// Write the outgoing channel set.
 		var b bytes.Buffer
 		for _, chanID := range swap.OutgoingChanSet {
@@ -444,6 +463,11 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 		}
 		err = swapBucket.Put(outgoingChanSetKey, b.Bytes())
 		if err != nil {
+			return err
+		}
+
+		// Write label to disk if we have one.
+		if err := putLabel(swapBucket, swap.Label); err != nil {
 			return err
 		}
 
@@ -482,6 +506,11 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 
 		err = swapBucket.Put(contractKey, contractBytes)
 		if err != nil {
+			return err
+		}
+
+		// Write label to disk if we have one.
+		if err := putLabel(swapBucket, swap.Label); err != nil {
 			return err
 		}
 

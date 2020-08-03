@@ -43,6 +43,9 @@ type SwapContract struct {
 
 	// InitiationTime is the time at which the swap was initiated.
 	InitiationTime time.Time
+
+	// Label contains an optional label for the swap.
+	Label string
 }
 
 // Loop contains fields shared between LoopIn and LoopOut

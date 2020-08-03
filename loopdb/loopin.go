@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/coreos/bbolt"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -24,6 +26,10 @@ type LoopInContract struct {
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
 	ExternalHtlc bool
+
+	// Label contains an optional label for the swap. Note that this field
+	// is stored separately to the rest of the contract on disk.
+	Label string
 }
 
 // LoopIn is a combination of the contract and the updates.
@@ -110,6 +116,31 @@ func serializeLoopInContract(swap *LoopInContract) (
 	}
 
 	return b.Bytes(), nil
+}
+
+// putLabel performs validation of a label and writes it to the bucket provided
+// under the label key if it is non-zero.
+func putLabel(bucket *bbolt.Bucket, label string) error {
+	if len(label) == 0 {
+		return nil
+	}
+
+	if err := labels.Validate(label); err != nil {
+		return err
+	}
+
+	return bucket.Put(labelKey, []byte(label))
+}
+
+// getLabel attempts to get an optional label stored under the label key in a
+// bucket. If it is not present, an empty label is returned.
+func getLabel(bucket *bbolt.Bucket) string {
+	label := bucket.Get(labelKey)
+	if label == nil {
+		return ""
+	}
+
+	return string(label)
 }
 
 // deserializeLoopInContract deserializes the loop in contract from a byte slice.

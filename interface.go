@@ -74,6 +74,9 @@ type OutRequest struct {
 
 	// Expiry is the absolute expiry height of the on-chain htlc.
 	Expiry int32
+
+	// Label contains an optional label for the swap.
+	Label string
 }
 
 // Out contains the full details of a loop out request. This includes things
@@ -186,6 +189,9 @@ type LoopInRequest struct {
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
 	ExternalHtlc bool
+
+	// Label contains an optional label for the swap.
+	Label string
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.

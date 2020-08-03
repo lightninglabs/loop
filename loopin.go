@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -76,6 +77,11 @@ type loopInInitResult struct {
 func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	currentHeight int32, request *LoopInRequest) (*loopInInitResult,
 	error) {
+
+	// Before we start, check that the label is valid.
+	if err := labels.Validate(request.Label); err != nil {
+		return nil, err
+	}
 
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
@@ -165,6 +171,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			CltvExpiry:       swapResp.expiry,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
+			Label:            request.Label,
 		},
 	}
 
