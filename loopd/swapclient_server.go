@@ -89,6 +89,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		SwapPublicationDeadline: time.Unix(
 			int64(in.SwapPublicationDeadline), 0,
 		),
+		Label: in.Label,
 	}
 
 	switch {
@@ -214,6 +215,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		CostServer:        int64(loopSwap.Cost.Server),
 		CostOnchain:       int64(loopSwap.Cost.Onchain),
 		CostOffchain:      int64(loopSwap.Cost.Offchain),
+		Label:             loopSwap.Label,
 	}, nil
 }
 
@@ -478,6 +480,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   in.ExternalHtlc,
+		Label:          in.Label,
 	}
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)

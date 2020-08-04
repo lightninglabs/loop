@@ -411,6 +411,10 @@
           "type": "integer",
           "format": "int32",
           "description": "*\nThe number of blocks that the on chain htlc should confirm within."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label for this swap. This field is limited to 500 characters\nand may not be one of the reserved values in loop/labels Reserved list."
         }
       }
     },
@@ -473,6 +477,10 @@
           "type": "string",
           "format": "uint64",
           "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label for this swap. This field is limited to 500 characters\nand may not start with the prefix [reserved], which is used to tag labels\nproduced by the daemon."
         }
       }
     },
@@ -683,6 +691,10 @@
           "type": "string",
           "format": "int64",
           "title": "Off-chain routing fees"
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label given to the swap on creation."
         }
       }
     },

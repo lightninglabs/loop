@@ -83,6 +83,13 @@ func TestLoopOutStore(t *testing.T) {
 	t.Run("two channel outgoing set", func(t *testing.T) {
 		testLoopOutStore(t, &restrictedSwap)
 	})
+
+	labelledSwap := unrestrictedSwap
+	labelledSwap.Label = "test label"
+	t.Run("labelled swap", func(t *testing.T) {
+		testLoopOutStore(t, &labelledSwap)
+	})
+
 }
 
 // testLoopOutStore tests the basic functionality of the current bbolt
@@ -196,27 +203,6 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 // TestLoopInStore tests all the basic functionality of the current bbolt
 // swap store.
 func TestLoopInStore(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchLoopInSwaps()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(swaps) != 0 {
-		t.Fatal("expected empty store")
-	}
-
-	hash := sha256.Sum256(testPreimage[:])
 	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	// Next, we'll make a new pending swap that we'll insert into the
@@ -241,6 +227,38 @@ func TestLoopInStore(t *testing.T) {
 		HtlcConfTarget: 2,
 		LastHop:        &lastHop,
 		ExternalHtlc:   true,
+	}
+
+	t.Run("loop in", func(t *testing.T) {
+		testLoopInStore(t, pendingSwap)
+	})
+
+	labelledSwap := pendingSwap
+	labelledSwap.Label = "test label"
+	t.Run("loop in with label", func(t *testing.T) {
+		testLoopInStore(t, labelledSwap)
+	})
+}
+
+func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First, verify that an empty database has no active swaps.
+	swaps, err := store.FetchLoopInSwaps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(swaps) != 0 {
+		t.Fatal("expected empty store")
 	}
 
 	// checkSwap is a test helper function that'll assert the state of a
@@ -268,6 +286,8 @@ func TestLoopInStore(t *testing.T) {
 			)
 		}
 	}
+
+	hash := sha256.Sum256(testPreimage[:])
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.

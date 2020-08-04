@@ -190,6 +190,13 @@ message LoopOutRequest {
     lower total swap fee.
     */
     uint64 swap_publication_deadline = 10;
+
+    /*
+    An optional label for this swap. This field is limited to 500 characters
+    and may not start with the prefix [reserved], which is used to tag labels
+    produced by the daemon.
+    */
+    string label = 12;
 }
 
 message LoopInRequest {
@@ -232,6 +239,12 @@ message LoopInRequest {
     The number of blocks that the on chain htlc should confirm within.
     */
     int32 htlc_conf_target = 6;
+
+    /*
+    An optional label for this swap. This field is limited to 500 characters
+    and may not be one of the reserved values in loop/labels Reserved list.
+    */
+    string label = 7;
 }
 
 message SwapResponse {
@@ -351,6 +364,9 @@ message SwapStatus {
 
     // Off-chain routing fees
     int64 cost_offchain = 10;
+
+    // An optional label given to the swap on creation.
+    string label = 15;
 }
 
 enum SwapType {
