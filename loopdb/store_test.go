@@ -70,6 +70,7 @@ func TestLoopOutStore(t *testing.T) {
 		SwapInvoice:             "swapinvoice",
 		MaxSwapRoutingFee:       30,
 		SweepConfTarget:         2,
+		HtlcConfirmations:       2,
 		SwapPublicationDeadline: time.Unix(0, initiationTime.UnixNano()),
 	}
 

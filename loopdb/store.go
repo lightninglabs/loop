@@ -77,10 +77,22 @@ var (
 	// value: concatenation of uint64 channel ids
 	outgoingChanSetKey = []byte("outgoing-chan-set")
 
+	// confirmationsKey is the key that stores the number of confirmations
+	// that were requested for a loop out swap.
+	//
+	// path: loopOutBucket -> swapBucket[hash] -> confirmationsKey
+	//
+	// value: uint32 confirmation value
+	confirmationsKey = []byte("confirmations")
+
 	byteOrder = binary.BigEndian
 
 	keyLength = 33
 )
+
+// DefaultLoopOutHtlcConfirmations is the default number of confirmations we
+// set for a loop out htlc.
+const DefaultLoopOutHtlcConfirmations uint32 = 1
 
 // fileExists returns true if the file exists, and false otherwise.
 func fileExists(path string) bool {
@@ -239,6 +251,23 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 						contract.OutgoingChanSet,
 						chanID,
 					)
+				}
+			}
+
+			// Set our default number of confirmations for the swap.
+			contract.HtlcConfirmations = DefaultLoopOutHtlcConfirmations
+
+			// If we have the number of confirmations stored for
+			// this swap, we overwrite our default with the stored
+			// value.
+			confBytes := swapBucket.Get(confirmationsKey)
+			if confBytes != nil {
+				r := bytes.NewReader(confBytes)
+				err := binary.Read(
+					r, byteOrder, &contract.HtlcConfirmations,
+				)
+				if err != nil {
+					return err
 				}
 			}
 
@@ -468,6 +497,18 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 
 		// Write label to disk if we have one.
 		if err := putLabel(swapBucket, swap.Label); err != nil {
+			return err
+		}
+
+		// Write our confirmation target under its own key.
+		var buf bytes.Buffer
+		err = binary.Write(&buf, byteOrder, swap.HtlcConfirmations)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(confirmationsKey, buf.Bytes())
+		if err != nil {
 			return err
 		}
 

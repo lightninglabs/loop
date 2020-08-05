@@ -36,6 +36,10 @@ type LoopOutContract struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
+	// HtlcConfirmations is the number of confirmations we require the on
+	// chain htlc to have before proceeding with the swap.
+	HtlcConfirmations uint32
+
 	// OutgoingChanSet is the set of short ids of channels that may be used.
 	// If empty, any channel may be used.
 	OutgoingChanSet ChannelSet

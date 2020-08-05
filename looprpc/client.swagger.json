@@ -473,6 +473,11 @@
           "format": "int32",
           "description": "*\nThe number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
         },
+        "htlc_confirmations": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The number of confirmations that we require for the on chain htlc that will\nbe published by the server before we reveal the preimage."
+        },
         "swap_publication_deadline": {
           "type": "string",
           "format": "uint64",

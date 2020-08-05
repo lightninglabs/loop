@@ -138,6 +138,15 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// If a htlc confirmation target was not provided, we use the default
+	// number of confirmations. We overwrite this value rather than failing
+	// it because the field is a new addition to the rpc, and we don't want
+	// to break older clients that are not aware of this new field.
+	confs := uint32(request.HtlcConfirmations)
+	if confs == 0 {
+		confs = loopdb.DefaultLoopOutHtlcConfirmations
+	}
+
 	// Instantiate a struct that contains all required data to start the
 	// swap.
 	initiationTime := time.Now()
@@ -147,6 +156,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		DestAddr:                request.DestAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
+		HtlcConfirmations:       confs,
 		PrepayInvoice:           swapResp.prepayInvoice,
 		MaxPrepayRoutingFee:     request.MaxPrepayRoutingFee,
 		SwapPublicationDeadline: request.SwapPublicationDeadline,
@@ -606,8 +616,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	// Wait for confirmation of the on-chain htlc by watching for a tx
 	// producing the swap script output.
 	s.log.Infof(
-		"Register conf ntfn for swap script on chain (hh=%v)",
-		s.InitiationHeight,
+		"Register %v conf ntfn for swap script on chain (hh=%v)",
+		s.HtlcConfirmations, s.InitiationHeight,
 	)
 
 	// If we've revealed the preimage in a previous run, we expect to have
@@ -624,8 +634,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	defer cancel()
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, s.htlcTxHash, s.htlc.PkScript, 1,
-			s.InitiationHeight,
+			ctx, s.htlcTxHash, s.htlc.PkScript,
+			int32(s.HtlcConfirmations), s.InitiationHeight,
 		)
 	if err != nil {
 		return nil, err

@@ -182,6 +182,12 @@ message LoopOutRequest {
     */
     int32 sweep_conf_target = 9;
 
+    /*
+    The number of confirmations that we require for the on chain htlc that will
+    be published by the server before we reveal the preimage.
+    */
+    int32 htlc_confirmations = 13;
+
     /**
     The latest time (in unix seconds) we allow the server to wait before
     publishing the HTLC on chain. Setting this to a larger value will give the

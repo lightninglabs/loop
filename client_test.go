@@ -27,6 +27,7 @@ var (
 		Amount:              btcutil.Amount(50000),
 		DestAddr:            testAddr,
 		MaxMinerFee:         50000,
+		HtlcConfirmations:   defaultConfirmations,
 		SweepConfTarget:     2,
 		MaxSwapFee:          1050,
 		MaxPrepayAmount:     100,
@@ -36,16 +37,22 @@ var (
 
 	swapInvoiceDesc   = "swap"
 	prepayInvoiceDesc = "prepay"
+
+	defaultConfirmations = int32(loopdb.DefaultLoopOutHtlcConfirmations)
 )
 
-// TestSuccess tests the loop out happy flow.
+// TestSuccess tests the loop out happy flow, using a custom htlc confirmation
+// target.
 func TestSuccess(t *testing.T) {
 	defer test.Guard(t)()
 
 	ctx := createClientTestContext(t, nil)
 
+	req := *testRequest
+	req.HtlcConfirmations = 2
+
 	// Initiate loop out.
-	info, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
+	info, err := ctx.swapClient.LoopOut(context.Background(), &req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +64,7 @@ func TestSuccess(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf.
-	confIntent := ctx.AssertRegisterConf(false)
+	confIntent := ctx.AssertRegisterConf(false, req.HtlcConfirmations)
 
 	testSuccess(ctx, testRequest.Amount, info.SwapHash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
@@ -83,7 +90,7 @@ func TestFailOffchain(t *testing.T) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	ctx.AssertRegisterConf(false)
+	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	signalSwapPaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
@@ -141,18 +148,25 @@ func TestFailWrongAmount(t *testing.T) {
 func TestResume(t *testing.T) {
 	defer test.Guard(t)()
 
+	defaultConfs := loopdb.DefaultLoopOutHtlcConfirmations
+
 	t.Run("not expired", func(t *testing.T) {
-		testResume(t, false, false, true)
+		testResume(t, defaultConfs, false, false, true)
+	})
+	t.Run("not expired, custom confirmations", func(t *testing.T) {
+		testResume(t, 3, false, false, true)
 	})
 	t.Run("expired not revealed", func(t *testing.T) {
-		testResume(t, true, false, false)
+		testResume(t, defaultConfs, true, false, false)
 	})
 	t.Run("expired revealed", func(t *testing.T) {
-		testResume(t, true, true, true)
+		testResume(t, defaultConfs, true, true, true)
 	})
 }
 
-func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
+func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
+	expectSuccess bool) {
+
 	defer test.Guard(t)()
 
 	preimage := testPreimage
@@ -191,11 +205,13 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 		update.HtlcTxHash = &chainhash.Hash{1, 2, 6}
 	}
 
+	// Create a pending swap with our custom number of confirmations.
 	pendingSwap := &loopdb.LoopOut{
 		Contract: &loopdb.LoopOutContract{
 			DestAddr:          dest,
 			SwapInvoice:       swapPayReq,
 			SweepConfTarget:   2,
+			HtlcConfirmations: confs,
 			MaxSwapRoutingFee: 70000,
 			PrepayInvoice:     prePayReq,
 			SwapContract: loopdb.SwapContract{
@@ -231,8 +247,8 @@ func testResume(t *testing.T, expired, preimageRevealed, expectSuccess bool) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	// Expect client to register for conf.
-	confIntent := ctx.AssertRegisterConf(preimageRevealed)
+	// Expect client to register for our expected number of confirmations.
+	confIntent := ctx.AssertRegisterConf(preimageRevealed, int32(confs))
 
 	signalSwapPaymentResult(nil)
 	signalPrepaymentResult(nil)

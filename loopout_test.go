@@ -116,7 +116,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 
 	// Swap is expected to register for confirmation of the htlc. Assert
 	// this to prevent a blocked channel in the mock.
-	ctx.AssertRegisterConf(false)
+	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	// Cancel the swap. There is nothing else we need to assert. The payment
 	// parameters don't play a role in the remainder of the swap process.
@@ -191,7 +191,7 @@ func TestLateHtlcPublish(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf
-	ctx.AssertRegisterConf(false)
+	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	// // Wait too long before publishing htlc.
 	blockEpochChan <- int32(swap.CltvExpiry - 10)
@@ -290,7 +290,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf(false)
+	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 
@@ -494,7 +494,7 @@ func TestPreimagePush(t *testing.T) {
 	signalPrepaymentResult(nil)
 
 	// Notify the confirmation notification for the HTLC.
-	ctx.AssertRegisterConf(false)
+	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	blockEpochChan <- ctx.Lnd.Height + 1
 

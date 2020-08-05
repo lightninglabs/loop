@@ -64,6 +64,10 @@ type OutRequest struct {
 	// client sweep tx.
 	SweepConfTarget int32
 
+	// HtlcConfirmations specifies the number of confirmations we require
+	// for on chain loop out htlcs.
+	HtlcConfirmations int32
+
 	// OutgoingChanSet optionally specifies the short channel ids of the
 	// channels that may be used to loop out.
 	OutgoingChanSet loopdb.ChannelSet

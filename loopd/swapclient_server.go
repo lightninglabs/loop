@@ -86,6 +86,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		MaxSwapRoutingFee:   btcutil.Amount(in.MaxSwapRoutingFee),
 		MaxSwapFee:          btcutil.Amount(in.MaxSwapFee),
 		SweepConfTarget:     sweepConfTarget,
+		HtlcConfirmations:   in.HtlcConfirmations,
 		SwapPublicationDeadline: time.Unix(
 			int64(in.SwapPublicationDeadline), 0,
 		),
