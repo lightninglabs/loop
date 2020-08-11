@@ -282,20 +282,48 @@ func testLoopInTimeout(t *testing.T,
 
 // TestLoopInResume tests resuming swaps in various states.
 func TestLoopInResume(t *testing.T) {
-	t.Run("initiated", func(t *testing.T) {
-		testLoopInResume(t, loopdb.StateInitiated, false)
-	})
+	storedVersion := []loopdb.ProtocolVersion{
+		loopdb.ProtocolVersionUnrecorded,
+		loopdb.ProtocolVersionHtlcV2,
+	}
 
-	t.Run("initiated expired", func(t *testing.T) {
-		testLoopInResume(t, loopdb.StateInitiated, true)
-	})
+	htlcVersion := []swap.ScriptVersion{
+		swap.HtlcV1,
+		swap.HtlcV2,
+	}
 
-	t.Run("htlc published", func(t *testing.T) {
-		testLoopInResume(t, loopdb.StateHtlcPublished, false)
-	})
+	for i, version := range storedVersion {
+		version := version
+		scriptVersion := htlcVersion[i]
+
+		t.Run(version.String(), func(t *testing.T) {
+			t.Run("initiated", func(t *testing.T) {
+				testLoopInResume(
+					t, loopdb.StateInitiated, false,
+					version, scriptVersion,
+				)
+			})
+
+			t.Run("initiated expired", func(t *testing.T) {
+				testLoopInResume(
+					t, loopdb.StateInitiated, true,
+					version, scriptVersion,
+				)
+			})
+
+			t.Run("htlc published", func(t *testing.T) {
+				testLoopInResume(
+					t, loopdb.StateHtlcPublished, false,
+					version, scriptVersion,
+				)
+			})
+		})
+	}
 }
 
-func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
+func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
+	storedVersion loopdb.ProtocolVersion, scriptVersion swap.ScriptVersion) {
+
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
@@ -314,6 +342,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 			SenderKey:       senderKey,
 			MaxSwapFee:      60000,
 			MaxMinerFee:     50000,
+			ProtocolVersion: storedVersion,
 		},
 	}
 	pendSwap := &loopdb.LoopIn{
@@ -331,7 +360,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	}
 
 	htlc, err := swap.NewHtlc(
-		swap.HtlcV1, contract.CltvExpiry, contract.SenderKey,
+		scriptVersion, contract.CltvExpiry, contract.SenderKey,
 		contract.ReceiverKey, testPreimage.Hash(), swap.HtlcNP2WSH,
 		cfg.lnd.ChainParams,
 	)
