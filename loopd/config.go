@@ -1,10 +1,13 @@
 package loopd
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/lncfg"
 )
 
 var (
@@ -14,6 +17,7 @@ var (
 	defaultLogDirname  = "logs"
 	defaultLogFilename = "loopd.log"
 	defaultLogDir      = filepath.Join(loopDirBase, defaultLogDirname)
+	defaultConfigFile  = filepath.Join(loopDirBase, defaultConfigFilename)
 
 	defaultMaxLogFiles     = 3
 	defaultMaxLogFileSize  = 10
@@ -43,6 +47,9 @@ type Config struct {
 	RESTListen  string `long:"restlisten" description:"Address to listen on for REST clients"`
 	CORSOrigin  string `long:"corsorigin" description:"The value to send in the Access-Control-Allow-Origin header. Header will be omitted if empty."`
 
+	LoopDir        string `long:"loopdir" description:"The directory for all of loop's data."`
+	ConfigFile     string `long:"configfile" description:"Path to configuration file."`
+	DataDir        string `long:"datadir" description:"Directory for loopdb."`
 	LogDir         string `long:"logdir" description:"Directory to log output."`
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`
 	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB"`
@@ -74,6 +81,9 @@ func DefaultConfig() Config {
 		Server: &loopServerConfig{
 			NoTLS: false,
 		},
+		LoopDir:         loopDirBase,
+		ConfigFile:      defaultConfigFile,
+		DataDir:         loopDirBase,
 		LogDir:          defaultLogDir,
 		MaxLogFiles:     defaultMaxLogFiles,
 		MaxLogFileSize:  defaultMaxLogFileSize,
@@ -85,4 +95,52 @@ func DefaultConfig() Config {
 			Host: "localhost:10009",
 		},
 	}
+}
+
+// Validate cleans up paths in the config provided and validates it.
+func Validate(cfg *Config) error {
+	// Cleanup any paths before we use them.
+	cfg.LoopDir = lncfg.CleanAndExpandPath(cfg.LoopDir)
+	cfg.DataDir = lncfg.CleanAndExpandPath(cfg.DataDir)
+	cfg.LogDir = lncfg.CleanAndExpandPath(cfg.LogDir)
+
+	// Since our loop directory overrides our log/data dir values, make sure
+	// that they are not set when loop dir is set. We hard here rather than
+	// overwriting and potentially confusing the user.
+	logDirSet := cfg.LogDir != defaultLogDir
+	dataDirSet := cfg.DataDir != loopDirBase
+	loopDirSet := cfg.LoopDir != loopDirBase
+
+	if loopDirSet {
+		if logDirSet {
+			return fmt.Errorf("loopdir overwrites logdir, please " +
+				"only set one value")
+		}
+
+		if dataDirSet {
+			return fmt.Errorf("loopdir overwrites datadir, please " +
+				"only set one value")
+		}
+
+		// Once we are satisfied that neither config value was set, we
+		// replace them with our loop dir.
+		cfg.DataDir = cfg.LoopDir
+		cfg.LogDir = filepath.Join(cfg.LoopDir, defaultLogDirname)
+	}
+
+	// Append the network type to the data and log directory so they are
+	// "namespaced" per network.
+	cfg.DataDir = filepath.Join(cfg.DataDir, cfg.Network)
+	cfg.LogDir = filepath.Join(cfg.LogDir, cfg.Network)
+
+	// If either of these directories do not exist, create them.
+	if err := os.MkdirAll(cfg.DataDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(cfg.LogDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	return nil
 }
