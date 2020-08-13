@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -126,7 +125,7 @@ type SingleInvoiceSubscription struct {
 // SignOutputRawRequest contains input data for a tx signing request.
 type SignOutputRawRequest struct {
 	Tx              *wire.MsgTx
-	SignDescriptors []*input.SignDescriptor
+	SignDescriptors []*lndclient.SignDescriptor
 }
 
 // LndMockServices provides a full set of mocked lnd services.

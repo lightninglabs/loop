@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -16,7 +17,7 @@ type mockSigner struct {
 }
 
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
 
 	s.lnd.SignOutputRawChannel <- SignOutputRawRequest{
 		Tx:              tx,
@@ -29,7 +30,7 @@ func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 }
 
 func (s *mockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
+	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
 
 	return nil, fmt.Errorf("unimplemented")
 }

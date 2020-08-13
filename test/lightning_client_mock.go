@@ -21,6 +21,10 @@ import (
 type mockLightningClient struct {
 	lnd *LndMockServices
 	wg  sync.WaitGroup
+
+	// Embed lndclient's interface so that lndclient can be expanded
+	// without the need to implement unused functions on the mock.
+	lndclient.LightningClient
 }
 
 // PayInvoice pays an invoice.
@@ -160,7 +164,7 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 
 // ListTransactions returns all known transactions of the backing lnd node.
 func (h *mockLightningClient) ListTransactions(
-	_ context.Context) ([]lndclient.Transaction, error) {
+	_ context.Context, _, _ int32) ([]lndclient.Transaction, error) {
 
 	h.lnd.lock.Lock()
 	txs := h.lnd.Transactions

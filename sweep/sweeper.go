@@ -57,7 +57,7 @@ func (s *Sweeper) CreateSweepTx(
 		return nil, err
 	}
 
-	signDesc := input.SignDescriptor{
+	signDesc := lndclient.SignDescriptor{
 		WitnessScript: htlc.Script,
 		Output: &wire.TxOut{
 			Value: int64(amount),
@@ -70,7 +70,7 @@ func (s *Sweeper) CreateSweepTx(
 	}
 
 	rawSigs, err := s.Lnd.Signer.SignOutputRaw(
-		globalCtx, sweepTx, []*input.SignDescriptor{&signDesc},
+		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("signing: %v", err)
