@@ -12,6 +12,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
 )
@@ -109,12 +110,19 @@ func Run(rpcCfg RPCConfig) error {
 	}
 
 	// Parse ini file.
-	loopDir := filepath.Join(loopDirBase, config.Network)
-	if err := os.MkdirAll(loopDir, os.ModePerm); err != nil {
-		return err
+	loopDir := lncfg.CleanAndExpandPath(config.LoopDir)
+	configFile := lncfg.CleanAndExpandPath(config.ConfigFile)
+
+	// If our loop directory is set and the config file parameter is not
+	// set, we assume that they want to point to a config file in their
+	// loop dir. However, if the config file has a non-default value, then
+	// we leave the config parameter as its custom value.
+	if loopDir != loopDirBase && configFile == defaultConfigFile {
+		configFile = filepath.Join(
+			loopDir, defaultConfigFilename,
+		)
 	}
 
-	configFile := filepath.Join(loopDir, defaultConfigFilename)
 	if err := flags.IniParse(configFile, &config); err != nil {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the config
@@ -146,9 +154,10 @@ func Run(rpcCfg RPCConfig) error {
 		os.Exit(0)
 	}
 
-	// Append the network type to the log directory so it is
-	// "namespaced" per network in the same fashion as the data directory.
-	config.LogDir = filepath.Join(config.LogDir, config.Network)
+	// Validate our config before we proceed.
+	if err := Validate(&config); err != nil {
+		return err
+	}
 
 	// Initialize logging at the default logging level.
 	err = logWriter.InitLogRotator(
