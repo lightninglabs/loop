@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,9 +22,21 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
+	// ErrTemporaryServerError is returned when the server provides us with
+	// a temporary error. The swap may still succeed if it is retried at
+	// a later stage.
+	ErrTemporaryServerError = errors.New("temporary server error, please " +
+		"retry later")
+
+	// temporaryErrStr is the error string that the server returns when it
+	// experiences a temporary error.
+	temporaryErrStr = "amount above current maximum"
+
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
 	// remaining blocks before htlc expiry required to reveal preimage.
 	MinLoopOutPreimageRevealDelta int32 = 20
@@ -122,7 +135,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		receiverKey, request.SwapPublicationDeadline,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cannot initiate swap: %v", err)
+		return nil, fmt.Errorf("cannot initiate swap: %v",
+			unwrapTemporaryError(err))
 	}
 
 	err = validateLoopOutContract(
@@ -211,6 +225,32 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		swap:          swap,
 		serverMessage: swapResp.serverMessage,
 	}, nil
+}
+
+// unwrapTemporaryError examines a non-nil error, and attempts to match it to
+// a temporary server side error. If it does not have the grpc code and error
+// string of our temporary error, we simply return the original error. If we
+// match our temporary error, we return ErrTemporaryServerError.
+func unwrapTemporaryError(err error) error {
+	// If the error does not have a grpc status, it is not a temporary
+	// server error.
+	e, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+
+	if e.Code() != codes.OutOfRange {
+		return err
+	}
+
+	// The server returns OutOfRange for invalid parameters and temporary
+	// server errors, so we need to string match to our exact temporary
+	// server error string.
+	if !strings.Contains(err.Error(), temporaryErrStr) {
+		return err
+	}
+
+	return ErrTemporaryServerError
 }
 
 // resumeLoopOutSwap returns a swap object representing a pending swap that has
