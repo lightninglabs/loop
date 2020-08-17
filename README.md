@@ -43,7 +43,7 @@ line application. Future APIs will be added to support implementation or use of
 the Loop service.
 
 The Loop daemon exposes a [gRPC API](https://lightning.engineering/loopapi/#lightning-loop-grpc-api-reference)
-(defaults to port 11010) and a [REST API](https://lightning.engineering/loopapi/rest/index.html)
+(defaults to port 11010) and a [REST API](https://lightning.engineering/loopapi/index.html#loop-rest-api-reference)
 (defaults to port 8081).
 
 The [GitHub issue tracker](https://github.com/lightninglabs/loop/issues) can be
