@@ -13,6 +13,7 @@ import (
 var (
 	loopDirBase = btcutil.AppDataDir("loop", false)
 
+	defaultNetwork     = "mainnet"
 	defaultLogLevel    = "info"
 	defaultLogDirname  = "logs"
 	defaultLogFilename = "loopd.log"
@@ -75,7 +76,7 @@ const (
 // DefaultConfig returns all default values for the Config struct.
 func DefaultConfig() Config {
 	return Config{
-		Network:    "mainnet",
+		Network:    defaultNetwork,
 		RPCListen:  "localhost:11010",
 		RESTListen: "localhost:8081",
 		Server: &loopServerConfig{
