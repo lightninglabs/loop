@@ -71,12 +71,19 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 		getLnd: func(network lndclient.Network, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {
 
+			syncCtx, cancel := context.WithCancel(
+				context.Background(),
+			)
+			defer cancel()
+
 			svcCfg := &lndclient.LndServicesConfig{
-				LndAddress:   cfg.Host,
-				Network:      network,
-				MacaroonDir:  cfg.MacaroonDir,
-				TLSPath:      cfg.TLSPath,
-				CheckVersion: LoopMinRequiredLndVersion,
+				LndAddress:            cfg.Host,
+				Network:               network,
+				MacaroonDir:           cfg.MacaroonDir,
+				TLSPath:               cfg.TLSPath,
+				CheckVersion:          LoopMinRequiredLndVersion,
+				BlockUntilChainSynced: true,
+				ChainSyncCtx:          syncCtx,
 			}
 
 			// If a custom lnd connection is specified we use that
@@ -88,6 +95,25 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 				}
 			}
 
+			// Before we try to get our client connection, setup
+			// a goroutine which will cancel our lndclient if loopd
+			// is terminated, or exit if our context is cancelled.
+			go func() {
+				select {
+				// If the client decides to kill loop before
+				// lnd is synced, we cancel our context, which
+				// will unblock lndclient.
+				case <-signal.ShutdownChannel():
+					cancel()
+
+				// If our sync context was cancelled, we know
+				// that the function exited, which means that
+				// our client synced.
+				case <-syncCtx.Done():
+				}
+			}()
+
+			// This will block until lnd is synced to chain.
 			return lndclient.NewLndServices(svcCfg)
 		},
 	}
@@ -177,10 +203,14 @@ func Run(rpcCfg RPCConfig) error {
 
 	lisCfg := newListenerCfg(&config, rpcCfg)
 
+	// Start listening for signal interrupts regardless of which command
+	// we are running. When our command tries to get a lnd connection, it
+	// blocks until lnd is synced. We listen for interrupts so that we can
+	// shutdown the daemon while waiting for sync to complete.
+	signal.Intercept()
+
 	// Execute command.
 	if parser.Active == nil {
-		signal.Intercept()
-
 		daemon := New(&config, lisCfg)
 		if err := daemon.Start(); err != nil {
 			return err
