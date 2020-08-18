@@ -18,7 +18,9 @@ var (
 	defaultLogDirname  = "logs"
 	defaultLogFilename = "loopd.log"
 	defaultLogDir      = filepath.Join(loopDirBase, defaultLogDirname)
-	defaultConfigFile  = filepath.Join(loopDirBase, defaultConfigFilename)
+	defaultConfigFile  = filepath.Join(
+		loopDirBase, defaultNetwork, defaultConfigFilename,
+	)
 
 	defaultMaxLogFiles     = 3
 	defaultMaxLogFileSize  = 10
