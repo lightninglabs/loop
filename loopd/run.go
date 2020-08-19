@@ -137,17 +137,7 @@ func Run(rpcCfg RPCConfig) error {
 
 	// Parse ini file.
 	loopDir := lncfg.CleanAndExpandPath(config.LoopDir)
-	configFile := lncfg.CleanAndExpandPath(config.ConfigFile)
-
-	// If our loop directory is set and the config file parameter is not
-	// set, we assume that they want to point to a config file in their
-	// loop dir. However, if the config file has a non-default value, then
-	// we leave the config parameter as its custom value.
-	if loopDir != loopDirBase && configFile == defaultConfigFile {
-		configFile = filepath.Join(
-			loopDir, defaultConfigFilename,
-		)
-	}
+	configFile := getConfigPath(config, loopDir)
 
 	if err := flags.IniParse(configFile, &config); err != nil {
 		// If it's a parsing related error, then we'll return
@@ -236,4 +226,26 @@ func Run(rpcCfg RPCConfig) error {
 	}
 
 	return fmt.Errorf("unimplemented command %v", parser.Active.Name)
+}
+
+// getConfigPath gets our config path based on the values that are set in our
+// config.
+func getConfigPath(cfg Config, loopDir string) string {
+	// If the config file path provided by the user is set, then we just
+	// use this value.
+	if cfg.ConfigFile != defaultConfigFile {
+		return lncfg.CleanAndExpandPath(cfg.ConfigFile)
+	}
+
+	// If the user has set a loop directory that is different to the default
+	// we will use this loop directory as the location of our config file.
+	// We do not namespace by network, because this is a custom loop dir.
+	if loopDir != loopDirBase {
+		return filepath.Join(loopDir, defaultConfigFilename)
+	}
+
+	// Otherwise, we are using our default loop directory, and the user did
+	// not set a config file path. We use our default loop dir, namespaced
+	// by network.
+	return filepath.Join(loopDir, cfg.Network, defaultConfigFilename)
 }
