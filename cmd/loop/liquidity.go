@@ -194,3 +194,30 @@ func setRule(ctx *cli.Context) error {
 
 	return err
 }
+
+var suggestSwapCommand = cli.Command{
+	Name:  "suggestswaps",
+	Usage: "show a list of suggested swaps",
+	Description: "Displays a list of suggested swaps that aim to obtain " +
+		"the liquidity thresholds set out in the autolooper config. ",
+	Action: suggestSwap,
+}
+
+func suggestSwap(ctx *cli.Context) error {
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.SuggestSwaps(
+		context.Background(), &looprpc.SuggestSwapsRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	printJSON(resp)
+
+	return nil
+}

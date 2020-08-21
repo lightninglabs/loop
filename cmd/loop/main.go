@@ -111,6 +111,7 @@ func main() {
 		monitorCommand, quoteCommand, listAuthCommand,
 		listSwapsCommand, swapInfoCommand, getLiquidityCfgCommand,
 		setLiquidityCfgCommand, setLiquidityRuleCommand,
+		suggestSwapCommand,
 	}
 
 	err := app.Run(os.Args)
