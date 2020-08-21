@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -144,6 +145,101 @@ func TestCalculateSwapAmount(t *testing.T) {
 				testCase.surplusSide,
 			)
 			require.Equal(t, testCase.expectedAmt, amt)
+		})
+	}
+}
+
+// TestGetSwaps tests creation of a slice of recommended swaps using for the
+// threshold rule.
+func TestGetSwaps(t *testing.T) {
+	var (
+		chan1 = lnwire.NewShortChanIDFromInt(1)
+		chan2 = lnwire.NewShortChanIDFromInt(2)
+	)
+
+	tests := []struct {
+		name            string
+		rule            *ThresholdRule
+		channels        []balances
+		outRestrictions *Restrictions
+		inRestrictions  *Restrictions
+		swaps           []SwapRecommendation
+		err             error
+	}{
+		{
+			name:     "no capacity",
+			rule:     NewThresholdRule(10, 10),
+			channels: nil,
+			err:      ErrNoCapacity,
+		},
+		{
+			name: "liquidity ok",
+			rule: NewThresholdRule(10, 10),
+			channels: []balances{
+				{
+					capacity: 100,
+					incoming: 50,
+					outgoing: 50,
+				},
+			},
+		},
+		{
+			name:           "loop in",
+			rule:           NewThresholdRule(10, 10),
+			inRestrictions: NewRestrictions(10, 100),
+			channels: []balances{
+				{
+					capacity: 100,
+					incoming: 100,
+					outgoing: 0,
+				},
+			},
+			swaps: []SwapRecommendation{
+				&LoopInRecommendation{amount: 50},
+			},
+		},
+		{
+			name:            "loop out",
+			rule:            NewThresholdRule(10, 10),
+			outRestrictions: NewRestrictions(10, 100),
+			channels: []balances{
+				{
+					capacity:  100,
+					incoming:  0,
+					outgoing:  100,
+					channelID: chan1,
+				},
+				{
+					capacity:  100,
+					incoming:  0,
+					outgoing:  100,
+					channelID: chan2,
+				},
+			},
+			swaps: []SwapRecommendation{
+				&LoopOutRecommendation{
+					amount:  100,
+					Channel: chan1,
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			swaps, err := test.rule.getSwaps(
+				test.channels, test.outRestrictions,
+				test.inRestrictions,
+			)
+
+			require.Equal(t, test.err, err)
+			if test.err != nil {
+				return
+			}
+
+			require.Equal(t, test.swaps, swaps)
 		})
 	}
 }

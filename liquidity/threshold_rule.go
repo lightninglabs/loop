@@ -1,9 +1,111 @@
 package liquidity
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
+
+var (
+	// ErrNoCapacity is returned when there is no capacity in the set of
+	// channels provided.
+	ErrNoCapacity = errors.New("no capacity available for swaps")
+)
+
+type channelDetails struct {
+	amount  btcutil.Amount
+	channel lnwire.ShortChannelID
+	peer    route.Vertex
+}
+
+func (r *ThresholdRule) getSwaps(channels []balances, outRestrictions,
+	inRestrictions *Restrictions) ([]SwapRecommendation, error) {
+
+	// To decide whether we should swap, we will look at all of our balances
+	// combined.
+	var totalBalance balances
+	for _, balance := range channels {
+		totalBalance.capacity += balance.capacity
+		totalBalance.incoming += balance.incoming
+		totalBalance.outgoing += balance.outgoing
+	}
+
+	// Check that we have some balance in the set of channels provided.
+	if totalBalance.capacity == 0 {
+		return nil, ErrNoCapacity
+	}
+
+	// Examine our total balance and required ratios to decide whether we
+	// need to swap.
+	amount, swapType := shouldSwap(
+		&totalBalance, r.MinimumInbound, r.MinimumOutbound,
+	)
+
+	// If a nil swap type is returned, we do not need to recommend any swaps
+	// so we return an empty swap set.
+	if swapType == nil {
+		return nil, nil
+	}
+
+	var (
+		restrictions *Restrictions
+		makeSwap     swapRecommendationFunc
+	)
+
+	// Switch on our swap type to determine the amount that we need to swap
+	// and set the appropriate set of restrictions.
+	switch *swapType {
+	case swap.TypeOut:
+		restrictions = outRestrictions
+		makeSwap = newLoopOutRecommendation
+
+	case swap.TypeIn:
+		restrictions = inRestrictions
+		makeSwap = newLoopInRecommendation
+
+	default:
+		return nil, fmt.Errorf("unknown swap type: %v", *swapType)
+	}
+
+	// At this stage, we know that we need to perform a swap, and we know
+	// the amount of our total capacity that we need to move. Before we
+	// proceed, we do a quick check that the amount we need to move is more
+	// than the minimum swap amount, returning if it is not.
+	if amount < restrictions.MinimumAmount {
+		return nil, nil
+	}
+
+	// Make a set of balances that contain the balance that should be used
+	// to create a swap, depending on the type of swap we are performing.
+	available := make([]channelDetails, len(channels))
+	for i, channel := range channels {
+		details := channelDetails{
+			channel: channel.channelID,
+			peer:    channel.pubkey,
+		}
+
+		if *swapType == swap.TypeOut {
+			details.amount = channel.outgoing
+		} else {
+			details.amount = channel.incoming
+		}
+
+		available[i] = details
+	}
+
+	// TODO(carla): add multi-swap selection for loop out, mocking the
+	// behaviour of lnd's current split algorithm.
+	swaps := selectSwaps(
+		available, makeSwap, amount, restrictions.MinimumAmount,
+		restrictions.MaximumAmount,
+	)
+
+	return swaps, nil
+}
 
 // shouldSwap examines our current set of balances, and required thresholds and
 // determines whether we can improve our liquidity balance. It returns a swap
