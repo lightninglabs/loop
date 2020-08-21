@@ -8,17 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/liquidity"
+	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
-
-	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
-
-	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/looprpc"
 )
 
 const (
@@ -545,6 +544,132 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	}
 
 	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
+// GetLiquidityConfig gets our current liquidity manager's config.
+func (s *swapClientServer) GetLiquidityConfig(ctx context.Context,
+	_ *looprpc.GetLiquidityConfigRequest) (*looprpc.LiquidityConfig,
+	error) {
+
+	cfg, err := s.impl.GetLiquidityConfig(ctx)
+	switch err {
+	case liquidity.ErrNoParameters:
+		return &looprpc.LiquidityConfig{}, nil
+
+	case nil:
+
+	default:
+		return nil, err
+	}
+
+	rpcCfg := &looprpc.LiquidityConfig{
+		IncludePrivate: cfg.IncludePrivate,
+	}
+
+	rpcCfg.Target, err = rpcTarget(cfg.Target)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.Rule != nil {
+		rpcCfg.Rule, err = rpcRule(cfg.Rule)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return rpcCfg, nil
+}
+
+// SetLiquidityConfig attempts to set our current liquidity manager's config.
+func (s *swapClientServer) SetLiquidityConfig(ctx context.Context,
+	in *looprpc.SetLiquidityConfigRequest) (*looprpc.SetLiquidityConfigResponse,
+	error) {
+
+	params := liquidity.Parameters{
+		IncludePrivate: in.Config.IncludePrivate,
+	}
+
+	switch in.Config.Target {
+	case looprpc.LiquidityTarget_NONE:
+		params.Target = liquidity.TargetNone
+
+	case looprpc.LiquidityTarget_NODE:
+		params.Target = liquidity.TargetNode
+
+	case looprpc.LiquidityTarget_PEER:
+		params.Target = liquidity.TargetPeer
+
+	case looprpc.LiquidityTarget_CHANNEL:
+		params.Target = liquidity.TargetChannel
+
+	default:
+		return nil, fmt.Errorf("unknown target: %v", in.Config.Target)
+	}
+
+	if in.Config.Rule != nil {
+		var err error
+		params.Rule, err = rpcToRule(in.Config.Rule)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.impl.SetLiquidityParameters(ctx, params); err != nil {
+		return nil, err
+	}
+
+	return &looprpc.SetLiquidityConfigResponse{}, nil
+}
+
+func rpcToRule(rule *looprpc.LiquidityRule) (liquidity.Rule, error) {
+	switch rule.Type {
+	case looprpc.LiquidityRuleType_UNKNOWN:
+		return nil, nil
+
+	case looprpc.LiquidityRuleType_THRESHOLD:
+		return liquidity.NewThresholdRule(
+			int(rule.MinimumInbound), int(rule.MinimumOutbound),
+		), nil
+
+	default:
+		return nil, fmt.Errorf("unknown rule: %T", rule)
+	}
+
+}
+
+func rpcRule(rule liquidity.Rule) (*looprpc.LiquidityRule, error) {
+	switch r := rule.(type) {
+	case *liquidity.ThresholdRule:
+		return &looprpc.LiquidityRule{
+			Type:            looprpc.LiquidityRuleType_THRESHOLD,
+			MinimumInbound:  uint32(r.MinimumInbound),
+			MinimumOutbound: uint32(r.MinimumOutbound),
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown rule: %T", rule)
+	}
+}
+
+func rpcTarget(target liquidity.Target) (looprpc.LiquidityTarget, error) {
+	switch target {
+	case liquidity.TargetNone:
+		return looprpc.LiquidityTarget_NONE, nil
+
+	case liquidity.TargetNode:
+		return looprpc.LiquidityTarget_NODE, nil
+
+	case liquidity.TargetPeer:
+		return looprpc.LiquidityTarget_PEER, nil
+
+	case liquidity.TargetChannel:
+		return looprpc.LiquidityTarget_CHANNEL, nil
+
+	default:
+		return looprpc.LiquidityTarget_NONE,
+			fmt.Errorf("unknown target: %v", target)
+	}
 }
 
 // processStatusUpdates reads updates on the status channel and processes them.

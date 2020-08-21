@@ -644,6 +644,21 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	}, nil
 }
 
+// GetLiquidityConfig gets the currently set parameters for our liquidity
+// manager.
+func (s *Client) GetLiquidityConfig(ctx context.Context) (*liquidity.Parameters,
+	error) {
+
+	return s.manager.GetParameters(ctx)
+}
+
+// SetLiquidityParameters attempts to set our liquidity manager's parameters.
+func (s *Client) SetLiquidityParameters(ctx context.Context,
+	parameters liquidity.Parameters) error {
+
+	return s.manager.SetParameters(ctx, parameters)
+}
+
 // LoopInTerms returns the terms on which the server executes swaps.
 func (s *Client) LoopInTerms(ctx context.Context) (
 	*LoopInTerms, error) {

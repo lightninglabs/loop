@@ -104,6 +104,29 @@ service SwapClient {
             get: "/v1/lsat/tokens"
         };
     }
+
+    /*
+    GetLiquidityConfig gets the config that the liquidity manager subsystem is
+    currently configured with. This may be nil if nothing is configured.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc GetLiquidityConfig(GetLiquidityConfigRequest) returns (LiquidityConfig){
+        option (google.api.http) = {
+            get: "/v1/liquidity/config"
+        };
+    }
+
+    /*
+    SetLiquidityConfig sets a new config for the liquidity manager subsystem.
+    It returns the config that has been applied.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc SetLiquidityConfig(SetLiquidityConfigRequest) returns (SetLiquidityConfigResponse){
+        option (google.api.http) = {
+            post: "/v1/liquidity/config"
+            body: "*"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -666,3 +689,72 @@ message LsatToken {
     */
     string storage_name = 8;
 }
+
+message GetLiquidityConfigRequest{}
+
+message LiquidityConfig{
+    /*
+    Set to true if we should include private channels in our balance
+    calculations.
+    */
+    bool include_private = 1;
+
+    /*
+    The target to apply liquidity rules to.
+    */
+    LiquidityTarget target = 2;
+
+    /*
+    A rule to be applied to the target. This value may not be set if setting
+    target to none, and must be supplied otherwise.
+    */
+    LiquidityRule rule = 3;
+}
+
+enum LiquidityTarget{
+    NONE = 0;
+    NODE = 1;
+    PEER = 2;
+    CHANNEL =3;
+}
+
+enum LiquidityRuleType{
+    UNKNOWN = 0;
+    THRESHOLD = 1;
+}
+
+message LiquidityRule{
+    /*
+    Type indicates the type of rule that this message rule represents. Setting
+    this value will determine which fields are used in the message. The comments
+    on each field in this message will be prefixed with the LiquidityRuleType
+    they belong to.
+    */
+    LiquidityRuleType type = 1;
+
+    /*
+    THRESHOLD: Minimum inbound is the minimum inbound percentage beneath which
+    loop outs to acquire inbound liquidity will be recommended when using the
+    threshold rule.
+    */
+    uint32 minimum_inbound = 2;
+
+    /*
+    THRESHOLD: Minimum outbound is the minimum outbound percentage beneath which
+    loop ins to acquire outbound liquidity will be recommended when using the
+    threshold rule.
+    */
+    uint32 minimum_outbound = 3;
+}
+
+message SetLiquidityConfigRequest{
+    /*
+    Config is the desired new config for the liquidity management subsystem.
+    Note that all of the fields in this config will be used to update your
+    current config,so fields that you do not want to change should be set to
+    their current values.
+    */
+    LiquidityConfig config = 1;
+}
+
+message SetLiquidityConfigResponse{}
