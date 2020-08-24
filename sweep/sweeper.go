@@ -21,7 +21,7 @@ type Sweeper struct {
 
 // CreateSweepTx creates an htlc sweep tx.
 func (s *Sweeper) CreateSweepTx(
-	globalCtx context.Context, height int32,
+	globalCtx context.Context, height int32, sequence uint32,
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
 	keyBytes [33]byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
@@ -37,6 +37,7 @@ func (s *Sweeper) CreateSweepTx(
 	sweepTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: htlcOutpoint,
 		SignatureScript:  htlc.SigScript,
+		Sequence:         sequence,
 	})
 
 	// Add output for the destination address.
