@@ -30,7 +30,7 @@ var (
 
 	// DefaultSweepConfTarget is the default confirmation target we'll use
 	// when sweeping on-chain HTLCs.
-	DefaultSweepConfTarget int32 = 12
+	DefaultSweepConfTarget int32 = 9
 
 	// DefaultHtlcConfTarget is the default confirmation target we'll use
 	// for on-chain htlcs published by the swap client for Loop In.
