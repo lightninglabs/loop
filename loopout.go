@@ -45,7 +45,7 @@ var (
 
 	// paymentTimeout is the timeout for the loop out payment loop as
 	// communicated to lnd.
-	paymentTimeout = time.Minute
+	paymentTimeout = time.Minute * 30
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
