@@ -1,5 +1,16 @@
-// Package liquidity is responsible for monitoring our node's liquidity.
-// It has a set of parameters which determine how we asses liquidity:
+// Package liquidity is responsible for monitoring our node's liquidity. It is
+// configured with a target and rule to inform how the node operator would like
+// to manage liquidity. A rule describes how liquidity should be allocated,
+// and a target describes what entity we apply this rule to.
+//
+// At present, the following targets are available:
+// - Node: examine the liquidity balance of our node as a whole, considering all
+//   channels.
+// - Peer: examine the liquidity balance of the channels that we have per peer.
+// - Channel: examine the liquidity balance of each channel.
+//
+// In addition to a target and rule, it has a set of parameters which determine
+// how we asses liquidity:
 // - Include private: whether to include private channels in our liquidity
 //   calculations.
 package liquidity
@@ -18,6 +29,14 @@ var (
 	// parameters, but none are set.
 	ErrNoParameters = errors.New("no parameters set for manager")
 
+	// ErrUnexpectedRule is returned when we are provided with a non-nil
+	// rule for the nil target value.
+	ErrUnexpectedRule = errors.New("rule not expected for target none")
+
+	// ErrNoRule is returned when we are not provided with a rule and we
+	// have a non-nil target.
+	ErrNoRule = errors.New("targets must be set with a rule")
+
 	// ErrShuttingDown is returned when a request is cancelled because
 	// the manager is shutting down.
 	ErrShuttingDown = errors.New("server shutting down")
@@ -35,9 +54,67 @@ type Config struct {
 	LoopInRestrictions func(ctx context.Context) (*Restrictions, error)
 }
 
+// Target describes the target that a liquidity rule will be applied to.
+type Target uint8
+
+const (
+	// TargetNone indicates that no mode has been set for the liquidity
+	// manager.
+	TargetNone Target = iota
+
+	// TargetNode indicates that the liquidity manager will apply its rule
+	// to all of the node's channels, examining the overall liquidity
+	// balance of the node as one entity.
+	TargetNode
+
+	// TargetPeer indicates that the liquidity manager will apply its rule
+	// per peer, examining the liquidity balance of the set of channels that
+	// we have with each peer as one entity.
+	TargetPeer
+
+	// TargetChannel indicates that the liquidity manager will apply its
+	// rule to individual channels, examining each channel's liquidity
+	// balance.
+	TargetChannel
+)
+
+// String returns the string representation of a mode.
+func (t Target) String() string {
+	switch t {
+	case TargetNone:
+		return "none"
+
+	case TargetNode:
+		return "node"
+
+	case TargetPeer:
+		return "peer"
+
+	case TargetChannel:
+		return "channel"
+
+	default:
+		return "unknown target"
+	}
+}
+
+func (t Target) validateTarget() error {
+	if t < TargetNone || t > TargetChannel {
+		return fmt.Errorf("unknown target: %v", t)
+	}
+
+	return nil
+}
+
 // Parameters is a set of parameters provided by the user which guide how we
 // assess liquidity.
 type Parameters struct {
+	// Rule is the rule that we apply when examining liquidity.
+	Rule
+
+	// Target is the entity that we apply our rule to.
+	Target
+
 	// IncludePrivate indicates whether we should include private channels
 	// in our balance calculations.
 	IncludePrivate bool
@@ -45,7 +122,32 @@ type Parameters struct {
 
 // String returns the string representation of our parameters.
 func (p *Parameters) String() string {
-	return fmt.Sprintf("include private: %v", p.IncludePrivate)
+	return fmt.Sprintf("target: %v, rule: %v, include private: %v",
+		p.Target, p.Rule, p.IncludePrivate)
+}
+
+// validate checks whether a set of parameters is valid.
+func (p *Parameters) validate() error {
+	if err := p.Target.validateTarget(); err != nil {
+		return err
+	}
+
+	// If we have no target set, we expect our rule to be nil. If we have
+	// a nil rule, we do not need to perform rule validation so we return.
+	if p.Target == TargetNone {
+		if p.Rule != nil {
+			return ErrUnexpectedRule
+		}
+
+		return nil
+	}
+
+	// If we have a target set, we expect a rule to be provided.
+	if p.Rule == nil {
+		return ErrNoRule
+	}
+
+	return p.Rule.validate()
 }
 
 // Restrictions describe the restrictions placed on swaps.
@@ -190,8 +292,13 @@ func (m *Manager) GetParameters(ctx context.Context) (*Parameters, error) {
 
 }
 
-// SetParameters sends a request to update our current parameters.
+// SetParameters sends a request to update our current parameters if they are
+// valid.
 func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
+	if err := params.validate(); err != nil {
+		return err
+	}
+
 	// Create a request to update our parameters.
 	request := setParamsRequest{
 		params: params,
