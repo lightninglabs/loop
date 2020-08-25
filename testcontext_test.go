@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
@@ -40,7 +41,7 @@ type testContext struct {
 	stop       func()
 }
 
-func newSwapClient(config *clientConfig) *Client {
+func newSwapClient(_ *testing.T, config *clientConfig) *Client {
 	sweeper := &sweep.Sweeper{
 		Lnd: config.LndServices,
 	}
@@ -61,6 +62,7 @@ func newSwapClient(config *clientConfig) *Client {
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
+		manager:      liquidity.NewManager(nil),
 	}
 }
 
@@ -87,7 +89,7 @@ func createClientTestContext(t *testing.T,
 		return expiryChan
 	}
 
-	swapClient := newSwapClient(&clientConfig{
+	swapClient := newSwapClient(t, &clientConfig{
 		LndServices:       &clientLnd.LndServices,
 		Server:            serverMock,
 		Store:             store,
