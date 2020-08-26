@@ -720,6 +720,19 @@ message LiquidityConfig{
     target to none, and must be supplied otherwise.
     */
     LiquidityRule rule = 3;
+
+    /*
+    A map of hex-encoded peer public keys to custom rules to apply for that
+    peer. Note that these will take precedence over the general target and rule.
+    */
+    map<string, LiquidityRule> peer_rules = 4;
+
+    /*
+    A map of short channel ids to custom rules to apply for the channel. Note
+    that these will take precedence over the general target and rule, *and* over
+    the custom rules set per peer.
+    */
+    map<uint64, LiquidityRule> channel_rules = 5;
 }
 
 enum LiquidityTarget{

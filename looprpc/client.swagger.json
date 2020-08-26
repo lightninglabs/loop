@@ -459,6 +459,20 @@
         "rule": {
           "$ref": "#/definitions/looprpcLiquidityRule",
           "description": "A rule to be applied to the target. This value may not be set if setting\ntarget to none, and must be supplied otherwise."
+        },
+        "peer_rules": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/looprpcLiquidityRule"
+          },
+          "description": "A map of hex-encoded peer public keys to custom rules to apply for that\npeer. Note that these will take precedence over the general target and rule."
+        },
+        "channel_rules": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/looprpcLiquidityRule"
+          },
+          "description": "A map of short channel ids to custom rules to apply for the channel. Note\nthat these will take precedence over the general target and rule, *and* over\nthe custom rules set per peer."
         }
       }
     },

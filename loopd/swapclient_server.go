@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lightningnetwork/lnd/lnwire"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -564,6 +566,8 @@ func (s *swapClientServer) GetLiquidityConfig(ctx context.Context,
 
 	rpcCfg := &looprpc.LiquidityConfig{
 		IncludePrivate: cfg.IncludePrivate,
+		PeerRules:      make(map[string]*looprpc.LiquidityRule),
+		ChannelRules:   make(map[uint64]*looprpc.LiquidityRule),
 	}
 
 	rpcCfg.Target, err = rpcTarget(cfg.Target)
@@ -575,6 +579,29 @@ func (s *swapClientServer) GetLiquidityConfig(ctx context.Context,
 		rpcCfg.Rule, err = rpcRule(cfg.Rule)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// If we have peer rules set, add them to the response.
+	if cfg.PeerRules != nil {
+		for peer, rule := range cfg.PeerRules {
+			rpcRule, err := rpcRule(rule)
+			if err != nil {
+				return nil, err
+			}
+			rpcCfg.PeerRules[peer.String()] = rpcRule
+		}
+	}
+
+	// If we have channel rules set, add them to the response.
+	if cfg.ChannelRules != nil {
+		for channel, rule := range cfg.ChannelRules {
+			rpcRule, err := rpcRule(rule)
+			if err != nil {
+				return nil, err
+			}
+
+			rpcCfg.ChannelRules[channel.ToUint64()] = rpcRule
 		}
 	}
 
@@ -612,6 +639,44 @@ func (s *swapClientServer) SetLiquidityConfig(ctx context.Context,
 		params.Rule, err = rpcToRule(in.Config.Rule)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	if in.Config.PeerRules != nil {
+		params.PeerRules = make(
+			map[route.Vertex]liquidity.Rule, len(in.Config.PeerRules),
+		)
+
+		for peer, rule := range in.Config.PeerRules {
+			pubkey, err := route.NewVertexFromStr(peer)
+			if err != nil {
+				return nil, err
+			}
+
+			rpcRule, err := rpcToRule(rule)
+			if err != nil {
+				return nil, err
+			}
+
+			params.PeerRules[pubkey] = rpcRule
+		}
+	}
+
+	if in.Config.ChannelRules != nil {
+		params.ChannelRules = make(
+			map[lnwire.ShortChannelID]liquidity.Rule,
+			len(in.Config.ChannelRules),
+		)
+
+		for channel, rule := range in.Config.ChannelRules {
+			chanID := lnwire.NewShortChanIDFromInt(channel)
+
+			rpcRule, err := rpcToRule(rule)
+			if err != nil {
+				return nil, err
+			}
+
+			params.ChannelRules[chanID] = rpcRule
 		}
 	}
 
