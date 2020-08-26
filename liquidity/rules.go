@@ -73,3 +73,29 @@ func (r *ThresholdRule) validate() error {
 
 	return nil
 }
+
+// ExcludePeer is a rule that excludes a target from consideration.
+type ExcludeRule struct{}
+
+// NewExcludePeerRule creates a new exclude peer rule.
+func NewExcludeRule() *ExcludeRule {
+	return &ExcludeRule{}
+}
+
+// String returns a string representation of a rule.
+func (r *ExcludeRule) String() string {
+	return fmt.Sprintf("exclude target from consideration")
+}
+
+// validate validates the parameters that a rule was created with.
+func (r *ExcludeRule) validate() error {
+	return nil
+}
+
+// getSwaps returns a set of recommended swaps for a set of channel
+// balances, taking into account the restrictions placed on swaps.
+func (r *ExcludeRule) getSwaps(_ []balances, _,
+	_ *Restrictions) ([]SwapRecommendation, error) {
+
+	return nil, nil
+}
