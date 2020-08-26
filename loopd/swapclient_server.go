@@ -632,6 +632,9 @@ func rpcToRule(rule *looprpc.LiquidityRule) (liquidity.Rule, error) {
 			int(rule.MinimumInbound), int(rule.MinimumOutbound),
 		), nil
 
+	case looprpc.LiquidityRuleType_EXCLUDE:
+		return liquidity.NewExcludeRule(), nil
+
 	default:
 		return nil, fmt.Errorf("unknown rule: %T", rule)
 	}
@@ -645,6 +648,11 @@ func rpcRule(rule liquidity.Rule) (*looprpc.LiquidityRule, error) {
 			Type:            looprpc.LiquidityRuleType_THRESHOLD,
 			MinimumInbound:  uint32(r.MinimumInbound),
 			MinimumOutbound: uint32(r.MinimumOutbound),
+		}, nil
+
+	case *liquidity.ExcludeRule:
+		return &looprpc.LiquidityRule{
+			Type: looprpc.LiquidityRuleType_EXCLUDE,
 		}, nil
 
 	default:

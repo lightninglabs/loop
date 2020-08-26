@@ -732,6 +732,7 @@ enum LiquidityTarget{
 enum LiquidityRuleType{
     UNKNOWN = 0;
     THRESHOLD = 1;
+    EXCLUDE = 2;
 }
 
 message LiquidityRule{

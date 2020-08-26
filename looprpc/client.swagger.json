@@ -485,7 +485,8 @@
       "type": "string",
       "enum": [
         "UNKNOWN",
-        "THRESHOLD"
+        "THRESHOLD",
+        "EXCLUDE"
       ],
       "default": "UNKNOWN"
     },
