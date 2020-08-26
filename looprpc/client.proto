@@ -127,6 +127,17 @@ service SwapClient {
             body: "*"
         };
     }
+
+    /*
+    SuggestSwaps returns a list of recommended swaps based on the current
+    state of your node's channels and the liquidity manager configuration set.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc SuggestSwaps(SuggestSwapsRequest) returns (SuggestSwapsResponse){
+        option (google.api.http) = {
+            get: "/v1/auto/swaps"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -758,3 +769,38 @@ message SetLiquidityConfigRequest{
 }
 
 message SetLiquidityConfigResponse{}
+
+message SuggestSwapsRequest{
+}
+
+message SuggestSwapsResponse{
+    /*
+    A set of swap suggestions, specified per target and rule combination
+    set in the liquidity manager.
+    */
+    repeated SwapSuggestion suggestions = 1;
+}
+
+message SwapSuggestion {
+    /*
+    The target that was examined to create this set of suggestions.
+    */
+    LiquidityTarget target = 1;
+
+
+    /*
+    The rule that was applied to the target.
+    */
+    LiquidityRule rule = 2;
+
+    /*
+    The set of recommended loop outs.
+    */
+    repeated LoopOutRequest loop_out= 3;
+
+    /*
+    The set of recommended loop ins.
+    */
+    repeated LoopInRequest loop_in= 4;
+}
+

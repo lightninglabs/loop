@@ -672,6 +672,62 @@ func rpcTarget(target liquidity.Target) (looprpc.LiquidityTarget, error) {
 	}
 }
 
+// SuggestSwaps provides a list of suggested swaps based on lnd's current
+// channel balances and the target and rule set by the liquidity manager.
+func (s *swapClientServer) SuggestSwaps(ctx context.Context,
+	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
+
+	swaps, err := s.impl.SuggestSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rule, err := rpcRule(swaps.Rule)
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := rpcTarget(swaps.Target)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &looprpc.SwapSuggestion{
+		Rule:   rule,
+		Target: target,
+	}
+
+	for _, swap := range swaps.Suggestions {
+		switch s := swap.(type) {
+		case *liquidity.LoopOutRecommendation:
+			resp.LoopOut = append(resp.LoopOut,
+				&looprpc.LoopOutRequest{
+					Amt: int64(swap.Amount()),
+					OutgoingChanSet: []uint64{
+						s.Channel.ToUint64(),
+					},
+				},
+			)
+
+		case *liquidity.LoopInRecommendation:
+			resp.LoopIn = append(resp.LoopIn,
+				&looprpc.LoopInRequest{
+					Amt:     int64(swap.Amount()),
+					LastHop: s.LastHop[:],
+				},
+			)
+
+		default:
+			return nil, fmt.Errorf("unknown swap "+
+				"recommendation: %T", swap)
+		}
+	}
+
+	return &looprpc.SuggestSwapsResponse{
+		Suggestions: []*looprpc.SwapSuggestion{resp},
+	}, nil
+}
+
 // processStatusUpdates reads updates on the status channel and processes them.
 //
 // NOTE: This must run inside a goroutine as it blocks until the main context

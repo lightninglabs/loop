@@ -11,6 +11,29 @@
     "application/json"
   ],
   "paths": {
+    "/v1/auto/swaps": {
+      "get": {
+        "summary": "SuggestSwaps returns a list of recommended swaps based on the current\nstate of your node's channels and the liquidity manager configuration set.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "operationId": "SuggestSwaps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSuggestSwapsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/liquidity/config": {
       "get": {
         "summary": "GetLiquidityConfig gets the config that the liquidity manager subsystem is\ncurrently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
@@ -709,6 +732,18 @@
     "looprpcSetLiquidityConfigResponse": {
       "type": "object"
     },
+    "looprpcSuggestSwapsResponse": {
+      "type": "object",
+      "properties": {
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcSwapSuggestion"
+          },
+          "description": "A set of swap suggestions, specified per target and rule combination\nset in the liquidity manager."
+        }
+      }
+    },
     "looprpcSwapResponse": {
       "type": "object",
       "properties": {
@@ -821,6 +856,33 @@
         "label": {
           "type": "string",
           "description": "An optional label given to the swap on creation."
+        }
+      }
+    },
+    "looprpcSwapSuggestion": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/definitions/looprpcLiquidityTarget",
+          "description": "The target that was examined to create this set of suggestions."
+        },
+        "rule": {
+          "$ref": "#/definitions/looprpcLiquidityRule",
+          "description": "The rule that was applied to the target."
+        },
+        "loop_out": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLoopOutRequest"
+          },
+          "description": "The set of recommended loop outs."
+        },
+        "loop_in": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLoopInRequest"
+          },
+          "description": "The set of recommended loop ins."
         }
       }
     },
