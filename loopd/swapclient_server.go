@@ -690,50 +690,54 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		return nil, err
 	}
 
-	rule, err := rpcRule(swaps.Rule)
-	if err != nil {
-		return nil, err
-	}
+	suggestions := &looprpc.SuggestSwapsResponse{}
 
-	target, err := rpcTarget(swaps.Target)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &looprpc.SwapSuggestion{
-		Rule:   rule,
-		Target: target,
-	}
-
-	for _, swap := range swaps.Suggestions {
-		switch s := swap.(type) {
-		case *liquidity.LoopOutRecommendation:
-			resp.LoopOut = append(resp.LoopOut,
-				&looprpc.LoopOutRequest{
-					Amt: int64(swap.Amount()),
-					OutgoingChanSet: []uint64{
-						s.Channel.ToUint64(),
-					},
-				},
-			)
-
-		case *liquidity.LoopInRecommendation:
-			resp.LoopIn = append(resp.LoopIn,
-				&looprpc.LoopInRequest{
-					Amt:     int64(swap.Amount()),
-					LastHop: s.LastHop[:],
-				},
-			)
-
-		default:
-			return nil, fmt.Errorf("unknown swap "+
-				"recommendation: %T", swap)
+	for _, suggestion := range swaps {
+		rule, err := rpcRule(suggestion.Rule)
+		if err != nil {
+			return nil, err
 		}
+
+		target, err := rpcTarget(suggestion.Target)
+		if err != nil {
+			return nil, err
+		}
+
+		resp := &looprpc.SwapSuggestion{
+			Rule:   rule,
+			Target: target,
+		}
+
+		for _, swap := range suggestion.Suggestions {
+			switch s := swap.(type) {
+			case *liquidity.LoopOutRecommendation:
+				resp.LoopOut = append(resp.LoopOut,
+					&looprpc.LoopOutRequest{
+						Amt: int64(swap.Amount()),
+						OutgoingChanSet: []uint64{
+							s.Channel.ToUint64(),
+						},
+					},
+				)
+
+			case *liquidity.LoopInRecommendation:
+				resp.LoopIn = append(resp.LoopIn,
+					&looprpc.LoopInRequest{
+						Amt:     int64(swap.Amount()),
+						LastHop: s.LastHop[:],
+					},
+				)
+
+			default:
+				return nil, fmt.Errorf("unknown swap "+
+					"recommendation: %T", swap)
+			}
+		}
+
+		suggestions.Suggestions = append(suggestions.Suggestions, resp)
 	}
 
-	return &looprpc.SuggestSwapsResponse{
-		Suggestions: []*looprpc.SwapSuggestion{resp},
-	}, nil
+	return suggestions, nil
 }
 
 // processStatusUpdates reads updates on the status channel and processes them.

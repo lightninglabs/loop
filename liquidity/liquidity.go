@@ -24,6 +24,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 var (
@@ -123,6 +124,15 @@ type Parameters struct {
 
 	// Target is the entity that we apply our rule to.
 	Target
+
+	// ChannelRules contains custom rules for a specific channel. These
+	// rules will overwrite the general rule/target if they are set, and
+	// any custom peer rules that are set.
+	ChannelRules map[lnwire.ShortChannelID]Rule
+
+	// PeerRules contains custom rules for a specific peer. These rules will
+	// overwrite the general rule/target if they are set.
+	PeerRules map[route.Vertex]Rule
 
 	// IncludePrivate indicates whether we should include private channels
 	// in our balance calculations.
@@ -230,8 +240,8 @@ type suggestionRequest struct {
 // suggestionResponse contains a set of recommended swaps, and any errors that
 // occurred while trying to obtain them.
 type suggestionResponse struct {
-	err        error
-	suggestion *SwapSuggestion
+	err         error
+	suggestions []SwapSuggestion
 }
 
 // SwapSuggestion contains the rule we used to determine whether we should
@@ -298,8 +308,8 @@ func (m *Manager) run(ctx context.Context) error {
 
 			swaps, err := m.suggestSwaps(request.ctx, channels)
 			request.response <- suggestionResponse{
-				suggestion: swaps,
-				err:        err,
+				suggestions: swaps,
+				err:         err,
 			}
 
 		// Return a non-nil error if we receive the instruction to exit.
@@ -374,7 +384,7 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 
 // SuggestSwap queries the manager's main event loop for swap suggestions.
 // Note that this function will block if the manager is not started.
-func (m *Manager) SuggestSwap(ctx context.Context) (*SwapSuggestion, error) {
+func (m *Manager) SuggestSwap(ctx context.Context) ([]SwapSuggestion, error) {
 	// Send a request to our main event loop to process the updates,
 	// buffering the response channel so that the event loop cannot be
 	// blocked by the client not consuming the request.
@@ -399,17 +409,22 @@ func (m *Manager) SuggestSwap(ctx context.Context) (*SwapSuggestion, error) {
 			return nil, resp.err
 		}
 
-		return resp.suggestion, nil
+		return resp.suggestions, nil
 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
+type ruleSet struct {
+	balances []balances
+	rule     Rule
+}
+
 // suggestSwaps divides a set of channels based on our current set of rules, and
 // gets suggested swaps for our current set of rules.
 func (m *Manager) suggestSwaps(ctx context.Context,
-	channels []lndclient.ChannelInfo) (*SwapSuggestion, error) {
+	channels []lndclient.ChannelInfo) ([]SwapSuggestion, error) {
 
 	// If our parameters are nil, or we have no target set, fail because
 	// we have no rules we can use to create our suggestions.
@@ -420,7 +435,22 @@ func (m *Manager) suggestSwaps(ctx context.Context,
 	// Run through all of our channels and create a set of balances. We do
 	// not preallocate because we may skip over come channels if they are
 	// private.
-	targets := make(map[string][]balances)
+	targets := make(map[string]ruleSet)
+
+	// Create a helper function which will add a fresh entry for our key
+	// to our targets map (if it is not present), and otherwise append
+	// another set of channel balances.
+	addEntry := func(key string, channel balances, rule Rule) {
+		value, ok := targets[key]
+		if !ok {
+			value = ruleSet{
+				rule: rule,
+			}
+		}
+
+		value.balances = append(value.balances, channel)
+		targets[key] = value
+	}
 
 	for _, channel := range channels {
 		// If the channel is private and we do not want to include
@@ -438,35 +468,65 @@ func (m *Manager) suggestSwaps(ctx context.Context,
 			pubkey:    channel.PubKeyBytes,
 		}
 
+		// If we have any custom channel rules set, we check whether
+		// this channel has a specific rule set, and add it with this
+		// custom rule to this set of targets if it does. We continue
+		// so that it is not overwritten by peer-level or generic rules.
+		if m.params.ChannelRules != nil {
+			chanID := lnwire.NewShortChanIDFromInt(
+				channel.ChannelID,
+			)
+
+			rule, ok := m.params.ChannelRules[chanID]
+			if ok {
+				addEntry(
+					fmt.Sprintf("%v", channel.ChannelID),
+					balances, rule,
+				)
+
+				continue
+			}
+		}
+
+		// If we have any custom peer rules set, we check whether this
+		// channel has a specific rule set for its peer, and add it
+		// with this custom rule to our set of targets if it does. We
+		// continue so that it is not overwritten by our generic rules.
+		if m.params.PeerRules != nil {
+			rule, ok := m.params.PeerRules[channel.PubKeyBytes]
+			if ok {
+				addEntry(
+					channel.PubKeyBytes.String(), balances,
+					rule,
+				)
+
+				continue
+			}
+		}
+
 		switch m.params.Target {
 		// For node, store all channels under the same key.
 		case TargetNode:
-			targets[TargetNode.String()] = append(
-				targets[TargetNode.String()], balances,
+			addEntry(
+				TargetNode.String(), balances, m.params.Rule,
 			)
 
 		// For peers, store balances by pubkey.
 		case TargetPeer:
-			targets[channel.PubKeyBytes.String()] = append(
-				targets[channel.PubKeyBytes.String()], balances,
+			addEntry(
+				channel.PubKeyBytes.String(), balances,
+				m.params.Rule,
 			)
 
 		// For channels, store balances by channel ID.
 		case TargetChannel:
 			str := fmt.Sprintf("%v", channel.ChannelID)
-			targets[str] = append(
-				targets[str], balances,
-			)
+			addEntry(str, balances, m.params.Rule)
 
 		default:
 			return nil, fmt.Errorf("cannot return suggestions "+
 				"for target: %v", m.params.Target)
 		}
-	}
-
-	resp := &SwapSuggestion{
-		Rule:   m.params.Rule,
-		Target: m.params.Target,
 	}
 
 	// Get restrictions from the server.
@@ -480,16 +540,23 @@ func (m *Manager) suggestSwaps(ctx context.Context,
 		return nil, err
 	}
 
-	for _, channels := range targets {
-		swaps, err := m.params.Rule.getSwaps(
-			channels, outRestrictions, inRestrictions,
+	var suggestions []SwapSuggestion
+	for _, ruleSet := range targets {
+		resp := SwapSuggestion{
+			Rule:   m.params.Rule,
+			Target: m.params.Target,
+		}
+
+		swaps, err := ruleSet.rule.getSwaps(
+			ruleSet.balances, outRestrictions, inRestrictions,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 		resp.Suggestions = append(resp.Suggestions, swaps...)
+		suggestions = append(suggestions, resp)
 	}
 
-	return resp, nil
+	return suggestions, nil
 }

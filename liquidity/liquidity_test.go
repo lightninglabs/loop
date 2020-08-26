@@ -211,6 +211,54 @@ func TestSuggestSwaps(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Select a set of channels that have exactly 50/50
+			// split on the node level, but we are excluding a peer.
+			name: "node level, exclude a peer",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2, channel3,
+			},
+			params: Parameters{
+				Rule:           NewThresholdRule(40, 40),
+				Target:         TargetNode,
+				IncludePrivate: true,
+				PeerRules: map[route.Vertex]Rule{
+					peer1: NewExcludeRule(),
+				},
+			},
+			expected: []SwapRecommendation{
+				&LoopOutRecommendation{
+					amount:  50,
+					Channel: chan2,
+				},
+			},
+		},
+		{
+			// Select a set of channels that have exactly 50/50
+			// split on the node level, but are not balanced per
+			// channel.
+			// Channel 1: (0/100) -> (50/50)
+			// Channel 2: (100/0) -> excluded
+			// Channel 3: (50/50) -> ok
+			name: "channel level, one excluded",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2, channel3,
+			},
+			params: Parameters{
+				Rule:           NewThresholdRule(40, 40),
+				Target:         TargetChannel,
+				IncludePrivate: true,
+				ChannelRules: map[lnwire.ShortChannelID]Rule{
+					chan2: NewExcludeRule(),
+				},
+			},
+			expected: []SwapRecommendation{
+				&LoopInRecommendation{
+					amount:  50,
+					LastHop: peer1,
+				},
+			},
+		},
 	}
 
 	for _, testCase := range tests {

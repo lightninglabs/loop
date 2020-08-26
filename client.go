@@ -662,7 +662,7 @@ func (s *Client) SetLiquidityParameters(ctx context.Context,
 
 // SuggestSwaps returns a list of suggested swaps based on the liquidity
 // manager's current configuration.
-func (s *Client) SuggestSwaps(ctx context.Context) (*liquidity.SwapSuggestion,
+func (s *Client) SuggestSwaps(ctx context.Context) ([]liquidity.SwapSuggestion,
 	error) {
 
 	return s.manager.SuggestSwap(ctx)
