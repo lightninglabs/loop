@@ -173,6 +173,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 				inTerms.MinSwapAmount, inTerms.MaxSwapAmount,
 			), nil
 		},
+		ListChannels: cfg.Lnd.Client.ListChannels,
 	}
 
 	manager := liquidity.NewManager(mngrCfg)

@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 var (
@@ -36,6 +38,10 @@ var (
 	// ErrNoRule is returned when we are not provided with a rule and we
 	// have a non-nil target.
 	ErrNoRule = errors.New("targets must be set with a rule")
+
+	// ErrSetTarget is returned when a request for suggestions is made but
+	// no target/rule combination is set.
+	ErrSetTarget = errors.New("target must be set to provide suggestions")
 
 	// ErrShuttingDown is returned when a request is cancelled because
 	// the manager is shutting down.
@@ -52,6 +58,9 @@ type Config struct {
 	// LoopInRestrictions returns the restrictions placed on loop in swaps
 	// by the server.
 	LoopInRestrictions func(ctx context.Context) (*Restrictions, error)
+
+	// ListChannels provides a list of our currently open channels.
+	ListChannels func(ctx context.Context) ([]lndclient.ChannelInfo, error)
 }
 
 // Target describes the target that a liquidity rule will be applied to.
@@ -192,6 +201,10 @@ type Manager struct {
 	// of parameters.
 	setParams chan setParamsRequest
 
+	// suggestionRequests accepts requests for swaps that will help us reach
+	// our configured thresholds.
+	suggestionRequests chan suggestionRequest
+
 	// done is closed when our main event loop is shutting down. This allows
 	// us to cancel requests sent to our main event loop that cannot be
 	// served.
@@ -208,14 +221,42 @@ type setParamsRequest struct {
 	params Parameters
 }
 
+// suggestionRequest contains a request for a set of suggested swaps.
+type suggestionRequest struct {
+	ctx      context.Context
+	response chan suggestionResponse
+}
+
+// suggestionResponse contains a set of recommended swaps, and any errors that
+// occurred while trying to obtain them.
+type suggestionResponse struct {
+	err        error
+	suggestion *SwapSuggestion
+}
+
+// SwapSuggestion contains the rule we used to determine whether we should
+// perform any swaps, and the set of swaps we recommend.
+type SwapSuggestion struct {
+	// Rule provides the rule that we used to get swap recommendations.
+	Rule Rule
+
+	// Target provides the name of the target(s) that this rule was applied
+	// to.
+	Target Target
+
+	// Suggestions contains a map of target ID to set of recommended swaps.
+	Suggestions []SwapRecommendation
+}
+
 // NewManager creates a liquidity manager which has no parameters set.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
-		cfg:       cfg,
-		params:    nil,
-		done:      make(chan struct{}),
-		getParams: make(chan getParametersRequest),
-		setParams: make(chan setParamsRequest),
+		cfg:                cfg,
+		params:             nil,
+		done:               make(chan struct{}),
+		getParams:          make(chan getParametersRequest),
+		setParams:          make(chan setParamsRequest),
+		suggestionRequests: make(chan suggestionRequest),
 	}
 }
 
@@ -245,6 +286,21 @@ func (m *Manager) run(ctx context.Context) error {
 		case setParams := <-m.setParams:
 			m.params = &setParams.params
 			log.Infof("updated parameters to: %v", m.params)
+
+		case request := <-m.suggestionRequests:
+			channels, err := m.cfg.ListChannels(request.ctx)
+			if err != nil {
+				request.response <- suggestionResponse{
+					err: err,
+				}
+				continue
+			}
+
+			swaps, err := m.suggestSwaps(request.ctx, channels)
+			request.response <- suggestionResponse{
+				suggestion: swaps,
+				err:        err,
+			}
 
 		// Return a non-nil error if we receive the instruction to exit.
 		case <-ctx.Done():
@@ -314,4 +370,126 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// SuggestSwap queries the manager's main event loop for swap suggestions.
+// Note that this function will block if the manager is not started.
+func (m *Manager) SuggestSwap(ctx context.Context) (*SwapSuggestion, error) {
+	// Send a request to our main event loop to process the updates,
+	// buffering the response channel so that the event loop cannot be
+	// blocked by the client not consuming the request.
+	responseChan := make(chan suggestionResponse, 1)
+	select {
+	case m.suggestionRequests <- suggestionRequest{
+		ctx:      ctx,
+		response: responseChan,
+	}:
+
+	case <-m.done:
+		return nil, ErrShuttingDown
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Wait for a response from the main event loop, or client cancellation.
+	select {
+	case resp := <-responseChan:
+		if resp.err != nil {
+			return nil, resp.err
+		}
+
+		return resp.suggestion, nil
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// suggestSwaps divides a set of channels based on our current set of rules, and
+// gets suggested swaps for our current set of rules.
+func (m *Manager) suggestSwaps(ctx context.Context,
+	channels []lndclient.ChannelInfo) (*SwapSuggestion, error) {
+
+	// If our parameters are nil, or we have no target set, fail because
+	// we have no rules we can use to create our suggestions.
+	if m.params == nil || m.params.Target == TargetNone {
+		return nil, ErrSetTarget
+	}
+
+	// Run through all of our channels and create a set of balances. We do
+	// not preallocate because we may skip over come channels if they are
+	// private.
+	targets := make(map[string][]balances)
+
+	for _, channel := range channels {
+		// If the channel is private and we do not want to include
+		// private channels, skip it.
+		if channel.Private && !m.params.IncludePrivate {
+			continue
+		}
+
+		chanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+		balances := balances{
+			outgoing:  channel.LocalBalance,
+			incoming:  channel.RemoteBalance,
+			capacity:  channel.Capacity,
+			channelID: chanID,
+			pubkey:    channel.PubKeyBytes,
+		}
+
+		switch m.params.Target {
+		// For node, store all channels under the same key.
+		case TargetNode:
+			targets[TargetNode.String()] = append(
+				targets[TargetNode.String()], balances,
+			)
+
+		// For peers, store balances by pubkey.
+		case TargetPeer:
+			targets[channel.PubKeyBytes.String()] = append(
+				targets[channel.PubKeyBytes.String()], balances,
+			)
+
+		// For channels, store balances by channel ID.
+		case TargetChannel:
+			str := fmt.Sprintf("%v", channel.ChannelID)
+			targets[str] = append(
+				targets[str], balances,
+			)
+
+		default:
+			return nil, fmt.Errorf("cannot return suggestions "+
+				"for target: %v", m.params.Target)
+		}
+	}
+
+	resp := &SwapSuggestion{
+		Rule:   m.params.Rule,
+		Target: m.params.Target,
+	}
+
+	// Get restrictions from the server.
+	outRestrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	inRestrictions, err := m.cfg.LoopInRestrictions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, channels := range targets {
+		swaps, err := m.params.Rule.getSwaps(
+			channels, outRestrictions, inRestrictions,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Suggestions = append(resp.Suggestions, swaps...)
+	}
+
+	return resp, nil
 }

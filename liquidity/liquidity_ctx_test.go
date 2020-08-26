@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,6 +26,11 @@ func newTestConfig() *Config {
 			error) {
 
 			return testRestrictions, nil
+		},
+		ListChannels: func(context.Context) ([]lndclient.ChannelInfo,
+			error) {
+
+			return nil, nil
 		},
 	}
 }
