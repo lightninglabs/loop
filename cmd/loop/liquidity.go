@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+
+	"github.com/lightningnetwork/lnd/routing/route"
 
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
@@ -110,6 +113,10 @@ var setLiquidityRuleCommand = cli.Command{
 				"to total capacity beneath which to " +
 				"recommend loop in to acquire outbound.",
 		},
+		cli.BoolFlag{
+			Name:  "exclude",
+			Usage: "exclude the target from swap suggestions",
+		},
 	},
 	Action: setRule,
 }
@@ -137,6 +144,10 @@ func setRule(ctx *cli.Context) error {
 		return err
 	}
 
+	// Create a function which will be used to set a custom rule.
+	// TODO(carla): this whole thing can be expressed more cleanly
+	var setCfgRule func(rule *looprpc.LiquidityRule)
+
 	target := ctx.Args().First()
 	switch target {
 	case liquidity.TargetNone.String():
@@ -152,7 +163,39 @@ func setRule(ctx *cli.Context) error {
 		cfg.Target = looprpc.LiquidityTarget_CHANNEL
 
 	default:
-		return fmt.Errorf("unknown rule target: %v", target)
+		peer, err := route.NewVertexFromStr(target)
+		isPeer := err == nil
+
+		chanID, err := strconv.Atoi(target)
+		isChannel := err == nil
+
+		switch {
+		case isPeer:
+			setCfgRule = func(rule *looprpc.LiquidityRule) {
+				if cfg.PeerRules == nil {
+					cfg.PeerRules = make(
+						map[string]*looprpc.LiquidityRule,
+					)
+				}
+
+				cfg.PeerRules[peer.String()] = rule
+			}
+
+		case isChannel:
+			setCfgRule = func(rule *looprpc.LiquidityRule) {
+				if cfg.ChannelRules == nil {
+					cfg.ChannelRules = make(
+						map[uint64]*looprpc.LiquidityRule,
+					)
+				}
+
+				cfg.ChannelRules[uint64(chanID)] = rule
+			}
+
+		default:
+			return fmt.Errorf("unknown custom target: %v, "+
+				"please set peer-pubkey or channel", target)
+		}
 	}
 
 	// Create a new rule which will be used to overwrite our current rule.
@@ -168,13 +211,24 @@ func setRule(ctx *cli.Context) error {
 		newRule.Type = looprpc.LiquidityRuleType_THRESHOLD
 	}
 
+	// Check if our exclude flag is set. If the rule type has already been
+	// set at this stage, we know that fields belonging to another rule
+	// have been set, so we fail.
+	if ctx.IsSet("exclude") {
+		if newRule.Type != looprpc.LiquidityRuleType_UNKNOWN {
+			return fmt.Errorf("do not set any fields with exclude")
+		}
+
+		newRule.Type = looprpc.LiquidityRuleType_EXCLUDE
+	}
+
 	ruleSet := newRule.Type != looprpc.LiquidityRuleType_UNKNOWN
 
 	// Check that our rule is set when we need it, and not set when we have
-	// no target.
+	// no target and do not have a custom rule.
 	switch cfg.Target {
 	case looprpc.LiquidityTarget_NONE:
-		if ruleSet {
+		if ruleSet && setCfgRule == nil {
 			return errors.New("target none should not have a " +
 				"rule set")
 		}
@@ -185,8 +239,13 @@ func setRule(ctx *cli.Context) error {
 		}
 	}
 
-	// Update our config to use this new rule.
-	cfg.Rule = newRule
+	// Update our config to use this new rule or add a custom rule.
+	if setCfgRule == nil {
+		cfg.Rule = newRule
+	} else {
+		setCfgRule(newRule)
+	}
+
 	_, err = client.SetLiquidityConfig(
 		context.Background(),
 		&looprpc.SetLiquidityConfigRequest{Config: cfg},
