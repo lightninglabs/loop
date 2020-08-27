@@ -937,8 +937,8 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, s.htlc, htlcOutpoint, s.ReceiverKey, witnessFunc,
-		htlcValue, fee, s.DestAddr,
+		ctx, s.height, s.htlc.SuccessSequence(), s.htlc, htlcOutpoint,
+		s.ReceiverKey, witnessFunc, htlcValue, fee, s.DestAddr,
 	)
 	if err != nil {
 		return err

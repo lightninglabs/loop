@@ -50,6 +50,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 
 	for _, s := range swaps {
 		htlc, err := swap.NewHtlc(
+			swap.HtlcV1,
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
@@ -101,6 +102,7 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 
 	for _, s := range swaps {
 		htlc, err := swap.NewHtlc(
+			swap.HtlcV1,
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,

@@ -331,8 +331,9 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool) {
 	}
 
 	htlc, err := swap.NewHtlc(
-		contract.CltvExpiry, contract.SenderKey, contract.ReceiverKey,
-		testPreimage.Hash(), swap.HtlcNP2WSH, cfg.lnd.ChainParams,
+		swap.HtlcV1, contract.CltvExpiry, contract.SenderKey,
+		contract.ReceiverKey, testPreimage.Hash(), swap.HtlcNP2WSH,
+		cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		t.Fatal(err)
