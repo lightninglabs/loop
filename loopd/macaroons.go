@@ -72,6 +72,10 @@ var (
 			Entity: "auth",
 			Action: "write",
 		}},
+		"/looprpc.SwapClient/ListPermissions": {{
+			Entity: "auth",
+			Action: "read",
+		}},
 	}
 
 	// allPermissions is the list of all existing permissions that exist

@@ -397,6 +397,24 @@ func local_request_SwapClient_BakeMacaroon_0(ctx context.Context, marshaler runt
 
 }
 
+func request_SwapClient_ListPermissions_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListPermissionsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.ListPermissions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_SwapClient_ListPermissions_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListPermissionsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.ListPermissions(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
 // RegisterSwapClientHandlerServer registers the http handlers for service SwapClient to "mux".
 // UnaryRPC     :call SwapClientServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -599,6 +617,26 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 		}
 
 		forward_SwapClient_BakeMacaroon_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_SwapClient_ListPermissions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_SwapClient_ListPermissions_0(rctx, inboundMarshaler, server, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_SwapClient_ListPermissions_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 
 	})
 
@@ -843,6 +881,26 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 
 	})
 
+	mux.Handle("GET", pattern_SwapClient_ListPermissions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_SwapClient_ListPermissions_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_SwapClient_ListPermissions_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
 	return nil
 }
 
@@ -866,6 +924,8 @@ var (
 	pattern_SwapClient_GetLsatTokens_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lsat", "tokens"}, "", runtime.AssumeColonVerbOpt(true)))
 
 	pattern_SwapClient_BakeMacaroon_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "macaroon"}, "", runtime.AssumeColonVerbOpt(true)))
+
+	pattern_SwapClient_ListPermissions_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "permissions"}, "", runtime.AssumeColonVerbOpt(true)))
 )
 
 var (
@@ -888,4 +948,6 @@ var (
 	forward_SwapClient_GetLsatTokens_0 = runtime.ForwardResponseMessage
 
 	forward_SwapClient_BakeMacaroon_0 = runtime.ForwardResponseMessage
+
+	forward_SwapClient_ListPermissions_0 = runtime.ForwardResponseMessage
 )

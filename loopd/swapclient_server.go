@@ -632,6 +632,33 @@ func (s *swapClientServer) BakeMacaroon(ctx context.Context,
 	return resp, nil
 }
 
+// ListPermissions lists all RPC method URIs and their required macaroon
+// permissions to access them.
+func (s *swapClientServer) ListPermissions(_ context.Context,
+	_ *looprpc.ListPermissionsRequest) (*looprpc.ListPermissionsResponse,
+	error) {
+
+	log.Debugf("[listpermissions]")
+
+	permissionMap := make(map[string]*looprpc.MacaroonPermissionList)
+	for uri, perms := range RequiredPermissions {
+		rpcPerms := make([]*looprpc.MacaroonPermission, len(perms))
+		for idx, perm := range perms {
+			rpcPerms[idx] = &looprpc.MacaroonPermission{
+				Entity: perm.Entity,
+				Action: perm.Action,
+			}
+		}
+		permissionMap[uri] = &looprpc.MacaroonPermissionList{
+			Permissions: rpcPerms,
+		}
+	}
+
+	return &looprpc.ListPermissionsResponse{
+		MethodPermissions: permissionMap,
+	}, nil
+}
+
 // processStatusUpdates reads updates on the status channel and processes them.
 //
 // NOTE: This must run inside a goroutine as it blocks until the main context

@@ -116,6 +116,17 @@ service SwapClient {
             body: "*"
         };
     }
+
+    /* loop: `listpermissions`
+    ListPermissions lists all RPC method URIs and their required macaroon
+    permissions to access them.
+    */
+    rpc ListPermissions (ListPermissionsRequest)
+        returns (ListPermissionsResponse) {
+        option (google.api.http) = {
+            get: "/v1/permissions"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -698,4 +709,20 @@ message BakeMacaroonRequest {
 message BakeMacaroonResponse {
     // The hex encoded macaroon, serialized in binary format.
     string macaroon = 1;
+}
+
+message MacaroonPermissionList {
+    // A list of macaroon permissions.
+    repeated MacaroonPermission permissions = 1;
+}
+
+message ListPermissionsRequest {
+}
+
+message ListPermissionsResponse {
+    /*
+    A map between all RPC method URIs and their required macaroon permissions to
+    access them.
+    */
+    map<string, MacaroonPermissionList> method_permissions = 1;
 }

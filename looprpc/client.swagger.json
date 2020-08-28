@@ -348,6 +348,29 @@
           "SwapClient"
         ]
       }
+    },
+    "/v1/permissions": {
+      "get": {
+        "summary": "loop: `listpermissions`\nListPermissions lists all RPC method URIs and their required macaroon\npermissions to access them.",
+        "operationId": "ListPermissions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListPermissionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
     }
   },
   "definitions": {
@@ -423,6 +446,18 @@
           "type": "string",
           "format": "int64",
           "title": "*\nMaximum swap amount (sat)"
+        }
+      }
+    },
+    "looprpcListPermissionsResponse": {
+      "type": "object",
+      "properties": {
+        "method_permissions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/looprpcMacaroonPermissionList"
+          },
+          "description": "A map between all RPC method URIs and their required macaroon permissions to\naccess them."
         }
       }
     },
@@ -602,6 +637,18 @@
         "action": {
           "type": "string",
           "description": "The action that is granted."
+        }
+      }
+    },
+    "looprpcMacaroonPermissionList": {
+      "type": "object",
+      "properties": {
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcMacaroonPermission"
+          },
+          "description": "A list of macaroon permissions."
         }
       }
     },
