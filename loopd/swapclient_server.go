@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
 
@@ -40,6 +41,7 @@ type swapClientServer struct {
 	nextSubscriberID int
 	swapsLock        sync.Mutex
 	mainCtx          context.Context
+	macService       *macaroons.Service
 }
 
 // LoopOut initiates an loop out swap with the given parameters. The call

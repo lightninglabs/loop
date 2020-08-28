@@ -376,6 +376,7 @@ func (d *Daemon) initialize() error {
 		subscribers: make(map[int]chan<- interface{}),
 		statusChan:  make(chan loop.SwapInfo),
 		mainCtx:     d.mainCtx,
+		macService:  d.macaroonService,
 	}
 
 	// Retrieve all currently existing swaps from the database.
