@@ -23,6 +23,8 @@ require (
 	gopkg.in/macaroon.v2 v2.1.0
 )
 
+replace github.com/lightningnetwork/lnd => github.com/guggero/lnd v0.11.0-beta.rc4.0.20200828124736-13bc4e126a1a
+
 replace github.com/lightningnetwork/lnd/cert => github.com/guggero/lnd/cert v1.0.3
 
 go 1.13
