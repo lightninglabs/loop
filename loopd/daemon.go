@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var (
@@ -169,7 +171,14 @@ func (d *Daemon) startWebServers() error {
 
 	// With our client created, let's now finish setting up and start our
 	// RPC server.
-	serverOpts := []grpc.ServerOption{}
+	serverTLSCfg, restClientCreds, err := d.getTLSConfig()
+	if err != nil {
+		return fmt.Errorf("could not create gRPC server options: %v",
+			err)
+	}
+	serverOpts := []grpc.ServerOption{
+		grpc.Creds(credentials.NewTLS(serverTLSCfg)),
+	}
 	d.grpcServer = grpc.NewServer(serverOpts...)
 	looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
@@ -203,11 +212,27 @@ func (d *Daemon) startWebServers() error {
 		restHandler = allowCORS(restHandler, d.cfg.CORSOrigin)
 	}
 	proxyOpts := []grpc.DialOption{
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(*restClientCreds),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
+
+	// With TLS enabled by default, we cannot call 0.0.0.0 internally from
+	// the REST proxy as that IP address isn't in the cert. We need to
+	// rewrite it to the loopback address.
+	restProxyDest := d.cfg.RPCListen
+	switch {
+	case strings.Contains(restProxyDest, "0.0.0.0"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "0.0.0.0", "127.0.0.1", 1,
+		)
+
+	case strings.Contains(restProxyDest, "[::]"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "[::]", "[::1]", 1,
+		)
+	}
 	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
-		ctx, mux, d.cfg.RPCListen, proxyOpts,
+		ctx, mux, restProxyDest, proxyOpts,
 	)
 	if err != nil {
 		return err
