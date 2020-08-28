@@ -68,6 +68,10 @@ var (
 			Entity: "auth",
 			Action: "read",
 		}},
+		"/looprpc.SwapClient/BakeMacaroon": {{
+			Entity: "auth",
+			Action: "write",
+		}},
 	}
 
 	// allPermissions is the list of all existing permissions that exist
@@ -92,7 +96,27 @@ var (
 	}, {
 		Entity: "auth",
 		Action: "read",
+	}, {
+		Entity: "auth",
+		Action: "write",
 	}}
+
+	// validEntities is a list of valid entity names that can be used to
+	// bake custom macaroons.
+	validEntities = []string{
+		"loop", "swap", "terms", "auth",
+		macaroons.PermissionEntityCustomURI,
+	}
+
+	// validActions is a list of all action names that can be used to bake
+	// custom macaroons.
+	validActions = []string{"out", "in", "execute", "read", "write"}
+
+	// If the --no-macaroons flag is used to start loopd, the macaroon
+	// service is not initialized. errMacaroonDisabled is then returned when
+	// macaroon related services are used.
+	errMacaroonDisabled = fmt.Errorf("macaroon authentication disabled, " +
+		"remove --no-macaroons flag to enable")
 
 	// macDbDefaultPw is the default encryption password used to encrypt the
 	// loop macaroon database.

@@ -104,6 +104,18 @@ service SwapClient {
             get: "/v1/lsat/tokens"
         };
     }
+
+    /* loop: `bakemacaroon`
+    BakeMacaroon allows the creation of a new macaroon with custom read and
+    write permissions. No first-party caveats are added since this can be done
+    offline.
+    */
+    rpc BakeMacaroon (BakeMacaroonRequest) returns (BakeMacaroonResponse) {
+        option (google.api.http) = {
+            post: "/v1/macaroon"
+            body: "*"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -425,7 +437,7 @@ enum SwapState {
     INVOICE_SETTLED = 5;
 }
 
-enum FailureReason{
+enum FailureReason {
     /*
     FAILURE_REASON_NONE is set when the swap did not fail, it is either in
     progress or succeeded.
@@ -665,4 +677,25 @@ message LsatToken {
     file name of the token where it's stored on the file system.
     */
     string storage_name = 8;
+}
+
+message MacaroonPermission {
+    // The entity a permission grants access to.
+    string entity = 1;
+
+    // The action that is granted.
+    string action = 2;
+}
+
+message BakeMacaroonRequest {
+    // The list of permissions the new macaroon should grant.
+    repeated MacaroonPermission permissions = 1;
+
+    // The root key ID used to create the macaroon, must be a positive integer.
+    uint64 root_key_id = 2;
+}
+
+message BakeMacaroonResponse {
+    // The hex encoded macaroon, serialized in binary format.
+    string macaroon = 1;
 }

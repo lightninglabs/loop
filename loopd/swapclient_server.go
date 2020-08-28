@@ -2,9 +2,11 @@ package loopd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -549,6 +552,86 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
 }
 
+// BakeMacaroon allows the creation of a new macaroon with custom read and write
+// permissions. No first-party caveats are added since this can be done offline.
+func (s *swapClientServer) BakeMacaroon(ctx context.Context,
+	req *looprpc.BakeMacaroonRequest) (*looprpc.BakeMacaroonResponse,
+	error) {
+
+	log.Debugf("[bakemacaroon]")
+
+	// If the --no-macaroons flag is used to start loopd, the macaroon
+	// service is not initialized. Therefore we can't bake new macaroons.
+	if s.macService == nil {
+		return nil, errMacaroonDisabled
+	}
+
+	helpMsg := fmt.Sprintf("supported actions are %v, supported entities "+
+		"are %v", validActions, validEntities)
+
+	// Don't allow empty permission list as it doesn't make sense to have
+	// a macaroon that is not allowed to access any RPC.
+	if len(req.Permissions) == 0 {
+		return nil, fmt.Errorf("permission list cannot be empty. "+
+			"specify at least one action/entity pair. %s", helpMsg)
+	}
+
+	// Validate and map permission struct used by gRPC to the one used by
+	// the bakery.
+	requestedPermissions := make([]bakery.Op, len(req.Permissions))
+	for idx, op := range req.Permissions {
+		if !stringInSlice(op.Entity, validEntities) {
+			return nil, fmt.Errorf("invalid permission entity. %s",
+				helpMsg)
+		}
+
+		// Either we have the special entity "uri" which specifies a
+		// full gRPC URI or we have one of the pre-defined actions.
+		if op.Entity == macaroons.PermissionEntityCustomURI {
+			_, ok := RequiredPermissions[op.Action]
+			if !ok {
+				return nil, fmt.Errorf("invalid permission " +
+					"action, must be an existing URI in " +
+					"the format /package.Service/" +
+					"MethodName")
+			}
+		} else if !stringInSlice(op.Action, validActions) {
+			return nil, fmt.Errorf("invalid permission action. %s",
+				helpMsg)
+
+		}
+
+		requestedPermissions[idx] = bakery.Op{
+			Entity: op.Entity,
+			Action: op.Action,
+		}
+	}
+
+	// Convert root key id from uint64 to bytes. Because the
+	// DefaultRootKeyID is a digit 0 expressed in a byte slice of a string
+	// "0", we will keep the IDs in the same format - all must be numeric,
+	// and must be a byte slice of string value of the digit, e.g.,
+	// uint64(123) to string(123).
+	rootKeyID := []byte(strconv.FormatUint(req.RootKeyId, 10))
+
+	// Bake new macaroon with the given permissions and send it binary
+	// serialized and hex encoded to the client.
+	newMac, err := s.macService.NewMacaroon(
+		ctx, rootKeyID, requestedPermissions...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	newMacBytes, err := newMac.M().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	resp := &looprpc.BakeMacaroonResponse{}
+	resp.Macaroon = hex.EncodeToString(newMacBytes)
+
+	return resp, nil
+}
+
 // processStatusUpdates reads updates on the status channel and processes them.
 //
 // NOTE: This must run inside a goroutine as it blocks until the main context
@@ -614,4 +697,14 @@ func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
 	}
 
 	return validateConfTarget(htlcConfTarget, loop.DefaultHtlcConfTarget)
+}
+
+// stringInSlice returns true if a string is contained in the given slice.
+func stringInSlice(a string, slice []string) bool {
+	for _, b := range slice {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
