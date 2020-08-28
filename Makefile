@@ -58,6 +58,10 @@ mod-check:
 	$(GOMOD) tidy
 	if test -n "$$(git status | grep -e "go.mod\|go.sum")"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
+rpc:
+	@$(call print, "Compiling protos.")
+	cd looprpc; ./gen_protos.sh
+
 # ============
 # INSTALLATION
 # ============
