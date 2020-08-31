@@ -10,9 +10,9 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/grpc-ecosystem/grpc-gateway v1.14.3
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/lndclient v1.0.1-0.20200811080044-d1a60f30cf60
+	github.com/lightninglabs/lndclient v0.11.0-0
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.11.0-beta.rc2
+	github.com/lightningnetwork/lnd v0.11.0-beta
 	github.com/lightningnetwork/lnd/queue v1.0.4
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
