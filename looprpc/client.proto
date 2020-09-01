@@ -104,6 +104,30 @@ service SwapClient {
             get: "/v1/lsat/tokens"
         };
     }
+
+    /*
+    GetLiquidityParams gets the parameters that the daemon's liquidity manager
+    is currently configured with. This may be nil if nothing is configured.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc GetLiquidityParams(GetLiquidityParamsRequest) returns (LiquidityParameters){
+        option (google.api.http) = {
+            get: "/v1/liquidity/params"
+        };
+    }
+
+    /*
+    SetLiquidityParams sets a new set of parameters for the daemon's liquidity
+    manager. Note that the full set of parameters must be provided, because
+    this call fully overwrites our existing parameters.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc SetLiquidityParams(SetLiquidityParamsRequest) returns (SetLiquidityParamsResponse){
+        option (google.api.http) = {
+            post: "/v1/liquidity/params"
+            body: "*"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -666,3 +690,56 @@ message LsatToken {
     */
     string storage_name = 8;
 }
+
+message GetLiquidityParamsRequest{}
+
+message LiquidityParameters{
+    /*
+    A set of liquidity rules that describe the desired liquidity balance.
+    */
+    repeated LiquidityRule rules = 1;
+}
+
+enum LiquidityRuleType{
+    UNKNOWN = 0;
+    THRESHOLD = 1;
+}
+
+message LiquidityRule{
+    /*
+    The short channel ID of the channel that this rule should be applied to.
+    */
+    uint64 channel_id = 1;
+
+    /*
+    Type indicates the type of rule that this message rule represents. Setting
+    this value will determine which fields are used in the message. The comments
+    on each field in this message will be prefixed with the LiquidityRuleType
+    they belong to.
+    */
+    LiquidityRuleType type = 2;
+
+    /*
+    THRESHOLD: The percentage of total capacity that incoming capacity should
+    not drop beneath.
+    */
+    uint32 incoming_threshold = 3;
+
+    /*
+    THRESHOLD: The percentage of total capacity that outgoing capacity should
+    not drop beneath.
+    */
+    uint32 outgoing_threshold = 4;
+}
+
+message SetLiquidityParamsRequest{
+    /*
+    Parameters is the desired new set of parameters for the liquidity management
+    subsystem. Note that the current set of parameters will be completely
+    overwritten by the parameters provided (if they are valid), so the full set
+    of parameters should be provided for each call.
+    */
+    LiquidityParameters parameters = 1;
+}
+
+message SetLiquidityParamsResponse{}
