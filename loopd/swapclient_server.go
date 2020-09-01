@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -33,6 +34,7 @@ const (
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
 	impl             *loop.Client
+	liquidityMgr     *liquidity.Manager
 	lnd              *lndclient.LndServices
 	swaps            map[lntypes.Hash]loop.SwapInfo
 	subscribers      map[int]chan<- interface{}
