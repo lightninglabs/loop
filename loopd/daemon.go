@@ -2,10 +2,12 @@ package loopd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -29,11 +31,13 @@ var (
 
 // listenerCfg holds closures used to retrieve listeners for the gRPC services.
 type listenerCfg struct {
-	// grpcListener returns a listener to use for the gRPC server.
-	grpcListener func() (net.Listener, error)
+	// grpcListener returns a TLS listener to use for the gRPC server, based
+	// on the passed TLS configuration.
+	grpcListener func(*tls.Config) (net.Listener, error)
 
-	// restListener returns a listener to use for the REST proxy.
-	restListener func() (net.Listener, error)
+	// restListener returns a TLS listener to use for the REST proxy, based
+	// on the passed TLS configuration.
+	restListener func(*tls.Config) (net.Listener, error)
 
 	// getLnd returns a grpc connection to an lnd instance.
 	getLnd func(lndclient.Network, *lndConfig) (*lndclient.GrpcLndServices,
@@ -175,11 +179,15 @@ func (d *Daemon) startWebServers() error {
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
-	d.grpcListener, err = d.listenerCfg.grpcListener()
+	serverTLSCfg, restClientCreds, err := getTLSConfig(d.cfg)
+	if err != nil {
+		return fmt.Errorf("could not create gRPC server options: %v",
+			err)
+	}
+	d.grpcListener, err = d.listenerCfg.grpcListener(serverTLSCfg)
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s: %v",
 			d.cfg.RPCListen, err)
-
 	}
 
 	// The default JSON marshaler of the REST proxy only sets OrigName to
@@ -203,17 +211,33 @@ func (d *Daemon) startWebServers() error {
 		restHandler = allowCORS(restHandler, d.cfg.CORSOrigin)
 	}
 	proxyOpts := []grpc.DialOption{
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(*restClientCreds),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
+
+	// With TLS enabled by default, we cannot call 0.0.0.0 internally from
+	// the REST proxy as that IP address isn't in the cert. We need to
+	// rewrite it to the loopback address.
+	restProxyDest := d.cfg.RPCListen
+	switch {
+	case strings.Contains(restProxyDest, "0.0.0.0"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "0.0.0.0", "127.0.0.1", 1,
+		)
+
+	case strings.Contains(restProxyDest, "[::]"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "[::]", "[::1]", 1,
+		)
+	}
 	err = looprpc.RegisterSwapClientHandlerFromEndpoint(
-		ctx, mux, d.cfg.RPCListen, proxyOpts,
+		ctx, mux, restProxyDest, proxyOpts,
 	)
 	if err != nil {
 		return err
 	}
 
-	d.restListener, err = d.listenerCfg.restListener()
+	d.restListener, err = d.listenerCfg.restListener(serverTLSCfg)
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s: %v",
 			d.cfg.RESTListen, err)
