@@ -18,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 var (
@@ -168,6 +169,21 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices) error {
 	// handlers. If this fails, then nothing has been started yet and we can
 	// just return the error.
 	return d.initialize()
+}
+
+// ValidateMacaroon extracts the macaroon from the context's gRPC metadata,
+// checks its signature, makes sure all specified permissions for the called
+// method are contained within and finally ensures all caveat conditions are
+// met. A non-nil error is returned if any of the checks fail. This method is
+// needed to enable loopd running as an external subserver in the same process
+// as lnd but still validate its own macaroons.
+func (d *Daemon) ValidateMacaroon(ctx context.Context,
+	requiredPermissions []bakery.Op, fullMethod string) error {
+
+	// Delegate the call to loop's own macaroon validator service.
+	return d.macaroonService.ValidateMacaroon(
+		ctx, requiredPermissions, fullMethod,
+	)
 }
 
 // startWebServers starts the gRPC and REST servers in goroutines.
