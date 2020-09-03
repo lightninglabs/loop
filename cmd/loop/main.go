@@ -380,12 +380,16 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	// TLS cannot be disabled, we'll always have a cert file to read.
 	creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
 	if err != nil {
-		fatal(err)
+		return nil, err
 	}
 
 	// Macaroons are not yet enabled by default.
 	if macaroonPath != "" {
-		opts = append(opts, readMacaroon(macaroonPath))
+		macOption, err := readMacaroon(macaroonPath)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, macOption)
 	}
 
 	opts = append(opts, grpc.WithTransportCredentials(creds))
@@ -401,16 +405,16 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 
 // readMacaroon tries to read the macaroon file at the specified path and create
 // gRPC dial options from it.
-func readMacaroon(macPath string) grpc.DialOption {
+func readMacaroon(macPath string) (grpc.DialOption, error) {
 	// Load the specified macaroon file.
 	macBytes, err := ioutil.ReadFile(macPath)
 	if err != nil {
-		fatal(fmt.Errorf("unable to read macaroon path : %v", err))
+		return nil, fmt.Errorf("unable to read macaroon path : %v", err)
 	}
 
 	mac := &macaroon.Macaroon{}
 	if err = mac.UnmarshalBinary(macBytes); err != nil {
-		fatal(fmt.Errorf("unable to decode macaroon: %v", err))
+		return nil, fmt.Errorf("unable to decode macaroon: %v", err)
 	}
 
 	macConstraints := []macaroons.Constraint{
@@ -430,10 +434,10 @@ func readMacaroon(macPath string) grpc.DialOption {
 	// Apply constraints to the macaroon.
 	constrainedMac, err := macaroons.AddConstraints(mac, macConstraints...)
 	if err != nil {
-		fatal(err)
+		return nil, err
 	}
 
 	// Now we append the macaroon credentials to the dial options.
 	cred := macaroons.NewMacaroonCredential(constrainedMac)
-	return grpc.WithPerRPCCredentials(cred)
+	return grpc.WithPerRPCCredentials(cred), nil
 }
