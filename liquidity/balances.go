@@ -2,6 +2,7 @@ package liquidity
 
 import (
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -19,4 +20,14 @@ type balances struct {
 
 	// channelID is the channel that has these balances.
 	channelID lnwire.ShortChannelID
+}
+
+// newBalances creates a balances struct from lndclient channel information.
+func newBalances(info lndclient.ChannelInfo) *balances {
+	return &balances{
+		capacity:  info.Capacity,
+		incoming:  info.RemoteBalance,
+		outgoing:  info.LocalBalance,
+		channelID: lnwire.NewShortChanIDFromInt(info.ChannelID),
+	}
 }
