@@ -6,15 +6,20 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopd"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/protobuf-hex-display/json"
 	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/macaroons"
 
 	"github.com/btcsuite/btcutil"
@@ -43,10 +48,22 @@ var (
 	// that we set when sending it over the line.
 	defaultMacaroonTimeout int64 = 60
 
+	loopDirFlag = cli.StringFlag{
+		Name:  "loopdir",
+		Value: loopd.LoopDirBase,
+		Usage: "path to loop's base directory",
+	}
+	networkFlag = cli.StringFlag{
+		Name: "network, n",
+		Usage: "the network loop is running on e.g. mainnet, " +
+			"testnet, etc.",
+		Value: loopd.DefaultNetwork,
+	}
+
 	tlsCertFlag = cli.StringFlag{
-		Name: "tlscertpath",
-		Usage: "path to loop's TLS certificate, only needed if loop " +
-			"runs in the same process as lnd",
+		Name:  "tlscertpath",
+		Usage: "path to loop's TLS certificate",
+		Value: loopd.DefaultTLSCertPath,
 	}
 	macaroonPathFlag = cli.StringFlag{
 		Name: "macaroonpath",
@@ -103,6 +120,8 @@ func main() {
 			Value: "localhost:11010",
 			Usage: "loopd daemon address host:port",
 		},
+		networkFlag,
+		loopDirFlag,
 		tlsCertFlag,
 		macaroonPathFlag,
 	}
@@ -121,8 +140,10 @@ func main() {
 
 func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
 	rpcServer := ctx.GlobalString("rpcserver")
-	tlsCertPath := ctx.GlobalString(tlsCertFlag.Name)
-	macaroonPath := ctx.GlobalString(macaroonPathFlag.Name)
+	tlsCertPath, macaroonPath, err := extractPathArgs(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
@@ -135,6 +156,40 @@ func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
 	return swap.CalcFee(amt, maxRoutingFeeBase, maxRoutingFeeRate)
+}
+
+// extractPathArgs parses the TLS certificate and macaroon paths from the
+// command.
+func extractPathArgs(ctx *cli.Context) (string, string, error) {
+	// We'll start off by parsing the network. This is needed to determine
+	// the correct path to the TLS certificate and macaroon when not
+	// specified.
+	networkStr := strings.ToLower(ctx.GlobalString("network"))
+	_, err := lndclient.Network(networkStr).ChainParams()
+	if err != nil {
+		return "", "", err
+	}
+
+	// We'll now fetch the loopdir so we can make a decision on how to
+	// properly read the cert. This will either be the default, or will have
+	// been overwritten by the end user.
+	loopDir := lncfg.CleanAndExpandPath(ctx.GlobalString(loopDirFlag.Name))
+	tlsCertPath := lncfg.CleanAndExpandPath(ctx.GlobalString(
+		tlsCertFlag.Name,
+	))
+
+	// If a custom lnd directory was set, we'll also check if custom paths
+	// for the TLS cert file were set as well. If not, we'll override their
+	// paths so they can be found within the custom loop directory set. This
+	// allows us to set a custom lnd directory, along with custom paths to
+	// the TLS cert file.
+	if loopDir != loopd.LoopDirBase || networkStr != loopd.DefaultNetwork {
+		tlsCertPath = filepath.Join(
+			loopDir, networkStr, loopd.DefaultTLSCertFilename,
+		)
+	}
+
+	return tlsCertPath, ctx.GlobalString(macaroonPathFlag.Name), nil
 }
 
 type inLimits struct {
@@ -322,32 +377,23 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
-	switch {
-	// If a TLS certificate file is specified, we need to load it and build
-	// transport credentials with it.
-	case tlsCertPath != "":
-		creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
-		if err != nil {
-			fatal(err)
-		}
-
-		// Macaroons are only allowed to be transmitted over a TLS
-		// enabled connection.
-		if macaroonPath != "" {
-			opts = append(opts, readMacaroon(macaroonPath))
-		}
-
-		opts = append(opts, grpc.WithTransportCredentials(creds))
-
-	// By default, if no certificate is supplied, we assume the RPC server
-	// runs without TLS.
-	default:
-		opts = append(opts, grpc.WithInsecure())
+	// TLS cannot be disabled, we'll always have a cert file to read.
+	creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
+	if err != nil {
+		fatal(err)
 	}
+
+	// Macaroons are not yet enabled by default.
+	if macaroonPath != "" {
+		opts = append(opts, readMacaroon(macaroonPath))
+	}
+
+	opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	conn, err := grpc.Dial(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v", err)
+		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+			err)
 	}
 
 	return conn, nil
