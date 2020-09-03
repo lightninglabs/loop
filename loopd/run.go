@@ -251,7 +251,7 @@ func getConfigPath(cfg Config, loopDir string) string {
 	// If the user has set a loop directory that is different to the default
 	// we will use this loop directory as the location of our config file.
 	// We do not namespace by network, because this is a custom loop dir.
-	if loopDir != loopDirBase {
+	if loopDir != LoopDirBase {
 		return filepath.Join(loopDir, defaultConfigFilename)
 	}
 
