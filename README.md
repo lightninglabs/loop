@@ -333,17 +333,24 @@ pending swaps after a restart.
 Information about pending swaps is stored persistently in the swap database.
 Its location is `~/.loopd/<network>/loop.db`.
 
-## Transport security
+## Authentication and transport security
 
-The gRPC and REST connections of `loopd` are encrypted with TLS the same way
-`lnd` is.
+The gRPC and REST connections of `loopd` are encrypted with TLS and secured with
+macaroon authentication the same way `lnd` is.
 
 If no custom loop directory is set then the TLS certificate is stored in
-`~/.loopd/<network>/tls.cert`.
+`~/.loop/<network>/tls.cert` and the base macaroon in
+`~/.loop/<network>/loop.macaroon`.
 
-The `loop` command will pick up the file automatically on mainnet if no custom
+The `loop` command will pick up these file automatically on mainnet if no custom
 loop directory is used. For other networks it should be sufficient to add the
 `--network` flag to tell the CLI in what sub directory to look for the files.
+
+For more information on macaroons,
+[see the macaroon documentation of lnd.](https://github.com/lightningnetwork/lnd/blob/master/docs/macaroons.md)
+
+**NOTE**: Loop's macaroons are independent from `lnd`'s. The same macaroon
+cannot be used for both `loopd` and `lnd`.
 
 ## Multiple Simultaneous Swaps
 
