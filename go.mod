@@ -12,7 +12,10 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/lndclient v0.11.0-0
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.11.0-beta
+
+	// TODO(guggero): Bump lnd to the final v0.11.1-beta version once it's
+	// released.
+	github.com/lightningnetwork/lnd v0.11.0-beta.rc4.0.20200911014924-bc6e52888763
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/queue v1.0.4
 	github.com/stretchr/testify v1.5.1
