@@ -11,6 +11,29 @@
     "application/json"
   ],
   "paths": {
+    "/v1/auto/suggest": {
+      "get": {
+        "summary": "SuggestSwaps returns a list of recommended swaps based on the current\nstate of your node's channels and it's liquidity manager parameters.\nNote that only loop out suggestions are currently supported.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "operationId": "SuggestSwaps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSuggestSwapsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/liquidity/params": {
       "get": {
         "summary": "GetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
@@ -697,6 +720,18 @@
     },
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
+    },
+    "looprpcSuggestSwapsResponse": {
+      "type": "object",
+      "properties": {
+        "loop_out": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLoopOutRequest"
+          },
+          "description": "The set of recommended loop outs."
+        }
+      }
     },
     "looprpcSwapResponse": {
       "type": "object",
