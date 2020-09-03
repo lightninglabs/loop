@@ -2,6 +2,7 @@ package liquidity
 
 import (
 	"github.com/btcsuite/btcutil"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 // balances summarizes the state of the balances of a channel. Channel reserve,
@@ -15,4 +16,7 @@ type balances struct {
 
 	// outgoing is the local balance of the channel.
 	outgoing btcutil.Amount
+
+	// channelID is the channel that has these balances.
+	channelID lnwire.ShortChannelID
 }

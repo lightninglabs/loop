@@ -174,3 +174,82 @@ func TestLoopOutAmount(t *testing.T) {
 		})
 	}
 }
+
+// TestSuggestSwaps tests swap suggestions for the threshold rule. It does not
+// many different values because we have separate tests for swap amount
+// calculation.
+func TestSuggestSwap(t *testing.T) {
+	tests := []struct {
+		name            string
+		rule            *ThresholdRule
+		channel         *balances
+		outRestrictions *Restrictions
+		swap            *LoopOutRecommendation
+	}{
+		{
+			name:            "liquidity ok",
+			rule:            NewThresholdRule(10, 10),
+			outRestrictions: NewRestrictions(10, 100),
+			channel: &balances{
+				capacity: 100,
+				incoming: 50,
+				outgoing: 50,
+			},
+		},
+		{
+			name:            "loop out",
+			rule:            NewThresholdRule(40, 40),
+			outRestrictions: NewRestrictions(10, 100),
+			channel: &balances{
+				capacity: 100,
+				incoming: 0,
+				outgoing: 100,
+			},
+			swap: &LoopOutRecommendation{Amount: 50},
+		},
+		{
+			name:            "amount below minimum",
+			rule:            NewThresholdRule(40, 40),
+			outRestrictions: NewRestrictions(200, 300),
+			channel: &balances{
+				capacity: 100,
+				incoming: 0,
+				outgoing: 100,
+			},
+			swap: nil,
+		},
+		{
+			name:            "amount above maximum",
+			rule:            NewThresholdRule(40, 40),
+			outRestrictions: NewRestrictions(10, 20),
+			channel: &balances{
+				capacity: 100,
+				incoming: 0,
+				outgoing: 100,
+			},
+			swap: &LoopOutRecommendation{Amount: 20},
+		},
+		{
+			name:            "loop in",
+			rule:            NewThresholdRule(10, 10),
+			outRestrictions: NewRestrictions(10, 100),
+			channel: &balances{
+				capacity: 100,
+				incoming: 100,
+				outgoing: 0,
+			},
+			swap: nil,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			swap := test.rule.suggestSwap(
+				test.channel, test.outRestrictions,
+			)
+			require.Equal(t, test.swap, swap)
+		})
+	}
+}

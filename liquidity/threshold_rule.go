@@ -62,6 +62,34 @@ func (r *ThresholdRule) validate() error {
 	return nil
 }
 
+// suggestSwap suggests a swap based on the liquidity thresholds configured,
+// returning nil if no swap is recommended.
+func (r *ThresholdRule) suggestSwap(channel *balances,
+	outRestrictions *Restrictions) *LoopOutRecommendation {
+
+	// Examine our total balance and required ratios to decide whether we
+	// need to swap.
+	amount := loopOutSwapAmount(
+		channel, r.MinimumIncoming, r.MinimumOutgoing,
+	)
+
+	// Limit our swap amount by the minimum/maximum thresholds set.
+	switch {
+	case amount < outRestrictions.Minimum:
+		return nil
+
+	case amount > outRestrictions.Maximum:
+		return newLoopOutRecommendation(
+			outRestrictions.Maximum, channel.channelID,
+		)
+
+	default:
+		return newLoopOutRecommendation(
+			amount, channel.channelID,
+		)
+	}
+}
+
 // loopOutSwapAmount determines whether we can perform a loop out swap, and
 // returns the amount we need to swap to reach the desired liquidity balance
 // specified by the incoming and outgoing thresholds.
