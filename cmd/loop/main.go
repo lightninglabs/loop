@@ -110,7 +110,7 @@ func main() {
 		loopOutCommand, loopInCommand, termsCommand,
 		monitorCommand, quoteCommand, listAuthCommand,
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
-		setLiquidityParamCommand,
+		setLiquidityParamCommand, suggestSwapCommand,
 	}
 
 	err := app.Run(os.Args)
