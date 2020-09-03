@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -51,22 +52,32 @@ type RPCConfig struct {
 // and RPCConfig.
 func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 	return &listenerCfg{
-		grpcListener: func() (net.Listener, error) {
+		grpcListener: func(tlsCfg *tls.Config) (net.Listener, error) {
 			// If a custom RPC listener is set, we will listen on
 			// it instead of the regular tcp socket.
 			if rpcCfg.RPCListener != nil {
 				return rpcCfg.RPCListener, nil
 			}
 
-			return net.Listen("tcp", config.RPCListen)
+			listener, err := net.Listen("tcp", config.RPCListen)
+			if err != nil {
+				return nil, err
+			}
+
+			return tls.NewListener(listener, tlsCfg), nil
 		},
-		restListener: func() (net.Listener, error) {
+		restListener: func(tlsCfg *tls.Config) (net.Listener, error) {
 			// If a custom RPC listener is set, we disable REST.
 			if rpcCfg.RPCListener != nil {
 				return nil, nil
 			}
 
-			return net.Listen("tcp", config.RESTListen)
+			listener, err := net.Listen("tcp", config.RESTListen)
+			if err != nil {
+				return nil, err
+			}
+
+			return tls.NewListener(listener, tlsCfg), nil
 		},
 		getLnd: func(network lndclient.Network, cfg *lndConfig) (
 			*lndclient.GrpcLndServices, error) {

@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -29,11 +30,13 @@ var (
 
 // listenerCfg holds closures used to retrieve listeners for the gRPC services.
 type listenerCfg struct {
-	// grpcListener returns a listener to use for the gRPC server.
-	grpcListener func() (net.Listener, error)
+	// grpcListener returns a TLS listener to use for the gRPC server, based
+	// on the passed TLS configuration.
+	grpcListener func(*tls.Config) (net.Listener, error)
 
-	// restListener returns a listener to use for the REST proxy.
-	restListener func() (net.Listener, error)
+	// restListener returns a TLS listener to use for the REST proxy, based
+	// on the passed TLS configuration.
+	restListener func(*tls.Config) (net.Listener, error)
 
 	// getLnd returns a grpc connection to an lnd instance.
 	getLnd func(lndclient.Network, *lndConfig) (*lndclient.GrpcLndServices,
@@ -175,7 +178,7 @@ func (d *Daemon) startWebServers() error {
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
-	d.grpcListener, err = d.listenerCfg.grpcListener()
+	d.grpcListener, err = d.listenerCfg.grpcListener(nil)
 	if err != nil {
 		return fmt.Errorf("RPC server unable to listen on %s: %v",
 			d.cfg.RPCListen, err)
@@ -213,7 +216,7 @@ func (d *Daemon) startWebServers() error {
 		return err
 	}
 
-	d.restListener, err = d.listenerCfg.restListener()
+	d.restListener, err = d.listenerCfg.restListener(nil)
 	if err != nil {
 		return fmt.Errorf("REST proxy unable to listen on %s: %v",
 			d.cfg.RESTListen, err)
