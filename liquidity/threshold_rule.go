@@ -3,6 +3,8 @@ package liquidity
 import (
 	"errors"
 	"fmt"
+
+	"github.com/btcsuite/btcutil"
 )
 
 var (
@@ -58,4 +60,61 @@ func (r *ThresholdRule) validate() error {
 	}
 
 	return nil
+}
+
+// loopOutSwapAmount determines whether we can perform a loop out swap, and
+// returns the amount we need to swap to reach the desired liquidity balance
+// specified by the incoming and outgoing thresholds.
+func loopOutSwapAmount(balances *balances, incomingThresholdPercent,
+	outgoingThresholdPercent int) btcutil.Amount {
+
+	minimumIncoming := btcutil.Amount(uint64(
+		balances.capacity) *
+		uint64(incomingThresholdPercent) / 100,
+	)
+
+	minimumOutgoing := btcutil.Amount(
+		uint64(balances.capacity) *
+			uint64(outgoingThresholdPercent) / 100,
+	)
+
+	switch {
+	// If we have sufficient incoming capacity, we do not need to loop out.
+	case balances.incoming >= minimumIncoming:
+		return 0
+
+	// If we are already below the threshold set for outgoing capacity, we
+	// cannot take any further action.
+	case balances.outgoing <= minimumOutgoing:
+		return 0
+
+	}
+
+	// Express our minimum outgoing amount as a maximum incoming amount.
+	// We will use this value to limit the amount that we swap, so that we
+	// do not dip below our outgoing threshold.
+	maximumIncoming := balances.capacity - minimumOutgoing
+
+	// Calculate the midpoint between our minimum and maximum incoming
+	// values. We will aim to swap this amount so that we do not tip our
+	// outgoing balance beneath the desired level.
+	midpoint := (minimumIncoming + maximumIncoming) / 2
+
+	// Calculate the amount of incoming balance we need to shift to reach
+	// this desired midpoint.
+	required := midpoint - balances.incoming
+
+	// Since we can have pending htlcs on our channel, we check the amount
+	// of outbound capacity that we can shift before we fall below our
+	// threshold.
+	available := balances.outgoing - minimumOutgoing
+
+	// If we do not have enough balance available to reach our midpoint, we
+	// take no action. This is the case when we have a large portion of
+	// pending htlcs.
+	if available < required {
+		return 0
+	}
+
+	return required
 }

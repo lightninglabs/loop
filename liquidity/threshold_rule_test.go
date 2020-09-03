@@ -3,6 +3,7 @@ package liquidity
 import (
 	"testing"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,6 +89,88 @@ func TestValidateThreshold(t *testing.T) {
 
 			err := testCase.threshold.validate()
 			require.Equal(t, testCase.err, err)
+		})
+	}
+}
+
+// TestLoopOutAmount tests assessing of a set of balances to determine whether
+// we should perform a loop out.
+func TestLoopOutAmount(t *testing.T) {
+	tests := []struct {
+		name        string
+		minIncoming int
+		minOutgoing int
+		balances    *balances
+		amt         btcutil.Amount
+	}{
+		{
+			name: "insufficient surplus",
+			balances: &balances{
+				capacity: 100,
+				incoming: 20,
+				outgoing: 20,
+			},
+			minOutgoing: 40,
+			minIncoming: 40,
+			amt:         0,
+		},
+		{
+			name: "loop out",
+			balances: &balances{
+				capacity: 100,
+				incoming: 20,
+				outgoing: 80,
+			},
+			minOutgoing: 20,
+			minIncoming: 60,
+			amt:         50,
+		},
+		{
+			name: "pending htlcs",
+			balances: &balances{
+				capacity: 100,
+				incoming: 20,
+				outgoing: 30,
+			},
+			minOutgoing: 20,
+			minIncoming: 60,
+			amt:         0,
+		},
+		{
+			name: "loop in",
+			balances: &balances{
+				capacity: 100,
+				incoming: 50,
+				outgoing: 50,
+			},
+			minOutgoing: 60,
+			minIncoming: 30,
+			amt:         0,
+		},
+		{
+			name: "liquidity ok",
+			balances: &balances{
+				capacity: 100,
+				incoming: 50,
+				outgoing: 50,
+			},
+			minOutgoing: 40,
+			minIncoming: 40,
+			amt:         0,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			amt := loopOutSwapAmount(
+				test.balances, test.minIncoming,
+				test.minOutgoing,
+			)
+			require.Equal(t, test.amt, amt)
 		})
 	}
 }
