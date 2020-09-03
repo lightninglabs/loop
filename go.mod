@@ -23,6 +23,7 @@ require (
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0
 	google.golang.org/genproto v0.0.0-20190927181202-20e1ac93f88c
 	google.golang.org/grpc v1.24.0
+	gopkg.in/macaroon-bakery.v2 v2.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 )
 
