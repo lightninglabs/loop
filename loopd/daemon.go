@@ -300,12 +300,13 @@ func (d *Daemon) initialize() error {
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
-		impl:        swapclient,
-		lnd:         &d.lnd.LndServices,
-		swaps:       make(map[lntypes.Hash]loop.SwapInfo),
-		subscribers: make(map[int]chan<- interface{}),
-		statusChan:  make(chan loop.SwapInfo),
-		mainCtx:     d.mainCtx,
+		impl:         swapclient,
+		liquidityMgr: getLiquidityManager(swapclient),
+		lnd:          &d.lnd.LndServices,
+		swaps:        make(map[lntypes.Hash]loop.SwapInfo),
+		subscribers:  make(map[int]chan<- interface{}),
+		statusChan:   make(chan loop.SwapInfo),
+		mainCtx:      d.mainCtx,
 	}
 
 	// Retrieve all currently existing swaps from the database.

@@ -8,17 +8,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/queue"
-	"github.com/lightningnetwork/lnd/routing/route"
-
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
-
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/queue"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 const (
@@ -33,6 +33,7 @@ const (
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
 	impl             *loop.Client
+	liquidityMgr     *liquidity.Manager
 	lnd              *lndclient.LndServices
 	swaps            map[lntypes.Hash]loop.SwapInfo
 	subscribers      map[int]chan<- interface{}
@@ -545,6 +546,90 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	}
 
 	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
+// GetLiquidityParams gets our current liquidity manager's parameters.
+func (s *swapClientServer) GetLiquidityParams(_ context.Context,
+	_ *looprpc.GetLiquidityParamsRequest) (*looprpc.LiquidityParameters,
+	error) {
+
+	cfg := s.liquidityMgr.GetParameters()
+
+	rpcCfg := &looprpc.LiquidityParameters{
+		Rules: make(
+			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
+		),
+	}
+
+	for channel, rule := range cfg.ChannelRules {
+		rpcRule := &looprpc.LiquidityRule{
+			ChannelId:         channel.ToUint64(),
+			Type:              looprpc.LiquidityRuleType_THRESHOLD,
+			IncomingThreshold: uint32(rule.MinimumIncoming),
+			OutgoingThreshold: uint32(rule.MinimumOutgoing),
+		}
+
+		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
+	}
+
+	return rpcCfg, nil
+}
+
+// SetLiquidityParams attempts to set our current liquidity manager's
+// parameters.
+func (s *swapClientServer) SetLiquidityParams(_ context.Context,
+	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
+	error) {
+
+	params := liquidity.Parameters{
+		ChannelRules: make(
+			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
+			len(in.Parameters.Rules),
+		),
+	}
+
+	for _, rule := range in.Parameters.Rules {
+		var (
+			shortID = lnwire.NewShortChanIDFromInt(rule.ChannelId)
+			err     error
+		)
+
+		// Make sure that there are not multiple rules set for a single
+		// channel.
+		if _, ok := params.ChannelRules[shortID]; ok {
+			return nil, fmt.Errorf("multiple rules set for "+
+				"channel: %v", shortID)
+		}
+
+		params.ChannelRules[shortID], err = rpcToRule(rule)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.liquidityMgr.SetParameters(params); err != nil {
+		return nil, err
+	}
+
+	return &looprpc.SetLiquidityParamsResponse{}, nil
+}
+
+// rpcToRule switches on rpc rule type to convert to our rule interface.
+func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.ThresholdRule, error) {
+	switch rule.Type {
+	case looprpc.LiquidityRuleType_UNKNOWN:
+		return nil, fmt.Errorf("rule type field must be set")
+
+	case looprpc.LiquidityRuleType_THRESHOLD:
+		return liquidity.NewThresholdRule(
+			int(rule.IncomingThreshold),
+			int(rule.OutgoingThreshold),
+		), nil
+
+	default:
+		return nil, fmt.Errorf("unknown rule: %T", rule)
+	}
+
 }
 
 // processStatusUpdates reads updates on the status channel and processes them.

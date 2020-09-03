@@ -11,6 +11,60 @@
     "application/json"
   ],
   "paths": {
+    "/v1/liquidity/params": {
+      "get": {
+        "summary": "GetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "operationId": "GetLiquidityParams",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcLiquidityParameters"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      },
+      "post": {
+        "summary": "SetLiquidityParams sets a new set of parameters for the daemon's liquidity\nmanager. Note that the full set of parameters must be provided, because\nthis call fully overwrites our existing parameters.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "operationId": "SetLiquidityParams",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSetLiquidityParamsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcSetLiquidityParamsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/in": {
       "post": {
         "summary": "* loop: `in`\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
@@ -367,6 +421,50 @@
         }
       }
     },
+    "looprpcLiquidityParameters": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLiquidityRule"
+          },
+          "description": "A set of liquidity rules that describe the desired liquidity balance."
+        }
+      }
+    },
+    "looprpcLiquidityRule": {
+      "type": "object",
+      "properties": {
+        "channel_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The short channel ID of the channel that this rule should be applied to."
+        },
+        "type": {
+          "$ref": "#/definitions/looprpcLiquidityRuleType",
+          "description": "Type indicates the type of rule that this message rule represents. Setting\nthis value will determine which fields are used in the message. The comments\non each field in this message will be prefixed with the LiquidityRuleType\nthey belong to."
+        },
+        "incoming_threshold": {
+          "type": "integer",
+          "format": "int64",
+          "description": "THRESHOLD: The percentage of total capacity that incoming capacity should\nnot drop beneath."
+        },
+        "outgoing_threshold": {
+          "type": "integer",
+          "format": "int64",
+          "description": "THRESHOLD: The percentage of total capacity that outgoing capacity should\nnot drop beneath."
+        }
+      }
+    },
+    "looprpcLiquidityRuleType": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN",
+        "THRESHOLD"
+      ],
+      "default": "UNKNOWN"
+    },
     "looprpcListSwapsResponse": {
       "type": "object",
       "properties": {
@@ -587,6 +685,18 @@
           "description": "The maximally accepted cltv delta of the on-chain htlc."
         }
       }
+    },
+    "looprpcSetLiquidityParamsRequest": {
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "$ref": "#/definitions/looprpcLiquidityParameters",
+          "description": "Parameters is the desired new set of parameters for the liquidity management\nsubsystem. Note that the current set of parameters will be completely\noverwritten by the parameters provided (if they are valid), so the full set\nof parameters should be provided for each call."
+        }
+      }
+    },
+    "looprpcSetLiquidityParamsResponse": {
+      "type": "object"
     },
     "looprpcSwapResponse": {
       "type": "object",
