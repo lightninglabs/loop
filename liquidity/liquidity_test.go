@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +18,7 @@ func newTestConfig() *Config {
 
 			return NewRestrictions(1, 10000), nil
 		},
+		Lnd: test.NewMockLnd().Client,
 	}
 }
 
@@ -63,4 +66,90 @@ func TestParameters(t *testing.T) {
 	}
 	err = manager.SetParameters(expected)
 	require.Equal(t, ErrZeroChannelID, err)
+}
+
+// TestSuggestSwaps tests getting of swap suggestions.
+func TestSuggestSwaps(t *testing.T) {
+	var (
+		chanID1 = lnwire.NewShortChanIDFromInt(1)
+		chanID2 = lnwire.NewShortChanIDFromInt(2)
+	)
+
+	tests := []struct {
+		name       string
+		channels   []lndclient.ChannelInfo
+		parameters Parameters
+		swaps      []*LoopOutRecommendation
+	}{
+		{
+			name:       "no rules",
+			channels:   nil,
+			parameters: newParameters(),
+		},
+		{
+			name: "loop out",
+			channels: []lndclient.ChannelInfo{
+				{
+					ChannelID:     1,
+					Capacity:      1000,
+					LocalBalance:  1000,
+					RemoteBalance: 0,
+				},
+			},
+			parameters: Parameters{
+				ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+					chanID1: NewThresholdRule(
+						10, 10,
+					),
+				},
+			},
+			swaps: []*LoopOutRecommendation{
+				{
+					Channel: chanID1,
+					Amount:  500,
+				},
+			},
+		},
+		{
+			name: "no rule for channel",
+			channels: []lndclient.ChannelInfo{
+				{
+					ChannelID:     1,
+					Capacity:      1000,
+					LocalBalance:  0,
+					RemoteBalance: 1000,
+				},
+			},
+			parameters: Parameters{
+				ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+					chanID2: NewThresholdRule(10, 10),
+				},
+			},
+			swaps: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := newTestConfig()
+
+			// Create a mock lnd with the set of channels set in our
+			// test case.
+			mock := test.NewMockLnd()
+			mock.Channels = testCase.channels
+			cfg.Lnd = mock.Client
+
+			manager := NewManager(cfg)
+
+			// Set our test case parameters.
+			err := manager.SetParameters(testCase.parameters)
+			require.NoError(t, err)
+
+			swaps, err := manager.SuggestSwaps(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, testCase.swaps, swaps)
+		})
+	}
 }

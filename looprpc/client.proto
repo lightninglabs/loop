@@ -128,6 +128,18 @@ service SwapClient {
             body: "*"
         };
     }
+
+    /*
+    SuggestSwaps returns a list of recommended swaps based on the current
+    state of your node's channels and it's liquidity manager parameters.
+    Note that only loop out suggestions are currently supported.
+    [EXPERIMENTAL]: endpoint is subject to change.
+    */
+    rpc SuggestSwaps(SuggestSwapsRequest) returns (SuggestSwapsResponse){
+        option (google.api.http) = {
+            get: "/v1/auto/suggest"
+        };
+    }
 }
 
 message LoopOutRequest {
@@ -743,3 +755,14 @@ message SetLiquidityParamsRequest{
 }
 
 message SetLiquidityParamsResponse{}
+
+message SuggestSwapsRequest{
+}
+
+message SuggestSwapsResponse{
+    /*
+    The set of recommended loop outs.
+    */
+    repeated LoopOutRequest loop_out= 1;
+}
+

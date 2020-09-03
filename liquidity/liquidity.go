@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -23,6 +24,9 @@ type Config struct {
 	// LoopOutRestrictions returns the restrictions that the server applies
 	// to loop out swaps.
 	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
+
+	// Lnd provides us with access to lnd's main rpc.
+	Lnd lndclient.LightningClient
 }
 
 // Parameters is a set of parameters provided by the user which guide
@@ -130,4 +134,52 @@ func cloneParameters(params Parameters) Parameters {
 	}
 
 	return paramCopy
+}
+
+// SuggestSwaps returns a set of swap suggestions based on our current liquidity
+// balance for the set of rules configured for the manager, failing if there are
+// no rules set.
+func (m *Manager) SuggestSwaps(ctx context.Context) (
+	[]*LoopOutRecommendation, error) {
+
+	m.paramsLock.Lock()
+	defer m.paramsLock.Unlock()
+
+	// If we have no rules set, exit early to avoid unnecessary calls to
+	// lnd and the server.
+	if len(m.params.ChannelRules) == 0 {
+		return nil, nil
+	}
+
+	channels, err := m.cfg.Lnd.ListChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the current server side restrictions.
+	outRestrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var suggestions []*LoopOutRecommendation
+	for _, channel := range channels {
+		channelID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+		rule, ok := m.params.ChannelRules[channelID]
+		if !ok {
+			continue
+		}
+
+		balance := newBalances(channel)
+
+		suggestion := rule.suggestSwap(balance, outRestrictions)
+
+		// We can have nil suggestions in the case where no action is
+		// required, so only add non-nil suggestions.
+		if suggestion != nil {
+			suggestions = append(suggestions, suggestion)
+		}
+	}
+
+	return suggestions, nil
 }

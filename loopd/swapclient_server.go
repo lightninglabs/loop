@@ -632,6 +632,32 @@ func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.ThresholdRule, error) {
 
 }
 
+// SuggestSwaps provides a list of suggested swaps based on lnd's current
+// channel balances and rules set by the liquidity manager.
+func (s *swapClientServer) SuggestSwaps(ctx context.Context,
+	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
+
+	swaps, err := s.liquidityMgr.SuggestSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var loopOut []*looprpc.LoopOutRequest
+
+	for _, swap := range swaps {
+		loopOut = append(loopOut, &looprpc.LoopOutRequest{
+			Amt: int64(swap.Amount),
+			OutgoingChanSet: []uint64{
+				swap.Channel.ToUint64(),
+			},
+		})
+	}
+
+	return &looprpc.SuggestSwapsResponse{
+		LoopOut: loopOut,
+	}, nil
+}
+
 // processStatusUpdates reads updates on the status channel and processes them.
 //
 // NOTE: This must run inside a goroutine as it blocks until the main context
