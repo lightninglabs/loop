@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "google/api/annotations.proto";
 
-package looprpc;
+package serverrpc;
 
 service SwapServer {
     rpc LoopOutTerms (ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);

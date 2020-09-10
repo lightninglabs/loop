@@ -3,7 +3,7 @@ package loopdb
 import (
 	"testing"
 
-	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/server/serverrpc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,13 +22,13 @@ func TestProtocolVersionSanity(t *testing.T) {
 		ProtocolVersionHtlcV2,
 	}
 
-	rpcVersions := [...]looprpc.ProtocolVersion{
-		looprpc.ProtocolVersion_LEGACY,
-		looprpc.ProtocolVersion_MULTI_LOOP_OUT,
-		looprpc.ProtocolVersion_NATIVE_SEGWIT_LOOP_IN,
-		looprpc.ProtocolVersion_PREIMAGE_PUSH_LOOP_OUT,
-		looprpc.ProtocolVersion_USER_EXPIRY_LOOP_OUT,
-		looprpc.ProtocolVersion_HTLC_V2,
+	rpcVersions := [...]serverrpc.ProtocolVersion{
+		serverrpc.ProtocolVersion_LEGACY,
+		serverrpc.ProtocolVersion_MULTI_LOOP_OUT,
+		serverrpc.ProtocolVersion_NATIVE_SEGWIT_LOOP_IN,
+		serverrpc.ProtocolVersion_PREIMAGE_PUSH_LOOP_OUT,
+		serverrpc.ProtocolVersion_USER_EXPIRY_LOOP_OUT,
+		serverrpc.ProtocolVersion_HTLC_V2,
 	}
 
 	require.Equal(t, len(versions), len(rpcVersions))
