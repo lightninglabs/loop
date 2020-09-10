@@ -6,6 +6,7 @@ import (
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -100,15 +101,15 @@ type genericSwap interface {
 type swapConfig struct {
 	lnd    *lndclient.LndServices
 	store  loopdb.SwapStore
-	server swapServerClient
+	server server.SwapServerClient
 }
 
 func newSwapConfig(lnd *lndclient.LndServices, store loopdb.SwapStore,
-	server swapServerClient) *swapConfig {
+	swapServer server.SwapServerClient) *swapConfig {
 
 	return &swapConfig{
 		lnd:    lnd,
 		store:  store,
-		server: server,
+		server: swapServer,
 	}
 }

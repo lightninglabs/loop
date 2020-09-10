@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 )
@@ -12,7 +13,7 @@ import (
 type loopInTestContext struct {
 	t              *testing.T
 	lnd            *test.LndMockServices
-	server         *serverMock
+	server         *server.Mock
 	store          *storeMock
 	sweeper        *sweep.Sweeper
 	cfg            *executeConfig
@@ -22,7 +23,7 @@ type loopInTestContext struct {
 
 func newLoopInTestContext(t *testing.T) *loopInTestContext {
 	lnd := test.NewMockLnd()
-	server := newServerMock()
+	mockServer := server.NewServerMock()
 	store := newStoreMock(t)
 	sweeper := sweep.Sweeper{Lnd: &lnd.LndServices}
 
@@ -44,7 +45,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 	return &loopInTestContext{
 		t:              t,
 		lnd:            lnd,
-		server:         server,
+		server:         mockServer,
 		store:          store,
 		sweeper:        &sweeper,
 		cfg:            &cfg,

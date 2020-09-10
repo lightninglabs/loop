@@ -8,13 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcutil"
-
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/lndclient"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -75,7 +74,7 @@ type loopInInitResult struct {
 
 // newLoopInSwap initiates a new loop in swap.
 func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *LoopInRequest) (*loopInInitResult,
+	currentHeight int32, request *server.InRequest) (*loopInInitResult,
 	error) {
 
 	// Before we start, check that the label is valid.
@@ -148,7 +147,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Validate the response parameters the prevent us continuing with a
 	// swap that is based on parameters outside our allowed range.
-	err = validateLoopInContract(cfg.lnd, currentHeight, request, swapResp)
+	err = validateLoopInContract(currentHeight, swapResp)
 	if err != nil {
 		return nil, err
 	}
@@ -164,11 +163,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
-			ReceiverKey:      swapResp.receiverKey,
+			ReceiverKey:      swapResp.ReceiverKey,
 			SenderKey:        senderKey,
 			Preimage:         swapPreimage,
 			AmountRequested:  request.Amount,
-			CltvExpiry:       swapResp.expiry,
+			CltvExpiry:       swapResp.Expiry,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 			Label:            request.Label,
@@ -199,13 +198,13 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
 
-	if swapResp.serverMessage != "" {
-		swap.log.Infof("Server message: %v", swapResp.serverMessage)
+	if swapResp.ServerMessage != "" {
+		swap.log.Infof("Server message: %v", swapResp.ServerMessage)
 	}
 
 	return &loopInInitResult{
 		swap:          swap,
-		serverMessage: swapResp.serverMessage,
+		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
 
@@ -246,14 +245,12 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 
 // validateLoopInContract validates the contract parameters against our
 // request.
-func validateLoopInContract(lnd *lndclient.LndServices,
-	height int32,
-	request *LoopInRequest,
-	response *newLoopInResponse) error {
+func validateLoopInContract(height int32,
+	response *server.NewLoopInResponse) error {
 
 	// Verify that we are not forced to publish an htlc that locks up our
 	// funds for too long in case the server doesn't follow through.
-	if response.expiry-height > MaxLoopInAcceptDelta {
+	if response.Expiry-height > MaxLoopInAcceptDelta {
 		return ErrExpiryTooFar
 	}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -27,7 +28,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	// Set up test context objects.
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	mockServer := server.NewServerMock()
 	store := newStoreMock(t)
 
 	expiryChan := make(chan time.Time)
@@ -40,7 +41,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	cfg := &swapConfig{
 		lnd:    &lnd.LndServices,
 		store:  store,
-		server: server,
+		server: mockServer,
 	}
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
@@ -138,7 +139,7 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	ctx := test.NewContext(t, lnd)
 
-	server := newServerMock()
+	mockServer := server.NewServerMock()
 
 	store := newStoreMock(t)
 
@@ -149,9 +150,9 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&lnd.LndServices, store, server)
+	cfg := newSwapConfig(&lnd.LndServices, store, mockServer)
 
-	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
+	testRequest.Expiry = height + server.TestLoopOutMinOnChainCltvDelta
 
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
@@ -187,8 +188,8 @@ func TestLateHtlcPublish(t *testing.T) {
 		t.Fatal("unexpected state")
 	}
 
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	// Expect client to register for conf
 	ctx.AssertRegisterConf(false, defaultConfirmations)
@@ -223,13 +224,13 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	mockServer := server.NewServerMock()
 
 	// Use the highest sweep confirmation target before we attempt to use
 	// the default.
 	testReq := *testRequest
 
-	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
+	testReq.SweepConfTarget = server.TestLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
 
 	// Set up custom fee estimates such that the lower confirmation target
@@ -238,7 +239,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, newStoreMock(t), mockServer,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -283,8 +284,8 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// We'll then pay both the swap and prepay invoice, which should trigger
 	// the server to publish the on-chain HTLC.
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	signalSwapPaymentResult(nil)
 	signalPrepaymentResult(nil)
@@ -365,7 +366,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	// Once we have published an on chain sweep, we expect a preimage to
 	// have been pushed to our server.
-	preimage := <-server.preimagePush
+	preimage := <-mockServer.PreimagePush
 	require.Equal(t, swap.Preimage, preimage)
 
 	// Now that we have pushed our preimage to the sever, we send an update
@@ -379,7 +380,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	// We'll then notify the height at which we begin using the default
 	// confirmation target.
 	defaultConfTargetHeight := ctx.Lnd.Height +
-		testLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
+		server.TestLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
 	blockEpochChan <- int32(defaultConfTargetHeight)
 	expiryChan <- time.Now()
 
@@ -424,14 +425,14 @@ func TestPreimagePush(t *testing.T) {
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	mockServer := server.NewServerMock()
 
 	// Start with a high confirmation delta which will have a very high fee
 	// attached to it.
 	testReq := *testRequest
-	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
+	testReq.SweepConfTarget = server.TestLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
-	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
+	testReq.Expiry = ctx.Lnd.Height + server.TestLoopOutMinOnChainCltvDelta
 
 	// We set our mock fee estimate for our target sweep confs to be our
 	// max miner fee *2, so that our fee will definitely be above what we
@@ -448,7 +449,7 @@ func TestPreimagePush(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 1)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, newStoreMock(t), mockServer,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -487,8 +488,8 @@ func TestPreimagePush(t *testing.T) {
 
 	// We'll then pay both the swap and prepay invoice, which should trigger
 	// the server to publish the on-chain HTLC.
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	signalSwapPaymentResult(nil)
 	signalPrepaymentResult(nil)
@@ -518,18 +519,18 @@ func TestPreimagePush(t *testing.T) {
 	// target at this stage which has fees higher than our max acceptable
 	// fee. We do not expect a sweep attempt at this point. Since our
 	// preimage is not revealed, we also do not expect a preimage push.
-	expiryChan <- testTime
+	expiryChan <- server.TestTime
 
 	// Now, we notify the height at which the client will start using the
 	// default confirmation target. This has the effect of lowering our fees
 	// so that the client still start sweeping.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta -
+	defaultConfTargetHeight := ctx.Lnd.Height + server.TestLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta
 	blockEpochChan <- defaultConfTargetHeight
 
 	// This time when we tick the expiry chan, our fees are lower than the
 	// swap max, so we expect it to prompt a sweep.
-	expiryChan <- testTime
+	expiryChan <- server.TestTime
 
 	// Expect a signing request for the HTLC success transaction.
 	<-ctx.Lnd.SignOutputRawChannel
@@ -547,14 +548,14 @@ func TestPreimagePush(t *testing.T) {
 
 	// Once we have published an on chain sweep, we expect a preimage to
 	// have been pushed to the server after the sweep.
-	preimage := <-server.preimagePush
+	preimage := <-mockServer.PreimagePush
 	require.Equal(t, swap.Preimage, preimage)
 
 	// To mock a server failure, we do not send a payment settled update
 	// for our off chain payment yet. We also do not confirm our sweep on
 	// chain yet so we can test our preimage push retry logic. Instead, we
 	// tick the expiry chan again to prompt another sweep.
-	expiryChan <- testTime
+	expiryChan <- server.TestTime
 
 	// We expect another signing request for out sweep, and publish of our
 	// sweep transaction.
@@ -564,7 +565,7 @@ func TestPreimagePush(t *testing.T) {
 	// Since we have not yet been notified of an off chain settle, and we
 	// have attempted to sweep again, we expect another preimage push
 	// attempt.
-	preimage = <-server.preimagePush
+	preimage = <-mockServer.PreimagePush
 	require.Equal(t, swap.Preimage, preimage)
 
 	// This time, we send a payment succeeded update into our payment stream
@@ -577,7 +578,7 @@ func TestPreimagePush(t *testing.T) {
 	// We tick one last time, this time expecting a sweep but no preimage
 	// push. The test's mocked preimage channel is un-buffered, so our test
 	// would hang if we pushed the preimage here.
-	expiryChan <- testTime
+	expiryChan <- server.TestTime
 	<-ctx.Lnd.SignOutputRawChannel
 	sweepTx := ctx.ReceiveTx()
 

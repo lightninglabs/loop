@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -36,9 +37,6 @@ var (
 		MaxSwapRoutingFee:   70000,
 	}
 
-	swapInvoiceDesc   = "swap"
-	prepayInvoiceDesc = "prepay"
-
 	defaultConfirmations = int32(loopdb.DefaultLoopOutHtlcConfirmations)
 )
 
@@ -61,8 +59,8 @@ func TestSuccess(t *testing.T) {
 	ctx.assertStored()
 	ctx.assertStatus(loopdb.StateInitiated)
 
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf(false, req.HtlcConfirmations)
@@ -88,8 +86,8 @@ func TestFailOffchain(t *testing.T) {
 	ctx.assertStored()
 	ctx.assertStatus(loopdb.StateInitiated)
 
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	ctx.AssertRegisterConf(false, defaultConfirmations)
 
@@ -110,7 +108,7 @@ func TestFailOffchain(t *testing.T) {
 func TestFailWrongAmount(t *testing.T) {
 	defer test.Guard(t)()
 
-	test := func(t *testing.T, modifier func(*serverMock),
+	test := func(t *testing.T, modifier func(*server.Mock),
 		expectedErr error) {
 
 		ctx := createClientTestContext(t, nil)
@@ -128,17 +126,17 @@ func TestFailWrongAmount(t *testing.T) {
 	}
 
 	t.Run("swap fee too high", func(t *testing.T) {
-		test(t, func(m *serverMock) {
-			m.swapInvoiceAmt += 10
+		test(t, func(m *server.Mock) {
+			m.SwapInvoiceAmt += 10
 		}, ErrSwapFeeTooHigh)
 	})
 
 	t.Run("prepay amount too high", func(t *testing.T) {
-		test(t, func(m *serverMock) {
+		test(t, func(m *server.Mock) {
 			// Keep total swap fee unchanged, but increase prepaid
 			// portion.
-			m.swapInvoiceAmt -= 10
-			m.prepayInvoiceAmt += 10
+			m.SwapInvoiceAmt -= 10
+			m.PrepayInvoiceAmt += 10
 		}, ErrPrepayAmountTooHigh)
 	})
 
@@ -201,12 +199,16 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	amt := btcutil.Amount(50000)
 
-	swapPayReq, err := getInvoice(hash, amt, swapInvoiceDesc)
+	swapPayReq, err := server.GetInvoice(
+		hash, amt, server.SwapInvoiceDesc,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	prePayReq, err := getInvoice(hash, 100, prepayInvoiceDesc)
+	prePayReq, err := server.GetInvoice(
+		hash, 100, server.PrepayInvoiceDesc,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,8 +272,8 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 		ctx.assertStatus(loopdb.StateInitiated)
 	}
 
-	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
-	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+	signalSwapPaymentResult := ctx.AssertPaid(server.SwapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(server.PrepayInvoiceDesc)
 
 	// Expect client to register for our expected number of confirmations.
 	confIntent := ctx.AssertRegisterConf(preimageRevealed, int32(confs))
@@ -322,7 +324,7 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	ctx.trackPayment(lnrpc.Payment_IN_FLIGHT)
 
 	// Publish tick.
-	ctx.expiryChan <- testTime
+	ctx.expiryChan <- server.TestTime
 
 	// Expect a signing request.
 	<-ctx.Lnd.SignOutputRawChannel

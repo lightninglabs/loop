@@ -1,9 +1,8 @@
-package loop
+package server
 
 import (
 	"context"
 	"errors"
-
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -16,52 +15,58 @@ import (
 )
 
 var (
-	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
+	TestTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
 
-	testLoopOutMinOnChainCltvDelta = int32(30)
+	TestLoopOutMinOnChainCltvDelta = int32(30)
 	testLoopOutMaxOnChainCltvDelta = int32(40)
 	testChargeOnChainCltvDelta     = int32(100)
 	testSwapFee                    = btcutil.Amount(210)
 	testFixedPrepayAmount          = btcutil.Amount(100)
 	testMinSwapAmount              = btcutil.Amount(10000)
 	testMaxSwapAmount              = btcutil.Amount(1000000)
+
+	// SwapInvoiceDesc is the description we give swap invoices.
+	SwapInvoiceDesc = "swap"
+
+	// PrepayInvoiceDesc is the description we give prepays.
+	PrepayInvoiceDesc = "prepay"
 )
 
-// serverMock is used in client unit tests to simulate swap server behaviour.
-type serverMock struct {
+// Mock is used in client unit tests to simulate swap server behaviour.
+type Mock struct {
 	expectedSwapAmt  btcutil.Amount
-	swapInvoiceAmt   btcutil.Amount
-	prepayInvoiceAmt btcutil.Amount
+	SwapInvoiceAmt   btcutil.Amount
+	PrepayInvoiceAmt btcutil.Amount
 
 	height int32
 
 	swapInvoice string
-	swapHash    lntypes.Hash
+	SwapHash    lntypes.Hash
 
-	// preimagePush is a channel that preimage pushes are sent into.
-	preimagePush chan lntypes.Preimage
+	// PreimagePush is a channel that preimage pushes are sent into.
+	PreimagePush chan lntypes.Preimage
 }
 
-var _ swapServerClient = (*serverMock)(nil)
+var _ SwapServerClient = (*Mock)(nil)
 
-func newServerMock() *serverMock {
-	return &serverMock{
+// NewServerMock returns a mocked server.
+func NewServerMock() *Mock {
+	return &Mock{
 		expectedSwapAmt: 50000,
 
 		// Total swap fee: 1000 + 0.01 * 50000 = 1050
-		swapInvoiceAmt:   50950,
-		prepayInvoiceAmt: 100,
+		SwapInvoiceAmt:   50950,
+		PrepayInvoiceAmt: 100,
 
 		height: 600,
 
-		preimagePush: make(chan lntypes.Preimage),
+		PreimagePush: make(chan lntypes.Preimage),
 	}
 }
 
-func (s *serverMock) NewLoopOutSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-	receiverKey [33]byte, _ time.Time) (
-	*newLoopOutResponse, error) {
+func (s *Mock) NewLoopOutSwap(ctx context.Context,
+	swapHash lntypes.Hash, amount btcutil.Amount, _ int32, _ [33]byte,
+	_ time.Time) (*NewLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)
 
@@ -69,14 +74,14 @@ func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 		return nil, errors.New("unexpected test swap amount")
 	}
 
-	swapPayReqString, err := getInvoice(swapHash, s.swapInvoiceAmt,
-		swapInvoiceDesc)
+	swapPayReqString, err := GetInvoice(swapHash, s.SwapInvoiceAmt,
+		SwapInvoiceDesc)
 	if err != nil {
 		return nil, err
 	}
 
-	prePayReqString, err := getInvoice(swapHash, s.prepayInvoiceAmt,
-		prepayInvoiceDesc)
+	prePayReqString, err := GetInvoice(swapHash, s.PrepayInvoiceAmt,
+		PrepayInvoiceDesc)
 	if err != nil {
 		return nil, err
 	}
@@ -84,26 +89,26 @@ func (s *serverMock) NewLoopOutSwap(ctx context.Context,
 	var senderKeyArray [33]byte
 	copy(senderKeyArray[:], senderKey.SerializeCompressed())
 
-	return &newLoopOutResponse{
-		senderKey:     senderKeyArray,
-		swapInvoice:   swapPayReqString,
-		prepayInvoice: prePayReqString,
+	return &NewLoopOutResponse{
+		SenderKey:     senderKeyArray,
+		SwapInvoice:   swapPayReqString,
+		PrepayInvoice: prePayReqString,
 	}, nil
 }
 
-func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
+func (s *Mock) GetLoopOutTerms(_ context.Context) (
 	*LoopOutTerms, error) {
 
 	return &LoopOutTerms{
 		MinSwapAmount: testMinSwapAmount,
 		MaxSwapAmount: testMaxSwapAmount,
-		MinCltvDelta:  testLoopOutMinOnChainCltvDelta,
+		MinCltvDelta:  TestLoopOutMinOnChainCltvDelta,
 		MaxCltvDelta:  testLoopOutMaxOnChainCltvDelta,
 	}, nil
 }
 
-func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
-	expiry int32, _ time.Time) (*LoopOutQuote, error) {
+func (s *Mock) GetLoopOutQuote(_ context.Context, _ btcutil.Amount,
+	_ int32, _ time.Time) (*LoopOutQuote, error) {
 
 	dest := [33]byte{1, 2, 3}
 
@@ -114,9 +119,11 @@ func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
 	}, nil
 }
 
-func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, error) {
+func GetInvoice(hash lntypes.Hash, amt btcutil.Amount,
+	memo string) (string, error) {
+
 	req, err := zpay32.NewInvoice(
-		&chaincfg.TestNet3Params, hash, testTime,
+		&chaincfg.TestNet3Params, hash, TestTime,
 		zpay32.Description(memo),
 		zpay32.Amount(lnwire.MilliSatoshi(1000*amt)),
 	)
@@ -132,10 +139,10 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 	return reqString, nil
 }
 
-func (s *serverMock) NewLoopInSwap(ctx context.Context,
+func (s *Mock) NewLoopInSwap(_ context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount,
-	senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
-	*newLoopInResponse, error) {
+	_ [33]byte, swapInvoice string, _ *route.Vertex) (
+	*NewLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
 
@@ -147,26 +154,26 @@ func (s *serverMock) NewLoopInSwap(ctx context.Context,
 	copy(receiverKeyArray[:], receiverKey.SerializeCompressed())
 
 	s.swapInvoice = swapInvoice
-	s.swapHash = swapHash
+	s.SwapHash = swapHash
 
-	resp := &newLoopInResponse{
-		expiry:      s.height + testChargeOnChainCltvDelta,
-		receiverKey: receiverKeyArray,
+	resp := &NewLoopInResponse{
+		Expiry:      s.height + testChargeOnChainCltvDelta,
+		ReceiverKey: receiverKeyArray,
 	}
 
 	return resp, nil
 }
 
-func (s *serverMock) PushLoopOutPreimage(_ context.Context,
+func (s *Mock) PushLoopOutPreimage(_ context.Context,
 	preimage lntypes.Preimage) error {
 
 	// Push the preimage into the mock's preimage channel.
-	s.preimagePush <- preimage
+	s.PreimagePush <- preimage
 
 	return nil
 }
 
-func (s *serverMock) GetLoopInTerms(ctx context.Context) (
+func (s *Mock) GetLoopInTerms(_ context.Context) (
 	*LoopInTerms, error) {
 
 	return &LoopInTerms{
@@ -175,7 +182,7 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context) (
 	}, nil
 }
 
-func (s *serverMock) GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
+func (s *Mock) GetLoopInQuote(_ context.Context, _ btcutil.Amount) (
 	*LoopInQuote, error) {
 
 	return &LoopInQuote{
@@ -186,15 +193,15 @@ func (s *serverMock) GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
 
 // SubscribeLoopOutUpdates provides a mocked implementation of state
 // subscriptions.
-func (s *serverMock) SubscribeLoopOutUpdates(_ context.Context,
-	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+func (s *Mock) SubscribeLoopOutUpdates(_ context.Context,
+	_ lntypes.Hash) (<-chan *Update, <-chan error, error) {
 
 	return nil, nil, nil
 }
 
 // SubscribeLoopInUpdates provides a mocked implementation of state subscriptions.
-func (s *serverMock) SubscribeLoopInUpdates(_ context.Context,
-	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+func (s *Mock) SubscribeLoopInUpdates(_ context.Context,
+	_ lntypes.Hash) (<-chan *Update, <-chan error, error) {
 
 	return nil, nil, nil
 }

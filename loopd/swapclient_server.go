@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -449,7 +450,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
-	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
+	quote, err := s.impl.LoopInQuote(ctx, &server.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
@@ -476,7 +477,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		return nil, err
 	}
 
-	req := &loop.LoopInRequest{
+	req := &server.InRequest{
 		Amount:         btcutil.Amount(in.Amt),
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
 		MaxSwapFee:     btcutil.Amount(in.MaxSwapFee),

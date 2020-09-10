@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -152,19 +153,19 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	initiationTime := time.Now()
 
 	contract := loopdb.LoopOutContract{
-		SwapInvoice:             swapResp.swapInvoice,
+		SwapInvoice:             swapResp.SwapInvoice,
 		DestAddr:                request.DestAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
 		HtlcConfirmations:       confs,
-		PrepayInvoice:           swapResp.prepayInvoice,
+		PrepayInvoice:           swapResp.PrepayInvoice,
 		MaxPrepayRoutingFee:     request.MaxPrepayRoutingFee,
 		SwapPublicationDeadline: request.SwapPublicationDeadline,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
 			ReceiverKey:      receiverKey,
-			SenderKey:        swapResp.senderKey,
+			SenderKey:        swapResp.SenderKey,
 			Preimage:         swapPreimage,
 			AmountRequested:  request.Amount,
 			CltvExpiry:       request.Expiry,
@@ -205,13 +206,13 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
 
-	if swapResp.serverMessage != "" {
-		swap.log.Infof("Server message: %v", swapResp.serverMessage)
+	if swapResp.ServerMessage != "" {
+		swap.log.Infof("Server message: %v", swapResp.ServerMessage)
 	}
 
 	return &loopOutInitResult{
 		swap:          swap,
-		serverMessage: swapResp.serverMessage,
+		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
 
@@ -975,13 +976,13 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 // request.
 func validateLoopOutContract(lnd *lndclient.LndServices,
 	height int32, request *OutRequest, swapHash lntypes.Hash,
-	response *newLoopOutResponse) error {
+	response *server.NewLoopOutResponse) error {
 
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams
 
 	swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
-		chainParams, response.swapInvoice,
+		chainParams, response.SwapInvoice,
 	)
 	if err != nil {
 		return err
@@ -994,7 +995,7 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 	}
 
 	_, prepayInvoiceAmt, err := swap.DecodeInvoice(
-		chainParams, response.prepayInvoice,
+		chainParams, response.PrepayInvoice,
 	)
 	if err != nil {
 		return err

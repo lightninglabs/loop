@@ -16,6 +16,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/server/serverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -39,43 +40,6 @@ var (
 		"be provided")
 )
 
-type swapServerClient interface {
-	GetLoopOutTerms(ctx context.Context) (
-		*LoopOutTerms, error)
-
-	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount, expiry int32,
-		swapPublicationDeadline time.Time) (
-		*LoopOutQuote, error)
-
-	GetLoopInTerms(ctx context.Context) (
-		*LoopInTerms, error)
-
-	GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
-		*LoopInQuote, error)
-
-	NewLoopOutSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-		receiverKey [33]byte,
-		swapPublicationDeadline time.Time) (
-		*newLoopOutResponse, error)
-
-	PushLoopOutPreimage(ctx context.Context,
-		preimage lntypes.Preimage) error
-
-	NewLoopInSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount,
-		senderKey [33]byte, swapInvoice string, lastHop *route.Vertex) (
-		*newLoopInResponse, error)
-
-	// SubscribeLoopOutUpdates subscribes to loop out server state.
-	SubscribeLoopOutUpdates(ctx context.Context,
-		hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)
-
-	// SubscribeLoopInUpdates subscribes to loop in server state.
-	SubscribeLoopInUpdates(ctx context.Context,
-		hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)
-}
-
 type grpcSwapServerClient struct {
 	server serverrpc.SwapServerClient
 	conn   *grpc.ClientConn
@@ -93,7 +57,7 @@ func (s *grpcSwapServerClient) stop() {
 	s.wg.Wait()
 }
 
-var _ swapServerClient = (*grpcSwapServerClient)(nil)
+var _ server.SwapServerClient = (*grpcSwapServerClient)(nil)
 
 func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 	*grpcSwapServerClient, error) {
@@ -121,7 +85,7 @@ func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 }
 
 func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
-	*LoopOutTerms, error) {
+	*server.LoopOutTerms, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -134,7 +98,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 		return nil, err
 	}
 
-	return &LoopOutTerms{
+	return &server.LoopOutTerms{
 		MinSwapAmount: btcutil.Amount(terms.MinSwapAmount),
 		MaxSwapAmount: btcutil.Amount(terms.MaxSwapAmount),
 		MinCltvDelta:  terms.MinCltvDelta,
@@ -144,7 +108,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	amt btcutil.Amount, expiry int32, swapPublicationDeadline time.Time) (
-	*LoopOutQuote, error) {
+	*server.LoopOutQuote, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -170,7 +134,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	var destArray [33]byte
 	copy(destArray[:], dest)
 
-	return &LoopOutQuote{
+	return &server.LoopOutQuote{
 		PrepayAmount:    btcutil.Amount(quoteResp.PrepayAmt),
 		SwapFee:         btcutil.Amount(quoteResp.SwapFee),
 		SwapPaymentDest: destArray,
@@ -178,7 +142,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 }
 
 func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
-	*LoopInTerms, error) {
+	*server.LoopInTerms, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -191,14 +155,14 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 		return nil, err
 	}
 
-	return &LoopInTerms{
+	return &server.LoopInTerms{
 		MinSwapAmount: btcutil.Amount(terms.MinSwapAmount),
 		MaxSwapAmount: btcutil.Amount(terms.MaxSwapAmount),
 	}, nil
 }
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
-	amt btcutil.Amount) (*LoopInQuote, error) {
+	amt btcutil.Amount) (*server.LoopInQuote, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -212,7 +176,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &LoopInQuote{
+	return &server.LoopInQuote{
 		SwapFee:   btcutil.Amount(quoteResp.SwapFee),
 		CltvDelta: quoteResp.CltvDelta,
 	}, nil
@@ -221,7 +185,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
 	receiverKey [33]byte, swapPublicationDeadline time.Time) (
-	*newLoopOutResponse, error) {
+	*server.NewLoopOutResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -248,11 +212,11 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
 
-	return &newLoopOutResponse{
-		swapInvoice:   swapResp.SwapInvoice,
-		prepayInvoice: swapResp.PrepayInvoice,
-		senderKey:     senderKey,
-		serverMessage: swapResp.ServerMessage,
+	return &server.NewLoopOutResponse{
+		SwapInvoice:   swapResp.SwapInvoice,
+		PrepayInvoice: swapResp.PrepayInvoice,
+		SenderKey:     senderKey,
+		ServerMessage: swapResp.ServerMessage,
 	}, nil
 }
 
@@ -275,7 +239,8 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
-	swapInvoice string, lastHop *route.Vertex) (*newLoopInResponse, error) {
+	swapInvoice string, lastHop *route.Vertex) (*server.NewLoopInResponse,
+	error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -305,26 +270,17 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
 
-	return &newLoopInResponse{
-		receiverKey:   receiverKey,
-		expiry:        swapResp.Expiry,
-		serverMessage: swapResp.ServerMessage,
+	return &server.NewLoopInResponse{
+		ReceiverKey:   receiverKey,
+		Expiry:        swapResp.Expiry,
+		ServerMessage: swapResp.ServerMessage,
 	}, nil
-}
-
-// ServerUpdate summarizes an update from the swap server.
-type ServerUpdate struct {
-	// State is the state that the server has sent us.
-	State serverrpc.ServerSwapState
-
-	// Timestamp is the time of the server state update.
-	Timestamp time.Time
 }
 
 // SubscribeLoopInUpdates subscribes to loop in server state and pipes updates
 // into the channel provided.
 func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
-	hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+	hash lntypes.Hash) (<-chan *server.Update, <-chan error, error) {
 
 	resp, err := s.server.SubscribeLoopInUpdates(
 		ctx, &serverrpc.SubscribeUpdatesRequest{
@@ -336,13 +292,13 @@ func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
 		return nil, nil, err
 	}
 
-	receive := func() (*ServerUpdate, error) {
+	receive := func() (*server.Update, error) {
 		response, err := resp.Recv()
 		if err != nil {
 			return nil, err
 		}
 
-		return &ServerUpdate{
+		return &server.Update{
 			State:     response.State,
 			Timestamp: time.Unix(0, response.TimestampNs),
 		}, nil
@@ -355,7 +311,7 @@ func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
 // SubscribeLoopOutUpdates subscribes to loop out server state and pipes updates
 // into the channel provided.
 func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
-	hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+	hash lntypes.Hash) (<-chan *server.Update, <-chan error, error) {
 
 	resp, err := s.server.SubscribeLoopOutUpdates(
 		ctx, &serverrpc.SubscribeUpdatesRequest{
@@ -367,13 +323,13 @@ func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
 		return nil, nil, err
 	}
 
-	receive := func() (*ServerUpdate, error) {
+	receive := func() (*server.Update, error) {
 		response, err := resp.Recv()
 		if err != nil {
 			return nil, err
 		}
 
-		return &ServerUpdate{
+		return &server.Update{
 			State:     response.State,
 			Timestamp: time.Unix(0, response.TimestampNs),
 		}, nil
@@ -388,14 +344,14 @@ func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
 // the client cancels, server client shuts down or the subscription is cancelled
 // server side.
 func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
-	receive func() (*ServerUpdate, error)) (<-chan *ServerUpdate,
+	receive func() (*server.Update, error)) (<-chan *server.Update,
 	<-chan error) {
 
 	// We will return exactly one error from this function so we buffer
 	// our error channel so that the function exit is not dependent on
 	// the error being read.
 	errChan := make(chan error, 1)
-	updateChan := make(chan *ServerUpdate)
+	updateChan := make(chan *server.Update)
 
 	// Create a goroutine that will pipe updates in to our updates channel.
 	s.wg.Add(1)
@@ -519,17 +475,4 @@ func isErrConClosing(err error) bool {
 	}
 
 	return strings.Contains(err.Error(), "transport is closing")
-}
-
-type newLoopOutResponse struct {
-	swapInvoice   string
-	prepayInvoice string
-	senderKey     [33]byte
-	serverMessage string
-}
-
-type newLoopInResponse struct {
-	receiverKey   [33]byte
-	expiry        int32
-	serverMessage string
 }

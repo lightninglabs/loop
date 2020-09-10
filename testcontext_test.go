@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
@@ -31,7 +32,7 @@ var (
 type testContext struct {
 	test.Context
 
-	serverMock *serverMock
+	serverMock *server.Mock
 	swapClient *Client
 	statusChan chan SwapInfo
 	store      *storeMock
@@ -67,7 +68,7 @@ func newSwapClient(config *clientConfig) *Client {
 func createClientTestContext(t *testing.T,
 	pendingSwaps []*loopdb.LoopOut) *testContext {
 
-	serverMock := newServerMock()
+	serverMock := server.NewServerMock()
 
 	clientLnd := test.NewMockLnd()
 
@@ -254,7 +255,7 @@ func (ctx *testContext) trackPayment(status lnrpc.Payment_PaymentStatus) {
 // the server.
 func (ctx *testContext) assertPreimagePush(preimage lntypes.Preimage) {
 	select {
-	case pushedPreimage := <-ctx.serverMock.preimagePush:
+	case pushedPreimage := <-ctx.serverMock.PreimagePush:
 		require.Equal(ctx.T, preimage, pushedPreimage)
 
 	case <-time.After(test.Timeout):

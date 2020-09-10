@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
 )
@@ -347,7 +348,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 //
 // The return value is a hash that uniquely identifies the new swap.
 func (s *Client) LoopOut(globalCtx context.Context,
-	request *OutRequest) (*LoopOutSwapInfo, error) {
+	request *OutRequest) (*server.LoopOutSwapInfo, error) {
 
 	log.Infof("LoopOut %v to %v (channels: %v)",
 		request.Amount, request.DestAddr, request.OutgoingChanSet,
@@ -386,7 +387,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	return &LoopOutSwapInfo{
+	return &server.LoopOutSwapInfo{
 		SwapHash:         swap.hash,
 		HtlcAddressP2WSH: swap.htlc.Address,
 		ServerMessage:    initResult.serverMessage,
@@ -395,7 +396,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 // getExpiry returns an absolute expiry height based on the sweep confirmation
 // target, constrained by the server terms.
-func (s *Client) getExpiry(height int32, terms *LoopOutTerms,
+func (s *Client) getExpiry(height int32, terms *server.LoopOutTerms,
 	confTarget int32) (int32, error) {
 
 	switch {
@@ -415,7 +416,7 @@ func (s *Client) getExpiry(height int32, terms *LoopOutTerms,
 // costs for the client. Both the swap server and the on-chain fee estimator
 // are queried to get to build the quote response.
 func (s *Client) LoopOutQuote(ctx context.Context,
-	request *LoopOutQuoteRequest) (*LoopOutQuote, error) {
+	request *LoopOutQuoteRequest) (*server.LoopOutQuote, error) {
 
 	terms, err := s.Server.GetLoopOutTerms(ctx)
 	if err != nil {
@@ -466,7 +467,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &LoopOutQuote{
+	return &server.LoopOutQuote{
 		SwapFee:         swapFee,
 		MinerFee:        minerFee,
 		PrepayAmount:    quote.PrepayAmount,
@@ -476,7 +477,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 
 // LoopOutTerms returns the terms on which the server executes swaps.
 func (s *Client) LoopOutTerms(ctx context.Context) (
-	*LoopOutTerms, error) {
+	*server.LoopOutTerms, error) {
 
 	return s.Server.GetLoopOutTerms(ctx)
 }
@@ -500,7 +501,7 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 
 // LoopIn initiates a loop in swap.
 func (s *Client) LoopIn(globalCtx context.Context,
-	request *LoopInRequest) (*LoopInSwapInfo, error) {
+	request *server.InRequest) (*server.LoopInSwapInfo, error) {
 
 	log.Infof("Loop in %v (last hop: %v)",
 		request.Amount,
@@ -527,7 +528,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
-	swapInfo := &LoopInSwapInfo{
+	swapInfo := &server.LoopInSwapInfo{
 		SwapHash:          swap.hash,
 		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
 		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
@@ -540,7 +541,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 // costs for the client. Both the swap server and the on-chain fee estimator are
 // queried to get to build the quote response.
 func (s *Client) LoopInQuote(ctx context.Context,
-	request *LoopInQuoteRequest) (*LoopInQuote, error) {
+	request *server.LoopInQuoteRequest) (*server.LoopInQuote, error) {
 
 	// Retrieve current server terms to calculate swap fee.
 	terms, err := s.Server.GetLoopInTerms(ctx)
@@ -567,7 +568,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	// We don't calculate the on-chain fee if the HTLC is going to be
 	// published externally.
 	if request.ExternalHtlc {
-		return &LoopInQuote{
+		return &server.LoopInQuote{
 			SwapFee:  swapFee,
 			MinerFee: 0,
 		}, nil
@@ -585,7 +586,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		ctx, request.Amount, request.HtlcConfTarget,
 	)
 	if err != nil && strings.Contains(err.Error(), "insufficient funds") {
-		return &LoopInQuote{
+		return &server.LoopInQuote{
 			SwapFee:   swapFee,
 			MinerFee:  MinerFeeEstimationFailed,
 			CltvDelta: quote.CltvDelta,
@@ -595,7 +596,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &LoopInQuote{
+	return &server.LoopInQuote{
 		SwapFee:   swapFee,
 		MinerFee:  minerFee,
 		CltvDelta: quote.CltvDelta,
@@ -604,7 +605,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 // LoopInTerms returns the terms on which the server executes swaps.
 func (s *Client) LoopInTerms(ctx context.Context) (
-	*LoopInTerms, error) {
+	*server.LoopInTerms, error) {
 
 	return s.Server.GetLoopInTerms(ctx)
 }

@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -13,7 +14,8 @@ import (
 // server restarts during swap execution.
 func subscribeAndLogUpdates(ctx context.Context, hash lntypes.Hash,
 	log *swap.PrefixLog, subscribe func(context.Context,
-		lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)) {
+		lntypes.Hash) (<-chan *server.Update, <-chan error,
+		error)) {
 
 	subscribeChan, errChan, err := subscribe(ctx, hash)
 	if err != nil {

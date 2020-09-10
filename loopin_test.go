@@ -6,6 +6,7 @@ import (
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/server"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	testLoopInRequest = LoopInRequest{
+	testLoopInRequest = server.InRequest{
 		Amount:         btcutil.Amount(50000),
 		MaxSwapFee:     btcutil.Amount(1000),
 		HtlcConfTarget: 2,
@@ -81,7 +82,7 @@ func TestLoopInSuccess(t *testing.T) {
 
 	// Client starts listening for swap invoice updates.
 	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != ctx.server.swapHash {
+	if subscription.Hash != ctx.server.SwapHash {
 		t.Fatal("client subscribing to wrong invoice")
 	}
 
@@ -239,7 +240,7 @@ func testLoopInTimeout(t *testing.T,
 
 	// Client starts listening for swap invoice updates.
 	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != ctx.server.swapHash {
+	if subscription.Hash != ctx.server.SwapHash {
 		t.Fatal("client subscribing to wrong invoice")
 	}
 
