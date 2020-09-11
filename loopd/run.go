@@ -208,7 +208,9 @@ func Run(rpcCfg RPCConfig) error {
 	// we are running. When our command tries to get a lnd connection, it
 	// blocks until lnd is synced. We listen for interrupts so that we can
 	// shutdown the daemon while waiting for sync to complete.
-	signal.Intercept()
+	if err := signal.Intercept(); err != nil {
+		return err
+	}
 
 	// Execute command.
 	if parser.Active == nil {
