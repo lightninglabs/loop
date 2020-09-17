@@ -163,6 +163,7 @@ func Validate(cfg *Config) error {
 	cfg.LogDir = lncfg.CleanAndExpandPath(cfg.LogDir)
 	cfg.TLSCertPath = lncfg.CleanAndExpandPath(cfg.TLSCertPath)
 	cfg.TLSKeyPath = lncfg.CleanAndExpandPath(cfg.TLSKeyPath)
+	cfg.MacaroonPath = lncfg.CleanAndExpandPath(cfg.MacaroonPath)
 
 	// Since our loop directory overrides our log/data dir values, make sure
 	// that they are not set when loop dir is set. We hard here rather than
