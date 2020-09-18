@@ -147,9 +147,8 @@ func (d *Daemon) startMacaroonService() error {
 		// existing permissions (equivalent to the admin.macaroon in
 		// lnd). Custom macaroons can be created through the bakery
 		// RPC.
-		loopMac, err := d.macaroonService.NewMacaroon(
-			ctx, macaroons.DefaultRootKeyID,
-			allPermissions...,
+		loopMac, err := d.macaroonService.Oven.NewMacaroon(
+			ctx, bakery.LatestVersion, nil, allPermissions...,
 		)
 		if err != nil {
 			return err
