@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -135,15 +136,53 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// Create the probe invoice in lnd. Derive the payment hash
+	// deterministically from the swap hash in such a way that the server
+	// can be sure that we don't know the preimage.
+	probeHash := lntypes.Hash(sha256.Sum256(swapHash[:]))
+	probeHash[0] ^= 1
+
+	log.Infof("Creating probe invoice %v", probeHash)
+	probeInvoice, err := cfg.lnd.Invoices.AddHoldInvoice(
+		globalCtx, &invoicesrpc.AddInvoiceData{
+			Hash:   &probeHash,
+			Value:  lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+			Memo:   "loop in probe",
+			Expiry: 3600,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a cancellable context that is used for monitoring the probe.
+	probeWaitCtx, probeWaitCancel := context.WithCancel(globalCtx)
+
+	// Launch a goroutine to monitor the probe.
+	probeResult, err := awaitProbe(probeWaitCtx, *cfg.lnd, probeHash)
+	if err != nil {
+		probeWaitCancel()
+		return nil, fmt.Errorf("probe failed: %v", err)
+	}
+
 	// Post the swap parameters to the swap server. The response contains
 	// the server success key and the expiry height of the on-chain swap
 	// htlc.
 	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
-		request.Amount, senderKey, swapInvoice, request.LastHop,
+		request.Amount, senderKey, swapInvoice, probeInvoice,
+		request.LastHop,
 	)
+	probeWaitCancel()
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)
+	}
+
+	// Because the context is cancelled, it is guaranteed that we will be
+	// able to read from the probeResult channel.
+	err = <-probeResult
+	if err != nil {
+		return nil, fmt.Errorf("probe error: %v", err)
 	}
 
 	// Validate the response parameters the prevent us continuing with a
@@ -207,6 +246,72 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		swap:          swap,
 		serverMessage: swapResp.serverMessage,
 	}, nil
+}
+
+// awaitProbe waits for a probe payment to arrive and cancels it. This is a
+// workaround for the current lack of multi-path probing.
+func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
+	probeHash lntypes.Hash) (chan error, error) {
+
+	// Subscribe to the probe invoice.
+	updateChan, errChan, err := lnd.Invoices.SubscribeSingleInvoice(
+		ctx, probeHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait in the background for the probe to arrive.
+	probeResult := make(chan error, 1)
+
+	go func() {
+		for {
+			select {
+			case update := <-updateChan:
+				switch update.State {
+				case channeldb.ContractAccepted:
+					log.Infof("Server probe successful")
+					probeResult <- nil
+
+					// Cancel probe invoice so that the
+					// server will know that its probe was
+					// successful.
+					err := lnd.Invoices.CancelInvoice(
+						ctx, probeHash,
+					)
+					if err != nil {
+						log.Errorf("Cancel probe "+
+							"invoice: %v", err)
+					}
+
+					return
+
+				case channeldb.ContractCanceled:
+					probeResult <- errors.New(
+						"probe invoice expired")
+
+					return
+
+				case channeldb.ContractSettled:
+					probeResult <- errors.New(
+						"impossible that probe " +
+							"invoice was settled")
+
+					return
+				}
+
+			case err := <-errChan:
+				probeResult <- err
+				return
+
+			case <-ctx.Done():
+				probeResult <- ctx.Err()
+				return
+			}
+		}
+	}()
+
+	return probeResult, nil
 }
 
 // resumeLoopInSwap returns a swap object representing a pending swap that has

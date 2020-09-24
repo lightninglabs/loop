@@ -27,7 +27,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	// Set up test context objects.
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	server := newServerMock(lnd)
 	store := newStoreMock(t)
 
 	expiryChan := make(chan time.Time)
@@ -138,7 +138,7 @@ func TestLateHtlcPublish(t *testing.T) {
 
 	ctx := test.NewContext(t, lnd)
 
-	server := newServerMock()
+	server := newServerMock(lnd)
 
 	store := newStoreMock(t)
 
@@ -223,7 +223,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	server := newServerMock(lnd)
 
 	// Use the highest sweep confirmation target before we attempt to use
 	// the default.
@@ -424,7 +424,7 @@ func TestPreimagePush(t *testing.T) {
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
-	server := newServerMock()
+	server := newServerMock(lnd)
 
 	// Start with a high confirmation delta which will have a very high fee
 	// attached to it.

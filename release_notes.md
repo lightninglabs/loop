@@ -13,6 +13,11 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* Multi-path payment has been enabled for Loop In. This means that it is now possible
+  to replenish multiple channels via a single Loop In request and a single on-chain htlc.
+  This has to potential to greatly reduce chain fee costs. Note that it is not yet possible
+  to select specific peers to loop in through.
+
 #### Breaking Changes
 
 * Macaroon authentication has been enabled for the `loopd` gRPC and REST
