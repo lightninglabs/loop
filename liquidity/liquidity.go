@@ -7,6 +7,12 @@
 // a loop out with no outgoing channel targets set or a loop in with no last
 // hop set), we will not suggest any swaps because these swaps will shift the
 // balances of our channels in ways we can't predict.
+//
+// Fee restrictions are placed on swap suggestions to ensure that we only
+// suggest swaps that fit the configured fee preferences.
+// - Sweep Fee Rate Limit: the maximum sat/vByte fee estimate for our sweep
+//   transaction to confirm within our configured number of confirmations
+//   that we will suggest swaps for.
 package liquidity
 
 import (
@@ -21,6 +27,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
@@ -54,18 +61,30 @@ const (
 	// defaultMaximumPrepay is the default limit we place on prepay
 	// invoices.
 	defaultMaximumPrepay = 30000
+
+	// defaultSweepFeeRateLimit is the default limit we place on estimated
+	// sweep fees, (750 * 4 /1000 = 3 sat/vByte).
+	defaultSweepFeeRateLimit = chainfee.SatPerKWeight(750)
 )
 
 var (
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
 	defaultParameters = Parameters{
-		ChannelRules:   make(map[lnwire.ShortChannelID]*ThresholdRule),
-		FailureBackOff: defaultFailureBackoff,
+		ChannelRules:      make(map[lnwire.ShortChannelID]*ThresholdRule),
+		FailureBackOff:    defaultFailureBackoff,
+		SweepFeeRateLimit: defaultSweepFeeRateLimit,
+		SweepConfTarget:   loop.DefaultSweepConfTarget,
 	}
 
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.
 	ErrZeroChannelID = fmt.Errorf("zero channel ID not allowed")
+
+	// ErrInvalidSweepFeeRateLimit is returned if an invalid sweep fee limit
+	// is set.
+	ErrInvalidSweepFeeRateLimit = fmt.Errorf("sweep fee rate limit must "+
+		"be > %v sat/vByte",
+		satPerKwToSatPerVByte(chainfee.AbsoluteFeePerKwFloor))
 )
 
 // Config contains the external functionality required to run the
@@ -86,6 +105,10 @@ type Config struct {
 
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
+
+	// MinimumConfirmations is the minimum number of confirmations we allow
+	// setting for sweep target.
+	MinimumConfirmations int32
 }
 
 // Parameters is a set of parameters provided by the user which guide
@@ -96,6 +119,15 @@ type Parameters struct {
 	// using it again.
 	// TODO(carla): add exponential backoff
 	FailureBackOff time.Duration
+
+	// SweepFeeRateLimit is the limit that we place on our estimated sweep
+	// fee. A swap will not be suggested if estimated fee rate is above this
+	// value.
+	SweepFeeRateLimit chainfee.SatPerKWeight
+
+	// SweepConfTarget is the number of blocks we aim to confirm our sweep
+	// transaction in. This value affects the on chain fees we will pay.
+	SweepConfTarget int32
 
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed.
@@ -112,12 +144,16 @@ func (p Parameters) String() string {
 		)
 	}
 
-	return fmt.Sprintf("channel rules: %v, failure backoff: %v",
-		strings.Join(channelRules, ","), p.FailureBackOff)
+	return fmt.Sprintf("channel rules: %v, failure backoff: %v, sweep "+
+		"fee rate limit: %v, sweep conf target: %v",
+		strings.Join(channelRules, ","), p.FailureBackOff,
+		p.SweepFeeRateLimit, p.SweepConfTarget,
+	)
 }
 
-// validate checks whether a set of parameters is valid.
-func (p Parameters) validate() error {
+// validate checks whether a set of parameters is valid. It takes the minimum
+// confirmations we allow for sweep confirmation target as a parameter.
+func (p Parameters) validate(minConfs int32) error {
 	for channel, rule := range p.ChannelRules {
 		if channel.ToUint64() == 0 {
 			return ErrZeroChannelID
@@ -127,6 +163,19 @@ func (p Parameters) validate() error {
 			return fmt.Errorf("channel: %v has invalid rule: %v",
 				channel.ToUint64(), err)
 		}
+	}
+
+	// Check that our sweep limit is above our minimum fee rate. We use
+	// absolute fee floor rather than kw floor because we will allow users
+	// to specify fee rate is sat/vByte and want to allow 1 sat/vByte.
+	if p.SweepFeeRateLimit < chainfee.AbsoluteFeePerKwFloor {
+		return ErrInvalidSweepFeeRateLimit
+	}
+
+	// Check that our confirmation target is above our required minimum.
+	if p.SweepConfTarget < minConfs {
+		return fmt.Errorf("confirmation target must be at least: %v",
+			minConfs)
 	}
 
 	return nil
@@ -166,7 +215,7 @@ func (m *Manager) GetParameters() Parameters {
 // SetParameters updates our current set of parameters if the new parameters
 // provided are valid.
 func (m *Manager) SetParameters(params Parameters) error {
-	if err := params.validate(); err != nil {
+	if err := params.validate(m.cfg.MinimumConfirmations); err != nil {
 		return err
 	}
 
@@ -210,6 +259,27 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, nil
 	}
 
+	// Before we get any swap suggestions, we check what the current fee
+	// estimate is to sweep within our target number of confirmations. If
+	// This fee exceeds the fee limit we have set, we will not suggest any
+	// swaps at present.
+	estimate, err := m.cfg.Lnd.WalletKit.EstimateFee(
+		ctx, m.params.SweepConfTarget,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if estimate > m.params.SweepFeeRateLimit {
+		log.Debugf("Current fee estimate to sweep within: %v blocks "+
+			"%v sat/vByte exceeds limit of: %v sat/vByte",
+			m.params.SweepConfTarget,
+			satPerKwToSatPerVByte(estimate),
+			satPerKwToSatPerVByte(m.params.SweepFeeRateLimit))
+
+		return nil, nil
+	}
+
 	// Get the current server side restrictions.
 	outRestrictions, err := m.cfg.LoopOutRestrictions(ctx)
 	if err != nil {
@@ -249,7 +319,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		// We can have nil suggestions in the case where no action is
 		// required, so only add non-nil suggestions.
 		if suggestion != nil {
-			outRequest := makeLoopOutRequest(suggestion)
+			outRequest := m.makeLoopOutRequest(suggestion)
 			suggestions = append(suggestions, outRequest)
 		}
 	}
@@ -259,7 +329,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 
 // makeLoopOutRequest creates a loop out request from a suggestion, setting fee
 // limits defined by our default fee values.
-func makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
+func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
 	prepayMaxFee := ppmToSat(
 		defaultMaximumPrepay, defaultPrepayRoutingFeePPM,
 	)
@@ -277,7 +347,7 @@ func makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
 		MaxMinerFee:         defaultMaximumMinerFee,
 		MaxSwapFee:          maxSwapFee,
 		MaxPrepayAmount:     defaultMaximumPrepay,
-		SweepConfTarget:     loop.DefaultSweepConfTarget,
+		SweepConfTarget:     m.params.SweepConfTarget,
 	}
 }
 
@@ -412,6 +482,11 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 	}
 
 	return eligible, nil
+}
+
+// satPerKwToSatPerVByte converts sat per kWeight to sat per vByte.
+func satPerKwToSatPerVByte(satPerKw chainfee.SatPerKWeight) int64 {
+	return int64(satPerKw.FeePerKVByte() / 1000)
 }
 
 // ppmToSat takes an amount and a measure of parts per million for the amount

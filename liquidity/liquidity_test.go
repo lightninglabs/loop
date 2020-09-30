@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -87,6 +88,13 @@ var (
 // newTestConfig creates a default test config.
 func newTestConfig() (*Config, *test.LndMockServices) {
 	lnd := test.NewMockLnd()
+
+	// Set our fee estimate for the default number of confirmations to our
+	// limit so that our fees will be ok by default.
+	lnd.SetFeeEstimate(
+		defaultParameters.SweepConfTarget,
+		defaultParameters.SweepFeeRateLimit,
+	)
 
 	return &Config{
 		LoopOutRestrictions: func(_ context.Context) (*Restrictions,
@@ -339,6 +347,54 @@ func TestRestrictedSuggestions(t *testing.T) {
 			testSuggestSwaps(
 				t, cfg, lnd, testCase.channels, rules,
 				testCase.expected,
+			)
+		})
+	}
+}
+
+// TestSweepFeeLimit tests getting of swap suggestions when our estimated sweep
+// fee is above and below the configured limit.
+func TestSweepFeeLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		feeRate chainfee.SatPerKWeight
+		swaps   []loop.OutRequest
+	}{
+		{
+			name:    "fee estimate ok",
+			feeRate: defaultSweepFeeRateLimit,
+			swaps: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name:    "fee estimate above limit",
+			feeRate: defaultSweepFeeRateLimit + 1,
+			swaps:   nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			// Set our test case's fee rate for our mock lnd.
+			lnd.SetFeeEstimate(
+				loop.DefaultSweepConfTarget, testCase.feeRate,
+			)
+
+			channels := []lndclient.ChannelInfo{
+				channel1,
+			}
+
+			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+			}
+
+			testSuggestSwaps(
+				t, cfg, lnd, channels, rules, testCase.swaps,
 			)
 		})
 	}
