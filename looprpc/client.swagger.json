@@ -453,6 +453,46 @@
             "$ref": "#/definitions/looprpcLiquidityRule"
           },
           "description": "A set of liquidity rules that describe the desired liquidity balance."
+        },
+        "sweep_fee_rate_sat_per_vbyte": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The limit we place on our estimated sweep cost for a swap in sat/vByte. If\nthe estimated fee for our sweep transaction within the specified\nconfirmation target is above this value, we will not suggest any swaps."
+        },
+        "max_swap_fee_ppm": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum fee paid to the server for facilitating the swap, expressed\nas parts per million of the swap volume."
+        },
+        "max_routing_fee_ppm": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum fee paid to route the swap invoice off chain, expressed as\nparts per million of the volume being routed."
+        },
+        "max_prepay_routing_fee_ppm": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum fee paid to route the prepay invoice off chain, expressed as\nparts per million of the volume being routed."
+        },
+        "max_prepay_sat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum no-show penalty in satoshis paid for a swap."
+        },
+        "max_miner_fee_sat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum miner fee we will pay to sweep the swap on chain. Note that we\nwill not suggest a swap if the estimate is above the sweep limit set by\nthese parameters, and we use the current fee estimate to sweep on chain so\nthis value is only a cap placed on the amount we spend on fees in the case\nwhere the swap needs to be claimed on chain, but fees have suddenly spiked."
+        },
+        "sweep_conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
+        },
+        "failure_backoff_sec": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount of time we require pass since a channel was part of a failed\nswap due to off chain payment failure until it will be considered for swap\nsuggestions again, expressed in seconds."
         }
       }
     },
