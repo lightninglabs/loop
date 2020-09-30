@@ -3,16 +3,20 @@ package liquidity
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
 
 var (
+	testTime = time.Date(2020, 02, 13, 0, 0, 0, 0, time.UTC)
+
 	chanID1 = lnwire.NewShortChanIDFromInt(1)
 	chanID2 = lnwire.NewShortChanIDFromInt(2)
 
@@ -55,7 +59,8 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 
 			return NewRestrictions(1, 10000), nil
 		},
-		Lnd: &lnd.LndServices,
+		Lnd:   &lnd.LndServices,
+		Clock: clock.NewTestClock(testTime),
 	}, lnd
 }
 
