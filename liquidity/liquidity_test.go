@@ -154,8 +154,38 @@ func TestParameters(t *testing.T) {
 // TestRestrictedSuggestions tests getting of swap suggestions when we have
 // other in-flight swaps. We setup our manager with a set of channels and rules
 // that require a loop out swap, focusing on the filtering our of channels that
-// are in use for in-flight swaps.
+// are in use for in-flight swaps, or those which have recently failed.
 func TestRestrictedSuggestions(t *testing.T) {
+	var (
+		failedWithinTimeout = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				State: loopdb.StateFailOffchainPayments,
+			},
+			Time: testTime,
+		}
+
+		failedBeforeBackoff = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				State: loopdb.StateFailOffchainPayments,
+			},
+			Time: testTime.Add(
+				defaultFailureBackoff * -1,
+			),
+		}
+
+		// failedTemporary is a swap that failed outside of our backoff
+		// period, but we still want to back off because the swap is
+		// considered pending.
+		failedTemporary = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				State: loopdb.StateFailTemporary,
+			},
+			Time: testTime.Add(
+				defaultFailureBackoff * -3,
+			),
+		}
+	)
+
 	tests := []struct {
 		name     string
 		channels []lndclient.ChannelInfo
@@ -231,6 +261,59 @@ func TestRestrictedSuggestions(t *testing.T) {
 			expected: []loop.OutRequest{
 				chan1Rec,
 			},
+		},
+		{
+			name: "swap failed recently",
+			channels: []lndclient.ChannelInfo{
+				channel1,
+			},
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: chan1Out,
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							failedWithinTimeout,
+						},
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "swap failed before cutoff",
+			channels: []lndclient.ChannelInfo{
+				channel1,
+			},
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: chan1Out,
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							failedBeforeBackoff,
+						},
+					},
+				},
+			},
+			expected: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name: "temporary failure",
+			channels: []lndclient.ChannelInfo{
+				channel1,
+			},
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: chan1Out,
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							failedTemporary,
+						},
+					},
+				},
+			},
+			expected: nil,
 		},
 	}
 

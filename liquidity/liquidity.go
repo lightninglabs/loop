@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
@@ -25,6 +26,10 @@ import (
 )
 
 const (
+	// defaultFailureBackoff is the default amount of time we backoff if
+	// a channel is part of a temporarily failed swap.
+	defaultFailureBackoff = time.Hour * 24
+
 	// FeeBase is the base that we use to express fees.
 	FeeBase = 1e6
 
@@ -55,7 +60,8 @@ var (
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
 	defaultParameters = Parameters{
-		ChannelRules: make(map[lnwire.ShortChannelID]*ThresholdRule),
+		ChannelRules:   make(map[lnwire.ShortChannelID]*ThresholdRule),
+		FailureBackOff: defaultFailureBackoff,
 	}
 
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.
@@ -85,6 +91,12 @@ type Config struct {
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
+	// FailureBackOff is the amount of time that we require passes after a
+	// channel has been part of a failed loop out swap before we suggest
+	// using it again.
+	// TODO(carla): add exponential backoff
+	FailureBackOff time.Duration
+
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed.
 	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
@@ -100,8 +112,8 @@ func (p Parameters) String() string {
 		)
 	}
 
-	return fmt.Sprintf("channel rules: %v",
-		strings.Join(channelRules, ","))
+	return fmt.Sprintf("channel rules: %v, failure backoff: %v",
+		strings.Join(channelRules, ","), p.FailureBackOff)
 }
 
 // validate checks whether a set of parameters is valid.
@@ -169,10 +181,11 @@ func (m *Manager) SetParameters(params Parameters) error {
 // cannot mutate our parameters. Although our parameters struct itself is not
 // a reference, we still need to clone the contents of maps.
 func cloneParameters(params Parameters) Parameters {
-	paramCopy := Parameters{
-		ChannelRules: make(map[lnwire.ShortChannelID]*ThresholdRule,
-			len(params.ChannelRules)),
-	}
+	paramCopy := params
+	paramCopy.ChannelRules = make(
+		map[lnwire.ShortChannelID]*ThresholdRule,
+		len(params.ChannelRules),
+	)
 
 	for channel, rule := range params.ChannelRules {
 		ruleCopy := *rule
@@ -279,7 +292,13 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 	var (
 		existingOut = make(map[lnwire.ShortChannelID]bool)
 		existingIn  = make(map[route.Vertex]bool)
+		failedOut   = make(map[lnwire.ShortChannelID]time.Time)
 	)
+
+	// Failure cutoff is the most recent failure timestamp we will still
+	// consider a channel eligible. Any channels involved in swaps that have
+	// failed since this point will not be considered.
+	failureCutoff := m.cfg.Clock.Now().Add(m.params.FailureBackOff * -1)
 
 	for _, out := range loopOut {
 		var (
@@ -287,7 +306,37 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 			chanSet = out.Contract.OutgoingChanSet
 		)
 
+		// If a loop out swap failed due to off chain payment after our
+		// failure cutoff, we add all of its channels to a set of
+		// recently failed channels. It is possible that not all of
+		// these channels were used for the swap, but we play it safe
+		// and back off for all of them.
+		//
+		// We only backoff for off temporary failures. In the case of
+		// chain payment failures, our swap failed to route and we do
+		// not want to repeatedly try to route through bad channels
+		// which remain unbalanced because they cannot route a swap, so
+		// we backoff.
+		if state == loopdb.StateFailOffchainPayments {
+			failedAt := out.LastUpdate().Time
+
+			if failedAt.After(failureCutoff) {
+				for _, id := range chanSet {
+					chanID := lnwire.NewShortChanIDFromInt(
+						id,
+					)
+
+					failedOut[chanID] = failedAt
+				}
+			}
+		}
+
 		// Skip completed swaps, they can't affect our channel balances.
+		// Swaps that fail temporarily are considered to be in a pending
+		// state, so we will also check that channels being used by
+		// these swaps. This is important, because a temporarily failed
+		// swap could be re-dispatched on restart, affecting our
+		// balances.
 		if state.Type() != loopdb.StateTypePending {
 			continue
 		}
@@ -333,6 +382,15 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 	var eligible []lndclient.ChannelInfo
 	for _, channel := range channels {
 		shortID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+
+		lastFail, recentFail := failedOut[shortID]
+		if recentFail {
+			log.Debugf("Channel: %v not eligible for "+
+				"suggestions, was part of a failed swap at: %v",
+				channel.ChannelID, lastFail)
+
+			continue
+		}
 
 		if existingOut[shortID] {
 			log.Debugf("Channel: %v not eligible for "+
