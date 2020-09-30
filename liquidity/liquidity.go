@@ -13,10 +13,28 @@
 // - Sweep Fee Rate Limit: the maximum sat/vByte fee estimate for our sweep
 //   transaction to confirm within our configured number of confirmations
 //   that we will suggest swaps for.
+// - Maximum Swap Fee PPM: the maximum server fee, expressed as parts per
+//   million of the full swap amount
+// - Maximum Routing Fee PPM: the maximum off-chain routing fees for the swap
+//   invoice, expressed as parts per million of the swap amount.
+// - Maximum Prepay Routing Fee PPM: the maximum off-chain routing fees for the
+//   swap prepayment, expressed as parts per million of the prepay amount.
+// - Maximum Prepay: the maximum now-show fee, expressed in satoshis. This
+//   amount is only payable in the case where the swap server broadcasts a htlc
+//   and the client fails to sweep the preimage.
+// - Maximum miner fee: the maximum miner fee we are willing to pay to sweep the
+//   on chain htlc. Note that the client will use current fee estimates to
+//   sweep, so this value acts more as a sanity check in the case of a large fee
+//   spike.
+//
+// The maximum fee per-swap is calculated as follows:
+// (swap amount * serverPPM/1e6) + miner fee + (swap amount * routingPPM/1e6)
+// + (prepay amount * prepayPPM/1e6).
 package liquidity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -55,8 +73,10 @@ const (
 	defaultPrepayRoutingFeePPM = 5000
 
 	// defaultMaximumMinerFee is the default limit we place on miner fees
-	// per swap.
-	defaultMaximumMinerFee = 15000
+	// per swap. We apply a multiplier to this default fee to guard against
+	// the case where we have broadcast the preimage, then fees spike and
+	// we need to sweep the preimage.
+	defaultMaximumMinerFee = 15000 * 100
 
 	// defaultMaximumPrepay is the default limit we place on prepay
 	// invoices.
@@ -71,10 +91,15 @@ var (
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
 	defaultParameters = Parameters{
-		ChannelRules:      make(map[lnwire.ShortChannelID]*ThresholdRule),
-		FailureBackOff:    defaultFailureBackoff,
-		SweepFeeRateLimit: defaultSweepFeeRateLimit,
-		SweepConfTarget:   loop.DefaultSweepConfTarget,
+		ChannelRules:               make(map[lnwire.ShortChannelID]*ThresholdRule),
+		FailureBackOff:             defaultFailureBackoff,
+		SweepFeeRateLimit:          defaultSweepFeeRateLimit,
+		SweepConfTarget:            loop.DefaultSweepConfTarget,
+		MaximumSwapFeePPM:          defaultSwapFeePPM,
+		MaximumRoutingFeePPM:       defaultRoutingFeePPM,
+		MaximumPrepayRoutingFeePPM: defaultPrepayRoutingFeePPM,
+		MaximumMinerFee:            defaultMaximumMinerFee,
+		MaximumPrepay:              defaultMaximumPrepay,
 	}
 
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.
@@ -85,6 +110,21 @@ var (
 	ErrInvalidSweepFeeRateLimit = fmt.Errorf("sweep fee rate limit must "+
 		"be > %v sat/vByte",
 		satPerKwToSatPerVByte(chainfee.AbsoluteFeePerKwFloor))
+
+	// ErrZeroMinerFee is returned if a zero maximum miner fee is set.
+	ErrZeroMinerFee = errors.New("maximum miner fee must be non-zero")
+
+	// ErrZeroSwapFeePPM is returned if a zero server fee ppm is set.
+	ErrZeroSwapFeePPM = errors.New("swap fee PPM must be non-zero")
+
+	// ErrZeroRoutingPPM is returned if a zero routing fee ppm is set.
+	ErrZeroRoutingPPM = errors.New("routing fee PPM must be non-zero")
+
+	// ErrZeroPrepayPPM is returned if a zero prepay routing fee ppm is set.
+	ErrZeroPrepayPPM = errors.New("prepay routing fee PPM must be non-zero")
+
+	// ErrZeroPrepay is returned if a zero maximum prepay is set.
+	ErrZeroPrepay = errors.New("maximum prepay must be non-zero")
 )
 
 // Config contains the external functionality required to run the
@@ -102,6 +142,11 @@ type Config struct {
 
 	// ListLoopIn returns all of the loop in swaps stored on disk.
 	ListLoopIn func() ([]*loopdb.LoopIn, error)
+
+	// LoopOutQuote gets swap fee, estimated miner fee and prepay amount for
+	// a loop out swap.
+	LoopOutQuote func(ctx context.Context,
+		request *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote, error)
 
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
@@ -129,6 +174,33 @@ type Parameters struct {
 	// transaction in. This value affects the on chain fees we will pay.
 	SweepConfTarget int32
 
+	// MaximumPrepay is the maximum prepay amount we are willing to pay per
+	// swap.
+	MaximumPrepay btcutil.Amount
+
+	// MaximumSwapFeePPM is the maximum server fee we are willing to pay per
+	// swap expressed as parts per million of the swap volume.
+	MaximumSwapFeePPM int
+
+	// MaximumRoutingFeePPM is the maximum off-chain routing fee we
+	// are willing to pay for off chain invoice routing fees per swap,
+	// expressed as parts per million of the swap amount.
+	MaximumRoutingFeePPM int
+
+	// MaximumPrepayRoutingFeePPM is the maximum off-chain routing fee we
+	// are willing to pay for off chain prepay routing fees per swap,
+	// expressed as parts per million of the prepay amount.
+	MaximumPrepayRoutingFeePPM int
+
+	// MaximumMinerFee is the maximum on chain fee that we cap our miner
+	// fee at in case where we need to claim on chain because we have
+	// revealed the preimage, but fees have spiked. We will not initiate a
+	// swap if we estimate that the sweep cost will be above our sweep
+	// fee limit, and we use fee estimates at time of sweep to set our fees,
+	// so this is just a sane cap covering the special case where we need to
+	// sweep during a fee spike.
+	MaximumMinerFee btcutil.Amount
+
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed.
 	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
@@ -145,9 +217,13 @@ func (p Parameters) String() string {
 	}
 
 	return fmt.Sprintf("channel rules: %v, failure backoff: %v, sweep "+
-		"fee rate limit: %v, sweep conf target: %v",
+		"fee rate limit: %v, sweep conf target: %v, maximum prepay: "+
+		"%v, maximum miner fee: %v, maximum swap fee ppm: %v, maximum "+
+		"routing fee ppm: %v, maximum prepay routing fee ppm: %v",
 		strings.Join(channelRules, ","), p.FailureBackOff,
-		p.SweepFeeRateLimit, p.SweepConfTarget,
+		p.SweepFeeRateLimit, p.SweepConfTarget, p.MaximumPrepay,
+		p.MaximumMinerFee, p.MaximumSwapFeePPM,
+		p.MaximumRoutingFeePPM, p.MaximumPrepayRoutingFeePPM,
 	)
 }
 
@@ -176,6 +252,27 @@ func (p Parameters) validate(minConfs int32) error {
 	if p.SweepConfTarget < minConfs {
 		return fmt.Errorf("confirmation target must be at least: %v",
 			minConfs)
+	}
+
+	// Check that we have non-zero fee limits.
+	if p.MaximumSwapFeePPM == 0 {
+		return ErrZeroSwapFeePPM
+	}
+
+	if p.MaximumRoutingFeePPM == 0 {
+		return ErrZeroRoutingPPM
+	}
+
+	if p.MaximumPrepayRoutingFeePPM == 0 {
+		return ErrZeroPrepayPPM
+	}
+
+	if p.MaximumPrepay == 0 {
+		return ErrZeroPrepay
+	}
+
+	if p.MaximumMinerFee == 0 {
+		return ErrZeroMinerFee
 	}
 
 	return nil
@@ -317,25 +414,62 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		suggestion := rule.suggestSwap(balance, outRestrictions)
 
 		// We can have nil suggestions in the case where no action is
-		// required, so only add non-nil suggestions.
-		if suggestion != nil {
-			outRequest := m.makeLoopOutRequest(suggestion)
-			suggestions = append(suggestions, outRequest)
+		// required, so we skip over them.
+		if suggestion == nil {
+			continue
 		}
+
+		// Get a quote for a swap of this amount.
+		quote, err := m.cfg.LoopOutQuote(
+			ctx, &loop.LoopOutQuoteRequest{
+				Amount:                  suggestion.Amount,
+				SweepConfTarget:         m.params.SweepConfTarget,
+				SwapPublicationDeadline: m.cfg.Clock.Now(),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Debugf("quote for suggestion: %v, swap fee: %v, "+
+			"miner fee: %v, prepay: %v", suggestion, quote.SwapFee,
+			quote.MinerFee, quote.PrepayAmount)
+
+		// Check that the estimated fees for the suggested swap are
+		// below the fee limits configured by the manager.
+		err = m.checkFeeLimits(quote, suggestion.Amount)
+		if err != nil {
+			log.Infof("suggestion: %v expected fees too high: %v",
+				suggestion, err)
+
+			continue
+		}
+
+		outRequest := m.makeLoopOutRequest(suggestion, quote)
+		suggestions = append(suggestions, outRequest)
 	}
 
 	return suggestions, nil
 }
 
-// makeLoopOutRequest creates a loop out request from a suggestion, setting fee
-// limits defined by our default fee values.
-func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
+// makeLoopOutRequest creates a loop out request from a suggestion. Since we
+// do not get any information about our off-chain routing fees when we request
+// a quote, we just set our prepay and route maximum fees directly from the
+// amounts we expect to route. The estimation we use elsewhere is the repo is
+// route-independent, which is a very poor estimation so we don't bother with
+// checking against this inaccurate constant. We use the exact prepay amount
+// and swap fee given to us by the server, but use our maximum miner fee anyway
+// to give us some leeway when performing the swap.
+func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
+	quote *loop.LoopOutQuote) loop.OutRequest {
+
 	prepayMaxFee := ppmToSat(
-		defaultMaximumPrepay, defaultPrepayRoutingFeePPM,
+		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
 	)
 
-	routeMaxFee := ppmToSat(suggestion.Amount, defaultRoutingFeePPM)
-	maxSwapFee := ppmToSat(suggestion.Amount, defaultSwapFeePPM)
+	routeMaxFee := ppmToSat(
+		suggestion.Amount, m.params.MaximumRoutingFeePPM,
+	)
 
 	return loop.OutRequest{
 		Amount: suggestion.Amount,
@@ -344,9 +478,9 @@ func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.Out
 		},
 		MaxPrepayRoutingFee: prepayMaxFee,
 		MaxSwapRoutingFee:   routeMaxFee,
-		MaxMinerFee:         defaultMaximumMinerFee,
-		MaxSwapFee:          maxSwapFee,
-		MaxPrepayAmount:     defaultMaximumPrepay,
+		MaxMinerFee:         m.params.MaximumMinerFee,
+		MaxSwapFee:          quote.SwapFee,
+		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     m.params.SweepConfTarget,
 	}
 }
@@ -482,6 +616,31 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 	}
 
 	return eligible, nil
+}
+
+// checkFeeLimits takes a set of fees for a swap and checks whether they exceed
+// our swap limits.
+func (m *Manager) checkFeeLimits(quote *loop.LoopOutQuote,
+	swapAmt btcutil.Amount) error {
+
+	maxFee := ppmToSat(swapAmt, m.params.MaximumSwapFeePPM)
+
+	if quote.SwapFee > maxFee {
+		return fmt.Errorf("quoted swap fee: %v > maximum swap fee: %v",
+			quote.SwapFee, maxFee)
+	}
+
+	if quote.MinerFee > m.params.MaximumMinerFee {
+		return fmt.Errorf("quoted miner fee: %v > maximum miner "+
+			"fee: %v", quote.MinerFee, m.params.MaximumMinerFee)
+	}
+
+	if quote.PrepayAmount > m.params.MaximumPrepay {
+		return fmt.Errorf("quoted prepay: %v > maximum prepay: %v",
+			quote.PrepayAmount, m.params.MaximumPrepay)
+	}
+
+	return nil
 }
 
 // satPerKwToSatPerVByte converts sat per kWeight to sat per vByte.

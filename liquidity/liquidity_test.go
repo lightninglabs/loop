@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
@@ -44,11 +45,16 @@ var (
 	// chanRule is a rule that produces chan1Rec.
 	chanRule = NewThresholdRule(50, 0)
 
+	testQuote = &loop.LoopOutQuote{
+		SwapFee:      btcutil.Amount(1),
+		PrepayAmount: btcutil.Amount(500),
+		MinerFee:     btcutil.Amount(50),
+	}
+
 	prepayFee = ppmToSat(
-		defaultMaximumPrepay, defaultPrepayRoutingFeePPM,
+		testQuote.PrepayAmount, defaultPrepayRoutingFeePPM,
 	)
 	routingFee = ppmToSat(7500, defaultRoutingFeePPM)
-	swapFee    = ppmToSat(7500, defaultSwapFeePPM)
 
 	// chan1Rec is the suggested swap for channel 1 when we use chanRule.
 	chan1Rec = loop.OutRequest{
@@ -57,8 +63,8 @@ var (
 		MaxPrepayRoutingFee: prepayFee,
 		MaxSwapRoutingFee:   routingFee,
 		MaxMinerFee:         defaultMaximumMinerFee,
-		MaxSwapFee:          swapFee,
-		MaxPrepayAmount:     defaultMaximumPrepay,
+		MaxSwapFee:          testQuote.SwapFee,
+		MaxPrepayAmount:     testQuote.PrepayAmount,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
 	}
 
@@ -69,8 +75,8 @@ var (
 		MaxPrepayRoutingFee: prepayFee,
 		MaxSwapRoutingFee:   routingFee,
 		MaxMinerFee:         defaultMaximumMinerFee,
-		MaxSwapFee:          swapFee,
-		MaxPrepayAmount:     defaultMaximumPrepay,
+		MaxPrepayAmount:     testQuote.PrepayAmount,
+		MaxSwapFee:          testQuote.SwapFee,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
 	}
 
@@ -109,6 +115,12 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 		},
 		ListLoopIn: func() ([]*loopdb.LoopIn, error) {
 			return nil, nil
+		},
+		LoopOutQuote: func(_ context.Context,
+			_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
+			error) {
+
+			return testQuote, nil
 		},
 	}, lnd
 }
@@ -443,6 +455,73 @@ func TestSuggestSwaps(t *testing.T) {
 			testSuggestSwaps(
 				t, cfg, lnd, channels, testCase.rules,
 				testCase.swaps,
+			)
+		})
+	}
+}
+
+// TestFeeLimits tests limiting of swap suggestions by fees.
+func TestFeeLimits(t *testing.T) {
+	tests := []struct {
+		name     string
+		quote    *loop.LoopOutQuote
+		expected []loop.OutRequest
+	}{
+		{
+			name:  "fees ok",
+			quote: testQuote,
+			expected: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name: "insufficient prepay",
+			quote: &loop.LoopOutQuote{
+				SwapFee:      1,
+				PrepayAmount: defaultMaximumPrepay + 1,
+				MinerFee:     50,
+			},
+		},
+		{
+			name: "insufficient miner fee",
+			quote: &loop.LoopOutQuote{
+				SwapFee:      1,
+				PrepayAmount: 100,
+				MinerFee:     defaultMaximumMinerFee + 1,
+			},
+		},
+		{
+			// Swap fee limited to 0.5% of 7500 = 37,5.
+			name: "insufficient swap fee",
+			quote: &loop.LoopOutQuote{
+				SwapFee:      38,
+				PrepayAmount: 100,
+				MinerFee:     500,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+			cfg.LoopOutQuote = func(context.Context,
+				*loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
+				error) {
+
+				return testCase.quote, nil
+			}
+
+			channels := []lndclient.ChannelInfo{
+				channel1,
+			}
+			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+			}
+
+			testSuggestSwaps(
+				t, cfg, lnd, channels, rules, testCase.expected,
 			)
 		})
 	}
