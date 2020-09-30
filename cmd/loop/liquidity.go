@@ -36,8 +36,8 @@ func getParams(ctx *cli.Context) error {
 	return nil
 }
 
-var setLiquidityParamCommand = cli.Command{
-	Name:        "setparam",
+var setLiquidityRuleCommand = cli.Command{
+	Name:        "setrule",
 	Usage:       "set liquidity manager rule for a channel",
 	Description: "Update or remove the liquidity rule for a channel.",
 	ArgsUsage:   "shortchanid",
@@ -58,10 +58,10 @@ var setLiquidityParamCommand = cli.Command{
 			Usage: "remove the rule currently set for the channel.",
 		},
 	},
-	Action: setParam,
+	Action: setRule,
 }
 
-func setParam(ctx *cli.Context) error {
+func setRule(ctx *cli.Context) error {
 	// We require that a channel ID is set for this rule update.
 	if ctx.NArg() != 1 {
 		return fmt.Errorf("please set a channel id for the rule " +
@@ -122,12 +122,11 @@ func setParam(ctx *cli.Context) error {
 				"flag")
 		}
 
+		params.Rules = otherRules
 		_, err = client.SetLiquidityParams(
 			context.Background(),
 			&looprpc.SetLiquidityParamsRequest{
-				Parameters: &looprpc.LiquidityParameters{
-					Rules: otherRules,
-				},
+				Parameters: params,
 			},
 		)
 		return err
@@ -158,13 +157,16 @@ func setParam(ctx *cli.Context) error {
 		)
 	}
 
+	// Just set the rules on our current set of parameters and leave the
+	// other values untouched.
+	otherRules = append(otherRules, newRule)
+	params.Rules = otherRules
+
 	// Update our parameters to the existing set, plus our new rule.
 	_, err = client.SetLiquidityParams(
 		context.Background(),
 		&looprpc.SetLiquidityParamsRequest{
-			Parameters: &looprpc.LiquidityParameters{
-				Rules: append(otherRules, newRule),
-			},
+			Parameters: params,
 		},
 	)
 
