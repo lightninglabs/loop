@@ -80,6 +80,18 @@ var (
 			Entity: "auth",
 			Action: "read",
 		}},
+		"/looprpc.SwapClient/SuggestSwaps": {{
+			Entity: "suggestions",
+			Action: "read",
+		}},
+		"/looprpc.SwapClient/GetLiquidityParams": {{
+			Entity: "suggestions",
+			Action: "read",
+		}},
+		"/looprpc.SwapClient/SetLiquidityParams": {{
+			Entity: "suggestions",
+			Action: "write",
+		}},
 	}
 
 	// allPermissions is the list of all existing permissions that exist
@@ -104,6 +116,12 @@ var (
 	}, {
 		Entity: "auth",
 		Action: "read",
+	}, {
+		Entity: "suggestions",
+		Action: "read",
+	}, {
+		Entity: "suggestions",
+		Action: "write",
 	}}
 
 	// macDbDefaultPw is the default encryption password used to encrypt the
