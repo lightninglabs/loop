@@ -4,6 +4,7 @@ import (
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/build"
@@ -21,6 +22,7 @@ func init() {
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("STORE", loopdb.UseLogger)
 	addSubLogger(lsat.Subsystem, lsat.UseLogger)
+	addSubLogger(liquidity.Subsystem, liquidity.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the

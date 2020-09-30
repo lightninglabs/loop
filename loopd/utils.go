@@ -47,8 +47,10 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 				outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
 			), nil
 		},
-		Lnd:   client.LndServices,
-		Clock: clock.NewDefaultClock(),
+		Lnd:         client.LndServices,
+		Clock:       clock.NewDefaultClock(),
+		ListLoopOut: client.Store.FetchLoopOutSwaps,
+		ListLoopIn:  client.Store.FetchLoopInSwaps,
 	}
 
 	return liquidity.NewManager(mngrCfg)

@@ -1,6 +1,12 @@
 // Package liquidity is responsible for monitoring our node's liquidity. It
 // allows setting of a liquidity rule which describes the desired liquidity
 // balance on a per-channel basis.
+//
+// Swap suggestions are limited to channels that are not currently being used
+// for a pending swap. If we are currently processing an unrestricted swap (ie,
+// a loop out with no outgoing channel targets set or a loop in with no last
+// hop set), we will not suggest any swaps because these swaps will shift the
+// balances of our channels in ways we can't predict.
 package liquidity
 
 import (
@@ -15,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 const (
@@ -64,6 +71,12 @@ type Config struct {
 
 	// Lnd provides us with access to lnd's rpc servers.
 	Lnd *lndclient.LndServices
+
+	// ListLoopOut returns all of the loop our swaps stored on disk.
+	ListLoopOut func() ([]*loopdb.LoopOut, error)
+
+	// ListLoopIn returns all of the loop in swaps stored on disk.
+	ListLoopIn func() ([]*loopdb.LoopIn, error)
 
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
@@ -184,19 +197,32 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, nil
 	}
 
-	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	// Get the current server side restrictions.
 	outRestrictions, err := m.cfg.LoopOutRestrictions(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// List our current set of swaps so that we can determine which channels
+	// are already being utilized by swaps. Note that these calls may race
+	// with manual initiation of swaps.
+	loopOut, err := m.cfg.ListLoopOut()
+	if err != nil {
+		return nil, err
+	}
+
+	loopIn, err := m.cfg.ListLoopIn()
+	if err != nil {
+		return nil, err
+	}
+
+	eligible, err := m.getEligibleChannels(ctx, loopOut, loopIn)
+	if err != nil {
+		return nil, err
+	}
+
 	var suggestions []loop.OutRequest
-	for _, channel := range channels {
+	for _, channel := range eligible {
 		channelID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 		rule, ok := m.params.ChannelRules[channelID]
 		if !ok {
@@ -240,6 +266,94 @@ func makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
 		MaxPrepayAmount:     defaultMaximumPrepay,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
 	}
+}
+
+// getEligibleChannels takes lists of our existing loop out and in swaps, and
+// gets a list of channels that are not currently being utilized for a swap.
+// If an unrestricted swap is ongoing, we return an empty set of channels
+// because we don't know which channels balances it will affect.
+func (m *Manager) getEligibleChannels(ctx context.Context,
+	loopOut []*loopdb.LoopOut, loopIn []*loopdb.LoopIn) (
+	[]lndclient.ChannelInfo, error) {
+
+	var (
+		existingOut = make(map[lnwire.ShortChannelID]bool)
+		existingIn  = make(map[route.Vertex]bool)
+	)
+
+	for _, out := range loopOut {
+		var (
+			state   = out.State().State
+			chanSet = out.Contract.OutgoingChanSet
+		)
+
+		// Skip completed swaps, they can't affect our channel balances.
+		if state.Type() != loopdb.StateTypePending {
+			continue
+		}
+
+		if len(chanSet) == 0 {
+			log.Debugf("Ongoing unrestricted loop out: "+
+				"%v, no suggestions at present", out.Hash)
+
+			return nil, nil
+		}
+
+		for _, id := range chanSet {
+			chanID := lnwire.NewShortChanIDFromInt(id)
+			existingOut[chanID] = true
+		}
+	}
+
+	for _, in := range loopIn {
+		// Skip completed swaps, they can't affect our channel balances.
+		if in.State().State.Type() != loopdb.StateTypePending {
+			continue
+		}
+
+		if in.Contract.LastHop == nil {
+			log.Debugf("Ongoing unrestricted loop in: "+
+				"%v, no suggestions at present", in.Hash)
+
+			return nil, nil
+		}
+
+		existingIn[*in.Contract.LastHop] = true
+	}
+
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Run through our set of channels and skip over any channels that
+	// are currently being utilized by a restricted swap (where restricted
+	// means that a loop out limited channels, or a loop in limited last
+	// hop).
+	var eligible []lndclient.ChannelInfo
+	for _, channel := range channels {
+		shortID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+
+		if existingOut[shortID] {
+			log.Debugf("Channel: %v not eligible for "+
+				"suggestions, ongoing loop out utilizing "+
+				"channel", channel.ChannelID)
+
+			continue
+		}
+
+		if existingIn[channel.PubKeyBytes] {
+			log.Debugf("Channel: %v not eligible for "+
+				"suggestions, ongoing loop in utilizing "+
+				"peer", channel.ChannelID)
+
+			continue
+		}
+
+		eligible = append(eligible, channel)
+	}
+
+	return eligible, nil
 }
 
 // ppmToSat takes an amount and a measure of parts per million for the amount

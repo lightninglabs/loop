@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,8 +21,20 @@ var (
 	chanID1 = lnwire.NewShortChanIDFromInt(1)
 	chanID2 = lnwire.NewShortChanIDFromInt(2)
 
+	peer1 = route.Vertex{1}
+	peer2 = route.Vertex{2}
+
 	channel1 = lndclient.ChannelInfo{
 		ChannelID:     chanID1.ToUint64(),
+		PubKeyBytes:   peer1,
+		LocalBalance:  10000,
+		RemoteBalance: 0,
+		Capacity:      10000,
+	}
+
+	channel2 = lndclient.ChannelInfo{
+		ChannelID:     chanID2.ToUint64(),
+		PubKeyBytes:   peer2,
 		LocalBalance:  10000,
 		RemoteBalance: 0,
 		Capacity:      10000,
@@ -47,6 +60,28 @@ var (
 		MaxPrepayAmount:     defaultMaximumPrepay,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
 	}
+
+	// chan2Rec is the suggested swap for channel 2 when we use chanRule.
+	chan2Rec = loop.OutRequest{
+		Amount:              7500,
+		OutgoingChanSet:     loopdb.ChannelSet{chanID2.ToUint64()},
+		MaxPrepayRoutingFee: prepayFee,
+		MaxSwapRoutingFee:   routingFee,
+		MaxMinerFee:         defaultMaximumMinerFee,
+		MaxSwapFee:          swapFee,
+		MaxPrepayAmount:     defaultMaximumPrepay,
+		SweepConfTarget:     loop.DefaultSweepConfTarget,
+	}
+
+	// chan1Out is a contract that uses channel 1, used to represent on
+	// disk swap using chan 1.
+	chan1Out = &loopdb.LoopOutContract{
+		OutgoingChanSet: loopdb.ChannelSet(
+			[]uint64{
+				chanID1.ToUint64(),
+			},
+		),
+	}
 )
 
 // newTestConfig creates a default test config.
@@ -61,6 +96,12 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 		},
 		Lnd:   &lnd.LndServices,
 		Clock: clock.NewTestClock(testTime),
+		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
+			return nil, nil
+		},
+		ListLoopIn: func() ([]*loopdb.LoopIn, error) {
+			return nil, nil
+		},
 	}, lnd
 }
 
@@ -108,6 +149,116 @@ func TestParameters(t *testing.T) {
 	}
 	err = manager.SetParameters(expected)
 	require.Equal(t, ErrZeroChannelID, err)
+}
+
+// TestRestrictedSuggestions tests getting of swap suggestions when we have
+// other in-flight swaps. We setup our manager with a set of channels and rules
+// that require a loop out swap, focusing on the filtering our of channels that
+// are in use for in-flight swaps.
+func TestRestrictedSuggestions(t *testing.T) {
+	tests := []struct {
+		name     string
+		channels []lndclient.ChannelInfo
+		loopOut  []*loopdb.LoopOut
+		loopIn   []*loopdb.LoopIn
+		expected []loop.OutRequest
+	}{
+		{
+			name: "no existing swaps",
+			channels: []lndclient.ChannelInfo{
+				channel1,
+			},
+			loopOut: nil,
+			loopIn:  nil,
+			expected: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name: "unrestricted loop out",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2,
+			},
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: nil,
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "unrestricted loop in",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2,
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: nil,
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "restricted loop out",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2,
+			},
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: chan1Out,
+				},
+			},
+			expected: []loop.OutRequest{
+				chan2Rec,
+			},
+		},
+		{
+			name: "restricted loop in",
+			channels: []lndclient.ChannelInfo{
+				channel1, channel2,
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer2,
+					},
+				},
+			},
+			expected: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			// Create a manager config which will return the test
+			// case's set of existing swaps.
+			cfg, lnd := newTestConfig()
+			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+				return testCase.loopOut, nil
+			}
+			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+				return testCase.loopIn, nil
+			}
+
+			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			}
+
+			testSuggestSwaps(
+				t, cfg, lnd, testCase.channels, rules,
+				testCase.expected,
+			)
+		})
+	}
 }
 
 // TestSuggestSwaps tests getting of swap suggestions based on the rules set for
