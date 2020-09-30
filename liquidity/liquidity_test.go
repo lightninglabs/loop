@@ -5,26 +5,64 @@ import (
 	"testing"
 
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	chanID1 = lnwire.NewShortChanIDFromInt(1)
+	chanID2 = lnwire.NewShortChanIDFromInt(2)
+
+	channel1 = lndclient.ChannelInfo{
+		ChannelID:     chanID1.ToUint64(),
+		LocalBalance:  10000,
+		RemoteBalance: 0,
+		Capacity:      10000,
+	}
+
+	// chanRule is a rule that produces chan1Rec.
+	chanRule = NewThresholdRule(50, 0)
+
+	prepayFee = ppmToSat(
+		defaultMaximumPrepay, defaultPrepayRoutingFeePPM,
+	)
+	routingFee = ppmToSat(7500, defaultRoutingFeePPM)
+	swapFee    = ppmToSat(7500, defaultSwapFeePPM)
+
+	// chan1Rec is the suggested swap for channel 1 when we use chanRule.
+	chan1Rec = loop.OutRequest{
+		Amount:              7500,
+		OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
+		MaxPrepayRoutingFee: prepayFee,
+		MaxSwapRoutingFee:   routingFee,
+		MaxMinerFee:         defaultMaximumMinerFee,
+		MaxSwapFee:          swapFee,
+		MaxPrepayAmount:     defaultMaximumPrepay,
+		SweepConfTarget:     loop.DefaultSweepConfTarget,
+	}
+)
+
 // newTestConfig creates a default test config.
-func newTestConfig() *Config {
+func newTestConfig() (*Config, *test.LndMockServices) {
+	lnd := test.NewMockLnd()
+
 	return &Config{
 		LoopOutRestrictions: func(_ context.Context) (*Restrictions,
 			error) {
 
 			return NewRestrictions(1, 10000), nil
 		},
-		Lnd: test.NewMockLnd().Client,
-	}
+		Lnd: &lnd.LndServices,
+	}, lnd
 }
 
 // TestParameters tests getting and setting of parameters for our manager.
 func TestParameters(t *testing.T) {
-	manager := NewManager(newTestConfig())
+	cfg, _ := newTestConfig()
+	manager := NewManager(cfg)
 
 	chanID := lnwire.NewShortChanIDFromInt(1)
 
@@ -68,62 +106,31 @@ func TestParameters(t *testing.T) {
 	require.Equal(t, ErrZeroChannelID, err)
 }
 
-// TestSuggestSwaps tests getting of swap suggestions.
+// TestSuggestSwaps tests getting of swap suggestions based on the rules set for
+// the liquidity manager and the current set of channel balances.
 func TestSuggestSwaps(t *testing.T) {
-	var (
-		chanID1 = lnwire.NewShortChanIDFromInt(1)
-		chanID2 = lnwire.NewShortChanIDFromInt(2)
-	)
-
 	tests := []struct {
-		name       string
-		channels   []lndclient.ChannelInfo
-		parameters Parameters
-		swaps      []*LoopOutRecommendation
+		name  string
+		rules map[lnwire.ShortChannelID]*ThresholdRule
+		swaps []loop.OutRequest
 	}{
 		{
-			name:       "no rules",
-			channels:   nil,
-			parameters: newParameters(),
+			name:  "no rules",
+			rules: map[lnwire.ShortChannelID]*ThresholdRule{},
 		},
 		{
 			name: "loop out",
-			channels: []lndclient.ChannelInfo{
-				{
-					ChannelID:     1,
-					Capacity:      1000,
-					LocalBalance:  1000,
-					RemoteBalance: 0,
-				},
+			rules: map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
 			},
-			parameters: Parameters{
-				ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
-					chanID1: NewThresholdRule(
-						10, 10,
-					),
-				},
-			},
-			swaps: []*LoopOutRecommendation{
-				{
-					Channel: chanID1,
-					Amount:  500,
-				},
+			swaps: []loop.OutRequest{
+				chan1Rec,
 			},
 		},
 		{
 			name: "no rule for channel",
-			channels: []lndclient.ChannelInfo{
-				{
-					ChannelID:     1,
-					Capacity:      1000,
-					LocalBalance:  0,
-					RemoteBalance: 1000,
-				},
-			},
-			parameters: Parameters{
-				ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
-					chanID2: NewThresholdRule(10, 10),
-				},
+			rules: map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID2: NewThresholdRule(10, 10),
 			},
 			swaps: nil,
 		},
@@ -133,23 +140,43 @@ func TestSuggestSwaps(t *testing.T) {
 		testCase := testCase
 
 		t.Run(testCase.name, func(t *testing.T) {
-			cfg := newTestConfig()
+			cfg, lnd := newTestConfig()
 
-			// Create a mock lnd with the set of channels set in our
-			// test case.
-			mock := test.NewMockLnd()
-			mock.Channels = testCase.channels
-			cfg.Lnd = mock.Client
+			channels := []lndclient.ChannelInfo{
+				channel1,
+			}
 
-			manager := NewManager(cfg)
-
-			// Set our test case parameters.
-			err := manager.SetParameters(testCase.parameters)
-			require.NoError(t, err)
-
-			swaps, err := manager.SuggestSwaps(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, testCase.swaps, swaps)
+			testSuggestSwaps(
+				t, cfg, lnd, channels, testCase.rules,
+				testCase.swaps,
+			)
 		})
 	}
+}
+
+// testSuggestSwaps tests getting swap suggestions.
+func testSuggestSwaps(t *testing.T, cfg *Config, lnd *test.LndMockServices,
+	channels []lndclient.ChannelInfo,
+	rules map[lnwire.ShortChannelID]*ThresholdRule,
+	expected []loop.OutRequest) {
+
+	t.Parallel()
+
+	// Create a mock lnd with the set of channels set in our test case and
+	// update our test case lnd to use these channels.
+	lnd.Channels = channels
+
+	// Create a new manager, get our current set of parameters and update
+	// them to use the rules set by the test.
+	manager := NewManager(cfg)
+
+	currentParams := manager.GetParameters()
+	currentParams.ChannelRules = rules
+
+	err := manager.SetParameters(currentParams)
+	require.NoError(t, err)
+
+	actual, err := manager.SuggestSwaps(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }

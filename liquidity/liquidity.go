@@ -9,8 +9,38 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/lnwire"
+)
+
+const (
+	// FeeBase is the base that we use to express fees.
+	FeeBase = 1e6
+
+	// defaultSwapFeePPM is the default limit we place on swap fees,
+	// expressed as parts per million of swap volume, 0.5%.
+	defaultSwapFeePPM = 5000
+
+	// defaultRoutingFeePPM is the default limit we place on routing fees
+	// for the swap invoice, expressed as parts per million of swap volume,
+	// 1%.
+	defaultRoutingFeePPM = 10000
+
+	// defaultRoutingFeePPM is the default limit we place on routing fees
+	// for the prepay invoice, expressed as parts per million of prepay
+	// volume, 0.5%.
+	defaultPrepayRoutingFeePPM = 5000
+
+	// defaultMaximumMinerFee is the default limit we place on miner fees
+	// per swap.
+	defaultMaximumMinerFee = 15000
+
+	// defaultMaximumPrepay is the default limit we place on prepay
+	// invoices.
+	defaultMaximumPrepay = 30000
 )
 
 var (
@@ -25,8 +55,8 @@ type Config struct {
 	// to loop out swaps.
 	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
 
-	// Lnd provides us with access to lnd's main rpc.
-	Lnd lndclient.LightningClient
+	// Lnd provides us with access to lnd's rpc servers.
+	Lnd *lndclient.LndServices
 }
 
 // Parameters is a set of parameters provided by the user which guide
@@ -140,7 +170,7 @@ func cloneParameters(params Parameters) Parameters {
 // balance for the set of rules configured for the manager, failing if there are
 // no rules set.
 func (m *Manager) SuggestSwaps(ctx context.Context) (
-	[]*LoopOutRecommendation, error) {
+	[]loop.OutRequest, error) {
 
 	m.paramsLock.Lock()
 	defer m.paramsLock.Unlock()
@@ -151,7 +181,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, nil
 	}
 
-	channels, err := m.cfg.Lnd.ListChannels(ctx)
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +192,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, err
 	}
 
-	var suggestions []*LoopOutRecommendation
+	var suggestions []loop.OutRequest
 	for _, channel := range channels {
 		channelID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 		rule, ok := m.params.ChannelRules[channelID]
@@ -177,9 +207,40 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		// We can have nil suggestions in the case where no action is
 		// required, so only add non-nil suggestions.
 		if suggestion != nil {
-			suggestions = append(suggestions, suggestion)
+			outRequest := makeLoopOutRequest(suggestion)
+			suggestions = append(suggestions, outRequest)
 		}
 	}
 
 	return suggestions, nil
+}
+
+// makeLoopOutRequest creates a loop out request from a suggestion, setting fee
+// limits defined by our default fee values.
+func makeLoopOutRequest(suggestion *LoopOutRecommendation) loop.OutRequest {
+	prepayMaxFee := ppmToSat(
+		defaultMaximumPrepay, defaultPrepayRoutingFeePPM,
+	)
+
+	routeMaxFee := ppmToSat(suggestion.Amount, defaultRoutingFeePPM)
+	maxSwapFee := ppmToSat(suggestion.Amount, defaultSwapFeePPM)
+
+	return loop.OutRequest{
+		Amount: suggestion.Amount,
+		OutgoingChanSet: loopdb.ChannelSet{
+			suggestion.Channel.ToUint64(),
+		},
+		MaxPrepayRoutingFee: prepayMaxFee,
+		MaxSwapRoutingFee:   routeMaxFee,
+		MaxMinerFee:         defaultMaximumMinerFee,
+		MaxSwapFee:          maxSwapFee,
+		MaxPrepayAmount:     defaultMaximumPrepay,
+		SweepConfTarget:     loop.DefaultSweepConfTarget,
+	}
+}
+
+// ppmToSat takes an amount and a measure of parts per million for the amount
+// and returns the amount that the ppm represents.
+func ppmToSat(amount btcutil.Amount, ppm int) btcutil.Amount {
+	return btcutil.Amount(uint64(amount) * uint64(ppm) / FeeBase)
 }

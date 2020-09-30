@@ -46,7 +46,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 				outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
 			), nil
 		},
-		Lnd: client.LndServices.Client,
+		Lnd: client.LndServices,
 	}
 
 	return liquidity.NewManager(mngrCfg)

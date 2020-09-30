@@ -646,10 +646,14 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 
 	for _, swap := range swaps {
 		loopOut = append(loopOut, &looprpc.LoopOutRequest{
-			Amt: int64(swap.Amount),
-			OutgoingChanSet: []uint64{
-				swap.Channel.ToUint64(),
-			},
+			Amt:                 int64(swap.Amount),
+			OutgoingChanSet:     swap.OutgoingChanSet,
+			MaxSwapFee:          int64(swap.MaxSwapFee),
+			MaxMinerFee:         int64(swap.MaxMinerFee),
+			MaxPrepayAmt:        int64(swap.MaxPrepayAmount),
+			MaxSwapRoutingFee:   int64(swap.MaxSwapRoutingFee),
+			MaxPrepayRoutingFee: int64(swap.MaxPrepayRoutingFee),
+			SweepConfTarget:     swap.SweepConfTarget,
 		})
 	}
 
