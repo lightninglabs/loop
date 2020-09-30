@@ -45,6 +45,12 @@ const (
 )
 
 var (
+	// defaultParameters contains the default parameters that we start our
+	// liquidity manger with.
+	defaultParameters = Parameters{
+		ChannelRules: make(map[lnwire.ShortChannelID]*ThresholdRule),
+	}
+
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.
 	ErrZeroChannelID = fmt.Errorf("zero channel ID not allowed")
 )
@@ -69,13 +75,6 @@ type Parameters struct {
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed.
 	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
-}
-
-// newParameters creates an empty set of parameters.
-func newParameters() Parameters {
-	return Parameters{
-		ChannelRules: make(map[lnwire.ShortChannelID]*ThresholdRule),
-	}
 }
 
 // String returns the string representation of our parameters.
@@ -127,7 +126,7 @@ type Manager struct {
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
 		cfg:    cfg,
-		params: newParameters(),
+		params: defaultParameters,
 	}
 }
 

@@ -73,7 +73,7 @@ func TestParameters(t *testing.T) {
 
 	// Start with the case where we have no rules set.
 	startParams := manager.GetParameters()
-	require.Equal(t, newParameters(), startParams)
+	require.Equal(t, defaultParameters, startParams)
 
 	// Mutate the parameters returned by our get function.
 	startParams.ChannelRules[chanID] = NewThresholdRule(1, 1)
@@ -81,15 +81,14 @@ func TestParameters(t *testing.T) {
 	// Make sure that we have not mutated the liquidity manager's params
 	// by making this change.
 	params := manager.GetParameters()
-	require.Equal(t, newParameters(), params)
+	require.Equal(t, defaultParameters, params)
 
 	// Provide a valid set of parameters and validate assert that they are
 	// set.
 	originalRule := NewThresholdRule(10, 10)
-	expected := Parameters{
-		ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
-			chanID: originalRule,
-		},
+	expected := defaultParameters
+	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+		chanID: originalRule,
 	}
 
 	err := manager.SetParameters(expected)
