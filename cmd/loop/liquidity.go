@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
@@ -171,6 +172,160 @@ func setRule(ctx *cli.Context) error {
 	)
 
 	return err
+}
+
+var setParamsCommand = cli.Command{
+	Name:        "setparams",
+	Usage:       "update the parameters set for the liquidity manager",
+	Description: "Updates the parameters set for the liquidity manager.",
+	Flags: []cli.Flag{
+		cli.IntFlag{
+			Name: "sweeplimit",
+			Usage: "the limit placed on our estimated sweep fee " +
+				"in sat/vByte.",
+		},
+		cli.Float64Flag{
+			Name: "maxswapfee",
+			Usage: "the maximum percentage of swap volume we are " +
+				"willing to pay in server fees.",
+		},
+		cli.Float64Flag{
+			Name: "maxroutingfee",
+			Usage: "the maximum percentage of off-chain payment " +
+				"volume that are are willing to pay in " +
+				"routing fees.",
+		},
+		cli.Float64Flag{
+			Name: "maxprepayfee",
+			Usage: "the maximum percentage of off-chain prepay " +
+				"volume that are are willing to pay in " +
+				"routing fees.",
+		},
+		cli.Uint64Flag{
+			Name: "maxprepay",
+			Usage: "the maximum no-show (prepay) in satoshis that " +
+				"swap suggestions should be limited to.",
+		},
+		cli.Uint64Flag{
+			Name: "maxminer",
+			Usage: "the maximum miner fee in satoshis that swap " +
+				"suggestions should be limited to.",
+		},
+		cli.IntFlag{
+			Name: "sweepconf",
+			Usage: "the number of blocks from htlc height that " +
+				"swap suggestion sweeps should target, used " +
+				"to estimate max miner fee.",
+		},
+		cli.Uint64Flag{
+			Name: "failurebackoff",
+			Usage: "the amount of time, in seconds, that " +
+				"should pass before a channel that " +
+				"previously had a failed swap will be " +
+				"included in suggestions.",
+		},
+	},
+	Action: setParams,
+}
+
+func setParams(ctx *cli.Context) error {
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	// We need to set the full set of current parameters every time we call
+	// SetParameters. To allow users to set only individual fields on the
+	// cli, we lookup our current params, then update individual values.
+	params, err := client.GetLiquidityParams(
+		context.Background(), &looprpc.GetLiquidityParamsRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	var flagSet bool
+
+	if ctx.IsSet("maxswapfee") {
+		feeRate := ctx.Float64("maxswapfee")
+		params.MaxSwapFeePpm, err = ppmFromPercentage(feeRate)
+		if err != nil {
+			return err
+		}
+
+		flagSet = true
+	}
+
+	if ctx.IsSet("sweeplimit") {
+		satPerVByte := ctx.Int("sweeplimit")
+		params.SweepFeeRateSatPerVbyte = uint64(satPerVByte)
+
+		flagSet = true
+	}
+
+	if ctx.IsSet("maxroutingfee") {
+		feeRate := ctx.Float64("maxroutingfee")
+		params.MaxRoutingFeePpm, err = ppmFromPercentage(feeRate)
+		if err != nil {
+			return err
+		}
+
+		flagSet = true
+	}
+
+	if ctx.IsSet("maxprepayfee") {
+		feeRate := ctx.Float64("maxprepayfee")
+		params.MaxPrepayRoutingFeePpm, err = ppmFromPercentage(feeRate)
+		if err != nil {
+			return err
+		}
+
+		flagSet = true
+	}
+
+	if ctx.IsSet("maxprepay") {
+		params.MaxPrepaySat = ctx.Uint64("maxprepay")
+		flagSet = true
+	}
+
+	if ctx.IsSet("maxminer") {
+		params.MaxMinerFeeSat = ctx.Uint64("maxminer")
+		flagSet = true
+	}
+
+	if ctx.IsSet("sweepconf") {
+		params.SweepConfTarget = int32(ctx.Int("sweepconf"))
+		flagSet = true
+	}
+
+	if ctx.IsSet("failurebackoff") {
+		params.FailureBackoffSec = ctx.Uint64("failurebackoff")
+		flagSet = true
+	}
+
+	if !flagSet {
+		return fmt.Errorf("at least one flag required to set params")
+	}
+
+	// Update our parameters to our mutated values.
+	_, err = client.SetLiquidityParams(
+		context.Background(), &looprpc.SetLiquidityParamsRequest{
+			Parameters: params,
+		},
+	)
+
+	return err
+}
+
+// ppmFromPercentage converts a percentage, expressed as a float, to parts
+// per million.
+func ppmFromPercentage(percentage float64) (uint64, error) {
+	if percentage <= 0 || percentage >= 100 {
+		return 0, fmt.Errorf("fee percentage must be in (0;100)")
+	}
+
+	return uint64(percentage / 100 * liquidity.FeeBase), nil
 }
 
 var suggestSwapCommand = cli.Command{
