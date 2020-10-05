@@ -710,6 +710,58 @@ message LiquidityParameters{
     A set of liquidity rules that describe the desired liquidity balance.
     */
     repeated LiquidityRule rules = 1;
+
+    /*
+    The limit we place on our estimated sweep cost for a swap in sat/vByte. If
+    the estimated fee for our sweep transaction within the specified
+    confirmation target is above this value, we will not suggest any swaps.
+    */
+    uint64 sweep_fee_rate_sat_per_vbyte = 2;
+
+    /*
+    The maximum fee paid to the server for facilitating the swap, expressed
+    as parts per million of the swap volume.
+    */
+    uint64 max_swap_fee_ppm = 3;
+
+    /*
+    The maximum fee paid to route the swap invoice off chain, expressed as
+    parts per million of the volume being routed.
+    */
+    uint64 max_routing_fee_ppm = 4;
+
+    /*
+    The maximum fee paid to route the prepay invoice off chain, expressed as
+    parts per million of the volume being routed.
+    */
+    uint64 max_prepay_routing_fee_ppm = 5;
+
+    /*
+    The maximum no-show penalty in satoshis paid for a swap.
+    */
+    uint64 max_prepay_sat = 6;
+
+    /*
+    The maximum miner fee we will pay to sweep the swap on chain. Note that we
+    will not suggest a swap if the estimate is above the sweep limit set by
+    these parameters, and we use the current fee estimate to sweep on chain so
+    this value is only a cap placed on the amount we spend on fees in the case
+    where the swap needs to be claimed on chain, but fees have suddenly spiked.
+    */
+    uint64 max_miner_fee_sat = 7;
+
+    /*
+    The number of blocks from the on-chain HTLC's confirmation height that it
+    should be swept within.
+    */
+    int32 sweep_conf_target = 8;
+
+    /*
+    The amount of time we require pass since a channel was part of a failed
+    swap due to off chain payment failure until it will be considered for swap
+    suggestions again, expressed in seconds.
+    */
+    uint64 failure_backoff_sec = 9;
 }
 
 enum LiquidityRuleType{

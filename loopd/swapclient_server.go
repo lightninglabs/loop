@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -555,7 +556,17 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	cfg := s.liquidityMgr.GetParameters()
 
+	satPerByte := cfg.SweepFeeRateLimit.FeePerKVByte() / 1000
+
 	rpcCfg := &looprpc.LiquidityParameters{
+		MaxMinerFeeSat:          uint64(cfg.MaximumMinerFee),
+		MaxSwapFeePpm:           uint64(cfg.MaximumSwapFeePPM),
+		MaxRoutingFeePpm:        uint64(cfg.MaximumRoutingFeePPM),
+		MaxPrepayRoutingFeePpm:  uint64(cfg.MaximumPrepayRoutingFeePPM),
+		MaxPrepaySat:            uint64(cfg.MaximumPrepay),
+		SweepFeeRateSatPerVbyte: uint64(satPerByte),
+		SweepConfTarget:         cfg.SweepConfTarget,
+		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
 		),
@@ -581,7 +592,20 @@ func (s *swapClientServer) SetLiquidityParams(_ context.Context,
 	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
 	error) {
 
+	satPerVbyte := chainfee.SatPerKVByte(
+		in.Parameters.SweepFeeRateSatPerVbyte * 1000,
+	)
+
 	params := liquidity.Parameters{
+		MaximumMinerFee:            btcutil.Amount(in.Parameters.MaxMinerFeeSat),
+		MaximumSwapFeePPM:          int(in.Parameters.MaxSwapFeePpm),
+		MaximumRoutingFeePPM:       int(in.Parameters.MaxRoutingFeePpm),
+		MaximumPrepayRoutingFeePPM: int(in.Parameters.MaxPrepayRoutingFeePpm),
+		MaximumPrepay:              btcutil.Amount(in.Parameters.MaxPrepaySat),
+		SweepFeeRateLimit:          satPerVbyte.FeePerKWeight(),
+		SweepConfTarget:            in.Parameters.SweepConfTarget,
+		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
+			time.Second,
 		ChannelRules: make(
 			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
 			len(in.Parameters.Rules),
@@ -646,10 +670,14 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 
 	for _, swap := range swaps {
 		loopOut = append(loopOut, &looprpc.LoopOutRequest{
-			Amt: int64(swap.Amount),
-			OutgoingChanSet: []uint64{
-				swap.Channel.ToUint64(),
-			},
+			Amt:                 int64(swap.Amount),
+			OutgoingChanSet:     swap.OutgoingChanSet,
+			MaxSwapFee:          int64(swap.MaxSwapFee),
+			MaxMinerFee:         int64(swap.MaxMinerFee),
+			MaxPrepayAmt:        int64(swap.MaxPrepayAmount),
+			MaxSwapRoutingFee:   int64(swap.MaxSwapRoutingFee),
+			MaxPrepayRoutingFee: int64(swap.MaxPrepayRoutingFee),
+			SweepConfTarget:     swap.SweepConfTarget,
 		})
 	}
 

@@ -18,6 +18,19 @@ This file tracks release notes for the loop client.
   This has to potential to greatly reduce chain fee costs. Note that it is not yet possible
   to select specific peers to loop in through.
 
+##### Updated Swap Suggestions
+* The swap suggestions endpoint has been updated to be fee-aware. Swaps that 
+  exceed the fee limits set by the liquidity manager will no longer be 
+  suggested (see `getParams` for the current limits, and use `setParams` to 
+  update these values). 
+* Swap suggestions are now aware of ongoing and previously failed swaps. They 
+  will not suggest swaps for channels that are currently being utilized for 
+  swaps, and will not suggest any swaps if a swap that is not limited to a 
+  specific peer or channel is ongoing. If a channel was part of a failed swap 
+  within the last 24H, it will be excluded from our swap suggestions (this 
+  value is configurable).
+* The `debug` logging level is recommended if using this feature.
+
 #### Breaking Changes
 
 * Macaroon authentication has been enabled for the `loopd` gRPC and REST
@@ -28,5 +41,9 @@ This file tracks release notes for the loop client.
   mainnet this file will be picked up automatically by the `loop` CLI tool. For
   testnet you need to specify the `--network=testnet` flag.
   [More information about TLS and macaroons.](README.md#authentication-and-transport-security)
+
+* The `setparm` loopcli endpoint is renamed to `setrule` because this endpoint 
+  is only used for setting liqudity rules (parameters can be set using the new 
+  `setparams` endpoint).
 
 #### Bug Fixes

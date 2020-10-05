@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
+	"github.com/lightningnetwork/lnd/clock"
 )
 
 // getClient returns an instance of the swap client.
@@ -46,7 +47,12 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 				outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
 			), nil
 		},
-		Lnd: client.LndServices.Client,
+		Lnd:                  client.LndServices,
+		Clock:                clock.NewDefaultClock(),
+		LoopOutQuote:         client.LoopOutQuote,
+		ListLoopOut:          client.Store.FetchLoopOutSwaps,
+		ListLoopIn:           client.Store.FetchLoopInSwaps,
+		MinimumConfirmations: minConfTarget,
 	}
 
 	return liquidity.NewManager(mngrCfg)

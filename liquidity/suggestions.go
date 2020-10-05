@@ -1,6 +1,8 @@
 package liquidity
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
@@ -13,6 +15,12 @@ type LoopOutRecommendation struct {
 
 	// Channel is the target outgoing channel.
 	Channel lnwire.ShortChannelID
+}
+
+// String returns a string representation of a loop out recommendation.
+func (l *LoopOutRecommendation) String() string {
+	return fmt.Sprintf("loop out: %v over %v", l.Amount,
+		l.Channel.ToUint64())
 }
 
 // newLoopOutRecommendation creates a new loop out swap.
