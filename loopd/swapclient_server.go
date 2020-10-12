@@ -578,9 +578,20 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		SweepFeeRateSatPerVbyte: uint64(satPerByte),
 		SweepConfTarget:         cfg.SweepConfTarget,
 		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
+		AutoLoopOut:             cfg.AutoOut,
+		AutoOutBudgetSat:        uint64(cfg.AutoFeeBudget),
+		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
 		),
+	}
+
+	// Zero golang time is different to a zero unix time, so we only set
+	// our start date if it is non-zero.
+	if !cfg.AutoFeeStartDate.IsZero() {
+		rpcCfg.AutoOutBudgetStartSec = uint64(
+			cfg.AutoFeeStartDate.Unix(),
+		)
 	}
 
 	for channel, rule := range cfg.ChannelRules {
@@ -617,10 +628,20 @@ func (s *swapClientServer) SetLiquidityParams(_ context.Context,
 		SweepConfTarget:            in.Parameters.SweepConfTarget,
 		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
 			time.Second,
+		AutoOut:         in.Parameters.AutoLoopOut,
+		AutoFeeBudget:   btcutil.Amount(in.Parameters.AutoOutBudgetSat),
+		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
 		ChannelRules: make(
 			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
 			len(in.Parameters.Rules),
 		),
+	}
+
+	// Zero unix time is different to zero golang time.
+	if in.Parameters.AutoOutBudgetStartSec != 0 {
+		params.AutoFeeStartDate = time.Unix(
+			int64(in.Parameters.AutoOutBudgetStartSec), 0,
+		)
 	}
 
 	for _, rule := range in.Parameters.Rules {

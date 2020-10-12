@@ -362,6 +362,8 @@ type Manager struct {
 }
 
 // Run periodically checks whether we should automatically dispatch a loop out.
+// We run this loop even if automated swaps are not currently enabled rather
+// than managing starting and stopping the ticker as our parameters are updated.
 func (m *Manager) Run(ctx context.Context) error {
 	m.cfg.AutoOutTicker.Resume()
 	defer m.cfg.AutoOutTicker.Stop()
