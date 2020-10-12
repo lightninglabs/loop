@@ -233,6 +233,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
 			Expiry:                  expiry,
+			UserAgent:               UserAgent(),
 		},
 	)
 	if err != nil {
@@ -287,6 +288,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		SwapInvoice:     swapInvoice,
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 		ProbeInvoice:    probeInvoice,
+		UserAgent:       UserAgent(),
 	}
 	if lastHop != nil {
 		req.LastHop = lastHop[:]
