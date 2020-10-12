@@ -88,6 +88,12 @@ const (
 	// defaultSweepFeeRateLimit is the default limit we place on estimated
 	// sweep fees, (750 * 4 /1000 = 3 sat/vByte).
 	defaultSweepFeeRateLimit = chainfee.SatPerKWeight(750)
+
+	// defaultMaxInFlight is the default number of in-flight automatically
+	// dispatched swaps we allow. Note that this does not enable automated
+	// swaps itself (because we want non-zero values to be expressed in
+	// suggestions as a dry-run).
+	defaultMaxInFlight = 2
 )
 
 var (
@@ -106,6 +112,7 @@ var (
 	// liquidity manger with.
 	defaultParameters = Parameters{
 		AutoFeeBudget:              defaultBudget,
+		MaxAutoInFlight:            defaultMaxInFlight,
 		ChannelRules:               make(map[lnwire.ShortChannelID]*ThresholdRule),
 		FailureBackOff:             defaultFailureBackoff,
 		SweepFeeRateLimit:          defaultSweepFeeRateLimit,
@@ -143,6 +150,9 @@ var (
 
 	// ErrNegativeBudget is returned if a negative swap budget is set.
 	ErrNegativeBudget = errors.New("swap budget must be >= 0")
+
+	// ErrZeroInFlight is returned is a zero in flight swaps value is set.
+	ErrZeroInFlight = errors.New("max in flight swaps must be >=0")
 )
 
 // Config contains the external functionality required to run the
@@ -186,6 +196,10 @@ type Parameters struct {
 	// AutoFeeStartDate is the date from which we will include automatically
 	// dispatched swaps in our current budget, inclusive.
 	AutoFeeStartDate time.Time
+
+	// MaxAutoInFlight is the maximum number of in-flight automatically
+	// dispatched swaps we allow.
+	MaxAutoInFlight int
 
 	// FailureBackOff is the amount of time that we require passes after a
 	// channel has been part of a failed loop out swap before we suggest
@@ -248,12 +262,12 @@ func (p Parameters) String() string {
 		"fee rate limit: %v, sweep conf target: %v, maximum prepay: "+
 		"%v, maximum miner fee: %v, maximum swap fee ppm: %v, maximum "+
 		"routing fee ppm: %v, maximum prepay routing fee ppm: %v, "+
-		"auto budget: %v, budget start: %v",
+		"auto budget: %v, budget start: %v, max auto in flight: %v",
 		strings.Join(channelRules, ","), p.FailureBackOff,
 		p.SweepFeeRateLimit, p.SweepConfTarget, p.MaximumPrepay,
 		p.MaximumMinerFee, p.MaximumSwapFeePPM,
 		p.MaximumRoutingFeePPM, p.MaximumPrepayRoutingFeePPM,
-		p.AutoFeeBudget, p.AutoFeeStartDate)
+		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight)
 }
 
 // validate checks whether a set of parameters is valid. It takes the minimum
@@ -306,6 +320,10 @@ func (p Parameters) validate(minConfs int32) error {
 
 	if p.AutoFeeBudget < 0 {
 		return ErrNegativeBudget
+	}
+
+	if p.MaxAutoInFlight <= 0 {
+		return ErrZeroInFlight
 	}
 
 	return nil
@@ -456,6 +474,15 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, nil
 	}
 
+	// If we have already reached our total allowed number of in flight
+	// swaps, we do not suggest any more at the moment.
+	allowedSwaps := m.params.MaxAutoInFlight - summary.inFlightCount
+	if allowedSwaps <= 0 {
+		log.Debugf("%v autoloops allowed, %v in flight",
+			m.params.MaxAutoInFlight, summary.inFlightCount)
+		return nil, nil
+	}
+
 	eligible, err := m.getEligibleChannels(ctx, loopOut, loopIn)
 	if err != nil {
 		return nil, err
@@ -541,8 +568,9 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			inBudget = append(inBudget, swap)
 		}
 
-		// If we're out of budget, exit early.
-		if available == 0 {
+		// If we're out of budget, or we have hit the max number of
+		// swaps that we want to dispatch at one time, exit early.
+		if available == 0 || allowedSwaps == len(inBudget) {
 			break
 		}
 	}
@@ -612,6 +640,13 @@ type existingAutoLoopSummary struct {
 	// pendingFees is the worst-case amount of fees we could spend on in
 	// flight autoloops.
 	pendingFees btcutil.Amount
+
+	// inFlightCount is the total number of automated swaps that are
+	// currently in flight. Note that this may race with swap completion,
+	// but not with initiation of new automated swaps, this is ok, because
+	// it can only lead to dispatching fewer swaps than we could have (not
+	// too many).
+	inFlightCount int
 }
 
 // totalFees returns the total amount of fees that automatically dispatched
@@ -622,7 +657,8 @@ func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
 
 // checkExistingAutoLoops calculates the total amount that has been spent by
 // automatically dispatched swaps that have completed, and the worst-case fee
-// total for our set of ongoing, automatically dispatched swaps.
+// total for our set of ongoing, automatically dispatched swaps as well as a
+// current in-flight count.
 func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	loopOuts []*loopdb.LoopOut) (*existingAutoLoopSummary, error) {
 
@@ -642,6 +678,8 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 		// for the swap provided that the swap completed after our
 		// budget start date.
 		if out.State().State.Type() == loopdb.StateTypePending {
+			summary.inFlightCount++
+
 			prepay, err := m.cfg.Lnd.Client.DecodePaymentRequest(
 				ctx, out.Contract.PrepayInvoice,
 			)

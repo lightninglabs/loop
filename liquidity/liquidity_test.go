@@ -690,6 +690,7 @@ func TestFeeBudget(t *testing.T) {
 			params.AutoFeeStartDate = testBudgetStart
 			params.AutoFeeBudget = testCase.budget
 			params.MaximumMinerFee = testCase.maxMinerFee
+			params.MaxAutoInFlight = 2
 
 			// Set our custom max miner fee on each expected swap,
 			// rather than having to create multiple vars for
@@ -698,6 +699,99 @@ func TestFeeBudget(t *testing.T) {
 				testCase.expectedSwaps[i].MaxMinerFee =
 					testCase.maxMinerFee
 			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.expectedSwaps,
+			)
+		})
+	}
+}
+
+// TestInFlightLimit tests the limit we place on the number of in-flight swaps
+// that are allowed.
+func TestInFlightLimit(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxInFlight   int
+		existingSwaps []*loopdb.LoopOut
+		expectedSwaps []loop.OutRequest
+	}{
+		{
+			name:        "none in flight, extra space",
+			maxInFlight: 3,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			name:        "none in flight, exact match",
+			maxInFlight: 2,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			name:        "one in flight, one allowed",
+			maxInFlight: 2,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name:        "max in flight",
+			maxInFlight: 1,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: nil,
+		},
+		{
+			name:        "max swaps exceeded",
+			maxInFlight: 1,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+				return testCase.existingSwaps, nil
+			}
+
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1, channel2,
+			}
+
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			}
+			params.MaxAutoInFlight = testCase.maxInFlight
+
+			// By default we only have budget for one swap, increase
+			// our budget so that we could recommend more than one
+			// swap at a time.
+			params.AutoFeeBudget = defaultBudget * 2
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
