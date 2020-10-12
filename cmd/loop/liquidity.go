@@ -224,6 +224,30 @@ var setParamsCommand = cli.Command{
 				"previously had a failed swap will be " +
 				"included in suggestions.",
 		},
+		cli.BoolFlag{
+			Name: "autoout",
+			Usage: "set to true to enable automated dispatch " +
+				"of loop out swaps, limited to the budget " +
+				"set by autobudget",
+		},
+		cli.Uint64Flag{
+			Name: "autobudget",
+			Usage: "the maximum amount of fees in satoshis that " +
+				"automatically dispatched loop out swaps may " +
+				"spend",
+		},
+		cli.Uint64Flag{
+			Name: "budgetstart",
+			Usage: "the start time for the automated loop " +
+				"out budget, expressed as a unix timestamp " +
+				"in seconds",
+		},
+		cli.Uint64Flag{
+			Name: "autoinflight",
+			Usage: "the maximum number of automatically " +
+				"dispatched swaps that we allow to be in " +
+				"flight",
+		},
 	},
 	Action: setParams,
 }
@@ -301,6 +325,26 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("failurebackoff") {
 		params.FailureBackoffSec = ctx.Uint64("failurebackoff")
+		flagSet = true
+	}
+
+	if ctx.IsSet("autoout") {
+		params.AutoLoopOut = ctx.Bool("autoout")
+		flagSet = true
+	}
+
+	if ctx.IsSet("autobudget") {
+		params.AutoOutBudgetSat = ctx.Uint64("autobudget")
+		flagSet = true
+	}
+
+	if ctx.IsSet("budgetstart") {
+		params.AutoOutBudgetStartSec = ctx.Uint64("budgetstart")
+		flagSet = true
+	}
+
+	if ctx.IsSet("autoinflight") {
+		params.AutoMaxInFlight = ctx.Uint64("autoinflight")
 		flagSet = true
 	}
 
