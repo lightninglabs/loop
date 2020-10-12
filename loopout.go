@@ -13,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
@@ -87,11 +86,6 @@ type loopOutInitResult struct {
 // corresponding swap object.
 func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	currentHeight int32, request *OutRequest) (*loopOutInitResult, error) {
-
-	// Before we start, check that the label is valid.
-	if err := labels.Validate(request.Label); err != nil {
-		return nil, err
-	}
 
 	// Generate random preimage.
 	var swapPreimage [32]byte

@@ -2,6 +2,7 @@ package labels
 
 import (
 	"errors"
+	"strings"
 )
 
 const (
@@ -29,16 +30,10 @@ func Validate(label string) error {
 		return ErrLabelTooLong
 	}
 
-	// If the label is shorter than our reserved prefix, it cannot contain
-	// it.
-	if len(label) < len(Reserved) {
-		return nil
-	}
-
 	// Check if our label begins with our reserved prefix. We don't mind if
 	// it has our reserved prefix in another case, we just need to be able
 	// to reserve a subset of labels with this prefix.
-	if label[0:len(Reserved)] == Reserved {
+	if strings.HasPrefix(label, Reserved) {
 		return ErrReservedPrefix
 	}
 

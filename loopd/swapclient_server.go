@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
@@ -77,6 +78,11 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("decode address: %v", err)
 		}
+	}
+
+	// Check that the label is valid.
+	if err := labels.Validate(in.Label); err != nil {
+		return nil, err
 	}
 
 	req := &loop.OutRequest{
@@ -474,6 +480,11 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		in.HtlcConfTarget, in.ExternalHtlc,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	// Check that the label is valid.
+	if err := labels.Validate(in.Label); err != nil {
 		return nil, err
 	}
 

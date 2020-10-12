@@ -125,8 +125,9 @@ func putLabel(bucket *bbolt.Bucket, label string) error {
 		return nil
 	}
 
-	if err := labels.Validate(label); err != nil {
-		return err
+	// Check that the label does not exceed our maximum length.
+	if len(label) > labels.MaxLength {
+		return labels.ErrLabelTooLong
 	}
 
 	return bucket.Put(labelKey, []byte(label))
