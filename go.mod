@@ -16,6 +16,7 @@ require (
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/clock v1.0.1
 	github.com/lightningnetwork/lnd/queue v1.0.4
+	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0

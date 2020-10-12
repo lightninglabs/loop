@@ -51,6 +51,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/ticker"
 )
 
 const (
@@ -93,7 +94,11 @@ const (
 	// dispatched swaps we allow. Note that this does not enable automated
 	// swaps itself (because we want non-zero values to be expressed in
 	// suggestions as a dry-run).
-	defaultMaxInFlight = 2
+	defaultMaxInFlight = 1
+
+	// DefaultAutoOutTicker is the default amount of time between automated
+	// loop out checks.
+	DefaultAutoOutTicker = time.Minute * 10
 )
 
 var (
@@ -158,6 +163,11 @@ var (
 // Config contains the external functionality required to run the
 // liquidity manager.
 type Config struct {
+	// AutoOutTicker determines how often we should check whether we want
+	// to dispatch an automated loop out. We use a force ticker so that
+	// we can trigger autoloop in itests.
+	AutoOutTicker *ticker.Force
+
 	// LoopOutRestrictions returns the restrictions that the server applies
 	// to loop out swaps.
 	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
@@ -176,6 +186,10 @@ type Config struct {
 	LoopOutQuote func(ctx context.Context,
 		request *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote, error)
 
+	// LoopOut dispatches a loop out.
+	LoopOut func(ctx context.Context, request *loop.OutRequest) (
+		*loop.LoopOutSwapInfo, error)
+
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
 
@@ -187,6 +201,9 @@ type Config struct {
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
+	// AutoOut enables automatic dispatch of loop out swaps.
+	AutoOut bool
+
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
 	// will stop dispatching swaps until the budget is increased or the
@@ -344,6 +361,24 @@ type Manager struct {
 	paramsLock sync.Mutex
 }
 
+// Run periodically checks whether we should automatically dispatch a loop out.
+func (m *Manager) Run(ctx context.Context) error {
+	m.cfg.AutoOutTicker.Resume()
+	defer m.cfg.AutoOutTicker.Stop()
+
+	for {
+		select {
+		case <-m.cfg.AutoOutTicker.Ticks():
+			if err := m.autoloop(ctx); err != nil {
+				log.Errorf("autoloop failed: %v", err)
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // NewManager creates a liquidity manager which has no rules set.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
@@ -392,10 +427,37 @@ func cloneParameters(params Parameters) Parameters {
 	return paramCopy
 }
 
+// autoloop gets a set of suggested swaps and dispatches them automatically if
+// we have automated looping enabled.
+func (m *Manager) autoloop(ctx context.Context) error {
+	swaps, err := m.SuggestSwaps(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	for _, swap := range swaps {
+		// Create a copy of our range var so that we can reference it.
+		swap := swap
+		loopOut, err := m.cfg.LoopOut(ctx, &swap)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("loop out automatically dispatched: hash: %v, "+
+			"address: %v", loopOut.SwapHash,
+			loopOut.HtlcAddressP2WSH)
+	}
+
+	return nil
+}
+
 // SuggestSwaps returns a set of swap suggestions based on our current liquidity
 // balance for the set of rules configured for the manager, failing if there are
-// no rules set.
-func (m *Manager) SuggestSwaps(ctx context.Context) (
+// no rules set. It takes an autoOut boolean that indicates whether the
+// suggestions are being used for our internal autolooper. This boolean is used
+// to determine the information we add to our swap suggestion and whether we
+// return any suggestions.
+func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 	[]loop.OutRequest, error) {
 
 	m.paramsLock.Lock()
@@ -532,7 +594,12 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			continue
 		}
 
-		outRequest := m.makeLoopOutRequest(suggestion, quote)
+		outRequest, err := m.makeLoopOutRequest(
+			ctx, suggestion, quote, autoOut,
+		)
+		if err != nil {
+			return nil, err
+		}
 		suggestions = append(suggestions, outRequest)
 	}
 
@@ -575,6 +642,18 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		}
 	}
 
+	// If we are getting suggestions for automatically dispatched swaps,
+	// and they are not enabled in our parameters, we just log the swap
+	// suggestions and return an empty set of suggestions.
+	if autoOut && !m.params.AutoOut {
+		for _, swap := range inBudget {
+			log.Debugf("recommended autoloop: %v sats over "+
+				"%v", swap.Amount, swap.OutgoingChanSet)
+		}
+
+		return nil, nil
+	}
+
 	return inBudget, nil
 }
 
@@ -585,9 +664,13 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 // route-independent, which is a very poor estimation so we don't bother with
 // checking against this inaccurate constant. We use the exact prepay amount
 // and swap fee given to us by the server, but use our maximum miner fee anyway
-// to give us some leeway when performing the swap.
-func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
-	quote *loop.LoopOutQuote) loop.OutRequest {
+// to give us some leeway when performing the swap. We take an auto-out which
+// determines whether we set a label identifying this swap as automatically
+// dispatched, and decides whether we set a sweep address (we don't bother for
+// non-auto requests, because the client api will set it anyway).
+func (m *Manager) makeLoopOutRequest(ctx context.Context,
+	suggestion *LoopOutRecommendation, quote *loop.LoopOutQuote,
+	autoOut bool) (loop.OutRequest, error) {
 
 	prepayMaxFee := ppmToSat(
 		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
@@ -597,7 +680,7 @@ func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
 		suggestion.Amount, m.params.MaximumRoutingFeePPM,
 	)
 
-	return loop.OutRequest{
+	request := loop.OutRequest{
 		Amount: suggestion.Amount,
 		OutgoingChanSet: loopdb.ChannelSet{
 			suggestion.Channel.ToUint64(),
@@ -609,6 +692,18 @@ func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
 		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     m.params.SweepConfTarget,
 	}
+
+	if autoOut {
+		request.Label = labels.AutoOutLabel()
+
+		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)
+		if err != nil {
+			return loop.OutRequest{}, err
+		}
+		request.DestAddr = addr
+	}
+
+	return request, nil
 }
 
 // worstCaseOutFees calculates the largest possible fees for a loop out swap,

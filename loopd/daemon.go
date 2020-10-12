@@ -98,10 +98,10 @@ func New(config *Config, lisCfg *listenerCfg) *Daemon {
 		cfg:         config,
 		listenerCfg: lisCfg,
 
-		// We have 3 goroutines that could potentially send an error.
+		// We have 4 goroutines that could potentially send an error.
 		// We react on the first error but in case more than one exits
 		// with an error we don't want them to block.
-		internalErrChan: make(chan error, 3),
+		internalErrChan: make(chan error, 4),
 	}
 }
 
@@ -406,6 +406,19 @@ func (d *Daemon) initialize() error {
 
 		log.Infof("Waiting for updates")
 		d.processStatusUpdates(d.mainCtx)
+	}()
+
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+
+		log.Info("Starting liquidity manager")
+		err := d.liquidityMgr.Run(d.mainCtx)
+		if err != nil && err != context.Canceled {
+			d.internalErrChan <- err
+		}
+
+		log.Info("Liquidity manager stopped")
 	}()
 
 	// Last, start our internal error handler. This will return exactly one

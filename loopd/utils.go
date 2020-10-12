@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/ticker"
 )
 
 // getClient returns an instance of the swap client.
@@ -35,6 +36,8 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 
 func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
+		AutoOutTicker: ticker.NewForce(liquidity.DefaultAutoOutTicker),
+		LoopOut:       client.LoopOut,
 		LoopOutRestrictions: func(ctx context.Context) (
 			*liquidity.Restrictions, error) {
 
