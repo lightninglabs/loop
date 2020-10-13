@@ -17,6 +17,8 @@ This file tracks release notes for the loop client.
   to replenish multiple channels via a single Loop In request and a single on-chain htlc.
   This has to potential to greatly reduce chain fee costs. Note that it is not yet possible
   to select specific peers to loop in through.
+* The daemon now sends a user agent string with each swap. This allows
+  developers to identify their fork or custom implementation of the loop client.
 
 ##### Updated Swap Suggestions
 * The swap suggestions endpoint has been updated to be fee-aware. Swaps that 

@@ -83,6 +83,15 @@ message ServerLoopOutRequest {
     // subjected to min and max constraints as reported in the LoopOutTerms
     // response.
     int32 expiry = 6;
+
+    // The user agent string that identifies the software running on the user's
+    // side. This can be changed in the user's client software but it _SHOULD_
+    // conform to the following pattern:
+    //    Agent-Name/semver-version(/additional-info)
+    // Examples:
+    //    loopd/v0.10.0-beta/commit=3b635821
+    //    litd/v0.2.0-alpha/commit=326d754
+    string user_agent = 7;
 }
 
 message ServerLoopOutResponse {
@@ -163,6 +172,15 @@ message ServerLoopInRequest {
     ProtocolVersion protocol_version = 6;
 
     string probe_invoice = 7;
+
+    // The user agent string that identifies the software running on the user's
+    // side. This can be changed in the user's client software but it _SHOULD_
+    // conform to the following pattern:
+    //    Agent-Name/semver-version(/additional-info)
+    // Examples:
+    //    loopd/v0.10.0-beta/commit=3b635821
+    //    litd/v0.2.0-alpha/commit=326d754
+    string user_agent = 8;
 }
 
 message ServerLoopInResponse {

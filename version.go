@@ -29,11 +29,37 @@ const (
 	// appPreRelease MUST only contain characters from semanticAlphabet per
 	// the semantic versioning spec.
 	appPreRelease = "beta"
+
+	// defaultAgentName is the default name of the software that is added as
+	// the first part of the user agent string.
+	defaultAgentName = "loopd"
 )
 
+// AgentName stores the name of the software that is added as the first part of
+// the user agent string. This defaults to the value "loopd" when being run as
+// a standalone component but can be overwritten by LiT for example when loopd
+// is integrated into the UI.
+var AgentName = defaultAgentName
+
 // Version returns the application version as a properly formed string per the
-// semantic versioning 2.0.0 spec (http://semver.org/).
+// semantic versioning 2.0.0 spec (http://semver.org/) and the commit it was
+// built on.
 func Version() string {
+	// Append commit hash of current build to version.
+	return fmt.Sprintf("%s commit=%s", semanticVersion(), Commit)
+}
+
+// UserAgent returns the full user agent string that identifies the software
+// that is submitting swaps to the loop server.
+func UserAgent() string {
+	// Assemble full string, including the commit hash of current build.
+	return fmt.Sprintf(
+		"%s/v%s/commit=%s", AgentName, semanticVersion(), Commit,
+	)
+}
+
+// semanticVersion returns the SemVer part of the version.
+func semanticVersion() string {
 	// Start with the major, minor, and patch versions.
 	version := fmt.Sprintf("%d.%d.%d", appMajor, appMinor, appPatch)
 
@@ -45,9 +71,6 @@ func Version() string {
 	if preRelease != "" {
 		version = fmt.Sprintf("%s-%s", version, preRelease)
 	}
-
-	// Append commit hash of current build to version.
-	version = fmt.Sprintf("%s commit=%s", version, Commit)
 
 	return version
 }
