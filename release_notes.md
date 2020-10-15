@@ -9,6 +9,17 @@ This file tracks release notes for the loop client.
 * All of the items under the "Next Release" heading should be included in the release notes.
 * As part of the PR that bumps the client version, the "Next Release" heading should be replaced with the release version including the changes.
 
+## Next release
+
+#### NewFeatures
+
+* The loop client now labels all its on-chain transactions to make them easily
+  identifiable in `lnd`'s `listchaintxns` output.
+
+#### Breaking Changes
+
+#### Bug Fixes
+
 ## 0.10.0
 
 #### New Features
