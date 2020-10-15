@@ -2,6 +2,8 @@ package labels
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 )
 
 const (
@@ -11,6 +13,10 @@ const (
 	// Reserved is used as a prefix to separate labels that are created by
 	// loopd from those created by users.
 	Reserved = "[reserved]"
+
+	// autoOut is the label used for loop out swaps that are automatically
+	// dispatched.
+	autoOut = "autoloop-out"
 )
 
 var (
@@ -22,6 +28,12 @@ var (
 	ErrReservedPrefix = errors.New("label contains reserved prefix")
 )
 
+// AutoOutLabel returns a label with the reserved prefix that identifies
+// automatically dispatched loop outs.
+func AutoOutLabel() string {
+	return fmt.Sprintf("%v: %v", Reserved, autoOut)
+}
+
 // Validate checks that a label is of appropriate length and is not in our list
 // of reserved labels.
 func Validate(label string) error {
@@ -29,16 +41,10 @@ func Validate(label string) error {
 		return ErrLabelTooLong
 	}
 
-	// If the label is shorter than our reserved prefix, it cannot contain
-	// it.
-	if len(label) < len(Reserved) {
-		return nil
-	}
-
 	// Check if our label begins with our reserved prefix. We don't mind if
 	// it has our reserved prefix in another case, we just need to be able
 	// to reserve a subset of labels with this prefix.
-	if label[0:len(Reserved)] == Reserved {
+	if strings.HasPrefix(label, Reserved) {
 		return ErrReservedPrefix
 	}
 

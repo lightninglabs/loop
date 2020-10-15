@@ -151,6 +151,11 @@ type SwapCost struct {
 	Offchain btcutil.Amount
 }
 
+// Total returns the total costs represented by swap costs.
+func (s SwapCost) Total() btcutil.Amount {
+	return s.Server + s.Onchain + s.Offchain
+}
+
 // SwapStateData is all persistent data to describe the current swap state.
 type SwapStateData struct {
 	// SwapState is the state the swap is in.

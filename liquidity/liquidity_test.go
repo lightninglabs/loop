@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -18,7 +19,8 @@ import (
 )
 
 var (
-	testTime = time.Date(2020, 02, 13, 0, 0, 0, 0, time.UTC)
+	testTime        = time.Date(2020, 02, 13, 0, 0, 0, 0, time.UTC)
+	testBudgetStart = testTime.Add(time.Hour * -1)
 
 	chanID1 = lnwire.NewShortChanIDFromInt(1)
 	chanID2 = lnwire.NewShortChanIDFromInt(2)
@@ -88,6 +90,17 @@ var (
 				chanID1.ToUint64(),
 			},
 		),
+	}
+
+	// autoOutContract is a contract for an existing loop out that was
+	// automatically dispatched. This swap is within our test budget period,
+	// and restricted to a channel that we do not use in our tests.
+	autoOutContract = &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			Label:          labels.AutoOutLabel(),
+			InitiationTime: testBudgetStart,
+		},
+		OutgoingChanSet: loopdb.ChannelSet{999},
 	}
 )
 
@@ -351,13 +364,16 @@ func TestRestrictedSuggestions(t *testing.T) {
 				return testCase.loopIn, nil
 			}
 
-			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+			lnd.Channels = testCase.channels
+
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 				chanID1: chanRule,
 				chanID2: chanRule,
 			}
 
 			testSuggestSwaps(
-				t, cfg, lnd, testCase.channels, rules,
+				t, newSuggestSwapsSetup(cfg, lnd, params),
 				testCase.expected,
 			)
 		})
@@ -397,16 +413,18 @@ func TestSweepFeeLimit(t *testing.T) {
 				loop.DefaultSweepConfTarget, testCase.feeRate,
 			)
 
-			channels := []lndclient.ChannelInfo{
+			lnd.Channels = []lndclient.ChannelInfo{
 				channel1,
 			}
 
-			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 				chanID1: chanRule,
 			}
 
 			testSuggestSwaps(
-				t, cfg, lnd, channels, rules, testCase.swaps,
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.swaps,
 			)
 		})
 	}
@@ -448,12 +466,15 @@ func TestSuggestSwaps(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
-			channels := []lndclient.ChannelInfo{
+			lnd.Channels = []lndclient.ChannelInfo{
 				channel1,
 			}
 
+			params := defaultParameters
+			params.ChannelRules = testCase.rules
+
 			testSuggestSwaps(
-				t, cfg, lnd, channels, testCase.rules,
+				t, newSuggestSwapsSetup(cfg, lnd, params),
 				testCase.swaps,
 			)
 		})
@@ -513,43 +534,331 @@ func TestFeeLimits(t *testing.T) {
 				return testCase.quote, nil
 			}
 
-			channels := []lndclient.ChannelInfo{
+			lnd.Channels = []lndclient.ChannelInfo{
 				channel1,
 			}
-			rules := map[lnwire.ShortChannelID]*ThresholdRule{
+
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 				chanID1: chanRule,
 			}
 
 			testSuggestSwaps(
-				t, cfg, lnd, channels, rules, testCase.expected,
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.expected,
 			)
 		})
 	}
 }
 
-// testSuggestSwaps tests getting swap suggestions.
-func testSuggestSwaps(t *testing.T, cfg *Config, lnd *test.LndMockServices,
-	channels []lndclient.ChannelInfo,
-	rules map[lnwire.ShortChannelID]*ThresholdRule,
+// TestFeeBudget tests limiting of swap suggestions to a fee budget, with and
+// without existing swaps. This test uses example channels and rules which need
+// a 7500 sat loop out. With our default parameters, and our test quote with
+// a prepay of 500, our total fees are (rounded due to int multiplication):
+// swap fee: 1 (as set in test quote)
+// route fee: 7500 * 0.005 = 37
+// prepay route: 500 * 0.005 = 2 sat
+// max miner: set by default params
+// Since our routing fees are calculated as a portion of our swap/prepay
+// amounts, we use our max miner fee to shift swap cost to values above/below
+// our budget, fixing our other fees at 114 sat for simplicity.
+func TestFeeBudget(t *testing.T) {
+	tests := []struct {
+		name string
+
+		// budget is our autoloop budget.
+		budget btcutil.Amount
+
+		// maxMinerFee is the maximum miner fee we will pay for swaps.
+		maxMinerFee btcutil.Amount
+
+		// existingSwaps represents our existing swaps, mapping their
+		// last update time to their total cost.
+		existingSwaps map[time.Time]btcutil.Amount
+
+		// expectedSwaps is the set of swaps we expect to be suggested.
+		expectedSwaps []loop.OutRequest
+	}{
+		{
+			// Two swaps will cost (78+5000)*2, set exactly 10156
+			// budget.
+			name:        "budget for 2 swaps, no existing",
+			budget:      10156,
+			maxMinerFee: 5000,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			// Two swaps will cost (78+5000)*2, set 10155 so we can
+			// only afford one swap.
+			name:        "budget for 1 swaps, no existing",
+			budget:      10155,
+			maxMinerFee: 5000,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			// Set an existing swap which would limit us to a single
+			// swap if it were in our period.
+			name:        "existing swaps, before budget period",
+			budget:      10156,
+			maxMinerFee: 5000,
+			existingSwaps: map[time.Time]btcutil.Amount{
+				testBudgetStart.Add(time.Hour * -1): 200,
+			},
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			// Add an existing swap in our budget period such that
+			// we only have budget left for one more swap.
+			name:        "existing swaps, in budget period",
+			budget:      10156,
+			maxMinerFee: 5000,
+			existingSwaps: map[time.Time]btcutil.Amount{
+				testBudgetStart.Add(time.Hour): 500,
+			},
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name:        "existing swaps, budget used",
+			budget:      500,
+			maxMinerFee: 1000,
+			existingSwaps: map[time.Time]btcutil.Amount{
+				testBudgetStart.Add(time.Hour): 500,
+			},
+			expectedSwaps: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			// Create a swap set of existing swaps with our set of
+			// existing swap timestamps.
+			swaps := make(
+				[]*loopdb.LoopOut, 0,
+				len(testCase.existingSwaps),
+			)
+
+			// Add an event with the timestamp and budget set by
+			// our test case.
+			for ts, amt := range testCase.existingSwaps {
+				event := &loopdb.LoopEvent{
+					SwapStateData: loopdb.SwapStateData{
+						Cost: loopdb.SwapCost{
+							Server: amt,
+						},
+						State: loopdb.StateSuccess,
+					},
+					Time: ts,
+				}
+
+				swaps = append(swaps, &loopdb.LoopOut{
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							event,
+						},
+					},
+					Contract: autoOutContract,
+				})
+			}
+
+			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+				return swaps, nil
+			}
+
+			// Set two channels that need swaps.
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1,
+				channel2,
+			}
+
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			}
+			params.AutoFeeStartDate = testBudgetStart
+			params.AutoFeeBudget = testCase.budget
+			params.MaximumMinerFee = testCase.maxMinerFee
+			params.MaxAutoInFlight = 2
+
+			// Set our custom max miner fee on each expected swap,
+			// rather than having to create multiple vars for
+			// different rates.
+			for i := range testCase.expectedSwaps {
+				testCase.expectedSwaps[i].MaxMinerFee =
+					testCase.maxMinerFee
+			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.expectedSwaps,
+			)
+		})
+	}
+}
+
+// TestInFlightLimit tests the limit we place on the number of in-flight swaps
+// that are allowed.
+func TestInFlightLimit(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxInFlight   int
+		existingSwaps []*loopdb.LoopOut
+		expectedSwaps []loop.OutRequest
+	}{
+		{
+			name:        "none in flight, extra space",
+			maxInFlight: 3,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			name:        "none in flight, exact match",
+			maxInFlight: 2,
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec, chan2Rec,
+			},
+		},
+		{
+			name:        "one in flight, one allowed",
+			maxInFlight: 2,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: []loop.OutRequest{
+				chan1Rec,
+			},
+		},
+		{
+			name:        "max in flight",
+			maxInFlight: 1,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: nil,
+		},
+		{
+			name:        "max swaps exceeded",
+			maxInFlight: 1,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+				{
+					Contract: autoOutContract,
+				},
+			},
+			expectedSwaps: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+				return testCase.existingSwaps, nil
+			}
+
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1, channel2,
+			}
+
+			params := defaultParameters
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			}
+			params.MaxAutoInFlight = testCase.maxInFlight
+
+			// By default we only have budget for one swap, increase
+			// our budget so that we could recommend more than one
+			// swap at a time.
+			params.AutoFeeBudget = defaultBudget * 2
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.expectedSwaps,
+			)
+		})
+	}
+}
+
+// testSuggestSwapsSetup contains the elements that are used to create a
+// suggest swaps test.
+type testSuggestSwapsSetup struct {
+	cfg    *Config
+	lnd    *test.LndMockServices
+	params Parameters
+}
+
+// newSuggestSwapsSetup creates a suggest swaps setup struct.
+func newSuggestSwapsSetup(cfg *Config, lnd *test.LndMockServices,
+	params Parameters) *testSuggestSwapsSetup {
+
+	return &testSuggestSwapsSetup{
+		cfg:    cfg,
+		lnd:    lnd,
+		params: params,
+	}
+}
+
+// testSuggestSwaps tests getting swap suggestions. It takes a setup struct
+// which contains custom setup for the test. If this struct is nil, it will
+// use the default parameters and setup two channels (channel1 + channel2) with
+// chanRule set for each.
+func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	expected []loop.OutRequest) {
 
 	t.Parallel()
 
-	// Create a mock lnd with the set of channels set in our test case and
-	// update our test case lnd to use these channels.
-	lnd.Channels = channels
+	// If our setup struct is nil, we replace it with our default test
+	// values.
+	if setup == nil {
+		cfg, lnd := newTestConfig()
+
+		lnd.Channels = []lndclient.ChannelInfo{
+			channel1, channel2,
+		}
+
+		params := defaultParameters
+		params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			chanID1: chanRule,
+			chanID2: chanRule,
+		}
+
+		setup = &testSuggestSwapsSetup{
+			cfg:    cfg,
+			lnd:    lnd,
+			params: params,
+		}
+	}
 
 	// Create a new manager, get our current set of parameters and update
 	// them to use the rules set by the test.
-	manager := NewManager(cfg)
+	manager := NewManager(setup.cfg)
 
-	currentParams := manager.GetParameters()
-	currentParams.ChannelRules = rules
-
-	err := manager.SetParameters(currentParams)
+	err := manager.SetParameters(setup.params)
 	require.NoError(t, err)
 
-	actual, err := manager.SuggestSwaps(context.Background())
+	actual, err := manager.SuggestSwaps(context.Background(), false)
 	require.NoError(t, err)
 	require.Equal(t, expected, actual)
 }

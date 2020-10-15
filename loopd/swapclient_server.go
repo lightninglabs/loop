@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
@@ -77,6 +78,11 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("decode address: %v", err)
 		}
+	}
+
+	// Check that the label is valid.
+	if err := labels.Validate(in.Label); err != nil {
+		return nil, err
 	}
 
 	req := &loop.OutRequest{
@@ -477,6 +483,11 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		return nil, err
 	}
 
+	// Check that the label is valid.
+	if err := labels.Validate(in.Label); err != nil {
+		return nil, err
+	}
+
 	req := &loop.LoopInRequest{
 		Amount:         btcutil.Amount(in.Amt),
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
@@ -567,9 +578,20 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		SweepFeeRateSatPerVbyte: uint64(satPerByte),
 		SweepConfTarget:         cfg.SweepConfTarget,
 		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
+		AutoLoopOut:             cfg.AutoOut,
+		AutoOutBudgetSat:        uint64(cfg.AutoFeeBudget),
+		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
 		),
+	}
+
+	// Zero golang time is different to a zero unix time, so we only set
+	// our start date if it is non-zero.
+	if !cfg.AutoFeeStartDate.IsZero() {
+		rpcCfg.AutoOutBudgetStartSec = uint64(
+			cfg.AutoFeeStartDate.Unix(),
+		)
 	}
 
 	for channel, rule := range cfg.ChannelRules {
@@ -606,10 +628,20 @@ func (s *swapClientServer) SetLiquidityParams(_ context.Context,
 		SweepConfTarget:            in.Parameters.SweepConfTarget,
 		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
 			time.Second,
+		AutoOut:         in.Parameters.AutoLoopOut,
+		AutoFeeBudget:   btcutil.Amount(in.Parameters.AutoOutBudgetSat),
+		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
 		ChannelRules: make(
 			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
 			len(in.Parameters.Rules),
 		),
+	}
+
+	// Zero unix time is different to zero golang time.
+	if in.Parameters.AutoOutBudgetStartSec != 0 {
+		params.AutoFeeStartDate = time.Unix(
+			int64(in.Parameters.AutoOutBudgetStartSec), 0,
+		)
 	}
 
 	for _, rule := range in.Parameters.Rules {
@@ -661,7 +693,7 @@ func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.ThresholdRule, error) {
 func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
 
-	swaps, err := s.liquidityMgr.SuggestSwaps(ctx)
+	swaps, err := s.liquidityMgr.SuggestSwaps(ctx, false)
 	if err != nil {
 		return nil, err
 	}

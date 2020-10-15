@@ -33,6 +33,18 @@ This file tracks release notes for the loop client.
   value is configurable).
 * The `debug` logging level is recommended if using this feature.
 
+##### Introducing Autoloop
+* This release includes support for opt-in automatic dispatch of loop out swaps, 
+  based on the output of the `Suggestions` endpoint. 
+* To enable the autolooper, the following command can be used: 
+  `loop setparams --autoout=true --autobudget={budget in sats} --budgetstart={start time for budget}`
+* Automatically dispatched swaps are identified in the output of the 
+  `ListSwaps` with the label `[reserved]: autoloop-out`. 
+* If autoloop is not enabled, the client will log the actions that the 
+  autolooper would have taken if it was enabled, and the `Suggestions` endpoint
+  can be used to view the exact set of swaps that the autolooper would make if 
+  enabled. 
+
 #### Breaking Changes
 
 * Macaroon authentication has been enabled for the `loopd` gRPC and REST

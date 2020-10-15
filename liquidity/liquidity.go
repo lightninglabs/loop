@@ -36,6 +36,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -43,11 +44,14 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/ticker"
 )
 
 const (
@@ -85,12 +89,35 @@ const (
 	// defaultSweepFeeRateLimit is the default limit we place on estimated
 	// sweep fees, (750 * 4 /1000 = 3 sat/vByte).
 	defaultSweepFeeRateLimit = chainfee.SatPerKWeight(750)
+
+	// defaultMaxInFlight is the default number of in-flight automatically
+	// dispatched swaps we allow. Note that this does not enable automated
+	// swaps itself (because we want non-zero values to be expressed in
+	// suggestions as a dry-run).
+	defaultMaxInFlight = 1
+
+	// DefaultAutoOutTicker is the default amount of time between automated
+	// loop out checks.
+	DefaultAutoOutTicker = time.Minute * 10
 )
 
 var (
+	// defaultBudget is the default autoloop budget we set. This budget will
+	// only be used for automatically dispatched swaps if autoloop is
+	// explicitly enabled, so we are happy to set a non-zero value here. The
+	// amount chosen simply uses the current defaults to provide budget for
+	// a single swap. We don't have a swap amount to calculate our maximum
+	// routing fee, so we use 0.16 BTC for now.
+	defaultBudget = defaultMaximumMinerFee +
+		ppmToSat(lnd.MaxBtcFundingAmount, defaultSwapFeePPM) +
+		ppmToSat(defaultMaximumPrepay, defaultPrepayRoutingFeePPM) +
+		ppmToSat(lnd.MaxBtcFundingAmount, defaultRoutingFeePPM)
+
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
 	defaultParameters = Parameters{
+		AutoFeeBudget:              defaultBudget,
+		MaxAutoInFlight:            defaultMaxInFlight,
 		ChannelRules:               make(map[lnwire.ShortChannelID]*ThresholdRule),
 		FailureBackOff:             defaultFailureBackoff,
 		SweepFeeRateLimit:          defaultSweepFeeRateLimit,
@@ -125,11 +152,22 @@ var (
 
 	// ErrZeroPrepay is returned if a zero maximum prepay is set.
 	ErrZeroPrepay = errors.New("maximum prepay must be non-zero")
+
+	// ErrNegativeBudget is returned if a negative swap budget is set.
+	ErrNegativeBudget = errors.New("swap budget must be >= 0")
+
+	// ErrZeroInFlight is returned is a zero in flight swaps value is set.
+	ErrZeroInFlight = errors.New("max in flight swaps must be >=0")
 )
 
 // Config contains the external functionality required to run the
 // liquidity manager.
 type Config struct {
+	// AutoOutTicker determines how often we should check whether we want
+	// to dispatch an automated loop out. We use a force ticker so that
+	// we can trigger autoloop in itests.
+	AutoOutTicker *ticker.Force
+
 	// LoopOutRestrictions returns the restrictions that the server applies
 	// to loop out swaps.
 	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
@@ -148,6 +186,10 @@ type Config struct {
 	LoopOutQuote func(ctx context.Context,
 		request *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote, error)
 
+	// LoopOut dispatches a loop out.
+	LoopOut func(ctx context.Context, request *loop.OutRequest) (
+		*loop.LoopOutSwapInfo, error)
+
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
 
@@ -159,6 +201,23 @@ type Config struct {
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
+	// AutoOut enables automatic dispatch of loop out swaps.
+	AutoOut bool
+
+	// AutoFeeBudget is the total amount we allow to be spent on
+	// automatically dispatched swaps. Once this budget has been used, we
+	// will stop dispatching swaps until the budget is increased or the
+	// start date is moved.
+	AutoFeeBudget btcutil.Amount
+
+	// AutoFeeStartDate is the date from which we will include automatically
+	// dispatched swaps in our current budget, inclusive.
+	AutoFeeStartDate time.Time
+
+	// MaxAutoInFlight is the maximum number of in-flight automatically
+	// dispatched swaps we allow.
+	MaxAutoInFlight int
+
 	// FailureBackOff is the amount of time that we require passes after a
 	// channel has been part of a failed loop out swap before we suggest
 	// using it again.
@@ -219,12 +278,13 @@ func (p Parameters) String() string {
 	return fmt.Sprintf("channel rules: %v, failure backoff: %v, sweep "+
 		"fee rate limit: %v, sweep conf target: %v, maximum prepay: "+
 		"%v, maximum miner fee: %v, maximum swap fee ppm: %v, maximum "+
-		"routing fee ppm: %v, maximum prepay routing fee ppm: %v",
+		"routing fee ppm: %v, maximum prepay routing fee ppm: %v, "+
+		"auto budget: %v, budget start: %v, max auto in flight: %v",
 		strings.Join(channelRules, ","), p.FailureBackOff,
 		p.SweepFeeRateLimit, p.SweepConfTarget, p.MaximumPrepay,
 		p.MaximumMinerFee, p.MaximumSwapFeePPM,
 		p.MaximumRoutingFeePPM, p.MaximumPrepayRoutingFeePPM,
-	)
+		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight)
 }
 
 // validate checks whether a set of parameters is valid. It takes the minimum
@@ -275,6 +335,14 @@ func (p Parameters) validate(minConfs int32) error {
 		return ErrZeroMinerFee
 	}
 
+	if p.AutoFeeBudget < 0 {
+		return ErrNegativeBudget
+	}
+
+	if p.MaxAutoInFlight <= 0 {
+		return ErrZeroInFlight
+	}
+
 	return nil
 }
 
@@ -291,6 +359,26 @@ type Manager struct {
 
 	// paramsLock is a lock for our current set of parameters.
 	paramsLock sync.Mutex
+}
+
+// Run periodically checks whether we should automatically dispatch a loop out.
+// We run this loop even if automated swaps are not currently enabled rather
+// than managing starting and stopping the ticker as our parameters are updated.
+func (m *Manager) Run(ctx context.Context) error {
+	m.cfg.AutoOutTicker.Resume()
+	defer m.cfg.AutoOutTicker.Stop()
+
+	for {
+		select {
+		case <-m.cfg.AutoOutTicker.Ticks():
+			if err := m.autoloop(ctx); err != nil {
+				log.Errorf("autoloop failed: %v", err)
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // NewManager creates a liquidity manager which has no rules set.
@@ -341,10 +429,37 @@ func cloneParameters(params Parameters) Parameters {
 	return paramCopy
 }
 
+// autoloop gets a set of suggested swaps and dispatches them automatically if
+// we have automated looping enabled.
+func (m *Manager) autoloop(ctx context.Context) error {
+	swaps, err := m.SuggestSwaps(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	for _, swap := range swaps {
+		// Create a copy of our range var so that we can reference it.
+		swap := swap
+		loopOut, err := m.cfg.LoopOut(ctx, &swap)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("loop out automatically dispatched: hash: %v, "+
+			"address: %v", loopOut.SwapHash,
+			loopOut.HtlcAddressP2WSH)
+	}
+
+	return nil
+}
+
 // SuggestSwaps returns a set of swap suggestions based on our current liquidity
 // balance for the set of rules configured for the manager, failing if there are
-// no rules set.
-func (m *Manager) SuggestSwaps(ctx context.Context) (
+// no rules set. It takes an autoOut boolean that indicates whether the
+// suggestions are being used for our internal autolooper. This boolean is used
+// to determine the information we add to our swap suggestion and whether we
+// return any suggestions.
+func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 	[]loop.OutRequest, error) {
 
 	m.paramsLock.Lock()
@@ -353,6 +468,16 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	// If we have no rules set, exit early to avoid unnecessary calls to
 	// lnd and the server.
 	if len(m.params.ChannelRules) == 0 {
+		return nil, nil
+	}
+
+	// If our start date is in the future, we interpret this as meaning that
+	// we should start using our budget at this date. This means that we
+	// have no budget for the present, so we just return.
+	if m.params.AutoFeeStartDate.After(m.cfg.Clock.Now()) {
+		log.Debugf("autoloop fee budget start time: %v is in "+
+			"the future", m.params.AutoFeeStartDate)
+
 		return nil, nil
 	}
 
@@ -394,6 +519,32 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	loopIn, err := m.cfg.ListLoopIn()
 	if err != nil {
 		return nil, err
+	}
+
+	// Get a summary of our existing swaps so that we can check our autoloop
+	// budget.
+	summary, err := m.checkExistingAutoLoops(ctx, loopOut)
+	if err != nil {
+		return nil, err
+	}
+
+	if summary.totalFees() >= m.params.AutoFeeBudget {
+		log.Debugf("autoloop fee budget: %v exhausted, %v spent on "+
+			"completed swaps, %v reserved for ongoing swaps "+
+			"(upper limit)",
+			m.params.AutoFeeBudget, summary.spentFees,
+			summary.pendingFees)
+
+		return nil, nil
+	}
+
+	// If we have already reached our total allowed number of in flight
+	// swaps, we do not suggest any more at the moment.
+	allowedSwaps := m.params.MaxAutoInFlight - summary.inFlightCount
+	if allowedSwaps <= 0 {
+		log.Debugf("%v autoloops allowed, %v in flight",
+			m.params.MaxAutoInFlight, summary.inFlightCount)
+		return nil, nil
 	}
 
 	eligible, err := m.getEligibleChannels(ctx, loopOut, loopIn)
@@ -445,11 +596,67 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			continue
 		}
 
-		outRequest := m.makeLoopOutRequest(suggestion, quote)
+		outRequest, err := m.makeLoopOutRequest(
+			ctx, suggestion, quote, autoOut,
+		)
+		if err != nil {
+			return nil, err
+		}
 		suggestions = append(suggestions, outRequest)
 	}
 
-	return suggestions, nil
+	// If we have no suggestions after we have applied all of our limits,
+	// just return.
+	if len(suggestions) == 0 {
+		return nil, nil
+	}
+
+	// Sort suggestions by amount in descending order.
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		return suggestions[i].Amount > suggestions[j].Amount
+	})
+
+	// Run through our suggested swaps in descending order of amount and
+	// return all of the swaps which will fit within our remaining budget.
+	var (
+		available = m.params.AutoFeeBudget - summary.totalFees()
+		inBudget  []loop.OutRequest
+	)
+
+	for _, swap := range suggestions {
+		fees := worstCaseOutFees(
+			swap.MaxPrepayRoutingFee, swap.MaxSwapRoutingFee,
+			swap.MaxSwapFee, swap.MaxMinerFee, swap.MaxPrepayAmount,
+		)
+
+		// If the maximum fee we expect our swap to use is less than the
+		// amount we have available, we add it to our set of swaps that
+		// fall within the budget and decrement our available amount.
+		if fees <= available {
+			available -= fees
+			inBudget = append(inBudget, swap)
+		}
+
+		// If we're out of budget, or we have hit the max number of
+		// swaps that we want to dispatch at one time, exit early.
+		if available == 0 || allowedSwaps == len(inBudget) {
+			break
+		}
+	}
+
+	// If we are getting suggestions for automatically dispatched swaps,
+	// and they are not enabled in our parameters, we just log the swap
+	// suggestions and return an empty set of suggestions.
+	if autoOut && !m.params.AutoOut {
+		for _, swap := range inBudget {
+			log.Debugf("recommended autoloop: %v sats over "+
+				"%v", swap.Amount, swap.OutgoingChanSet)
+		}
+
+		return nil, nil
+	}
+
+	return inBudget, nil
 }
 
 // makeLoopOutRequest creates a loop out request from a suggestion. Since we
@@ -459,9 +666,13 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 // route-independent, which is a very poor estimation so we don't bother with
 // checking against this inaccurate constant. We use the exact prepay amount
 // and swap fee given to us by the server, but use our maximum miner fee anyway
-// to give us some leeway when performing the swap.
-func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
-	quote *loop.LoopOutQuote) loop.OutRequest {
+// to give us some leeway when performing the swap. We take an auto-out which
+// determines whether we set a label identifying this swap as automatically
+// dispatched, and decides whether we set a sweep address (we don't bother for
+// non-auto requests, because the client api will set it anyway).
+func (m *Manager) makeLoopOutRequest(ctx context.Context,
+	suggestion *LoopOutRecommendation, quote *loop.LoopOutQuote,
+	autoOut bool) (loop.OutRequest, error) {
 
 	prepayMaxFee := ppmToSat(
 		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
@@ -471,7 +682,7 @@ func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
 		suggestion.Amount, m.params.MaximumRoutingFeePPM,
 	)
 
-	return loop.OutRequest{
+	request := loop.OutRequest{
 		Amount: suggestion.Amount,
 		OutgoingChanSet: loopdb.ChannelSet{
 			suggestion.Channel.ToUint64(),
@@ -483,6 +694,109 @@ func (m *Manager) makeLoopOutRequest(suggestion *LoopOutRecommendation,
 		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     m.params.SweepConfTarget,
 	}
+
+	if autoOut {
+		request.Label = labels.AutoOutLabel()
+
+		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)
+		if err != nil {
+			return loop.OutRequest{}, err
+		}
+		request.DestAddr = addr
+	}
+
+	return request, nil
+}
+
+// worstCaseOutFees calculates the largest possible fees for a loop out swap,
+// comparing the fees for a successful swap to the cost when the client pays
+// the prepay because they failed to sweep the on chain htlc. This is unlikely,
+// because we expect clients to be online to sweep, but we want to account for
+// every outcome so we include it.
+func worstCaseOutFees(prepayRouting, swapRouting, swapFee, minerFee,
+	prepayAmount btcutil.Amount) btcutil.Amount {
+
+	var (
+		successFees = prepayRouting + minerFee + swapFee + swapRouting
+		noShowFees  = prepayRouting + prepayAmount
+	)
+
+	if noShowFees > successFees {
+		return noShowFees
+	}
+
+	return successFees
+}
+
+// existingAutoLoopSummary provides a summary of the existing autoloops which
+// were dispatched during our current budget period.
+type existingAutoLoopSummary struct {
+	// spentFees is the amount we have spent on completed swaps.
+	spentFees btcutil.Amount
+
+	// pendingFees is the worst-case amount of fees we could spend on in
+	// flight autoloops.
+	pendingFees btcutil.Amount
+
+	// inFlightCount is the total number of automated swaps that are
+	// currently in flight. Note that this may race with swap completion,
+	// but not with initiation of new automated swaps, this is ok, because
+	// it can only lead to dispatching fewer swaps than we could have (not
+	// too many).
+	inFlightCount int
+}
+
+// totalFees returns the total amount of fees that automatically dispatched
+// swaps may consume.
+func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
+	return e.spentFees + e.pendingFees
+}
+
+// checkExistingAutoLoops calculates the total amount that has been spent by
+// automatically dispatched swaps that have completed, and the worst-case fee
+// total for our set of ongoing, automatically dispatched swaps as well as a
+// current in-flight count.
+func (m *Manager) checkExistingAutoLoops(ctx context.Context,
+	loopOuts []*loopdb.LoopOut) (*existingAutoLoopSummary, error) {
+
+	var summary existingAutoLoopSummary
+
+	for _, out := range loopOuts {
+		if out.Contract.Label != labels.AutoOutLabel() {
+			continue
+		}
+
+		// If we have a pending swap, we are uncertain of the fees that
+		// it will end up paying. We use the worst-case estimate based
+		// on the maximum values we set for each fee category. This will
+		// likely over-estimate our fees (because we probably won't
+		// spend our maximum miner amount). If a swap is not pending,
+		// it has succeeded or failed so we just record our actual fees
+		// for the swap provided that the swap completed after our
+		// budget start date.
+		if out.State().State.Type() == loopdb.StateTypePending {
+			summary.inFlightCount++
+
+			prepay, err := m.cfg.Lnd.Client.DecodePaymentRequest(
+				ctx, out.Contract.PrepayInvoice,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			summary.pendingFees += worstCaseOutFees(
+				out.Contract.MaxPrepayRoutingFee,
+				out.Contract.MaxSwapRoutingFee,
+				out.Contract.MaxSwapFee,
+				out.Contract.MaxMinerFee,
+				mSatToSatoshis(prepay.Value),
+			)
+		} else if !out.LastUpdateTime().Before(m.params.AutoFeeStartDate) {
+			summary.spentFees += out.State().Cost.Total()
+		}
+	}
+
+	return &summary, nil
 }
 
 // getEligibleChannels takes lists of our existing loop out and in swaps, and
@@ -652,4 +966,8 @@ func satPerKwToSatPerVByte(satPerKw chainfee.SatPerKWeight) int64 {
 // and returns the amount that the ppm represents.
 func ppmToSat(amount btcutil.Amount, ppm int) btcutil.Amount {
 	return btcutil.Amount(uint64(amount) * uint64(ppm) / FeeBase)
+}
+
+func mSatToSatoshis(amount lnwire.MilliSatoshi) btcutil.Amount {
+	return btcutil.Amount(amount / 1000)
 }

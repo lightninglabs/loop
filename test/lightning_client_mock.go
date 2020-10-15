@@ -42,6 +42,13 @@ func (h *mockLightningClient) PayInvoice(ctx context.Context, invoice string,
 	return done
 }
 
+// DecodePaymentRequest returns a non-nil payment request.
+func (h *mockLightningClient) DecodePaymentRequest(_ context.Context,
+	_ string) (*lndclient.PaymentRequest, error) {
+
+	return &lndclient.PaymentRequest{}, nil
+}
+
 func (h *mockLightningClient) WaitForFinished() {
 	h.wg.Wait()
 }
