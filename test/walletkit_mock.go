@@ -80,14 +80,16 @@ func (m *mockWalletKit) NextAddr(ctx context.Context) (btcutil.Address, error) {
 	return addr, nil
 }
 
-func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
+func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
+	_ string) error {
+
 	m.lnd.AddTx(tx)
 	m.lnd.TxPublishChannel <- tx
 	return nil
 }
 
 func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
-	feeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+	feeRate chainfee.SatPerKWeight, _ string) (*wire.MsgTx, error) {
 
 	var inputTxHash chainhash.Hash
 
@@ -130,4 +132,15 @@ func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
 // ListSweeps returns a list of the sweep transaction ids known to our node.
 func (m *mockWalletKit) ListSweeps(_ context.Context) ([]string, error) {
 	return m.lnd.Sweeps, nil
+}
+
+// BumpFee attempts to bump the fee of a transaction by spending one of
+// its outputs at the given fee rate. This essentially results in a
+// child-pays-for-parent (CPFP) scenario. If the given output has been
+// used in a previous BumpFee call, then a transaction replacing the
+// previous is broadcast, resulting in a replace-by-fee (RBF) scenario.
+func (m *mockWalletKit) BumpFee(context.Context, wire.OutPoint,
+	chainfee.SatPerKWeight) error {
+
+	return nil
 }
