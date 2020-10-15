@@ -34,6 +34,7 @@ const (
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
+	network          lndclient.Network
 	impl             *loop.Client
 	liquidityMgr     *liquidity.Manager
 	lnd              *lndclient.LndServices

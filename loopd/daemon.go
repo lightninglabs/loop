@@ -197,6 +197,9 @@ func (d *Daemon) startWebServers() error {
 	d.grpcServer = grpc.NewServer(serverOpts...)
 	looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
+	// Register our debug server if it is compiled in.
+	d.registerDebugServer()
+
 	// Next, start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
 	serverTLSCfg, restClientCreds, err := getTLSConfig(d.cfg)
@@ -355,6 +358,7 @@ func (d *Daemon) initialize() error {
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
+		network:      lndclient.Network(d.cfg.Network),
 		impl:         swapclient,
 		liquidityMgr: getLiquidityManager(swapclient),
 		lnd:          &d.lnd.LndServices,
