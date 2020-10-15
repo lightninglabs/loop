@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
@@ -957,7 +958,10 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	s.log.Infof("Sweep on chain HTLC to address %v with fee %v (tx %v)",
 		s.DestAddr, fee, sweepTx.TxHash())
 
-	err = s.lnd.WalletKit.PublishTransaction(ctx, sweepTx)
+	err = s.lnd.WalletKit.PublishTransaction(
+		ctx, sweepTx,
+		labels.LoopOutSweepSuccess(swap.ShortHash(&s.hash)),
+	)
 	if err != nil {
 		s.log.Warnf("Publish sweep: %v", err)
 	}

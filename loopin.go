@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -652,12 +653,11 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	s.log.Infof("Publishing on chain HTLC with fee rate %v", feeRate)
 
 	// Internal loop-in is always P2WSH.
-	tx, err := s.lnd.WalletKit.SendOutputs(ctx,
-		[]*wire.TxOut{{
+	tx, err := s.lnd.WalletKit.SendOutputs(
+		ctx, []*wire.TxOut{{
 			PkScript: s.htlcP2WSH.PkScript,
 			Value:    int64(s.LoopInContract.AmountRequested),
-		}},
-		feeRate,
+		}}, feeRate, labels.LoopInHtlcLabel(swap.ShortHash(&s.hash)),
 	)
 	if err != nil {
 		return false, fmt.Errorf("send outputs: %v", err)
@@ -874,7 +874,10 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	s.log.Infof("Publishing timeout tx %v with fee %v to addr %v",
 		timeoutTxHash, fee, s.timeoutAddr)
 
-	err = s.lnd.WalletKit.PublishTransaction(ctx, timeoutTx)
+	err = s.lnd.WalletKit.PublishTransaction(
+		ctx, timeoutTx,
+		labels.LoopInSweepTimeout(swap.ShortHash(&s.hash)),
+	)
 	if err != nil {
 		s.log.Warnf("publish timeout: %v", err)
 	}
