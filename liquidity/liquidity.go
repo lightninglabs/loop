@@ -453,6 +453,17 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	return nil
 }
 
+// ForceAutoLoop force-ticks our auto-out ticker.
+func (m *Manager) ForceAutoLoop(ctx context.Context) error {
+	select {
+	case m.cfg.AutoOutTicker.Force <- m.cfg.Clock.Now():
+		return nil
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // SuggestSwaps returns a set of swap suggestions based on our current liquidity
 // balance for the set of rules configured for the manager, failing if there are
 // no rules set. It takes an autoOut boolean that indicates whether the

@@ -164,7 +164,8 @@ func (d *Daemon) startMacaroonService() error {
 		// We only generate one default macaroon that contains all
 		// existing permissions (equivalent to the admin.macaroon in
 		// lnd). Custom macaroons can be created through the bakery
-		// RPC.
+		// RPC. Add our debug permissions if required.
+		allPermissions = append(allPermissions, debugPermissions...)
 		loopMac, err := d.macaroonService.Oven.NewMacaroon(
 			ctx, bakery.LatestVersion, nil, allPermissions...,
 		)
@@ -196,6 +197,12 @@ func (d *Daemon) stopMacaroonService() error {
 // macaroonInterceptor creates gRPC server options with the macaroon security
 // interceptors.
 func (d *Daemon) macaroonInterceptor() []grpc.ServerOption {
+	// Add our debug permissions to our main set of required permissions
+	// if compiled in.
+	for endpoint, perm := range debugRequiredPermissions {
+		RequiredPermissions[endpoint] = perm
+	}
+
 	unaryInterceptor := d.macaroonService.UnaryServerInterceptor(
 		RequiredPermissions,
 	)

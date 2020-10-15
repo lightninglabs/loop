@@ -11,6 +11,7 @@ GOMOD := GO111MODULE=on go mod
 
 COMMIT := $(shell git describe --abbrev=40 --dirty)
 LDFLAGS := -ldflags "-X $(PKG)/build.Commit=$(COMMIT)"
+DEV_TAGS = dev
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
@@ -64,10 +65,10 @@ mod-check:
 
 build:
 	@$(call print, "Building debug loop and loopd.")
-	$(GOBUILD) -o loop-debug $(LDFLAGS) $(PKG)/cmd/loop
-	$(GOBUILD) -o loopd-debug $(LDFLAGS) $(PKG)/cmd/loopd
+	$(GOBUILD) -tags="$(DEV_TAGS)" -o loop-debug $(LDFLAGS) $(PKG)/cmd/loop
+	$(GOBUILD) -tags="$(DEV_TAGS)" -o loopd-debug $(LDFLAGS) $(PKG)/cmd/loopd
 
 install:
 	@$(call print, "Installing loop and loopd.")
-	$(GOINSTALL) $(LDFLAGS) $(PKG)/cmd/loop
-	$(GOINSTALL) $(LDFLAGS) $(PKG)/cmd/loopd
+	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loop
+	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loopd
