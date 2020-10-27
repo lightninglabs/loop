@@ -64,14 +64,7 @@ with the correct sub-servers enabled.**
 
 To run loop, you need a compatible version of `lnd` running. It is generally
 recommended to always keep both `lnd` and `loop` updated to the most recent
-released version. If you need to run an older version of `lnd`, please consult
-the following table for supported versions.
-
-Loop Version                  | Compatible LND Version(s)
-------------------------------|------------------
-`>= v0.6.3-beta`              | >= `v0.10.1-beta`
-`v0.6.0-beta` - `v0.6.2-beta` | >= `v0.10.0-beta`
-`<= 0.5.1-beta`               | >= `v0.7.1-beta`
+released version.
 
 If you are building from source make sure you are using the latest tagged
 version of lnd. You can get this by git cloning the repository and checking out
@@ -80,7 +73,7 @@ a specific tag:
 ```
 git clone https://github.com/lightningnetwork/lnd.git
 cd lnd
-git checkout v0.10.0-beta
+git checkout v0.x.x-beta
 ```
 
 Once the lnd repository is cloned, it will need to be built with special build
