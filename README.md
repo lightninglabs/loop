@@ -186,6 +186,8 @@ swap is initiated successfully, `loopd` will see the process through.
 
 To query in-flight swap statuses, run `loop monitor`.
 
+The loop client also has the ability to automatically dispatch loop out swaps on your behalf - see our [autoloop documentation](https://github.com/lightninglabs/loop/blob/master/docs/autoloop.md) for details.
+
 ### Fees explained
 
 The following is an example output of a 0.01 BTC fast (non-batched) Loop Out
