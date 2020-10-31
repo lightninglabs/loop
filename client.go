@@ -458,12 +458,22 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	minerFee, err := s.sweeper.GetSweepFee(
+	var changeAddr btcutil.Address
+	if request.WithChange {
+		changeAddr = p2wshAddress
+	}
+
+	minerFeeOnlyDest, _, minerFeeBoth, err := s.sweeper.GetSweepFee(
 		ctx, swap.QuoteHtlc.AddSuccessToEstimator,
-		p2wshAddress, request.SweepConfTarget,
+		p2wshAddress, changeAddr, request.SweepConfTarget,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	minerFee := minerFeeOnlyDest
+	if request.WithChange {
+		minerFee = minerFeeBoth
 	}
 
 	return &LoopOutQuote{

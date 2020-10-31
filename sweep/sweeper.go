@@ -25,8 +25,9 @@ func (s *Sweeper) CreateSweepTx(
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
 	keyBytes [33]byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
-	amount, fee btcutil.Amount,
-	destAddr btcutil.Address) (*wire.MsgTx, error) {
+	amount, destAmount, feeOnlyDest, feeOnlyChange, feeBoth btcutil.Amount,
+	destAddr, changeAddr btcutil.Address,
+	warnf func(message string, args ...interface{})) (*wire.MsgTx, error) {
 
 	// Compose tx.
 	sweepTx := wire.NewMsgTx(2)
@@ -40,16 +41,28 @@ func (s *Sweeper) CreateSweepTx(
 		Sequence:         sequence,
 	})
 
-	// Add output for the destination address.
-	sweepPkScript, err := txscript.PayToAddrScript(destAddr)
+	destinations, err := deduceDestinations(amount, destAmount,
+		feeOnlyDest, feeOnlyChange, feeBoth,
+		destAddr, changeAddr)
 	if err != nil {
 		return nil, err
 	}
+	if len(destinations) == 1 && destinations[0].addr == changeAddr {
+		warnf("Not sufficient coin size to send to destAddr, so sending to changeAddr. amount=%s, destination=destAmount, fee=%s. This must be a bug.", amount, destAmount, feeOnlyDest)
+	}
 
-	sweepTx.AddTxOut(&wire.TxOut{
-		PkScript: sweepPkScript,
-		Value:    int64(amount - fee),
-	})
+	// Add outputs.
+	for _, dst := range destinations {
+		sweepPkScript, err := txscript.PayToAddrScript(dst.addr)
+		if err != nil {
+			return nil, err
+		}
+
+		sweepTx.AddTxOut(&wire.TxOut{
+			PkScript: sweepPkScript,
+			Value:    int64(dst.amount),
+		})
+	}
 
 	// Generate a signature for the swap htlc transaction.
 
@@ -92,18 +105,49 @@ func (s *Sweeper) CreateSweepTx(
 // estimator.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator),
-	destAddr btcutil.Address, sweepConfTarget int32) (
-	btcutil.Amount, error) {
+	destAddr, changeAddr btcutil.Address, sweepConfTarget int32) (
+	feeOnlyDest, feeOnlyChange, feeBoth btcutil.Amount, err error) {
 
 	// Get fee estimate from lnd.
 	feeRate, err := s.Lnd.WalletKit.EstimateFee(ctx, sweepConfTarget)
 	if err != nil {
-		return 0, fmt.Errorf("estimate fee: %v", err)
+		return 0, 0, 0, fmt.Errorf("estimate fee: %v", err)
 	}
 
-	// Calculate weight for this tx.
-	var weightEstimate input.TxWeightEstimator
-	switch destAddr.(type) {
+	// Calculate feeOnlyDest.
+	var estOnlyDest input.TxWeightEstimator
+	if err := addOutput(&estOnlyDest, destAddr); err != nil {
+		return 0, 0, 0, err
+	}
+	addInputEstimate(&estOnlyDest)
+	feeOnlyDest = feeRate.FeeForWeight(int64(estOnlyDest.Weight()))
+
+	if changeAddr != nil {
+		// Calculate feeOnlyChange.
+		var estOnlyChange input.TxWeightEstimator
+		if err := addOutput(&estOnlyChange, changeAddr); err != nil {
+			return 0, 0, 0, err
+		}
+		addInputEstimate(&estOnlyChange)
+		feeOnlyChange = feeRate.FeeForWeight(int64(estOnlyChange.Weight()))
+
+		// Calculate feeBoth.
+		var estBoth input.TxWeightEstimator
+		if err := addOutput(&estBoth, destAddr); err != nil {
+			return 0, 0, 0, err
+		}
+		if err := addOutput(&estBoth, changeAddr); err != nil {
+			return 0, 0, 0, err
+		}
+		addInputEstimate(&estBoth)
+		feeBoth = feeRate.FeeForWeight(int64(estBoth.Weight()))
+	}
+
+	return feeOnlyDest, feeOnlyChange, feeBoth, nil
+}
+
+func addOutput(weightEstimate *input.TxWeightEstimator, addr btcutil.Address) error {
+	switch addr.(type) {
 	case *btcutil.AddressWitnessScriptHash:
 		weightEstimate.AddP2WSHOutput()
 	case *btcutil.AddressWitnessPubKeyHash:
@@ -113,11 +157,78 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	case *btcutil.AddressPubKeyHash:
 		weightEstimate.AddP2PKHOutput()
 	default:
-		return 0, fmt.Errorf("unknown address type %T", destAddr)
+		return fmt.Errorf("unknown address type %T", addr)
+	}
+	return nil
+}
+
+const dustOutput = 2020 // FIXME: find the actual value.
+
+type destination struct {
+	addr   btcutil.Address
+	amount btcutil.Amount
+}
+
+func deduceDestinations(amount, destAmount, feeOnlyDest, feeOnlyChange, feeBoth btcutil.Amount,
+	destAddr, changeAddr btcutil.Address) ([]destination, error) {
+
+	if (destAmount != 0) != (changeAddr != nil) {
+		return nil, fmt.Errorf("provide either both destAmount and changeAddr or none of them")
+	}
+	if (feeOnlyChange != 0) != (changeAddr != nil) {
+		return nil, fmt.Errorf("provide either both feeOnlyChange and changeAddr or none of them")
+	}
+	if (feeBoth != 0) != (changeAddr != nil) {
+		return nil, fmt.Errorf("provide either both feeBoth and changeAddr or none of them")
 	}
 
-	addInputEstimate(&weightEstimate)
-	weight := weightEstimate.Weight()
+	if changeAddr == nil {
+		// No change. Just put everything on the main destination address.
+		return []destination{
+			{
+				addr:   destAddr,
+				amount: amount - feeOnlyDest,
+			},
+		}, nil
+	}
 
-	return feeRate.FeeForWeight(int64(weight)), nil
+	changeAmount := amount - destAmount - feeBoth
+
+	if changeAmount > dustOutput {
+		// Change is large enough. Return tx with 2 outputs.
+		return []destination{
+			{
+				addr:   destAddr,
+				amount: destAmount,
+			},
+			{
+				addr:   changeAddr,
+				amount: changeAmount,
+			},
+		}, nil
+	}
+
+	// If we are here, then changeAmount is below dustOutput so we drop the change.
+
+	if amount-destAmount >= feeOnlyDest {
+		// We still can send destAmount to destAddr.
+		return []destination{
+			{
+				addr:   destAddr,
+				amount: destAmount,
+			},
+		}, nil
+	}
+
+	// We can not send destAmount to destAddr. This must be a bug, because we
+	// checked in swapClientServer.LoopOut that amt >= max_miner_fee + dest_amt.
+	// However it is better to send everything to change address than to crash.
+	// The warning is logged by CreateSweepTx.
+
+	return []destination{
+		{
+			addr:   changeAddr,
+			amount: amount - feeOnlyChange,
+		},
+	}, nil
 }

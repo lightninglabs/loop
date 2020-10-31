@@ -44,6 +44,18 @@ var loopOutCommand = cli.Command{
 			Usage: "the amount in satoshis to loop out",
 		},
 		cli.Uint64Flag{
+			Name: "dest_amt",
+			Usage: "the optional exact amount in satoshis to send to " +
+				"'addr'; useful to pay to merchants; note that " +
+				"amt >= max_miner_fee + dest_amt",
+		},
+		cli.StringFlag{
+			Name: "change_addr",
+			Usage: "the optional address where to send change in case " +
+				"'dest_amt' is specified; if left empty and 'dest_amt' " +
+				"is provided, the funds will go to lnd's wallet",
+		},
+		cli.Uint64Flag{
 			Name: "htlc_confs",
 			Usage: "the number of of confirmations, in blocks " +
 				"that we require for the htlc extended by " +
@@ -128,6 +140,19 @@ func loopOut(ctx *cli.Context) error {
 		destAddr = args.First()
 	}
 
+	var destAmount btcutil.Amount
+	if ctx.IsSet("dest_amt") {
+		destAmount, err = parseAmt(ctx.String("dest_amt"))
+		if err != nil {
+			return err
+		}
+	}
+
+	var changeAddr string
+	if ctx.IsSet("change_addr") {
+		changeAddr = ctx.String("change_addr")
+	}
+
 	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
@@ -152,6 +177,7 @@ func loopOut(ctx *cli.Context) error {
 		Amt:                     int64(amt),
 		ConfTarget:              sweepConfTarget,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
+		WithChange:              changeAddr != "",
 	}
 	quote, err := client.LoopOutQuote(context.Background(), quoteReq)
 	if err != nil {
@@ -185,6 +211,8 @@ func loopOut(ctx *cli.Context) error {
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
+		DestAmount:              int64(destAmount),
+		ChangeAddr:              changeAddr,
 		MaxMinerFee:             int64(limits.maxMinerFee),
 		MaxPrepayAmt:            int64(limits.maxPrepayAmt),
 		MaxSwapFee:              int64(limits.maxSwapFee),

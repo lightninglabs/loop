@@ -154,6 +154,16 @@ message LoopOutRequest {
     string dest = 2;
 
     /*
+    Exact amount in satoshis to send to 'dest'. Optional.
+    */
+    int64 dest_amount = 15;
+
+    /*
+    Base58 encoded change address for the swap.
+    */
+    string change_addr = 16;
+
+    /*
     Maximum off-chain fee in sat that may be paid for swap payment to the server.
     This limit is applied during path finding. Typically this value is taken
     from the response of the GetQuote call.
@@ -588,6 +598,11 @@ message QuoteRequest {
     The amount to swap in satoshis.
     */
     int64 amt = 1;
+
+    /*
+    If change output will be added. This is needed to send exact amount.
+    */
+    bool with_change = 5;
 
     /*
     The confirmation target that should be used either for the sweep of the

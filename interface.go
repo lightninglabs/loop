@@ -19,6 +19,17 @@ type OutRequest struct {
 	// Destination address for the swap.
 	DestAddr btcutil.Address
 
+	// DestAmount specifies the exact amount to send to DestAddr. If this
+	// field is enabled, ChangeAddr must also be specified. If it fails to
+	// send exactly DestAmount to DestAddr due to fees increase, it sends
+	// everything to ChangeAddr. Otherwise only the change goes to ChangeAddr.
+	// This is useful when a merchant asks you to pay exactly X to address.
+	DestAmount btcutil.Amount
+
+	// Where to send change in case DestAmount is specified. See description
+	// of DestAmount.
+	ChangeAddr btcutil.Address
+
 	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for payment to the server. This limit is applied during path
 	// finding. Typically this value is taken from the response of the
@@ -110,6 +121,11 @@ type LoopOutQuoteRequest struct {
 	// Amount specifies the requested swap amount in sat. This does not
 	// include the swap and miner fee.
 	Amount btcutil.Amount
+
+	// WithChange specifies if change output is added to sweep tx.
+	// This is useful when a merchant asks you to pay exactly X to address.
+	// See the description of OutRequest.DestAmount.
+	WithChange bool
 
 	// SweepConfTarget specifies the targeted confirmation target for the
 	// client sweep tx.

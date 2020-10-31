@@ -16,6 +16,12 @@ This file tracks release notes for the loop client.
 
 #### NewFeatures
 
+* When making `loop out`, users can request exact amount to be delivered
+  to destination address. The user provides options `--dest_amt` and `--change_addr`
+  for that. In this case exactly `--dest_amt` is delivered to `--addr` and the change
+  amount goes to `--change_addr`. The following must be true: `amt >= max_miner_fee + dest_amt`.
+  This mode of operation is useful to pay to merchants expecting an exact amount for a purchase.
+
 #### Breaking Changes
 
 #### Bug Fixes

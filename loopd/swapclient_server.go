@@ -81,6 +81,28 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		}
 	}
 
+	var changeAddr btcutil.Address
+	if in.ChangeAddr != "" {
+		var err error
+		changeAddr, err = btcutil.DecodeAddress(
+			in.ChangeAddr, s.lnd.ChainParams,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("decode change address: %v", err)
+		}
+	} else if in.DestAmount != 0 {
+		// Generate change address.
+		var err error
+		changeAddr, err = s.lnd.WalletKit.NextAddr(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("NextAddr error: %v", err)
+		}
+	}
+
+	if in.DestAmount != 0 && in.Amt < in.DestAmount+in.MaxMinerFee {
+		return nil, fmt.Errorf("amt is too small; the following rule is not satisfied: amt >= max_miner_fee + dest_amt; got values: amt=%d, max_miner_fee=%d, dest_amt=%d", in.Amt, in.DestAmount, in.MaxMinerFee)
+	}
+
 	// Check that the label is valid.
 	if err := labels.Validate(in.Label); err != nil {
 		return nil, err
@@ -89,6 +111,8 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	req := &loop.OutRequest{
 		Amount:              btcutil.Amount(in.Amt),
 		DestAddr:            sweepAddr,
+		DestAmount:          btcutil.Amount(in.DestAmount),
+		ChangeAddr:          changeAddr,
 		MaxMinerFee:         btcutil.Amount(in.MaxMinerFee),
 		MaxPrepayAmount:     btcutil.Amount(in.MaxPrepayAmt),
 		MaxPrepayRoutingFee: btcutil.Amount(in.MaxPrepayRoutingFee),
@@ -410,6 +434,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	}
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
 		Amount:          btcutil.Amount(req.Amt),
+		WithChange:      req.WithChange,
 		SweepConfTarget: confTarget,
 		SwapPublicationDeadline: time.Unix(
 			int64(req.SwapPublicationDeadline), 0,

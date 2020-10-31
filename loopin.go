@@ -849,8 +849,8 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	}
 
 	// Calculate sweep tx fee
-	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddTimeoutToEstimator, s.timeoutAddr,
+	fee, _, _, err := s.sweeper.GetSweepFee(
+		ctx, s.htlc.AddTimeoutToEstimator, s.timeoutAddr, nil,
 		TimeoutTxConfTarget,
 	)
 	if err != nil {
@@ -864,7 +864,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	sequence := uint32(0)
 	timeoutTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, sequence, s.htlc, *htlcOutpoint, s.SenderKey,
-		witnessFunc, htlcValue, fee, s.timeoutAddr,
+		witnessFunc, htlcValue, 0, fee, 0, 0, s.timeoutAddr, nil, s.log.Warnf,
 	)
 	if err != nil {
 		return err

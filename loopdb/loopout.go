@@ -24,6 +24,14 @@ type LoopOutContract struct {
 	// DestAddr is the destination address of the loop out swap.
 	DestAddr btcutil.Address
 
+	// DestAmount specifies the exact amount to send to DestAddr. Optional.
+	// Used together with ChangeAddr.
+	DestAmount btcutil.Amount
+
+	// Where to send change in case DestAmount is specified. Optional.
+	// Used together with DestAmount.
+	ChangeAddr btcutil.Address
+
 	// SwapInvoice is the invoice that is to be paid by the client to
 	// initiate the loop out swap.
 	SwapInvoice string
@@ -205,6 +213,21 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 	}
 	contract.SwapPublicationDeadline = time.Unix(0, deadlineNano)
 
+	if err := binary.Read(r, byteOrder, &contract.DestAmount); err != nil {
+		return nil, err
+	}
+
+	addr, err = wire.ReadVarString(r, 0)
+	if err != nil {
+		return nil, err
+	}
+	if addr != "" {
+		contract.ChangeAddr, err = btcutil.DecodeAddress(addr, chainParams)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &contract, nil
 }
 
@@ -291,6 +314,17 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 
 	err = binary.Write(&b, byteOrder, swap.SwapPublicationDeadline.UnixNano())
 	if err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(&b, byteOrder, swap.DestAmount); err != nil {
+		return nil, err
+	}
+	var addressStr string
+	if swap.ChangeAddr != nil {
+		addressStr = swap.ChangeAddr.String()
+	}
+	if err := wire.WriteVarString(&b, 0, addressStr); err != nil {
 		return nil, err
 	}
 

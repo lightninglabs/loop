@@ -76,6 +76,11 @@ var quoteOutCommand = cli.Command{
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
 	Flags: []cli.Flag{
+		cli.BoolFlag{
+			Name: "with_change",
+			Usage: "Indicate you want to add change output; " +
+				"this is needed when making exact amount payment",
+		},
 		cli.Uint64Flag{
 			Name: "conf_target",
 			Usage: "the number of blocks from the swap " +
@@ -124,6 +129,7 @@ func quoteOut(ctx *cli.Context) error {
 	ctxb := context.Background()
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:                     int64(amt),
+		WithChange:              ctx.Bool("with_change"),
 		ConfTarget:              int32(ctx.Uint64("conf_target")),
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 	}

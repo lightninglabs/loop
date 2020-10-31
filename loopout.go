@@ -149,6 +149,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	contract := loopdb.LoopOutContract{
 		SwapInvoice:             swapResp.swapInvoice,
 		DestAddr:                request.DestAddr,
+		DestAmount:              request.DestAmount,
+		ChangeAddr:              request.ChangeAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
 		HtlcConfirmations:       confs,
@@ -910,23 +912,27 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		confTarget > DefaultSweepConfTarget {
 		confTarget = DefaultSweepConfTarget
 	}
-	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, confTarget,
+
+	feeOnlyDest, feeOnlyChange, feeBoth, err := s.sweeper.GetSweepFee(
+		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, s.ChangeAddr, confTarget,
 	)
 	if err != nil {
 		return err
 	}
 
 	// Ensure it doesn't exceed our maximum fee allowed.
-	if fee > s.MaxMinerFee {
+	for _, fee := range []*btcutil.Amount{&feeOnlyDest, &feeOnlyChange, &feeBoth} {
+		if *fee == 0 || *fee <= s.MaxMinerFee {
+			continue
+		}
 		s.log.Warnf("Required fee %v exceeds max miner fee of %v",
-			fee, s.MaxMinerFee)
+			*fee, s.MaxMinerFee)
 
 		if s.state == loopdb.StatePreimageRevealed {
 			// The currently required fee exceeds the max, but we
 			// already revealed the preimage. The best we can do now
 			// is to republish with the max fee.
-			fee = s.MaxMinerFee
+			*fee = s.MaxMinerFee
 		} else {
 			s.log.Warnf("Not revealing preimage")
 			return nil
@@ -936,7 +942,10 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, s.htlc.SuccessSequence(), s.htlc, htlcOutpoint,
-		s.ReceiverKey, witnessFunc, htlcValue, fee, s.DestAddr,
+		s.ReceiverKey, witnessFunc, htlcValue, s.DestAmount,
+		feeOnlyDest, feeOnlyChange, feeBoth,
+		s.DestAddr, s.ChangeAddr,
+		s.log.Warnf,
 	)
 	if err != nil {
 		return err
@@ -955,6 +964,11 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	}
 
 	// Publish tx.
+	var sumOutputs int64
+	for _, txout := range sweepTx.TxOut {
+		sumOutputs += txout.Value
+	}
+	fee := htlcValue - btcutil.Amount(sumOutputs)
 	s.log.Infof("Sweep on chain HTLC to address %v with fee %v (tx %v)",
 		s.DestAddr, fee, sweepTx.TxHash())
 
@@ -974,6 +988,10 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 func validateLoopOutContract(lnd *lndclient.LndServices,
 	height int32, request *OutRequest, swapHash lntypes.Hash,
 	response *newLoopOutResponse) error {
+
+	if (request.DestAmount != 0) != (request.ChangeAddr != nil) {
+		return fmt.Errorf("provide either both DestAmount and ChangeAddr or none of them")
+	}
 
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams

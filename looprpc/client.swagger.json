@@ -149,6 +149,14 @@
             "format": "int64"
           },
           {
+            "name": "with_change",
+            "description": "If change output will be added. This is needed to send exact amount.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
+          },
+          {
             "name": "conf_target",
             "description": "The confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
             "in": "query",
@@ -260,6 +268,14 @@
             "required": true,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "with_change",
+            "description": "If change output will be added. This is needed to send exact amount.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
           },
           {
             "name": "conf_target",
@@ -614,6 +630,15 @@
         "dest": {
           "type": "string",
           "description": "Base58 encoded destination address for the swap."
+        },
+        "dest_amount": {
+          "type": "string",
+          "format": "int64",
+          "description": "Exact amount in satoshis to send to 'dest'. Optional."
+        },
+        "change_addr": {
+          "type": "string",
+          "description": "Base58 encoded change address for the swap."
         },
         "max_swap_routing_fee": {
           "type": "string",
