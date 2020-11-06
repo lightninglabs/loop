@@ -10,7 +10,7 @@ GOINSTALL := GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
 
 COMMIT := $(shell git describe --abbrev=40 --dirty)
-LDFLAGS := -ldflags "-X $(PKG)/build.Commit=$(COMMIT)"
+LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT)"
 DEV_TAGS = dev
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
