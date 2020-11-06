@@ -114,7 +114,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	// latest swap publication time.
 	swapResp, err := cfg.server.NewLoopOutSwap(
 		globalCtx, swapHash, request.Amount, request.Expiry,
-		receiverKey, request.SwapPublicationDeadline,
+		receiverKey, request.SwapPublicationDeadline, request.Initiator,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot initiate swap: %v", err)

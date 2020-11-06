@@ -55,9 +55,8 @@ type swapServerClient interface {
 
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-		receiverKey [33]byte,
-		swapPublicationDeadline time.Time) (
-		*newLoopOutResponse, error)
+		receiverKey [33]byte, swapPublicationDeadline time.Time,
+		initiator string) (*newLoopOutResponse, error)
 
 	PushLoopOutPreimage(ctx context.Context,
 		preimage lntypes.Preimage) error
@@ -65,7 +64,8 @@ type swapServerClient interface {
 	NewLoopInSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount,
 		senderKey [33]byte, swapInvoice, probeInvoice string,
-		lastHop *route.Vertex) (*newLoopInResponse, error)
+		lastHop *route.Vertex, initiator string) (*newLoopInResponse,
+		error)
 
 	// SubscribeLoopOutUpdates subscribes to loop out server state.
 	SubscribeLoopOutUpdates(ctx context.Context,
@@ -220,8 +220,8 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-	receiverKey [33]byte, swapPublicationDeadline time.Time) (
-	*newLoopOutResponse, error) {
+	receiverKey [33]byte, swapPublicationDeadline time.Time,
+	initiator string) (*newLoopOutResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -233,7 +233,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
 			Expiry:                  expiry,
-			UserAgent:               UserAgent(),
+			UserAgent:               UserAgent(initiator),
 		},
 	)
 	if err != nil {
@@ -276,7 +276,8 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
-	swapInvoice, probeInvoice string, lastHop *route.Vertex) (*newLoopInResponse, error) {
+	swapInvoice, probeInvoice string, lastHop *route.Vertex,
+	initiator string) (*newLoopInResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -288,7 +289,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		SwapInvoice:     swapInvoice,
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
 		ProbeInvoice:    probeInvoice,
-		UserAgent:       UserAgent(),
+		UserAgent:       UserAgent(initiator),
 	}
 	if lastHop != nil {
 		req.LastHop = lastHop[:]

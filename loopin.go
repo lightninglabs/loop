@@ -166,7 +166,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
 		request.Amount, senderKey, swapInvoice, probeInvoice,
-		request.LastHop,
+		request.LastHop, request.Initiator,
 	)
 	probeWaitCancel()
 	if err != nil {

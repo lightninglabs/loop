@@ -53,10 +53,21 @@ func Version() string {
 
 // UserAgent returns the full user agent string that identifies the software
 // that is submitting swaps to the loop server.
-func UserAgent() string {
+func UserAgent(initiator string) string {
+	// We'll only allow "safe" characters in the initiator portion of the
+	// user agent string and spaces only if surrounded by other characters.
+	initiatorAlphabet := semanticAlphabet + ". "
+	cleanInitiator := normalizeVerString(
+		strings.TrimSpace(initiator), initiatorAlphabet,
+	)
+	if len(cleanInitiator) > 0 {
+		cleanInitiator = fmt.Sprintf(",initiator=%s", cleanInitiator)
+	}
+
 	// Assemble full string, including the commit hash of current build.
 	return fmt.Sprintf(
-		"%s/v%s/commit=%s", AgentName, semanticVersion(), Commit,
+		"%s/v%s/commit=%s%s", AgentName, semanticVersion(), Commit,
+		cleanInitiator,
 	)
 }
 

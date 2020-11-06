@@ -21,6 +21,7 @@ var (
 		Amount:         btcutil.Amount(50000),
 		MaxSwapFee:     btcutil.Amount(1000),
 		HtlcConfTarget: 2,
+		Initiator:      "test",
 	}
 )
 
