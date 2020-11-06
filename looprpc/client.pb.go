@@ -55,31 +55,31 @@ func (SwapType) EnumDescriptor() ([]byte, []int) {
 type SwapState int32
 
 const (
-	//*
+	//
 	//INITIATED is the initial state of a swap. At that point, the initiation
 	//call to the server has been made and the payment process has been started
 	//for the swap and prepayment invoices.
 	SwapState_INITIATED SwapState = 0
-	//*
+	//
 	//PREIMAGE_REVEALED is reached when the sweep tx publication is first
 	//attempted. From that point on, we should consider the preimage to no
 	//longer be secret and we need to do all we can to get the sweep confirmed.
 	//This state will mostly coalesce with StateHtlcConfirmed, except in the
 	//case where we wait for fees to come down before we sweep.
 	SwapState_PREIMAGE_REVEALED SwapState = 1
-	//*
+	//
 	//HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
 	//swap.
 	SwapState_HTLC_PUBLISHED SwapState = 2
-	//*
+	//
 	//SUCCESS is the final swap state that is reached when the sweep tx has
 	//the required confirmation depth.
 	SwapState_SUCCESS SwapState = 3
-	//*
+	//
 	//FAILED is the final swap state for a failed swap with or without loss of
 	//the swap amount.
 	SwapState_FAILED SwapState = 4
-	//*
+	//
 	//INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
 	//paid, but we are still waiting for the htlc spend to confirm.
 	SwapState_INVOICE_SETTLED SwapState = 5
@@ -201,32 +201,32 @@ func (LiquidityRuleType) EnumDescriptor() ([]byte, []int) {
 }
 
 type LoopOutRequest struct {
-	//*
+	//
 	//Requested swap amount in sat. This does not include the swap and miner fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	//*
+	//
 	//Base58 encoded destination address for the swap.
 	Dest string `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
-	//*
+	//
 	//Maximum off-chain fee in sat that may be paid for swap payment to the server.
 	//This limit is applied during path finding. Typically this value is taken
 	//from the response of the GetQuote call.
 	MaxSwapRoutingFee int64 `protobuf:"varint,3,opt,name=max_swap_routing_fee,json=maxSwapRoutingFee,proto3" json:"max_swap_routing_fee,omitempty"`
-	//*
+	//
 	//Maximum off-chain fee in sat that may be paid for the prepay to the server.
 	//This limit is applied during path finding. Typically this value is taken
 	//from the response of the GetQuote call.
 	MaxPrepayRoutingFee int64 `protobuf:"varint,4,opt,name=max_prepay_routing_fee,json=maxPrepayRoutingFee,proto3" json:"max_prepay_routing_fee,omitempty"`
-	//*
+	//
 	//Maximum we are willing to pay the server for the swap. This value is not
 	//disclosed in the swap initiation call, but if the server asks for a
 	//higher fee, we abort the swap. Typically this value is taken from the
 	//response of the GetQuote call. It includes the prepay amount.
 	MaxSwapFee int64 `protobuf:"varint,5,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	//*
+	//
 	//Maximum amount of the swap fee that may be charged as a prepayment.
 	MaxPrepayAmt int64 `protobuf:"varint,6,opt,name=max_prepay_amt,json=maxPrepayAmt,proto3" json:"max_prepay_amt,omitempty"`
-	//*
+	//
 	//Maximum in on-chain fees that we are willing to spend. If we want to
 	//sweep the on-chain htlc and the fee estimate turns out higher than this
 	//value, we cancel the swap. If the fee estimate is lower, we publish the
@@ -242,17 +242,17 @@ type LoopOutRequest struct {
 	//
 	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,7,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	//*
+	//
 	//Deprecated, use outgoing_chan_set. The channel to loop out, the channel
 	//to loop out is selected based on the lowest routing fee for the swap
 	//payment to the server.
 	LoopOutChannel uint64 `protobuf:"varint,8,opt,name=loop_out_channel,json=loopOutChannel,proto3" json:"loop_out_channel,omitempty"` // Deprecated: Do not use.
-	//*
+	//
 	//A restriction on the channel set that may be used to loop out. The actual
 	//channel(s) that will be used are selected based on the lowest routing fee
 	//for the swap payment to the server.
 	OutgoingChanSet []uint64 `protobuf:"varint,11,rep,packed,name=outgoing_chan_set,json=outgoingChanSet,proto3" json:"outgoing_chan_set,omitempty"`
-	//*
+	//
 	//The number of blocks from the on-chain HTLC's confirmation height that it
 	//should be swept within.
 	SweepConfTarget int32 `protobuf:"varint,9,opt,name=sweep_conf_target,json=sweepConfTarget,proto3" json:"sweep_conf_target,omitempty"`
@@ -260,7 +260,7 @@ type LoopOutRequest struct {
 	//The number of confirmations that we require for the on chain htlc that will
 	//be published by the server before we reveal the preimage.
 	HtlcConfirmations int32 `protobuf:"varint,13,opt,name=htlc_confirmations,json=htlcConfirmations,proto3" json:"htlc_confirmations,omitempty"`
-	//*
+	//
 	//The latest time (in unix seconds) we allow the server to wait before
 	//publishing the HTLC on chain. Setting this to a larger value will give the
 	//server the opportunity to batch multiple swaps together, and wait for
@@ -395,32 +395,32 @@ func (m *LoopOutRequest) GetLabel() string {
 }
 
 type LoopInRequest struct {
-	//*
+	//
 	//Requested swap amount in sat. This does not include the swap and miner
 	//fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	//*
+	//
 	//Maximum we are willing to pay the server for the swap. This value is not
 	//disclosed in the swap initiation call, but if the server asks for a
 	//higher fee, we abort the swap. Typically this value is taken from the
 	//response of the GetQuote call.
 	MaxSwapFee int64 `protobuf:"varint,2,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	//*
+	//
 	//Maximum in on-chain fees that we are willing to spend. If we want to
 	//publish the on-chain htlc and the fee estimate turns out higher than this
 	//value, we cancel the swap.
 	//
 	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,3,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	//*
+	//
 	//The last hop to use for the loop in swap. If empty, the last hop is selected
 	//based on the lowest routing fee for the swap payment from the server.
 	LastHop []byte `protobuf:"bytes,4,opt,name=last_hop,json=lastHop,proto3" json:"last_hop,omitempty"`
-	//*
+	//
 	//If external_htlc is true, we expect the htlc to be published by an external
 	//actor.
 	ExternalHtlc bool `protobuf:"varint,5,opt,name=external_htlc,json=externalHtlc,proto3" json:"external_htlc,omitempty"`
-	//*
+	//
 	//The number of blocks that the on chain htlc should confirm within.
 	HtlcConfTarget int32 `protobuf:"varint,6,opt,name=htlc_conf_target,json=htlcConfTarget,proto3" json:"htlc_conf_target,omitempty"`
 	//
@@ -507,17 +507,17 @@ func (m *LoopInRequest) GetLabel() string {
 }
 
 type SwapResponse struct {
-	//*
+	//
 	//Swap identifier to track status in the update stream that is returned from
 	//the Start() call. Currently this is the hash that locks the htlcs.
 	//DEPRECATED: To make the API more consistent, this field is deprecated in
 	//favor of id_bytes and will be removed in a future release.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Deprecated: Do not use.
-	//*
+	//
 	//Swap identifier to track status in the update stream that is returned from
 	//the Start() call. Currently this is the hash that locks the htlcs.
 	IdBytes []byte `protobuf:"bytes,3,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"`
-	//*
+	//
 	//DEPRECATED. This field stores the address of the onchain htlc, but
 	//depending on the request, the semantics are different.
 	//- For internal loop-in htlc_address contains the address of the
@@ -527,11 +527,11 @@ type SwapResponse struct {
 	//- For loop-out htlc_address always contains the native segwit (P2WSH)
 	//htlc address.
 	HtlcAddress string `protobuf:"bytes,2,opt,name=htlc_address,json=htlcAddress,proto3" json:"htlc_address,omitempty"` // Deprecated: Do not use.
-	//*
+	//
 	//The nested segwit address of the on-chain htlc.
 	//This field remains empty for loop-out.
 	HtlcAddressNp2Wsh string `protobuf:"bytes,4,opt,name=htlc_address_np2wsh,json=htlcAddressNp2wsh,proto3" json:"htlc_address_np2wsh,omitempty"`
-	//*
+	//
 	//The native segwit address of the on-chain htlc.
 	//Used for both loop-in and loop-out.
 	HtlcAddressP2Wsh string `protobuf:"bytes,5,opt,name=htlc_address_p2wsh,json=htlcAddressP2wsh,proto3" json:"htlc_address_p2wsh,omitempty"`
@@ -643,36 +643,36 @@ func (m *MonitorRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_MonitorRequest proto.InternalMessageInfo
 
 type SwapStatus struct {
-	//*
+	//
 	//Requested swap amount in sat. This does not include the swap and miner
 	//fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	//*
+	//
 	//Swap identifier to track status in the update stream that is returned from
 	//the Start() call. Currently this is the hash that locks the htlcs.
 	//DEPRECATED: To make the API more consistent, this field is deprecated in
 	//favor of id_bytes and will be removed in a future release.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"` // Deprecated: Do not use.
-	//*
+	//
 	//Swap identifier to track status in the update stream that is returned from
 	//the Start() call. Currently this is the hash that locks the htlcs.
 	IdBytes []byte `protobuf:"bytes,11,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"`
-	//*
-	//Swap type
+	//
+	//The type of the swap.
 	Type SwapType `protobuf:"varint,3,opt,name=type,proto3,enum=looprpc.SwapType" json:"type,omitempty"`
-	//*
+	//
 	//State the swap is currently in, see State enum.
 	State SwapState `protobuf:"varint,4,opt,name=state,proto3,enum=looprpc.SwapState" json:"state,omitempty"`
 	//
 	//A failure reason for the swap, only set if the swap has failed.
 	FailureReason FailureReason `protobuf:"varint,14,opt,name=failure_reason,json=failureReason,proto3,enum=looprpc.FailureReason" json:"failure_reason,omitempty"`
-	//*
+	//
 	//Initiation time of the swap.
 	InitiationTime int64 `protobuf:"varint,5,opt,name=initiation_time,json=initiationTime,proto3" json:"initiation_time,omitempty"`
-	//*
+	//
 	//Initiation time of the swap.
 	LastUpdateTime int64 `protobuf:"varint,6,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
-	//*
+	//
 	//DEPRECATED:  This field stores the address of the onchain htlc.
 	//- For internal loop-in htlc_address contains the address of the
 	//native segwit (P2WSH) htlc.
@@ -685,7 +685,7 @@ type SwapStatus struct {
 	HtlcAddressP2Wsh string `protobuf:"bytes,12,opt,name=htlc_address_p2wsh,json=htlcAddressP2wsh,proto3" json:"htlc_address_p2wsh,omitempty"`
 	// HTLC address (nested segwit), used in loop-in swaps only.
 	HtlcAddressNp2Wsh string `protobuf:"bytes,13,opt,name=htlc_address_np2wsh,json=htlcAddressNp2wsh,proto3" json:"htlc_address_np2wsh,omitempty"`
-	/// Swap server cost
+	// Swap server cost
 	CostServer int64 `protobuf:"varint,8,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
 	// On-chain transaction cost
 	CostOnchain int64 `protobuf:"varint,9,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
@@ -862,7 +862,7 @@ func (m *ListSwapsRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_ListSwapsRequest proto.InternalMessageInfo
 
 type ListSwapsResponse struct {
-	//*
+	//
 	//The list of all currently known swaps and their status.
 	Swaps                []*SwapStatus `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
@@ -903,7 +903,7 @@ func (m *ListSwapsResponse) GetSwaps() []*SwapStatus {
 }
 
 type SwapInfoRequest struct {
-	//*
+	//
 	//The swap identifier which currently is the hash that locks the HTLCs. When
 	//using REST, this field must be encoded as URL safe base64.
 	Id                   []byte   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -976,10 +976,10 @@ func (m *TermsRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_TermsRequest proto.InternalMessageInfo
 
 type InTermsResponse struct {
-	//*
+	//
 	//Minimum swap amount (sat)
 	MinSwapAmount int64 `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	//*
+	//
 	//Maximum swap amount (sat)
 	MaxSwapAmount        int64    `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -1027,10 +1027,10 @@ func (m *InTermsResponse) GetMaxSwapAmount() int64 {
 }
 
 type OutTermsResponse struct {
-	//*
+	//
 	//Minimum swap amount (sat)
 	MinSwapAmount int64 `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	//*
+	//
 	//Maximum swap amount (sat)
 	MaxSwapAmount int64 `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
 	// The minimally accepted cltv delta of the on-chain htlc.
@@ -1096,20 +1096,20 @@ func (m *OutTermsResponse) GetMaxCltvDelta() int32 {
 }
 
 type QuoteRequest struct {
-	//*
+	//
 	//The amount to swap in satoshis.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	//*
+	//
 	//The confirmation target that should be used either for the sweep of the
 	//on-chain HTLC broadcast by the swap server in the case of a Loop Out, or for
 	//the confirmation of the on-chain HTLC broadcast by the swap client in the
 	//case of a Loop In.
 	ConfTarget int32 `protobuf:"varint,2,opt,name=conf_target,json=confTarget,proto3" json:"conf_target,omitempty"`
-	//*
+	//
 	//If external_htlc is true, we expect the htlc to be published by an external
 	//actor.
 	ExternalHtlc bool `protobuf:"varint,3,opt,name=external_htlc,json=externalHtlc,proto3" json:"external_htlc,omitempty"`
-	//*
+	//
 	//The latest time (in unix seconds) we allow the server to wait before
 	//publishing the HTLC on chain. Setting this to a larger value will give the
 	//server the opportunity to batch multiple swaps together, and wait for
@@ -1175,7 +1175,7 @@ func (m *QuoteRequest) GetSwapPublicationDeadline() uint64 {
 }
 
 type InQuoteResponse struct {
-	//*
+	//
 	//The fee that the swap server is charging for the swap.
 	SwapFeeSat int64 `protobuf:"varint,1,opt,name=swap_fee_sat,json=swapFeeSat,proto3" json:"swap_fee_sat,omitempty"`
 	//
@@ -1186,7 +1186,7 @@ type InQuoteResponse struct {
 	//create a sample estimation transaction because not enough funds are
 	//available. An information message should be shown to the user in this case.
 	HtlcPublishFeeSat int64 `protobuf:"varint,3,opt,name=htlc_publish_fee_sat,json=htlcPublishFeeSat,proto3" json:"htlc_publish_fee_sat,omitempty"`
-	//*
+	//
 	//On-chain cltv expiry delta
 	CltvDelta            int32    `protobuf:"varint,5,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -1241,21 +1241,21 @@ func (m *InQuoteResponse) GetCltvDelta() int32 {
 }
 
 type OutQuoteResponse struct {
-	//*
+	//
 	//The fee that the swap server is charging for the swap.
 	SwapFeeSat int64 `protobuf:"varint,1,opt,name=swap_fee_sat,json=swapFeeSat,proto3" json:"swap_fee_sat,omitempty"`
-	//*
+	//
 	//The part of the swap fee that is requested as a prepayment.
 	PrepayAmtSat int64 `protobuf:"varint,2,opt,name=prepay_amt_sat,json=prepayAmtSat,proto3" json:"prepay_amt_sat,omitempty"`
-	//*
+	//
 	//An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
 	//a loop out.
 	HtlcSweepFeeSat int64 `protobuf:"varint,3,opt,name=htlc_sweep_fee_sat,json=htlcSweepFeeSat,proto3" json:"htlc_sweep_fee_sat,omitempty"`
-	//*
+	//
 	//The node pubkey where the swap payment needs to be paid
 	//to. This can be used to test connectivity before initiating the swap.
 	SwapPaymentDest []byte `protobuf:"bytes,4,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
-	//*
+	//
 	//On-chain cltv expiry delta
 	CltvDelta            int32    `protobuf:"varint,5,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -1355,7 +1355,7 @@ func (m *TokensRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_TokensRequest proto.InternalMessageInfo
 
 type TokensResponse struct {
-	//*
+	//
 	//List of all tokens the daemon knows of, including old/expired tokens.
 	Tokens               []*LsatToken `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
@@ -1396,30 +1396,30 @@ func (m *TokensResponse) GetTokens() []*LsatToken {
 }
 
 type LsatToken struct {
-	//*
+	//
 	//The base macaroon that was baked by the auth server.
 	BaseMacaroon []byte `protobuf:"bytes,1,opt,name=base_macaroon,json=baseMacaroon,proto3" json:"base_macaroon,omitempty"`
-	//*
+	//
 	//The payment hash of the payment that was paid to obtain the token.
 	PaymentHash []byte `protobuf:"bytes,2,opt,name=payment_hash,json=paymentHash,proto3" json:"payment_hash,omitempty"`
-	//*
+	//
 	//The preimage of the payment hash, knowledge of this is proof that the
 	//payment has been paid. If the preimage is set to all zeros, this means the
 	//payment is still pending and the token is not yet fully valid.
 	PaymentPreimage []byte `protobuf:"bytes,3,opt,name=payment_preimage,json=paymentPreimage,proto3" json:"payment_preimage,omitempty"`
-	//*
+	//
 	//The amount of millisatoshis that was paid to get the token.
 	AmountPaidMsat int64 `protobuf:"varint,4,opt,name=amount_paid_msat,json=amountPaidMsat,proto3" json:"amount_paid_msat,omitempty"`
-	//*
+	//
 	//The amount of millisatoshis paid in routing fee to pay for the token.
 	RoutingFeePaidMsat int64 `protobuf:"varint,5,opt,name=routing_fee_paid_msat,json=routingFeePaidMsat,proto3" json:"routing_fee_paid_msat,omitempty"`
-	//*
+	//
 	//The creation time of the token as UNIX timestamp in seconds.
 	TimeCreated int64 `protobuf:"varint,6,opt,name=time_created,json=timeCreated,proto3" json:"time_created,omitempty"`
-	//*
+	//
 	//Indicates whether the token is expired or still valid.
 	Expired bool `protobuf:"varint,7,opt,name=expired,proto3" json:"expired,omitempty"`
-	//*
+	//
 	//Identifying attribute of this token in the store. Currently represents the
 	//file name of the token where it's stored on the file system.
 	StorageName          string   `protobuf:"bytes,8,opt,name=storage_name,json=storageName,proto3" json:"storage_name,omitempty"`
@@ -2140,42 +2140,42 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type SwapClientClient interface {
-	//* loop: `out`
+	// loop: `out`
 	//LoopOut initiates an loop out swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream that is
 	//returned from Monitor().
 	LoopOut(ctx context.Context, in *LoopOutRequest, opts ...grpc.CallOption) (*SwapResponse, error)
-	//* loop: `in`
+	// loop: `in`
 	//LoopIn initiates a loop in swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream
 	//that is returned from Monitor().
 	LoopIn(ctx context.Context, in *LoopInRequest, opts ...grpc.CallOption) (*SwapResponse, error)
-	//* loop: `monitor`
+	// loop: `monitor`
 	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (SwapClient_MonitorClient, error)
-	//* loop: `listswaps`
+	// loop: `listswaps`
 	//ListSwaps returns a list of all currently known swaps and their current
 	//status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
-	//* loop: `swapinfo`
+	// loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
-	//* loop: `terms`
+	// loop: `terms`
 	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*OutTermsResponse, error)
-	//* loop: `quote`
+	// loop: `quote`
 	//LoopOutQuote returns a quote for a loop out swap with the provided
 	//parameters.
 	LoopOutQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*OutQuoteResponse, error)
-	//* loop: `terms`
+	// loop: `terms`
 	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*InTermsResponse, error)
-	//* loop: `quote`
+	// loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*InQuoteResponse, error)
-	//* loop: `listauth`
+	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 	//
@@ -2347,42 +2347,42 @@ func (c *swapClientClient) SuggestSwaps(ctx context.Context, in *SuggestSwapsReq
 
 // SwapClientServer is the server API for SwapClient service.
 type SwapClientServer interface {
-	//* loop: `out`
+	// loop: `out`
 	//LoopOut initiates an loop out swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream that is
 	//returned from Monitor().
 	LoopOut(context.Context, *LoopOutRequest) (*SwapResponse, error)
-	//* loop: `in`
+	// loop: `in`
 	//LoopIn initiates a loop in swap with the given parameters. The call
 	//returns after the swap has been set up with the swap server. From that
 	//point onwards, progress can be tracked via the SwapStatus stream
 	//that is returned from Monitor().
 	LoopIn(context.Context, *LoopInRequest) (*SwapResponse, error)
-	//* loop: `monitor`
+	// loop: `monitor`
 	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(*MonitorRequest, SwapClient_MonitorServer) error
-	//* loop: `listswaps`
+	// loop: `listswaps`
 	//ListSwaps returns a list of all currently known swaps and their current
 	//status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
-	//* loop: `swapinfo`
+	// loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
-	//* loop: `terms`
+	// loop: `terms`
 	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(context.Context, *TermsRequest) (*OutTermsResponse, error)
-	//* loop: `quote`
+	// loop: `quote`
 	//LoopOutQuote returns a quote for a loop out swap with the provided
 	//parameters.
 	LoopOutQuote(context.Context, *QuoteRequest) (*OutQuoteResponse, error)
-	//* loop: `terms`
+	// loop: `terms`
 	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(context.Context, *TermsRequest) (*InTermsResponse, error)
-	//* loop: `quote`
+	// loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*InQuoteResponse, error)
-	//* loop: `listauth`
+	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
 	//
