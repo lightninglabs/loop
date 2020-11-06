@@ -72,3 +72,7 @@ install:
 	@$(call print, "Installing loop and loopd.")
 	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loop
 	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loopd
+
+rpc:
+	@$(call print, "Compiling RPC protos.")
+	cd looprpc; ./gen_protos.sh
