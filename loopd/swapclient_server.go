@@ -99,7 +99,8 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		SwapPublicationDeadline: time.Unix(
 			int64(in.SwapPublicationDeadline), 0,
 		),
-		Label: in.Label,
+		Label:     in.Label,
+		Initiator: in.Initiator,
 	}
 
 	switch {
@@ -496,6 +497,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   in.ExternalHtlc,
 		Label:          in.Label,
+		Initiator:      in.Initiator,
 	}
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)

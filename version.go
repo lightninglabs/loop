@@ -8,6 +8,7 @@ package loop
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -63,6 +64,13 @@ func UserAgent(initiator string) string {
 	if len(cleanInitiator) > 0 {
 		cleanInitiator = fmt.Sprintf(",initiator=%s", cleanInitiator)
 	}
+
+	// The whole user agent string is limited to 255 characters server side
+	// and also consists of the agent name, version and commit. So we only
+	// want to take up at most 150 characters for the initiator. Anything
+	// more will just be dropped.
+	strLen := len(cleanInitiator)
+	cleanInitiator = cleanInitiator[:int(math.Min(float64(strLen), 150))]
 
 	// Assemble full string, including the commit hash of current build.
 	return fmt.Sprintf(
