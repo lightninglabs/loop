@@ -239,6 +239,15 @@ message LoopOutRequest {
     produced by the daemon.
     */
     string label = 12;
+
+    /*
+    An optional identification string that will be appended to the user agent
+    string sent to the server to give information about the usage of loop. This
+    initiator part is meant for user interfaces to add their name to give the
+    full picture of the binary used (loopd, LiT) and the method used for
+    triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+    */
+    string initiator = 14;
 }
 
 message LoopInRequest {
@@ -287,6 +296,15 @@ message LoopInRequest {
     and may not be one of the reserved values in loop/labels Reserved list.
     */
     string label = 7;
+
+    /*
+    An optional identification string that will be appended to the user agent
+    string sent to the server to give information about the usage of loop. This
+    initiator part is meant for user interfaces to add their name to give the
+    full picture of the binary used (loopd, LiT) and the method used for
+    triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+    */
+    string initiator = 8;
 }
 
 message SwapResponse {
