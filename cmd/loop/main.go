@@ -48,6 +48,10 @@ var (
 	// that we set when sending it over the line.
 	defaultMacaroonTimeout int64 = 60
 
+	// defaultInitiator is the default value for the "initiator" part of the
+	// user agent string we send when using the command line utility.
+	defaultInitiator = "loop-cli"
+
 	loopDirFlag = cli.StringFlag{
 		Name:  "loopdir",
 		Value: loopd.LoopDirBase,

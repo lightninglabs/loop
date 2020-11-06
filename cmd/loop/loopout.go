@@ -195,6 +195,7 @@ func loopOut(ctx *cli.Context) error {
 		HtlcConfirmations:       htlcConfs,
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 		Label:                   label,
+		Initiator:               defaultInitiator,
 	})
 	if err != nil {
 		return err
