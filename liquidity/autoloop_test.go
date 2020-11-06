@@ -146,6 +146,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
 			Label:           labels.AutoOutLabel(),
+			Initiator:       autoloopSwapInitiator,
 		}
 
 		chan2Swap = &loop.OutRequest{
@@ -161,6 +162,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID2.ToUint64()},
 			Label:           labels.AutoOutLabel(),
+			Initiator:       autoloopSwapInitiator,
 		}
 
 		loopOuts = []loopOutRequestResp{

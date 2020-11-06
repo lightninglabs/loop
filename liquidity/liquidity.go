@@ -99,6 +99,10 @@ const (
 	// DefaultAutoOutTicker is the default amount of time between automated
 	// loop out checks.
 	DefaultAutoOutTicker = time.Minute * 10
+
+	// autoloopSwapInitiator is the value we send in the initiator field of
+	// a swap request when issuing an automatic swap.
+	autoloopSwapInitiator = "autoloop"
 )
 
 var (
@@ -704,6 +708,7 @@ func (m *Manager) makeLoopOutRequest(ctx context.Context,
 		MaxSwapFee:          quote.SwapFee,
 		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     m.params.SweepConfTarget,
+		Initiator:           autoloopSwapInitiator,
 	}
 
 	if autoOut {
