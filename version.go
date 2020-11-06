@@ -15,7 +15,9 @@ import (
 // using the -ldflags during compilation.
 var Commit string
 
-// semanticAlphabet
+// semanticAlphabet is the allowed characters from the semantic versioning
+// guidelines for pre-release version and build metadata strings. In particular
+// they MUST only contain characters in semanticAlphabet.
 const semanticAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
 
 // These constants define the application version and follow the semantic
@@ -63,11 +65,11 @@ func semanticVersion() string {
 	// Start with the major, minor, and patch versions.
 	version := fmt.Sprintf("%d.%d.%d", appMajor, appMinor, appPatch)
 
-	// Append pre-release version if there is one.  The hyphen called for
+	// Append pre-release version if there is one. The hyphen called for
 	// by the semantic versioning spec is automatically appended and should
-	// not be contained in the pre-release string.  The pre-release version
+	// not be contained in the pre-release string. The pre-release version
 	// is not appended if it contains invalid characters.
-	preRelease := normalizeVerString(appPreRelease)
+	preRelease := normalizeVerString(appPreRelease, semanticAlphabet)
 	if preRelease != "" {
 		version = fmt.Sprintf("%s-%s", version, preRelease)
 	}
@@ -76,13 +78,11 @@ func semanticVersion() string {
 }
 
 // normalizeVerString returns the passed string stripped of all characters
-// which are not valid according to the semantic versioning guidelines for
-// pre-release version and build metadata strings.  In particular they MUST
-// only contain characters in semanticAlphabet.
-func normalizeVerString(str string) string {
+// which are not valid according to the given alphabet.
+func normalizeVerString(str, alphabet string) string {
 	var result bytes.Buffer
 	for _, r := range str {
-		if strings.ContainsRune(semanticAlphabet, r) {
+		if strings.ContainsRune(alphabet, r) {
 			result.WriteRune(r)
 		}
 	}
