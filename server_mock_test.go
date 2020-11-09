@@ -64,10 +64,9 @@ func newServerMock(lnd *test.LndMockServices) *serverMock {
 	}
 }
 
-func (s *serverMock) NewLoopOutSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-	receiverKey [33]byte, _ time.Time) (
-	*newLoopOutResponse, error) {
+func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
+	amount btcutil.Amount, _ int32, _ [33]byte, _ time.Time,
+	_ string) (*newLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)
 
@@ -138,10 +137,9 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 	return reqString, nil
 }
 
-func (s *serverMock) NewLoopInSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount,
-	senderKey [33]byte, swapInvoice, probeInvoice string,
-	lastHop *route.Vertex) (*newLoopInResponse, error) {
+func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
+	amount btcutil.Amount, _ [33]byte, swapInvoice, _ string,
+	_ *route.Vertex, _ string) (*newLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
 

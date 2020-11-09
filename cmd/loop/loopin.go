@@ -150,6 +150,7 @@ func loopIn(ctx *cli.Context) error {
 		ExternalHtlc:   external,
 		HtlcConfTarget: htlcConfTarget,
 		Label:          label,
+		Initiator:      defaultInitiator,
 	}
 
 	if ctx.IsSet(lastHopFlag.Name) {

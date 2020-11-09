@@ -8,6 +8,7 @@ package loop
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -15,7 +16,9 @@ import (
 // using the -ldflags during compilation.
 var Commit string
 
-// semanticAlphabet
+// semanticAlphabet is the allowed characters from the semantic versioning
+// guidelines for pre-release version and build metadata strings. In particular
+// they MUST only contain characters in semanticAlphabet.
 const semanticAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
 
 // These constants define the application version and follow the semantic
@@ -51,10 +54,28 @@ func Version() string {
 
 // UserAgent returns the full user agent string that identifies the software
 // that is submitting swaps to the loop server.
-func UserAgent() string {
+func UserAgent(initiator string) string {
+	// We'll only allow "safe" characters in the initiator portion of the
+	// user agent string and spaces only if surrounded by other characters.
+	initiatorAlphabet := semanticAlphabet + ". "
+	cleanInitiator := normalizeVerString(
+		strings.TrimSpace(initiator), initiatorAlphabet,
+	)
+	if len(cleanInitiator) > 0 {
+		cleanInitiator = fmt.Sprintf(",initiator=%s", cleanInitiator)
+	}
+
+	// The whole user agent string is limited to 255 characters server side
+	// and also consists of the agent name, version and commit. So we only
+	// want to take up at most 150 characters for the initiator. Anything
+	// more will just be dropped.
+	strLen := len(cleanInitiator)
+	cleanInitiator = cleanInitiator[:int(math.Min(float64(strLen), 150))]
+
 	// Assemble full string, including the commit hash of current build.
 	return fmt.Sprintf(
-		"%s/v%s/commit=%s", AgentName, semanticVersion(), Commit,
+		"%s/v%s/commit=%s%s", AgentName, semanticVersion(), Commit,
+		cleanInitiator,
 	)
 }
 
@@ -63,11 +84,11 @@ func semanticVersion() string {
 	// Start with the major, minor, and patch versions.
 	version := fmt.Sprintf("%d.%d.%d", appMajor, appMinor, appPatch)
 
-	// Append pre-release version if there is one.  The hyphen called for
+	// Append pre-release version if there is one. The hyphen called for
 	// by the semantic versioning spec is automatically appended and should
-	// not be contained in the pre-release string.  The pre-release version
+	// not be contained in the pre-release string. The pre-release version
 	// is not appended if it contains invalid characters.
-	preRelease := normalizeVerString(appPreRelease)
+	preRelease := normalizeVerString(appPreRelease, semanticAlphabet)
 	if preRelease != "" {
 		version = fmt.Sprintf("%s-%s", version, preRelease)
 	}
@@ -76,13 +97,11 @@ func semanticVersion() string {
 }
 
 // normalizeVerString returns the passed string stripped of all characters
-// which are not valid according to the semantic versioning guidelines for
-// pre-release version and build metadata strings.  In particular they MUST
-// only contain characters in semanticAlphabet.
-func normalizeVerString(str string) string {
+// which are not valid according to the given alphabet.
+func normalizeVerString(str, alphabet string) string {
 	var result bytes.Buffer
 	for _, r := range str {
-		if strings.ContainsRune(semanticAlphabet, r) {
+		if strings.ContainsRune(alphabet, r) {
 			result.WriteRune(r)
 		}
 	}

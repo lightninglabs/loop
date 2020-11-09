@@ -34,6 +34,7 @@ var (
 		MaxPrepayAmount:     100,
 		MaxPrepayRoutingFee: 75000,
 		MaxSwapRoutingFee:   70000,
+		Initiator:           "test",
 	}
 
 	swapInvoiceDesc   = "swap"

@@ -81,6 +81,11 @@ type OutRequest struct {
 
 	// Label contains an optional label for the swap.
 	Label string
+
+	// Initiator is an optional string that identifies what software
+	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
+	// appended to the user agent string.
+	Initiator string
 }
 
 // Out contains the full details of a loop out request. This includes things
@@ -196,6 +201,11 @@ type LoopInRequest struct {
 
 	// Label contains an optional label for the swap.
 	Label string
+
+	// Initiator is an optional string that identifies what software
+	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
+	// appended to the user agent string.
+	Initiator string
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.

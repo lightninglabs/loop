@@ -90,7 +90,7 @@
     },
     "/v1/loop/in": {
       "post": {
-        "summary": "* loop: `in`\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
+        "summary": "loop: `in`\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
         "operationId": "LoopIn",
         "responses": {
           "200": {
@@ -123,7 +123,7 @@
     },
     "/v1/loop/in/quote/{amt}": {
       "get": {
-        "summary": "* loop: `quote`\nGetQuote returns a quote for a swap with the provided parameters.",
+        "summary": "loop: `quote`\nGetQuote returns a quote for a swap with the provided parameters.",
         "operationId": "GetLoopInQuote",
         "responses": {
           "200": {
@@ -142,7 +142,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "*\nThe amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -150,7 +150,7 @@
           },
           {
             "name": "conf_target",
-            "description": "*\nThe confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
+            "description": "The confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
             "in": "query",
             "required": false,
             "type": "integer",
@@ -158,7 +158,7 @@
           },
           {
             "name": "external_htlc",
-            "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor.",
+            "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor.",
             "in": "query",
             "required": false,
             "type": "boolean",
@@ -166,7 +166,7 @@
           },
           {
             "name": "swap_publication_deadline",
-            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
+            "description": "The latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
             "in": "query",
             "required": false,
             "type": "string",
@@ -180,7 +180,7 @@
     },
     "/v1/loop/in/terms": {
       "get": {
-        "summary": "* loop: `terms`\nGetTerms returns the terms that the server enforces for swaps.",
+        "summary": "loop: `terms`\nGetTerms returns the terms that the server enforces for swaps.",
         "operationId": "GetLoopInTerms",
         "responses": {
           "200": {
@@ -203,7 +203,7 @@
     },
     "/v1/loop/out": {
       "post": {
-        "summary": "* loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
+        "summary": "loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
         "operationId": "LoopOut",
         "responses": {
           "200": {
@@ -236,7 +236,7 @@
     },
     "/v1/loop/out/quote/{amt}": {
       "get": {
-        "summary": "* loop: `quote`\nLoopOutQuote returns a quote for a loop out swap with the provided\nparameters.",
+        "summary": "loop: `quote`\nLoopOutQuote returns a quote for a loop out swap with the provided\nparameters.",
         "operationId": "LoopOutQuote",
         "responses": {
           "200": {
@@ -255,7 +255,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "*\nThe amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -263,7 +263,7 @@
           },
           {
             "name": "conf_target",
-            "description": "*\nThe confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
+            "description": "The confirmation target that should be used either for the sweep of the\non-chain HTLC broadcast by the swap server in the case of a Loop Out, or for\nthe confirmation of the on-chain HTLC broadcast by the swap client in the\ncase of a Loop In.",
             "in": "query",
             "required": false,
             "type": "integer",
@@ -271,7 +271,7 @@
           },
           {
             "name": "external_htlc",
-            "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor.",
+            "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor.",
             "in": "query",
             "required": false,
             "type": "boolean",
@@ -279,7 +279,7 @@
           },
           {
             "name": "swap_publication_deadline",
-            "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
+            "description": "The latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee. This only has an effect on loop out quotes.",
             "in": "query",
             "required": false,
             "type": "string",
@@ -293,7 +293,7 @@
     },
     "/v1/loop/out/terms": {
       "get": {
-        "summary": "* loop: `terms`\nLoopOutTerms returns the terms that the server enforces for a loop out swap.",
+        "summary": "loop: `terms`\nLoopOutTerms returns the terms that the server enforces for a loop out swap.",
         "operationId": "LoopOutTerms",
         "responses": {
           "200": {
@@ -316,7 +316,7 @@
     },
     "/v1/loop/swap/{id}": {
       "get": {
-        "summary": "* loop: `swapinfo`\nSwapInfo returns all known details about a single swap.",
+        "summary": "loop: `swapinfo`\nSwapInfo returns all known details about a single swap.",
         "operationId": "SwapInfo",
         "responses": {
           "200": {
@@ -335,7 +335,7 @@
         "parameters": [
           {
             "name": "id",
-            "description": "*\nThe swap identifier which currently is the hash that locks the HTLCs. When\nusing REST, this field must be encoded as URL safe base64.",
+            "description": "The swap identifier which currently is the hash that locks the HTLCs. When\nusing REST, this field must be encoded as URL safe base64.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -349,7 +349,7 @@
     },
     "/v1/loop/swaps": {
       "get": {
-        "summary": "* loop: `listswaps`\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
+        "summary": "loop: `listswaps`\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
         "operationId": "ListSwaps",
         "responses": {
           "200": {
@@ -372,7 +372,7 @@
     },
     "/v1/lsat/tokens": {
       "get": {
-        "summary": "* loop: `listauth`\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
+        "summary": "loop: `listauth`\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
         "operationId": "GetLsatTokens",
         "responses": {
           "200": {
@@ -415,7 +415,7 @@
         "swap_fee_sat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe fee that the swap server is charging for the swap."
+          "description": "The fee that the swap server is charging for the swap."
         },
         "htlc_publish_fee_sat": {
           "type": "string",
@@ -425,7 +425,7 @@
         "cltv_delta": {
           "type": "integer",
           "format": "int32",
-          "title": "*\nOn-chain cltv expiry delta"
+          "title": "On-chain cltv expiry delta"
         }
       }
     },
@@ -435,12 +435,12 @@
         "min_swap_amount": {
           "type": "string",
           "format": "int64",
-          "title": "*\nMinimum swap amount (sat)"
+          "title": "Minimum swap amount (sat)"
         },
         "max_swap_amount": {
           "type": "string",
           "format": "int64",
-          "title": "*\nMaximum swap amount (sat)"
+          "title": "Maximum swap amount (sat)"
         }
       }
     },
@@ -556,7 +556,7 @@
           "items": {
             "$ref": "#/definitions/looprpcSwapStatus"
           },
-          "description": "*\nThe list of all currently known swaps and their status."
+          "description": "The list of all currently known swaps and their status."
         }
       }
     },
@@ -566,36 +566,40 @@
         "amt": {
           "type": "string",
           "format": "int64",
-          "description": "*\nRequested swap amount in sat. This does not include the swap and miner \nfee."
+          "description": "Requested swap amount in sat. This does not include the swap and miner \nfee."
         },
         "max_swap_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum we are willing to pay the server for the swap. This value is not\ndisclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call."
+          "description": "Maximum we are willing to pay the server for the swap. This value is not\ndisclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call."
         },
         "max_miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum in on-chain fees that we are willing to spend. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+          "description": "Maximum in on-chain fees that we are willing to spend. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
         "last_hop": {
           "type": "string",
           "format": "byte",
-          "description": "*\nThe last hop to use for the loop in swap. If empty, the last hop is selected\nbased on the lowest routing fee for the swap payment from the server."
+          "description": "The last hop to use for the loop in swap. If empty, the last hop is selected\nbased on the lowest routing fee for the swap payment from the server."
         },
         "external_htlc": {
           "type": "boolean",
           "format": "boolean",
-          "description": "*\nIf external_htlc is true, we expect the htlc to be published by an external\nactor."
+          "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor."
         },
         "htlc_conf_target": {
           "type": "integer",
           "format": "int32",
-          "description": "*\nThe number of blocks that the on chain htlc should confirm within."
+          "description": "The number of blocks that the on chain htlc should confirm within."
         },
         "label": {
           "type": "string",
           "description": "An optional label for this swap. This field is limited to 500 characters\nand may not be one of the reserved values in loop/labels Reserved list."
+        },
+        "initiator": {
+          "type": "string",
+          "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
         }
       }
     },
@@ -605,41 +609,41 @@
         "amt": {
           "type": "string",
           "format": "int64",
-          "description": "*\nRequested swap amount in sat. This does not include the swap and miner fee."
+          "description": "Requested swap amount in sat. This does not include the swap and miner fee."
         },
         "dest": {
           "type": "string",
-          "description": "*\nBase58 encoded destination address for the swap."
+          "description": "Base58 encoded destination address for the swap."
         },
         "max_swap_routing_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum off-chain fee in sat that may be paid for swap payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
+          "description": "Maximum off-chain fee in sat that may be paid for swap payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
         },
         "max_prepay_routing_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum off-chain fee in sat that may be paid for the prepay to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
+          "description": "Maximum off-chain fee in sat that may be paid for the prepay to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
         },
         "max_swap_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum we are willing to pay the server for the swap. This value is not\ndisclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call. It includes the prepay amount."
+          "description": "Maximum we are willing to pay the server for the swap. This value is not\ndisclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call. It includes the prepay amount."
         },
         "max_prepay_amt": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum amount of the swap fee that may be charged as a prepayment."
+          "description": "Maximum amount of the swap fee that may be charged as a prepayment."
         },
         "max_miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "*\nMaximum in on-chain fees that we are willing to spend. If we want to\nsweep the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. If the fee estimate is lower, we publish the\nsweep tx.\n\nIf the sweep tx is not confirmed, we are forced to ratchet up fees until it\nis swept. Possibly even exceeding max_miner_fee if we get close to the htlc\ntimeout. Because the initial publication revealed the preimage, we have no\nother choice. The server may already have pulled the off-chain htlc. Only\nwhen the fee becomes higher than the swap amount, we can only wait for fees\nto come down and hope - if we are past the timeout - that the server is not\npublishing the revocation.\n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+          "description": "Maximum in on-chain fees that we are willing to spend. If we want to\nsweep the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. If the fee estimate is lower, we publish the\nsweep tx.\n\nIf the sweep tx is not confirmed, we are forced to ratchet up fees until it\nis swept. Possibly even exceeding max_miner_fee if we get close to the htlc\ntimeout. Because the initial publication revealed the preimage, we have no\nother choice. The server may already have pulled the off-chain htlc. Only\nwhen the fee becomes higher than the swap amount, we can only wait for fees\nto come down and hope - if we are past the timeout - that the server is not\npublishing the revocation.\n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
         "loop_out_channel": {
           "type": "string",
           "format": "uint64",
-          "description": "*\nDeprecated, use outgoing_chan_set. The channel to loop out, the channel\nto loop out is selected based on the lowest routing fee for the swap\npayment to the server."
+          "description": "Deprecated, use outgoing_chan_set. The channel to loop out, the channel\nto loop out is selected based on the lowest routing fee for the swap\npayment to the server."
         },
         "outgoing_chan_set": {
           "type": "array",
@@ -647,12 +651,12 @@
             "type": "string",
             "format": "uint64"
           },
-          "description": "*\nA restriction on the channel set that may be used to loop out. The actual\nchannel(s) that will be used are selected based on the lowest routing fee\nfor the swap payment to the server."
+          "description": "A restriction on the channel set that may be used to loop out. The actual\nchannel(s) that will be used are selected based on the lowest routing fee\nfor the swap payment to the server."
         },
         "sweep_conf_target": {
           "type": "integer",
           "format": "int32",
-          "description": "*\nThe number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
+          "description": "The number of blocks from the on-chain HTLC's confirmation height that it\nshould be swept within."
         },
         "htlc_confirmations": {
           "type": "integer",
@@ -662,11 +666,15 @@
         "swap_publication_deadline": {
           "type": "string",
           "format": "uint64",
-          "description": "*\nThe latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee."
+          "description": "The latest time (in unix seconds) we allow the server to wait before\npublishing the HTLC on chain. Setting this to a larger value will give the\nserver the opportunity to batch multiple swaps together, and wait for\nlow-fee periods before publishing the HTLC, potentially resulting in a\nlower total swap fee."
         },
         "label": {
           "type": "string",
           "description": "An optional label for this swap. This field is limited to 500 characters\nand may not start with the prefix [reserved], which is used to tag labels\nproduced by the daemon."
+        },
+        "initiator": {
+          "type": "string",
+          "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
         }
       }
     },
@@ -676,41 +684,41 @@
         "base_macaroon": {
           "type": "string",
           "format": "byte",
-          "description": "*\nThe base macaroon that was baked by the auth server."
+          "description": "The base macaroon that was baked by the auth server."
         },
         "payment_hash": {
           "type": "string",
           "format": "byte",
-          "description": "*\nThe payment hash of the payment that was paid to obtain the token."
+          "description": "The payment hash of the payment that was paid to obtain the token."
         },
         "payment_preimage": {
           "type": "string",
           "format": "byte",
-          "description": "*\nThe preimage of the payment hash, knowledge of this is proof that the\npayment has been paid. If the preimage is set to all zeros, this means the\npayment is still pending and the token is not yet fully valid."
+          "description": "The preimage of the payment hash, knowledge of this is proof that the\npayment has been paid. If the preimage is set to all zeros, this means the\npayment is still pending and the token is not yet fully valid."
         },
         "amount_paid_msat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe amount of millisatoshis that was paid to get the token."
+          "description": "The amount of millisatoshis that was paid to get the token."
         },
         "routing_fee_paid_msat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe amount of millisatoshis paid in routing fee to pay for the token."
+          "description": "The amount of millisatoshis paid in routing fee to pay for the token."
         },
         "time_created": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe creation time of the token as UNIX timestamp in seconds."
+          "description": "The creation time of the token as UNIX timestamp in seconds."
         },
         "expired": {
           "type": "boolean",
           "format": "boolean",
-          "description": "*\nIndicates whether the token is expired or still valid."
+          "description": "Indicates whether the token is expired or still valid."
         },
         "storage_name": {
           "type": "string",
-          "description": "*\nIdentifying attribute of this token in the store. Currently represents the\nfile name of the token where it's stored on the file system."
+          "description": "Identifying attribute of this token in the store. Currently represents the\nfile name of the token where it's stored on the file system."
         }
       }
     },
@@ -720,27 +728,27 @@
         "swap_fee_sat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe fee that the swap server is charging for the swap."
+          "description": "The fee that the swap server is charging for the swap."
         },
         "prepay_amt_sat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nThe part of the swap fee that is requested as a prepayment."
+          "description": "The part of the swap fee that is requested as a prepayment."
         },
         "htlc_sweep_fee_sat": {
           "type": "string",
           "format": "int64",
-          "description": "*\nAn estimate of the on-chain fee that needs to be paid to sweep the HTLC for\na loop out."
+          "description": "An estimate of the on-chain fee that needs to be paid to sweep the HTLC for\na loop out."
         },
         "swap_payment_dest": {
           "type": "string",
           "format": "byte",
-          "description": "*\nThe node pubkey where the swap payment needs to be paid\nto. This can be used to test connectivity before initiating the swap."
+          "description": "The node pubkey where the swap payment needs to be paid\nto. This can be used to test connectivity before initiating the swap."
         },
         "cltv_delta": {
           "type": "integer",
           "format": "int32",
-          "title": "*\nOn-chain cltv expiry delta"
+          "title": "On-chain cltv expiry delta"
         }
       }
     },
@@ -750,12 +758,12 @@
         "min_swap_amount": {
           "type": "string",
           "format": "int64",
-          "title": "*\nMinimum swap amount (sat)"
+          "title": "Minimum swap amount (sat)"
         },
         "max_swap_amount": {
           "type": "string",
           "format": "int64",
-          "title": "*\nMaximum swap amount (sat)"
+          "title": "Maximum swap amount (sat)"
         },
         "min_cltv_delta": {
           "type": "integer",
@@ -798,24 +806,24 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
+          "description": "Swap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
         },
         "id_bytes": {
           "type": "string",
           "format": "byte",
-          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
+          "description": "Swap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
         },
         "htlc_address": {
           "type": "string",
-          "description": "*\nDEPRECATED. This field stores the address of the onchain htlc, but\ndepending on the request, the semantics are different.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the address of the\nnested segwit (NP2WSH) htlc.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
+          "description": "DEPRECATED. This field stores the address of the onchain htlc, but\ndepending on the request, the semantics are different.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the address of the\nnested segwit (NP2WSH) htlc.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
         },
         "htlc_address_np2wsh": {
           "type": "string",
-          "description": "*\nThe nested segwit address of the on-chain htlc.\nThis field remains empty for loop-out."
+          "description": "The nested segwit address of the on-chain htlc.\nThis field remains empty for loop-out."
         },
         "htlc_address_p2wsh": {
           "type": "string",
-          "description": "*\nThe native segwit address of the on-chain htlc.\nUsed for both loop-in and loop-out."
+          "description": "The native segwit address of the on-chain htlc.\nUsed for both loop-in and loop-out."
         },
         "server_message": {
           "type": "string",
@@ -834,7 +842,7 @@
         "INVOICE_SETTLED"
       ],
       "default": "INITIATED",
-      "description": " - INITIATED: *\nINITIATED is the initial state of a swap. At that point, the initiation\ncall to the server has been made and the payment process has been started\nfor the swap and prepayment invoices.\n - PREIMAGE_REVEALED: *\nPREIMAGE_REVEALED is reached when the sweep tx publication is first\nattempted. From that point on, we should consider the preimage to no\nlonger be secret and we need to do all we can to get the sweep confirmed.\nThis state will mostly coalesce with StateHtlcConfirmed, except in the\ncase where we wait for fees to come down before we sweep.\n - HTLC_PUBLISHED: *\nHTLC_PUBLISHED is reached when the htlc tx has been published in a loop in\nswap.\n - SUCCESS: *\nSUCCESS is the final swap state that is reached when the sweep tx has\nthe required confirmation depth.\n - FAILED: *\nFAILED is the final swap state for a failed swap with or without loss of\nthe swap amount.\n - INVOICE_SETTLED: *\nINVOICE_SETTLED is reached when the swap invoice in a loop in swap has been\npaid, but we are still waiting for the htlc spend to confirm."
+      "description": " - INITIATED: INITIATED is the initial state of a swap. At that point, the initiation\ncall to the server has been made and the payment process has been started\nfor the swap and prepayment invoices.\n - PREIMAGE_REVEALED: PREIMAGE_REVEALED is reached when the sweep tx publication is first\nattempted. From that point on, we should consider the preimage to no\nlonger be secret and we need to do all we can to get the sweep confirmed.\nThis state will mostly coalesce with StateHtlcConfirmed, except in the\ncase where we wait for fees to come down before we sweep.\n - HTLC_PUBLISHED: HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in\nswap.\n - SUCCESS: SUCCESS is the final swap state that is reached when the sweep tx has\nthe required confirmation depth.\n - FAILED: FAILED is the final swap state for a failed swap with or without loss of\nthe swap amount.\n - INVOICE_SETTLED: INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been\npaid, but we are still waiting for the htlc spend to confirm."
     },
     "looprpcSwapStatus": {
       "type": "object",
@@ -842,24 +850,24 @@
         "amt": {
           "type": "string",
           "format": "int64",
-          "description": "*\nRequested swap amount in sat. This does not include the swap and miner\nfee."
+          "description": "Requested swap amount in sat. This does not include the swap and miner\nfee."
         },
         "id": {
           "type": "string",
-          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
+          "description": "Swap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
         },
         "id_bytes": {
           "type": "string",
           "format": "byte",
-          "description": "*\nSwap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
+          "description": "Swap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs."
         },
         "type": {
           "$ref": "#/definitions/looprpcSwapType",
-          "title": "*\nSwap type"
+          "description": "The type of the swap."
         },
         "state": {
           "$ref": "#/definitions/looprpcSwapState",
-          "description": "*\nState the swap is currently in, see State enum."
+          "description": "State the swap is currently in, see State enum."
         },
         "failure_reason": {
           "$ref": "#/definitions/looprpcFailureReason",
@@ -868,16 +876,16 @@
         "initiation_time": {
           "type": "string",
           "format": "int64",
-          "description": "*\nInitiation time of the swap."
+          "description": "Initiation time of the swap."
         },
         "last_update_time": {
           "type": "string",
           "format": "int64",
-          "description": "*\nInitiation time of the swap."
+          "description": "Initiation time of the swap."
         },
         "htlc_address": {
           "type": "string",
-          "description": "*\nDEPRECATED:  This field stores the address of the onchain htlc.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the nested segwit (NP2WSH)\naddress.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
+          "description": "DEPRECATED:  This field stores the address of the onchain htlc.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the nested segwit (NP2WSH)\naddress.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
         },
         "htlc_address_p2wsh": {
           "type": "string",
@@ -890,7 +898,7 @@
         "cost_server": {
           "type": "string",
           "format": "int64",
-          "title": "/ Swap server cost"
+          "title": "Swap server cost"
         },
         "cost_onchain": {
           "type": "string",
@@ -925,7 +933,7 @@
           "items": {
             "$ref": "#/definitions/looprpcLsatToken"
           },
-          "description": "*\nList of all tokens the daemon knows of, including old/expired tokens."
+          "description": "List of all tokens the daemon knows of, including old/expired tokens."
         }
       }
     },

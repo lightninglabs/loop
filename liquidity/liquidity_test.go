@@ -68,6 +68,7 @@ var (
 		MaxSwapFee:          testQuote.SwapFee,
 		MaxPrepayAmount:     testQuote.PrepayAmount,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
+		Initiator:           autoloopSwapInitiator,
 	}
 
 	// chan2Rec is the suggested swap for channel 2 when we use chanRule.
@@ -80,6 +81,7 @@ var (
 		MaxPrepayAmount:     testQuote.PrepayAmount,
 		MaxSwapFee:          testQuote.SwapFee,
 		SweepConfTarget:     loop.DefaultSweepConfTarget,
+		Initiator:           autoloopSwapInitiator,
 	}
 
 	// chan1Out is a contract that uses channel 1, used to represent on
