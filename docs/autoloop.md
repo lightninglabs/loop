@@ -95,9 +95,10 @@ loop setparams --maxminer={limit in satoshis}
 ### Server Fees
 #### Swap Fee
 The server charges a fee for facilitating swaps. The autolooper can be limited 
-to a set swap fee using the following command:
+to a set swap fee, expressed as a percentage of the total swap amount, using 
+the following command:
 ```
-loop setparams --maxswapfee={limit in satoshis}
+loop setparams --maxswapfee={percentage of swap volume}
 ```
 
 #### No-Show Fee
@@ -113,12 +114,19 @@ loop setparams --maxprepay={limit in satoshis}
 
 ### Off-Chain Fees
 The loop client dispatches two off-chain payments to the loop server - one for 
-the swap prepayment, and one for the swap itself. The total amount that the 
-client will pay in off-chain routing fees can be limited using the following 
-command:
-```
-loop setparams --maxprepayfee={limit for swap in satoshis} --maxroutingfee={limit for prepay in satoshis}
-```
+the swap prepayment, and one for the swap itself. The amount that the client 
+will pay in off-chain fees for each of these payments can be limited to a 
+percentage of the payment amount using the following commands:
+
+Prepayment routing fees:
+ ```
+ loop setparams --maxprepayfee={percentage of prepay amount}
+ ```
+
+Swap routing fees:
+ ```
+ loop setparams --maxroutingfee={percentage of swap amount}
+ ```
 
 ## Budget
 The autolooper operates within a set budget, and will stop executing swaps when 
