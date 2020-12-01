@@ -191,6 +191,33 @@ The default value for this parameter is 24hours, and it can be updated as follow
 loop setparams --failurebackoff={backoff in seconds}
 ```
 
+### Swap Size
+By default, the autolooper will execute a swap when the amount that needs to be
+rebalanced within a channel is equal to the swap server's minimum swap size. 
+This means that it will dispatch swaps more regularly, and ensure that channels 
+are not run down too far below their configured threshold. If you are willing 
+to allow your liquidity to drop further than the minimum swap amount below your 
+threshold, a custom minimum swap size can be set. If autolooper is configured 
+with a larger minimum swap size, it will allow channels to drop further below
+their target threshold, but will perform fewer swaps, potentially saving on 
+fees.
+
+```
+loop setparams --minamt={amount in satoshis}
+```
+
+Swaps are also limited to the maximum swap amount advertised by the server. If
+you would like to reduce the size of swap that autoloop created, this value can 
+also be configured. 
+
+```
+loop setparams --maxamt={amount in satoshis}
+```
+
+The server's current terms are provided by the `loop terms` cli command. The 
+values set for minimum and maximum swap amount must be within the range that
+the server supports. 
+
 ## Manual Swap Interaction
 The autolooper will not dispatch swaps over channels that are already included 
 in manually dispatched swaps - for loop out, this would mean the channel is 
