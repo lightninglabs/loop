@@ -28,7 +28,7 @@ func TestAutoLoopDisabled(t *testing.T) {
 		chanID1: chanRule,
 	}
 
-	c := newAutoloopTestCtx(t, params, channels)
+	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
 
 	// We expect a single quote to be required for our swap on channel 1.
@@ -93,7 +93,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 		},
 	}
 
-	c := newAutoloopTestCtx(t, params, channels)
+	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
 
 	// Calculate our maximum allowed fees and create quotes that fall within

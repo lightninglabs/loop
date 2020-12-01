@@ -58,7 +58,8 @@ type autoloopTestCtx struct {
 // newAutoloopTestCtx creates a test context with custom liquidity manager
 // parameters and lnd channels.
 func newAutoloopTestCtx(t *testing.T, parameters Parameters,
-	channels []lndclient.ChannelInfo) *autoloopTestCtx {
+	channels []lndclient.ChannelInfo,
+	server *Restrictions) *autoloopTestCtx {
 
 	// Create a mock lnd and set our expected fee rate for sweeps to our
 	// sweep fee rate limit value.
@@ -121,11 +122,20 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		Clock:                testCtx.testClock,
 	}
 
+	// SetParameters needs to make a call to our mocked restrictions call,
+	// which will block, so we push our test values in a goroutine.
+	done := make(chan struct{})
+	go func() {
+		testCtx.loopOutRestrictions <- server
+		close(done)
+	}()
+
 	// Create a manager with our test config and set our starting set of
 	// parameters.
 	testCtx.manager = NewManager(cfg)
-	assert.NoError(t, testCtx.manager.SetParameters(parameters))
-
+	err := testCtx.manager.SetParameters(context.Background(), parameters)
+	assert.NoError(t, err)
+	<-done
 	return testCtx
 }
 

@@ -162,6 +162,21 @@ var (
 
 	// ErrZeroInFlight is returned is a zero in flight swaps value is set.
 	ErrZeroInFlight = errors.New("max in flight swaps must be >=0")
+
+	// ErrMinimumExceedsMaximumAmt is returned when the minimum configured
+	// swap amount is more than the maximum.
+	ErrMinimumExceedsMaximumAmt = errors.New("minimum swap amount " +
+		"exceeds maximum")
+
+	// ErrMaxExceedsServer is returned if the maximum swap amount set is
+	// more than the server offers.
+	ErrMaxExceedsServer = errors.New("maximum swap amount is more than " +
+		"server maximum")
+
+	// ErrMinLessThanServer is returned if the minimum swap amount set is
+	// less than the server minimum.
+	ErrMinLessThanServer = errors.New("minimum swap amount is less than " +
+		"server minimum")
 )
 
 // Config contains the external functionality required to run the
@@ -264,6 +279,10 @@ type Parameters struct {
 	// sweep during a fee spike.
 	MaximumMinerFee btcutil.Amount
 
+	// ClientRestrictions are the restrictions placed on swap size by the
+	// client.
+	ClientRestrictions Restrictions
+
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed.
 	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
@@ -283,17 +302,19 @@ func (p Parameters) String() string {
 		"fee rate limit: %v, sweep conf target: %v, maximum prepay: "+
 		"%v, maximum miner fee: %v, maximum swap fee ppm: %v, maximum "+
 		"routing fee ppm: %v, maximum prepay routing fee ppm: %v, "+
-		"auto budget: %v, budget start: %v, max auto in flight: %v",
+		"auto budget: %v, budget start: %v, max auto in flight: %v, "+
+		"minimum swap size=%v, maximum swap size=%v",
 		strings.Join(channelRules, ","), p.FailureBackOff,
 		p.SweepFeeRateLimit, p.SweepConfTarget, p.MaximumPrepay,
 		p.MaximumMinerFee, p.MaximumSwapFeePPM,
 		p.MaximumRoutingFeePPM, p.MaximumPrepayRoutingFeePPM,
-		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight)
+		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight,
+		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
 }
 
 // validate checks whether a set of parameters is valid. It takes the minimum
 // confirmations we allow for sweep confirmation target as a parameter.
-func (p Parameters) validate(minConfs int32) error {
+func (p Parameters) validate(minConfs int32, server *Restrictions) error {
 	for channel, rule := range p.ChannelRules {
 		if channel.ToUint64() == 0 {
 			return ErrZeroChannelID
@@ -345,6 +366,47 @@ func (p Parameters) validate(minConfs int32) error {
 
 	if p.MaxAutoInFlight <= 0 {
 		return ErrZeroInFlight
+	}
+
+	err := validateRestrictions(server, &p.ClientRestrictions)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateRestrictions checks that client restrictions fall within the server's
+// restrictions.
+func validateRestrictions(server, client *Restrictions) error {
+	zeroMin := client.Minimum == 0
+	zeroMax := client.Maximum == 0
+
+	if zeroMin && zeroMax {
+		return nil
+	}
+
+	// If we have a non-zero maximum, we need to ensure it is greater than
+	// our minimum (which is fine if min is zero), and does not exceed the
+	// server's maximum.
+	if !zeroMax {
+		if client.Minimum > client.Maximum {
+			return ErrMinimumExceedsMaximumAmt
+		}
+
+		if client.Maximum > server.Maximum {
+			return ErrMaxExceedsServer
+		}
+	}
+
+	if zeroMin {
+		return nil
+	}
+
+	// If the client set a minimum, ensure it is at least equal to the
+	// server's limit.
+	if client.Minimum < server.Minimum {
+		return ErrMinLessThanServer
 	}
 
 	return nil
@@ -403,8 +465,14 @@ func (m *Manager) GetParameters() Parameters {
 
 // SetParameters updates our current set of parameters if the new parameters
 // provided are valid.
-func (m *Manager) SetParameters(params Parameters) error {
-	if err := params.validate(m.cfg.MinimumConfirmations); err != nil {
+func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
+	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = params.validate(m.cfg.MinimumConfirmations, restrictions)
+	if err != nil {
 		return err
 	}
 
@@ -517,8 +585,9 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 		return nil, nil
 	}
 
-	// Get the current server side restrictions.
-	outRestrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	// Get the current server side restrictions, combined with the client
+	// set restrictions, if any.
+	outRestrictions, err := m.getLoopOutRestrictions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -672,6 +741,41 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 	}
 
 	return inBudget, nil
+}
+
+// getLoopOutRestrictions queries the server for its latest swap size
+// restrictions, validates client restrictions (if present) against these
+// values and merges the client's custom requirements with the server's limits
+// to produce a single set of limitations for our swap.
+func (m *Manager) getLoopOutRestrictions(ctx context.Context) (*Restrictions,
+	error) {
+
+	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// It is possible that the server has updated its restrictions since
+	// we validated our client restrictions, so we validate again to ensure
+	// that our restrictions are within the server's bounds.
+	err = validateRestrictions(restrictions, &m.params.ClientRestrictions)
+	if err != nil {
+		return nil, err
+	}
+
+	// If our minimum is more than the server's minimum, we set it.
+	if m.params.ClientRestrictions.Minimum > restrictions.Minimum {
+		restrictions.Minimum = m.params.ClientRestrictions.Minimum
+	}
+
+	// If our maximum set and is less than the server's maximum, we set it.
+	if m.params.ClientRestrictions.Maximum != 0 &&
+		m.params.ClientRestrictions.Maximum < restrictions.Maximum {
+
+		restrictions.Maximum = m.params.ClientRestrictions.Maximum
+	}
+
+	return restrictions, nil
 }
 
 // makeLoopOutRequest creates a loop out request from a suggestion. Since we

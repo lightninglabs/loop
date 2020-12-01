@@ -613,7 +613,7 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 // SetLiquidityParams attempts to set our current liquidity manager's
 // parameters.
-func (s *swapClientServer) SetLiquidityParams(_ context.Context,
+func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
 	error) {
 
@@ -666,7 +666,7 @@ func (s *swapClientServer) SetLiquidityParams(_ context.Context,
 		}
 	}
 
-	if err := s.liquidityMgr.SetParameters(params); err != nil {
+	if err := s.liquidityMgr.SetParameters(ctx, params); err != nil {
 		return nil, err
 	}
 
