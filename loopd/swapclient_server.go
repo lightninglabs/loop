@@ -587,6 +587,8 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
 		),
+		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
+		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
 	}
 
 	// Zero golang time is different to a zero unix time, so we only set
@@ -638,6 +640,10 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
 			len(in.Parameters.Rules),
 		),
+		ClientRestrictions: liquidity.Restrictions{
+			Minimum: btcutil.Amount(in.Parameters.MinSwapAmount),
+			Maximum: btcutil.Amount(in.Parameters.MaxSwapAmount),
+		},
 	}
 
 	// Zero unix time is different to zero golang time.
