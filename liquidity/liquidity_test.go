@@ -104,6 +104,8 @@ var (
 		},
 		OutgoingChanSet: loopdb.ChannelSet{999},
 	}
+
+	testRestrictions = NewRestrictions(1, 10000)
 )
 
 // newTestConfig creates a default test config.
@@ -121,7 +123,7 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 		LoopOutRestrictions: func(_ context.Context) (*Restrictions,
 			error) {
 
-			return NewRestrictions(1, 10000), nil
+			return testRestrictions, nil
 		},
 		Lnd:   &lnd.LndServices,
 		Clock: clock.NewTestClock(testTime),
@@ -167,7 +169,7 @@ func TestParameters(t *testing.T) {
 		chanID: originalRule,
 	}
 
-	err := manager.SetParameters(expected)
+	err := manager.SetParameters(context.Background(), expected)
 	require.NoError(t, err)
 
 	// Check that changing the parameters we just set does not mutate
@@ -182,8 +184,62 @@ func TestParameters(t *testing.T) {
 	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 		lnwire.NewShortChanIDFromInt(0): NewThresholdRule(1, 2),
 	}
-	err = manager.SetParameters(expected)
+	err = manager.SetParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
+}
+
+// TestValidateRestrictions tests validating client restrictions against a set
+// of server restrictions.
+func TestValidateRestrictions(t *testing.T) {
+	tests := []struct {
+		name   string
+		client *Restrictions
+		server *Restrictions
+		err    error
+	}{
+		{
+			name: "client invalid",
+			client: &Restrictions{
+				Minimum: 100,
+				Maximum: 1,
+			},
+			server: testRestrictions,
+			err:    ErrMinimumExceedsMaximumAmt,
+		},
+		{
+			name: "maximum exceeds server",
+			client: &Restrictions{
+				Maximum: 2000,
+			},
+			server: &Restrictions{
+				Minimum: 1000,
+				Maximum: 1500,
+			},
+			err: ErrMaxExceedsServer,
+		},
+		{
+			name: "minimum less than server",
+			client: &Restrictions{
+				Minimum: 500,
+			},
+			server: &Restrictions{
+				Minimum: 1000,
+				Maximum: 1500,
+			},
+			err: ErrMinLessThanServer,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := validateRestrictions(
+				testCase.server, testCase.client,
+			)
+			require.Equal(t, testCase.err, err)
+		})
+	}
 }
 
 // TestRestrictedSuggestions tests getting of swap suggestions when we have
@@ -376,7 +432,7 @@ func TestRestrictedSuggestions(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.expected,
+				testCase.expected, nil,
 			)
 		})
 	}
@@ -426,7 +482,7 @@ func TestSweepFeeLimit(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.swaps,
+				testCase.swaps, nil,
 			)
 		})
 	}
@@ -477,7 +533,7 @@ func TestSuggestSwaps(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.swaps,
+				testCase.swaps, nil,
 			)
 		})
 	}
@@ -547,7 +603,7 @@ func TestFeeLimits(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.expected,
+				testCase.expected, nil,
 			)
 		})
 	}
@@ -704,7 +760,7 @@ func TestFeeBudget(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.expectedSwaps,
+				testCase.expectedSwaps, nil,
 			)
 		})
 	}
@@ -797,7 +853,151 @@ func TestInFlightLimit(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.expectedSwaps,
+				testCase.expectedSwaps, nil,
+			)
+		})
+	}
+}
+
+// TestSizeRestrictions tests the use of client-set size restrictions on swaps.
+func TestSizeRestrictions(t *testing.T) {
+	var (
+		serverRestrictions = Restrictions{
+			Minimum: 6000,
+			Maximum: 10000,
+		}
+
+		swap = loop.OutRequest{
+			OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
+			MaxPrepayRoutingFee: prepayFee,
+			MaxMinerFee:         defaultMaximumMinerFee,
+			MaxSwapFee:          testQuote.SwapFee,
+			MaxPrepayAmount:     testQuote.PrepayAmount,
+			SweepConfTarget:     loop.DefaultSweepConfTarget,
+			Initiator:           autoloopSwapInitiator,
+		}
+	)
+
+	tests := []struct {
+		name string
+
+		// clientRestrictions holds the restrictions that the client
+		// has configured.
+		clientRestrictions Restrictions
+
+		// server holds the server's mocked responses to our terms
+		// endpoint.
+		serverRestrictions []Restrictions
+
+		// expectedAmount is the amount that we expect for our swap.
+		expectedAmount btcutil.Amount
+
+		// expectedError is the error we expect.
+		expectedError error
+	}{
+		{
+			name: "minimum more than server, swap happens",
+			clientRestrictions: Restrictions{
+				Minimum: 7000,
+			},
+			serverRestrictions: []Restrictions{
+				serverRestrictions, serverRestrictions,
+			},
+			expectedAmount: 7500,
+		},
+		{
+			name: "minimum more than server, no swap",
+			clientRestrictions: Restrictions{
+				Minimum: 8000,
+			},
+			serverRestrictions: []Restrictions{
+				serverRestrictions, serverRestrictions,
+			},
+			expectedAmount: 0,
+		},
+		{
+			name: "maximum less than server, swap happens",
+			clientRestrictions: Restrictions{
+				Maximum: 7000,
+			},
+			serverRestrictions: []Restrictions{
+				serverRestrictions, serverRestrictions,
+			},
+			expectedAmount: 7000,
+		},
+		{
+			// Originally, our client params are ok. But then the
+			// server increases its minimum, making the client
+			// params stale.
+			name: "client params stale over time",
+			clientRestrictions: Restrictions{
+				Minimum: 6500,
+				Maximum: 9000,
+			},
+			serverRestrictions: []Restrictions{
+				serverRestrictions,
+				{
+					Minimum: 5000,
+					Maximum: 6000,
+				},
+			},
+			expectedAmount: 0,
+			expectedError:  ErrMaxExceedsServer,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1,
+			}
+
+			params := defaultParameters
+			params.ClientRestrictions = testCase.clientRestrictions
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+			}
+
+			// callCount tracks the number of calls we make to
+			// our restrictions endpoint.
+			var callCount int
+
+			cfg.LoopOutRestrictions = func(_ context.Context) (
+				*Restrictions, error) {
+
+				restrictions := testCase.serverRestrictions[callCount]
+				callCount++
+
+				return &restrictions, nil
+			}
+
+			// If we expect a swap (non-zero amount), we add a
+			// swap to our set of expected swaps, and update amount
+			// and fee accordingly.
+			var expectedSwaps []loop.OutRequest
+			if testCase.expectedAmount != 0 {
+				swap.Amount = testCase.expectedAmount
+
+				swap.MaxSwapRoutingFee = ppmToSat(
+					testCase.expectedAmount,
+					defaultRoutingFeePPM,
+				)
+
+				expectedSwaps = append(expectedSwaps, swap)
+			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				expectedSwaps, testCase.expectedError,
+			)
+
+			require.Equal(
+				t, callCount, len(testCase.serverRestrictions),
+				"too many restrictions provided by mock",
 			)
 		})
 	}
@@ -827,7 +1027,7 @@ func newSuggestSwapsSetup(cfg *Config, lnd *test.LndMockServices,
 // use the default parameters and setup two channels (channel1 + channel2) with
 // chanRule set for each.
 func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
-	expected []loop.OutRequest) {
+	expected []loop.OutRequest, expectedErr error) {
 
 	t.Parallel()
 
@@ -857,10 +1057,10 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	// them to use the rules set by the test.
 	manager := NewManager(setup.cfg)
 
-	err := manager.SetParameters(setup.params)
+	err := manager.SetParameters(context.Background(), setup.params)
 	require.NoError(t, err)
 
 	actual, err := manager.SuggestSwaps(context.Background(), false)
-	require.NoError(t, err)
+	require.Equal(t, expectedErr, err)
 	require.Equal(t, expected, actual)
 }

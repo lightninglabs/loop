@@ -513,6 +513,16 @@
           "type": "string",
           "format": "uint64",
           "description": "The maximum number of automatically dispatched swaps that we allow to be in\nflight at any point in time."
+        },
+        "min_swap_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The minimum amount, expressed in satoshis, that the autoloop client will\ndispatch a swap for. This value is subject to the server-side limits\nspecified by the LoopOutTerms endpoint."
+        },
+        "max_swap_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum amount, expressed in satoshis, that the autoloop client will\ndispatch a swap for. This value is subject to the server-side limits\nspecified by the LoopOutTerms endpoint."
         }
       }
     },

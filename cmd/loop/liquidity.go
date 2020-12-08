@@ -248,6 +248,16 @@ var setParamsCommand = cli.Command{
 				"dispatched swaps that we allow to be in " +
 				"flight",
 		},
+		cli.Uint64Flag{
+			Name: "minamt",
+			Usage: "the minimum amount in satoshis that the " +
+				"autoloop client will dispatch per-swap",
+		},
+		cli.Uint64Flag{
+			Name: "maxamt",
+			Usage: "the maximum amount in satoshis that the " +
+				"autoloop client will dispatch per-swap",
+		},
 	},
 	Action: setParams,
 }
@@ -345,6 +355,16 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("autoinflight") {
 		params.AutoMaxInFlight = ctx.Uint64("autoinflight")
+		flagSet = true
+	}
+
+	if ctx.IsSet("minamt") {
+		params.MinSwapAmount = ctx.Uint64("minamt")
+		flagSet = true
+	}
+
+	if ctx.IsSet("maxamt") {
+		params.MaxSwapAmount = ctx.Uint64("maxamt")
 		flagSet = true
 	}
 
