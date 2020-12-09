@@ -499,7 +499,10 @@ func getSwapServerConn(address, proxyAddress string, insecure bool,
 		log.Infof("Proxying connection to %v over Tor SOCKS proxy %v",
 			address, proxyAddress)
 		torDialer := func(_ context.Context, addr string) (net.Conn, error) {
-			return tor.Dial(addr, proxyAddress, false)
+			return tor.Dial(
+				addr, proxyAddress, false,
+				tor.DefaultConnTimeout,
+			)
 		}
 		opts = append(opts, grpc.WithContextDialer(torDialer))
 	}

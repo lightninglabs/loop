@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -16,6 +17,10 @@ const (
 	// loopMacaroonLocation is the value we use for the loopd macaroons'
 	// "Location" field when baking them.
 	loopMacaroonLocation = "loop"
+
+	// macDatabaseOpenTimeout is how long we wait for acquiring the lock on
+	// the macaroon database before we give up with an error.
+	macDatabaseOpenTimeout = time.Second * 5
 )
 
 var (
@@ -144,7 +149,8 @@ func (d *Daemon) startMacaroonService() error {
 	// Create the macaroon authentication/authorization service.
 	var err error
 	d.macaroonService, err = macaroons.NewService(
-		d.cfg.DataDir, loopMacaroonLocation, macaroons.IPLockChecker,
+		d.cfg.DataDir, loopMacaroonLocation, false,
+		macDatabaseOpenTimeout, macaroons.IPLockChecker,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to set up macaroon authentication: "+
