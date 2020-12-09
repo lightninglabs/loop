@@ -165,7 +165,12 @@ func (d *Daemon) startMacaroonService() error {
 
 	// Create macaroon files for loop CLI to use if they don't exist.
 	if !lnrpc.FileExists(d.cfg.MacaroonPath) {
-		ctx := context.Background()
+		// We don't offer the ability to rotate macaroon root keys yet,
+		// so just use the default one since the service expects some
+		// value to be set.
+		idCtx := macaroons.ContextWithRootKeyID(
+			context.Background(), macaroons.DefaultRootKeyID,
+		)
 
 		// We only generate one default macaroon that contains all
 		// existing permissions (equivalent to the admin.macaroon in
@@ -173,7 +178,7 @@ func (d *Daemon) startMacaroonService() error {
 		// RPC. Add our debug permissions if required.
 		allPermissions = append(allPermissions, debugPermissions...)
 		loopMac, err := d.macaroonService.Oven.NewMacaroon(
-			ctx, bakery.LatestVersion, nil, allPermissions...,
+			idCtx, bakery.LatestVersion, nil, allPermissions...,
 		)
 		if err != nil {
 			return err
