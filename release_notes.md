@@ -15,6 +15,8 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+* If lnd is locked when the loop client starts up, it will wait for lnd to be 
+  unlocked. Previous versions would exit with an error. 
 
 #### Breaking Changes
 
