@@ -95,6 +95,7 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 				CheckVersion:          LoopMinRequiredLndVersion,
 				BlockUntilChainSynced: true,
 				CallerCtx:             callerCtx,
+				BlockUntilUnlocked:    true,
 			}
 
 			// If a custom lnd connection is specified we use that
