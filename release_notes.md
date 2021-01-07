@@ -13,6 +13,7 @@ This file tracks release notes for the loop client.
 * Once the version bump PR is merged and tagged, add the release notes to the tag on GitHub.
 
 ## Next release
+- Fixed compile time compatibility with `lnd v0.12.0-beta`.
 
 #### New Features
 
