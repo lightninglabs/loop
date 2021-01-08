@@ -1,7 +1,7 @@
 module github.com/lightninglabs/loop
 
 require (
-	github.com/btcsuite/btcd v0.20.1-beta.0.20200730232343-1db1b6f8217f
+	github.com/btcsuite/btcd v0.21.0-beta.0.20201208033208-6bd4c64a54fa
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/btcsuite/btcwallet/wtxmgr v1.2.0
@@ -12,7 +12,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/lndclient v0.11.0-3
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.11.1-beta
+	github.com/lightningnetwork/lnd v0.12.0-beta.rc3
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/clock v1.0.1
 	github.com/lightningnetwork/lnd/queue v1.0.4

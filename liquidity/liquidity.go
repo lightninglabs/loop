@@ -46,8 +46,8 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -113,9 +113,9 @@ var (
 	// a single swap. We don't have a swap amount to calculate our maximum
 	// routing fee, so we use 0.16 BTC for now.
 	defaultBudget = defaultMaximumMinerFee +
-		ppmToSat(lnd.MaxBtcFundingAmount, defaultSwapFeePPM) +
+		ppmToSat(funding.MaxBtcFundingAmount, defaultSwapFeePPM) +
 		ppmToSat(defaultMaximumPrepay, defaultPrepayRoutingFeePPM) +
-		ppmToSat(lnd.MaxBtcFundingAmount, defaultRoutingFeePPM)
+		ppmToSat(funding.MaxBtcFundingAmount, defaultRoutingFeePPM)
 
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
