@@ -7,6 +7,7 @@ import (
 )
 
 type mockRouter struct {
+	lndclient.RouterClient
 	lnd *LndMockServices
 }
 

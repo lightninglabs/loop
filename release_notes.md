@@ -16,6 +16,8 @@ This file tracks release notes for the loop client.
 - Fixed compile time compatibility with `lnd v0.12.0-beta`.
 
 #### New Features
+* If lnd is locked when the loop client starts up, it will wait for lnd to be 
+  unlocked. Previous versions would exit with an error. 
 
 #### Breaking Changes
 
