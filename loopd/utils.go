@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/ticker"
 )
@@ -36,18 +37,29 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 
 func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
-		AutoOutTicker: ticker.NewForce(liquidity.DefaultAutoOutTicker),
-		LoopOut:       client.LoopOut,
-		LoopOutRestrictions: func(ctx context.Context) (
-			*liquidity.Restrictions, error) {
+		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
+		LoopOut:        client.LoopOut,
+		Restrictions: func(ctx context.Context,
+			swapType swap.Type) (*liquidity.Restrictions, error) {
 
-			outTerms, err := client.Server.GetLoopOutTerms(ctx)
+			if swapType == swap.TypeOut {
+				outTerms, err := client.Server.GetLoopOutTerms(ctx)
+				if err != nil {
+					return nil, err
+				}
+
+				return liquidity.NewRestrictions(
+					outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
+				), nil
+			}
+
+			inTerms, err := client.Server.GetLoopInTerms(ctx)
 			if err != nil {
 				return nil, err
 			}
 
 			return liquidity.NewRestrictions(
-				outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
+				inTerms.MinSwapAmount, inTerms.MaxSwapAmount,
 			), nil
 		},
 		Lnd:                  client.LndServices,

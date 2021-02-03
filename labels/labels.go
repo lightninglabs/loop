@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/lightninglabs/loop/swap"
 )
 
 const (
@@ -17,6 +19,10 @@ const (
 	// autoOut is the label used for loop out swaps that are automatically
 	// dispatched.
 	autoOut = "autoloop-out"
+
+	// autoIn is the label used for loop in swaps that are automatically
+	// dispatched.
+	autoIn = "autoloop-in"
 )
 
 var (
@@ -28,10 +34,14 @@ var (
 	ErrReservedPrefix = errors.New("label contains reserved prefix")
 )
 
-// AutoOutLabel returns a label with the reserved prefix that identifies
-// automatically dispatched loop outs.
-func AutoOutLabel() string {
-	return fmt.Sprintf("%v: %v", Reserved, autoOut)
+// AutoloopLabel returns a label with the reserved prefix that identifies
+// automatically dispatched swaps depending on the type of swap being executed.
+func AutoloopLabel(swapType swap.Type) string {
+	if swapType == swap.TypeOut {
+		return fmt.Sprintf("%v: %v", Reserved, autoOut)
+	}
+
+	return fmt.Sprintf("%v: %v", Reserved, autoIn)
 }
 
 // Validate checks that a label is of appropriate length and is not in our list

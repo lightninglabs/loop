@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -99,7 +100,7 @@ var (
 	// and restricted to a channel that we do not use in our tests.
 	autoOutContract = &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
-			Label:          labels.AutoOutLabel(),
+			Label:          labels.AutoloopLabel(swap.TypeOut),
 			InitiationTime: testBudgetStart,
 		},
 		OutgoingChanSet: loopdb.ChannelSet{999},
@@ -120,7 +121,7 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 	)
 
 	return &Config{
-		LoopOutRestrictions: func(_ context.Context) (*Restrictions,
+		Restrictions: func(_ context.Context, _ swap.Type) (*Restrictions,
 			error) {
 
 			return testRestrictions, nil
@@ -867,7 +868,7 @@ func TestSizeRestrictions(t *testing.T) {
 			Maximum: 10000,
 		}
 
-		swap = loop.OutRequest{
+		outSwap = loop.OutRequest{
 			OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
 			MaxPrepayRoutingFee: prepayFee,
 			MaxMinerFee:         defaultMaximumMinerFee,
@@ -966,7 +967,7 @@ func TestSizeRestrictions(t *testing.T) {
 			// our restrictions endpoint.
 			var callCount int
 
-			cfg.LoopOutRestrictions = func(_ context.Context) (
+			cfg.Restrictions = func(_ context.Context, _ swap.Type) (
 				*Restrictions, error) {
 
 				restrictions := testCase.serverRestrictions[callCount]
@@ -980,14 +981,14 @@ func TestSizeRestrictions(t *testing.T) {
 			// and fee accordingly.
 			var expectedSwaps []loop.OutRequest
 			if testCase.expectedAmount != 0 {
-				swap.Amount = testCase.expectedAmount
+				outSwap.Amount = testCase.expectedAmount
 
-				swap.MaxSwapRoutingFee = ppmToSat(
+				outSwap.MaxSwapRoutingFee = ppmToSat(
 					testCase.expectedAmount,
 					defaultRoutingFeePPM,
 				)
 
-				expectedSwaps = append(expectedSwaps, swap)
+				expectedSwaps = append(expectedSwaps, outSwap)
 			}
 
 			testSuggestSwaps(

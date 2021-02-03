@@ -783,25 +783,25 @@ message LiquidityParameters {
     uint64 failure_backoff_sec = 9;
 
     /*
-    Set to true to enable automatic dispatch of loop out swaps. All swaps will
-    be limited to the fee categories set by these parameters, and total
-    expenditure will be limited to the auto out budget.
+    Set to true to enable automatic dispatch of swaps. All swaps will be limited 
+    to the fee categories set by these parameters, and total expenditure will 
+    be limited to the autoloop budget.
     */
-    bool auto_loop_out = 10;
+    bool autoloop = 10;
 
     /*
     The total budget for automatically dispatched swaps since the budget start
     time, expressed in satoshis.
     */
-    uint64 auto_out_budget_sat = 11;
+    uint64 autoloop_budget_sat = 11;
 
     /*
-    The start time for auto-out budget, expressed as a unix timestamp in
+    The start time for autoloop budget, expressed as a unix timestamp in
     seconds. If this value is 0, the budget will be applied for all
     automatically dispatched swaps. Swaps that were completed before this date
     will not be included in budget calculations.
     */
-    uint64 auto_out_budget_start_sec = 12;
+    uint64 autoloop_budget_start_sec = 12;
 
     /*
     The maximum number of automatically dispatched swaps that we allow to be in

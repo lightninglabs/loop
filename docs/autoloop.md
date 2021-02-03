@@ -6,7 +6,7 @@ budget of your choosing.
 The autoloop functionality is disabled by default, and can be enabled using the 
 following command:
 ```
-loop setparams --autoout=true
+loop setparams --autoloop=true
 ```
 
 Swaps that are dispatched by the autolooper can be identified in the output of 

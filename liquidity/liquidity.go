@@ -46,6 +46,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -96,9 +97,9 @@ const (
 	// suggestions as a dry-run).
 	defaultMaxInFlight = 1
 
-	// DefaultAutoOutTicker is the default amount of time between automated
-	// loop out checks.
-	DefaultAutoOutTicker = time.Minute * 10
+	// DefaultAutoloopTicker is the default amount of time between automated
+	// swap checks.
+	DefaultAutoloopTicker = time.Minute * 10
 
 	// autoloopSwapInitiator is the value we send in the initiator field of
 	// a swap request when issuing an automatic swap.
@@ -182,14 +183,15 @@ var (
 // Config contains the external functionality required to run the
 // liquidity manager.
 type Config struct {
-	// AutoOutTicker determines how often we should check whether we want
-	// to dispatch an automated loop out. We use a force ticker so that
-	// we can trigger autoloop in itests.
-	AutoOutTicker *ticker.Force
+	// AutoloopTicker determines how often we should check whether we want
+	// to dispatch an automated swap. We use a force ticker so that we can
+	// trigger autoloop in itests.
+	AutoloopTicker *ticker.Force
 
-	// LoopOutRestrictions returns the restrictions that the server applies
-	// to loop out swaps.
-	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
+	// Restrictions returns the restrictions that the server applies to
+	// swaps.
+	Restrictions func(ctx context.Context, swapType swap.Type) (
+		*Restrictions, error)
 
 	// Lnd provides us with access to lnd's rpc servers.
 	Lnd *lndclient.LndServices
@@ -220,8 +222,8 @@ type Config struct {
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
-	// AutoOut enables automatic dispatch of loop out swaps.
-	AutoOut bool
+	// Autoloop enables automatic dispatch of swaps.
+	Autoloop bool
 
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
@@ -431,12 +433,12 @@ type Manager struct {
 // We run this loop even if automated swaps are not currently enabled rather
 // than managing starting and stopping the ticker as our parameters are updated.
 func (m *Manager) Run(ctx context.Context) error {
-	m.cfg.AutoOutTicker.Resume()
-	defer m.cfg.AutoOutTicker.Stop()
+	m.cfg.AutoloopTicker.Resume()
+	defer m.cfg.AutoloopTicker.Stop()
 
 	for {
 		select {
-		case <-m.cfg.AutoOutTicker.Ticks():
+		case <-m.cfg.AutoloopTicker.Ticks():
 			if err := m.autoloop(ctx); err != nil {
 				log.Errorf("autoloop failed: %v", err)
 			}
@@ -466,7 +468,7 @@ func (m *Manager) GetParameters() Parameters {
 // SetParameters updates our current set of parameters if the new parameters
 // provided are valid.
 func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
-	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return err
 	}
@@ -510,6 +512,15 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	}
 
 	for _, swap := range swaps {
+		// If we don't actually have dispatch of swaps enabled, log
+		// suggestions.
+		if !m.params.Autoloop {
+			log.Debugf("recommended autoloop: %v sats over "+
+				"%v", swap.Amount, swap.OutgoingChanSet)
+
+			continue
+		}
+
 		// Create a copy of our range var so that we can reference it.
 		swap := swap
 		loopOut, err := m.cfg.LoopOut(ctx, &swap)
@@ -528,7 +539,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 // ForceAutoLoop force-ticks our auto-out ticker.
 func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	select {
-	case m.cfg.AutoOutTicker.Force <- m.cfg.Clock.Now():
+	case m.cfg.AutoloopTicker.Force <- m.cfg.Clock.Now():
 		return nil
 
 	case <-ctx.Done():
@@ -538,11 +549,11 @@ func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 
 // SuggestSwaps returns a set of swap suggestions based on our current liquidity
 // balance for the set of rules configured for the manager, failing if there are
-// no rules set. It takes an autoOut boolean that indicates whether the
+// no rules set. It takes an autoloop boolean that indicates whether the
 // suggestions are being used for our internal autolooper. This boolean is used
 // to determine the information we add to our swap suggestion and whether we
 // return any suggestions.
-func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
+func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	[]loop.OutRequest, error) {
 
 	m.paramsLock.Lock()
@@ -587,7 +598,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 
 	// Get the current server side restrictions, combined with the client
 	// set restrictions, if any.
-	outRestrictions, err := m.getLoopOutRestrictions(ctx)
+	restrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
 	}
@@ -646,7 +657,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 
 		balance := newBalances(channel)
 
-		suggestion := rule.suggestSwap(balance, outRestrictions)
+		suggestion := rule.suggestSwap(balance, restrictions)
 
 		// We can have nil suggestions in the case where no action is
 		// required, so we skip over them.
@@ -681,7 +692,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 		}
 
 		outRequest, err := m.makeLoopOutRequest(
-			ctx, suggestion, quote, autoOut,
+			ctx, suggestion, quote, autoloop,
 		)
 		if err != nil {
 			return nil, err
@@ -728,29 +739,17 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 		}
 	}
 
-	// If we are getting suggestions for automatically dispatched swaps,
-	// and they are not enabled in our parameters, we just log the swap
-	// suggestions and return an empty set of suggestions.
-	if autoOut && !m.params.AutoOut {
-		for _, swap := range inBudget {
-			log.Debugf("recommended autoloop: %v sats over "+
-				"%v", swap.Amount, swap.OutgoingChanSet)
-		}
-
-		return nil, nil
-	}
-
 	return inBudget, nil
 }
 
-// getLoopOutRestrictions queries the server for its latest swap size
-// restrictions, validates client restrictions (if present) against these
-// values and merges the client's custom requirements with the server's limits
-// to produce a single set of limitations for our swap.
-func (m *Manager) getLoopOutRestrictions(ctx context.Context) (*Restrictions,
-	error) {
+// getSwapRestrictions queries the server for its latest swap size restrictions,
+// validates client restrictions (if present) against these values and merges
+// the client's custom requirements with the server's limits to produce a single
+// set of limitations for our swap.
+func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
+	*Restrictions, error) {
 
-	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	restrictions, err := m.cfg.Restrictions(ctx, swapType)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +790,7 @@ func (m *Manager) getLoopOutRestrictions(ctx context.Context) (*Restrictions,
 // non-auto requests, because the client api will set it anyway).
 func (m *Manager) makeLoopOutRequest(ctx context.Context,
 	suggestion *LoopOutRecommendation, quote *loop.LoopOutQuote,
-	autoOut bool) (loop.OutRequest, error) {
+	autoloop bool) (loop.OutRequest, error) {
 
 	prepayMaxFee := ppmToSat(
 		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
@@ -815,8 +814,8 @@ func (m *Manager) makeLoopOutRequest(ctx context.Context,
 		Initiator:           autoloopSwapInitiator,
 	}
 
-	if autoOut {
-		request.Label = labels.AutoOutLabel()
+	if autoloop {
+		request.Label = labels.AutoloopLabel(swap.TypeOut)
 
 		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)
 		if err != nil {
@@ -882,7 +881,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	var summary existingAutoLoopSummary
 
 	for _, out := range loopOuts {
-		if out.Contract.Label != labels.AutoOutLabel() {
+		if out.Contract.Label != labels.AutoloopLabel(swap.TypeOut) {
 			continue
 		}
 

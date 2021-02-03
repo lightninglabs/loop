@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/ticker"
@@ -91,8 +92,10 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	testCtx.lnd.Channels = channels
 
 	cfg := &Config{
-		AutoOutTicker: ticker.NewForce(DefaultAutoOutTicker),
-		LoopOutRestrictions: func(context.Context) (*Restrictions, error) {
+		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
+		Restrictions: func(context.Context, swap.Type) (*Restrictions,
+			error) {
+
 			return <-testCtx.loopOutRestrictions, nil
 		},
 		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
@@ -182,7 +185,7 @@ func (c *autoloopTestCtx) autoloop(minAmt, maxAmt btcutil.Amount,
 	expectedSwaps []loopOutRequestResp) {
 
 	// Tick our autoloop ticker to force assessing whether we want to loop.
-	c.manager.cfg.AutoOutTicker.Force <- testTime
+	c.manager.cfg.AutoloopTicker.Force <- testTime
 
 	// Send a mocked response from the server with the swap size limits.
 	c.loopOutRestrictions <- NewRestrictions(minAmt, maxAmt)

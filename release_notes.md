@@ -20,5 +20,10 @@ This file tracks release notes for the loop client.
   unlocked. Previous versions would exit with an error. 
 
 #### Breaking Changes
+* The `AutoOut`, `AutoOutBudgetSat` and `AutoOutBudgetStartSec` fields in the
+  `LiquidityParameters` message used in the experimental autoloop API have 
+  been renamed to `Autoloop`, `AutoloopBudgetSat` and `AutoloopBudgetStartSec`. 
+* The `autoout` flag for enabling automatic dispatch of loop out swaps has been
+  renamed to `autoloop` so that it can cover loop out and loop in.
 
 #### Bug Fixes
