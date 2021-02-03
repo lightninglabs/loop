@@ -220,8 +220,8 @@ type Config struct {
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
-	// AutoOut enables automatic dispatch of loop out swaps.
-	AutoOut bool
+	// Autoloop enables automatic dispatch of swaps.
+	Autoloop bool
 
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
@@ -538,11 +538,11 @@ func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 
 // SuggestSwaps returns a set of swap suggestions based on our current liquidity
 // balance for the set of rules configured for the manager, failing if there are
-// no rules set. It takes an autoOut boolean that indicates whether the
+// no rules set. It takes an autoloop boolean that indicates whether the
 // suggestions are being used for our internal autolooper. This boolean is used
 // to determine the information we add to our swap suggestion and whether we
 // return any suggestions.
-func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
+func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	[]loop.OutRequest, error) {
 
 	m.paramsLock.Lock()
@@ -681,7 +681,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 		}
 
 		outRequest, err := m.makeLoopOutRequest(
-			ctx, suggestion, quote, autoOut,
+			ctx, suggestion, quote, autoloop,
 		)
 		if err != nil {
 			return nil, err
@@ -731,7 +731,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoOut bool) (
 	// If we are getting suggestions for automatically dispatched swaps,
 	// and they are not enabled in our parameters, we just log the swap
 	// suggestions and return an empty set of suggestions.
-	if autoOut && !m.params.AutoOut {
+	if autoloop && !m.params.Autoloop {
 		for _, swap := range inBudget {
 			log.Debugf("recommended autoloop: %v sats over "+
 				"%v", swap.Amount, swap.OutgoingChanSet)
@@ -791,7 +791,7 @@ func (m *Manager) getLoopOutRestrictions(ctx context.Context) (*Restrictions,
 // non-auto requests, because the client api will set it anyway).
 func (m *Manager) makeLoopOutRequest(ctx context.Context,
 	suggestion *LoopOutRecommendation, quote *loop.LoopOutQuote,
-	autoOut bool) (loop.OutRequest, error) {
+	autoloop bool) (loop.OutRequest, error) {
 
 	prepayMaxFee := ppmToSat(
 		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
@@ -815,7 +815,7 @@ func (m *Manager) makeLoopOutRequest(ctx context.Context,
 		Initiator:           autoloopSwapInitiator,
 	}
 
-	if autoOut {
+	if autoloop {
 		request.Label = labels.AutoOutLabel()
 
 		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)

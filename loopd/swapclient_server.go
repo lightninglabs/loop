@@ -581,7 +581,7 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		SweepFeeRateSatPerVbyte: uint64(satPerByte),
 		SweepConfTarget:         cfg.SweepConfTarget,
 		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
-		AutoLoopOut:             cfg.AutoOut,
+		AutoLoopOut:             cfg.Autoloop,
 		AutoOutBudgetSat:        uint64(cfg.AutoFeeBudget),
 		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
 		Rules: make(
@@ -633,7 +633,7 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 		SweepConfTarget:            in.Parameters.SweepConfTarget,
 		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
 			time.Second,
-		AutoOut:         in.Parameters.AutoLoopOut,
+		Autoloop:        in.Parameters.AutoLoopOut,
 		AutoFeeBudget:   btcutil.Amount(in.Parameters.AutoOutBudgetSat),
 		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
 		ChannelRules: make(

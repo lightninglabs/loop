@@ -75,7 +75,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 	// is set to allow exactly 2 swaps at the prices that we set in our
 	// test quotes.
 	params := Parameters{
-		AutoOut:                    true,
+		Autoloop:                   true,
 		AutoFeeBudget:              40066,
 		AutoFeeStartDate:           testTime,
 		MaxAutoInFlight:            2,
