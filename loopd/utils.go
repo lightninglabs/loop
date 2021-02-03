@@ -36,8 +36,8 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 
 func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
-		AutoOutTicker: ticker.NewForce(liquidity.DefaultAutoOutTicker),
-		LoopOut:       client.LoopOut,
+		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
+		LoopOut:        client.LoopOut,
 		LoopOutRestrictions: func(ctx context.Context) (
 			*liquidity.Restrictions, error) {
 

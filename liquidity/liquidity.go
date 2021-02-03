@@ -96,9 +96,9 @@ const (
 	// suggestions as a dry-run).
 	defaultMaxInFlight = 1
 
-	// DefaultAutoOutTicker is the default amount of time between automated
-	// loop out checks.
-	DefaultAutoOutTicker = time.Minute * 10
+	// DefaultAutoloopTicker is the default amount of time between automated
+	// swap checks.
+	DefaultAutoloopTicker = time.Minute * 10
 
 	// autoloopSwapInitiator is the value we send in the initiator field of
 	// a swap request when issuing an automatic swap.
@@ -182,10 +182,10 @@ var (
 // Config contains the external functionality required to run the
 // liquidity manager.
 type Config struct {
-	// AutoOutTicker determines how often we should check whether we want
-	// to dispatch an automated loop out. We use a force ticker so that
-	// we can trigger autoloop in itests.
-	AutoOutTicker *ticker.Force
+	// AutoloopTicker determines how often we should check whether we want
+	// to dispatch an automated swap. We use a force ticker so that we can
+	// trigger autoloop in itests.
+	AutoloopTicker *ticker.Force
 
 	// LoopOutRestrictions returns the restrictions that the server applies
 	// to loop out swaps.
@@ -431,12 +431,12 @@ type Manager struct {
 // We run this loop even if automated swaps are not currently enabled rather
 // than managing starting and stopping the ticker as our parameters are updated.
 func (m *Manager) Run(ctx context.Context) error {
-	m.cfg.AutoOutTicker.Resume()
-	defer m.cfg.AutoOutTicker.Stop()
+	m.cfg.AutoloopTicker.Resume()
+	defer m.cfg.AutoloopTicker.Stop()
 
 	for {
 		select {
-		case <-m.cfg.AutoOutTicker.Ticks():
+		case <-m.cfg.AutoloopTicker.Ticks():
 			if err := m.autoloop(ctx); err != nil {
 				log.Errorf("autoloop failed: %v", err)
 			}
@@ -528,7 +528,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 // ForceAutoLoop force-ticks our auto-out ticker.
 func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	select {
-	case m.cfg.AutoOutTicker.Force <- m.cfg.Clock.Now():
+	case m.cfg.AutoloopTicker.Force <- m.cfg.Clock.Now():
 		return nil
 
 	case <-ctx.Done():

@@ -91,7 +91,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	testCtx.lnd.Channels = channels
 
 	cfg := &Config{
-		AutoOutTicker: ticker.NewForce(DefaultAutoOutTicker),
+		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
 		LoopOutRestrictions: func(context.Context) (*Restrictions, error) {
 			return <-testCtx.loopOutRestrictions, nil
 		},
@@ -182,7 +182,7 @@ func (c *autoloopTestCtx) autoloop(minAmt, maxAmt btcutil.Amount,
 	expectedSwaps []loopOutRequestResp) {
 
 	// Tick our autoloop ticker to force assessing whether we want to loop.
-	c.manager.cfg.AutoOutTicker.Force <- testTime
+	c.manager.cfg.AutoloopTicker.Force <- testTime
 
 	// Send a mocked response from the server with the swap size limits.
 	c.loopOutRestrictions <- NewRestrictions(minAmt, maxAmt)
