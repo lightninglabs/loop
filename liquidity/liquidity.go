@@ -188,9 +188,10 @@ type Config struct {
 	// trigger autoloop in itests.
 	AutoloopTicker *ticker.Force
 
-	// LoopOutRestrictions returns the restrictions that the server applies
-	// to loop out swaps.
-	LoopOutRestrictions func(ctx context.Context) (*Restrictions, error)
+	// Restrictions returns the restrictions that the server applies to
+	// swaps.
+	Restrictions func(ctx context.Context, swapType swap.Type) (
+		*Restrictions, error)
 
 	// Lnd provides us with access to lnd's rpc servers.
 	Lnd *lndclient.LndServices
@@ -467,7 +468,7 @@ func (m *Manager) GetParameters() Parameters {
 // SetParameters updates our current set of parameters if the new parameters
 // provided are valid.
 func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
-	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return err
 	}
@@ -588,7 +589,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Get the current server side restrictions, combined with the client
 	// set restrictions, if any.
-	outRestrictions, err := m.getLoopOutRestrictions(ctx)
+	restrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +648,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 		balance := newBalances(channel)
 
-		suggestion := rule.suggestSwap(balance, outRestrictions)
+		suggestion := rule.suggestSwap(balance, restrictions)
 
 		// We can have nil suggestions in the case where no action is
 		// required, so we skip over them.
@@ -744,14 +745,14 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	return inBudget, nil
 }
 
-// getLoopOutRestrictions queries the server for its latest swap size
-// restrictions, validates client restrictions (if present) against these
-// values and merges the client's custom requirements with the server's limits
-// to produce a single set of limitations for our swap.
-func (m *Manager) getLoopOutRestrictions(ctx context.Context) (*Restrictions,
-	error) {
+// getSwapRestrictions queries the server for its latest swap size restrictions,
+// validates client restrictions (if present) against these values and merges
+// the client's custom requirements with the server's limits to produce a single
+// set of limitations for our swap.
+func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
+	*Restrictions, error) {
 
-	restrictions, err := m.cfg.LoopOutRestrictions(ctx)
+	restrictions, err := m.cfg.Restrictions(ctx, swapType)
 	if err != nil {
 		return nil, err
 	}

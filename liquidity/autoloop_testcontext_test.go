@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/ticker"
@@ -92,7 +93,9 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 	cfg := &Config{
 		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
-		LoopOutRestrictions: func(context.Context) (*Restrictions, error) {
+		Restrictions: func(context.Context, swap.Type) (*Restrictions,
+			error) {
+
 			return <-testCtx.loopOutRestrictions, nil
 		},
 		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
