@@ -512,6 +512,15 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	}
 
 	for _, swap := range swaps {
+		// If we don't actually have dispatch of swaps enabled, log
+		// suggestions.
+		if !m.params.Autoloop {
+			log.Debugf("recommended autoloop: %v sats over "+
+				"%v", swap.Amount, swap.OutgoingChanSet)
+
+			continue
+		}
+
 		// Create a copy of our range var so that we can reference it.
 		swap := swap
 		loopOut, err := m.cfg.LoopOut(ctx, &swap)
@@ -728,18 +737,6 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		if available == 0 || allowedSwaps == len(inBudget) {
 			break
 		}
-	}
-
-	// If we are getting suggestions for automatically dispatched swaps,
-	// and they are not enabled in our parameters, we just log the swap
-	// suggestions and return an empty set of suggestions.
-	if autoloop && !m.params.Autoloop {
-		for _, swap := range inBudget {
-			log.Debugf("recommended autoloop: %v sats over "+
-				"%v", swap.Amount, swap.OutgoingChanSet)
-		}
-
-		return nil, nil
 	}
 
 	return inBudget, nil
