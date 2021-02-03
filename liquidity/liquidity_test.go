@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -99,7 +100,7 @@ var (
 	// and restricted to a channel that we do not use in our tests.
 	autoOutContract = &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
-			Label:          labels.AutoOutLabel(),
+			Label:          labels.AutoloopLabel(swap.TypeOut),
 			InitiationTime: testBudgetStart,
 		},
 		OutgoingChanSet: loopdb.ChannelSet{999},

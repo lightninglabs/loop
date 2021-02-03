@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -145,7 +146,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 			MaxMinerFee:     params.MaximumMinerFee,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
-			Label:           labels.AutoOutLabel(),
+			Label:           labels.AutoloopLabel(swap.TypeOut),
 			Initiator:       autoloopSwapInitiator,
 		}
 
@@ -161,7 +162,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 			MaxMinerFee:     params.MaximumMinerFee,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID2.ToUint64()},
-			Label:           labels.AutoOutLabel(),
+			Label:           labels.AutoloopLabel(swap.TypeOut),
 			Initiator:       autoloopSwapInitiator,
 		}
 

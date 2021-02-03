@@ -46,6 +46,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -816,7 +817,7 @@ func (m *Manager) makeLoopOutRequest(ctx context.Context,
 	}
 
 	if autoloop {
-		request.Label = labels.AutoOutLabel()
+		request.Label = labels.AutoloopLabel(swap.TypeOut)
 
 		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)
 		if err != nil {
@@ -882,7 +883,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	var summary existingAutoLoopSummary
 
 	for _, out := range loopOuts {
-		if out.Contract.Label != labels.AutoOutLabel() {
+		if out.Contract.Label != labels.AutoloopLabel(swap.TypeOut) {
 			continue
 		}
 
