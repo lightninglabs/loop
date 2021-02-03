@@ -225,10 +225,10 @@ var setParamsCommand = cli.Command{
 				"included in suggestions.",
 		},
 		cli.BoolFlag{
-			Name: "autoout",
+			Name: "autoloop",
 			Usage: "set to true to enable automated dispatch " +
-				"of loop out swaps, limited to the budget " +
-				"set by autobudget",
+				"of swaps, limited to the budget set by " +
+				"autobudget",
 		},
 		cli.Uint64Flag{
 			Name: "autobudget",
@@ -338,18 +338,18 @@ func setParams(ctx *cli.Context) error {
 		flagSet = true
 	}
 
-	if ctx.IsSet("autoout") {
-		params.AutoLoopOut = ctx.Bool("autoout")
+	if ctx.IsSet("autoloop") {
+		params.Autoloop = ctx.Bool("autoloop")
 		flagSet = true
 	}
 
 	if ctx.IsSet("autobudget") {
-		params.AutoOutBudgetSat = ctx.Uint64("autobudget")
+		params.AutoloopBudgetSat = ctx.Uint64("autobudget")
 		flagSet = true
 	}
 
 	if ctx.IsSet("budgetstart") {
-		params.AutoOutBudgetStartSec = ctx.Uint64("budgetstart")
+		params.AutoloopBudgetStartSec = ctx.Uint64("budgetstart")
 		flagSet = true
 	}
 
