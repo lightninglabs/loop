@@ -28,7 +28,7 @@ The docker image contains:
 Docker is very flexible so you can use that information however you choose. This guide isn't meant to be prescriptive.
 
 
-### Example: Running loopd
+### Example: Running loopd
 
 One way of running `loopd` is 
 ```
