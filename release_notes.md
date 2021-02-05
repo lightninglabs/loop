@@ -17,7 +17,13 @@ This file tracks release notes for the loop client.
 
 #### New Features
 * If lnd is locked when the loop client starts up, it will wait for lnd to be 
-  unlocked. Previous versions would exit with an error. 
+  unlocked. Previous versions would exit with an error.
+* Loop will no longer need all `lnd` subserver macaroons to be present in the
+  `--lnd.macaroondir`. Instead the new `--lnd.macaroonpath` option can be
+  pointed to a single macaroon, for example the `admin.macaroon` or a custom
+  baked one with the exact permissions needed for Loop. If the now deprecated
+  flag/option `--lnd.macaroondir` is used, it will fall back to use only the
+  `admin.macaroon` from that directory.
 
 #### Breaking Changes
 * The `AutoOut`, `AutoOutBudgetSat` and `AutoOutBudgetStartSec` fields in the

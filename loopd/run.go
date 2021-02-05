@@ -90,7 +90,7 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 			svcCfg := &lndclient.LndServicesConfig{
 				LndAddress:            cfg.Host,
 				Network:               network,
-				MacaroonDir:           cfg.MacaroonDir,
+				CustomMacaroonPath:    cfg.MacaroonPath,
 				TLSPath:               cfg.TLSPath,
 				CheckVersion:          LoopMinRequiredLndVersion,
 				BlockUntilChainSynced: true,
