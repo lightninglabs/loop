@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var getLiquidityParamsCommand = cli.Command{
@@ -411,11 +414,22 @@ func suggestSwap(ctx *cli.Context) error {
 	resp, err := client.SuggestSwaps(
 		context.Background(), &looprpc.SuggestSwapsRequest{},
 	)
-	if err != nil {
+	if err == nil {
+		printRespJSON(resp)
+		return nil
+	}
+
+	// If we got an error because no rules are set, we want to display a
+	// friendly message.
+	rpcErr, ok := status.FromError(err)
+	if !ok {
 		return err
 	}
 
-	printJSON(resp)
+	if rpcErr.Code() != codes.FailedPrecondition {
+		return err
+	}
 
-	return nil
+	return errors.New("no rules set for autolooper, please set rules " +
+		"using the setrule command")
 }

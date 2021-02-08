@@ -224,8 +224,51 @@ in manually dispatched swaps - for loop out, this would mean the channel is
 specified in the outgoing channel swap, and for loop in the channel's peer is 
 specified as the last hop for an ongoing swap. This check is put in place to 
 prevent the autolooper from interfering with swaps you have created yourself. 
-If there is an ongoing swap that does not have a restriction placed on it (no 
-outgoing channel set, or last hop), then the autolooper will take no action 
-until it has resolved, because it does not know how that swap will affect 
-liquidity balances. 
 
+## Disqualified Swaps
+There are various restrictions placed on the client's autoloop functionality.
+If a channel is not eligible for a swap at present, or it does not need one
+based on the current set of liquidity rules, it will be listed in the 
+`Disqualified` section of the output of the `SuggestSwaps` API. One of the 
+following reasons will be displayed:
+
+* Budget not started: if the start date for your budget is in the future,
+  no swaps will be executed until the start date is reached. See [budget](#budget) to
+  update.
+* Budget elapsed: if the autolooper has elapsed the budget assigned to it for 
+  fees, this reason will be returned. See [budget](#budget) to update.
+* Sweep fees: this reason will be displayed if the estimated chain fee rate for
+  sweeping a loop out swap is higher than the current limit. See [sweep fees](#fee-market-awareness) 
+  to update.
+* In flight: there is a limit to the number of automatically dispatched swaps
+  that the client allows. If this limit has been reached, no further swaps
+  will be automatically dispatched until the in-flight swaps complete. See 
+  [in flight limit](#in-flight-limit) to update.
+* Budget insufficient: if there is not enough remaining budget for a swap, 
+  including the amount currently reserved for in flight swaps, an insufficient
+  reason will be displayed. This differs from budget elapsed because there is
+  still budget remaining, just not enough to execute a specific swap.
+* Swap fee: there is a limit placed on the fee that the client will pay to the
+  server for automatically dispatched swaps. The swap fee reason will be shown 
+  if the fees advertised by the server are too high. See [swap fee](#swap-fee)
+  to update.
+* Miner fee: if the estimated on-chain fees for a swap are too high, autoloop
+  will display a miner fee reason. See [miner fee](#miner-fee) to update. 
+* Prepay: if the no-show fee that the server will pay in the unlikely event 
+  that the client fails to complete a swap is too high, a prepay reason will
+  be returned. See [no show fees](#no-show-fee) to update. 
+* Backoff: if an automatically dispatched swap has recently failed for a channel,
+  autoloop will backoff for a period before retrying. See [failure backoff](#failure-backoff) 
+  to update. 
+* Loop out: if there is currently a loop out swap in-flight on a channel, it 
+  will not be used for automated swaps. This issue will resolve itself once the 
+  in-flight swap completes.
+* Loop in: if there is currently a loop in swap in-flight for a peer, it will 
+  not be used for automated swaps. This will resolve itself once the swap is 
+  completed.
+* Liquidity ok: if a channel's current liquidity balance is within the bound set
+  by the rule that it applies to, then a liquidity ok reason will be displayed
+  to indicate that no action is required for that channel.
+
+Further details for all of these reasons can be found in loopd's debug level 
+logs.
