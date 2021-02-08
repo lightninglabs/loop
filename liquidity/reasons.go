@@ -1,0 +1,62 @@
+package liquidity
+
+// Reason is an enum which represents the various reasons we have for not
+// executing a swap.
+type Reason uint8
+
+const (
+	// ReasonNone is the zero value reason, added so that this enum can
+	// align with the numeric values used in our protobufs and avoid
+	// ambiguity around default zero values.
+	ReasonNone Reason = iota
+
+	// ReasonBudgetNotStarted indicates that we do not recommend any swaps
+	// because the start time for our budget has not arrived yet.
+	ReasonBudgetNotStarted
+
+	// ReasonSweepFees indicates that the estimated fees to sweep swaps
+	// are too high right now.
+	ReasonSweepFees
+
+	// ReasonBudgetElapsed indicates that the autoloop budget for the
+	// period has been elapsed.
+	ReasonBudgetElapsed
+
+	// ReasonInFlight indicates that the limit on in-flight automatically
+	// dispatched swaps has already been reached.
+	ReasonInFlight
+
+	// ReasonSwapFee indicates that the server fee for a specific swap is
+	// too high.
+	ReasonSwapFee
+
+	// ReasonMinerFee indicates that the miner fee for a specific swap is
+	// to high.
+	ReasonMinerFee
+
+	// ReasonPrepay indicates that the prepay fee for a specific swap is
+	// too high.
+	ReasonPrepay
+
+	// ReasonFailureBackoff indicates that a swap has recently failed for
+	// this target, and the backoff period has not yet passed.
+	ReasonFailureBackoff
+
+	// ReasonLoopOut indicates that a loop out swap is currently utilizing
+	// the channel, so it is not eligible.
+	ReasonLoopOut
+
+	// ReasonLoopIn indicates that a loop in swap is currently in flight
+	// for the peer, so it is not eligible.
+	ReasonLoopIn
+
+	// ReasonLiquidityOk indicates that a target meets the liquidity
+	// balance expressed in its rule, so no swap is needed.
+	ReasonLiquidityOk
+
+	// ReasonBudgetInsufficient indicates that we cannot perform a swap
+	// because we do not have enough pending budget available. This differs
+	// from budget elapsed, because we still have some budget available,
+	// but we have allocated it to other swaps.
+	ReasonBudgetInsufficient
+)

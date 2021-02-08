@@ -704,7 +704,7 @@ func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.ThresholdRule, error) {
 func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
 
-	swaps, err := s.liquidityMgr.SuggestSwaps(ctx, false)
+	suggestions, err := s.liquidityMgr.SuggestSwaps(ctx, false)
 	switch err {
 	case liquidity.ErrNoRules:
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -717,7 +717,7 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 
 	var loopOut []*looprpc.LoopOutRequest
 
-	for _, swap := range swaps {
+	for _, swap := range suggestions.OutSwaps {
 		loopOut = append(loopOut, &looprpc.LoopOutRequest{
 			Amt:                 int64(swap.Amount),
 			OutgoingChanSet:     swap.OutgoingChanSet,
