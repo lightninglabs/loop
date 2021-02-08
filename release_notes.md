@@ -24,6 +24,10 @@ This file tracks release notes for the loop client.
   baked one with the exact permissions needed for Loop. If the now deprecated
   flag/option `--lnd.macaroondir` is used, it will fall back to use only the
   `admin.macaroon` from that directory.
+* The rules used for autoloop have been relaxed to allow autoloop to dispatch
+  swaps even if there are manually initiated swaps that are not limited to a
+  single channel in progress. This change was made to allow autoloop to coexist
+  with manual swaps. 
 
 #### Breaking Changes
 * The `AutoOut`, `AutoOutBudgetSat` and `AutoOutBudgetStartSec` fields in the

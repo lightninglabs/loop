@@ -224,8 +224,4 @@ in manually dispatched swaps - for loop out, this would mean the channel is
 specified in the outgoing channel swap, and for loop in the channel's peer is 
 specified as the last hop for an ongoing swap. This check is put in place to 
 prevent the autolooper from interfering with swaps you have created yourself. 
-If there is an ongoing swap that does not have a restriction placed on it (no 
-outgoing channel set, or last hop), then the autolooper will take no action 
-until it has resolved, because it does not know how that swap will affect 
-liquidity balances. 
 

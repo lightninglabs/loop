@@ -930,8 +930,6 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 
 // getEligibleChannels takes lists of our existing loop out and in swaps, and
 // gets a list of channels that are not currently being utilized for a swap.
-// If an unrestricted swap is ongoing, we return an empty set of channels
-// because we don't know which channels balances it will affect.
 func (m *Manager) getEligibleChannels(ctx context.Context,
 	loopOut []*loopdb.LoopOut, loopIn []*loopdb.LoopIn) (
 	[]lndclient.ChannelInfo, error) {
@@ -988,13 +986,6 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 			continue
 		}
 
-		if len(chanSet) == 0 {
-			log.Debugf("Ongoing unrestricted loop out: "+
-				"%v, no suggestions at present", out.Hash)
-
-			return nil, nil
-		}
-
 		for _, id := range chanSet {
 			chanID := lnwire.NewShortChanIDFromInt(id)
 			existingOut[chanID] = true
@@ -1007,11 +998,9 @@ func (m *Manager) getEligibleChannels(ctx context.Context,
 			continue
 		}
 
+		// Skip over swaps that may come through any peer.
 		if in.Contract.LastHop == nil {
-			log.Debugf("Ongoing unrestricted loop in: "+
-				"%v, no suggestions at present", in.Hash)
-
-			return nil, nil
+			continue
 		}
 
 		existingIn[*in.Contract.LastHop] = true
