@@ -28,6 +28,10 @@ This file tracks release notes for the loop client.
   swaps even if there are manually initiated swaps that are not limited to a
   single channel in progress. This change was made to allow autoloop to coexist
   with manual swaps. 
+* The `SuggestSwaps` endpoint has been updated to include reasons that indicate
+  why the Autolooper is not currently dispatching swaps for the set of rules
+  that the client is configured with. See the [autoloop documentation](docs/autoloop.md) for a
+  detailed explanations of these reasons.
 
 #### Breaking Changes
 * The `AutoOut`, `AutoOutBudgetSat` and `AutoOutBudgetStartSec` fields in the
