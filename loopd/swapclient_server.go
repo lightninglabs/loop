@@ -715,7 +715,10 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		return nil, err
 	}
 
-	var loopOut []*looprpc.LoopOutRequest
+	var (
+		loopOut      []*looprpc.LoopOutRequest
+		disqualified []*looprpc.Disqualified
+	)
 
 	for _, swap := range suggestions.OutSwaps {
 		loopOut = append(loopOut, &looprpc.LoopOutRequest{
@@ -730,9 +733,69 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		})
 	}
 
+	for id, reason := range suggestions.DisqualifiedChans {
+		autoloopReason, err := rpcAutoloopReason(reason)
+		if err != nil {
+			return nil, err
+		}
+
+		exclChan := &looprpc.Disqualified{
+			Reason:    autoloopReason,
+			ChannelId: id.ToUint64(),
+		}
+		disqualified = append(disqualified, exclChan)
+	}
+
 	return &looprpc.SuggestSwapsResponse{
-		LoopOut: loopOut,
+		LoopOut:      loopOut,
+		Disqualified: disqualified,
 	}, nil
+}
+
+func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
+	switch reason {
+	case liquidity.ReasonNone:
+		return looprpc.AutoReason_AUTO_REASON_UNKNOWN, nil
+
+	case liquidity.ReasonBudgetNotStarted:
+		return looprpc.AutoReason_AUTO_REASON_BUDGET_NOT_STARTED, nil
+
+	case liquidity.ReasonSweepFees:
+		return looprpc.AutoReason_AUTO_REASON_SWEEP_FEES, nil
+
+	case liquidity.ReasonBudgetElapsed:
+		return looprpc.AutoReason_AUTO_REASON_BUDGET_ELAPSED, nil
+
+	case liquidity.ReasonInFlight:
+		return looprpc.AutoReason_AUTO_REASON_IN_FLIGHT, nil
+
+	case liquidity.ReasonSwapFee:
+		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
+
+	case liquidity.ReasonMinerFee:
+		return looprpc.AutoReason_AUTO_REASON_MINER_FEE, nil
+
+	case liquidity.ReasonPrepay:
+		return looprpc.AutoReason_AUTO_REASON_PREPAY, nil
+
+	case liquidity.ReasonFailureBackoff:
+		return looprpc.AutoReason_AUTO_REASON_FAILURE_BACKOFF, nil
+
+	case liquidity.ReasonLoopOut:
+		return looprpc.AutoReason_AUTO_REASON_LOOP_OUT, nil
+
+	case liquidity.ReasonLoopIn:
+		return looprpc.AutoReason_AUTO_REASON_LOOP_IN, nil
+
+	case liquidity.ReasonLiquidityOk:
+		return looprpc.AutoReason_AUTO_REASON_LIQUIDITY_OK, nil
+
+	case liquidity.ReasonBudgetInsufficient:
+		return looprpc.AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT, nil
+
+	default:
+		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
+	}
 }
 
 // processStatusUpdates reads updates on the status channel and processes them.

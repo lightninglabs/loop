@@ -395,6 +395,40 @@
     }
   },
   "definitions": {
+    "looprpcAutoReason": {
+      "type": "string",
+      "enum": [
+        "AUTO_REASON_UNKNOWN",
+        "AUTO_REASON_BUDGET_NOT_STARTED",
+        "AUTO_REASON_SWEEP_FEES",
+        "AUTO_REASON_BUDGET_ELAPSED",
+        "AUTO_REASON_IN_FLIGHT",
+        "AUTO_REASON_SWAP_FEE",
+        "AUTO_REASON_MINER_FEE",
+        "AUTO_REASON_PREPAY",
+        "AUTO_REASON_FAILURE_BACKOFF",
+        "AUTO_REASON_LOOP_OUT",
+        "AUTO_REASON_LOOP_IN",
+        "AUTO_REASON_LIQUIDITY_OK",
+        "AUTO_REASON_BUDGET_INSUFFICIENT"
+      ],
+      "default": "AUTO_REASON_UNKNOWN",
+      "description": " - AUTO_REASON_BUDGET_NOT_STARTED: Budget not started indicates that we do not recommend any swaps because \nthe start time for our budget has not arrived yet.\n - AUTO_REASON_SWEEP_FEES: Sweep fees indicates that the estimated fees to sweep swaps are too high \nright now.\n - AUTO_REASON_BUDGET_ELAPSED: Budget elapsed indicates that the autoloop budget for the period has been \nelapsed.\n - AUTO_REASON_IN_FLIGHT: In flight indicates that the limit on in-flight automatically dispatched \nswaps has already been reached.\n - AUTO_REASON_SWAP_FEE: Swap fee indicates that the server fee for a specific swap is too high.\n - AUTO_REASON_MINER_FEE: Miner fee indicates that the miner fee for a specific swap is to high.\n - AUTO_REASON_PREPAY: Prepay indicates that the prepay fee for a specific swap is too high.\n - AUTO_REASON_FAILURE_BACKOFF: Failure backoff indicates that a swap has recently failed for this target,\nand the backoff period has not yet passed.\n - AUTO_REASON_LOOP_OUT: Loop out indicates that a loop out swap is currently utilizing the channel,\nso it is not eligible.\n - AUTO_REASON_LOOP_IN: Loop In indicates that a loop in swap is currently in flight for the peer, \nso it is not eligible.\n - AUTO_REASON_LIQUIDITY_OK: Liquidity ok indicates that a target meets the liquidity balance expressed \nin its rule, so no swap is needed.\n - AUTO_REASON_BUDGET_INSUFFICIENT: Budget insufficient indicates that we cannot perform a swap because we do \nnot have enough pending budget available. This differs from budget elapsed, \nbecause we still have some budget available, but we have allocated it to \nother swaps."
+    },
+    "looprpcDisqualified": {
+      "type": "object",
+      "properties": {
+        "channel_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The short channel ID of the channel that was excluded from our suggestions."
+        },
+        "reason": {
+          "$ref": "#/definitions/looprpcAutoReason",
+          "description": "The reason that we excluded the channel from the our suggestions."
+        }
+      }
+    },
     "looprpcFailureReason": {
       "type": "string",
       "enum": [
@@ -808,6 +842,13 @@
             "$ref": "#/definitions/looprpcLoopOutRequest"
           },
           "description": "The set of recommended loop outs."
+        },
+        "disqualified": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDisqualified"
+          },
+          "description": "Disqualified contains the set of channels that swaps are not recommended\nfor."
         }
       }
     },

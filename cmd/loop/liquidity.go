@@ -415,7 +415,7 @@ func suggestSwap(ctx *cli.Context) error {
 		context.Background(), &looprpc.SuggestSwapsRequest{},
 	)
 	if err == nil {
-		printJSON(resp)
+		printRespJSON(resp)
 		return nil
 	}
 
