@@ -496,10 +496,12 @@ func TestSuggestSwaps(t *testing.T) {
 		name  string
 		rules map[lnwire.ShortChannelID]*ThresholdRule
 		swaps []loop.OutRequest
+		err   error
 	}{
 		{
 			name:  "no rules",
 			rules: map[lnwire.ShortChannelID]*ThresholdRule{},
+			err:   ErrNoRules,
 		},
 		{
 			name: "loop out",
@@ -534,7 +536,7 @@ func TestSuggestSwaps(t *testing.T) {
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
-				testCase.swaps, nil,
+				testCase.swaps, testCase.err,
 			)
 		})
 	}

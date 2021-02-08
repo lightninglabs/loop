@@ -31,5 +31,8 @@ This file tracks release notes for the loop client.
   been renamed to `Autoloop`, `AutoloopBudgetSat` and `AutoloopBudgetStartSec`. 
 * The `autoout` flag for enabling automatic dispatch of loop out swaps has been
   renamed to `autoloop` so that it can cover loop out and loop in.
+* The `SuggestSwaps` rpc call will now fail with a `FailedPrecondition` grpc
+  error code if no rules are configured for the autolooper. Previously the rpc
+  would return an empty response.
 
 #### Bug Fixes

@@ -21,6 +21,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -703,7 +705,13 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
 
 	swaps, err := s.liquidityMgr.SuggestSwaps(ctx, false)
-	if err != nil {
+	switch err {
+	case liquidity.ErrNoRules:
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+
+	case nil:
+
+	default:
 		return nil, err
 	}
 
