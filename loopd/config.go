@@ -167,6 +167,11 @@ func DefaultConfig() Config {
 		LoopOutMaxParts: defaultLoopOutMaxParts,
 		Lnd: &lndConfig{
 			Host: "localhost:10009",
+			MacaroonPath: filepath.Join(
+				btcutil.AppDataDir("lnd", false),
+				"data", "chain", "bitcoin", DefaultNetwork,
+				"admin.macaroon",
+			),
 		},
 	}
 }
