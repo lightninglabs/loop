@@ -19,4 +19,3 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
-* Default for `--lnd.macaroonpath` is set to the default path for the LND `admin.macaroon` (https://github.com/lightninglabs/loop/issues/336)
