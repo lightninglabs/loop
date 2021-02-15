@@ -138,7 +138,9 @@ By default `loopd` attempts to connect to the lnd instance running on
 This can be altered using command line flags. See `loopd --help`.
 
 `loopd` only listens on localhost and uses an unencrypted and unauthenticated
-connection.
+connection. If you set `restlisten` variable `loop` will use TLS encryption
+and macaroon authentication, see [Authentication and transport security](https://github.com/lightninglabs/loop#authentication-and-transport-security)
+for more details.
 
 ### Loop Out Swaps
 
