@@ -1,5 +1,7 @@
 package liquidity
 
+import "fmt"
+
 // Reason is an enum which represents the various reasons we have for not
 // executing a swap.
 type Reason uint8
@@ -60,3 +62,67 @@ const (
 	// but we have allocated it to other swaps.
 	ReasonBudgetInsufficient
 )
+
+// String returns a string representation of a reason.
+func (r Reason) String() string {
+	switch r {
+	case ReasonNone:
+		return "none"
+
+	case ReasonBudgetNotStarted:
+		return "budget not started"
+
+	case ReasonSweepFees:
+		return "sweep fees to high"
+
+	case ReasonBudgetElapsed:
+		return "budget elapsed"
+
+	case ReasonInFlight:
+		return "autoloops already in flight"
+
+	case ReasonSwapFee:
+		return "swap server fee to high"
+
+	case ReasonMinerFee:
+		return "miner fee to high"
+
+	case ReasonPrepay:
+		return "prepayment too high"
+
+	case ReasonFailureBackoff:
+		return "backing off due to failure"
+
+	case ReasonLoopOut:
+		return "loop out using channel"
+
+	case ReasonLoopIn:
+		return "loop in using peer"
+
+	case ReasonLiquidityOk:
+		return "liquidity balance ok"
+
+	case ReasonBudgetInsufficient:
+		return "budget insufficient"
+
+	default:
+		return "unknown"
+	}
+}
+
+// reasonError is an error type which embeds our reasons for not performing
+// swaps.
+type reasonError struct {
+	reason Reason
+}
+
+func newReasonError(r Reason) *reasonError {
+	return &reasonError{
+		reason: r,
+	}
+}
+
+// Error returns an error string for a reason error.
+func (r *reasonError) Error() string {
+	return fmt.Sprintf("swap reason: %v", r.reason)
+}

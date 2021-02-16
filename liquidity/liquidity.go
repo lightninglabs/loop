@@ -705,53 +705,21 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 			continue
 		}
 
-		// Check whether we can perform a swap, adding the channel to
-		// our set of disqualified swaps if it is not eligible.
-		reason := traffic.maySwap(channel.PubKeyBytes, balance.channelID)
-		if reason != ReasonNone {
-			disqualified[balance.channelID] = reason
-			continue
-		}
-
-		// We can have zero amount in the case where no action is
-		// required, so we skip over them.
-		amount := rule.swapAmount(balance, restrictions)
-		if amount == 0 {
-			disqualified[balance.channelID] = ReasonLiquidityOk
-			continue
-		}
-
-		// Get a quote for a swap of this amount.
-		quote, err := m.cfg.LoopOutQuote(
-			ctx, &loop.LoopOutQuoteRequest{
-				Amount:                  amount,
-				SweepConfTarget:         m.params.SweepConfTarget,
-				SwapPublicationDeadline: m.cfg.Clock.Now(),
-			},
+		suggestion, err := m.suggestSwap(
+			ctx, traffic, balance, rule, restrictions, autoloop,
 		)
+
+		var reasonErr *reasonError
+		if errors.As(err, &reasonErr) {
+			disqualified[balance.channelID] = reasonErr.reason
+			continue
+		}
+
 		if err != nil {
 			return nil, err
 		}
 
-		log.Debugf("quote for suggestion: %v, swap fee: %v, "+
-			"miner fee: %v, prepay: %v", amount, quote.SwapFee,
-			quote.MinerFee, quote.PrepayAmount)
-
-		// Check that the estimated fees for the suggested swap are
-		// below the fee limits configured by the manager.
-		feeReason := m.checkFeeLimits(quote, amount)
-		if feeReason != ReasonNone {
-			disqualified[balance.channelID] = feeReason
-			continue
-		}
-
-		outRequest, err := m.makeLoopOutRequest(
-			ctx, amount, balance, quote, autoloop,
-		)
-		if err != nil {
-			return nil, err
-		}
-		suggestions = append(suggestions, outRequest)
+		suggestions = append(suggestions, *suggestion)
 	}
 
 	// Finally, run through all possible swaps, excluding swaps that are
@@ -822,6 +790,67 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	}
 
 	return resp, nil
+}
+
+// suggestSwap checks whether we can currently perform a swap, and creates a
+// swap request for the rule provided.
+func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
+	balance *balances, rule *ThresholdRule, restrictions *Restrictions,
+	autoloop bool) (*loop.OutRequest, error) {
+
+	// Check whether we can perform a swap.
+	err := traffic.maySwap(balance.pubkey, balance.channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	// We can have nil suggestions in the case where no action is
+	// required, so we skip over them.
+	amount := rule.swapAmount(balance, restrictions)
+	if amount == 0 {
+		return nil, newReasonError(ReasonLiquidityOk)
+	}
+
+	return m.loopOutSwap(ctx, amount, balance, autoloop)
+}
+
+// loopOutSwap creates a loop out swap with the amount provided for the balance
+// described by the balance set provided. A reason that indicates whether we
+// can swap is returned. If this value is not ReasonNone, there is no possible
+// swap and the loop out request returned will be nil.
+func (m *Manager) loopOutSwap(ctx context.Context, amount btcutil.Amount,
+	balance *balances, autoloop bool) (*loop.OutRequest, error) {
+
+	quote, err := m.cfg.LoopOutQuote(
+		ctx, &loop.LoopOutQuoteRequest{
+			Amount:                  amount,
+			SweepConfTarget:         m.params.SweepConfTarget,
+			SwapPublicationDeadline: m.cfg.Clock.Now(),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debugf("quote for suggestion: %v, swap fee: %v, "+
+		"miner fee: %v, prepay: %v", amount, quote.SwapFee,
+		quote.MinerFee, quote.PrepayAmount)
+
+	// Check that the estimated fees for the suggested swap are
+	// below the fee limits configured by the manager.
+	feeReason := m.checkFeeLimits(quote, amount)
+	if feeReason != ReasonNone {
+		return nil, newReasonError(feeReason)
+	}
+
+	outRequest, err := m.makeLoopOutRequest(
+		ctx, amount, balance, quote, autoloop,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &outRequest, nil
 }
 
 // getSwapRestrictions queries the server for its latest swap size restrictions,
@@ -1093,31 +1122,31 @@ func newSwapTraffic() *swapTraffic {
 // maySwap returns a boolean that indicates whether we may perform a swap for a
 // peer and its set of channels.
 func (s *swapTraffic) maySwap(peer route.Vertex,
-	chanID lnwire.ShortChannelID) Reason {
+	chanID lnwire.ShortChannelID) error {
 
 	lastFail, recentFail := s.failedLoopOut[chanID]
 	if recentFail {
 		log.Debugf("Channel: %v not eligible for suggestions, was "+
 			"part of a failed swap at: %v", chanID, lastFail)
 
-		return ReasonFailureBackoff
+		return newReasonError(ReasonFailureBackoff)
 	}
 
 	if s.ongoingLoopOut[chanID] {
 		log.Debugf("Channel: %v not eligible for suggestions, "+
 			"ongoing loop out utilizing channel", chanID)
 
-		return ReasonLoopOut
+		return newReasonError(ReasonLoopOut)
 	}
 
 	if s.ongoingLoopIn[peer] {
 		log.Debugf("Peer: %x not eligible for suggestions ongoing "+
 			"loop in utilizing peer", peer)
 
-		return ReasonLoopIn
+		return newReasonError(ReasonLoopIn)
 	}
 
-	return ReasonNone
+	return nil
 }
 
 // checkFeeLimits takes a set of fees for a swap and checks whether they exceed
