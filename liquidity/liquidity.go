@@ -574,6 +574,17 @@ func newSuggestions() *Suggestions {
 	}
 }
 
+func (s *Suggestions) addSwap(swap swapSuggestion) error {
+	out, ok := swap.(*loopOutSwapSuggestion)
+	if !ok {
+		return fmt.Errorf("unexpected swap type: %T", swap)
+	}
+
+	s.OutSwaps = append(s.OutSwaps, out.OutRequest)
+
+	return nil
+}
+
 // singleReasonSuggestion is a helper function which returns a set of
 // suggestions where all of our rules are disqualified due to a reason that
 // applies to all of them (such as being out of budget).
@@ -693,7 +704,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	traffic := m.currentSwapTraffic(loopOut, loopIn)
 
 	var (
-		suggestions  []loop.OutRequest
+		suggestions  []swapSuggestion
 		disqualified = make(map[lnwire.ShortChannelID]Reason)
 	)
 
@@ -719,7 +730,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 			return nil, err
 		}
 
-		suggestions = append(suggestions, *suggestion)
+		suggestions = append(suggestions, suggestion)
 	}
 
 	// Finally, run through all possible swaps, excluding swaps that are
@@ -736,7 +747,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Sort suggestions by amount in descending order.
 	sort.SliceStable(suggestions, func(i, j int) bool {
-		return suggestions[i].Amount > suggestions[j].Amount
+		return suggestions[i].amount() > suggestions[j].amount()
 	})
 
 	// Run through our suggested swaps in descending order of amount and
@@ -745,11 +756,14 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// setReason is a helper that adds a swap's channels to our disqualified
 	// list with the reason provided.
-	setReason := func(reason Reason, swap loop.OutRequest) {
-		for _, id := range swap.OutgoingChanSet {
-			chanID := lnwire.NewShortChanIDFromInt(id)
+	setReason := func(reason Reason, swap swapSuggestion) {
+		for _, channel := range swap.channels() {
+			_, ok := m.params.ChannelRules[channel]
+			if !ok {
+				continue
+			}
 
-			resp.DisqualifiedChans[chanID] = reason
+			resp.DisqualifiedChans[channel] = reason
 		}
 	}
 
@@ -773,17 +787,17 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 			continue
 		}
 
-		fees := worstCaseOutFees(
-			swap.MaxPrepayRoutingFee, swap.MaxSwapRoutingFee,
-			swap.MaxSwapFee, swap.MaxMinerFee, swap.MaxPrepayAmount,
-		)
+		fees := swap.fees()
 
 		// If the maximum fee we expect our swap to use is less than the
 		// amount we have available, we add it to our set of swaps that
 		// fall within the budget and decrement our available amount.
 		if fees <= available {
 			available -= fees
-			resp.OutSwaps = append(resp.OutSwaps, swap)
+
+			if err := resp.addSwap(swap); err != nil {
+				return nil, err
+			}
 		} else {
 			setReason(ReasonBudgetInsufficient, swap)
 		}
@@ -796,7 +810,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	balance *balances, rule *ThresholdRule, restrictions *Restrictions,
-	autoloop bool) (*loop.OutRequest, error) {
+	autoloop bool) (swapSuggestion, error) {
 
 	// Check whether we can perform a swap.
 	err := traffic.maySwap(balance.pubkey, balance.channelID)
@@ -811,7 +825,14 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 		return nil, newReasonError(ReasonLiquidityOk)
 	}
 
-	return m.loopOutSwap(ctx, amount, balance, autoloop)
+	swap, err := m.loopOutSwap(ctx, amount, balance, autoloop)
+	if err != nil {
+		return nil, err
+	}
+
+	return &loopOutSwapSuggestion{
+		OutRequest: *swap,
+	}, nil
 }
 
 // loopOutSwap creates a loop out swap with the amount provided for the balance
