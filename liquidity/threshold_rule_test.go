@@ -184,7 +184,7 @@ func TestSuggestSwap(t *testing.T) {
 		rule            *ThresholdRule
 		channel         *balances
 		outRestrictions *Restrictions
-		swap            *LoopOutRecommendation
+		swap            btcutil.Amount
 	}{
 		{
 			name:            "liquidity ok",
@@ -205,7 +205,7 @@ func TestSuggestSwap(t *testing.T) {
 				incoming: 0,
 				outgoing: 100,
 			},
-			swap: &LoopOutRecommendation{Amount: 50},
+			swap: 50,
 		},
 		{
 			name:            "amount below minimum",
@@ -216,7 +216,7 @@ func TestSuggestSwap(t *testing.T) {
 				incoming: 0,
 				outgoing: 100,
 			},
-			swap: nil,
+			swap: 0,
 		},
 		{
 			name:            "amount above maximum",
@@ -227,7 +227,7 @@ func TestSuggestSwap(t *testing.T) {
 				incoming: 0,
 				outgoing: 100,
 			},
-			swap: &LoopOutRecommendation{Amount: 20},
+			swap: 20,
 		},
 		{
 			name:            "loop in",
@@ -238,7 +238,7 @@ func TestSuggestSwap(t *testing.T) {
 				incoming: 100,
 				outgoing: 0,
 			},
-			swap: nil,
+			swap: 0,
 		},
 	}
 
@@ -246,7 +246,7 @@ func TestSuggestSwap(t *testing.T) {
 		test := test
 
 		t.Run(test.name, func(t *testing.T) {
-			swap := test.rule.suggestSwap(
+			swap := test.rule.swapAmount(
 				test.channel, test.outRestrictions,
 			)
 			require.Equal(t, test.swap, swap)

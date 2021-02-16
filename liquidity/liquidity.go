@@ -713,10 +713,10 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 			continue
 		}
 
-		// We can have nil suggestions in the case where no action is
+		// We can have zero amount in the case where no action is
 		// required, so we skip over them.
-		suggestion := rule.suggestSwap(balance, restrictions)
-		if suggestion == nil {
+		amount := rule.swapAmount(balance, restrictions)
+		if amount == 0 {
 			disqualified[balance.channelID] = ReasonLiquidityOk
 			continue
 		}
@@ -724,7 +724,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		// Get a quote for a swap of this amount.
 		quote, err := m.cfg.LoopOutQuote(
 			ctx, &loop.LoopOutQuoteRequest{
-				Amount:                  suggestion.Amount,
+				Amount:                  amount,
 				SweepConfTarget:         m.params.SweepConfTarget,
 				SwapPublicationDeadline: m.cfg.Clock.Now(),
 			},
@@ -734,19 +734,19 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		}
 
 		log.Debugf("quote for suggestion: %v, swap fee: %v, "+
-			"miner fee: %v, prepay: %v", suggestion, quote.SwapFee,
+			"miner fee: %v, prepay: %v", amount, quote.SwapFee,
 			quote.MinerFee, quote.PrepayAmount)
 
 		// Check that the estimated fees for the suggested swap are
 		// below the fee limits configured by the manager.
-		feeReason := m.checkFeeLimits(quote, suggestion.Amount)
+		feeReason := m.checkFeeLimits(quote, amount)
 		if feeReason != ReasonNone {
 			disqualified[balance.channelID] = feeReason
 			continue
 		}
 
 		outRequest, err := m.makeLoopOutRequest(
-			ctx, suggestion, quote, autoloop,
+			ctx, amount, balance, quote, autoloop,
 		)
 		if err != nil {
 			return nil, err
@@ -871,21 +871,19 @@ func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
 // dispatched, and decides whether we set a sweep address (we don't bother for
 // non-auto requests, because the client api will set it anyway).
 func (m *Manager) makeLoopOutRequest(ctx context.Context,
-	suggestion *LoopOutRecommendation, quote *loop.LoopOutQuote,
+	amount btcutil.Amount, balance *balances, quote *loop.LoopOutQuote,
 	autoloop bool) (loop.OutRequest, error) {
 
 	prepayMaxFee := ppmToSat(
 		quote.PrepayAmount, m.params.MaximumPrepayRoutingFeePPM,
 	)
 
-	routeMaxFee := ppmToSat(
-		suggestion.Amount, m.params.MaximumRoutingFeePPM,
-	)
+	routeMaxFee := ppmToSat(amount, m.params.MaximumRoutingFeePPM)
 
 	request := loop.OutRequest{
-		Amount: suggestion.Amount,
+		Amount: amount,
 		OutgoingChanSet: loopdb.ChannelSet{
-			suggestion.Channel.ToUint64(),
+			balance.channelID.ToUint64(),
 		},
 		MaxPrepayRoutingFee: prepayMaxFee,
 		MaxSwapRoutingFee:   routeMaxFee,
