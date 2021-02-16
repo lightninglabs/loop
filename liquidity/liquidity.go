@@ -124,6 +124,7 @@ var (
 		AutoFeeBudget:              defaultBudget,
 		MaxAutoInFlight:            defaultMaxInFlight,
 		ChannelRules:               make(map[lnwire.ShortChannelID]*ThresholdRule),
+		PeerRules:                  make(map[route.Vertex]*ThresholdRule),
 		FailureBackOff:             defaultFailureBackoff,
 		SweepFeeRateLimit:          defaultSweepFeeRateLimit,
 		SweepConfTarget:            loop.DefaultSweepConfTarget,
@@ -181,6 +182,11 @@ var (
 
 	// ErrNoRules is returned when no rules are set for swap suggestions.
 	ErrNoRules = errors.New("no rules set for autoloop")
+
+	// ErrExclusiveRules is returned when a set of rules that may not be
+	// set together are specified.
+	ErrExclusiveRules = errors.New("channel and peer rules must be " +
+		"exclusive")
 )
 
 // Config contains the external functionality required to run the
@@ -289,27 +295,41 @@ type Parameters struct {
 	ClientRestrictions Restrictions
 
 	// ChannelRules maps a short channel ID to a rule that describes how we
-	// would like liquidity to be managed.
+	// would like liquidity to be managed. These rules and PeerRules are
+	// exclusively set to prevent overlap between peer and channel rules.
 	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
+
+	// PeerRules maps a peer's pubkey to a rule that applies to all the
+	// channels that we have with the peer collectively. These rules and
+	// ChannelRules are exclusively set to prevent overlap between peer
+	// and channel rules map to avoid ambiguity.
+	PeerRules map[route.Vertex]*ThresholdRule
 }
 
 // String returns the string representation of our parameters.
 func (p Parameters) String() string {
-	channelRules := make([]string, 0, len(p.ChannelRules))
+	ruleList := make([]string, 0, len(p.ChannelRules)+len(p.PeerRules))
 
 	for channel, rule := range p.ChannelRules {
-		channelRules = append(
-			channelRules, fmt.Sprintf("%v: %v", channel, rule),
+		ruleList = append(
+			ruleList, fmt.Sprintf("Channel: %v: %v", channel, rule),
 		)
 	}
 
-	return fmt.Sprintf("channel rules: %v, failure backoff: %v, sweep "+
+	for peer, rule := range p.PeerRules {
+		ruleList = append(
+			ruleList, fmt.Sprintf("Peer: %v: %v", peer, rule),
+		)
+
+	}
+
+	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+
 		"fee rate limit: %v, sweep conf target: %v, maximum prepay: "+
 		"%v, maximum miner fee: %v, maximum swap fee ppm: %v, maximum "+
 		"routing fee ppm: %v, maximum prepay routing fee ppm: %v, "+
 		"auto budget: %v, budget start: %v, max auto in flight: %v, "+
 		"minimum swap size=%v, maximum swap size=%v",
-		strings.Join(channelRules, ","), p.FailureBackOff,
+		strings.Join(ruleList, ","), p.FailureBackOff,
 		p.SweepFeeRateLimit, p.SweepConfTarget, p.MaximumPrepay,
 		p.MaximumMinerFee, p.MaximumSwapFeePPM,
 		p.MaximumRoutingFeePPM, p.MaximumPrepayRoutingFeePPM,
@@ -317,9 +337,54 @@ func (p Parameters) String() string {
 		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
 }
 
-// validate checks whether a set of parameters is valid. It takes the minimum
-// confirmations we allow for sweep confirmation target as a parameter.
-func (p Parameters) validate(minConfs int32, server *Restrictions) error {
+// haveRules returns a boolean indicating whether we have any rules configured.
+func (p Parameters) haveRules() bool {
+	if len(p.ChannelRules) != 0 {
+		return true
+	}
+
+	if len(p.PeerRules) != 0 {
+		return true
+	}
+
+	return false
+}
+
+// validate checks whether a set of parameters is valid. Our set of currently
+// open channels are required to check that there is no overlap between the
+// rules set on a per-peer level, and those set for specific channels. We can't
+// allow both, because then we're trying to cater for two separate liquidity
+// goals on the same channel. Since we use short channel ID, we don't need to
+// worry about pending channels (users would need to work very hard to get the
+// short channel ID for a pending channel). Likewise, we don't care about closed
+// channels, since there is no action that may occur on them, and we want to
+// allow peer-level rules to be set once a channel which had a specific rule
+// has been closed. It takes the minimum confirmations we allow for sweep
+// confirmation target as a parameter.
+// TODO(carla): prune channels that have been closed from rules.
+func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
+	server *Restrictions) error {
+
+	// First, we check that the rules on a per peer and per channel do not
+	// overlap, since this could lead to contractions.
+	for _, channel := range openChans {
+		// If we don't have a rule for the peer, there's no way we have
+		// an overlap between this peer and the channel.
+		_, ok := p.PeerRules[channel.PubKeyBytes]
+		if !ok {
+			continue
+		}
+
+		shortID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+		_, ok = p.ChannelRules[shortID]
+		if ok {
+			log.Debugf("Rules for peer: %v and its channel: %v "+
+				"can't both be set", channel.PubKeyBytes, shortID)
+
+			return ErrExclusiveRules
+		}
+	}
+
 	for channel, rule := range p.ChannelRules {
 		if channel.ToUint64() == 0 {
 			return ErrZeroChannelID
@@ -328,6 +393,13 @@ func (p Parameters) validate(minConfs int32, server *Restrictions) error {
 		if err := rule.validate(); err != nil {
 			return fmt.Errorf("channel: %v has invalid rule: %v",
 				channel.ToUint64(), err)
+		}
+	}
+
+	for peer, rule := range p.PeerRules {
+		if err := rule.validate(); err != nil {
+			return fmt.Errorf("peer: %v has invalid rule: %v",
+				peer, err)
 		}
 	}
 
@@ -483,7 +555,12 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 		return err
 	}
 
-	err = params.validate(m.cfg.MinimumConfirmations, restrictions)
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = params.validate(m.cfg.MinimumConfirmations, channels, restrictions)
 	if err != nil {
 		return err
 	}
@@ -508,6 +585,16 @@ func cloneParameters(params Parameters) Parameters {
 	for channel, rule := range params.ChannelRules {
 		ruleCopy := *rule
 		paramCopy.ChannelRules[channel] = &ruleCopy
+	}
+
+	paramCopy.PeerRules = make(
+		map[route.Vertex]*ThresholdRule,
+		len(params.PeerRules),
+	)
+
+	for peer, rule := range params.PeerRules {
+		ruleCopy := *rule
+		paramCopy.PeerRules[peer] = &ruleCopy
 	}
 
 	return paramCopy
@@ -566,11 +653,16 @@ type Suggestions struct {
 	// DisqualifiedChans maps the set of channels that we do not recommend
 	// swaps on to the reason that we did not recommend a swap.
 	DisqualifiedChans map[lnwire.ShortChannelID]Reason
+
+	// Disqualified peers maps the set of peers that we do not recommend
+	// swaps for to the reason that they were excluded.
+	DisqualifiedPeers map[route.Vertex]Reason
 }
 
 func newSuggestions() *Suggestions {
 	return &Suggestions{
 		DisqualifiedChans: make(map[lnwire.ShortChannelID]Reason),
+		DisqualifiedPeers: make(map[route.Vertex]Reason),
 	}
 }
 
@@ -595,6 +687,10 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 		resp.DisqualifiedChans[id] = reason
 	}
 
+	for peer := range m.params.PeerRules {
+		resp.DisqualifiedPeers[peer] = reason
+	}
+
 	return resp
 }
 
@@ -612,7 +708,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// If we have no rules set, exit early to avoid unnecessary calls to
 	// lnd and the server.
-	if len(m.params.ChannelRules) == 0 {
+	if !m.params.haveRules() {
 		return nil, ErrNoRules
 	}
 
@@ -699,30 +795,44 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return nil, err
 	}
 
+	peerChannels := make(map[route.Vertex]*balances)
+	for _, channel := range channels {
+		bal, ok := peerChannels[channel.PubKeyBytes]
+		if !ok {
+			bal = &balances{}
+		}
+
+		chanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+		bal.channels = append(bal.channels, chanID)
+		bal.capacity += channel.Capacity
+		bal.incoming += channel.RemoteBalance
+		bal.outgoing += channel.LocalBalance
+		bal.pubkey = channel.PubKeyBytes
+
+		peerChannels[channel.PubKeyBytes] = bal
+	}
+
 	// Get a summary of the channels and peers that are not eligible due
 	// to ongoing swaps.
 	traffic := m.currentSwapTraffic(loopOut, loopIn)
 
 	var (
-		suggestions  []swapSuggestion
-		disqualified = make(map[lnwire.ShortChannelID]Reason)
+		suggestions []swapSuggestion
+		resp        = newSuggestions()
 	)
 
-	for _, channel := range channels {
-		balance := newBalances(channel)
-
-		rule, ok := m.params.ChannelRules[balance.channelID]
-		if !ok {
+	for peer, balances := range peerChannels {
+		rule, haveRule := m.params.PeerRules[peer]
+		if !haveRule {
 			continue
 		}
 
 		suggestion, err := m.suggestSwap(
-			ctx, traffic, balance, rule, restrictions, autoloop,
+			ctx, traffic, balances, rule, restrictions, autoloop,
 		)
-
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
-			disqualified[balance.channelID] = reasonErr.reason
+			resp.DisqualifiedPeers[peer] = reasonErr.reason
 			continue
 		}
 
@@ -733,10 +843,30 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		suggestions = append(suggestions, suggestion)
 	}
 
-	// Finally, run through all possible swaps, excluding swaps that are
-	// not feasible due to fee or budget restrictions.
-	resp := &Suggestions{
-		DisqualifiedChans: disqualified,
+	for _, channel := range channels {
+		balance := newBalances(channel)
+
+		channelID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+		rule, ok := m.params.ChannelRules[channelID]
+		if !ok {
+			continue
+		}
+
+		suggestion, err := m.suggestSwap(
+			ctx, traffic, balance, rule, restrictions, autoloop,
+		)
+
+		var reasonErr *reasonError
+		if errors.As(err, &reasonErr) {
+			resp.DisqualifiedChans[channelID] = reasonErr.reason
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		suggestions = append(suggestions, suggestion)
 	}
 
 	// If we have no swaps to execute after we have applied all of our
@@ -813,7 +943,7 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	autoloop bool) (swapSuggestion, error) {
 
 	// Check whether we can perform a swap.
-	err := traffic.maySwap(balance.pubkey, balance.channelID)
+	err := traffic.maySwap(balance.pubkey, balance.channels)
 	if err != nil {
 		return nil, err
 	}
@@ -930,11 +1060,14 @@ func (m *Manager) makeLoopOutRequest(ctx context.Context,
 
 	routeMaxFee := ppmToSat(amount, m.params.MaximumRoutingFeePPM)
 
+	var chanSet loopdb.ChannelSet
+	for _, channel := range balance.channels {
+		chanSet = append(chanSet, channel.ToUint64())
+	}
+
 	request := loop.OutRequest{
-		Amount: amount,
-		OutgoingChanSet: loopdb.ChannelSet{
-			balance.channelID.ToUint64(),
-		},
+		Amount:              amount,
+		OutgoingChanSet:     chanSet,
 		MaxPrepayRoutingFee: prepayMaxFee,
 		MaxSwapRoutingFee:   routeMaxFee,
 		MaxMinerFee:         m.params.MaximumMinerFee,
@@ -1143,21 +1276,23 @@ func newSwapTraffic() *swapTraffic {
 // maySwap returns a boolean that indicates whether we may perform a swap for a
 // peer and its set of channels.
 func (s *swapTraffic) maySwap(peer route.Vertex,
-	chanID lnwire.ShortChannelID) error {
+	channels []lnwire.ShortChannelID) error {
 
-	lastFail, recentFail := s.failedLoopOut[chanID]
-	if recentFail {
-		log.Debugf("Channel: %v not eligible for suggestions, was "+
-			"part of a failed swap at: %v", chanID, lastFail)
+	for _, chanID := range channels {
+		lastFail, recentFail := s.failedLoopOut[chanID]
+		if recentFail {
+			log.Debugf("Channel: %v not eligible for suggestions, was "+
+				"part of a failed swap at: %v", chanID, lastFail)
 
-		return newReasonError(ReasonFailureBackoff)
-	}
+			return newReasonError(ReasonFailureBackoff)
+		}
 
-	if s.ongoingLoopOut[chanID] {
-		log.Debugf("Channel: %v not eligible for suggestions, "+
-			"ongoing loop out utilizing channel", chanID)
+		if s.ongoingLoopOut[chanID] {
+			log.Debugf("Channel: %v not eligible for suggestions, "+
+				"ongoing loop out utilizing channel", chanID)
 
-		return newReasonError(ReasonLoopOut)
+			return newReasonError(ReasonLoopOut)
+		}
 	}
 
 	if s.ongoingLoopIn[peer] {
