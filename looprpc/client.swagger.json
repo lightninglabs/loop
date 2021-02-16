@@ -423,6 +423,11 @@
           "format": "uint64",
           "description": "The short channel ID of the channel that was excluded from our suggestions."
         },
+        "pubkey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The public key of the peer that was excluded from our suggestions."
+        },
         "reason": {
           "$ref": "#/definitions/looprpcAutoReason",
           "description": "The reason that we excluded the channel from the our suggestions."
@@ -566,7 +571,12 @@
         "channel_id": {
           "type": "string",
           "format": "uint64",
-          "description": "The short channel ID of the channel that this rule should be applied to."
+          "description": "The short channel ID of the channel that this rule should be applied to.\nThis field may not be set when the pubkey field is set."
+        },
+        "pubkey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The public key of the peer that this rule should be applied to. This field\nmay not be set when the channel id field is set."
         },
         "type": {
           "$ref": "#/definitions/looprpcLiquidityRuleType",

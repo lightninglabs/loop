@@ -574,6 +574,8 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	satPerByte := cfg.SweepFeeRateLimit.FeePerKVByte() / 1000
 
+	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
+
 	rpcCfg := &looprpc.LiquidityParameters{
 		MaxMinerFeeSat:          uint64(cfg.MaximumMinerFee),
 		MaxSwapFeePpm:           uint64(cfg.MaximumSwapFeePPM),
@@ -587,7 +589,7 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		AutoloopBudgetSat:       uint64(cfg.AutoFeeBudget),
 		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
 		Rules: make(
-			[]*looprpc.LiquidityRule, 0, len(cfg.ChannelRules),
+			[]*looprpc.LiquidityRule, 0, totalRules,
 		),
 		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
 		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
@@ -602,17 +604,28 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 	}
 
 	for channel, rule := range cfg.ChannelRules {
-		rpcRule := &looprpc.LiquidityRule{
-			ChannelId:         channel.ToUint64(),
-			Type:              looprpc.LiquidityRuleType_THRESHOLD,
-			IncomingThreshold: uint32(rule.MinimumIncoming),
-			OutgoingThreshold: uint32(rule.MinimumOutgoing),
-		}
+		rpcRule := newRPCRule(channel.ToUint64(), nil, rule)
+		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
+	}
 
+	for peer, rule := range cfg.PeerRules {
+		rpcRule := newRPCRule(0, peer[:], rule)
 		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
 	}
 
 	return rpcCfg, nil
+}
+
+func newRPCRule(channelID uint64, peer []byte,
+	rule *liquidity.ThresholdRule) *looprpc.LiquidityRule {
+
+	return &looprpc.LiquidityRule{
+		ChannelId:         channelID,
+		Pubkey:            peer,
+		Type:              looprpc.LiquidityRuleType_THRESHOLD,
+		IncomingThreshold: uint32(rule.MinimumIncoming),
+		OutgoingThreshold: uint32(rule.MinimumOutgoing),
+	}
 }
 
 // SetLiquidityParams attempts to set our current liquidity manager's
@@ -640,7 +653,9 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
 		ChannelRules: make(
 			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
-			len(in.Parameters.Rules),
+		),
+		PeerRules: make(
+			map[route.Vertex]*liquidity.ThresholdRule,
 		),
 		ClientRestrictions: liquidity.Restrictions{
 			Minimum: btcutil.Amount(in.Parameters.MinSwapAmount),
@@ -656,21 +671,46 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	}
 
 	for _, rule := range in.Parameters.Rules {
-		var (
-			shortID = lnwire.NewShortChanIDFromInt(rule.ChannelId)
-			err     error
-		)
+		peerRule := rule.Pubkey != nil
+		chanRule := rule.ChannelId != 0
 
-		// Make sure that there are not multiple rules set for a single
-		// channel.
-		if _, ok := params.ChannelRules[shortID]; ok {
-			return nil, fmt.Errorf("multiple rules set for "+
-				"channel: %v", shortID)
-		}
-
-		params.ChannelRules[shortID], err = rpcToRule(rule)
+		liquidityRule, err := rpcToRule(rule)
 		if err != nil {
 			return nil, err
+		}
+
+		switch {
+		case peerRule && chanRule:
+			return nil, fmt.Errorf("cannot set channel: %v and "+
+				"peer: %v fields in rule", rule.ChannelId,
+				rule.Pubkey)
+
+		case peerRule:
+			pubkey, err := route.NewVertexFromBytes(rule.Pubkey)
+			if err != nil {
+				return nil, err
+			}
+
+			if _, ok := params.PeerRules[pubkey]; ok {
+				return nil, fmt.Errorf("multiple rules set "+
+					"for peer: %v", pubkey)
+			}
+
+			params.PeerRules[pubkey] = liquidityRule
+
+		case chanRule:
+			shortID := lnwire.NewShortChanIDFromInt(rule.ChannelId)
+
+			if _, ok := params.ChannelRules[shortID]; ok {
+				return nil, fmt.Errorf("multiple rules set "+
+					"for channel: %v", shortID)
+			}
+
+			params.ChannelRules[shortID] = liquidityRule
+
+		default:
+			return nil, errors.New("please set channel id or " +
+				"pubkey for rule")
 		}
 	}
 
@@ -743,6 +783,21 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			Reason:    autoloopReason,
 			ChannelId: id.ToUint64(),
 		}
+
+		disqualified = append(disqualified, exclChan)
+	}
+
+	for pubkey, reason := range suggestions.DisqualifiedPeers {
+		autoloopReason, err := rpcAutoloopReason(reason)
+		if err != nil {
+			return nil, err
+		}
+
+		exclChan := &looprpc.Disqualified{
+			Reason: autoloopReason,
+			Pubkey: pubkey[:],
+		}
+
 		disqualified = append(disqualified, exclChan)
 	}
 

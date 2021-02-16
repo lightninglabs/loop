@@ -832,8 +832,15 @@ enum LiquidityRuleType {
 message LiquidityRule {
     /*
     The short channel ID of the channel that this rule should be applied to.
+    This field may not be set when the pubkey field is set.
     */
     uint64 channel_id = 1;
+
+    /* 
+    The public key of the peer that this rule should be applied to. This field
+    may not be set when the channel id field is set.
+    */
+    bytes pubkey = 5;
 
     /*
     Type indicates the type of rule that this message rule represents. Setting
@@ -952,6 +959,11 @@ message Disqualified {
     The short channel ID of the channel that was excluded from our suggestions.
     */
     uint64 channel_id = 1; 
+    
+    /*
+    The public key of the peer that was excluded from our suggestions.
+    */
+    bytes pubkey = 3;
 
     /*
     The reason that we excluded the channel from the our suggestions.
