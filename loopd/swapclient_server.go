@@ -609,6 +609,7 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 	}
 
 	for peer, rule := range cfg.PeerRules {
+		peer := peer
 		rpcRule := newRPCRule(0, peer[:], rule)
 		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
 	}
