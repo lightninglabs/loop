@@ -23,27 +23,35 @@ Note that autoloop parameters and rules are not persisted, so must be set on
 restart. We recommend running loopd with `--debuglevel=debug` when using this 
 feature.
 
-### Channel Thresholds 
-To setup the autolooper to dispatch swaps on your behalf, you need to tell it 
-which channels you would like it to perform swaps on, and the liquidity balance 
-you would like on each channel. Desired liqudity balance is expressed using 
-threshold incoming and outgoing percentages of channel capacity. The incoming 
-threshold you specify indicates the minimum percentage of your channel capacity
-that you would like in incoming capacity. The outgoing thresold allows you to 
-reserve a percentage of your balance for outgoing capacity, but may be set to 
-zero if you are only concerned with incoming capcity.
+### Liquidity Targets
+Autoloop can be configured to manage liquidity for individual channels, or for
+a peer as a whole. Peer-level liquidity management will examine the liquidity 
+balance of all the channels you have with a peer. This differs from channel-level
+liquidity, where each channel's individual balance is checked. Note that if you
+set a liquidity rule for a peer, you cannot also set a specific rule for one of
+its channels.
 
-The autolooper will perform swaps that push your incoming channel capacity to 
-at least the incoming threshold you specify, while reserving at least the 
-outgoing capacity threshold. Rules can be set as follows:
+### Liqudity Thresholds 
+To setup the autolooper to dispatch swaps on your behalf, you need to set the 
+liquidity balance you would like for each channel or peer. Desired liquidity 
+balance is expressed using threshold incoming and outgoing percentages of 
+capacity. The incoming threshold you specify indicates the minimum percentage 
+of your capacity that you would like in incoming capacity. The outgoing 
+threshold allows you to reserve a percentage of your balance for outgoing 
+capacity, but may be set to zero if you are only concerned with incoming 
+capacity.
+
+The autolooper will perform swaps that push your incoming capacity to at least 
+the incoming threshold you specify, while reserving at least the outgoing 
+capacity threshold. Rules can be set as follows:
 
 ```
-loop setrule {short channel id} --incoming_threshold={minimum % incoming} --outgoing_threshold={minimum % outgoing}
+loop setrule {short channel id/ peer pubkey} --incoming_threshold={minimum % incoming} --outgoing_threshold={minimum % outgoing}
 ```
 
-To remove a channel from consideration, its rule can simply be cleared:
+To remove a rule from consideration, its rule can simply be cleared:
 ```
-loop setrule {short channel id} --clear
+loop setrule {short channel id/ peer pubkey} --clear
 ```
 
 ## Fees
