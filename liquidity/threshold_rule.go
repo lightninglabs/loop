@@ -62,10 +62,10 @@ func (r *ThresholdRule) validate() error {
 	return nil
 }
 
-// suggestSwap suggests a swap based on the liquidity thresholds configured,
-// returning nil if no swap is recommended.
-func (r *ThresholdRule) suggestSwap(channel *balances,
-	outRestrictions *Restrictions) *LoopOutRecommendation {
+// swapAmount suggests a swap based on the liquidity thresholds configured,
+// returning zero if no swap is recommended.
+func (r *ThresholdRule) swapAmount(channel *balances,
+	outRestrictions *Restrictions) btcutil.Amount {
 
 	// Examine our total balance and required ratios to decide whether we
 	// need to swap.
@@ -76,17 +76,13 @@ func (r *ThresholdRule) suggestSwap(channel *balances,
 	// Limit our swap amount by the minimum/maximum thresholds set.
 	switch {
 	case amount < outRestrictions.Minimum:
-		return nil
+		return 0
 
 	case amount > outRestrictions.Maximum:
-		return newLoopOutRecommendation(
-			outRestrictions.Maximum, channel.channelID,
-		)
+		return outRestrictions.Maximum
 
 	default:
-		return newLoopOutRecommendation(
-			amount, channel.channelID,
-		)
+		return amount
 	}
 }
 

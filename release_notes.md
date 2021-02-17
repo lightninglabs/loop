@@ -15,6 +15,11 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+* Autoloop can now be configured on a per-peer basis, rather than only on an
+  individual channel level. This change allows desired liquidity thresholds 
+  to be set for an individual peer, rather than a specific channel, and 
+  leverages multi-loop-out to more efficiently manage liquidity. To configure
+  peer-level rules, provide the 'setrule' command with the peer's pubkey. 
 
 #### Breaking Changes
 
