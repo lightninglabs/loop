@@ -45,7 +45,7 @@ var loopOutCommand = cli.Command{
 		},
 		cli.Uint64Flag{
 			Name: "htlc_confs",
-			Usage: "the number of of confirmations, in blocks " +
+			Usage: "the number of confirmations (in blocks) " +
 				"that we require for the htlc extended by " +
 				"the server before we reveal the preimage.",
 			Value: uint64(loopdb.DefaultLoopOutHtlcConfirmations),
