@@ -572,28 +572,34 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	cfg := s.liquidityMgr.GetParameters()
 
-	satPerByte := cfg.SweepFeeRateLimit.FeePerKVByte() / 1000
-
 	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
 
 	rpcCfg := &looprpc.LiquidityParameters{
-		MaxMinerFeeSat:          uint64(cfg.MaximumMinerFee),
-		MaxSwapFeePpm:           uint64(cfg.MaximumSwapFeePPM),
-		MaxRoutingFeePpm:        uint64(cfg.MaximumRoutingFeePPM),
-		MaxPrepayRoutingFeePpm:  uint64(cfg.MaximumPrepayRoutingFeePPM),
-		MaxPrepaySat:            uint64(cfg.MaximumPrepay),
-		SweepFeeRateSatPerVbyte: uint64(satPerByte),
-		SweepConfTarget:         cfg.SweepConfTarget,
-		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
-		Autoloop:                cfg.Autoloop,
-		AutoloopBudgetSat:       uint64(cfg.AutoFeeBudget),
-		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
+		SweepConfTarget:   cfg.SweepConfTarget,
+		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
+		Autoloop:          cfg.Autoloop,
+		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
+		AutoMaxInFlight:   uint64(cfg.MaxAutoInFlight),
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, totalRules,
 		),
 		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
 		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
 	}
+
+	feeCategories, ok := cfg.FeeLimit.(*liquidity.FeeCategoryLimit)
+	if !ok {
+		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
+	}
+
+	satPerByte := feeCategories.SweepFeeRateLimit.FeePerKVByte() / 1000
+
+	rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
+	rpcCfg.MaxMinerFeeSat = uint64(feeCategories.MaximumMinerFee)
+	rpcCfg.MaxSwapFeePpm = feeCategories.MaximumSwapFeePPM
+	rpcCfg.MaxRoutingFeePpm = feeCategories.MaximumRoutingFeePPM
+	rpcCfg.MaxPrepayRoutingFeePpm = feeCategories.MaximumPrepayRoutingFeePPM
+	rpcCfg.MaxPrepaySat = uint64(feeCategories.MaximumPrepay)
 
 	// Zero golang time is different to a zero unix time, so we only set
 	// our start date if it is non-zero.
@@ -639,14 +645,18 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 		in.Parameters.SweepFeeRateSatPerVbyte * 1000,
 	)
 
+	feeLimit := liquidity.NewFeeCategoryLimit(
+		in.Parameters.MaxSwapFeePpm,
+		in.Parameters.MaxRoutingFeePpm,
+		in.Parameters.MaxPrepayRoutingFeePpm,
+		btcutil.Amount(in.Parameters.MaxMinerFeeSat),
+		btcutil.Amount(in.Parameters.MaxPrepaySat),
+		satPerVbyte.FeePerKWeight(),
+	)
+
 	params := liquidity.Parameters{
-		MaximumMinerFee:            btcutil.Amount(in.Parameters.MaxMinerFeeSat),
-		MaximumSwapFeePPM:          int(in.Parameters.MaxSwapFeePpm),
-		MaximumRoutingFeePPM:       int(in.Parameters.MaxRoutingFeePpm),
-		MaximumPrepayRoutingFeePPM: int(in.Parameters.MaxPrepayRoutingFeePpm),
-		MaximumPrepay:              btcutil.Amount(in.Parameters.MaxPrepaySat),
-		SweepFeeRateLimit:          satPerVbyte.FeePerKWeight(),
-		SweepConfTarget:            in.Parameters.SweepConfTarget,
+		FeeLimit:        feeLimit,
+		SweepConfTarget: in.Parameters.SweepConfTarget,
 		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
 			time.Second,
 		Autoloop:        in.Parameters.Autoloop,

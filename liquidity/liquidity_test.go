@@ -125,8 +125,7 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 	// Set our fee estimate for the default number of confirmations to our
 	// limit so that our fees will be ok by default.
 	lnd.SetFeeEstimate(
-		defaultParameters.SweepConfTarget,
-		defaultParameters.SweepFeeRateLimit,
+		defaultParameters.SweepConfTarget, defaultSweepFeeRateLimit,
 	)
 
 	return &Config{
@@ -978,8 +977,13 @@ func TestFeeBudget(t *testing.T) {
 			}
 			params.AutoFeeStartDate = testBudgetStart
 			params.AutoFeeBudget = testCase.budget
-			params.MaximumMinerFee = testCase.maxMinerFee
 			params.MaxAutoInFlight = 2
+			params.FeeLimit = NewFeeCategoryLimit(
+				defaultSwapFeePPM, defaultRoutingFeePPM,
+				defaultPrepayRoutingFeePPM,
+				testCase.maxMinerFee, defaultMaximumPrepay,
+				defaultSweepFeeRateLimit,
+			)
 
 			// Set our custom max miner fee on each expected swap,
 			// rather than having to create multiple vars for
@@ -1129,8 +1133,7 @@ func TestSizeRestrictions(t *testing.T) {
 			OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
 			MaxPrepayRoutingFee: prepayFee,
 			MaxSwapRoutingFee: ppmToSat(
-				7000,
-				defaultRoutingFeePPM,
+				7000, defaultRoutingFeePPM,
 			),
 			MaxMinerFee:     defaultMaximumMinerFee,
 			MaxSwapFee:      testQuote.SwapFee,
