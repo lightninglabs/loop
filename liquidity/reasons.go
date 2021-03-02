@@ -61,6 +61,10 @@ const (
 	// from budget elapsed, because we still have some budget available,
 	// but we have allocated it to other swaps.
 	ReasonBudgetInsufficient
+
+	// ReasonFeePPMInsufficient indicates that the fees a swap would require
+	// are greater than the portion of swap amount allocated to fees.
+	ReasonFeePPMInsufficient
 )
 
 // String returns a string representation of a reason.
@@ -104,6 +108,9 @@ func (r Reason) String() string {
 
 	case ReasonBudgetInsufficient:
 		return "budget insufficient"
+
+	case ReasonFeePPMInsufficient:
+		return "fee portion insufficient"
 
 	default:
 		return "unknown"

@@ -859,6 +859,9 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 	case liquidity.ReasonBudgetInsufficient:
 		return looprpc.AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT, nil
 
+	case liquidity.ReasonFeePPMInsufficient:
+		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
+
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
 	}

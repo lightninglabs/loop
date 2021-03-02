@@ -37,6 +37,11 @@ const (
 	// defaultSweepFeeRateLimit is the default limit we place on estimated
 	// sweep fees, (750 * 4 /1000 = 3 sat/vByte).
 	defaultSweepFeeRateLimit = chainfee.SatPerKWeight(750)
+
+	// minerMultiplier is a multiplier we use to scale our miner fee to
+	// ensure that we will still be able to complete our swap in the case
+	// of a severe fee spike.
+	minerMultiplier = 100
 )
 
 var (
@@ -54,6 +59,10 @@ var (
 
 	// ErrZeroPrepay is returned if a zero maximum prepay is set.
 	ErrZeroPrepay = errors.New("maximum prepay must be non-zero")
+
+	// ErrInvalidPPM is returned is the parts per million for a fee rate
+	// are invalid.
+	ErrInvalidPPM = errors.New("invalid ppm")
 
 	// ErrInvalidSweepFeeRateLimit is returned if an invalid sweep fee limit
 	// is set.
@@ -223,4 +232,145 @@ func (f *FeeCategoryLimit) loopOutFees(amount btcutil.Amount,
 	routeMaxFee := ppmToSat(amount, f.MaximumRoutingFeePPM)
 
 	return prepayMaxFee, routeMaxFee, f.MaximumMinerFee
+}
+
+// Compile time assertion that FeePortion implements FeeLimit interface.
+var _ FeeLimit = (*FeePortion)(nil)
+
+// FeePortion is a fee limitation which limits fees to a set portion of
+// the swap amount.
+type FeePortion struct {
+	// PartsPerMillion is the total portion of the swap amount that the
+	// swap may consume.
+	PartsPerMillion uint64
+}
+
+// NewFeePortion creates a fee limit based on a flat percentage of swap amount.
+func NewFeePortion(ppm uint64) *FeePortion {
+	return &FeePortion{
+		PartsPerMillion: ppm,
+	}
+}
+
+// String returns a string representation of the fee limit.
+func (f *FeePortion) String() string {
+	return fmt.Sprintf("parts per million: %v", f.PartsPerMillion)
+}
+
+// validate returns an error if the values provided are invalid.
+func (f *FeePortion) validate() error {
+	if f.PartsPerMillion <= 0 {
+		return ErrInvalidPPM
+	}
+
+	return nil
+}
+
+// mayLoopOut checks our estimated loop out sweep fee against our sweep limit.
+// For fee percentage, we do not check anything because we need the full quote
+// to determine whether we can perform a swap.
+func (f *FeePortion) mayLoopOut(_ chainfee.SatPerKWeight) error {
+	return nil
+}
+
+// loopOutLimits checks whether the quote provided is within our fee
+// limits for the swap amount.
+func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
+	quote *loop.LoopOutQuote) error {
+
+	// First, check whether any of the individual fee categories provided
+	// by the server are more than our total limit. We do this so that we
+	// can provide more specific reasons for not executing swaps.
+	feeLimit := ppmToSat(swapAmt, f.PartsPerMillion)
+	minerFee := scaleMinerFee(quote.MinerFee)
+
+	if minerFee > feeLimit {
+		log.Debugf("miner fee: %v greater than fee limit: %v, at "+
+			"%v ppm", minerFee, feeLimit, f.PartsPerMillion)
+
+		return newReasonError(ReasonMinerFee)
+	}
+
+	if quote.SwapFee > feeLimit {
+		log.Debugf("swap fee: %v greater than fee limit: %v, at "+
+			"%v ppm", quote.SwapFee, feeLimit, f.PartsPerMillion)
+
+		return newReasonError(ReasonSwapFee)
+	}
+
+	if quote.PrepayAmount > feeLimit {
+		log.Debugf("prepay amount: %v greater than fee limit: %v, at "+
+			"%v ppm", quote.PrepayAmount, feeLimit, f.PartsPerMillion)
+
+		return newReasonError(ReasonPrepay)
+	}
+
+	// If our miner and swap fee equal our limit, we will have nothing left
+	// for off-chain fees, so we fail out early.
+	if minerFee+quote.SwapFee >= feeLimit {
+		log.Debugf("no budget for off-chain routing with miner fee: "+
+			"%v, swap fee: %v and fee limit: %v, at %v ppm",
+			minerFee, quote.SwapFee, feeLimit, f.PartsPerMillion)
+
+		return newReasonError(ReasonFeePPMInsufficient)
+	}
+
+	prepay, route, miner := f.loopOutFees(swapAmt, quote)
+
+	// Calculate the worst case fees that we could pay for this swap,
+	// ensuring that we are within our fee limit even if the swap fails.
+	fees := worstCaseOutFees(
+		prepay, route, quote.SwapFee, miner, quote.PrepayAmount,
+	)
+
+	if fees > feeLimit {
+		log.Debugf("total fees for swap: %v > fee limit: %v, at "+
+			"%v ppm", fees, feeLimit, f.PartsPerMillion)
+
+		return newReasonError(ReasonFeePPMInsufficient)
+	}
+
+	return nil
+}
+
+// loopOutFees return the maximum prepay and invoice routing fees for a swap
+// amount and quote. Note that the fee portion implementation just returns
+// the quote's miner fee, assuming that this value has already been validated.
+// We also assume that the quote's minerfee + swapfee < fee limit, so that we
+// have some fees left for off-chain routing.
+func (f *FeePortion) loopOutFees(amount btcutil.Amount,
+	quote *loop.LoopOutQuote) (btcutil.Amount, btcutil.Amount,
+	btcutil.Amount) {
+
+	// Calculate the total amount we can spend in fees, and subtract the
+	// amounts provided by the quote to get the total available for
+	// off-chain fees.
+	feeLimit := ppmToSat(amount, f.PartsPerMillion)
+	minerFee := scaleMinerFee(quote.MinerFee)
+
+	available := feeLimit - minerFee - quote.SwapFee
+
+	prepayMaxFee, routeMaxFee := splitOffChain(
+		available, quote.PrepayAmount, amount,
+	)
+
+	return prepayMaxFee, routeMaxFee, minerFee
+}
+
+// splitOffChain takes an available fee budget and divides it among our prepay
+// and swap payments proportional to their volume.
+func splitOffChain(available, prepayAmt,
+	swapAmt btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
+
+	total := swapAmt + prepayAmt
+
+	prepayMaxFee := available * prepayAmt / total
+	routeMaxFee := available * swapAmt / total
+
+	return prepayMaxFee, routeMaxFee
+}
+
+// scaleMinerFee scales our miner fee by our constant multiplier.
+func scaleMinerFee(estimate btcutil.Amount) btcutil.Amount {
+	return estimate * btcutil.Amount(minerMultiplier)
 }

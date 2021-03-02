@@ -952,6 +952,12 @@ enum AutoReason {
     other swaps.
     */
     AUTO_REASON_BUDGET_INSUFFICIENT = 12;
+
+    /*
+    Fee insufficient indicates that the fee estimate for a swap is higher than
+    the portion of total swap amount that we allow fees to consume.
+    */
+    AUTO_REASON_FEE_INSUFFICIENT = 13;
 } 
 
 message Disqualified {

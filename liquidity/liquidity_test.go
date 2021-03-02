@@ -151,6 +151,19 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 	}, lnd
 }
 
+// testPPMFees calculates the split of fees between prepay and swap invoice
+// for the swap amount and ppm, relying on the test quote.
+func testPPMFees(ppm uint64, quote *loop.LoopOutQuote,
+	swapAmount btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
+
+	feeTotal := ppmToSat(swapAmount, ppm)
+	feeAvailable := feeTotal - scaleMinerFee(quote.MinerFee) - quote.SwapFee
+
+	return splitOffChain(
+		feeAvailable, quote.PrepayAmount, swapAmount,
+	)
+}
+
 // TestParameters tests getting and setting of parameters for our manager.
 func TestParameters(t *testing.T) {
 	cfg, _ := newTestConfig()
@@ -1264,6 +1277,147 @@ func TestSizeRestrictions(t *testing.T) {
 			require.Equal(
 				t, callCount, len(testCase.serverRestrictions),
 				"too many restrictions provided by mock",
+			)
+		})
+	}
+}
+
+// TestFeePercentage tests use of a flat fee percentage to limit the fees we
+// pay for swaps. Our test is setup to require a 7500 sat swap, and we test
+// this amount against various fee percentages and server quotes.
+func TestFeePercentage(t *testing.T) {
+	var (
+		okPPM   uint64 = 30000
+		okQuote        = &loop.LoopOutQuote{
+			SwapFee:      15,
+			PrepayAmount: 30,
+			MinerFee:     1,
+		}
+
+		rec = loop.OutRequest{
+			Amount:          7500,
+			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
+			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
+			MaxSwapFee:      okQuote.SwapFee,
+			MaxPrepayAmount: okQuote.PrepayAmount,
+			SweepConfTarget: loop.DefaultSweepConfTarget,
+			Initiator:       autoloopSwapInitiator,
+		}
+	)
+
+	rec.MaxPrepayRoutingFee, rec.MaxSwapRoutingFee = testPPMFees(
+		okPPM, okQuote, 7500,
+	)
+
+	tests := []struct {
+		name        string
+		feePPM      uint64
+		quote       *loop.LoopOutQuote
+		suggestions *Suggestions
+	}{
+		{
+			// With our limit set to 3% of swap amount 7500, we
+			// have a total budget of 225 sat.
+			name:   "fees ok",
+			feePPM: okPPM,
+			quote:  okQuote,
+			suggestions: &Suggestions{
+				OutSwaps: []loop.OutRequest{
+					rec,
+				},
+				DisqualifiedChans: noneDisqualified,
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name:   "swap fee too high",
+			feePPM: 20000,
+			quote: &loop.LoopOutQuote{
+				SwapFee:      300,
+				PrepayAmount: 30,
+				MinerFee:     1,
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonSwapFee,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name:   "miner fee too high",
+			feePPM: 20000,
+			quote: &loop.LoopOutQuote{
+				SwapFee:      80,
+				PrepayAmount: 30,
+				MinerFee:     300,
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonMinerFee,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name:   "miner and swap too high",
+			feePPM: 20000,
+			quote: &loop.LoopOutQuote{
+				SwapFee:      60,
+				PrepayAmount: 30,
+				MinerFee:     1,
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonFeePPMInsufficient,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name:   "prepay too high",
+			feePPM: 30000,
+			quote: &loop.LoopOutQuote{
+				SwapFee:      75,
+				PrepayAmount: 300,
+				MinerFee:     1,
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonPrepay,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			cfg.LoopOutQuote = func(_ context.Context,
+				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
+				error) {
+
+				return testCase.quote, nil
+
+			}
+
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1,
+			}
+
+			params := defaultParameters
+			params.FeeLimit = NewFeePortion(testCase.feePPM)
+			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.suggestions, nil,
 			)
 		})
 	}
