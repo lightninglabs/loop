@@ -99,7 +99,7 @@ var (
 		PeerRules:       make(map[route.Vertex]*ThresholdRule),
 		FailureBackOff:  defaultFailureBackoff,
 		SweepConfTarget: loop.DefaultSweepConfTarget,
-		FeeLimit:        defaultFeeCategoryLimit(),
+		FeeLimit:        defaultFeePortion(),
 	}
 
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.

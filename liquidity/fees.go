@@ -42,6 +42,10 @@ const (
 	// ensure that we will still be able to complete our swap in the case
 	// of a severe fee spike.
 	minerMultiplier = 100
+
+	// defaultFeePPM is the default percentage of swap amount that we
+	// allocate to fees, 2%.
+	defaultFeePPM = 20000
 )
 
 var (
@@ -243,6 +247,12 @@ type FeePortion struct {
 	// PartsPerMillion is the total portion of the swap amount that the
 	// swap may consume.
 	PartsPerMillion uint64
+}
+
+func defaultFeePortion() *FeePortion {
+	return &FeePortion{
+		PartsPerMillion: defaultFeePPM,
+	}
 }
 
 // NewFeePortion creates a fee limit based on a flat percentage of swap amount.
