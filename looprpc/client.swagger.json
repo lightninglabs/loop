@@ -494,6 +494,11 @@
           },
           "description": "A set of liquidity rules that describe the desired liquidity balance."
         },
+        "fee_ppm": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The parts per million of swap amount that is allowed to be allocated to swap\nfees. This value is applied across swap categories and may not be set in \nconjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay\nrouting, max prepay and max miner fee."
+        },
         "sweep_fee_rate_sat_per_vbyte": {
           "type": "string",
           "format": "uint64",

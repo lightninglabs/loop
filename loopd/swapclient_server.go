@@ -587,19 +587,24 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
 	}
 
-	feeCategories, ok := cfg.FeeLimit.(*liquidity.FeeCategoryLimit)
-	if !ok {
+	switch f := cfg.FeeLimit.(type) {
+	case *liquidity.FeeCategoryLimit:
+		satPerByte := f.SweepFeeRateLimit.FeePerKVByte() / 1000
+
+		rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
+
+		rpcCfg.MaxMinerFeeSat = uint64(f.MaximumMinerFee)
+		rpcCfg.MaxSwapFeePpm = f.MaximumSwapFeePPM
+		rpcCfg.MaxRoutingFeePpm = f.MaximumRoutingFeePPM
+		rpcCfg.MaxPrepayRoutingFeePpm = f.MaximumPrepayRoutingFeePPM
+		rpcCfg.MaxPrepaySat = uint64(f.MaximumPrepay)
+
+	case *liquidity.FeePortion:
+		rpcCfg.FeePpm = f.PartsPerMillion
+
+	default:
 		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
 	}
-
-	satPerByte := feeCategories.SweepFeeRateLimit.FeePerKVByte() / 1000
-
-	rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
-	rpcCfg.MaxMinerFeeSat = uint64(feeCategories.MaximumMinerFee)
-	rpcCfg.MaxSwapFeePpm = feeCategories.MaximumSwapFeePPM
-	rpcCfg.MaxRoutingFeePpm = feeCategories.MaximumRoutingFeePPM
-	rpcCfg.MaxPrepayRoutingFeePpm = feeCategories.MaximumPrepayRoutingFeePPM
-	rpcCfg.MaxPrepaySat = uint64(feeCategories.MaximumPrepay)
 
 	// Zero golang time is different to a zero unix time, so we only set
 	// our start date if it is non-zero.
@@ -641,18 +646,10 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
 	error) {
 
-	satPerVbyte := chainfee.SatPerKVByte(
-		in.Parameters.SweepFeeRateSatPerVbyte * 1000,
-	)
-
-	feeLimit := liquidity.NewFeeCategoryLimit(
-		in.Parameters.MaxSwapFeePpm,
-		in.Parameters.MaxRoutingFeePpm,
-		in.Parameters.MaxPrepayRoutingFeePpm,
-		btcutil.Amount(in.Parameters.MaxMinerFeeSat),
-		btcutil.Amount(in.Parameters.MaxPrepaySat),
-		satPerVbyte.FeePerKWeight(),
-	)
+	feeLimit, err := rpcToFee(in.Parameters)
+	if err != nil {
+		return nil, err
+	}
 
 	params := liquidity.Parameters{
 		FeeLimit:        feeLimit,
@@ -730,6 +727,45 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	}
 
 	return &looprpc.SetLiquidityParamsResponse{}, nil
+}
+
+// rpcToFee converts the values provided over rpc to a fee limit interface,
+// failing if an inconsistent set of fields are set.
+func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
+	error) {
+
+	// Check which fee limit type we have values set for. If any fields
+	// relevant to our individual categories are set, we count that type
+	// as set.
+	isFeePPM := req.FeePpm != 0
+	isCategories := req.MaxSwapFeePpm != 0 || req.MaxRoutingFeePpm != 0 ||
+		req.MaxPrepayRoutingFeePpm != 0 || req.MaxMinerFeeSat != 0 ||
+		req.MaxPrepaySat != 0 || req.SweepFeeRateSatPerVbyte != 0
+
+	switch {
+	case isFeePPM && isCategories:
+		return nil, errors.New("set either fee ppm, or individual " +
+			"fee categories")
+	case isFeePPM:
+		return liquidity.NewFeePortion(req.FeePpm), nil
+
+	case isCategories:
+		satPerVbyte := chainfee.SatPerKVByte(
+			req.SweepFeeRateSatPerVbyte * 1000,
+		)
+
+		return liquidity.NewFeeCategoryLimit(
+			req.MaxSwapFeePpm,
+			req.MaxRoutingFeePpm,
+			req.MaxPrepayRoutingFeePpm,
+			btcutil.Amount(req.MaxMinerFeeSat),
+			btcutil.Amount(req.MaxPrepaySat),
+			satPerVbyte.FeePerKWeight(),
+		), nil
+
+	default:
+		return nil, errors.New("no fee categories set")
+	}
 }
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.

@@ -731,6 +731,14 @@ message LiquidityParameters {
     repeated LiquidityRule rules = 1;
 
     /*
+    The parts per million of swap amount that is allowed to be allocated to swap
+    fees. This value is applied across swap categories and may not be set in 
+    conjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay
+    routing, max prepay and max miner fee.
+    */
+    uint64 fee_ppm = 16;
+
+    /*
     The limit we place on our estimated sweep cost for a swap in sat/vByte. If
     the estimated fee for our sweep transaction within the specified
     confirmation target is above this value, we will not suggest any swaps.
