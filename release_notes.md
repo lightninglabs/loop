@@ -20,6 +20,10 @@ This file tracks release notes for the loop client.
   to be set for an individual peer, rather than a specific channel, and 
   leverages multi-loop-out to more efficiently manage liquidity. To configure
   peer-level rules, provide the 'setrule' command with the peer's pubkey. 
+* Autoloop's fee API has been simplified to allow setting a single percentage
+  which will be used to limit total swap fees to a percentage of the amount 
+  being swapped. Use `loop setparams --feepercent={percentage}` to update 
+  this value. This fee setting has been updated to the default for autoloop.
 
 #### Breaking Changes
 
