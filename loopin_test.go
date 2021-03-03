@@ -64,9 +64,17 @@ func TestLoopInSuccess(t *testing.T) {
 	// Expect htlc to be published.
 	htlcTx := <-ctx.lnd.SendOutputsChannel
 
-	// Expect the same state to be written again with the htlc tx hash.
+	// We expect our cost to use the mock fee rate we set for our conf
+	// target.
+	cost := loopdb.SwapCost{
+		Onchain: getTxFee(&htlcTx, test.DefaultMockFee.FeePerKVByte()),
+	}
+
+	// Expect the same state to be written again with the htlc tx hash
+	// and on chain fee.
 	state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
 	require.NotNil(t, state.HtlcTxHash)
+	require.Equal(t, cost, state.Cost)
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
@@ -186,14 +194,24 @@ func testLoopInTimeout(t *testing.T,
 	ctx.assertState(loopdb.StateHtlcPublished)
 	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
 
-	var htlcTx wire.MsgTx
+	var (
+		htlcTx wire.MsgTx
+		cost   loopdb.SwapCost
+	)
 	if externalValue == 0 {
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
+		cost = loopdb.SwapCost{
+			Onchain: getTxFee(
+				&htlcTx, test.DefaultMockFee.FeePerKVByte(),
+			),
+		}
 
-		// Expect the same state to be written again with the htlc tx hash.
+		// Expect the same state to be written again with the htlc tx
+		// hash and cost.
 		state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
 		require.NotNil(t, state.HtlcTxHash)
+		require.Equal(t, cost, state.Cost)
 	} else {
 		// Create an external htlc publish tx.
 		var pkScript []byte
@@ -257,6 +275,15 @@ func testLoopInTimeout(t *testing.T,
 	// Expect timeout tx to be published.
 	timeoutTx := <-ctx.lnd.TxPublishChannel
 
+	// We can just get our sweep fee as we would in the swap code because
+	// our estimate is static.
+	fee, err := s.sweeper.GetSweepFee(
+		context.Background(), s.htlc.AddTimeoutToEstimator,
+		s.timeoutAddr, TimeoutTxConfTarget,
+	)
+	require.NoError(t, err)
+	cost.Onchain += fee
+
 	// Confirm timeout tx.
 	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
 		SpendingTx:        timeoutTx,
@@ -273,7 +300,8 @@ func testLoopInTimeout(t *testing.T,
 	}
 
 	ctx.assertState(loopdb.StateFailTimeout)
-	ctx.store.assertLoopInState(loopdb.StateFailTimeout)
+	state := ctx.store.assertLoopInState(loopdb.StateFailTimeout)
+	require.Equal(t, cost, state.Cost)
 
 	err = <-errChan
 	if err != nil {
@@ -360,6 +388,16 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		},
 	}
 
+	// If we have already published the htlc, we expect our cost to already
+	// be published.
+	var cost loopdb.SwapCost
+	if state == loopdb.StateHtlcPublished {
+		cost = loopdb.SwapCost{
+			Onchain: 999,
+		}
+		pendSwap.Loop.Events[0].Cost = cost
+	}
+
 	htlc, err := swap.NewHtlc(
 		scriptVersion, contract.CltvExpiry, contract.SenderKey,
 		contract.ReceiverKey, testPreimage.Hash(), swap.HtlcNP2WSH,
@@ -431,6 +469,11 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
+		cost = loopdb.SwapCost{
+			Onchain: getTxFee(
+				&htlcTx, test.DefaultMockFee.FeePerKVByte(),
+			),
+		}
 
 		// Expect the same state to be written again with the htlc tx
 		// hash.
@@ -465,10 +508,11 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
-	subscription.Update <- lndclient.InvoiceUpdate{
+	invoiceUpdate := lndclient.InvoiceUpdate{
 		State:   channeldb.ContractSettled,
 		AmtPaid: 49000,
 	}
+	subscription.Update <- invoiceUpdate
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
@@ -488,4 +532,12 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	}
 
 	ctx.assertState(loopdb.StateSuccess)
+	finalState := ctx.store.assertLoopInState(loopdb.StateSuccess)
+
+	// We expect our server fee to reflect as the difference between htlc
+	// value and invoice amount paid. We use our original on-chain cost, set
+	// earlier in the test, because we expect this value to be unchanged.
+	cost.Server = btcutil.Amount(htlcTx.TxOut[0].Value) -
+		invoiceUpdate.AmtPaid
+	require.Equal(t, cost, finalState.Cost)
 }

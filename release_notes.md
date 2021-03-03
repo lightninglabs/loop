@@ -24,3 +24,5 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
+* A bug where loop in on-chain fees were not recorded properly has been 
+  addressed.
