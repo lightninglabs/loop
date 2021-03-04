@@ -426,6 +426,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		PrepayAmtSat:    int64(quote.PrepayAmount),
 		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
+		ConfTarget:      confTarget,
 	}, nil
 }
 
@@ -471,6 +472,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	return &looprpc.InQuoteResponse{
 		HtlcPublishFeeSat: int64(quote.MinerFee),
 		SwapFeeSat:        int64(quote.SwapFee),
+		ConfTarget:        htlcConfTarget,
 	}, nil
 }
 
