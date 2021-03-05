@@ -14,8 +14,8 @@ ENV GO111MODULE on
 RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
-&&  cd /go/src/github.com/lightningnetwork/loop/cmd \
-&&  go install ./...
+&&  cd /go/src/github.com/lightningnetwork/loop \
+&&  make install
 
 # Start a new, final image to reduce size.
 FROM alpine as final

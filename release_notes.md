@@ -28,3 +28,5 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
+* The loop dockerfile has been updated to use the `make` command so that the
+  latest commit hash of the code being run will be included in `loopd`.
