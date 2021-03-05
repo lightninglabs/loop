@@ -16,6 +16,10 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
+// DefaultMockFee is the default value we use for fee estimates when no values
+// are set for specific conf targets.
+var DefaultMockFee = chainfee.SatPerKWeight(10000)
+
 type mockWalletKit struct {
 	lnd          *LndMockServices
 	keyIndex     int32
@@ -123,7 +127,7 @@ func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
 
 	feeEstimate, ok := m.feeEstimates[confTarget]
 	if !ok {
-		return 10000, nil
+		return DefaultMockFee, nil
 	}
 
 	return feeEstimate, nil
