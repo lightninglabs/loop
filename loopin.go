@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/mempool"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
@@ -21,6 +22,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -311,7 +313,7 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 
 // resumeLoopInSwap returns a swap object representing a pending swap that has
 // been restored from the database.
-func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
+func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 	pend *loopdb.LoopIn) (*loopInSwap, error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
@@ -339,6 +341,7 @@ func resumeLoopInSwap(reqContext context.Context, cfg *swapConfig,
 		swap.state = lastUpdate.State
 		swap.lastUpdateTime = lastUpdate.Time
 		swap.htlcTxHash = lastUpdate.HtlcTxHash
+		swap.cost = lastUpdate.Cost
 	}
 
 	return swap, nil
@@ -516,8 +519,6 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 		return s.persistAndAnnounceState(globalCtx)
 	}
 
-	// TODO: Add miner fee of htlc tx to swap cost balance.
-
 	// The server is expected to see the htlc on-chain and knowing that it
 	// can sweep that htlc with the preimage, it should pay our swap
 	// invoice, receive the preimage and sweep the htlc. We are waiting for
@@ -662,8 +663,11 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("send outputs: %v", err)
 	}
+
 	txHash := tx.TxHash()
-	s.log.Infof("Published on chain HTLC tx %v", txHash)
+	fee := getTxFee(tx, feeRate.FeePerKVByte())
+
+	s.log.Infof("Published on chain HTLC tx %v, fee: %v", txHash, fee)
 
 	// Persist the htlc hash so that after a restart we are still waiting
 	// for our own htlc. We don't need to announce to clients, because the
@@ -672,6 +676,12 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// TODO(joostjager): Store tx hash before calling SendOutputs. This is
 	// not yet possible with the current lnd api.
 	s.htlcTxHash = &txHash
+
+	// We do not expect any on-chain fees to be recorded yet, and we only
+	// publish our htlc once, so we set our total on-chain costs to equal
+	// the fee for publishing the htlc.
+	s.cost.Onchain = fee
+
 	s.lastUpdateTime = time.Now()
 	if err := s.persistState(); err != nil {
 		return false, fmt.Errorf("persist htlc tx: %v", err)
@@ -679,6 +689,16 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 	return true, nil
 
+}
+
+// getTxFee calculates our fee for a transaction that we have broadcast. We use
+// sat per kvbyte because this is what lnd uses, and we will run into rounding
+// issues if we do not use the same fee rate as lnd.
+func getTxFee(tx *wire.MsgTx, fee chainfee.SatPerKVByte) btcutil.Amount {
+	btcTx := btcutil.NewTx(tx)
+	vsize := mempool.GetTxVirtualSize(btcTx)
+
+	return fee.FeeForVSize(vsize)
 }
 
 // waitForSwapComplete waits until a spending tx of the htlc gets confirmed and
@@ -709,17 +729,18 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	}
 
 	// checkTimeout publishes the timeout tx if the contract has expired.
-	checkTimeout := func() error {
+	checkTimeout := func() (btcutil.Amount, error) {
 		if s.height >= s.LoopInContract.CltvExpiry {
 			return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
 		}
 
-		return nil
+		return 0, nil
 	}
 
 	// Check timeout at current height. After a restart we may want to
 	// publish the tx immediately.
-	err = checkTimeout()
+	var sweepFee btcutil.Amount
+	sweepFee, err = checkTimeout()
 	if err != nil {
 		return err
 	}
@@ -737,7 +758,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
 
-			err := checkTimeout()
+			sweepFee, err = checkTimeout()
 			if err != nil {
 				return err
 			}
@@ -749,7 +770,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				spendDetails.SpenderTxHash)
 
 			err := s.processHtlcSpend(
-				ctx, spendDetails, htlcValue,
+				ctx, spendDetails, htlcValue, sweepFee,
 			)
 			if err != nil {
 				return err
@@ -804,7 +825,8 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 }
 
 func (s *loopInSwap) processHtlcSpend(ctx context.Context,
-	spend *chainntnfs.SpendDetail, htlcValue btcutil.Amount) error {
+	spend *chainntnfs.SpendDetail, htlcValue,
+	sweepFee btcutil.Amount) error {
 
 	// Determine the htlc input of the spending tx and inspect the witness
 	// to findout whether a success or a timeout tx spend the htlc.
@@ -817,6 +839,9 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		// server cost balance.
 		s.cost.Server += htlcValue
 	} else {
+		// We needed another on chain tx to sweep the timeout clause,
+		// which we now include in our costs.
+		s.cost.Onchain += sweepFee
 		s.setState(loopdb.StateFailTimeout)
 
 		// Now that the timeout tx confirmed, we can safely cancel the
@@ -828,23 +853,24 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		if err != nil && err != channeldb.ErrInvoiceAlreadySettled {
 			return err
 		}
-
-		// TODO: Add miner fee of timeout tx to swap cost balance.
 	}
 
 	return nil
 }
 
-// publishTimeoutTx publishes a timeout tx after the on-chain htlc has expired.
-// The swap failed and we are reclaiming our funds.
+// publishTimeoutTx publishes a timeout tx after the on-chain htlc has expired,
+// returning the fee that is paid by the sweep tx. We cannot update our swap
+// costs in this function because it is called multiple times. The swap failed
+// and we are reclaiming our funds.
 func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
-	htlcOutpoint *wire.OutPoint, htlcValue btcutil.Amount) error {
+	htlcOutpoint *wire.OutPoint, htlcValue btcutil.Amount) (btcutil.Amount,
+	error) {
 
 	if s.timeoutAddr == nil {
 		var err error
 		s.timeoutAddr, err = s.lnd.WalletKit.NextAddr(ctx)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 
@@ -854,7 +880,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		TimeoutTxConfTarget,
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	witnessFunc := func(sig []byte) (wire.TxWitness, error) {
@@ -867,7 +893,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		witnessFunc, htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	timeoutTxHash := timeoutTx.TxHash()
@@ -882,7 +908,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		s.log.Warnf("publish timeout: %v", err)
 	}
 
-	return nil
+	return fee, nil
 }
 
 // persistAndAnnounceState updates the swap state on disk and sends out an
