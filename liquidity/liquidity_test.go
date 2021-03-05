@@ -622,6 +622,13 @@ func TestSweepFeeLimit(t *testing.T) {
 			params := defaultParameters
 			params.FeeLimit = defaultFeeCategoryLimit()
 
+			// Set our budget to cover a single swap with these
+			// parameters.
+			params.AutoFeeBudget = defaultMaximumMinerFee +
+				ppmToSat(7500, defaultSwapFeePPM) +
+				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
+				ppmToSat(7500, defaultRoutingFeePPM)
+
 			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 				chanID1: chanRule,
 			}
@@ -854,6 +861,13 @@ func TestFeeLimits(t *testing.T) {
 			// Set our params to use individual fee limits.
 			params := defaultParameters
 			params.FeeLimit = defaultFeeCategoryLimit()
+
+			// Set our budget to cover a single swap with these
+			// parameters.
+			params.AutoFeeBudget = defaultMaximumMinerFee +
+				ppmToSat(7500, defaultSwapFeePPM) +
+				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
+				ppmToSat(7500, defaultRoutingFeePPM)
 
 			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
 				chanID1: chanRule,
