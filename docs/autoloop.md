@@ -55,10 +55,16 @@ loop setrule {short channel id/ peer pubkey} --clear
 ```
 
 ## Fees
-Fee control is one of the most important features of the autolooper, so we expose 
-multiple fee related settings which can be used to tune the autolooper to your 
-preference. Note that these fees are expressed on a per-swap basis, rather than 
-as an overall budget. 
+The amount of fees that an automatically dispatched swap consumes can be limited
+to a percentage of the swap amount using the fee percentage parameter:
+```
+loop setparams --feepercent={percentage of swap amount}
+```
+
+If you would like finer grained control over swap fees, there are multiple fee
+related settings which can be used to tune the autolooper to your preference.
+The sections that follow explain these settings in detail. Note that these fees 
+are expressed on a per-swap basis, rather than as an overall budget. 
 
 ### On-Chain Fees
 When performing a successful loop out swap, the loop client needs to sweep the 
@@ -277,6 +283,10 @@ following reasons will be displayed:
 * Liquidity ok: if a channel's current liquidity balance is within the bound set
   by the rule that it applies to, then a liquidity ok reason will be displayed
   to indicate that no action is required for that channel.
+* Fee insufficient: if the fees that a swap will cost are more than the
+  percentage of total swap amount that we allow, this reason will be displayed.
+  See [fees](#fees) to update this value.
+
 
 Further details for all of these reasons can be found in loopd's debug level 
 logs.

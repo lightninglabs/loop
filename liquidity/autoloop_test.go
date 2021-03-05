@@ -70,32 +70,37 @@ func TestAutoLoopDisabled(t *testing.T) {
 func TestAutoLoopEnabled(t *testing.T) {
 	defer test.Guard(t)()
 
-	channels := []lndclient.ChannelInfo{
-		channel1, channel2,
-	}
+	var (
+		channels = []lndclient.ChannelInfo{
+			channel1, channel2,
+		}
 
-	// Create a set of parameters with autoloop enabled. The autoloop budget
-	// is set to allow exactly 2 swaps at the prices that we set in our
-	// test quotes.
-	params := Parameters{
-		Autoloop:                   true,
-		AutoFeeBudget:              40066,
-		AutoFeeStartDate:           testTime,
-		MaxAutoInFlight:            2,
-		FailureBackOff:             time.Hour,
-		SweepFeeRateLimit:          20000,
-		SweepConfTarget:            10,
-		MaximumPrepay:              20000,
-		MaximumSwapFeePPM:          1000,
-		MaximumRoutingFeePPM:       1000,
-		MaximumPrepayRoutingFeePPM: 1000,
-		MaximumMinerFee:            20000,
-		ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
-			chanID1: chanRule,
-			chanID2: chanRule,
-		},
-	}
+		swapFeePPM   uint64 = 1000
+		routeFeePPM  uint64 = 1000
+		prepayFeePPM uint64 = 1000
+		prepayAmount        = btcutil.Amount(20000)
+		maxMiner            = btcutil.Amount(20000)
 
+		// Create a set of parameters with autoloop enabled. The
+		// autoloop budget is set to allow exactly 2 swaps at the prices
+		// that we set in our test quotes.
+		params = Parameters{
+			Autoloop:         true,
+			AutoFeeBudget:    40066,
+			AutoFeeStartDate: testTime,
+			MaxAutoInFlight:  2,
+			FailureBackOff:   time.Hour,
+			SweepConfTarget:  10,
+			FeeLimit: NewFeeCategoryLimit(
+				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
+				prepayAmount, 20000,
+			),
+			ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			},
+		}
+	)
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
 
@@ -104,18 +109,20 @@ func TestAutoLoopEnabled(t *testing.T) {
 	var (
 		amt = chan1Rec.Amount
 
-		maxSwapFee = ppmToSat(amt, params.MaximumSwapFeePPM)
+		maxSwapFee = ppmToSat(amt, swapFeePPM)
 
 		// Create a quote that is within our limits. We do not set miner
 		// fee because this value is not actually set by the server.
 		quote1 = &loop.LoopOutQuote{
 			SwapFee:      maxSwapFee,
-			PrepayAmount: params.MaximumPrepay - 10,
+			PrepayAmount: prepayAmount - 10,
+			MinerFee:     maxMiner - 10,
 		}
 
 		quote2 = &loop.LoopOutQuote{
 			SwapFee:      maxSwapFee,
-			PrepayAmount: params.MaximumPrepay - 20,
+			PrepayAmount: prepayAmount - 20,
+			MinerFee:     maxMiner - 10,
 		}
 
 		quoteRequest = &loop.LoopOutQuoteRequest{
@@ -134,18 +141,17 @@ func TestAutoLoopEnabled(t *testing.T) {
 			},
 		}
 
-		maxRouteFee = ppmToSat(amt, params.MaximumRoutingFeePPM)
+		maxRouteFee = ppmToSat(amt, routeFeePPM)
 
 		chan1Swap = &loop.OutRequest{
 			Amount:            amt,
 			MaxSwapRoutingFee: maxRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
-				quote1.PrepayAmount,
-				params.MaximumPrepayRoutingFeePPM,
+				quote1.PrepayAmount, prepayFeePPM,
 			),
 			MaxSwapFee:      quote1.SwapFee,
 			MaxPrepayAmount: quote1.PrepayAmount,
-			MaxMinerFee:     params.MaximumMinerFee,
+			MaxMinerFee:     maxMiner,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
 			Label:           labels.AutoloopLabel(swap.TypeOut),
@@ -156,12 +162,11 @@ func TestAutoLoopEnabled(t *testing.T) {
 			Amount:            amt,
 			MaxSwapRoutingFee: maxRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
-				quote2.PrepayAmount,
-				params.MaximumPrepayRoutingFeePPM,
+				quote2.PrepayAmount, routeFeePPM,
 			),
 			MaxSwapFee:      quote2.SwapFee,
 			MaxPrepayAmount: quote2.PrepayAmount,
-			MaxMinerFee:     params.MaximumMinerFee,
+			MaxMinerFee:     maxMiner,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID2.ToUint64()},
 			Label:           labels.AutoloopLabel(swap.TypeOut),
@@ -216,7 +221,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 				State: loopdb.StateSuccess,
 				Cost: loopdb.SwapCost{
 					Server:  quote1.SwapFee,
-					Onchain: params.MaximumMinerFee,
+					Onchain: maxMiner,
 					Offchain: maxRouteFee +
 						chan1Rec.MaxPrepayRoutingFee,
 				},
@@ -273,42 +278,48 @@ func TestAutoLoopEnabled(t *testing.T) {
 func TestCompositeRules(t *testing.T) {
 	defer test.Guard(t)()
 
-	// Setup our channels so that we have two channels with peer 2, and
-	// a single channel with peer 1.
-	channel3 := lndclient.ChannelInfo{
-		ChannelID:     chanID3.ToUint64(),
-		PubKeyBytes:   peer2,
-		LocalBalance:  10000,
-		RemoteBalance: 0,
-		Capacity:      10000,
-	}
+	var (
+		// Setup our channels so that we have two channels with peer 2,
+		// and a single channel with peer 1.
+		channel3 = lndclient.ChannelInfo{
+			ChannelID:     chanID3.ToUint64(),
+			PubKeyBytes:   peer2,
+			LocalBalance:  10000,
+			RemoteBalance: 0,
+			Capacity:      10000,
+		}
 
-	channels := []lndclient.ChannelInfo{
-		channel1, channel2, channel3,
-	}
+		channels = []lndclient.ChannelInfo{
+			channel1, channel2, channel3,
+		}
 
-	// Create a set of parameters with autoloop enabled, set our budget to
-	// a value that will easily accommodate our two swaps.
-	params := Parameters{
-		Autoloop:                   true,
-		AutoFeeBudget:              100000,
-		AutoFeeStartDate:           testTime,
-		MaxAutoInFlight:            2,
-		FailureBackOff:             time.Hour,
-		SweepFeeRateLimit:          20000,
-		SweepConfTarget:            10,
-		MaximumPrepay:              20000,
-		MaximumSwapFeePPM:          1000,
-		MaximumRoutingFeePPM:       1000,
-		MaximumPrepayRoutingFeePPM: 1000,
-		MaximumMinerFee:            20000,
-		ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
-			chanID1: chanRule,
-		},
-		PeerRules: map[route.Vertex]*ThresholdRule{
-			peer2: chanRule,
-		},
-	}
+		swapFeePPM   uint64 = 1000
+		routeFeePPM  uint64 = 1000
+		prepayFeePPM uint64 = 1000
+		prepayAmount        = btcutil.Amount(20000)
+		maxMiner            = btcutil.Amount(20000)
+
+		// Create a set of parameters with autoloop enabled, set our
+		// budget to a value that will easily accommodate our two swaps.
+		params = Parameters{
+			FeeLimit: NewFeeCategoryLimit(
+				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
+				prepayAmount, 20000,
+			),
+			Autoloop:         true,
+			AutoFeeBudget:    100000,
+			AutoFeeStartDate: testTime,
+			MaxAutoInFlight:  2,
+			FailureBackOff:   time.Hour,
+			SweepConfTarget:  10,
+			ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+				chanID1: chanRule,
+			},
+			PeerRules: map[route.Vertex]*ThresholdRule{
+				peer2: chanRule,
+			},
+		}
+	)
 
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
@@ -320,11 +331,12 @@ func TestCompositeRules(t *testing.T) {
 		// our budget, with an amount which would balance the peer
 		/// across all of its channels.
 		peerAmount     = btcutil.Amount(15000)
-		maxPeerSwapFee = ppmToSat(peerAmount, params.MaximumSwapFeePPM)
+		maxPeerSwapFee = ppmToSat(peerAmount, swapFeePPM)
 
 		peerSwapQuote = &loop.LoopOutQuote{
 			SwapFee:      maxPeerSwapFee,
-			PrepayAmount: params.MaximumPrepay - 20,
+			PrepayAmount: prepayAmount - 20,
+			MinerFee:     maxMiner - 10,
 		}
 
 		peerSwapQuoteRequest = &loop.LoopOutQuoteRequest{
@@ -332,20 +344,17 @@ func TestCompositeRules(t *testing.T) {
 			SweepConfTarget: params.SweepConfTarget,
 		}
 
-		maxPeerRouteFee = ppmToSat(
-			peerAmount, params.MaximumRoutingFeePPM,
-		)
+		maxPeerRouteFee = ppmToSat(peerAmount, routeFeePPM)
 
 		peerSwap = &loop.OutRequest{
 			Amount:            peerAmount,
 			MaxSwapRoutingFee: maxPeerRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
-				peerSwapQuote.PrepayAmount,
-				params.MaximumPrepayRoutingFeePPM,
+				peerSwapQuote.PrepayAmount, routeFeePPM,
 			),
 			MaxSwapFee:      peerSwapQuote.SwapFee,
 			MaxPrepayAmount: peerSwapQuote.PrepayAmount,
-			MaxMinerFee:     params.MaximumMinerFee,
+			MaxMinerFee:     maxMiner,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{
 				chanID2.ToUint64(), chanID3.ToUint64(),
@@ -356,11 +365,12 @@ func TestCompositeRules(t *testing.T) {
 		// Create a quote for our single channel swap that is within
 		// our budget.
 		chanAmount     = chan1Rec.Amount
-		maxChanSwapFee = ppmToSat(chanAmount, params.MaximumSwapFeePPM)
+		maxChanSwapFee = ppmToSat(chanAmount, swapFeePPM)
 
 		channelSwapQuote = &loop.LoopOutQuote{
 			SwapFee:      maxChanSwapFee,
-			PrepayAmount: params.MaximumPrepay - 10,
+			PrepayAmount: prepayAmount - 10,
+			MinerFee:     maxMiner - 10,
 		}
 
 		chanSwapQuoteRequest = &loop.LoopOutQuoteRequest{
@@ -368,20 +378,17 @@ func TestCompositeRules(t *testing.T) {
 			SweepConfTarget: params.SweepConfTarget,
 		}
 
-		maxChanRouteFee = ppmToSat(
-			chanAmount, params.MaximumRoutingFeePPM,
-		)
+		maxChanRouteFee = ppmToSat(chanAmount, routeFeePPM)
 
 		chanSwap = &loop.OutRequest{
 			Amount:            chanAmount,
 			MaxSwapRoutingFee: maxChanRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
-				channelSwapQuote.PrepayAmount,
-				params.MaximumPrepayRoutingFeePPM,
+				channelSwapQuote.PrepayAmount, routeFeePPM,
 			),
 			MaxSwapFee:      channelSwapQuote.SwapFee,
 			MaxPrepayAmount: channelSwapQuote.PrepayAmount,
-			MaxMinerFee:     params.MaximumMinerFee,
+			MaxMinerFee:     maxMiner,
 			SweepConfTarget: params.SweepConfTarget,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
 			Label:           labels.AutoloopLabel(swap.TypeOut),

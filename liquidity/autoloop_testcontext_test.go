@@ -65,10 +65,13 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	// Create a mock lnd and set our expected fee rate for sweeps to our
 	// sweep fee rate limit value.
 	lnd := test.NewMockLnd()
-	lnd.SetFeeEstimate(
-		defaultParameters.SweepConfTarget,
-		defaultParameters.SweepFeeRateLimit,
-	)
+
+	categories, ok := parameters.FeeLimit.(*FeeCategoryLimit)
+	if ok {
+		lnd.SetFeeEstimate(
+			parameters.SweepConfTarget, categories.SweepFeeRateLimit,
+		)
+	}
 
 	testCtx := &autoloopTestCtx{
 		t:         t,

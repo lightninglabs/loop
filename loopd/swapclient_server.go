@@ -572,27 +572,38 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	cfg := s.liquidityMgr.GetParameters()
 
-	satPerByte := cfg.SweepFeeRateLimit.FeePerKVByte() / 1000
-
 	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
 
 	rpcCfg := &looprpc.LiquidityParameters{
-		MaxMinerFeeSat:          uint64(cfg.MaximumMinerFee),
-		MaxSwapFeePpm:           uint64(cfg.MaximumSwapFeePPM),
-		MaxRoutingFeePpm:        uint64(cfg.MaximumRoutingFeePPM),
-		MaxPrepayRoutingFeePpm:  uint64(cfg.MaximumPrepayRoutingFeePPM),
-		MaxPrepaySat:            uint64(cfg.MaximumPrepay),
-		SweepFeeRateSatPerVbyte: uint64(satPerByte),
-		SweepConfTarget:         cfg.SweepConfTarget,
-		FailureBackoffSec:       uint64(cfg.FailureBackOff.Seconds()),
-		Autoloop:                cfg.Autoloop,
-		AutoloopBudgetSat:       uint64(cfg.AutoFeeBudget),
-		AutoMaxInFlight:         uint64(cfg.MaxAutoInFlight),
+		SweepConfTarget:   cfg.SweepConfTarget,
+		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
+		Autoloop:          cfg.Autoloop,
+		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
+		AutoMaxInFlight:   uint64(cfg.MaxAutoInFlight),
 		Rules: make(
 			[]*looprpc.LiquidityRule, 0, totalRules,
 		),
 		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
 		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
+	}
+
+	switch f := cfg.FeeLimit.(type) {
+	case *liquidity.FeeCategoryLimit:
+		satPerByte := f.SweepFeeRateLimit.FeePerKVByte() / 1000
+
+		rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
+
+		rpcCfg.MaxMinerFeeSat = uint64(f.MaximumMinerFee)
+		rpcCfg.MaxSwapFeePpm = f.MaximumSwapFeePPM
+		rpcCfg.MaxRoutingFeePpm = f.MaximumRoutingFeePPM
+		rpcCfg.MaxPrepayRoutingFeePpm = f.MaximumPrepayRoutingFeePPM
+		rpcCfg.MaxPrepaySat = uint64(f.MaximumPrepay)
+
+	case *liquidity.FeePortion:
+		rpcCfg.FeePpm = f.PartsPerMillion
+
+	default:
+		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
 	}
 
 	// Zero golang time is different to a zero unix time, so we only set
@@ -635,18 +646,14 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
 	error) {
 
-	satPerVbyte := chainfee.SatPerKVByte(
-		in.Parameters.SweepFeeRateSatPerVbyte * 1000,
-	)
+	feeLimit, err := rpcToFee(in.Parameters)
+	if err != nil {
+		return nil, err
+	}
 
 	params := liquidity.Parameters{
-		MaximumMinerFee:            btcutil.Amount(in.Parameters.MaxMinerFeeSat),
-		MaximumSwapFeePPM:          int(in.Parameters.MaxSwapFeePpm),
-		MaximumRoutingFeePPM:       int(in.Parameters.MaxRoutingFeePpm),
-		MaximumPrepayRoutingFeePPM: int(in.Parameters.MaxPrepayRoutingFeePpm),
-		MaximumPrepay:              btcutil.Amount(in.Parameters.MaxPrepaySat),
-		SweepFeeRateLimit:          satPerVbyte.FeePerKWeight(),
-		SweepConfTarget:            in.Parameters.SweepConfTarget,
+		FeeLimit:        feeLimit,
+		SweepConfTarget: in.Parameters.SweepConfTarget,
 		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
 			time.Second,
 		Autoloop:        in.Parameters.Autoloop,
@@ -720,6 +727,45 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	}
 
 	return &looprpc.SetLiquidityParamsResponse{}, nil
+}
+
+// rpcToFee converts the values provided over rpc to a fee limit interface,
+// failing if an inconsistent set of fields are set.
+func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
+	error) {
+
+	// Check which fee limit type we have values set for. If any fields
+	// relevant to our individual categories are set, we count that type
+	// as set.
+	isFeePPM := req.FeePpm != 0
+	isCategories := req.MaxSwapFeePpm != 0 || req.MaxRoutingFeePpm != 0 ||
+		req.MaxPrepayRoutingFeePpm != 0 || req.MaxMinerFeeSat != 0 ||
+		req.MaxPrepaySat != 0 || req.SweepFeeRateSatPerVbyte != 0
+
+	switch {
+	case isFeePPM && isCategories:
+		return nil, errors.New("set either fee ppm, or individual " +
+			"fee categories")
+	case isFeePPM:
+		return liquidity.NewFeePortion(req.FeePpm), nil
+
+	case isCategories:
+		satPerVbyte := chainfee.SatPerKVByte(
+			req.SweepFeeRateSatPerVbyte * 1000,
+		)
+
+		return liquidity.NewFeeCategoryLimit(
+			req.MaxSwapFeePpm,
+			req.MaxRoutingFeePpm,
+			req.MaxPrepayRoutingFeePpm,
+			btcutil.Amount(req.MaxMinerFeeSat),
+			btcutil.Amount(req.MaxPrepaySat),
+			satPerVbyte.FeePerKWeight(),
+		), nil
+
+	default:
+		return nil, errors.New("no fee categories set")
+	}
 }
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.
@@ -848,6 +894,9 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 
 	case liquidity.ReasonBudgetInsufficient:
 		return looprpc.AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT, nil
+
+	case liquidity.ReasonFeePPMInsufficient:
+		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
 
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)

@@ -212,6 +212,11 @@ var setParamsCommand = cli.Command{
 			Usage: "the limit placed on our estimated sweep fee " +
 				"in sat/vByte.",
 		},
+		cli.IntFlag{
+			Name: "feepercent",
+			Usage: "the maximum percentage of swap amount to be " +
+				"used across all fee categories",
+		},
 		cli.Float64Flag{
 			Name: "maxswapfee",
 			Usage: "the maximum percentage of swap volume we are " +
@@ -307,8 +312,11 @@ func setParams(ctx *cli.Context) error {
 		return err
 	}
 
-	var flagSet bool
+	var flagSet, categoriesSet, feePercentSet bool
 
+	// Update our existing parameters with the values provided by cli flags.
+	// Our fee categories and fee percentage are exclusive, so track which
+	// flags are set to ensure that we don't have nonsensical overlap.
 	if ctx.IsSet("maxswapfee") {
 		feeRate := ctx.Float64("maxswapfee")
 		params.MaxSwapFeePpm, err = ppmFromPercentage(feeRate)
@@ -317,6 +325,7 @@ func setParams(ctx *cli.Context) error {
 		}
 
 		flagSet = true
+		categoriesSet = true
 	}
 
 	if ctx.IsSet("sweeplimit") {
@@ -324,6 +333,18 @@ func setParams(ctx *cli.Context) error {
 		params.SweepFeeRateSatPerVbyte = uint64(satPerVByte)
 
 		flagSet = true
+		categoriesSet = true
+	}
+
+	if ctx.IsSet("feepercent") {
+		feeRate := ctx.Float64("feepercent")
+		params.FeePpm, err = ppmFromPercentage(feeRate)
+		if err != nil {
+			return err
+		}
+
+		flagSet = true
+		feePercentSet = true
 	}
 
 	if ctx.IsSet("maxroutingfee") {
@@ -334,6 +355,7 @@ func setParams(ctx *cli.Context) error {
 		}
 
 		flagSet = true
+		categoriesSet = true
 	}
 
 	if ctx.IsSet("maxprepayfee") {
@@ -344,16 +366,19 @@ func setParams(ctx *cli.Context) error {
 		}
 
 		flagSet = true
+		categoriesSet = true
 	}
 
 	if ctx.IsSet("maxprepay") {
 		params.MaxPrepaySat = ctx.Uint64("maxprepay")
 		flagSet = true
+		categoriesSet = true
 	}
 
 	if ctx.IsSet("maxminer") {
 		params.MaxMinerFeeSat = ctx.Uint64("maxminer")
 		flagSet = true
+		categoriesSet = true
 	}
 
 	if ctx.IsSet("sweepconf") {
@@ -400,6 +425,29 @@ func setParams(ctx *cli.Context) error {
 		return fmt.Errorf("at least one flag required to set params")
 	}
 
+	switch {
+	// Fail if fee params for both types of fee limit are set, since they
+	// cannot be used in conjunction.
+	case feePercentSet && categoriesSet:
+		return fmt.Errorf("feepercent cannot be set with specific " +
+			"fee category flags")
+
+	// If we are updating to fee percentage, we unset all other fee related
+	// params so that users do not need to manually unset them.
+	case feePercentSet:
+		params.SweepFeeRateSatPerVbyte = 0
+		params.MaxMinerFeeSat = 0
+		params.MaxPrepayRoutingFeePpm = 0
+		params.MaxPrepaySat = 0
+		params.MaxRoutingFeePpm = 0
+		params.MaxSwapFeePpm = 0
+
+	// If we are setting any of our fee categories, unset fee percentage
+	// so that it does not need to be manually updated.
+	case categoriesSet:
+		params.FeePpm = 0
+
+	}
 	// Update our parameters to our mutated values.
 	_, err = client.SetLiquidityParams(
 		context.Background(), &looprpc.SetLiquidityParamsRequest{
