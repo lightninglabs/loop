@@ -60,6 +60,11 @@ const (
 	// a channel is part of a temporarily failed swap.
 	defaultFailureBackoff = time.Hour * 24
 
+	// defaultConfTarget is the default sweep target we use for loop outs.
+	// We get our inbound liquidity quickly using preimage push, so we can
+	// use a long conf target without worrying about ux impact.
+	defaultConfTarget = 100
+
 	// FeeBase is the base that we use to express fees.
 	FeeBase = 1e6
 
@@ -95,7 +100,7 @@ var (
 		ChannelRules:    make(map[lnwire.ShortChannelID]*ThresholdRule),
 		PeerRules:       make(map[route.Vertex]*ThresholdRule),
 		FailureBackOff:  defaultFailureBackoff,
-		SweepConfTarget: loop.DefaultSweepConfTarget,
+		SweepConfTarget: defaultConfTarget,
 		FeeLimit:        defaultFeePortion(),
 	}
 

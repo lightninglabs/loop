@@ -66,7 +66,7 @@ var (
 		MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
 		MaxSwapFee:          testQuote.SwapFee,
 		MaxPrepayAmount:     testQuote.PrepayAmount,
-		SweepConfTarget:     loop.DefaultSweepConfTarget,
+		SweepConfTarget:     defaultConfTarget,
 		Initiator:           autoloopSwapInitiator,
 	}
 
@@ -79,7 +79,7 @@ var (
 		MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
 		MaxPrepayAmount:     testQuote.PrepayAmount,
 		MaxSwapFee:          testQuote.SwapFee,
-		SweepConfTarget:     loop.DefaultSweepConfTarget,
+		SweepConfTarget:     defaultConfTarget,
 		Initiator:           autoloopSwapInitiator,
 	}
 
@@ -612,7 +612,7 @@ func TestSweepFeeLimit(t *testing.T) {
 
 			// Set our test case's fee rate for our mock lnd.
 			lnd.SetFeeEstimate(
-				loop.DefaultSweepConfTarget, testCase.feeRate,
+				defaultConfTarget, testCase.feeRate,
 			)
 
 			lnd.Channels = []lndclient.ChannelInfo{
@@ -732,7 +732,7 @@ func TestSuggestSwaps(t *testing.T) {
 						MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
 						MaxSwapFee:          testQuote.SwapFee,
 						MaxPrepayAmount:     testQuote.PrepayAmount,
-						SweepConfTarget:     loop.DefaultSweepConfTarget,
+						SweepConfTarget:     defaultConfTarget,
 						Initiator:           autoloopSwapInitiator,
 					},
 				},
@@ -1227,7 +1227,7 @@ func TestSizeRestrictions(t *testing.T) {
 			MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
 			MaxSwapFee:          testQuote.SwapFee,
 			MaxPrepayAmount:     testQuote.PrepayAmount,
-			SweepConfTarget:     loop.DefaultSweepConfTarget,
+			SweepConfTarget:     defaultConfTarget,
 			Initiator:           autoloopSwapInitiator,
 		}
 	)
@@ -1376,7 +1376,7 @@ func TestFeePercentage(t *testing.T) {
 			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
 			MaxSwapFee:      okQuote.SwapFee,
 			MaxPrepayAmount: okQuote.PrepayAmount,
-			SweepConfTarget: loop.DefaultSweepConfTarget,
+			SweepConfTarget: defaultConfTarget,
 			Initiator:       autoloopSwapInitiator,
 		}
 	)
