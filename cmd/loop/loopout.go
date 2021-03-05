@@ -74,6 +74,7 @@ var loopOutCommand = cli.Command{
 				"result in a lower swap fee.",
 		},
 		labelFlag,
+		verboseFlag,
 	},
 	Action: loopOut,
 }
@@ -175,8 +176,8 @@ func loopOut(ctx *cli.Context) error {
 			ctx.Int64("max_swap_routing_fee"),
 		)
 	}
-	err = displayOutLimits(
-		amt, btcutil.Amount(quote.HtlcSweepFeeSat), limits, warning,
+	err = displayOutDetails(
+		limits, warning, quoteReq, quote, ctx.Bool("verbose"),
 	)
 	if err != nil {
 		return err

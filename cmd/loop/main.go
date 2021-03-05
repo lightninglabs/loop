@@ -74,6 +74,27 @@ var (
 		Usage: "path to macaroon file",
 		Value: loopd.DefaultMacaroonPath,
 	}
+	verboseFlag = cli.BoolFlag{
+		Name:  "verbose, v",
+		Usage: "show expanded details",
+	}
+)
+
+const (
+
+	// satAmtFmt formats a satoshi value into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Estimated on-chain fee:", fee)
+	// prints out as,
+	//      Estimated on-chain fee:                      7262 sat
+	satAmtFmt = "%-36s %12d sat\n"
+
+	// blkFmt formats the number of blocks into a one line string, intended
+	// to prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Conf target", target)
+	// prints out as,
+	//      Conf target:                                    9 block
+	blkFmt = "%-36s %12d block\n"
 )
 
 func printJSON(resp interface{}) {
@@ -246,89 +267,56 @@ func getOutLimits(amt btcutil.Amount,
 	}
 }
 
-func displayInLimits(amt, minerFees btcutil.Amount, l *inLimits,
-	externalHtlc bool) error {
+func displayInDetails(req *looprpc.QuoteRequest,
+	resp *looprpc.InQuoteResponse, verbose bool) error {
 
-	totalSuccessMax := l.maxMinerFee + l.maxSwapFee
-
-	if externalHtlc {
+	if req.ExternalHtlc {
 		fmt.Printf("On-chain fee for external loop in is not " +
 			"included.\nSufficient fees will need to be paid " +
 			"when constructing the transaction in the external " +
 			"wallet.\n\n")
 	}
 
-	fmt.Printf("Max swap fees for %d sat Loop %v: %d sat\n", amt, swap.TypeIn,
-		totalSuccessMax)
+	printQuoteInResp(req, resp, verbose)
 
-	fmt.Printf("CONTINUE SWAP? (y/n), expand fee detail (x): ")
+	fmt.Printf("\nCONTINUE SWAP? (y/n): ")
 
 	var answer string
 	fmt.Scanln(&answer)
-
-	switch answer {
-	case "y":
+	if answer == "y" {
 		return nil
-	case "x":
-		fmt.Println()
-		f := "%-36s %d sat\n"
-
-		if !externalHtlc {
-			fmt.Printf(f, "Estimated on-chain HTLC fee:",
-				minerFees)
-		}
-
-		fmt.Printf(f, "Max swap fee:", l.maxSwapFee)
-
-		fmt.Printf("CONTINUE SWAP? (y/n): ")
-		fmt.Scanln(&answer)
-		if answer == "y" {
-			return nil
-		}
 	}
 
 	return errors.New("swap canceled")
 }
 
-func displayOutLimits(amt, minerFees btcutil.Amount, l *outLimits,
-	warning string) error {
+func displayOutDetails(l *outLimits, warning string, req *looprpc.QuoteRequest,
+	resp *looprpc.OutQuoteResponse, verbose bool) error {
 
-	totalSuccessMax := l.maxMinerFee + l.maxSwapFee + l.maxSwapRoutingFee +
-		l.maxPrepayRoutingFee
+	printQuoteOutResp(req, resp, verbose)
 
-	fmt.Printf("Max swap fees for %d sat Loop %v: %d sat\n", amt, swap.TypeOut,
-		totalSuccessMax)
-
-	if warning != "" {
-		fmt.Println(warning)
+	// Display fee limits.
+	if verbose {
+		fmt.Println()
+		fmt.Printf(satAmtFmt, "Max on-chain fee:", l.maxMinerFee)
+		fmt.Printf(satAmtFmt,
+			"Max off-chain swap routing fee:", l.maxSwapRoutingFee,
+		)
+		fmt.Printf(satAmtFmt, "Max off-chain prepay routing fee:",
+			l.maxPrepayRoutingFee)
 	}
 
-	fmt.Printf("CONTINUE SWAP? (y/n), expand fee detail (x): ")
+	// show warning
+	if warning != "" {
+		fmt.Printf("\n%s\n\n", warning)
+	}
+
+	fmt.Printf("CONTINUE SWAP? (y/n): ")
 
 	var answer string
 	fmt.Scanln(&answer)
-
-	switch answer {
-	case "y":
+	if answer == "y" {
 		return nil
-	case "x":
-		fmt.Println()
-		f := "%-36s %d sat\n"
-
-		fmt.Printf(f, "Estimated on-chain sweep fee:", minerFees)
-		fmt.Printf(f, "Max on-chain sweep fee:", l.maxMinerFee)
-		fmt.Printf(f, "Max off-chain swap routing fee:",
-			l.maxSwapRoutingFee)
-		fmt.Printf(f, "Max no show penalty (prepay):", l.maxPrepayAmt)
-		fmt.Printf(f, "Max off-chain prepay routing fee:",
-			l.maxPrepayRoutingFee)
-		fmt.Printf(f, "Max swap fee:", l.maxSwapFee)
-
-		fmt.Printf("CONTINUE SWAP? (y/n): ")
-		fmt.Scanln(&answer)
-		if answer == "y" {
-			return nil
-		}
 	}
 
 	return errors.New("swap canceled")

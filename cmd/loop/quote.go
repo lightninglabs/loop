@@ -22,7 +22,7 @@ var quoteInCommand = cli.Command{
 	Usage:       "get a quote for the cost of a loop in swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
-	Flags:       []cli.Flag{confTargetFlag},
+	Flags:       []cli.Flag{confTargetFlag, verboseFlag},
 	Action:      quoteIn,
 }
 
@@ -66,7 +66,7 @@ func quoteIn(ctx *cli.Context) error {
 			"amount.\n")
 	}
 
-	printRespJSON(quoteResp)
+	printQuoteInResp(quoteReq, quoteResp, ctx.Bool("verbose"))
 	return nil
 }
 
@@ -93,6 +93,7 @@ var quoteOutCommand = cli.Command{
 				"setting this flag might result in a lower " +
 				"swap fee.",
 		},
+		verboseFlag,
 	},
 	Action: quoteOut,
 }
@@ -132,6 +133,68 @@ func quoteOut(ctx *cli.Context) error {
 		return err
 	}
 
-	printRespJSON(quoteResp)
+	printQuoteOutResp(quoteReq, quoteResp, ctx.Bool("verbose"))
 	return nil
+}
+
+func printQuoteInResp(req *looprpc.QuoteRequest,
+	resp *looprpc.InQuoteResponse, verbose bool) {
+
+	totalFee := resp.HtlcPublishFeeSat + resp.SwapFeeSat
+
+	fmt.Printf(satAmtFmt, "Send on-chain:", req.Amt)
+	fmt.Printf(satAmtFmt, "Receive off-chain:", req.Amt-totalFee)
+
+	switch {
+	case req.ExternalHtlc && !verbose:
+		// If it's external then we don't know the miner fee hence the
+		// total cost.
+		fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
+
+	case req.ExternalHtlc && verbose:
+		fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
+		fmt.Println()
+		fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
+
+	case verbose:
+		fmt.Println()
+		fmt.Printf(
+			satAmtFmt, "Estimated on-chain fee:",
+			resp.HtlcPublishFeeSat,
+		)
+		fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
+		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
+		fmt.Println()
+		fmt.Printf(blkFmt, "Conf target:", resp.ConfTarget)
+		fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
+	default:
+		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
+	}
+}
+
+func printQuoteOutResp(req *looprpc.QuoteRequest,
+	resp *looprpc.OutQuoteResponse, verbose bool) {
+
+	totalFee := resp.HtlcSweepFeeSat + resp.SwapFeeSat
+
+	fmt.Printf(satAmtFmt, "Send off-chain:", req.Amt)
+	fmt.Printf(satAmtFmt, "Receive on-chain:", req.Amt-totalFee)
+
+	if !verbose {
+		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf(satAmtFmt, "Estimated on-chain fee:", resp.HtlcSweepFeeSat)
+	fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
+	fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
+	fmt.Println()
+	fmt.Printf(satAmtFmt, "No show penalty (prepay):", resp.PrepayAmtSat)
+	fmt.Printf(blkFmt, "Conf target:", resp.ConfTarget)
+	fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
+	fmt.Printf("%-38s %s\n",
+		"Publication deadline:",
+		time.Unix(int64(req.SwapPublicationDeadline), 0),
+	)
 }
