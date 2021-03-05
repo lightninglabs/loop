@@ -22,8 +22,12 @@ This file tracks release notes for the loop client.
   peer-level rules, provide the 'setrule' command with the peer's pubkey. 
 * Autoloop's fee API has been simplified to allow setting a single percentage
   which will be used to limit total swap fees to a percentage of the amount 
-  being swapped. Use `loop setparams --feepercent={percentage}` to update 
-  this value. This fee setting has been updated to the default for autoloop.
+  being swapped, the default budget has been updated to reflect this. Use 
+  `loop setparams --feepercent={percentage}` to update this value. This fee 
+  setting has been updated to the default for autoloop.
+* The default confirmation target for automated loop out swap sweeps has been
+  increased to 100 blocks. This change will not affect the time it takes to 
+  acquire inbound liquidity, but will decrease the cost of swaps.
 
 #### Breaking Changes
 

@@ -60,6 +60,11 @@ const (
 	// a channel is part of a temporarily failed swap.
 	defaultFailureBackoff = time.Hour * 24
 
+	// defaultConfTarget is the default sweep target we use for loop outs.
+	// We get our inbound liquidity quickly using preimage push, so we can
+	// use a long conf target without worrying about ux impact.
+	defaultConfTarget = 100
+
 	// FeeBase is the base that we use to express fees.
 	FeeBase = 1e6
 
@@ -83,12 +88,9 @@ var (
 	// only be used for automatically dispatched swaps if autoloop is
 	// explicitly enabled, so we are happy to set a non-zero value here. The
 	// amount chosen simply uses the current defaults to provide budget for
-	// a single swap. We don't have a swap amount to calculate our maximum
-	// routing fee, so we use 0.16 BTC for now.
-	defaultBudget = defaultMaximumMinerFee +
-		ppmToSat(funding.MaxBtcFundingAmount, defaultSwapFeePPM) +
-		ppmToSat(defaultMaximumPrepay, defaultPrepayRoutingFeePPM) +
-		ppmToSat(funding.MaxBtcFundingAmount, defaultRoutingFeePPM)
+	// a single swap. We don't have a swap amount so we just use our max
+	// funding amount.
+	defaultBudget = ppmToSat(funding.MaxBtcFundingAmount, defaultFeePPM)
 
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manger with.
@@ -98,7 +100,7 @@ var (
 		ChannelRules:    make(map[lnwire.ShortChannelID]*ThresholdRule),
 		PeerRules:       make(map[route.Vertex]*ThresholdRule),
 		FailureBackOff:  defaultFailureBackoff,
-		SweepConfTarget: loop.DefaultSweepConfTarget,
+		SweepConfTarget: defaultConfTarget,
 		FeeLimit:        defaultFeePortion(),
 	}
 
