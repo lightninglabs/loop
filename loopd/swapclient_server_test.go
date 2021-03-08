@@ -163,13 +163,53 @@ func TestValidateLoopInRequest(t *testing.T) {
 func TestValidateLoopOutRequest(t *testing.T) {
 	tests := []struct {
 		name           string
+		chain          chaincfg.Params
 		confTarget     int32
+		destAddr       btcutil.Address
 		label          string
 		err            error
 		expectedTarget int32
 	}{
 		{
+			name:           "mainnet address with mainnet backend",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       mainnetAddr,
+			label:          "label ok",
+			confTarget:     2,
+			err:            nil,
+			expectedTarget: 2,
+		},
+		{
+			name:           "mainnet address with testnet backend",
+			chain:          chaincfg.TestNet3Params,
+			destAddr:       mainnetAddr,
+			label:          "label ok",
+			confTarget:     2,
+			err:            errIncorrectChain,
+			expectedTarget: 0,
+		},
+		{
+			name:           "testnet address with testnet backend",
+			chain:          chaincfg.TestNet3Params,
+			destAddr:       testnetAddr,
+			label:          "label ok",
+			confTarget:     2,
+			err:            nil,
+			expectedTarget: 2,
+		},
+		{
+			name:           "testnet address with mainnet backend",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       testnetAddr,
+			label:          "label ok",
+			confTarget:     2,
+			err:            errIncorrectChain,
+			expectedTarget: 0,
+		},
+		{
 			name:           "invalid label",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       mainnetAddr,
 			label:          labels.Reserved,
 			confTarget:     2,
 			err:            labels.ErrReservedPrefix,
@@ -177,6 +217,8 @@ func TestValidateLoopOutRequest(t *testing.T) {
 		},
 		{
 			name:           "invalid conf target",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       mainnetAddr,
 			label:          "label ok",
 			confTarget:     1,
 			err:            errConfTargetTooLow,
@@ -184,6 +226,8 @@ func TestValidateLoopOutRequest(t *testing.T) {
 		},
 		{
 			name:           "default conf target",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       mainnetAddr,
 			label:          "label ok",
 			confTarget:     0,
 			err:            nil,
@@ -198,7 +242,8 @@ func TestValidateLoopOutRequest(t *testing.T) {
 			t.Parallel()
 
 			conf, err := validateLoopOutRequest(
-				test.confTarget, test.label,
+				&test.chain, test.confTarget, test.destAddr,
+				test.label,
 			)
 			require.True(t, errors.Is(err, test.err))
 			require.Equal(t, test.expectedTarget, conf)
