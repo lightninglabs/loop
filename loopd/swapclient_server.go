@@ -34,6 +34,12 @@ const (
 	minConfTarget = 2
 )
 
+var (
+	// errConfTargetTooLow is returned when the chosen confirmation target
+	// is below the allowed minimum.
+	errConfTargetTooLow = errors.New("confirmation target too low")
+)
+
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
 	network          lndclient.Network
@@ -58,13 +64,6 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	log.Infof("Loop out request received")
 
-	sweepConfTarget, err := validateConfTarget(
-		in.SweepConfTarget, loop.DefaultSweepConfTarget,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	var sweepAddr btcutil.Address
 	if in.Dest == "" {
 		// Generate sweep address if none specified.
@@ -83,8 +82,9 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		}
 	}
 
-	// Check that the label is valid.
-	if err := labels.Validate(in.Label); err != nil {
+	sweepConfTarget, err := validateLoopOutRequest(in.SweepConfTarget,
+		in.Label)
+	if err != nil {
 		return nil, err
 	}
 
@@ -894,8 +894,9 @@ func validateConfTarget(target, defaultTarget int32) (int32, error) {
 
 	// Ensure the target respects our minimum threshold.
 	case target < minConfTarget:
-		return 0, fmt.Errorf("a confirmation target of at least %v "+
-			"must be provided", minConfTarget)
+		return 0, fmt.Errorf("%w: A confirmation target of at "+
+			"least %v must be provided", errConfTargetTooLow,
+			minConfTarget)
 
 	default:
 		return target, nil
@@ -919,4 +920,15 @@ func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
 	}
 
 	return validateConfTarget(htlcConfTarget, loop.DefaultHtlcConfTarget)
+}
+
+// validateLoopOutRequest validates the confirmation target and label of the
+// loop out request.
+func validateLoopOutRequest(confTarget int32, label string) (int32, error) {
+	// Check that the label is valid.
+	if err := labels.Validate(label); err != nil {
+		return 0, err
+	}
+
+	return validateConfTarget(confTarget, loop.DefaultSweepConfTarget)
 }

@@ -1,9 +1,24 @@
 package loopd
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/labels"
+	"github.com/stretchr/testify/require"
+)
+
+var (
+	testnetAddr, _ = btcutil.NewAddressScriptHash(
+		[]byte{123}, &chaincfg.TestNet3Params,
+	)
+
+	mainnetAddr, _ = btcutil.NewAddressScriptHash(
+		[]byte{123}, &chaincfg.MainNetParams,
+	)
 )
 
 // TestValidateConfTarget tests all failure and success cases for our conf
@@ -140,6 +155,53 @@ func TestValidateLoopInRequest(t *testing.T) {
 				t.Fatalf("expected: %v, got: %v",
 					test.expectedTarget, conf)
 			}
+		})
+	}
+}
+
+// TestValidateLoopOutRequest tests validation of loop out requests.
+func TestValidateLoopOutRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		confTarget     int32
+		label          string
+		err            error
+		expectedTarget int32
+	}{
+		{
+			name:           "invalid label",
+			label:          labels.Reserved,
+			confTarget:     2,
+			err:            labels.ErrReservedPrefix,
+			expectedTarget: 0,
+		},
+		{
+			name:           "invalid conf target",
+			label:          "label ok",
+			confTarget:     1,
+			err:            errConfTargetTooLow,
+			expectedTarget: 0,
+		},
+		{
+			name:           "default conf target",
+			label:          "label ok",
+			confTarget:     0,
+			err:            nil,
+			expectedTarget: 9,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			conf, err := validateLoopOutRequest(
+				test.confTarget, test.label,
+			)
+			require.True(t, errors.Is(err, test.err))
+			require.Equal(t, test.expectedTarget, conf)
 		})
 	}
 }
