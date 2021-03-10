@@ -64,6 +64,9 @@ enum ProtocolVersion {
     // The client creates a probe invoice so that the server can perform a
     // multi-path probe.
     MULTI_LOOP_IN = 6;
+
+    // The client creates a probe invoice in the loop-in quote.
+    MULTI_LOOP_IN_V2 = 7;
 }
 
 message ServerLoopOutRequest {
@@ -197,6 +200,8 @@ message ServerLoopInQuoteRequest {
 
     /// The protocol version that the client adheres to.
     ProtocolVersion protocol_version = 2;
+
+    string probe_invoice = 3;
 }
 
 message ServerLoopInQuoteResponse {

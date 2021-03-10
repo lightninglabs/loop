@@ -2,6 +2,8 @@ package loop
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -14,10 +16,13 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tor"
 	"google.golang.org/grpc"
@@ -79,6 +84,7 @@ type swapServerClient interface {
 type grpcSwapServerClient struct {
 	server looprpc.SwapServerClient
 	conn   *grpc.ClientConn
+	lnd    *lndclient.LndServices
 
 	wg sync.WaitGroup
 }
@@ -117,6 +123,7 @@ func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 	return &grpcSwapServerClient{
 		conn:   serverConn,
 		server: server,
+		lnd:    cfg.Lnd,
 	}, nil
 }
 
@@ -202,14 +209,60 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	quoteResp, err := s.server.LoopInQuote(rpcCtx,
-		&looprpc.ServerLoopInQuoteRequest{
-			Amt:             uint64(amt),
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
-		},
-	)
+
+	quoteReq := &looprpc.ServerLoopInQuoteRequest{
+		Amt:             uint64(amt),
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+	}
+
+	var probeHash lntypes.Hash
+	if loopdb.CurrentRPCProtocolVersion == looprpc.ProtocolVersion_MULTI_LOOP_IN_V2 {
+		// Generate random preimage.
+		var preimage lntypes.Preimage
+		if _, err := rand.Read(preimage[:]); err != nil {
+			log.Error("Cannot generate preimage")
+		}
+
+		probeHash := lntypes.Hash(sha256.Sum256(preimage[:]))
+
+		log.Infof("Creating quote probe invoice %v", probeHash)
+		probeInvoice, err := s.lnd.Invoices.AddHoldInvoice(
+			rpcCtx, &invoicesrpc.AddInvoiceData{
+				Hash:   &probeHash,
+				Value:  lnwire.NewMSatFromSatoshis(amt),
+				Memo:   "loop in quote probe",
+				Expiry: 3600,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		quoteReq.ProbeInvoice = probeInvoice
+	}
+
+	quoteResp, err := s.server.LoopInQuote(rpcCtx, quoteReq)
 	if err != nil {
 		return nil, err
+	}
+
+	if loopdb.CurrentRPCProtocolVersion == looprpc.ProtocolVersion_MULTI_LOOP_IN_V2 {
+		// Create a cancellable context that is used for monitoring the probe.
+		probeWaitCtx, probeWaitCancel := context.WithCancel(ctx)
+		defer probeWaitCancel()
+
+		// Launch a goroutine to monitor the probe.
+		probeResult, err := awaitProbe(probeWaitCtx, *s.lnd, probeHash)
+		if err != nil {
+			return nil, fmt.Errorf("loop in quote probe failed: %v", err)
+		}
+
+		// Because the context is cancelled, it is guaranteed that we will be
+		// able to read from the probeResult channel.
+		err = <-probeResult
+		if err != nil {
+			return nil, fmt.Errorf("probe error: %v", err)
+		}
 	}
 
 	return &LoopInQuote{

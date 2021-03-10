@@ -39,13 +39,15 @@ const (
 	// invoice so that the server can perform a multi-path probe.
 	ProtocolVersionMultiLoopIn ProtocolVersion = 6
 
+	ProtocolVersionMultiLoopInV2 ProtocolVersion = 7
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_IN
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_IN_V2
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
