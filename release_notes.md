@@ -15,7 +15,11 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-
+* A new flag, `--verbose`, or `-v`, is added to `loop in`, `loop out` and
+ `loop quote`. Responses from these commands are also updated to provide more
+  verbose info, giving users a more intuitive view about money paid
+  on/off-chain and fees incurred. Use `loop in -v`, `loop out -v`,
+  `loop quote in -v` or `loop quote out -v` to view the details.
 
 #### Breaking Changes
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
@@ -61,6 +60,7 @@ var (
 			confTargetFlag,
 			lastHopFlag,
 			labelFlag,
+			verboseFlag,
 		},
 		Action: loopIn,
 	}
@@ -109,14 +109,12 @@ func loopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	quote, err := client.GetLoopInQuote(
-		context.Background(),
-		&looprpc.QuoteRequest{
-			Amt:          int64(amt),
-			ConfTarget:   htlcConfTarget,
-			ExternalHtlc: external,
-		},
-	)
+	quoteReq := &looprpc.QuoteRequest{
+		Amt:          int64(amt),
+		ConfTarget:   htlcConfTarget,
+		ExternalHtlc: external,
+	}
+	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
 	if err != nil {
 		return err
 	}
@@ -136,9 +134,7 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(quote)
-	err = displayInLimits(
-		amt, btcutil.Amount(quote.HtlcPublishFeeSat), limits, external,
-	)
+	err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
 	if err != nil {
 		return err
 	}

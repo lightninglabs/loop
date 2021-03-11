@@ -466,6 +466,11 @@
           "type": "integer",
           "format": "int32",
           "title": "On-chain cltv expiry delta"
+        },
+        "conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The confirmation target to be used to publish the on-chain HTLC."
         }
       }
     },
@@ -809,6 +814,11 @@
           "type": "integer",
           "format": "int32",
           "title": "On-chain cltv expiry delta"
+        },
+        "conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The confirmation target to be used for the sweep of the on-chain HTLC."
         }
       }
     },
