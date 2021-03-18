@@ -44,6 +44,13 @@ var (
 	// errConfTargetTooLow is returned when the chosen confirmation target
 	// is below the allowed minimum.
 	errConfTargetTooLow = errors.New("confirmation target too low")
+
+	// errBalanceTooLow is returned when the loop out amount can't be
+	// satisfied given total balance of the selection of channels to loop
+	// out on.
+	errBalanceTooLow = errors.New(
+		"channel balance too low for loop out amount",
+	)
 )
 
 // swapClientServer implements the grpc service exposed by loopd.
@@ -89,7 +96,8 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	sweepConfTarget, err := validateLoopOutRequest(
-		s.lnd.ChainParams, in.SweepConfTarget, sweepAddr, in.Label,
+		ctx, s.lnd.Client, s.lnd.ChainParams, in, sweepAddr,
+		s.impl.LoopOutMaxParts,
 	)
 	if err != nil {
 		return nil, err
@@ -981,9 +989,12 @@ func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
 }
 
 // validateLoopOutRequest validates the confirmation target, destination
-// address and label of the loop out request.
-func validateLoopOutRequest(chainParams *chaincfg.Params, confTarget int32,
-	sweepAddr btcutil.Address, label string) (int32, error) {
+// address and label of the loop out request. It also checks that the requested
+// loop amount is valid given the available balance.
+func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
+	chainParams *chaincfg.Params, req *looprpc.LoopOutRequest,
+	sweepAddr btcutil.Address, maxParts uint32) (int32, error) {
+
 	// Check that the provided destination address has the correct format
 	// for the active network.
 	if !sweepAddr.IsForNet(chainParams) {
@@ -992,9 +1003,101 @@ func validateLoopOutRequest(chainParams *chaincfg.Params, confTarget int32,
 	}
 
 	// Check that the label is valid.
-	if err := labels.Validate(label); err != nil {
+	if err := labels.Validate(req.Label); err != nil {
 		return 0, err
 	}
 
-	return validateConfTarget(confTarget, loop.DefaultSweepConfTarget)
+	channels, err := lnd.ListChannels(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	unlimitedChannels := len(req.OutgoingChanSet) == 0
+	outgoingChanSetMap := make(map[uint64]bool)
+	for _, chanID := range req.OutgoingChanSet {
+		outgoingChanSetMap[chanID] = true
+	}
+
+	var activeChannelSet []lndclient.ChannelInfo
+	for _, c := range channels {
+		// Don't bother looking at inactive channels.
+		if !c.Active {
+			continue
+		}
+
+		// If no outgoing channel set was specified then all active
+		// channels are considered. However, if a channel set was
+		// specified then only the specified channels are considered.
+		if unlimitedChannels || outgoingChanSetMap[c.ChannelID] {
+			activeChannelSet = append(activeChannelSet, c)
+		}
+	}
+
+	// Determine if the loop out request is theoretically possible given
+	// the amount requested, the maximum possible routing fees,
+	// the available channel set and the fact that equal splitting is
+	// used for MPP.
+	requiredBalance := btcutil.Amount(req.Amt + req.MaxSwapRoutingFee)
+	isRoutable, _ := hasBandwidth(activeChannelSet, requiredBalance,
+		int(maxParts))
+	if !isRoutable {
+		return 0, fmt.Errorf("%w: Requested swap amount of %d "+
+			"sats along with the maximum routing fee of %d sats "+
+			"is more than what can be routed given current state "+
+			"of the channel set", errBalanceTooLow, req.Amt,
+			req.MaxSwapRoutingFee)
+	}
+
+	return validateConfTarget(
+		req.SweepConfTarget, loop.DefaultSweepConfTarget,
+	)
+}
+
+// hasBandwidth simulates the MPP splitting logic that will be used by LND when
+// attempting to route the payment. This function is used to evaluate if a
+// payment will be routable given the splitting logic used by LND.
+// It returns true if the amount is routable given the channel set and the
+// maximum number of shards allowed. If the amount is routable then the number
+// of shards used is also returned. This function makes an assumption that the
+// minimum loop amount divided by max parts will not be less than the minimum
+// shard amount. If the MPP logic changes, then this function should be updated.
+func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
+	maxParts int) (bool, int) {
+
+	scratch := make([]btcutil.Amount, len(channels))
+	var totalBandwidth btcutil.Amount
+	for i, channel := range channels {
+		scratch[i] = channel.LocalBalance
+		totalBandwidth += channel.LocalBalance
+	}
+
+	if totalBandwidth < amt {
+		return false, 0
+	}
+
+	split := amt
+	for shard := 0; shard <= maxParts; {
+		paid := false
+		for i := 0; i < len(scratch); i++ {
+			if scratch[i] >= split {
+				scratch[i] -= split
+				amt -= split
+				paid = true
+				shard++
+				break
+			}
+		}
+
+		if amt == 0 {
+			return true, shard
+		}
+
+		if !paid {
+			split /= 2
+		} else {
+			split = amt
+		}
+	}
+
+	return false, 0
 }

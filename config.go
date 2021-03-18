@@ -15,4 +15,5 @@ type clientConfig struct {
 	Store             loopdb.SwapStore
 	LsatStore         lsat.Store
 	CreateExpiryTimer func(expiry time.Duration) <-chan time.Time
+	LoopOutMaxParts   uint32
 }

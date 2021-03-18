@@ -129,6 +129,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},
+		LoopOutMaxParts: cfg.LoopOutMaxParts,
 	}
 
 	sweeper := &sweep.Sweeper{
