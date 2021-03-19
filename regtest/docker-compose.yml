@@ -1,0 +1,117 @@
+version: '3'
+services:
+  bitcoind:
+    image: ruimarinho/bitcoin-core:0.21-alpine
+    restart: unless-stopped
+    networks:
+      - regtest
+    command:
+      - "-txindex"
+      - "-regtest"
+      - "-rest"
+      - "-printtoconsole"
+      - "-zmqpubrawblock=tcp://0.0.0.0:28332"
+      - "-zmqpubrawtx=tcp://0.0.0.0:28333"
+      - "-rpcport=18443"
+      - "-rpcbind=0.0.0.0"
+      # This is just the hashed string "lightning" with a salt.
+      - "-rpcauth=lightning:8492220e715bbfdf5f165102bfd7ed4$$88090545821ed5e9db614588c0afbad575ccc14681fb77f3cae6899bc419af67"
+      - "-rpcallowip=172.0.0.0/8"
+      - "-rpcallowip=127.0.0.1"
+      - "-fallbackfee=0.0002"
+      - "-peerblockfilters=1"
+      - "-blockfilterindex=1"
+      - "-wallet=/home/bitcoin/.bitcoin/regtest/wallets/miner"
+    environment:
+      - HOME=/home/bitcoin
+
+  lndserver:
+    image: lightninglabs/lnd:v0.12.1-beta
+    restart: unless-stopped
+    networks:
+      - regtest
+    volumes:
+      - "lndserver:/root/.lnd"
+    depends_on:
+      - bitcoind
+    command:
+      - "--alias=lndserver"
+      - "--rpclisten=0.0.0.0:10009"
+      - "--noseedbackup"
+      - "--bitcoin.active"
+      - "--bitcoin.regtest"
+      - "--bitcoin.node=bitcoind"
+      - "--bitcoind.rpchost=regtest_bitcoind_1"
+      - "--bitcoind.rpcuser=lightning"
+      - "--bitcoind.rpcpass=lightning"
+      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
+      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
+      - "--tlsextradomain=regtest_lndserver_1"
+
+  loopserver:
+    image: lightninglabs/loopserver:latest
+    restart: unless-stopped
+    networks:
+      - regtest
+    volumes:
+      - "lndserver:/root/.lnd"
+    depends_on:
+      - lndserver
+    command:
+      - "daemon"
+      - "--maxamt=5000000"
+      - "--lnd.host=regtest_lndserver_1:10009"
+      - "--lnd.macaroondir=/root/.lnd/data/chain/bitcoin/regtest"
+      - "--lnd.tlspath=/root/.lnd/tls.cert"
+
+  lndclient:
+    image: lightninglabs/lnd:v0.12.1-beta
+    restart: unless-stopped
+    networks:
+      - regtest
+    volumes:
+      - "lndclient:/root/.lnd"
+    depends_on:
+      - bitcoind
+    command:
+      - "--alias=lndclient"
+      - "--rpclisten=0.0.0.0:10009"
+      - "--noseedbackup"
+      - "--bitcoin.active"
+      - "--bitcoin.regtest"
+      - "--bitcoin.node=bitcoind"
+      - "--bitcoind.rpchost=regtest_bitcoind_1"
+      - "--bitcoind.rpcuser=lightning"
+      - "--bitcoind.rpcpass=lightning"
+      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
+      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
+      - "--tlsextradomain=regtest_lndclient_1"
+
+  loopclient:
+    image: loopd
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - regtest
+    volumes:
+      - "lndclient:/root/.lnd"
+    depends_on:
+      - lndclient
+    command:
+      - "loopd"
+      - "--network=regtest"
+      - "--debuglevel=debug"
+      - "--server.host=regtest_loopserver_1:11009"
+      - "--server.notls"
+      - "--lnd.host=regtest_lndclient_1:10009"
+      - "--lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
+      - "--lnd.tlspath=/root/.lnd/tls.cert"
+
+networks:
+  regtest:
+
+volumes:
+  lndserver:
+  lndclient:
