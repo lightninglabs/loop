@@ -52,6 +52,12 @@ problems. Community support is also available in the
 [LND Slack](https://lightning.engineering/slack.html)
 .
 
+### Regtest Loop server
+
+To get started with local development against a stripped down dummy Loop server
+running in a local `regtest` Bitcoin network, take a look at the
+[`regtest` server environment example documentation](./regtest/README.md).
+
 ## Setup and Install
 
 LND and the loop client are using Go modules. Make sure that the `GO111MODULE`
