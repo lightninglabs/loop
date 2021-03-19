@@ -11,11 +11,9 @@ bitcoin into and out of the Lightning Network.
 
 ## Use Cases
 - Automate channel balancing with AutoLoop ([Learn more](https://github.com/lightninglabs/loop/blob/master/docs/autoloop.md))
-- Pay or deposit to a Bitcoin address without closing channels
-- Pay Lightning Invoices with on-chain bitcoin
+- Deposit to a Bitcoin address without closing channels
 - Convert outbound liquidity into inbound liquidity
 - Refill depleted Lightning channels
-- Service Lightning withdrawals with on-chain payments
 
 ## Installation
 Download the latest binaries from the [releases](https://github.com/lightninglabs/loop/releases) page.
