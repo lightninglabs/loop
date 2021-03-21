@@ -11,9 +11,9 @@ bitcoin into and out of the Lightning Network.
 
 ## Use Cases
 - Automate channel balancing with AutoLoop ([Learn more](https://github.com/lightninglabs/loop/blob/master/docs/autoloop.md))
-- Deposit to a Bitcoin address without closing channels
-- Convert outbound liquidity into inbound liquidity
-- Refill depleted Lightning channels
+- Deposit to a Bitcoin address without closing channels with Loop In
+- Convert outbound liquidity into inbound liquidity with Loop Out
+- Refill depleted Lightning channels with Loop In
 
 ## Installation
 Download the latest binaries from the [releases](https://github.com/lightninglabs/loop/releases) page.
@@ -25,26 +25,14 @@ The Loop client needs its own short-lived daemon to facilitate swaps. To start `
 loopd
 ```
 
-To use Loop in testnet, simply pass the network flag:
-```
-loopd --network=testnet
-```
-
 By default `loopd` attempts to connect to the `lnd` instance running on
 `localhost:10009` and reads the macaroon and tls certificate from `~/.lnd`.
 This can be altered using command line flags. See `loopd --help`.
 
-## LND
-Note that Loop requires `lnd` to be built with **all of its subservers**. Download the latest [official release binary](https://github.com/lightningnetwork/lnd/releases/latest) or build `lnd` from source by following the [installation instructions](https://github.com/lightningnetwork/lnd/blob/master/docs/INSTALL.md). If you choose to build `lnd` from source, use the following command to enable all the relevant subservers:
-
-```
-make install tags="signrpc walletrpc chainrpc invoicesrpc"
-```
-
 ## Usage
 
 ### AutoLoop
-AutoLoop makes it easy to keep your channels balanced. Checkout our [autoloop documentation](https://github.com/lightninglabs/loop/blob/master/docs/autoloop.md) for details.
+AutoLoop makes it easy to keep your channels balanced. Checkout our [autoloop documentation](https://docs.lightning.engineering/advanced-best-practices/advanced-best-practices-overview/autoloop) for details.
 
 ### Loop Out
 Use Loop Out to move bitcoins on Lightning into an on-chain Bitcoin address.
@@ -69,6 +57,37 @@ To execute a Loop In:
 loop in <amt_in_satoshis>
 ```
 
+### More info
+For more information about using Loop checkout our [Loop FAQs](./docs/faqs.md).
+
+## Development
+
+### Regtest
+To get started with local development against a stripped down dummy Loop server
+running in a local `regtest` Bitcoin network, take a look at the
+[`regtest` server environment example documentation](./regtest/README.md).
+
+### Testnet
+To use Loop in testnet, simply pass the network flag:
+```
+loopd --network=testnet
+```
+
+### Submit feature requests
+The [GitHub issue tracker](https://github.com/lightninglabs/loop/issues) can be
+used to request specific improvements or report bugs.
+
+### Join us on Slack
+Join us on the
+[LND Slack](https://lightning.engineering/slack.html) and join the #loop
+channel to ask questions and interact with the community.
+
+## LND
+Note that Loop requires `lnd` to be built with **all of its subservers**. Download the latest [official release binary](https://github.com/lightningnetwork/lnd/releases/latest) or build `lnd` from source by following the [installation instructions](https://github.com/lightningnetwork/lnd/blob/master/docs/INSTALL.md). If you choose to build `lnd` from source, use the following command to enable all the relevant subservers:
+
+```
+make install tags="signrpc walletrpc chainrpc invoicesrpc"
+```
 
 ## API
 The Loop daemon exposes a [gRPC API](https://lightning.engineering/loopapi/#lightning-loop-grpc-api-reference)
@@ -99,9 +118,3 @@ git clone https://github.com/lightninglabs/loop.git
 cd loop/cmd
 go install ./...
 ```
-
-## Development and Support
-The [GitHub issue tracker](https://github.com/lightninglabs/loop/issues) can be
-used to request specific improvements or register and get help with any
-problems. Community support is also available in the
-[LND Slack](https://lightning.engineering/slack.html).
