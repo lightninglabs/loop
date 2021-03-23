@@ -922,12 +922,20 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		s.log.Warnf("Required fee %v exceeds max miner fee of %v",
 			fee, s.MaxMinerFee)
 
-		if s.state == loopdb.StatePreimageRevealed {
+		switch {
+		case s.state == loopdb.StatePreimageRevealed:
 			// The currently required fee exceeds the max, but we
 			// already revealed the preimage. The best we can do now
 			// is to republish with the max fee.
 			fee = s.MaxMinerFee
-		} else {
+
+		case s.CltvExpiry-s.height <= DefaultHtlcConfTarget:
+			// If the deadline is close, use the max miner fee to
+			// sweep.
+			fee = s.MaxMinerFee
+
+		default:
+			// If time permitted, retry sweep in next round.
 			s.log.Warnf("Not revealing preimage")
 			return nil
 		}
