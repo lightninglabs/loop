@@ -1098,7 +1098,10 @@ func TestInFlightLimit(t *testing.T) {
 		name          string
 		maxInFlight   int
 		existingSwaps []*loopdb.LoopOut
-		suggestions   *Suggestions
+		// peerRules will only be set (instead of test default values)
+		// is it is non-nil.
+		peerRules   map[route.Vertex]*ThresholdRule
+		suggestions *Suggestions
 	}{
 		{
 			name:        "none in flight, extra space",
@@ -1175,6 +1178,32 @@ func TestInFlightLimit(t *testing.T) {
 				DisqualifiedPeers: noPeersDisqualified,
 			},
 		},
+		{
+			name:        "peer rules max swaps exceeded",
+			maxInFlight: 2,
+			existingSwaps: []*loopdb.LoopOut{
+				{
+					Contract: autoOutContract,
+				},
+			},
+			// Create two peer-level rules, both in need of a swap,
+			// but peer 1 needs a larger swap so will be
+			// prioritized.
+			peerRules: map[route.Vertex]*ThresholdRule{
+				peer1: NewThresholdRule(50, 0),
+				peer2: NewThresholdRule(40, 0),
+			},
+			suggestions: &Suggestions{
+				OutSwaps: []loop.OutRequest{
+					chan1Rec,
+				},
+				DisqualifiedChans: noneDisqualified,
+				// This is a bug, we should list our second
+				// peer as disqualified because we've hit our
+				// in-flight limit for now.
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -1191,10 +1220,17 @@ func TestInFlightLimit(t *testing.T) {
 			}
 
 			params := defaultParameters
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
-				chanID1: chanRule,
-				chanID2: chanRule,
+
+			if testCase.peerRules != nil {
+				params.PeerRules = testCase.peerRules
+			} else {
+				params.ChannelRules =
+					map[lnwire.ShortChannelID]*ThresholdRule{
+						chanID1: chanRule,
+						chanID2: chanRule,
+					}
 			}
+
 			params.MaxAutoInFlight = testCase.maxInFlight
 
 			// By default we only have budget for one swap, increase
