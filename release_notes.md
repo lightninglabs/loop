@@ -24,3 +24,7 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
+* A bug that would not list autoloop rules set on a per-peer basis when they 
+  were excluded due to insufficient budget, or the number of swaps in flight
+  has been corrected. These rules will now be included in the output of 
+  `suggestswaps` with other autoloop peer rules.
