@@ -685,8 +685,13 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return nil, err
 	}
 
+	// Collect a map of channel IDs to peer pubkeys, and a set of per-peer
+	// balances which we will use for peer-level liquidity rules.
+	channelPeers := make(map[uint64]route.Vertex)
 	peerChannels := make(map[route.Vertex]*balances)
 	for _, channel := range channels {
+		channelPeers[channel.ChannelID] = channel.PubKeyBytes
+
 		bal, ok := peerChannels[channel.PubKeyBytes]
 		if !ok {
 			bal = &balances{}
@@ -777,6 +782,15 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	// setReason is a helper that adds a swap's channels to our disqualified
 	// list with the reason provided.
 	setReason := func(reason Reason, swap swapSuggestion) {
+		for _, peer := range swap.peers(channelPeers) {
+			_, ok := m.params.PeerRules[peer]
+			if !ok {
+				continue
+			}
+
+			resp.DisqualifiedPeers[peer] = reason
+		}
+
 		for _, channel := range swap.channels() {
 			_, ok := m.params.ChannelRules[channel]
 			if !ok {

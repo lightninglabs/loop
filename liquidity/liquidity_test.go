@@ -1198,10 +1198,9 @@ func TestInFlightLimit(t *testing.T) {
 					chan1Rec,
 				},
 				DisqualifiedChans: noneDisqualified,
-				// This is a bug, we should list our second
-				// peer as disqualified because we've hit our
-				// in-flight limit for now.
-				DisqualifiedPeers: noPeersDisqualified,
+				DisqualifiedPeers: map[route.Vertex]Reason{
+					peer2: ReasonInFlight,
+				},
 			},
 		},
 	}
