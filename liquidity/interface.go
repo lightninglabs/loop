@@ -5,6 +5,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 // FeeLimit is an interface implemented by different strategies for limiting
@@ -43,7 +44,16 @@ type swapSuggestion interface {
 
 	// channels returns the set of channels involved in the swap.
 	channels() []lnwire.ShortChannelID
+
+	// peers returns the set of peers involved in the swap, taking a map
+	// of known channel IDs to peers as an argument so that channel peers
+	// can be looked up.
+	peers(knownChans map[uint64]route.Vertex) []route.Vertex
 }
+
+// Compile-time assertion that loopOutSwapSuggestion satisfies the
+// swapSuggestion interface.
+var _ swapSuggestion = (*loopOutSwapSuggestion)(nil)
 
 type loopOutSwapSuggestion struct {
 	loop.OutRequest
@@ -68,4 +78,27 @@ func (l *loopOutSwapSuggestion) channels() []lnwire.ShortChannelID {
 	}
 
 	return channels
+}
+
+// peers returns the set of peers that the loop out swap is restricted to.
+func (l *loopOutSwapSuggestion) peers(
+	knownChans map[uint64]route.Vertex) []route.Vertex {
+
+	peers := make(map[route.Vertex]struct{}, len(knownChans))
+
+	for _, channel := range l.OutgoingChanSet {
+		peer, ok := knownChans[channel]
+		if !ok {
+			log.Warnf("peer for channel: %v unknown", channel)
+		}
+
+		peers[peer] = struct{}{}
+	}
+
+	peerList := make([]route.Vertex, 0, len(peers))
+	for peer := range peers {
+		peerList = append(peerList, peer)
+	}
+
+	return peerList
 }
