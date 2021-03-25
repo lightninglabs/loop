@@ -25,6 +25,11 @@ The Loop client needs its own short-lived daemon to facilitate swaps. To start `
 loopd
 ```
 
+To use Loop in testnet, simply pass the network flag:
+```
+loopd --network=testnet
+```
+
 By default `loopd` attempts to connect to the `lnd` instance running on
 `localhost:10009` and reads the macaroon and tls certificate from `~/.lnd`.
 This can be altered using command line flags. See `loopd --help`.

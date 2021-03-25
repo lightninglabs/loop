@@ -20,6 +20,11 @@ This file tracks release notes for the loop client.
   verbose info, giving users a more intuitive view about money paid
   on/off-chain and fees incurred. Use `loop in -v`, `loop out -v`,
   `loop quote in -v` or `loop quote out -v` to view the details.
+* A stripped down version of the Loop server is now provided as a
+  [Docker image](https://hub.docker.com/r/lightninglabs/loopserver). A quick
+  start script and example `docker-compose` environment as well as
+  [documentation on how to use the `regtest` Loop server](https://github.com/lightninglabs/loop/blob/master/regtest/README.md)
+  was added too.
 
 #### Breaking Changes
 
