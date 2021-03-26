@@ -142,6 +142,21 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		confs = loopdb.DefaultLoopOutHtlcConfirmations
 	}
 
+	// If a MaxMinerFee is not provided, we will replace it with the
+	// prepay amount. If the sweep failed, the cost would be the prepay. If
+	// succeeded, we would have the prepay back and the miner fee would be
+	// the cost. Thus we can use the prepay (the gain) as the cap as the
+	// max miner fee (the cost).
+	maxMinerFee := request.MaxMinerFee
+	if maxMinerFee == 0 {
+		// We can skip the error check here because it would have been
+		// caught by validateLoopOutContract.
+		_, prepayInvoiceAmt, _ := swap.DecodeInvoice(
+			cfg.lnd.ChainParams, swapResp.prepayInvoice,
+		)
+		maxMinerFee = prepayInvoiceAmt
+	}
+
 	// Instantiate a struct that contains all required data to start the
 	// swap.
 	initiationTime := time.Now()
@@ -163,7 +178,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			Preimage:         swapPreimage,
 			AmountRequested:  request.Amount,
 			CltvExpiry:       request.Expiry,
-			MaxMinerFee:      request.MaxMinerFee,
+			MaxMinerFee:      maxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 			Label:            request.Label,
 			ProtocolVersion:  loopdb.CurrentInternalProtocolVersion,
