@@ -15,6 +15,14 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+* Two new flags, `--max_sweep_fee` and `--max_sweep_fee_percent`, are added to
+  `loop out`. Users now can specify the max on-chain fee to be paid when
+  sweeping the HTLCs. `max_sweep_fee` specifies the max fee can be used in
+  satoshis, default to the prepay amount. `max_sweep_fee_percent` specifies a
+  portion based on the total swap amount. Note that these flags cannot be used
+  together. When neither is specified, the default value of `max_sweep_fee` will
+  be used. Be cautious when setting the max fee as a low value might cause
+  forfeiting the prepay.
 
 #### Breaking Changes
 

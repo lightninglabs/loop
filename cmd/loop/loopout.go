@@ -63,6 +63,20 @@ var loopOutCommand = cli.Command{
 				"satoshis, if not specified, a default max " +
 				"fee will be used",
 		},
+		cli.Float64Flag{
+			Name: "max_sweep_fee_percent",
+			Usage: "the max on-chain miner fee used for sweeping " +
+				"HTLCs, expressed as a percent (0 to 1.0) to " +
+				"be deducted from the total swap amount. If " +
+				"not set, will use the default value of " +
+				"max_sweep_fee instead.",
+		},
+		cli.Uint64Flag{
+			Name: "max_sweep_fee",
+			Usage: "the max on-chain miner fee (in satoshis) " +
+				"used for sweeping HTLCs. If not set, will " +
+				"use the prepay amount as the default value.",
+		},
 		cli.BoolFlag{
 			Name: "fast",
 			Usage: "Indicate you want to swap immediately, " +
@@ -176,6 +190,25 @@ func loopOut(ctx *cli.Context) error {
 			ctx.Int64("max_swap_routing_fee"),
 		)
 	}
+
+	// Calculate max miner fee. The prepay amount will be used if not set.
+	maxMinerFee, err := calculateMaxMinerFee(ctx, amt)
+	if err != nil {
+		return err
+	}
+	if maxMinerFee != 0 {
+		// Override the default if maxMinerFee is set.
+		limits.maxMinerFee = maxMinerFee
+	}
+
+	// Check that the maxMinerFee is sane. The prepay amount should also be
+	// greater then the minMinerFee.
+	if limits.maxMinerFee < limits.minMinerFee {
+		return fmt.Errorf("max sweep fee is too small, must be "+
+			"greater than %d sats", limits.minMinerFee,
+		)
+	}
+
 	err = displayOutDetails(
 		limits, warning, quoteReq, quote, ctx.Bool("verbose"),
 	)
@@ -212,4 +245,44 @@ func loopOut(ctx *cli.Context) error {
 	fmt.Printf("Run `loop monitor` to monitor progress.\n")
 
 	return nil
+}
+
+// calculateMaxMinerFee validates the max miner fee set by cli is sane.
+func calculateMaxMinerFee(ctx *cli.Context,
+	amt btcutil.Amount) (btcutil.Amount, error) {
+
+	useSatoshi := ctx.IsSet("max_sweep_fee")
+	usePercent := ctx.IsSet("max_sweep_fee_percent")
+
+	switch {
+	case useSatoshi && usePercent:
+		// Max sweep fee can only be set either in the format of
+		// satoshi or percent.
+		return 0, fmt.Errorf("either max_sweep_fee or " +
+			"max_sweep_fee_percent should be set, not both",
+		)
+
+	case useSatoshi:
+		fee := btcutil.Amount(ctx.Uint64("max_sweep_fee"))
+		if fee >= amt {
+			return 0, fmt.Errorf("max_sweep_fee (%d) cannot be "+
+				"greater than total swap amount (%d)", fee, amt,
+			)
+		}
+		return btcutil.Amount(ctx.Uint64("max_sweep_fee")), nil
+
+	case usePercent:
+		// Validate percent is sane.
+		percent := ctx.Float64("max_sweep_fee_percent")
+		if percent < 0 || percent >= 1 {
+			return 0, fmt.Errorf("max_sweep_fee_percent is "+
+				"invalid, must be in range(0, 1), "+
+				"instead got %f", percent,
+			)
+		}
+		return amt.MulF64(percent), nil
+	}
+
+	// Return zero if neither is set.
+	return 0, nil
 }

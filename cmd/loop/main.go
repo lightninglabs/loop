@@ -243,6 +243,10 @@ type outLimits struct {
 	maxMinerFee         btcutil.Amount
 	maxSwapFee          btcutil.Amount
 	maxPrepayAmt        btcutil.Amount
+
+	// minMinerFee guards the min value can be used when specifying the max
+	// miner fee.
+	minMinerFee btcutil.Amount
 }
 
 func getOutLimits(amt btcutil.Amount,
@@ -258,10 +262,9 @@ func getOutLimits(amt btcutil.Amount,
 		maxSwapRoutingFee:   maxSwapRoutingFee,
 		maxPrepayRoutingFee: maxPrepayRoutingFee,
 
-		// Apply a multiplier to the estimated miner fee, to not get
-		// the swap canceled because fees increased in the mean time.
-		maxMinerFee: btcutil.Amount(quote.HtlcSweepFeeSat) * 100,
-
+		// maxMinerFee is default to the prepay amount.
+		maxMinerFee:  maxPrepayAmt,
+		minMinerFee:  btcutil.Amount(quote.HtlcSweepFeeSat),
 		maxSwapFee:   btcutil.Amount(quote.SwapFeeSat),
 		maxPrepayAmt: maxPrepayAmt,
 	}
