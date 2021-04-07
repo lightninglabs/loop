@@ -438,6 +438,12 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 		return err
 	}
 
+	// If the on-chain HTLC's CLTV has been reached, spendDetails will be
+	// nil.
+	if spendDetails == nil {
+		return nil
+	}
+
 	// Inspect witness stack to see if it is a success transaction. We
 	// don't just try to match with the hash of our sweep tx, because it
 	// may be swept by a different (fee) sweep tx from a previous run.
@@ -844,6 +850,23 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 		// timer.
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
+
+			maxPreimageRevealHeight := s.CltvExpiry -
+				MinLoopOutPreimageRevealDelta
+
+			// Check if the on-chain HTLC's CLTV has been reached.
+			// If so, we will time out the swap because it's no
+			// longer safe for us to reveal the preimage.
+			if s.height > maxPreimageRevealHeight {
+				s.log.Infof("Timeout as preimage reveal "+
+					"height %v exceeded (current: %v)",
+					maxPreimageRevealHeight, s.height,
+				)
+
+				s.state = loopdb.StateFailSweepTimeout
+				return nil, nil
+			}
+
 			timerChan = s.timerFactory(republishDelay)
 
 		// Some time after start or after arrival of a new block, try
