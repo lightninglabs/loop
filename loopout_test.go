@@ -581,3 +581,117 @@ func TestPreimagePush(t *testing.T) {
 
 	require.NoError(t, <-errChan)
 }
+
+// TestExpiryBeforeReveal tests the case where the on-chain HTLC expires before
+// we have revealed our preimage. This test demonstrates that the client will
+// erroneously reveal the preimage even though we're nearing our timeout.
+func TestExpiryBeforeReveal(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx := test.NewContext(t, lnd)
+	server := newServerMock(lnd)
+
+	testReq := *testRequest
+
+	// Set on-chain HTLC CLTV.
+	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
+
+	// Set our fee estimate to higher than our max miner fee will allow.
+	lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
+		testReq.MaxMinerFee*2,
+	))
+
+	// Setup the cfg using mock server and init a loop out request.
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), server,
+	)
+	initResult, err := newLoopOutSwap(
+		context.Background(), cfg, ctx.Lnd.Height, &testReq,
+	)
+	require.NoError(t, err)
+	swap := initResult.swap
+
+	// Set up the required dependencies to execute the swap.
+	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
+	blockEpochChan := make(chan interface{})
+	statusChan := make(chan SwapInfo)
+	expiryChan := make(chan time.Time)
+	timerFactory := func(_ time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	errChan := make(chan error)
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		err := swap.execute(cancelCtx, &executeConfig{
+			statusChan:     statusChan,
+			blockEpochChan: blockEpochChan,
+			timerFactory:   timerFactory,
+			sweeper:        sweeper,
+		}, ctx.Lnd.Height)
+		if err != nil {
+			log.Error(err)
+		}
+		errChan <- err
+	}()
+
+	// The swap should be found in its initial state.
+	cfg.store.(*storeMock).assertLoopOutStored()
+	state := <-statusChan
+	require.Equal(t, loopdb.StateInitiated, state.State)
+
+	// We'll then pay both the swap and prepay invoice, which should trigger
+	// the server to publish the on-chain HTLC.
+	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+
+	signalSwapPaymentResult(nil)
+	signalPrepaymentResult(nil)
+
+	// Notify the confirmation notification for the HTLC.
+	ctx.AssertRegisterConf(false, defaultConfirmations)
+
+	// Advance the block height to get the HTLC confirmed.
+	blockEpochChan <- ctx.Lnd.Height + 1
+
+	htlcTx := wire.NewMsgTx(2)
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    int64(swap.AmountRequested),
+		PkScript: swap.htlc.PkScript,
+	})
+	ctx.NotifyConf(htlcTx)
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	// Assert that we made a query to track our payment, as required for
+	// preimage push tracking.
+	ctx.AssertTrackPayment()
+
+	// Tick the expiry channel. Because our max miner fee is too high, we
+	// won't attempt a sweep at this point.
+	expiryChan <- testTime
+
+	// Now we decrease our conf target to less than our max miner fee.
+	lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
+		testReq.MaxMinerFee/2,
+	))
+
+	// Advance the block height to the point where we would do timeout
+	// instead of pushing the preimage.
+	blockEpochChan <- lnd.Height + testReq.Expiry
+
+	// Tick our expiry chan again, this time we expect the swap to
+	// publish our sweep timeout, despite expiry having passed, and the
+	// potential for a race with the server.
+	expiryChan <- testTime
+
+	// Expect a signing request for the HTLC success transaction.
+	<-ctx.Lnd.SignOutputRawChannel
+
+	// We just cancel the swap now rather than testing to completion.
+	cancel()
+	require.Equal(t, context.Canceled, <-errChan)
+}
