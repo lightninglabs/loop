@@ -414,11 +414,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 // not detected our settle) and settle the off chain htlc, indicating that the
 // server successfully settled using the preimage push. In this test, we need
 // to start with a fee rate that will be too high, then progress to an
-// acceptable one. We do this by starting with a high confirmation target with
-// a high fee, and setting the default confirmation fee (which our swap will
-// drop down to if it is not confirming in time) to a lower fee. This is not
-// intuitive (lower confs having lower fees), but it allows up to mock fee
-// changes.
+// acceptable one.
 func TestPreimagePush(t *testing.T) {
 	defer test.Guard(t)()
 
@@ -426,11 +422,8 @@ func TestPreimagePush(t *testing.T) {
 	ctx := test.NewContext(t, lnd)
 	server := newServerMock(lnd)
 
-	// Start with a high confirmation delta which will have a very high fee
-	// attached to it.
 	testReq := *testRequest
-	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
-		DefaultSweepConfTargetDelta - 1
+	testReq.SweepConfTarget = 10
 	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
 
 	// We set our mock fee estimate for our target sweep confs to be our
@@ -441,11 +434,6 @@ func TestPreimagePush(t *testing.T) {
 			testReq.MaxMinerFee*2,
 		),
 	)
-
-	// We set the fee estimate for our default confirmation target very
-	// low, so that once we drop down to our default confs we will start
-	// trying to sweep the preimage.
-	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 1)
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, newStoreMock(t), server,
@@ -520,15 +508,15 @@ func TestPreimagePush(t *testing.T) {
 	// preimage is not revealed, we also do not expect a preimage push.
 	expiryChan <- testTime
 
-	// Now, we notify the height at which the client will start using the
-	// default confirmation target. This has the effect of lowering our fees
-	// so that the client still start sweeping.
-	defaultConfTargetHeight := ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta -
-		DefaultSweepConfTargetDelta
-	blockEpochChan <- defaultConfTargetHeight
+	// Now we decrease our fees for the swap's confirmation target to less
+	// than the maximum miner fee.
+	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
+		testReq.MaxMinerFee/2,
+	))
 
-	// This time when we tick the expiry chan, our fees are lower than the
-	// swap max, so we expect it to prompt a sweep.
+	// Now when we report a new block and tick our expiry fee timer, and
+	// fees are acceptably low so we expect our sweep to be published.
+	blockEpochChan <- ctx.Lnd.Height + 2
 	expiryChan <- testTime
 
 	// Expect a signing request for the HTLC success transaction.

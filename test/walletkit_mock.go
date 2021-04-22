@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -21,9 +22,11 @@ import (
 var DefaultMockFee = chainfee.SatPerKWeight(10000)
 
 type mockWalletKit struct {
-	lnd          *LndMockServices
-	keyIndex     int32
-	feeEstimates map[int32]chainfee.SatPerKWeight
+	lnd      *LndMockServices
+	keyIndex int32
+
+	feeEstimateLock sync.Mutex
+	feeEstimates    map[int32]chainfee.SatPerKWeight
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
@@ -118,8 +121,18 @@ func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
 	return &tx, nil
 }
 
+func (m *mockWalletKit) setFeeEstimate(confTarget int32, fee chainfee.SatPerKWeight) {
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
+
+	m.feeEstimates[confTarget] = fee
+}
+
 func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
 	chainfee.SatPerKWeight, error) {
+
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
 
 	if confTarget <= 1 {
 		return 0, errors.New("conf target must be greater than 1")

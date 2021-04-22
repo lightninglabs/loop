@@ -258,5 +258,5 @@ func (s *LndMockServices) DecodeInvoice(request string) (*zpay32.Invoice,
 func (s *LndMockServices) SetFeeEstimate(confTarget int32,
 	feeEstimate chainfee.SatPerKWeight) {
 
-	s.WalletKit.(*mockWalletKit).feeEstimates[confTarget] = feeEstimate
+	s.WalletKit.(*mockWalletKit).setFeeEstimate(confTarget, feeEstimate)
 }
