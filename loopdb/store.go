@@ -99,9 +99,18 @@ var (
 	keyLength = 33
 )
 
-// DefaultLoopOutHtlcConfirmations is the default number of confirmations we
-// set for a loop out htlc.
-const DefaultLoopOutHtlcConfirmations uint32 = 1
+const (
+	// DefaultLoopOutHtlcConfirmations is the default number of
+	// confirmations we set for a loop out htlc.
+	DefaultLoopOutHtlcConfirmations uint32 = 1
+
+	// DefaultLoopDBTimeout is the default maximum time we wait for the
+	// Loop bbolt database to be opened. If the database is already opened
+	// by another process, the unique lock cannot be obtained. With the
+	// timeout we error out after the given time instead of just blocking
+	// for forever.
+	DefaultLoopDBTimeout = 5 * time.Second
+)
 
 // fileExists returns true if the file exists, and false otherwise.
 func fileExists(path string) bool {
@@ -139,7 +148,14 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	// Now that we know that path exists, we'll open up bolt, which
 	// implements our default swap store.
 	path := filepath.Join(dbPath, dbFileName)
-	bdb, err := bbolt.Open(path, 0600, nil)
+	bdb, err := bbolt.Open(path, 0600, &bbolt.Options{
+		Timeout: DefaultLoopDBTimeout,
+	})
+	if err == bbolt.ErrTimeout {
+		return nil, fmt.Errorf("%w: couldn't obtain exclusive lock on "+
+			"%s, timed out after %v", bbolt.ErrTimeout, path,
+			DefaultLoopDBTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}

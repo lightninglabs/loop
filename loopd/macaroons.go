@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
 
+	"github.com/coreos/bbolt"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -17,10 +18,6 @@ const (
 	// loopMacaroonLocation is the value we use for the loopd macaroons'
 	// "Location" field when baking them.
 	loopMacaroonLocation = "loop"
-
-	// macDatabaseOpenTimeout is how long we wait for acquiring the lock on
-	// the macaroon database before we give up with an error.
-	macDatabaseOpenTimeout = time.Second * 5
 )
 
 var (
@@ -150,8 +147,14 @@ func (d *Daemon) startMacaroonService() error {
 	var err error
 	d.macaroonService, err = macaroons.NewService(
 		d.cfg.DataDir, loopMacaroonLocation, false,
-		macDatabaseOpenTimeout, macaroons.IPLockChecker,
+		loopdb.DefaultLoopDBTimeout, macaroons.IPLockChecker,
 	)
+	if err == bbolt.ErrTimeout {
+		return fmt.Errorf("%w: couldn't obtain exclusive lock on "+
+			"%s/%s, timed out after %v", bbolt.ErrTimeout,
+			d.cfg.DataDir, "macaroons.db",
+			loopdb.DefaultLoopDBTimeout)
+	}
 	if err != nil {
 		return fmt.Errorf("unable to set up macaroon authentication: "+
 			"%v", err)
