@@ -2,11 +2,11 @@ package loopd
 
 import (
 	"github.com/btcsuite/btclog"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/build"
 )
 

@@ -14,9 +14,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tor"
@@ -102,7 +102,7 @@ func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 	// the LSAT protocol for us.
 	clientInterceptor := lsat.NewInterceptor(
 		cfg.Lnd, lsatStore, serverRPCTimeout, cfg.MaxLsatCost,
-		cfg.MaxLsatFee,
+		cfg.MaxLsatFee, false,
 	)
 	serverConn, err := getSwapServerConn(
 		cfg.ServerAddress, cfg.ProxyAddress, cfg.SwapServerNoTLS,
@@ -460,7 +460,8 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 // proxyAddr indicates that a SOCKS proxy found at the address should be used to
 // establish the connection.
 func getSwapServerConn(address, proxyAddress string, insecure bool,
-	tlsPath string, interceptor *lsat.Interceptor) (*grpc.ClientConn, error) {
+	tlsPath string, interceptor *lsat.ClientInterceptor) (*grpc.ClientConn,
+	error) {
 
 	// Create a dial options array.
 	opts := []grpc.DialOption{

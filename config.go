@@ -3,9 +3,9 @@ package loop
 import (
 	"time"
 
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/lsat"
 )
 
 // clientConfig contains config items for the swap client.
