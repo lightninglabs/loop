@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,10 +53,37 @@ func newExecutor(cfg *executorConfig) *executor {
 func (s *executor) run(mainCtx context.Context,
 	statusChan chan<- SwapInfo) error {
 
-	blockEpochChan, blockErrorChan, err :=
-		s.lnd.ChainNotifier.RegisterBlockEpochNtfn(mainCtx)
-	if err != nil {
-		return err
+	var (
+		err            error
+		blockEpochChan <-chan int32
+		blockErrorChan <-chan error
+	)
+
+	for {
+		blockEpochChan, blockErrorChan, err =
+			s.lnd.ChainNotifier.RegisterBlockEpochNtfn(mainCtx)
+		if err != nil {
+			if strings.Contains(err.Error(),
+				"in the process of starting") {
+
+				log.Warnf("LND chain notifier server not " +
+					"ready yet, retrying with delay")
+
+				// Give chain notifier some time to start and
+				// try to re-attempt block epoch subscription.
+				select {
+				case <-time.After(500 * time.Millisecond):
+					continue
+
+				case <-mainCtx.Done():
+					return err
+				}
+			}
+
+			return err
+		}
+
+		break
 	}
 
 	// Before starting, make sure we have an up to date block height.
