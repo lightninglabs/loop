@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/coreos/bbolt"
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -128,6 +129,13 @@ func (d *Daemon) Start() error {
 	// and error handlers. If this fails, then nothing has been started yet
 	// and we can just return the error.
 	err = d.initialize()
+	if errors.Is(err, bbolt.ErrTimeout) {
+		// We're trying to be started as a standalone Loop daemon, most
+		// likely LiT is already running and blocking the DB
+		return fmt.Errorf("%v: make sure no other loop daemon "+
+			"process (standalone or embedded in "+
+			"lightning-terminal) is running", err)
+	}
 	if err != nil {
 		return err
 	}
@@ -168,7 +176,14 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices) error {
 	// the swap server client, the RPC server instance and our main swap
 	// handlers. If this fails, then nothing has been started yet and we can
 	// just return the error.
-	return d.initialize()
+	err := d.initialize()
+	if errors.Is(err, bbolt.ErrTimeout) {
+		// We're trying to be started inside LiT so there most likely is
+		// another standalone Loop process blocking the DB.
+		return fmt.Errorf("%v: make sure no other loop daemon "+
+			"process is running", err)
+	}
+	return err
 }
 
 // ValidateMacaroon extracts the macaroon from the context's gRPC metadata,
