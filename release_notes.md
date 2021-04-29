@@ -15,11 +15,7 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-- If the payment for an LSAT fails, it is now automatically re-tried.
 
 #### Breaking Changes
 
 #### Bug Fixes
- - Instead of just blocking for forever without any apparent reason if another
-   Loop daemon process is already running, we now exit with an error after 5
-   seconds if acquiring the unique lock on the Loop `bbolt` DB fails.
