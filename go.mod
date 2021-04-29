@@ -10,6 +10,7 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/grpc-ecosystem/grpc-gateway v1.14.3
 	github.com/jessevdk/go-flags v1.4.0
+	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/lndclient v0.11.0-5
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.12.0-beta.rc3
@@ -19,9 +20,9 @@ require (
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
-	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0
+	golang.org/x/net v0.0.0-20191112182307-2180aed22343
 	google.golang.org/genproto v0.0.0-20190927181202-20e1ac93f88c
-	google.golang.org/grpc v1.24.0
+	google.golang.org/grpc v1.25.1
 	gopkg.in/macaroon-bakery.v2 v2.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 )

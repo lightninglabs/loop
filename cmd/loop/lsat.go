@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/urfave/cli"
 	"gopkg.in/macaroon.v2"
 )

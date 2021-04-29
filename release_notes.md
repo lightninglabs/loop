@@ -15,6 +15,7 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+- If the payment for an LSAT fails, it is now automatically re-tried.
 
 #### Breaking Changes
 
