@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "common.proto";
+
 package looprpc;
 
 option go_package = "github.com/lightninglabs/loop/looprpc";
@@ -61,6 +63,12 @@ service SwapClient {
     GetQuote returns a quote for a swap with the provided parameters.
     */
     rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse);
+
+    /*
+    Probe asks he sever to probe the route to us to have a better upfront
+    estimate about routing fees when loopin-in.
+    */
+    rpc Probe (ProbeRequest) returns (ProbeResponse);
 
     /* loop: `listauth`
     GetLsatTokens returns all LSAT tokens the daemon ever paid for.
@@ -560,6 +568,13 @@ message QuoteRequest {
     lower total swap fee. This only has an effect on loop out quotes.
     */
     uint64 swap_publication_deadline = 4;
+
+    /*
+    Optionally the client can specify the last hop pubkey when requesting a
+    loop-in quote. This is useful to get better off-chain routing fee from the
+    server.
+    */
+    bytes loop_in_last_hop = 5;
 }
 
 message InQuoteResponse {
@@ -623,6 +638,26 @@ message OutQuoteResponse {
     The confirmation target to be used for the sweep of the on-chain HTLC.
     */
     int32 conf_target = 6;
+}
+
+message ProbeRequest {
+    /*
+    The amount to probe.
+    */
+    int64 amt = 1;
+
+    /*
+    Optional last hop of the route to probe.
+    */
+    bytes last_hop = 2;
+
+    /*
+    Optional route hints to reach the destination through private channels.
+    */
+    repeated RouteHint route_hints = 3;
+}
+
+message ProbeResponse {
 }
 
 message TokensRequest {

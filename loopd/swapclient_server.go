@@ -2,12 +2,14 @@ package loopd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
@@ -22,6 +24,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -493,6 +496,85 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		SwapFeeSat:        int64(quote.SwapFee),
 		ConfTarget:        htlcConfTarget,
 	}, nil
+}
+
+// unmarshallRouteHints unmarshalls a list of route hints.
+func unmarshallRouteHints(rpcRouteHints []*looprpc.RouteHint) (
+	[][]zpay32.HopHint, error) {
+
+	routeHints := make([][]zpay32.HopHint, 0, len(rpcRouteHints))
+	for _, rpcRouteHint := range rpcRouteHints {
+		routeHint := make(
+			[]zpay32.HopHint, 0, len(rpcRouteHint.HopHints),
+		)
+		for _, rpcHint := range rpcRouteHint.HopHints {
+			hint, err := unmarshallHopHint(rpcHint)
+			if err != nil {
+				return nil, err
+			}
+
+			routeHint = append(routeHint, hint)
+		}
+		routeHints = append(routeHints, routeHint)
+	}
+
+	return routeHints, nil
+}
+
+// unmarshallHopHint unmarshalls a single hop hint.
+func unmarshallHopHint(rpcHint *looprpc.HopHint) (zpay32.HopHint, error) {
+	pubBytes, err := hex.DecodeString(rpcHint.NodeId)
+	if err != nil {
+		return zpay32.HopHint{}, err
+	}
+
+	pubkey, err := btcec.ParsePubKey(pubBytes, btcec.S256())
+	if err != nil {
+		return zpay32.HopHint{}, err
+	}
+
+	return zpay32.HopHint{
+		NodeID:                    pubkey,
+		ChannelID:                 rpcHint.ChanId,
+		FeeBaseMSat:               rpcHint.FeeBaseMsat,
+		FeeProportionalMillionths: rpcHint.FeeProportionalMillionths,
+		CLTVExpiryDelta:           uint16(rpcHint.CltvExpiryDelta),
+	}, nil
+}
+
+// Probe requests the server to probe the client's node to test inbound
+// liquidity.
+func (s *swapClientServer) Probe(ctx context.Context,
+	req *looprpc.ProbeRequest) (*looprpc.ProbeResponse, error) {
+
+	log.Infof("Probe request received")
+
+	var lastHop *route.Vertex
+	if req.LastHop != nil {
+		lastHopVertex, err := route.NewVertexFromBytes(req.LastHop)
+		if err != nil {
+			return nil, err
+		}
+
+		lastHop = &lastHopVertex
+	}
+
+	routeHints, err := unmarshallRouteHints(req.RouteHints)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.impl.Probe(ctx, &loop.ProbeRequest{
+		Amount:     btcutil.Amount(req.Amt),
+		LastHop:    lastHop,
+		RouteHints: routeHints,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.ProbeResponse{}, nil
 }
 
 func (s *swapClientServer) LoopIn(ctx context.Context,

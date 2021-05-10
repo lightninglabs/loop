@@ -212,8 +212,8 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context) (
 	}, nil
 }
 
-func (s *serverMock) GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
-	*LoopInQuote, error) {
+func (s *serverMock) GetLoopInQuote(context.Context, btcutil.Amount,
+	route.Vertex, *route.Vertex) (*LoopInQuote, error) {
 
 	return &LoopInQuote{
 		SwapFee:   testSwapFee,
@@ -234,4 +234,11 @@ func (s *serverMock) SubscribeLoopInUpdates(_ context.Context,
 	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
 
 	return nil, nil, nil
+}
+
+func (s *serverMock) Probe(ctx context.Context, amt btcutil.Amount,
+	pubKey route.Vertex, lastHop *route.Vertex,
+	routeHints [][]zpay32.HopHint) error {
+
+	return nil
 }

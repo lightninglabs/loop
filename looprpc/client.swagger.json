@@ -126,6 +126,47 @@
         ]
       }
     },
+    "/v1/loop/in/probe/{amt}": {
+      "get": {
+        "summary": "Probe asks he sever to probe the route to us to have a better upfront\nestimate about routing fees when loopin-in.",
+        "operationId": "SwapClient_Probe",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcProbeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "amt",
+            "description": "The amount to probe.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "last_hop",
+            "description": "Optional last hop of the route to probe.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/in/quote/{amt}": {
       "get": {
         "summary": "loop: `quote`\nGetQuote returns a quote for a swap with the provided parameters.",
@@ -175,6 +216,14 @@
             "required": false,
             "type": "string",
             "format": "uint64"
+          },
+          {
+            "name": "loop_in_last_hop",
+            "description": "Optionally the client can specify the last hop pubkey when requesting a\nloop-in quote. This is useful to get better off-chain routing fee from the\nserver.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
           }
         ],
         "tags": [
@@ -287,6 +336,14 @@
             "required": false,
             "type": "string",
             "format": "uint64"
+          },
+          {
+            "name": "loop_in_last_hop",
+            "description": "Optionally the client can specify the last hop pubkey when requesting a\nloop-in quote. This is useful to get better off-chain routing fee from the\nserver.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
           }
         ],
         "tags": [
@@ -451,6 +508,35 @@
       ],
       "default": "FAILURE_REASON_NONE",
       "description": " - FAILURE_REASON_NONE: FAILURE_REASON_NONE is set when the swap did not fail, it is either in\nprogress or succeeded.\n - FAILURE_REASON_OFFCHAIN: FAILURE_REASON_OFFCHAIN indicates that a loop out failed because it wasn't\npossible to find a route for one or both off chain payments that met the fee\nand timelock limits required.\n - FAILURE_REASON_TIMEOUT: FAILURE_REASON_TIMEOUT indicates that the swap failed because on chain htlc\ndid not confirm before its expiry, or it confirmed too late for us to reveal\nour preimage and claim.\n - FAILURE_REASON_SWEEP_TIMEOUT: FAILURE_REASON_SWEEP_TIMEOUT indicates that a loop out permanently failed\nbecause the on chain htlc wasn't swept before the server revoked the\nhtlc.\n - FAILURE_REASON_INSUFFICIENT_VALUE: FAILURE_REASON_INSUFFICIENT_VALUE indicates that a loop out has failed\nbecause the on chain htlc had a lower value than requested.\n - FAILURE_REASON_TEMPORARY: FAILURE_REASON_TEMPORARY indicates that a swap cannot continue due to an\ninternal error. Manual intervention such as a restart is required.\n - FAILURE_REASON_INCORRECT_AMOUNT: FAILURE_REASON_INCORRECT_AMOUNT indicates that a loop in permanently failed\nbecause the amount extended by an external loop in htlc is insufficient."
+    },
+    "looprpcHopHint": {
+      "type": "object",
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "description": "The public key of the node at the start of the channel."
+        },
+        "chan_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The unique identifier of the channel."
+        },
+        "fee_base_msat": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The base fee of the channel denominated in millisatoshis."
+        },
+        "fee_proportional_millionths": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The fee rate of the channel for sending one satoshi across it denominated in\nmillionths of a satoshi."
+        },
+        "cltv_expiry_delta": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The time-lock delta of the channel."
+        }
+      }
     },
     "looprpcInQuoteResponse": {
       "type": "object",
@@ -844,6 +930,21 @@
           "type": "integer",
           "format": "int32",
           "description": "The maximally accepted cltv delta of the on-chain htlc."
+        }
+      }
+    },
+    "looprpcProbeResponse": {
+      "type": "object"
+    },
+    "looprpcRouteHint": {
+      "type": "object",
+      "properties": {
+        "hop_hints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcHopHint"
+          },
+          "description": "A list of hop hints that when chained together can assist in reaching a\nspecific destination."
         }
       }
     },

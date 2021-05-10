@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
 )
 
 // OutRequest contains the required parameters for a loop out swap.
@@ -243,6 +244,11 @@ type LoopInQuoteRequest struct {
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
 	ExternalHtlc bool
+
+	// LastHop is an optional last hop to use. This last hop is used when
+	// the client has already requested a server probe for more accurate
+	// routing fee estimation.
+	LastHop *route.Vertex
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost
@@ -339,4 +345,16 @@ func (s *In) LastUpdate() time.Time {
 // SwapHash returns the swap hash.
 func (s *In) SwapHash() lntypes.Hash {
 	return s.Hash
+}
+
+// ProbeRequest specifies probe parameters for the server probe.
+type ProbeRequest struct {
+	// Amount is the amount that will be probed.
+	Amount btcutil.Amount
+
+	// LastHop is the last hop along the route.
+	LastHop *route.Vertex
+
+	// Optional hop hints.
+	RouteHints [][]zpay32.HopHint
 }

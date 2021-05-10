@@ -83,7 +83,9 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
 	// request that we send to the server.
-	quote, err := cfg.server.GetLoopInQuote(globalCtx, request.Amount)
+	quote, err := cfg.server.GetLoopInQuote(
+		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
+	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)
 	}
