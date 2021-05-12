@@ -438,6 +438,12 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 		return err
 	}
 
+	// If spend details are nil, we resolved the swap without waiting for
+	// its spend, so we can exit.
+	if spendDetails == nil {
+		return nil
+	}
+
 	// Inspect witness stack to see if it is a success transaction. We
 	// don't just try to match with the hash of our sweep tx, because it
 	// may be swept by a different (fee) sweep tx from a previous run.
@@ -854,6 +860,14 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 				return nil, err
 			}
 
+			// If the result of our spend func was that the swap
+			// has reached a final state, then we return nil spend
+			// details, because there is no further action required
+			// for this swap.
+			if s.state.Type() != loopdb.StateTypePending {
+				return nil, nil
+			}
+
 			// If our off chain payment is not yet complete, we
 			// try to push our preimage to the server.
 			if !paymentComplete {
@@ -889,7 +903,9 @@ func (s *loopOutSwap) pushPreimage(ctx context.Context) {
 
 // sweep tries to sweep the given htlc to a destination address. It takes into
 // account the max miner fee and marks the preimage as revealed when it
-// published the tx.
+// published the tx. If the preimage has not yet been revealed, and the time
+// during which we can safely reveal it has passed, the swap will be marked
+// as failed, and the function will return.
 //
 // TODO: Use lnd sweeper?
 func (s *loopOutSwap) sweep(ctx context.Context,
@@ -900,16 +916,36 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		return s.htlc.GenSuccessWitness(sig, s.Preimage)
 	}
 
+	remainingBlocks := s.CltvExpiry - s.height
+	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
+	preimageRevealed := s.state == loopdb.StatePreimageRevealed
+
+	// If we have not revealed our preimage, and we don't have time left
+	// to sweep the swap, we abandon the swap because we can no longer
+	// sweep the success path (without potentially having to compete with
+	// the server's timeout sweep), and we have not had any coins pulled
+	// off-chain.
+	if blocksToLastReveal <= 0 && !preimageRevealed {
+		s.log.Infof("Preimage can no longer be safely revealed: "+
+			"expires at: %v, current height: %v", s.CltvExpiry,
+			s.height)
+
+		s.state = loopdb.StateFailTimeout
+		return nil
+	}
+
 	// Calculate the transaction fee based on the confirmation target
 	// required to sweep the HTLC before the timeout. We'll use the
 	// confirmation target provided by the client unless we've come too
 	// close to the expiration height, in which case we'll use the default
 	// if it is better than what the client provided.
 	confTarget := s.SweepConfTarget
-	if s.CltvExpiry-s.height <= DefaultSweepConfTargetDelta &&
+	if remainingBlocks <= DefaultSweepConfTargetDelta &&
 		confTarget > DefaultSweepConfTarget {
+
 		confTarget = DefaultSweepConfTarget
 	}
+
 	fee, err := s.sweeper.GetSweepFee(
 		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, confTarget,
 	)
@@ -922,7 +958,7 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		s.log.Warnf("Required fee %v exceeds max miner fee of %v",
 			fee, s.MaxMinerFee)
 
-		if s.state == loopdb.StatePreimageRevealed {
+		if preimageRevealed {
 			// The currently required fee exceeds the max, but we
 			// already revealed the preimage. The best we can do now
 			// is to republish with the max fee.

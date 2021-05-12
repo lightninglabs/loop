@@ -583,8 +583,8 @@ func TestPreimagePush(t *testing.T) {
 }
 
 // TestExpiryBeforeReveal tests the case where the on-chain HTLC expires before
-// we have revealed our preimage. This test demonstrates that the client will
-// erroneously reveal the preimage even though we're nearing our timeout.
+// we have revealed our preimage, demonstrating that we do not reveal our
+// preimage once we've reached our expiry height.
 func TestExpiryBeforeReveal(t *testing.T) {
 	defer test.Guard(t)()
 
@@ -622,9 +622,8 @@ func TestExpiryBeforeReveal(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	cancelCtx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := swap.execute(cancelCtx, &executeConfig{
+		err := swap.execute(context.Background(), &executeConfig{
 			statusChan:     statusChan,
 			blockEpochChan: blockEpochChan,
 			timerFactory:   timerFactory,
@@ -653,7 +652,8 @@ func TestExpiryBeforeReveal(t *testing.T) {
 	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	// Advance the block height to get the HTLC confirmed.
-	blockEpochChan <- ctx.Lnd.Height + 1
+	height := ctx.Lnd.Height + 1
+	blockEpochChan <- height
 
 	htlcTx := wire.NewMsgTx(2)
 	htlcTx.AddTxOut(&wire.TxOut{
@@ -681,17 +681,19 @@ func TestExpiryBeforeReveal(t *testing.T) {
 
 	// Advance the block height to the point where we would do timeout
 	// instead of pushing the preimage.
-	blockEpochChan <- lnd.Height + testReq.Expiry
+	blockEpochChan <- testReq.Expiry + height
 
-	// Tick our expiry chan again, this time we expect the swap to
-	// publish our sweep timeout, despite expiry having passed, and the
-	// potential for a race with the server.
+	// Tick our expiry channel again to trigger another sweep attempt.
 	expiryChan <- testTime
 
-	// Expect a signing request for the HTLC success transaction.
-	<-ctx.Lnd.SignOutputRawChannel
+	// We should see our swap marked as failed.
+	cfg.store.(*storeMock).assertLoopOutState(
+		loopdb.StateFailTimeout,
+	)
+	status := <-statusChan
+	require.Equal(
+		t, status.State, loopdb.StateFailTimeout,
+	)
 
-	// We just cancel the swap now rather than testing to completion.
-	cancel()
-	require.Equal(t, context.Canceled, <-errChan)
+	require.Nil(t, <-errChan)
 }
