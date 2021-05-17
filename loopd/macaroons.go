@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
+	"github.com/lightningnetwork/lnd/rpcperms"
 	"google.golang.org/grpc"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
@@ -210,21 +211,33 @@ func (d *Daemon) stopMacaroonService() error {
 
 // macaroonInterceptor creates gRPC server options with the macaroon security
 // interceptors.
-func (d *Daemon) macaroonInterceptor() []grpc.ServerOption {
+func (d *Daemon) macaroonInterceptor() ([]grpc.ServerOption, error) {
 	// Add our debug permissions to our main set of required permissions
 	// if compiled in.
 	for endpoint, perm := range debugRequiredPermissions {
 		RequiredPermissions[endpoint] = perm
 	}
 
-	unaryInterceptor := d.macaroonService.UnaryServerInterceptor(
-		RequiredPermissions,
-	)
-	streamInterceptor := d.macaroonService.StreamServerInterceptor(
-		RequiredPermissions,
-	)
+	interceptor := rpcperms.NewInterceptorChain(log, false)
+	err := interceptor.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	interceptor.SetWalletUnlocked()
+	interceptor.AddMacaroonService(d.macaroonService)
+
+	for method, permissions := range RequiredPermissions {
+		err := interceptor.AddPermission(method, permissions)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	unaryInterceptor := interceptor.MacaroonUnaryServerInterceptor()
+	streamInterceptor := interceptor.MacaroonStreamServerInterceptor()
 	return []grpc.ServerOption{
 		grpc.UnaryInterceptor(unaryInterceptor),
 		grpc.StreamInterceptor(streamInterceptor),
-	}
+	}, nil
 }
