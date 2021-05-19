@@ -208,7 +208,10 @@ func (d *Daemon) startWebServers() error {
 	// With our client created, let's now finish setting up and start our
 	// RPC server. First we add the security interceptor to our gRPC server
 	// options that checks the macaroons for validity.
-	serverOpts := d.macaroonInterceptor()
+	serverOpts, err := d.macaroonInterceptor()
+	if err != nil {
+		return fmt.Errorf("error with macaroon interceptor: %v", err)
+	}
 	d.grpcServer = grpc.NewServer(serverOpts...)
 	looprpc.RegisterSwapClientServer(d.grpcServer, d)
 

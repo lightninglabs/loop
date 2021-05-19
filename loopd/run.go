@@ -26,7 +26,7 @@ var (
 	// listed build tags/subservers need to be enabled.
 	LoopMinRequiredLndVersion = &verrpc.Version{
 		AppMajor: 0,
-		AppMinor: 10,
+		AppMinor: 11,
 		AppPatch: 1,
 		BuildTags: []string{
 			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
@@ -115,7 +115,7 @@ func newListenerCfg(config *Config, rpcCfg RPCConfig) *listenerCfg {
 				// If the client decides to kill loop before
 				// lnd is synced, we cancel our context, which
 				// will unblock lndclient.
-				case <-signal.ShutdownChannel():
+				case <-interceptor.ShutdownChannel():
 					cancel()
 
 				// If our sync context was cancelled, we know
@@ -187,7 +187,19 @@ func Run(rpcCfg RPCConfig) error {
 		return err
 	}
 
+	// Start listening for signal interrupts regardless of which command
+	// we are running. When our command tries to get a lnd connection, it
+	// blocks until lnd is synced. We listen for interrupts so that we can
+	// shutdown the daemon while waiting for sync to complete.
+	shutdownInterceptor, err := signal.Intercept()
+	if err != nil {
+		return err
+	}
+
 	// Initialize logging at the default logging level.
+	logWriter := build.NewRotatingLogWriter()
+	SetupLoggers(logWriter, shutdownInterceptor)
+
 	err = logWriter.InitLogRotator(
 		filepath.Join(config.LogDir, defaultLogFilename),
 		config.MaxLogFileSize, config.MaxLogFiles,
@@ -205,14 +217,6 @@ func Run(rpcCfg RPCConfig) error {
 
 	lisCfg := newListenerCfg(&config, rpcCfg)
 
-	// Start listening for signal interrupts regardless of which command
-	// we are running. When our command tries to get a lnd connection, it
-	// blocks until lnd is synced. We listen for interrupts so that we can
-	// shutdown the daemon while waiting for sync to complete.
-	if err := signal.Intercept(); err != nil {
-		return err
-	}
-
 	// Execute command.
 	if parser.Active == nil {
 		daemon := New(&config, lisCfg)
@@ -221,7 +225,7 @@ func Run(rpcCfg RPCConfig) error {
 		}
 
 		select {
-		case <-signal.ShutdownChannel():
+		case <-interceptor.ShutdownChannel():
 			log.Infof("Received SIGINT (Ctrl+C).")
 			daemon.Stop()
 
