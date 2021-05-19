@@ -242,7 +242,7 @@ func (s *Client) Run(ctx context.Context,
 	}
 
 	// Log connected node.
-	log.Infof("Connected to lnd node '%v' with pubkey %x (version %s)",
+	log.Infof("Connected to lnd node '%v' with pubkey %s (version %s)",
 		s.lndServices.NodeAlias, s.lndServices.NodePubkey,
 		lndclient.VersionString(s.lndServices.Version))
 
