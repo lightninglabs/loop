@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -21,7 +22,16 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/zpay32"
 )
+
+// loopInternalHops indicate the number of hops that a loop out swap makes in
+// the server's off-chain infrastructure. We are ok reporting failure distances
+// from the server up until this point, because every swap takes these two
+// hops, so surfacing this information does not identify the client in any way.
+// After this point, the client does not report failure distances, so that
+// sender-privacy is preserved.
+const loopInternalHops = 2
 
 var (
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
@@ -759,7 +769,10 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 					s.log.Infof("Failed swap payment: %v",
 						result.failure())
 
-					s.state = loopdb.StateFailOffchainPayments
+					s.failOffChain(
+						ctx, paymentTypeInvoice,
+						result.status,
+					)
 					return nil, nil
 				}
 
@@ -778,7 +791,11 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 					s.log.Infof("Failed prepayment: %v",
 						result.failure())
 
-					s.state = loopdb.StateFailOffchainPayments
+					s.failOffChain(
+						ctx, paymentTypeInvoice,
+						result.status,
+					)
+
 					return nil, nil
 				}
 
@@ -969,6 +986,98 @@ func (s *loopOutSwap) pushPreimage(ctx context.Context) {
 	// outcome of our preimage push.
 	if err := s.server.PushLoopOutPreimage(ctx, s.Preimage); err != nil {
 		s.log.Warnf("Could not push preimage: %v", err)
+	}
+}
+
+// failOffChain updates a swap's state when it has failed due to a routing
+// failure and notifies the server of the failure.
+func (s *loopOutSwap) failOffChain(ctx context.Context, paymentType paymentType,
+	status lndclient.PaymentStatus) {
+
+	// Set our state to failed off chain timeout.
+	s.state = loopdb.StateFailOffchainPayments
+
+	swapPayReq, err := zpay32.Decode(
+		s.LoopOutContract.SwapInvoice, s.swapConfig.lnd.ChainParams,
+	)
+	if err != nil {
+		s.log.Errorf("could not decode swap invoice: %v", err)
+		return
+	}
+
+	if swapPayReq.PaymentAddr == nil {
+		s.log.Errorf("expected payment address for invoice")
+		return
+	}
+
+	details := &outCancelDetails{
+		hash:        s.hash,
+		paymentAddr: *swapPayReq.PaymentAddr,
+		metadata: routeCancelMetadata{
+			paymentType:   paymentType,
+			failureReason: status.FailureReason,
+		},
+	}
+
+	for _, htlc := range status.Htlcs {
+		if htlc.Status != lnrpc.HTLCAttempt_FAILED {
+			continue
+		}
+
+		if htlc.Route == nil {
+			continue
+		}
+
+		if len(htlc.Route.Hops) == 0 {
+			continue
+		}
+
+		if htlc.Failure == nil {
+			continue
+		}
+
+		failureIdx := htlc.Failure.FailureSourceIndex
+		hops := uint32(len(htlc.Route.Hops))
+
+		// We really don't expect a failure index that is greater than
+		// our number of hops. This is because failure index is zero
+		// based, where a value of zero means that the payment failed
+		// at the client's node, and a value = len(hops) means that it
+		// failed at the last node in the route. We don't want to
+		// underflow so we check and log a warning if this happens.
+		if failureIdx > hops {
+			s.log.Warnf("Htlc attempt failure index > hops",
+				failureIdx, hops)
+
+			continue
+		}
+
+		// Add the number of hops from the server that we failed at
+		// to the set of attempts that we will report to the server.
+		distance := hops - failureIdx
+
+		// In the case that our swap failed in the network at large,
+		// rather than the loop server's internal infrastructure, we
+		// don't want to disclose and information about distance from
+		// the server, so we set maxUint32 to represent failure in
+		// "the network at large" rather than due to the server's
+		// liquidity.
+		if distance > loopInternalHops {
+			distance = math.MaxUint32
+		}
+
+		details.metadata.attempts = append(
+			details.metadata.attempts, distance,
+		)
+	}
+
+	s.log.Infof("Canceling swap: %v payment failed: %v, %v attempts",
+		paymentType, details.metadata.failureReason,
+		len(details.metadata.attempts))
+
+	// Report to server, it's not critical if this doesn't go through.
+	if err := s.cancelSwap(ctx, details); err != nil {
+		s.log.Warnf("Could not report failure: %v", err)
 	}
 }
 

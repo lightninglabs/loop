@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"testing"
 
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -124,10 +126,17 @@ func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
 }
 
 func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, error) {
+	// Set different payment addresses for swap invoices.
+	payAddr := [32]byte{1, 2, 3}
+	if memo == swapInvoiceDesc {
+		payAddr = [32]byte{3, 2, 1}
+	}
+
 	req, err := zpay32.NewInvoice(
 		&chaincfg.TestNet3Params, hash, testTime,
 		zpay32.Description(memo),
 		zpay32.Amount(lnwire.MilliSatoshi(1000*amt)),
+		zpay32.PaymentAddr(payAddr),
 	)
 	if err != nil {
 		return "", err
@@ -188,6 +197,10 @@ func (s *serverMock) CancelLoopOutSwap(ctx context.Context,
 
 	s.cancelSwap <- details
 	return nil
+}
+
+func (s *serverMock) assertSwapCanceled(t *testing.T, details *outCancelDetails) {
+	require.Equal(t, details, <-s.cancelSwap)
 }
 
 func (s *serverMock) GetLoopInTerms(ctx context.Context) (

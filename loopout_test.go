@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -700,4 +702,141 @@ func TestExpiryBeforeReveal(t *testing.T) {
 	)
 
 	require.Nil(t, <-errChan)
+}
+
+// TestFailedOffChainCancelation tests sending of a cancelation message to
+// the server when a swap fails due to off-chain routing.
+func TestFailedOffChainCancelation(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx := test.NewContext(t, lnd)
+	server := newServerMock(lnd)
+
+	testReq := *testRequest
+	testReq.Expiry = lnd.Height + 20
+
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), server,
+	)
+
+	initResult, err := newLoopOutSwap(
+		context.Background(), cfg, lnd.Height, &testReq,
+	)
+	require.NoError(t, err)
+	swap := initResult.swap
+
+	// Set up the required dependencies to execute the swap.
+	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
+	blockEpochChan := make(chan interface{})
+	statusChan := make(chan SwapInfo)
+	expiryChan := make(chan time.Time)
+	timerFactory := func(_ time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	errChan := make(chan error)
+	go func() {
+		cfg := &executeConfig{
+			statusChan:     statusChan,
+			sweeper:        sweeper,
+			blockEpochChan: blockEpochChan,
+			timerFactory:   timerFactory,
+			cancelSwap:     server.CancelLoopOutSwap,
+		}
+
+		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
+		errChan <- err
+	}()
+
+	// The swap should be found in its initial state.
+	cfg.store.(*storeMock).assertLoopOutStored()
+	state := <-statusChan
+	require.Equal(t, loopdb.StateInitiated, state.State)
+
+	// Assert that we register for htlc confirmation notifications.
+	ctx.AssertRegisterConf(false, defaultConfirmations)
+
+	// We expect prepayment and invoice to be dispatched, order is unknown.
+	pmt1 := <-ctx.Lnd.RouterSendPaymentChannel
+	pmt2 := <-ctx.Lnd.RouterSendPaymentChannel
+
+	failUpdate := lndclient.PaymentStatus{
+		State:         lnrpc.Payment_FAILED,
+		FailureReason: lnrpc.PaymentFailureReason_FAILURE_REASON_ERROR,
+		Htlcs: []*lndclient.HtlcAttempt{
+			{
+				// Include a non-failed htlc to test that we
+				// only report failed htlcs.
+				Status: lnrpc.HTLCAttempt_IN_FLIGHT,
+			},
+			// Add one htlc that failed within the server's
+			// infrastructure.
+			{
+				Status: lnrpc.HTLCAttempt_FAILED,
+				Route: &lnrpc.Route{
+					Hops: []*lnrpc.Hop{
+						{}, {}, {},
+					},
+				},
+				Failure: &lndclient.HtlcFailure{
+					FailureSourceIndex: 1,
+				},
+			},
+			// Add one htlc that failed in the network at wide.
+			{
+				Status: lnrpc.HTLCAttempt_FAILED,
+				Route: &lnrpc.Route{
+					Hops: []*lnrpc.Hop{
+						{}, {}, {}, {}, {},
+					},
+				},
+				Failure: &lndclient.HtlcFailure{
+					FailureSourceIndex: 1,
+				},
+			},
+		},
+	}
+
+	successUpdate := lndclient.PaymentStatus{
+		State: lnrpc.Payment_SUCCEEDED,
+	}
+
+	// We want to fail our swap payment and succeed the prepush, so we send
+	// a failure update to the payment that has the larger amount.
+	if pmt1.Amount > pmt2.Amount {
+		pmt1.TrackPaymentMessage.Updates <- failUpdate
+		pmt2.TrackPaymentMessage.Updates <- successUpdate
+	} else {
+		pmt1.TrackPaymentMessage.Updates <- successUpdate
+		pmt2.TrackPaymentMessage.Updates <- failUpdate
+	}
+
+	invoice, err := zpay32.Decode(
+		swap.LoopOutContract.SwapInvoice, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, invoice.PaymentAddr)
+
+	swapCancelation := &outCancelDetails{
+		hash:        swap.hash,
+		paymentAddr: *invoice.PaymentAddr,
+		metadata: routeCancelMetadata{
+			paymentType:   paymentTypeInvoice,
+			failureReason: failUpdate.FailureReason,
+			attempts: []uint32{
+				2,
+				math.MaxUint32,
+			},
+		},
+	}
+	server.assertSwapCanceled(t, swapCancelation)
+
+	// Finally, the swap should be recorded with failed off chain timeout.
+	cfg.store.(*storeMock).assertLoopOutState(
+		loopdb.StateFailOffchainPayments,
+	)
+	state = <-statusChan
+	require.Equal(t, state.State, loopdb.StateFailOffchainPayments)
+	require.NoError(t, <-errChan)
 }
