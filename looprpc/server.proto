@@ -298,6 +298,14 @@ enum ServerSwapState {
 
     // The swap htlc has confirmed on chain.
     HTLC_CONFIRMED = 12;
+
+    // The client canceled the swap because they could not route the prepay.
+    CLIENT_PREPAY_CANCEL = 13;
+
+    // The client canceled the swap because they could not route the swap
+    // payment.
+    CLIENT_INVOICE_CANCEL = 14;
+
 }
 
 message SubscribeLoopOutUpdatesResponse{
