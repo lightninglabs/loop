@@ -140,7 +140,7 @@ func (s *executor) run(mainCtx context.Context,
 			go func() {
 				defer s.wg.Done()
 
-				newSwap.execute(mainCtx, &executeConfig{
+				err := newSwap.execute(mainCtx, &executeConfig{
 					statusChan:      statusChan,
 					sweeper:         s.sweeper,
 					blockEpochChan:  queue.ChanOut(),
@@ -148,6 +148,9 @@ func (s *executor) run(mainCtx context.Context,
 					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
 					cancelSwap:      s.executorConfig.cancelSwap,
 				}, height)
+				if err != nil && err != context.Canceled {
+					log.Errorf("Execute error: %v", err)
+				}
 
 				select {
 				case swapDoneChan <- swapID:
