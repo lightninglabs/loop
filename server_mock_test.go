@@ -43,6 +43,9 @@ type serverMock struct {
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
 
+	// cancelSwap is a channel that swap cancelations are sent into.
+	cancelSwap chan *outCancelDetails
+
 	lnd *test.LndMockServices
 }
 
@@ -59,6 +62,7 @@ func newServerMock(lnd *test.LndMockServices) *serverMock {
 		height: 600,
 
 		preimagePush: make(chan lntypes.Preimage),
+		cancelSwap:   make(chan *outCancelDetails),
 
 		lnd: lnd,
 	}
@@ -175,6 +179,14 @@ func (s *serverMock) PushLoopOutPreimage(_ context.Context,
 	// Push the preimage into the mock's preimage channel.
 	s.preimagePush <- preimage
 
+	return nil
+}
+
+// CancelLoopOutSwap pushes a request to cancel a swap into our mock's channel.
+func (s *serverMock) CancelLoopOutSwap(ctx context.Context,
+	details *outCancelDetails) error {
+
+	s.cancelSwap <- details
 	return nil
 }
 

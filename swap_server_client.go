@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tor"
@@ -74,6 +75,10 @@ type swapServerClient interface {
 	// SubscribeLoopInUpdates subscribes to loop in server state.
 	SubscribeLoopInUpdates(ctx context.Context,
 		hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)
+
+	// CancelLoopOutSwap cancels a loop out swap.
+	CancelLoopOutSwap(ctx context.Context,
+		details *outCancelDetails) error
 }
 
 type grpcSwapServerClient struct {
@@ -454,6 +459,104 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 	}()
 
 	return updateChan, errChan
+}
+
+// paymentType is an enum representing different types of off-chain payments
+// made by a swap.
+type paymentType uint8
+
+const (
+	// paymentTypePrepay indicates that we could not route the prepay.
+	paymentTypePrepay paymentType = iota
+
+	// paymentTypeInvoice indicates that we could not route the swap
+	// invoice.
+	paymentTypeInvoice
+)
+
+// routeCancelMetadata contains cancelation information for swaps that are
+// canceled because the client could not route off-chain to the server.
+type routeCancelMetadata struct {
+	// paymentType is the type of payment that failed.
+	paymentType paymentType
+
+	// attempts is the set of htlc attempts made by the client, reporting
+	// the distance from the invoice's destination node that a failure
+	// occurred.
+	attempts []uint32
+
+	// failureReason is the reason that the payment failed.
+	failureReason lnrpc.PaymentFailureReason
+}
+
+// outCancelDetails contains the informaton required to cancel a loop out swap.
+type outCancelDetails struct {
+	// Hash is the swap's hash.
+	hash lntypes.Hash
+
+	// paymentAddr is the payment address for the swap's invoice.
+	paymentAddr [32]byte
+
+	// metadata contains additional information about the swap.
+	metadata routeCancelMetadata
+}
+
+// CancelLoopOutSwap sends an instruction to the server to cancel a loop out
+// swap.
+func (s *grpcSwapServerClient) CancelLoopOutSwap(ctx context.Context,
+	details *outCancelDetails) error {
+
+	req := &looprpc.CancelLoopOutSwapRequest{
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		SwapHash:        details.hash[:],
+		PaymentAddress:  details.paymentAddr[:],
+	}
+
+	var err error
+	req.CancelInfo, err = rpcRouteCancel(details)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.server.CancelLoopOutSwap(ctx, req)
+	return err
+}
+
+func rpcRouteCancel(details *outCancelDetails) (
+	*looprpc.CancelLoopOutSwapRequest_RouteCancel, error) {
+
+	attempts := make([]*looprpc.HtlcAttempt, len(details.metadata.attempts))
+	for i, remaining := range details.metadata.attempts {
+		attempts[i] = &looprpc.HtlcAttempt{
+			RemainingHops: remaining,
+		}
+	}
+
+	resp := &looprpc.CancelLoopOutSwapRequest_RouteCancel{
+		RouteCancel: &looprpc.RouteCancel{
+			Attempts: attempts,
+			// We can cast our lnd failure reason to a loop payment
+			// failure reason because these values are copied 1:1
+			// from lnd.
+			Failure: looprpc.PaymentFailureReason(
+				details.metadata.failureReason,
+			),
+		},
+	}
+
+	switch details.metadata.paymentType {
+	case paymentTypePrepay:
+		resp.RouteCancel.RouteType = looprpc.RoutePaymentType_PREPAY_ROUTE
+
+	case paymentTypeInvoice:
+		resp.RouteCancel.RouteType = looprpc.RoutePaymentType_INVOICE_ROUTE
+
+	default:
+		return nil, fmt.Errorf("unknown payment type: %v",
+			details.metadata.paymentType)
+	}
+
+	return resp, nil
 }
 
 // getSwapServerConn returns a connection to the swap server. A non-empty
