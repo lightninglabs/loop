@@ -25,6 +25,8 @@ type executorConfig struct {
 	createExpiryTimer func(expiry time.Duration) <-chan time.Time
 
 	loopOutMaxParts uint32
+
+	cancelSwap func(ctx context.Context, details *outCancelDetails) error
 }
 
 // executor is responsible for executing swaps.
@@ -144,6 +146,7 @@ func (s *executor) run(mainCtx context.Context,
 					blockEpochChan:  queue.ChanOut(),
 					timerFactory:    s.executorConfig.createExpiryTimer,
 					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
+					cancelSwap:      s.executorConfig.cancelSwap,
 				}, height)
 
 				select {

@@ -75,6 +75,7 @@ type executeConfig struct {
 	blockEpochChan  <-chan interface{}
 	timerFactory    func(d time.Duration) <-chan time.Time
 	loopOutMaxParts uint32
+	cancelSwap      func(context.Context, *outCancelDetails) error
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.

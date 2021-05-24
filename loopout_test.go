@@ -73,6 +73,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 			blockEpochChan:  blockEpochChan,
 			timerFactory:    timerFactory,
 			loopOutMaxParts: maxParts,
+			cancelSwap:      server.CancelLoopOutSwap,
 		}, height)
 		if err != nil {
 			log.Error(err)
@@ -173,6 +174,7 @@ func TestLateHtlcPublish(t *testing.T) {
 			sweeper:        sweeper,
 			blockEpochChan: blockEpochChan,
 			timerFactory:   timerFactory,
+			cancelSwap:     server.CancelLoopOutSwap,
 		}, height)
 		if err != nil {
 			log.Error(err)
@@ -267,6 +269,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 			blockEpochChan: blockEpochChan,
 			timerFactory:   timerFactory,
 			sweeper:        sweeper,
+			cancelSwap:     server.CancelLoopOutSwap,
 		}, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
@@ -461,6 +464,7 @@ func TestPreimagePush(t *testing.T) {
 			blockEpochChan: blockEpochChan,
 			timerFactory:   timerFactory,
 			sweeper:        sweeper,
+			cancelSwap:     server.CancelLoopOutSwap,
 		}, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)

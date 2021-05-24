@@ -142,6 +142,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
 		loopOutMaxParts:   cfg.LoopOutMaxParts,
+		cancelSwap:        swapServerClient.CancelLoopOutSwap,
 	})
 
 	client := &Client{
