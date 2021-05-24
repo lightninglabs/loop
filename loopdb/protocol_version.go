@@ -39,13 +39,17 @@ const (
 	// invoice so that the server can perform a multi-path probe.
 	ProtocolVersionMultiLoopIn ProtocolVersion = 6
 
+	// ProtocolVersionLoopOutCancel indicates that the client supports
+	// canceling loop out swaps.
+	ProtocolVersionLoopOutCancel = 7
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_MULTI_LOOP_IN
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_LOOP_OUT_CANCEL
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
@@ -80,6 +84,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionHtlcV2:
 		return "HTLC V2"
+
+	case ProtocolVersionLoopOutCancel:
+		return "Loop Out Cancel"
 
 	default:
 		return "Unknown"
