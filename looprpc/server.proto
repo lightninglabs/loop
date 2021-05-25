@@ -26,6 +26,9 @@ service SwapServer {
 
     rpc SubscribeLoopInUpdates (SubscribeUpdatesRequest)
         returns (stream SubscribeLoopInUpdatesResponse);
+
+    rpc CancelLoopOutSwap(CancelLoopOutSwapRequest) 
+        returns (CancelLoopOutSwapResponse);
 }
 
 /**
@@ -64,6 +67,9 @@ enum ProtocolVersion {
     // The client creates a probe invoice so that the server can perform a
     // multi-path probe.
     MULTI_LOOP_IN = 6;
+
+    // The client supports loop out swap cancelation.
+    LOOP_OUT_CANCEL = 7;
 }
 
 message ServerLoopOutRequest {
@@ -292,6 +298,14 @@ enum ServerSwapState {
 
     // The swap htlc has confirmed on chain.
     HTLC_CONFIRMED = 12;
+
+    // The client canceled the swap because they could not route the prepay.
+    CLIENT_PREPAY_CANCEL = 13;
+
+    // The client canceled the swap because they could not route the swap
+    // payment.
+    CLIENT_INVOICE_CANCEL = 14;
+
 }
 
 message SubscribeLoopOutUpdatesResponse{
@@ -309,3 +323,88 @@ message SubscribeLoopInUpdatesResponse{
     // The swap's current state.
     ServerSwapState state = 2;
 }
+
+enum RoutePaymentType {
+    // No reason, used to distinguish from the default value.
+    UNKNOWN = 0;
+
+    // Prepay route indicates that the swap was canceled because the client 
+    // could not find a route to the server for the prepay.
+    PREPAY_ROUTE = 1;
+
+    // Invoice route indicates that the swap was canceled because the client
+    // could not find a route to the server for the swap invoice.
+    INVOICE_ROUTE = 2;
+}
+
+// PaymentFailureReason describes the reason that a payment failed. These
+// values are copied directly from lnd.
+enum PaymentFailureReason {
+    /*
+    Payment isn't failed (yet).
+    */
+    FAILURE_REASON_NONE = 0;
+
+    /*
+    There are more routes to try, but the payment timeout was exceeded.
+    */
+    FAILURE_REASON_TIMEOUT = 1;
+
+    /*
+    All possible routes were tried and failed permanently. Or were no
+    routes to the destination at all.
+    */
+    FAILURE_REASON_NO_ROUTE = 2;
+
+    /*
+    A non-recoverable error has occured.
+    */
+    FAILURE_REASON_ERROR = 3;
+
+    /*
+    Payment details incorrect (unknown hash, invalid amt or
+    invalid final cltv delta)
+    */
+    FAILURE_REASON_INCORRECT_PAYMENT_DETAILS = 4;
+
+    /*
+    Insufficient local balance.
+    */
+    FAILURE_REASON_INSUFFICIENT_BALANCE = 5;
+}
+
+message RouteCancel {
+    // The type of the payment that failed.
+    RoutePaymentType route_type = 1;
+
+    // The htlcs that the client tried to pay the server with, if any.
+    repeated HtlcAttempt attempts = 2;
+
+    // The reason that the payment failed.
+    PaymentFailureReason failure = 3;    
+}
+
+message HtlcAttempt {
+    // The number of hops from the htlc's failure hop that it needed to take
+    // to reach the server's node. 
+    uint32 remaining_hops = 1;
+}
+
+message CancelLoopOutSwapRequest {
+    // The protocol version that the client adheres to.
+    ProtocolVersion protocol_version = 1;
+
+    // The swap hash.
+    bytes swap_hash = 2; 
+
+    // The payment address for the swap invoice, used to ensure that only the
+    // swap owner can cancel the payment.
+    bytes payment_address = 3;
+
+    // Additional information about the swap cancelation.
+    oneof cancel_info {
+        RouteCancel route_cancel = 5;
+    }
+}
+
+message CancelLoopOutSwapResponse{}

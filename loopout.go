@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -21,7 +22,16 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/zpay32"
 )
+
+// loopInternalHops indicate the number of hops that a loop out swap makes in
+// the server's off-chain infrastructure. We are ok reporting failure distances
+// from the server up until this point, because every swap takes these two
+// hops, so surfacing this information does not identify the client in any way.
+// After this point, the client does not report failure distances, so that
+// sender-privacy is preserved.
+const loopInternalHops = 2
 
 var (
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
@@ -62,8 +72,8 @@ type loopOutSwap struct {
 	// htlcTxHash is the confirmed htlc tx id.
 	htlcTxHash *chainhash.Hash
 
-	swapPaymentChan chan lndclient.PaymentResult
-	prePaymentChan  chan lndclient.PaymentResult
+	swapPaymentChan chan paymentResult
+	prePaymentChan  chan paymentResult
 
 	wg sync.WaitGroup
 }
@@ -75,6 +85,7 @@ type executeConfig struct {
 	blockEpochChan  <-chan interface{}
 	timerFactory    func(d time.Duration) <-chan time.Time
 	loopOutMaxParts uint32
+	cancelSwap      func(context.Context, *outCancelDetails) error
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
@@ -340,27 +351,35 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		select {
 		case result := <-s.swapPaymentChan:
 			s.swapPaymentChan = nil
-			if result.Err != nil {
+
+			err := s.handlePaymentResult(result)
+			if err != nil {
+				return err
+			}
+
+			if result.failure() != nil {
 				// Server didn't pull the swap payment.
 				s.log.Infof("Swap payment failed: %v",
-					result.Err)
+					result.failure())
 
 				continue
 			}
-			s.cost.Server += result.PaidAmt
-			s.cost.Offchain += result.PaidFee
 
 		case result := <-s.prePaymentChan:
 			s.prePaymentChan = nil
-			if result.Err != nil {
+
+			err := s.handlePaymentResult(result)
+			if err != nil {
+				return err
+			}
+
+			if result.failure() != nil {
 				// Server didn't pull the prepayment.
 				s.log.Infof("Prepayment failed: %v",
-					result.Err)
+					result.failure())
 
 				continue
 			}
-			s.cost.Server += result.PaidAmt
-			s.cost.Offchain += result.PaidFee
 
 		case <-globalCtx.Done():
 			return globalCtx.Err()
@@ -377,6 +396,27 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 	)
 
 	return s.persistState(globalCtx)
+}
+
+func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
+	switch {
+	// If our result has a non-nil error, our status will be nil. In this
+	// case the payment failed so we do not need to take any action.
+	case result.err != nil:
+		return nil
+
+	case result.status.State == lnrpc.Payment_SUCCEEDED:
+		s.cost.Server += result.status.Value.ToSatoshis()
+		s.cost.Offchain += result.status.Fee.ToSatoshis()
+
+		return nil
+
+	case result.status.State == lnrpc.Payment_FAILED:
+		return nil
+
+	default:
+		return fmt.Errorf("unexpected state: %v", result.status.State)
+	}
 }
 
 // executeSwap executes the swap, but returns as soon as the swap outcome is
@@ -510,31 +550,64 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	)
 }
 
+// paymentResult contains the response for a failed or settled payment, and
+// any errors that occurred if the payment unexpectedly failed.
+type paymentResult struct {
+	status lndclient.PaymentStatus
+	err    error
+}
+
+// failure returns the error we encountered trying to dispatch a payment result,
+// if any.
+func (p paymentResult) failure() error {
+	if p.err != nil {
+		return p.err
+	}
+
+	if p.status.State == lnrpc.Payment_SUCCEEDED {
+		return nil
+	}
+
+	return fmt.Errorf("payment failed: %v", p.status.FailureReason)
+}
+
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet) chan lndclient.PaymentResult {
+	outgoingChanIds loopdb.ChannelSet) chan paymentResult {
 
-	resultChan := make(chan lndclient.PaymentResult)
+	resultChan := make(chan paymentResult)
+	sendResult := func(result paymentResult) {
+		select {
+		case resultChan <- result:
+		case <-ctx.Done():
+		}
+	}
 
 	go func() {
-		var result lndclient.PaymentResult
+		var result paymentResult
 
 		status, err := s.payInvoiceAsync(
 			ctx, invoice, maxFee, outgoingChanIds,
 		)
 		if err != nil {
-			result.Err = err
-		} else {
-			result.Preimage = status.Preimage
-			result.PaidFee = status.Fee.ToSatoshis()
-			result.PaidAmt = status.Value.ToSatoshis()
+			result.err = err
+			sendResult(result)
+			return
 		}
 
-		select {
-		case resultChan <- result:
-		case <-ctx.Done():
+		// If our payment failed or succeeded, our status should be
+		// non-nil.
+		switch status.State {
+		case lnrpc.Payment_FAILED, lnrpc.Payment_SUCCEEDED:
+			result.status = *status
+
+		default:
+			result.err = fmt.Errorf("unexpected payment state: %v",
+				status.State)
 		}
+
+		sendResult(result)
 	}()
 
 	return resultChan
@@ -583,7 +656,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 				return &payState, nil
 
 			case lnrpc.Payment_FAILED:
-				return nil, errors.New("payment failed")
+				return &payState, nil
 
 			case lnrpc.Payment_IN_FLIGHT:
 				// Continue waiting for final state.
@@ -686,30 +759,45 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			// have lost the prepayment.
 			case result := <-s.swapPaymentChan:
 				s.swapPaymentChan = nil
-				if result.Err != nil {
-					s.state = loopdb.StateFailOffchainPayments
-					s.log.Infof("Failed swap payment: %v",
-						result.Err)
 
+				err := s.handlePaymentResult(result)
+				if err != nil {
+					return nil, err
+				}
+
+				if result.failure() != nil {
+					s.log.Infof("Failed swap payment: %v",
+						result.failure())
+
+					s.failOffChain(
+						ctx, paymentTypeInvoice,
+						result.status,
+					)
 					return nil, nil
 				}
-				s.cost.Server += result.PaidAmt
-				s.cost.Offchain += result.PaidFee
 
 			// If the prepay fails, abandon the swap. Because we
 			// didn't reveal the preimage, the swap payment will be
 			// canceled or time out.
 			case result := <-s.prePaymentChan:
 				s.prePaymentChan = nil
-				if result.Err != nil {
-					s.state = loopdb.StateFailOffchainPayments
+
+				err := s.handlePaymentResult(result)
+				if err != nil {
+					return nil, err
+				}
+
+				if result.failure() != nil {
 					s.log.Infof("Failed prepayment: %v",
-						result.Err)
+						result.failure())
+
+					s.failOffChain(
+						ctx, paymentTypeInvoice,
+						result.status,
+					)
 
 					return nil, nil
 				}
-				s.cost.Server += result.PaidAmt
-				s.cost.Offchain += result.PaidFee
 
 			// Unexpected error on the confirm channel happened,
 			// abandon the swap.
@@ -898,6 +986,98 @@ func (s *loopOutSwap) pushPreimage(ctx context.Context) {
 	// outcome of our preimage push.
 	if err := s.server.PushLoopOutPreimage(ctx, s.Preimage); err != nil {
 		s.log.Warnf("Could not push preimage: %v", err)
+	}
+}
+
+// failOffChain updates a swap's state when it has failed due to a routing
+// failure and notifies the server of the failure.
+func (s *loopOutSwap) failOffChain(ctx context.Context, paymentType paymentType,
+	status lndclient.PaymentStatus) {
+
+	// Set our state to failed off chain timeout.
+	s.state = loopdb.StateFailOffchainPayments
+
+	swapPayReq, err := zpay32.Decode(
+		s.LoopOutContract.SwapInvoice, s.swapConfig.lnd.ChainParams,
+	)
+	if err != nil {
+		s.log.Errorf("could not decode swap invoice: %v", err)
+		return
+	}
+
+	if swapPayReq.PaymentAddr == nil {
+		s.log.Errorf("expected payment address for invoice")
+		return
+	}
+
+	details := &outCancelDetails{
+		hash:        s.hash,
+		paymentAddr: *swapPayReq.PaymentAddr,
+		metadata: routeCancelMetadata{
+			paymentType:   paymentType,
+			failureReason: status.FailureReason,
+		},
+	}
+
+	for _, htlc := range status.Htlcs {
+		if htlc.Status != lnrpc.HTLCAttempt_FAILED {
+			continue
+		}
+
+		if htlc.Route == nil {
+			continue
+		}
+
+		if len(htlc.Route.Hops) == 0 {
+			continue
+		}
+
+		if htlc.Failure == nil {
+			continue
+		}
+
+		failureIdx := htlc.Failure.FailureSourceIndex
+		hops := uint32(len(htlc.Route.Hops))
+
+		// We really don't expect a failure index that is greater than
+		// our number of hops. This is because failure index is zero
+		// based, where a value of zero means that the payment failed
+		// at the client's node, and a value = len(hops) means that it
+		// failed at the last node in the route. We don't want to
+		// underflow so we check and log a warning if this happens.
+		if failureIdx > hops {
+			s.log.Warnf("Htlc attempt failure index > hops",
+				failureIdx, hops)
+
+			continue
+		}
+
+		// Add the number of hops from the server that we failed at
+		// to the set of attempts that we will report to the server.
+		distance := hops - failureIdx
+
+		// In the case that our swap failed in the network at large,
+		// rather than the loop server's internal infrastructure, we
+		// don't want to disclose and information about distance from
+		// the server, so we set maxUint32 to represent failure in
+		// "the network at large" rather than due to the server's
+		// liquidity.
+		if distance > loopInternalHops {
+			distance = math.MaxUint32
+		}
+
+		details.metadata.attempts = append(
+			details.metadata.attempts, distance,
+		)
+	}
+
+	s.log.Infof("Canceling swap: %v payment failed: %v, %v attempts",
+		paymentType, details.metadata.failureReason,
+		len(details.metadata.attempts))
+
+	// Report to server, it's not critical if this doesn't go through.
+	if err := s.cancelSwap(ctx, details); err != nil {
+		s.log.Warnf("Could not report failure: %v", err)
 	}
 }
 

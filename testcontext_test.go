@@ -52,6 +52,7 @@ func newSwapClient(config *clientConfig) *Client {
 		store:             config.Store,
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
+		cancelSwap:        config.Server.CancelLoopOutSwap,
 	})
 
 	return &Client{

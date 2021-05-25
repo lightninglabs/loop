@@ -100,6 +100,7 @@ func TestFailOffchain(t *testing.T) {
 	signalPrepaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
 	)
+	<-ctx.serverMock.cancelSwap
 	ctx.assertStatus(loopdb.StateFailOffchainPayments)
 
 	ctx.assertStoreFinished(loopdb.StateFailOffchainPayments)

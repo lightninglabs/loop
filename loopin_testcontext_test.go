@@ -39,6 +39,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 		sweeper:        &sweeper,
 		blockEpochChan: blockEpochChan,
 		timerFactory:   timerFactory,
+		cancelSwap:     server.CancelLoopOutSwap,
 	}
 
 	return &loopInTestContext{
