@@ -414,7 +414,7 @@
         "AUTO_REASON_FEE_INSUFFICIENT"
       ],
       "default": "AUTO_REASON_UNKNOWN",
-      "description": " - AUTO_REASON_BUDGET_NOT_STARTED: Budget not started indicates that we do not recommend any swaps because \nthe start time for our budget has not arrived yet.\n - AUTO_REASON_SWEEP_FEES: Sweep fees indicates that the estimated fees to sweep swaps are too high \nright now.\n - AUTO_REASON_BUDGET_ELAPSED: Budget elapsed indicates that the autoloop budget for the period has been \nelapsed.\n - AUTO_REASON_IN_FLIGHT: In flight indicates that the limit on in-flight automatically dispatched \nswaps has already been reached.\n - AUTO_REASON_SWAP_FEE: Swap fee indicates that the server fee for a specific swap is too high.\n - AUTO_REASON_MINER_FEE: Miner fee indicates that the miner fee for a specific swap is to high.\n - AUTO_REASON_PREPAY: Prepay indicates that the prepay fee for a specific swap is too high.\n - AUTO_REASON_FAILURE_BACKOFF: Failure backoff indicates that a swap has recently failed for this target,\nand the backoff period has not yet passed.\n - AUTO_REASON_LOOP_OUT: Loop out indicates that a loop out swap is currently utilizing the channel,\nso it is not eligible.\n - AUTO_REASON_LOOP_IN: Loop In indicates that a loop in swap is currently in flight for the peer, \nso it is not eligible.\n - AUTO_REASON_LIQUIDITY_OK: Liquidity ok indicates that a target meets the liquidity balance expressed \nin its rule, so no swap is needed.\n - AUTO_REASON_BUDGET_INSUFFICIENT: Budget insufficient indicates that we cannot perform a swap because we do \nnot have enough pending budget available. This differs from budget elapsed, \nbecause we still have some budget available, but we have allocated it to \nother swaps.\n - AUTO_REASON_FEE_INSUFFICIENT: Fee insufficient indicates that the fee estimate for a swap is higher than\nthe portion of total swap amount that we allow fees to consume."
+      "description": " - AUTO_REASON_BUDGET_NOT_STARTED: Budget not started indicates that we do not recommend any swaps because\nthe start time for our budget has not arrived yet.\n - AUTO_REASON_SWEEP_FEES: Sweep fees indicates that the estimated fees to sweep swaps are too high\nright now.\n - AUTO_REASON_BUDGET_ELAPSED: Budget elapsed indicates that the autoloop budget for the period has been\nelapsed.\n - AUTO_REASON_IN_FLIGHT: In flight indicates that the limit on in-flight automatically dispatched\nswaps has already been reached.\n - AUTO_REASON_SWAP_FEE: Swap fee indicates that the server fee for a specific swap is too high.\n - AUTO_REASON_MINER_FEE: Miner fee indicates that the miner fee for a specific swap is to high.\n - AUTO_REASON_PREPAY: Prepay indicates that the prepay fee for a specific swap is too high.\n - AUTO_REASON_FAILURE_BACKOFF: Failure backoff indicates that a swap has recently failed for this target,\nand the backoff period has not yet passed.\n - AUTO_REASON_LOOP_OUT: Loop out indicates that a loop out swap is currently utilizing the channel,\nso it is not eligible.\n - AUTO_REASON_LOOP_IN: Loop In indicates that a loop in swap is currently in flight for the peer,\nso it is not eligible.\n - AUTO_REASON_LIQUIDITY_OK: Liquidity ok indicates that a target meets the liquidity balance expressed\nin its rule, so no swap is needed.\n - AUTO_REASON_BUDGET_INSUFFICIENT: Budget insufficient indicates that we cannot perform a swap because we do\nnot have enough pending budget available. This differs from budget elapsed,\nbecause we still have some budget available, but we have allocated it to\nother swaps.\n - AUTO_REASON_FEE_INSUFFICIENT: Fee insufficient indicates that the fee estimate for a swap is higher than\nthe portion of total swap amount that we allow fees to consume."
     },
     "looprpcDisqualified": {
       "type": "object",
@@ -502,7 +502,7 @@
         "fee_ppm": {
           "type": "string",
           "format": "uint64",
-          "description": "The parts per million of swap amount that is allowed to be allocated to swap\nfees. This value is applied across swap categories and may not be set in \nconjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay\nrouting, max prepay and max miner fee."
+          "description": "The parts per million of swap amount that is allowed to be allocated to swap\nfees. This value is applied across swap categories and may not be set in\nconjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay\nrouting, max prepay and max miner fee."
         },
         "sweep_fee_rate_sat_per_vbyte": {
           "type": "string",
@@ -547,7 +547,7 @@
         "autoloop": {
           "type": "boolean",
           "format": "boolean",
-          "description": "Set to true to enable automatic dispatch of swaps. All swaps will be limited \nto the fee categories set by these parameters, and total expenditure will \nbe limited to the autoloop budget."
+          "description": "Set to true to enable automatic dispatch of swaps. All swaps will be limited\nto the fee categories set by these parameters, and total expenditure will\nbe limited to the autoloop budget."
         },
         "autoloop_budget_sat": {
           "type": "string",
@@ -631,7 +631,7 @@
         "amt": {
           "type": "string",
           "format": "int64",
-          "description": "Requested swap amount in sat. This does not include the swap and miner \nfee."
+          "description": "Requested swap amount in sat. This does not include the swap and miner\nfee."
         },
         "max_swap_fee": {
           "type": "string",
@@ -641,7 +641,7 @@
         "max_miner_fee": {
           "type": "string",
           "format": "int64",
-          "description": "Maximum in on-chain fees that we are willing to spend. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap. \n\nmax_miner_fee is typically taken from the response of the GetQuote call."
+          "description": "Maximum in on-chain fees that we are willing to spend. If we want to\npublish the on-chain htlc and the fee estimate turns out higher than this\nvalue, we cancel the swap.\n\nmax_miner_fee is typically taken from the response of the GetQuote call."
         },
         "last_hop": {
           "type": "string",
@@ -683,7 +683,7 @@
         "max_swap_routing_fee": {
           "type": "string",
           "format": "int64",
-          "description": "Maximum off-chain fee in sat that may be paid for swap payment to the server.\nThis limit is applied during path finding. Typically this value is taken\nfrom the response of the GetQuote call."
+          "description": "Maximum off-chain fee in sat that may be paid for swap payment to the\nserver. This limit is applied during path finding. Typically this value is\ntaken from the response of the GetQuote call."
         },
         "max_prepay_routing_fee": {
           "type": "string",

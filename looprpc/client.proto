@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package looprpc;
 
+option go_package = "github.com/lightninglabs/loop/looprpc";
+
 /*
 SwapClient is a service that handles the client side process of onchain/offchain
 swaps. The service is designed for a single client.
@@ -103,9 +105,9 @@ message LoopOutRequest {
     string dest = 2;
 
     /*
-    Maximum off-chain fee in sat that may be paid for swap payment to the server.
-    This limit is applied during path finding. Typically this value is taken
-    from the response of the GetQuote call.
+    Maximum off-chain fee in sat that may be paid for swap payment to the
+    server. This limit is applied during path finding. Typically this value is
+    taken from the response of the GetQuote call.
     */
     int64 max_swap_routing_fee = 3;
 
@@ -201,7 +203,7 @@ message LoopOutRequest {
 
 message LoopInRequest {
     /*
-    Requested swap amount in sat. This does not include the swap and miner 
+    Requested swap amount in sat. This does not include the swap and miner
     fee.
     */
     int64 amt = 1;
@@ -217,7 +219,7 @@ message LoopInRequest {
     /*
     Maximum in on-chain fees that we are willing to spend. If we want to
     publish the on-chain htlc and the fee estimate turns out higher than this
-    value, we cancel the swap. 
+    value, we cancel the swap.
 
     max_miner_fee is typically taken from the response of the GetQuote call.
     */
@@ -497,7 +499,6 @@ message TermsRequest {
 }
 
 message InTermsResponse {
-
     reserved 1, 2, 3, 4, 7;
 
     /*
@@ -512,7 +513,6 @@ message InTermsResponse {
 }
 
 message OutTermsResponse {
-
     reserved 1, 2, 3, 4, 7;
 
     /*
@@ -691,7 +691,7 @@ message LiquidityParameters {
 
     /*
     The parts per million of swap amount that is allowed to be allocated to swap
-    fees. This value is applied across swap categories and may not be set in 
+    fees. This value is applied across swap categories and may not be set in
     conjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay
     routing, max prepay and max miner fee.
     */
@@ -750,8 +750,8 @@ message LiquidityParameters {
     uint64 failure_backoff_sec = 9;
 
     /*
-    Set to true to enable automatic dispatch of swaps. All swaps will be limited 
-    to the fee categories set by these parameters, and total expenditure will 
+    Set to true to enable automatic dispatch of swaps. All swaps will be limited
+    to the fee categories set by these parameters, and total expenditure will
     be limited to the autoloop budget.
     */
     bool autoloop = 10;
@@ -803,7 +803,7 @@ message LiquidityRule {
     */
     uint64 channel_id = 1;
 
-    /* 
+    /*
     The public key of the peer that this rule should be applied to. This field
     may not be set when the channel id field is set.
     */
@@ -850,25 +850,25 @@ enum AutoReason {
     AUTO_REASON_UNKNOWN = 0;
 
     /*
-    Budget not started indicates that we do not recommend any swaps because 
+    Budget not started indicates that we do not recommend any swaps because
     the start time for our budget has not arrived yet.
     */
     AUTO_REASON_BUDGET_NOT_STARTED = 1;
 
     /*
-    Sweep fees indicates that the estimated fees to sweep swaps are too high 
+    Sweep fees indicates that the estimated fees to sweep swaps are too high
     right now.
     */
     AUTO_REASON_SWEEP_FEES = 2;
 
     /*
-    Budget elapsed indicates that the autoloop budget for the period has been 
+    Budget elapsed indicates that the autoloop budget for the period has been
     elapsed.
     */
     AUTO_REASON_BUDGET_ELAPSED = 3;
 
     /*
-    In flight indicates that the limit on in-flight automatically dispatched 
+    In flight indicates that the limit on in-flight automatically dispatched
     swaps has already been reached.
     */
     AUTO_REASON_IN_FLIGHT = 4;
@@ -901,21 +901,21 @@ enum AutoReason {
     AUTO_REASON_LOOP_OUT = 9;
 
     /*
-    Loop In indicates that a loop in swap is currently in flight for the peer, 
+    Loop In indicates that a loop in swap is currently in flight for the peer,
     so it is not eligible.
     */
     AUTO_REASON_LOOP_IN = 10;
 
     /*
-    Liquidity ok indicates that a target meets the liquidity balance expressed 
+    Liquidity ok indicates that a target meets the liquidity balance expressed
     in its rule, so no swap is needed.
     */
     AUTO_REASON_LIQUIDITY_OK = 11;
 
-    /* 
-    Budget insufficient indicates that we cannot perform a swap because we do 
-    not have enough pending budget available. This differs from budget elapsed, 
-    because we still have some budget available, but we have allocated it to 
+    /*
+    Budget insufficient indicates that we cannot perform a swap because we do
+    not have enough pending budget available. This differs from budget elapsed,
+    because we still have some budget available, but we have allocated it to
     other swaps.
     */
     AUTO_REASON_BUDGET_INSUFFICIENT = 12;
@@ -925,14 +925,14 @@ enum AutoReason {
     the portion of total swap amount that we allow fees to consume.
     */
     AUTO_REASON_FEE_INSUFFICIENT = 13;
-} 
+}
 
 message Disqualified {
     /*
     The short channel ID of the channel that was excluded from our suggestions.
     */
-    uint64 channel_id = 1; 
-    
+    uint64 channel_id = 1;
+
     /*
     The public key of the peer that was excluded from our suggestions.
     */

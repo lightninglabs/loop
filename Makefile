@@ -74,5 +74,9 @@ install:
 	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loopd
 
 rpc:
-	@$(call print, "Compiling RPC protos.")
-	cd looprpc; ./gen_protos.sh
+	@$(call print, "Compiling protos.")
+	cd ./looprpc; ./gen_protos_docker.sh
+
+rpc-check: rpc
+	@$(call print, "Verifying protos.")
+	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
