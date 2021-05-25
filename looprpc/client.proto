@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-import "google/api/annotations.proto";
-
 package looprpc;
 
 /*
@@ -15,12 +13,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream that is
     returned from Monitor().
     */
-    rpc LoopOut (LoopOutRequest) returns (SwapResponse) {
-        option (google.api.http) = {
-            post: "/v1/loop/out"
-            body: "*"
-        };
-    }
+    rpc LoopOut (LoopOutRequest) returns (SwapResponse);
 
     /* loop: `in`
     LoopIn initiates a loop in swap with the given parameters. The call
@@ -28,12 +21,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream
     that is returned from Monitor().
     */
-    rpc LoopIn (LoopInRequest) returns (SwapResponse) {
-        option (google.api.http) = {
-            post: "/v1/loop/in"
-            body: "*"
-        };
-    }
+    rpc LoopIn (LoopInRequest) returns (SwapResponse);
 
     /* loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
@@ -44,77 +32,46 @@ service SwapClient {
     ListSwaps returns a list of all currently known swaps and their current
     status.
     */
-    rpc ListSwaps (ListSwapsRequest) returns (ListSwapsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/swaps"
-        };
-    }
+    rpc ListSwaps (ListSwapsRequest) returns (ListSwapsResponse);
 
     /* loop: `swapinfo`
     SwapInfo returns all known details about a single swap.
     */
-    rpc SwapInfo (SwapInfoRequest) returns (SwapStatus) {
-        option (google.api.http) = {
-            get: "/v1/loop/swap/{id}"
-        };
-    }
+    rpc SwapInfo (SwapInfoRequest) returns (SwapStatus);
 
     /* loop: `terms`
     LoopOutTerms returns the terms that the server enforces for a loop out swap.
     */
-    rpc LoopOutTerms (TermsRequest) returns (OutTermsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/out/terms"
-        };
-    }
+    rpc LoopOutTerms (TermsRequest) returns (OutTermsResponse);
 
     /* loop: `quote`
     LoopOutQuote returns a quote for a loop out swap with the provided
     parameters.
     */
-    rpc LoopOutQuote (QuoteRequest) returns (OutQuoteResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/out/quote/{amt}"
-        };
-    }
+    rpc LoopOutQuote (QuoteRequest) returns (OutQuoteResponse);
 
     /* loop: `terms`
     GetTerms returns the terms that the server enforces for swaps.
     */
-    rpc GetLoopInTerms (TermsRequest) returns (InTermsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/in/terms"
-        };
-    }
+    rpc GetLoopInTerms (TermsRequest) returns (InTermsResponse);
 
     /* loop: `quote`
     GetQuote returns a quote for a swap with the provided parameters.
     */
-    rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/in/quote/{amt}"
-        };
-    }
+    rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse);
 
     /* loop: `listauth`
     GetLsatTokens returns all LSAT tokens the daemon ever paid for.
     */
-    rpc GetLsatTokens (TokensRequest) returns (TokensResponse) {
-        option (google.api.http) = {
-            get: "/v1/lsat/tokens"
-        };
-    }
+    rpc GetLsatTokens (TokensRequest) returns (TokensResponse);
 
     /*
     GetLiquidityParams gets the parameters that the daemon's liquidity manager
     is currently configured with. This may be nil if nothing is configured.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc GetLiquidityParams (GetLiquidityParamsRequest) returns (LiquidityParameters) {
-        option (google.api.http) = {
-            get: "/v1/liquidity/params"
-        };
-    }
+    rpc GetLiquidityParams (GetLiquidityParamsRequest)
+        returns (LiquidityParameters);
 
     /*
     SetLiquidityParams sets a new set of parameters for the daemon's liquidity
@@ -122,12 +79,8 @@ service SwapClient {
     this call fully overwrites our existing parameters.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc SetLiquidityParams (SetLiquidityParamsRequest) returns (SetLiquidityParamsResponse) {
-        option (google.api.http) = {
-            post: "/v1/liquidity/params"
-            body: "*"
-        };
-    }
+    rpc SetLiquidityParams (SetLiquidityParamsRequest)
+        returns (SetLiquidityParamsResponse);
 
     /*
     SuggestSwaps returns a list of recommended swaps based on the current
@@ -135,11 +88,7 @@ service SwapClient {
     Note that only loop out suggestions are currently supported.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse) {
-        option (google.api.http) = {
-            get: "/v1/auto/suggest"
-        };
-    }
+    rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
 }
 
 message LoopOutRequest {
