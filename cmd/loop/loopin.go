@@ -109,11 +109,25 @@ func loopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	quoteReq := &looprpc.QuoteRequest{
-		Amt:          int64(amt),
-		ConfTarget:   htlcConfTarget,
-		ExternalHtlc: external,
+	var lastHop []byte
+	if ctx.IsSet(lastHopFlag.Name) {
+		lastHopVertex, err := route.NewVertexFromStr(
+			ctx.String(lastHopFlag.Name),
+		)
+		if err != nil {
+			return err
+		}
+
+		lastHop = lastHopVertex[:]
 	}
+
+	quoteReq := &looprpc.QuoteRequest{
+		Amt:           int64(amt),
+		ConfTarget:    htlcConfTarget,
+		ExternalHtlc:  external,
+		LoopInLastHop: lastHop,
+	}
+
 	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
 	if err != nil {
 		return err
@@ -147,17 +161,7 @@ func loopIn(ctx *cli.Context) error {
 		HtlcConfTarget: htlcConfTarget,
 		Label:          label,
 		Initiator:      defaultInitiator,
-	}
-
-	if ctx.IsSet(lastHopFlag.Name) {
-		lastHop, err := route.NewVertexFromStr(
-			ctx.String(lastHopFlag.Name),
-		)
-		if err != nil {
-			return err
-		}
-
-		req.LastHop = lastHop[:]
+		LastHop:        lastHop,
 	}
 
 	resp, err := client.LoopIn(context.Background(), req)
