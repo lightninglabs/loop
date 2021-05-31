@@ -31,7 +31,7 @@ liquidity, where each channel's individual balance is checked. Note that if you
 set a liquidity rule for a peer, you cannot also set a specific rule for one of
 its channels.
 
-### Liqudity Thresholds 
+### Liquidity Thresholds 
 To setup the autolooper to dispatch swaps on your behalf, you need to set the 
 liquidity balance you would like for each channel or peer. Desired liquidity 
 balance is expressed using threshold incoming and outgoing percentages of 
