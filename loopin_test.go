@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
@@ -89,17 +88,11 @@ func TestLoopInSuccess(t *testing.T) {
 	<-ctx.lnd.RegisterSpendChannel
 
 	// Client starts listening for swap invoice updates.
-	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != ctx.server.swapHash {
-		t.Fatal("client subscribing to wrong invoice")
-	}
+	ctx.assertSubscribeInvoice(ctx.server.swapHash)
 
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
-	subscription.Update <- lndclient.InvoiceUpdate{
-		State:   channeldb.ContractSettled,
-		AmtPaid: 49000,
-	}
+	ctx.updateInvoiceState(49000, channeldb.ContractSettled)
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
@@ -257,10 +250,7 @@ func testLoopInTimeout(t *testing.T,
 	<-ctx.lnd.RegisterSpendChannel
 
 	// Client starts listening for swap invoice updates.
-	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != ctx.server.swapHash {
-		t.Fatal("client subscribing to wrong invoice")
-	}
+	ctx.assertSubscribeInvoice(ctx.server.swapHash)
 
 	// Let htlc expire.
 	ctx.blockEpochChan <- s.LoopInContract.CltvExpiry
@@ -294,10 +284,8 @@ func testLoopInTimeout(t *testing.T,
 	// safely cancel the swap invoice.
 	<-ctx.lnd.FailInvoiceChannel
 
-	// Signal the the invoice was canceled.
-	subscription.Update <- lndclient.InvoiceUpdate{
-		State: channeldb.ContractCanceled,
-	}
+	// Signal that the invoice was canceled.
+	ctx.updateInvoiceState(0, channeldb.ContractCanceled)
 
 	ctx.assertState(loopdb.StateFailTimeout)
 	state := ctx.store.assertLoopInState(loopdb.StateFailTimeout)
@@ -501,18 +489,12 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	<-ctx.lnd.RegisterSpendChannel
 
 	// Client starts listening for swap invoice updates.
-	subscription := <-ctx.lnd.SingleInvoiceSubcribeChannel
-	if subscription.Hash != testPreimage.Hash() {
-		t.Fatal("client subscribing to wrong invoice")
-	}
+	ctx.assertSubscribeInvoice(testPreimage.Hash())
 
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
-	invoiceUpdate := lndclient.InvoiceUpdate{
-		State:   channeldb.ContractSettled,
-		AmtPaid: 49000,
-	}
-	subscription.Update <- invoiceUpdate
+	amtPaid := btcutil.Amount(49000)
+	ctx.updateInvoiceState(amtPaid, channeldb.ContractSettled)
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
@@ -537,7 +519,6 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	// We expect our server fee to reflect as the difference between htlc
 	// value and invoice amount paid. We use our original on-chain cost, set
 	// earlier in the test, because we expect this value to be unchanged.
-	cost.Server = btcutil.Amount(htlcTx.TxOut[0].Value) -
-		invoiceUpdate.AmtPaid
+	cost.Server = btcutil.Amount(htlcTx.TxOut[0].Value) - amtPaid
 	require.Equal(t, cost, finalState.Cost)
 }
