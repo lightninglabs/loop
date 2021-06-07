@@ -84,4 +84,13 @@ func (c *loopInTestContext) updateInvoiceState(amount btcutil.Amount,
 		AmtPaid: amount,
 		State:   state,
 	}
+
+	// If we're in a final state, close our update channels as lndclient
+	// would.
+	if state == channeldb.ContractCanceled ||
+		state == channeldb.ContractSettled {
+
+		close(c.swapInvoiceSubscription.Update)
+		close(c.swapInvoiceSubscription.Err)
+	}
 }
