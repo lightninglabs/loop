@@ -19,3 +19,5 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
+* A protobuf warning that was being logged on `loopd` startup and `loop` cli 
+  calls has been addressed.

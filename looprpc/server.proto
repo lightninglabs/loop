@@ -252,60 +252,59 @@ message SubscribeUpdatesRequest {
 // from the server's perspective.
 enum ServerSwapState {
     // The server has created the swap.
-    INITIATED = 0;
+    SERVER_INITIATED = 0;
 
     // The server has published the loop out on chain htlc.
-    HTLC_PUBLISHED = 1;
+    SERVER_HTLC_PUBLISHED = 1;
 
     // The swap completed successfully.
-    SUCCESS = 2;
+    SERVER_SUCCESS = 2;
 
     /*
     The swap failed for a reason that is unknown to the server, this is only
     set for older swaps.
     */
-    FAILED_UNKNOWN = 3;
+    SERVER_FAILED_UNKNOWN = 3;
 
     // No htlc was confirmed in time for the loop in swap to complete.
-    FAILED_NO_HTLC = 4;
+    SERVER_FAILED_NO_HTLC = 4;
 
     // A loop in htlc confirmed on chain, but it did not have the correct value.
-    FAILED_INVALID_HTLC_AMOUNT = 5;
+    SERVER_FAILED_INVALID_HTLC_AMOUNT = 5;
 
     /*
     We did not succeed in completing the loop in off chain payment before the
     timeout.
     */
-    FAILED_OFF_CHAIN_TIMEOUT = 6;
+    SERVER_FAILED_OFF_CHAIN_TIMEOUT = 6;
 
     // The on chain timeout was claimed.
-    FAILED_TIMEOUT = 7;
+    SERVER_FAILED_TIMEOUT = 7;
 
     /*
     The server could not publish the loop out on chain htlc before the deadline
     provided.
     */
-    FAILED_SWAP_DEADLINE = 8;
+    SERVER_FAILED_SWAP_DEADLINE = 8;
 
     // The server could not publish the loop out on chain htlc.
-    FAILED_HTLC_PUBLICATION = 9;
+    SERVER_FAILED_HTLC_PUBLICATION = 9;
 
     // The server has published the loop out on chain timeout tx.
-    TIMEOUT_PUBLISHED = 10;
+    SERVER_TIMEOUT_PUBLISHED = 10;
 
     // The swap has failed for unknown reasons, it will not be completed.
-    UNEXPECTED_FAILURE = 11;
+    SERVER_UNEXPECTED_FAILURE = 11;
 
     // The swap htlc has confirmed on chain.
-    HTLC_CONFIRMED = 12;
+    SERVER_HTLC_CONFIRMED = 12;
 
     // The client canceled the swap because they could not route the prepay.
-    CLIENT_PREPAY_CANCEL = 13;
+    SERVER_CLIENT_PREPAY_CANCEL = 13;
 
     // The client canceled the swap because they could not route the swap
     // payment.
-    CLIENT_INVOICE_CANCEL = 14;
-
+    SERVER_CLIENT_INVOICE_CANCEL = 14;
 }
 
 message SubscribeLoopOutUpdatesResponse{
@@ -326,7 +325,7 @@ message SubscribeLoopInUpdatesResponse{
 
 enum RoutePaymentType {
     // No reason, used to distinguish from the default value.
-    UNKNOWN = 0;
+    ROUTE_UNKNOWN = 0;
 
     // Prepay route indicates that the swap was canceled because the client 
     // could not find a route to the server for the prepay.
@@ -343,34 +342,34 @@ enum PaymentFailureReason {
     /*
     Payment isn't failed (yet).
     */
-    FAILURE_REASON_NONE = 0;
+    LND_FAILURE_REASON_NONE = 0;
 
     /*
     There are more routes to try, but the payment timeout was exceeded.
     */
-    FAILURE_REASON_TIMEOUT = 1;
+    LND_FAILURE_REASON_TIMEOUT = 1;
 
     /*
     All possible routes were tried and failed permanently. Or were no
     routes to the destination at all.
     */
-    FAILURE_REASON_NO_ROUTE = 2;
+    LND_FAILURE_REASON_NO_ROUTE = 2;
 
     /*
     A non-recoverable error has occured.
     */
-    FAILURE_REASON_ERROR = 3;
+    LND_FAILURE_REASON_ERROR = 3;
 
     /*
     Payment details incorrect (unknown hash, invalid amt or
     invalid final cltv delta)
     */
-    FAILURE_REASON_INCORRECT_PAYMENT_DETAILS = 4;
+    LND_FAILURE_REASON_INCORRECT_PAYMENT_DETAILS = 4;
 
     /*
     Insufficient local balance.
     */
-    FAILURE_REASON_INSUFFICIENT_BALANCE = 5;
+    LND_FAILURE_REASON_INSUFFICIENT_BALANCE = 5;
 }
 
 message RouteCancel {
