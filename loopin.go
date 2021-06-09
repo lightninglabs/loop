@@ -779,12 +779,30 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 			htlcSpend = true
 
 		// Swap invoice ntfn error.
-		case err := <-swapInvoiceErr:
+		case err, ok := <-swapInvoiceErr:
+			// If the channel has been closed, the server has
+			// finished sending updates, so we set the channel to
+			// nil because we don't want to constantly select this
+			// case.
+			if !ok {
+				swapInvoiceErr = nil
+				continue
+			}
+
 			return err
 
 		// An update to the swap invoice occurred. Check the new state
 		// and update the swap state accordingly.
-		case update := <-swapInvoiceChan:
+		case update, ok := <-swapInvoiceChan:
+			// If the channel has been closed, the server has
+			// finished sending updates, so we set the channel to
+			// nil because we don't want to constantly select this
+			// case.
+			if !ok {
+				swapInvoiceChan = nil
+				continue
+			}
+
 			s.log.Infof("Received swap invoice update: %v",
 				update.State)
 
