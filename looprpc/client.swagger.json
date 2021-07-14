@@ -13,7 +13,7 @@
   "paths": {
     "/v1/auto/suggest": {
       "get": {
-        "summary": "SuggestSwaps returns a list of recommended swaps based on the current\nstate of your node's channels and it's liquidity manager parameters.\nNote that only loop out suggestions are currently supported.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "summary": "loop: `suggestswaps`\nSuggestSwaps returns a list of recommended swaps based on the current\nstate of your node's channels and it's liquidity manager parameters.\nNote that only loop out suggestions are currently supported.\n[EXPERIMENTAL]: endpoint is subject to change.",
         "operationId": "SuggestSwaps",
         "responses": {
           "200": {
@@ -36,7 +36,7 @@
     },
     "/v1/liquidity/params": {
       "get": {
-        "summary": "GetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "summary": "loop: `getparams`\nGetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
         "operationId": "GetLiquidityParams",
         "responses": {
           "200": {
@@ -57,7 +57,7 @@
         ]
       },
       "post": {
-        "summary": "SetLiquidityParams sets a new set of parameters for the daemon's liquidity\nmanager. Note that the full set of parameters must be provided, because\nthis call fully overwrites our existing parameters.\n[EXPERIMENTAL]: endpoint is subject to change.",
+        "summary": "loop: `setparams`\nSetLiquidityParams sets a new set of parameters for the daemon's liquidity\nmanager. Note that the full set of parameters must be provided, because\nthis call fully overwrites our existing parameters.\n[EXPERIMENTAL]: endpoint is subject to change.",
         "operationId": "SetLiquidityParams",
         "responses": {
           "200": {

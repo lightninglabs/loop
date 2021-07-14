@@ -67,7 +67,7 @@ service SwapClient {
     */
     rpc GetLsatTokens (TokensRequest) returns (TokensResponse);
 
-    /*
+    /* loop: `getparams`
     GetLiquidityParams gets the parameters that the daemon's liquidity manager
     is currently configured with. This may be nil if nothing is configured.
     [EXPERIMENTAL]: endpoint is subject to change.
@@ -75,7 +75,7 @@ service SwapClient {
     rpc GetLiquidityParams (GetLiquidityParamsRequest)
         returns (LiquidityParameters);
 
-    /*
+    /* loop: `setparams`
     SetLiquidityParams sets a new set of parameters for the daemon's liquidity
     manager. Note that the full set of parameters must be provided, because
     this call fully overwrites our existing parameters.
@@ -84,7 +84,7 @@ service SwapClient {
     rpc SetLiquidityParams (SetLiquidityParamsRequest)
         returns (SetLiquidityParamsResponse);
 
-    /*
+    /* loop: `suggestswaps`
     SuggestSwaps returns a list of recommended swaps based on the current
     state of your node's channels and it's liquidity manager parameters.
     Note that only loop out suggestions are currently supported.

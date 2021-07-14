@@ -3393,18 +3393,18 @@ type SwapClientClient interface {
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
-	//
+	// loop: `getparams`
 	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	//is currently configured with. This may be nil if nothing is configured.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error)
-	//
+	// loop: `setparams`
 	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
 	//manager. Note that the full set of parameters must be provided, because
 	//this call fully overwrites our existing parameters.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(ctx context.Context, in *SetLiquidityParamsRequest, opts ...grpc.CallOption) (*SetLiquidityParamsResponse, error)
-	//
+	// loop: `suggestswaps`
 	//SuggestSwaps returns a list of recommended swaps based on the current
 	//state of your node's channels and it's liquidity manager parameters.
 	//Note that only loop out suggestions are currently supported.
@@ -3600,18 +3600,18 @@ type SwapClientServer interface {
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
-	//
+	// loop: `getparams`
 	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	//is currently configured with. This may be nil if nothing is configured.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error)
-	//
+	// loop: `setparams`
 	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
 	//manager. Note that the full set of parameters must be provided, because
 	//this call fully overwrites our existing parameters.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(context.Context, *SetLiquidityParamsRequest) (*SetLiquidityParamsResponse, error)
-	//
+	// loop: `suggestswaps`
 	//SuggestSwaps returns a list of recommended swaps based on the current
 	//state of your node's channels and it's liquidity manager parameters.
 	//Note that only loop out suggestions are currently supported.
