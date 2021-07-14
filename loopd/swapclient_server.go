@@ -121,12 +121,12 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	switch {
-	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0:
+	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0: // nolint:staticcheck
 		return nil, errors.New("loop_out_channel and outgoing_" +
 			"chan_ids are mutually exclusive")
 
-	case in.LoopOutChannel != 0:
-		req.OutgoingChanSet = loopdb.ChannelSet{in.LoopOutChannel}
+	case in.LoopOutChannel != 0: // nolint:staticcheck
+		req.OutgoingChanSet = loopdb.ChannelSet{in.LoopOutChannel} // nolint:staticcheck
 
 	default:
 		req.OutgoingChanSet = in.OutgoingChanSet
@@ -540,9 +540,9 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	if req.ExternalHtlc {
 		response.HtlcAddressNp2Wsh = swapInfo.HtlcAddressNP2WSH.String()
-		response.HtlcAddress = response.HtlcAddressNp2Wsh
+		response.HtlcAddress = response.HtlcAddressNp2Wsh // nolint:staticcheck
 	} else {
-		response.HtlcAddress = response.HtlcAddressP2Wsh
+		response.HtlcAddress = response.HtlcAddressP2Wsh // nolint:staticcheck
 	}
 
 	return response, nil
