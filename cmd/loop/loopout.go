@@ -203,8 +203,8 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	fmt.Printf("Swap initiated\n")
-	fmt.Printf("ID:             %v\n", resp.Id)
-	fmt.Printf("HTLC address:   %v\n", resp.HtlcAddress)
+	fmt.Printf("ID:             %x\n", resp.IdBytes)
+	fmt.Printf("HTLC address:   %v\n", resp.HtlcAddress) // nolint:staticcheck
 	if resp.ServerMessage != "" {
 		fmt.Printf("Server message: %v\n", resp.ServerMessage)
 	}

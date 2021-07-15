@@ -1,0 +1,33 @@
+type: google.api.Service
+config_version: 3
+
+http:
+  rules:
+    # client.proto
+    - selector: looprpc.SwapClient.LoopOut
+      post: "/v1/loop/out"
+      body: "*"
+    - selector: looprpc.SwapClient.LoopIn
+      post: "/v1/loop/in"
+      body: "*"
+    - selector: looprpc.SwapClient.ListSwaps
+      get: "/v1/loop/swaps"
+    - selector: looprpc.SwapClient.SwapInfo
+      get: "/v1/loop/swap/{id}"
+    - selector: looprpc.SwapClient.LoopOutTerms
+      get: "/v1/loop/out/terms"
+    - selector: looprpc.SwapClient.LoopOutQuote
+      get: "/v1/loop/out/quote/{amt}"
+    - selector: looprpc.SwapClient.GetLoopInTerms
+      get: "/v1/loop/in/terms"
+    - selector: looprpc.SwapClient.GetLoopInQuote
+      get: "/v1/loop/in/quote/{amt}"
+    - selector: looprpc.SwapClient.GetLsatTokens
+      get: "/v1/lsat/tokens"
+    - selector: looprpc.SwapClient.GetLiquidityParams
+      get: "/v1/liquidity/params"
+    - selector: looprpc.SwapClient.SetLiquidityParams
+      post: "/v1/liquidity/params"
+      body: "*"
+    - selector: looprpc.SwapClient.SuggestSwaps
+      get: "/v1/auto/suggest"

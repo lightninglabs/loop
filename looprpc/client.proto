@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-import "google/api/annotations.proto";
-
 package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/looprpc";
 
 /*
 SwapClient is a service that handles the client side process of onchain/offchain
@@ -15,12 +15,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream that is
     returned from Monitor().
     */
-    rpc LoopOut (LoopOutRequest) returns (SwapResponse) {
-        option (google.api.http) = {
-            post: "/v1/loop/out"
-            body: "*"
-        };
-    }
+    rpc LoopOut (LoopOutRequest) returns (SwapResponse);
 
     /* loop: `in`
     LoopIn initiates a loop in swap with the given parameters. The call
@@ -28,12 +23,7 @@ service SwapClient {
     point onwards, progress can be tracked via the SwapStatus stream
     that is returned from Monitor().
     */
-    rpc LoopIn (LoopInRequest) returns (SwapResponse) {
-        option (google.api.http) = {
-            post: "/v1/loop/in"
-            body: "*"
-        };
-    }
+    rpc LoopIn (LoopInRequest) returns (SwapResponse);
 
     /* loop: `monitor`
     Monitor will return a stream of swap updates for currently active swaps.
@@ -44,102 +34,63 @@ service SwapClient {
     ListSwaps returns a list of all currently known swaps and their current
     status.
     */
-    rpc ListSwaps (ListSwapsRequest) returns (ListSwapsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/swaps"
-        };
-    }
+    rpc ListSwaps (ListSwapsRequest) returns (ListSwapsResponse);
 
     /* loop: `swapinfo`
     SwapInfo returns all known details about a single swap.
     */
-    rpc SwapInfo (SwapInfoRequest) returns (SwapStatus) {
-        option (google.api.http) = {
-            get: "/v1/loop/swap/{id}"
-        };
-    }
+    rpc SwapInfo (SwapInfoRequest) returns (SwapStatus);
 
     /* loop: `terms`
     LoopOutTerms returns the terms that the server enforces for a loop out swap.
     */
-    rpc LoopOutTerms (TermsRequest) returns (OutTermsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/out/terms"
-        };
-    }
+    rpc LoopOutTerms (TermsRequest) returns (OutTermsResponse);
 
     /* loop: `quote`
     LoopOutQuote returns a quote for a loop out swap with the provided
     parameters.
     */
-    rpc LoopOutQuote (QuoteRequest) returns (OutQuoteResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/out/quote/{amt}"
-        };
-    }
+    rpc LoopOutQuote (QuoteRequest) returns (OutQuoteResponse);
 
     /* loop: `terms`
     GetTerms returns the terms that the server enforces for swaps.
     */
-    rpc GetLoopInTerms (TermsRequest) returns (InTermsResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/in/terms"
-        };
-    }
+    rpc GetLoopInTerms (TermsRequest) returns (InTermsResponse);
 
     /* loop: `quote`
     GetQuote returns a quote for a swap with the provided parameters.
     */
-    rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse) {
-        option (google.api.http) = {
-            get: "/v1/loop/in/quote/{amt}"
-        };
-    }
+    rpc GetLoopInQuote (QuoteRequest) returns (InQuoteResponse);
 
     /* loop: `listauth`
     GetLsatTokens returns all LSAT tokens the daemon ever paid for.
     */
-    rpc GetLsatTokens (TokensRequest) returns (TokensResponse) {
-        option (google.api.http) = {
-            get: "/v1/lsat/tokens"
-        };
-    }
+    rpc GetLsatTokens (TokensRequest) returns (TokensResponse);
 
-    /*
+    /* loop: `getparams`
     GetLiquidityParams gets the parameters that the daemon's liquidity manager
     is currently configured with. This may be nil if nothing is configured.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc GetLiquidityParams (GetLiquidityParamsRequest) returns (LiquidityParameters) {
-        option (google.api.http) = {
-            get: "/v1/liquidity/params"
-        };
-    }
+    rpc GetLiquidityParams (GetLiquidityParamsRequest)
+        returns (LiquidityParameters);
 
-    /*
+    /* loop: `setparams`
     SetLiquidityParams sets a new set of parameters for the daemon's liquidity
     manager. Note that the full set of parameters must be provided, because
     this call fully overwrites our existing parameters.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc SetLiquidityParams (SetLiquidityParamsRequest) returns (SetLiquidityParamsResponse) {
-        option (google.api.http) = {
-            post: "/v1/liquidity/params"
-            body: "*"
-        };
-    }
+    rpc SetLiquidityParams (SetLiquidityParamsRequest)
+        returns (SetLiquidityParamsResponse);
 
-    /*
+    /* loop: `suggestswaps`
     SuggestSwaps returns a list of recommended swaps based on the current
     state of your node's channels and it's liquidity manager parameters.
     Note that only loop out suggestions are currently supported.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
-    rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse) {
-        option (google.api.http) = {
-            get: "/v1/auto/suggest"
-        };
-    }
+    rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
 }
 
 message LoopOutRequest {
@@ -154,9 +105,9 @@ message LoopOutRequest {
     string dest = 2;
 
     /*
-    Maximum off-chain fee in sat that may be paid for swap payment to the server.
-    This limit is applied during path finding. Typically this value is taken
-    from the response of the GetQuote call.
+    Maximum off-chain fee in sat that may be paid for swap payment to the
+    server. This limit is applied during path finding. Typically this value is
+    taken from the response of the GetQuote call.
     */
     int64 max_swap_routing_fee = 3;
 
@@ -252,7 +203,7 @@ message LoopOutRequest {
 
 message LoopInRequest {
     /*
-    Requested swap amount in sat. This does not include the swap and miner 
+    Requested swap amount in sat. This does not include the swap and miner
     fee.
     */
     int64 amt = 1;
@@ -268,7 +219,7 @@ message LoopInRequest {
     /*
     Maximum in on-chain fees that we are willing to spend. If we want to
     publish the on-chain htlc and the fee estimate turns out higher than this
-    value, we cancel the swap. 
+    value, we cancel the swap.
 
     max_miner_fee is typically taken from the response of the GetQuote call.
     */
@@ -548,7 +499,6 @@ message TermsRequest {
 }
 
 message InTermsResponse {
-
     reserved 1, 2, 3, 4, 7;
 
     /*
@@ -563,7 +513,6 @@ message InTermsResponse {
 }
 
 message OutTermsResponse {
-
     reserved 1, 2, 3, 4, 7;
 
     /*
@@ -742,7 +691,7 @@ message LiquidityParameters {
 
     /*
     The parts per million of swap amount that is allowed to be allocated to swap
-    fees. This value is applied across swap categories and may not be set in 
+    fees. This value is applied across swap categories and may not be set in
     conjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay
     routing, max prepay and max miner fee.
     */
@@ -801,8 +750,8 @@ message LiquidityParameters {
     uint64 failure_backoff_sec = 9;
 
     /*
-    Set to true to enable automatic dispatch of swaps. All swaps will be limited 
-    to the fee categories set by these parameters, and total expenditure will 
+    Set to true to enable automatic dispatch of swaps. All swaps will be limited
+    to the fee categories set by these parameters, and total expenditure will
     be limited to the autoloop budget.
     */
     bool autoloop = 10;
@@ -854,7 +803,7 @@ message LiquidityRule {
     */
     uint64 channel_id = 1;
 
-    /* 
+    /*
     The public key of the peer that this rule should be applied to. This field
     may not be set when the channel id field is set.
     */
@@ -901,25 +850,25 @@ enum AutoReason {
     AUTO_REASON_UNKNOWN = 0;
 
     /*
-    Budget not started indicates that we do not recommend any swaps because 
+    Budget not started indicates that we do not recommend any swaps because
     the start time for our budget has not arrived yet.
     */
     AUTO_REASON_BUDGET_NOT_STARTED = 1;
 
     /*
-    Sweep fees indicates that the estimated fees to sweep swaps are too high 
+    Sweep fees indicates that the estimated fees to sweep swaps are too high
     right now.
     */
     AUTO_REASON_SWEEP_FEES = 2;
 
     /*
-    Budget elapsed indicates that the autoloop budget for the period has been 
+    Budget elapsed indicates that the autoloop budget for the period has been
     elapsed.
     */
     AUTO_REASON_BUDGET_ELAPSED = 3;
 
     /*
-    In flight indicates that the limit on in-flight automatically dispatched 
+    In flight indicates that the limit on in-flight automatically dispatched
     swaps has already been reached.
     */
     AUTO_REASON_IN_FLIGHT = 4;
@@ -952,21 +901,21 @@ enum AutoReason {
     AUTO_REASON_LOOP_OUT = 9;
 
     /*
-    Loop In indicates that a loop in swap is currently in flight for the peer, 
+    Loop In indicates that a loop in swap is currently in flight for the peer,
     so it is not eligible.
     */
     AUTO_REASON_LOOP_IN = 10;
 
     /*
-    Liquidity ok indicates that a target meets the liquidity balance expressed 
+    Liquidity ok indicates that a target meets the liquidity balance expressed
     in its rule, so no swap is needed.
     */
     AUTO_REASON_LIQUIDITY_OK = 11;
 
-    /* 
-    Budget insufficient indicates that we cannot perform a swap because we do 
-    not have enough pending budget available. This differs from budget elapsed, 
-    because we still have some budget available, but we have allocated it to 
+    /*
+    Budget insufficient indicates that we cannot perform a swap because we do
+    not have enough pending budget available. This differs from budget elapsed,
+    because we still have some budget available, but we have allocated it to
     other swaps.
     */
     AUTO_REASON_BUDGET_INSUFFICIENT = 12;
@@ -976,14 +925,14 @@ enum AutoReason {
     the portion of total swap amount that we allow fees to consume.
     */
     AUTO_REASON_FEE_INSUFFICIENT = 13;
-} 
+}
 
 message Disqualified {
     /*
     The short channel ID of the channel that was excluded from our suggestions.
     */
-    uint64 channel_id = 1; 
-    
+    uint64 channel_id = 1;
+
     /*
     The public key of the peer that was excluded from our suggestions.
     */
