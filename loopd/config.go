@@ -319,6 +319,7 @@ func getTLSConfig(cfg *Config) (*tls.Config, *credentials.TransportCredentials,
 	}
 
 	tlsCfg := cert.TLSConfFromCert(certData)
+	tlsCfg.NextProtos = []string{"h2"}
 	restCreds, err := credentials.NewClientTLSFromFile(
 		cfg.TLSCertPath, "",
 	)
