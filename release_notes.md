@@ -19,7 +19,3 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
-- Certain versions of the Python gRPC library
-  [weren't able to connect](https://github.com/grpc/grpc/issues/23172) to
-  `loopd`'s gRPC interface, getting the `missing selected ALPN property` error.
-  A server side fix was introduced to get rid of that error message.
