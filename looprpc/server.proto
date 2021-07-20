@@ -305,6 +305,12 @@ enum ServerSwapState {
     // The client canceled the swap because they could not route the swap
     // payment.
     SERVER_CLIENT_INVOICE_CANCEL = 14;
+
+    /*
+    A loop in swap was rejected because it contained multiple outputs for a
+    single swap.
+    */
+    SERVER_FAILED_MULTIPLE_SWAP_SCRIPTS = 15;
 }
 
 message SubscribeLoopOutUpdatesResponse {
