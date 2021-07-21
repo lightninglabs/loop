@@ -128,7 +128,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		receiverKey, request.SwapPublicationDeadline, request.Initiator,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cannot initiate swap: %v", err)
+		return nil, wrapGrpcError("cannot initiate swap", err)
 	}
 
 	err = validateLoopOutContract(

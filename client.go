@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -609,4 +610,18 @@ func (s *Client) LoopInTerms(ctx context.Context) (
 	*LoopInTerms, error) {
 
 	return s.Server.GetLoopInTerms(ctx)
+}
+
+// wrapGrpcError wraps the non-nil error provided with a message providing
+// additional context, preserving the grpc code returned with the original
+// error. If the original error has no grpc code, then codes.Unknown is used.
+func wrapGrpcError(message string, err error) error {
+	// Since our error is non-nil, we don't need to worry about a nil
+	// grpcStatus, we'll just get an unknown one if no code was passed back.
+	grpcStatus, _ := status.FromError(err)
+
+	return status.Error(
+		grpcStatus.Code(), fmt.Sprintf("%v: %v", message,
+			grpcStatus.Message()),
+	)
 }

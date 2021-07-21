@@ -17,6 +17,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -371,4 +373,40 @@ func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	ctx.assertStoreFinished(loopdb.StateSuccess)
 
 	ctx.finish()
+}
+
+// TestWrapGrpcError tests grpc error wrapping in the case where a grpc error
+// code is present, and when it is absent.
+func TestWrapGrpcError(t *testing.T) {
+	tests := []struct {
+		name         string
+		original     error
+		expectedCode codes.Code
+	}{
+		{
+			name: "out of range error",
+			original: status.Error(
+				codes.OutOfRange, "err string",
+			),
+			expectedCode: codes.OutOfRange,
+		},
+		{
+			name:         "no grpc code",
+			original:     errors.New("no error code"),
+			expectedCode: codes.Unknown,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := wrapGrpcError("", testCase.original)
+			require.Error(t, err, "test only expects errors")
+
+			status, ok := status.FromError(err)
+			require.True(t, ok, "test expects grpc code")
+			require.Equal(t, testCase.expectedCode, status.Code())
+		})
+	}
 }

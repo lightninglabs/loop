@@ -19,3 +19,7 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
+* Grpc error codes returned by the swap server when swap initiation fails are 
+  now surfaced to the client. Previously these error codes would be returned
+  as a string.
+

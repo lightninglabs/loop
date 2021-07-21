@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcutil"
-
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/mempool"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
@@ -86,7 +85,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// request that we send to the server.
 	quote, err := cfg.server.GetLoopInQuote(globalCtx, request.Amount)
 	if err != nil {
-		return nil, fmt.Errorf("loop in terms: %v", err)
+		return nil, wrapGrpcError("loop in terms", err)
 	}
 
 	swapFee := quote.SwapFee
@@ -172,7 +171,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	)
 	probeWaitCancel()
 	if err != nil {
-		return nil, fmt.Errorf("cannot initiate swap: %v", err)
+		return nil, wrapGrpcError("cannot initiate swap", err)
 	}
 
 	// Because the context is cancelled, it is guaranteed that we will be
