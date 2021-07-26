@@ -236,6 +236,9 @@ func TestCustomSweepConfTarget(t *testing.T) {
 	testReq.SweepConfTarget = testLoopOutMinOnChainCltvDelta -
 		DefaultSweepConfTargetDelta - 1
 
+	// Set on-chain HTLC CLTV.
+	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
+
 	// Set up custom fee estimates such that the lower confirmation target
 	// yields a much higher fee rate.
 	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, 250)
