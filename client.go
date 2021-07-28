@@ -565,6 +565,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	quote, err := s.Server.GetLoopInQuote(
 		ctx, request.Amount, s.lndServices.NodePubkey, request.LastHop,
+		request.RouteHints,
 	)
 	if err != nil {
 		return nil, err

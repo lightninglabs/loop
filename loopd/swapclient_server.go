@@ -483,10 +483,29 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
+	var lastHop *route.Vertex
+	if req.LoopInLastHop != nil {
+		lastHopVertex, err := route.NewVertexFromBytes(
+			req.LoopInLastHop,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		lastHop = &lastHopVertex
+	}
+
+	routeHints, err := unmarshallRouteHints(req.LoopInRouteHints)
+	if err != nil {
+		return nil, err
+	}
+
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         btcutil.Amount(req.Amt),
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
+		LastHop:        lastHop,
+		RouteHints:     routeHints,
 	})
 	if err != nil {
 		return nil, err
@@ -569,7 +588,6 @@ func (s *swapClientServer) Probe(ctx context.Context,
 		LastHop:    lastHop,
 		RouteHints: routeHints,
 	})
-
 	if err != nil {
 		return nil, err
 	}

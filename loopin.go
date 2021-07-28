@@ -82,9 +82,14 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
-	// request that we send to the server.
+	// request that we send to the server. We pass nil as optional route
+	// hints as hop hint selection when generating invoices with private
+	// channels is an LND side black box feaure. Advanced users will quote
+	// directly anyway and there they have the option to add specific
+	// route hints.
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
+		nil,
 	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)

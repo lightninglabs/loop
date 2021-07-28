@@ -249,6 +249,10 @@ type LoopInQuoteRequest struct {
 	// the client has already requested a server probe for more accurate
 	// routing fee estimation.
 	LastHop *route.Vertex
+
+	// RouteHints are optional route hints to reach the destination through
+	// private channels.
+	RouteHints [][]zpay32.HopHint
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost

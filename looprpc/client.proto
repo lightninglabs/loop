@@ -575,6 +575,11 @@ message QuoteRequest {
     server.
     */
     bytes loop_in_last_hop = 5;
+
+    /*
+    Optional route hints to reach the destination through private channels.
+    */
+    repeated RouteHint loop_in_route_hints = 6;
 }
 
 message InQuoteResponse {

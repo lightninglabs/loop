@@ -213,7 +213,7 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context) (
 }
 
 func (s *serverMock) GetLoopInQuote(context.Context, btcutil.Amount,
-	route.Vertex, *route.Vertex) (*LoopInQuote, error) {
+	route.Vertex, *route.Vertex, [][]zpay32.HopHint) (*LoopInQuote, error) {
 
 	return &LoopInQuote{
 		SwapFee:   testSwapFee,

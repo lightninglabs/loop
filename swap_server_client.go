@@ -23,7 +23,9 @@ import (
 	"github.com/lightningnetwork/lnd/tor"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -53,7 +55,8 @@ type swapServerClient interface {
 		*LoopInTerms, error)
 
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
-		pubKey route.Vertex, lastHop *route.Vertex) (*LoopInQuote, error)
+		pubKey route.Vertex, lastHop *route.Vertex,
+		routeHints [][]zpay32.HopHint) (*LoopInQuote, error)
 
 	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
 		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
@@ -207,8 +210,13 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 }
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
-	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex) (
-	*LoopInQuote, error) {
+	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
+	routeHints [][]zpay32.HopHint) (*LoopInQuote, error) {
+
+	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
+	if err != nil && status.Code(err) != codes.Unavailable {
+		log.Warnf("Server probe error: %v", err)
+	}
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
