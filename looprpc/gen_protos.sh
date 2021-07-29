@@ -8,20 +8,26 @@ function generate() {
   for file in ./*.proto
   do
     protoc -I/usr/local/include -I. \
-           --go_out=plugins=grpc,paths=source_relative:. \
+      --go_out . --go_opt paths=source_relative \
+      --go-grpc_out . --go-grpc_opt paths=source_relative \
       "${file}"
   done
   
   # Generate the REST reverse proxy for the client only.
   protoc -I/usr/local/include -I. \
-    --grpc-gateway_out=logtostderr=true,paths=source_relative,grpc_api_configuration=rest-annotations.yaml:. \
-    "client.proto"
-
+    --grpc-gateway_out . \
+    --grpc-gateway_opt logtostderr=true \
+    --grpc-gateway_opt paths=source_relative \
+    --grpc-gateway_opt grpc_api_configuration=client.yaml \
+    client.proto
 
   # Finally, generate the swagger file which describes the REST API in detail.
   protoc -I/usr/local/include -I. \
-    --swagger_out=logtostderr=true,grpc_api_configuration=rest-annotations.yaml:. \
-    "client.proto"
+    --openapiv2_out . \
+    --openapiv2_opt logtostderr=true \
+    --openapiv2_opt grpc_api_configuration=client.yaml \
+    --openapiv2_opt json_names_for_fields=false \
+    client.proto
 }
 
 # format formats the *.proto files with the clang-format utility.

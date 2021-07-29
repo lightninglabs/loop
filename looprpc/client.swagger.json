@@ -4,6 +4,11 @@
     "title": "client.proto",
     "version": "version not set"
   },
+  "tags": [
+    {
+      "name": "SwapClient"
+    }
+  ],
   "consumes": [
     "application/json"
   ],
@@ -14,7 +19,7 @@
     "/v1/auto/suggest": {
       "get": {
         "summary": "loop: `suggestswaps`\nSuggestSwaps returns a list of recommended swaps based on the current\nstate of your node's channels and it's liquidity manager parameters.\nNote that only loop out suggestions are currently supported.\n[EXPERIMENTAL]: endpoint is subject to change.",
-        "operationId": "SuggestSwaps",
+        "operationId": "SwapClient_SuggestSwaps",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -23,9 +28,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -37,7 +42,7 @@
     "/v1/liquidity/params": {
       "get": {
         "summary": "loop: `getparams`\nGetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
-        "operationId": "GetLiquidityParams",
+        "operationId": "SwapClient_GetLiquidityParams",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -46,9 +51,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -58,7 +63,7 @@
       },
       "post": {
         "summary": "loop: `setparams`\nSetLiquidityParams sets a new set of parameters for the daemon's liquidity\nmanager. Note that the full set of parameters must be provided, because\nthis call fully overwrites our existing parameters.\n[EXPERIMENTAL]: endpoint is subject to change.",
-        "operationId": "SetLiquidityParams",
+        "operationId": "SwapClient_SetLiquidityParams",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -67,9 +72,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -91,7 +96,7 @@
     "/v1/loop/in": {
       "post": {
         "summary": "loop: `in`\nLoopIn initiates a loop in swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream\nthat is returned from Monitor().",
-        "operationId": "LoopIn",
+        "operationId": "SwapClient_LoopIn",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -100,9 +105,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -124,7 +129,7 @@
     "/v1/loop/in/quote/{amt}": {
       "get": {
         "summary": "loop: `quote`\nGetQuote returns a quote for a swap with the provided parameters.",
-        "operationId": "GetLoopInQuote",
+        "operationId": "SwapClient_GetLoopInQuote",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -133,9 +138,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -161,8 +166,7 @@
             "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor.",
             "in": "query",
             "required": false,
-            "type": "boolean",
-            "format": "boolean"
+            "type": "boolean"
           },
           {
             "name": "swap_publication_deadline",
@@ -181,7 +185,7 @@
     "/v1/loop/in/terms": {
       "get": {
         "summary": "loop: `terms`\nGetTerms returns the terms that the server enforces for swaps.",
-        "operationId": "GetLoopInTerms",
+        "operationId": "SwapClient_GetLoopInTerms",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -190,9 +194,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -204,7 +208,7 @@
     "/v1/loop/out": {
       "post": {
         "summary": "loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",
-        "operationId": "LoopOut",
+        "operationId": "SwapClient_LoopOut",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -213,9 +217,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -237,7 +241,7 @@
     "/v1/loop/out/quote/{amt}": {
       "get": {
         "summary": "loop: `quote`\nLoopOutQuote returns a quote for a loop out swap with the provided\nparameters.",
-        "operationId": "LoopOutQuote",
+        "operationId": "SwapClient_LoopOutQuote",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -246,9 +250,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -274,8 +278,7 @@
             "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor.",
             "in": "query",
             "required": false,
-            "type": "boolean",
-            "format": "boolean"
+            "type": "boolean"
           },
           {
             "name": "swap_publication_deadline",
@@ -294,7 +297,7 @@
     "/v1/loop/out/terms": {
       "get": {
         "summary": "loop: `terms`\nLoopOutTerms returns the terms that the server enforces for a loop out swap.",
-        "operationId": "LoopOutTerms",
+        "operationId": "SwapClient_LoopOutTerms",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -303,9 +306,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -317,7 +320,7 @@
     "/v1/loop/swap/{id}": {
       "get": {
         "summary": "loop: `swapinfo`\nSwapInfo returns all known details about a single swap.",
-        "operationId": "SwapInfo",
+        "operationId": "SwapClient_SwapInfo",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -326,9 +329,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -350,7 +353,7 @@
     "/v1/loop/swaps": {
       "get": {
         "summary": "loop: `listswaps`\nListSwaps returns a list of all currently known swaps and their current\nstatus.",
-        "operationId": "ListSwaps",
+        "operationId": "SwapClient_ListSwaps",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -359,9 +362,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -373,7 +376,7 @@
     "/v1/lsat/tokens": {
       "get": {
         "summary": "loop: `listauth`\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
-        "operationId": "GetLsatTokens",
+        "operationId": "SwapClient_GetLsatTokens",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -382,9 +385,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -546,7 +549,6 @@
         },
         "autoloop": {
           "type": "boolean",
-          "format": "boolean",
           "description": "Set to true to enable automatic dispatch of swaps. All swaps will be limited\nto the fee categories set by these parameters, and total expenditure will\nbe limited to the autoloop budget."
         },
         "autoloop_budget_sat": {
@@ -650,7 +652,6 @@
         },
         "external_htlc": {
           "type": "boolean",
-          "format": "boolean",
           "description": "If external_htlc is true, we expect the htlc to be published by an external\nactor."
         },
         "htlc_conf_target": {
@@ -778,7 +779,6 @@
         },
         "expired": {
           "type": "boolean",
-          "format": "boolean",
           "description": "Indicates whether the token is expired or still valid."
         },
         "storage_name": {
@@ -1026,42 +1026,14 @@
         }
       }
     },
-    "runtimeError": {
+    "rpcStatus": {
       "type": "object",
       "properties": {
-        "error": {
-          "type": "string"
-        },
         "code": {
           "type": "integer",
           "format": "int32"
         },
         "message": {
-          "type": "string"
-        },
-        "details": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/protobufAny"
-          }
-        }
-      }
-    },
-    "runtimeStreamError": {
-      "type": "object",
-      "properties": {
-        "grpc_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "http_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "message": {
-          "type": "string"
-        },
-        "http_status": {
           "type": "string"
         },
         "details": {

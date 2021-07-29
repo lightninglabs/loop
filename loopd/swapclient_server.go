@@ -55,6 +55,10 @@ var (
 
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
+	// Required by the grpc-gateway/v2 library for forward compatibility.
+	looprpc.UnimplementedSwapClientServer
+	looprpc.UnimplementedDebugServer
+
 	network          lndclient.Network
 	impl             *loop.Client
 	liquidityMgr     *liquidity.Manager
