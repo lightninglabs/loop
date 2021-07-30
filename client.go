@@ -48,6 +48,9 @@ var (
 	// and pay for an LSAT token.
 	globalCallTimeout = serverRPCTimeout + lsat.PaymentTimeout
 
+	// probeTimeout is the maximum time until a probe is allowed to take.
+	probeTimeout = 3 * time.Minute
+
 	republishDelay = 10 * time.Second
 
 	// MinerFeeEstimationFailed is a magic number that is returned in a
@@ -560,7 +563,10 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		return nil, ErrSwapAmountTooHigh
 	}
 
-	quote, err := s.Server.GetLoopInQuote(ctx, request.Amount)
+	quote, err := s.Server.GetLoopInQuote(
+		ctx, request.Amount, s.lndServices.NodePubkey, request.LastHop,
+		request.RouteHints,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -623,5 +629,15 @@ func wrapGrpcError(message string, err error) error {
 	return status.Error(
 		grpcStatus.Code(), fmt.Sprintf("%v: %v", message,
 			grpcStatus.Message()),
+	)
+}
+
+// Probe asks the server to probe a route to us given a requested amount and
+// last hop. The server is free to discard frequent request to avoid abuse or if
+// there's been a recent probe to us for the same amount.
+func (s *Client) Probe(ctx context.Context, req *ProbeRequest) error {
+	return s.Server.Probe(
+		ctx, req.Amount, s.lndServices.NodePubkey, req.LastHop,
+		req.RouteHints,
 	)
 }

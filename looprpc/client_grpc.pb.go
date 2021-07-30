@@ -53,6 +53,10 @@ type SwapClientClient interface {
 	// loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*InQuoteResponse, error)
+	//
+	//Probe asks he sever to probe the route to us to have a better upfront
+	//estimate about routing fees when loopin-in.
+	Probe(ctx context.Context, in *ProbeRequest, opts ...grpc.CallOption) (*ProbeResponse, error)
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
@@ -187,6 +191,15 @@ func (c *swapClientClient) GetLoopInQuote(ctx context.Context, in *QuoteRequest,
 	return out, nil
 }
 
+func (c *swapClientClient) Probe(ctx context.Context, in *ProbeRequest, opts ...grpc.CallOption) (*ProbeResponse, error) {
+	out := new(ProbeResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/Probe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
 	out := new(TokensResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLsatTokens", in, out, opts...)
@@ -262,6 +275,10 @@ type SwapClientServer interface {
 	// loop: `quote`
 	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*InQuoteResponse, error)
+	//
+	//Probe asks he sever to probe the route to us to have a better upfront
+	//estimate about routing fees when loopin-in.
+	Probe(context.Context, *ProbeRequest) (*ProbeResponse, error)
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
@@ -315,6 +332,9 @@ func (UnimplementedSwapClientServer) GetLoopInTerms(context.Context, *TermsReque
 }
 func (UnimplementedSwapClientServer) GetLoopInQuote(context.Context, *QuoteRequest) (*InQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLoopInQuote not implemented")
+}
+func (UnimplementedSwapClientServer) Probe(context.Context, *ProbeRequest) (*ProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
 }
 func (UnimplementedSwapClientServer) GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLsatTokens not implemented")
@@ -506,6 +526,24 @@ func _SwapClient_GetLoopInQuote_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_Probe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).Probe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/Probe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).Probe(ctx, req.(*ProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_GetLsatTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TokensRequest)
 	if err := dec(in); err != nil {
@@ -616,6 +654,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetLoopInQuote",
 			Handler:    _SwapClient_GetLoopInQuote_Handler,
+		},
+		{
+			MethodName: "Probe",
+			Handler:    _SwapClient_Probe_Handler,
 		},
 		{
 			MethodName: "GetLsatTokens",

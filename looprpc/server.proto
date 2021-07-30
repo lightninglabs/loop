@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "common.proto";
+
 package looprpc;
 
 option go_package = "github.com/lightninglabs/loop/looprpc";
@@ -29,6 +31,8 @@ service SwapServer {
 
     rpc CancelLoopOutSwap (CancelLoopOutSwapRequest)
         returns (CancelLoopOutSwapResponse);
+
+    rpc Probe (ServerProbeRequest) returns (ServerProbeResponse);
 }
 
 /**
@@ -70,6 +74,10 @@ enum ProtocolVersion {
 
     // The client supports loop out swap cancelation.
     LOOP_OUT_CANCEL = 7;
+
+    // The client is able to ask the server to probe to test inbound
+    // liquidity.
+    PROBE = 8;
 }
 
 message ServerLoopOutRequest {
@@ -200,6 +208,16 @@ message ServerLoopInResponse {
 message ServerLoopInQuoteRequest {
     /// The swap amount. If zero, a quote for a maximum amt swap will be given.
     uint64 amt = 1;
+
+    // The destination pubkey. Will be used to retrieve cached probed routing
+    // fee.
+    bytes pubkey = 3;
+
+    // The last hop to use. Will be used to retrieve cached probed routing fee.
+    bytes last_hop = 4;
+
+    // Optional route hints to reach the destination through private channels.
+    repeated RouteHint route_hints = 5;
 
     /// The protocol version that the client adheres to.
     ProtocolVersion protocol_version = 2;
@@ -413,4 +431,26 @@ message CancelLoopOutSwapRequest {
 }
 
 message CancelLoopOutSwapResponse {
+}
+
+message ServerProbeRequest {
+    /// The protocol version that the client adheres to.
+    ProtocolVersion protocol_version = 1;
+
+    // The probe amount.
+    uint64 amt = 2;
+
+    // The target node for the probe.
+    bytes target = 3;
+
+    // Optional last hop to use when probing the client.
+    bytes last_hop = 4;
+
+    /*
+    Optional route hints to reach the destination through private channels.
+    */
+    repeated RouteHint route_hints = 5;
+}
+
+message ServerProbeResponse {
 }

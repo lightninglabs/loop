@@ -15,6 +15,9 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+* Loop-in quote now asks the server to optionally probe the client to test
+  inbound liquidity. The server may use this information to give more accurate
+  quotes.
 
 #### Breaking Changes
 

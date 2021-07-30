@@ -21,8 +21,11 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tor"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -51,8 +54,12 @@ type swapServerClient interface {
 	GetLoopInTerms(ctx context.Context) (
 		*LoopInTerms, error)
 
-	GetLoopInQuote(ctx context.Context, amt btcutil.Amount) (
-		*LoopInQuote, error)
+	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
+		pubKey route.Vertex, lastHop *route.Vertex,
+		routeHints [][]zpay32.HopHint) (*LoopInQuote, error)
+
+	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
+		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
 
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
@@ -203,16 +210,28 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 }
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
-	amt btcutil.Amount) (*LoopInQuote, error) {
+	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
+	routeHints [][]zpay32.HopHint) (*LoopInQuote, error) {
+
+	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
+	if err != nil && status.Code(err) != codes.Unavailable {
+		log.Warnf("Server probe error: %v", err)
+	}
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	quoteResp, err := s.server.LoopInQuote(rpcCtx,
-		&looprpc.ServerLoopInQuoteRequest{
-			Amt:             uint64(amt),
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
-		},
-	)
+
+	req := &looprpc.ServerLoopInQuoteRequest{
+		Amt:             uint64(amt),
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		Pubkey:          pubKey[:],
+	}
+
+	if lastHop != nil {
+		req.LastHop = lastHop[:]
+	}
+
+	quoteResp, err := s.server.LoopInQuote(rpcCtx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +240,76 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		SwapFee:   btcutil.Amount(quoteResp.SwapFee),
 		CltvDelta: quoteResp.CltvDelta,
 	}, nil
+}
+
+// marshallRouteHints marshalls a list of route hints.
+func marshallRouteHints(routeHints [][]zpay32.HopHint) (
+	[]*looprpc.RouteHint, error) {
+
+	rpcRouteHints := make([]*looprpc.RouteHint, 0, len(routeHints))
+	for _, routeHint := range routeHints {
+		rpcRouteHint := make(
+			[]*looprpc.HopHint, 0, len(routeHint),
+		)
+		for _, hint := range routeHint {
+			rpcHint, err := marshallHopHint(hint)
+			if err != nil {
+				return nil, err
+			}
+
+			rpcRouteHint = append(rpcRouteHint, rpcHint)
+		}
+		rpcRouteHints = append(rpcRouteHints, &looprpc.RouteHint{
+			HopHints: rpcRouteHint,
+		})
+	}
+
+	return rpcRouteHints, nil
+}
+
+// marshallHopHint marshalls a single hop hint.
+func marshallHopHint(hint zpay32.HopHint) (*looprpc.HopHint, error) {
+	nodeID, err := route.NewVertexFromBytes(
+		hint.NodeID.SerializeCompressed(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.HopHint{
+		ChanId:                    hint.ChannelID,
+		CltvExpiryDelta:           uint32(hint.CLTVExpiryDelta),
+		FeeBaseMsat:               hint.FeeBaseMSat,
+		FeeProportionalMillionths: hint.FeeProportionalMillionths,
+		NodeId:                    nodeID.String(),
+	}, nil
+}
+
+func (s *grpcSwapServerClient) Probe(ctx context.Context, amt btcutil.Amount,
+	target route.Vertex, lastHop *route.Vertex,
+	routeHints [][]zpay32.HopHint) error {
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, probeTimeout)
+	defer rpcCancel()
+
+	rpcRouteHints, err := marshallRouteHints(routeHints)
+	if err != nil {
+		return err
+	}
+
+	req := &looprpc.ServerProbeRequest{
+		Amt:             uint64(amt),
+		Target:          target[:],
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		RouteHints:      rpcRouteHints,
+	}
+
+	if lastHop != nil {
+		req.LastHop = lastHop[:]
+	}
+
+	_, err = s.server.Probe(rpcCtx, req)
+	return err
 }
 
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,

@@ -43,13 +43,17 @@ const (
 	// canceling loop out swaps.
 	ProtocolVersionLoopOutCancel = 7
 
+	// ProtocolVerionProbe indicates that the client is able to request
+	// the server to perform a probe to test inbound liquidty.
+	ProtocolVersionProbe ProtocolVersion = 8
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_LOOP_OUT_CANCEL
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_PROBE
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
@@ -87,6 +91,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionLoopOutCancel:
 		return "Loop Out Cancel"
+
+	case ProtocolVersionProbe:
+		return "Probe"
 
 	default:
 		return "Unknown"

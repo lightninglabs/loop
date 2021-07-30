@@ -8,6 +8,7 @@ import (
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
 
@@ -22,8 +23,16 @@ var quoteInCommand = cli.Command{
 	Usage:       "get a quote for the cost of a loop in swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
-	Flags:       []cli.Flag{confTargetFlag, verboseFlag},
-	Action:      quoteIn,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: lastHopFlag.Name,
+			Usage: "the pubkey of the last hop to use for the " +
+				"quote",
+		},
+		confTargetFlag,
+		verboseFlag,
+	},
+	Action: quoteIn,
 }
 
 func quoteIn(ctx *cli.Context) error {
@@ -44,11 +53,23 @@ func quoteIn(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	ctxb := context.Background()
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:        int64(amt),
 		ConfTarget: int32(ctx.Uint64("conf_target")),
 	}
+
+	if ctx.IsSet(lastHopFlag.Name) {
+		lastHopVertex, err := route.NewVertexFromStr(
+			ctx.String(lastHopFlag.Name),
+		)
+		if err != nil {
+			return err
+		}
+
+		quoteReq.LoopInLastHop = lastHopVertex[:]
+	}
+
+	ctxb := context.Background()
 	quoteResp, err := client.GetLoopInQuote(ctxb, quoteReq)
 	if err != nil {
 		return err
