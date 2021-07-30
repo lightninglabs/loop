@@ -23,3 +23,6 @@ This file tracks release notes for the loop client.
   now surfaced to the client. Previously these error codes would be returned
   as a string.
 
+#### Maintenance
+* Updated compile time dependencies of `lnd`, `grpc-gateway`, `protobuf` and
+  `grpc`.
