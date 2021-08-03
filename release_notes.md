@@ -15,17 +15,9 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-* Loop-in quote now asks the server to optionally probe the client to test
-  inbound liquidity. The server may use this information to give more accurate
-  quotes.
 
 #### Breaking Changes
 
 #### Bug Fixes
-* Grpc error codes returned by the swap server when swap initiation fails are 
-  now surfaced to the client. Previously these error codes would be returned
-  as a string.
 
 #### Maintenance
-* Updated compile time dependencies of `lnd`, `grpc-gateway`, `protobuf` and
-  `grpc`.
