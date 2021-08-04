@@ -149,13 +149,16 @@ func Run(rpcCfg RPCConfig) error {
 
 	// Parse ini file.
 	loopDir := lncfg.CleanAndExpandPath(config.LoopDir)
-	configFile := getConfigPath(config, loopDir)
+	configFile, explicitConfig := getConfigPath(config, loopDir)
 
 	if err := flags.IniParse(configFile, &config); err != nil {
-		// If it's a parsing related error, then we'll return
-		// immediately, otherwise we can proceed as possibly the config
-		// file doesn't exist which is OK.
-		if _, ok := err.(*flags.IniError); ok {
+		// File not existing is OK as long as it wasn't specified
+		// explicitly.  All other errors (parsing, EACCESS...) indicate
+		// misconfiguration and need to be reported. In case of
+		// non-not-found FS errors there's high likelihood that other
+		// operations in data directory would also fail so we treat it
+		// as early detection of a problem.
+		if explicitConfig || !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -248,22 +251,22 @@ func Run(rpcCfg RPCConfig) error {
 
 // getConfigPath gets our config path based on the values that are set in our
 // config.
-func getConfigPath(cfg Config, loopDir string) string {
+func getConfigPath(cfg Config, loopDir string) (string, bool) {
 	// If the config file path provided by the user is set, then we just
 	// use this value.
 	if cfg.ConfigFile != defaultConfigFile {
-		return lncfg.CleanAndExpandPath(cfg.ConfigFile)
+		return lncfg.CleanAndExpandPath(cfg.ConfigFile), true
 	}
 
 	// If the user has set a loop directory that is different to the default
 	// we will use this loop directory as the location of our config file.
 	// We do not namespace by network, because this is a custom loop dir.
 	if loopDir != LoopDirBase {
-		return filepath.Join(loopDir, defaultConfigFilename)
+		return filepath.Join(loopDir, defaultConfigFilename), false
 	}
 
 	// Otherwise, we are using our default loop directory, and the user did
 	// not set a config file path. We use our default loop dir, namespaced
 	// by network.
-	return filepath.Join(loopDir, cfg.Network, defaultConfigFilename)
+	return filepath.Join(loopDir, cfg.Network, defaultConfigFilename), false
 }
