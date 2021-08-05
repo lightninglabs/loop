@@ -23,7 +23,7 @@ sudo: required
 
 script:
   - export GO111MODULE=on
-  - make lint unit build mod-check
+  - make lint unit build mod-check rpc-js-compile
   - make tags=dev
 
 after_script:

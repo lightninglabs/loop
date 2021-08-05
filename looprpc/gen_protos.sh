@@ -28,6 +28,16 @@ function generate() {
     --openapiv2_opt grpc_api_configuration=client.yaml \
     --openapiv2_opt json_names_for_fields=false \
     client.proto
+
+  # Generate the JSON/WASM client stubs.
+  falafel=$(which falafel)
+  pkg="looprpc"
+  opts="package_name=$pkg,js_stubs=1,build_tags=// +build js"
+  protoc -I/usr/local/include -I. -I.. \
+    --plugin=protoc-gen-custom=$falafel\
+    --custom_out=. \
+    --custom_opt="$opts" \
+    client.proto
 }
 
 # format formats the *.proto files with the clang-format utility.
