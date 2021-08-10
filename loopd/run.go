@@ -153,7 +153,7 @@ func Run(rpcCfg RPCConfig) error {
 
 	if err := flags.IniParse(configFile, &config); err != nil {
 		// File not existing is OK as long as it wasn't specified
-		// explicitly.  All other errors (parsing, EACCESS...) indicate
+		// explicitly. All other errors (parsing, EACCESS...) indicate
 		// misconfiguration and need to be reported. In case of
 		// non-not-found FS errors there's high likelihood that other
 		// operations in data directory would also fail so we treat it
