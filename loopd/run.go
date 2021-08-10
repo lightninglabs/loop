@@ -149,7 +149,7 @@ func Run(rpcCfg RPCConfig) error {
 
 	// Parse ini file.
 	loopDir := lncfg.CleanAndExpandPath(config.LoopDir)
-	configFile, explicitConfig := getConfigPath(config, loopDir)
+	configFile, hasExplicitConfig := getConfigPath(config, loopDir)
 
 	if err := flags.IniParse(configFile, &config); err != nil {
 		// File not existing is OK as long as it wasn't specified
@@ -158,7 +158,7 @@ func Run(rpcCfg RPCConfig) error {
 		// non-not-found FS errors there's high likelihood that other
 		// operations in data directory would also fail so we treat it
 		// as early detection of a problem.
-		if explicitConfig || !os.IsNotExist(err) {
+		if hasExplicitConfig || !os.IsNotExist(err) {
 			return err
 		}
 	}
