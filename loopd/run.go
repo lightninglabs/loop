@@ -250,7 +250,8 @@ func Run(rpcCfg RPCConfig) error {
 }
 
 // getConfigPath gets our config path based on the values that are set in our
-// config.
+// config. The returned bool is set to true if the config file path was set
+// explicitly by the user and thus should not be ignored if it doesn't exist.
 func getConfigPath(cfg Config, loopDir string) (string, bool) {
 	// If the config file path provided by the user is set, then we just
 	// use this value.
