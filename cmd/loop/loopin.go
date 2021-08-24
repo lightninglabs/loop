@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/lightninglabs/loop"
@@ -30,6 +31,11 @@ var (
 			"limited to %v characters. The label may not start "+
 			"with our reserved prefix: %v.",
 			labels.MaxLength, labels.Reserved),
+	}
+	routeHintsFlag = cli.StringSliceFlag{
+		Name: "route_hints",
+		Usage: "Route hints that can each be individually used " +
+			"to assist in reaching the invoice's destination.",
 	}
 
 	loopInCommand = cli.Command{
@@ -61,6 +67,7 @@ var (
 			lastHopFlag,
 			labelFlag,
 			verboseFlag,
+			routeHintsFlag,
 		},
 		Action: loopIn,
 	}
@@ -120,12 +127,20 @@ func loopIn(ctx *cli.Context) error {
 
 		lastHop = lastHopVertex[:]
 	}
+	var hints []*looprpc.RouteHint
+	if ctx.IsSet(routeHints.Name) {
+		err = json.Unmarshal([]byte(ctx.String(routeHints.Name)), &hints)
+		if err != nil {
+			return fmt.Errorf("unable to parse json: %v", err)
+		}
+	}
 
 	quoteReq := &looprpc.QuoteRequest{
-		Amt:           int64(amt),
-		ConfTarget:    htlcConfTarget,
-		ExternalHtlc:  external,
-		LoopInLastHop: lastHop,
+		Amt:              int64(amt),
+		ConfTarget:       htlcConfTarget,
+		ExternalHtlc:     external,
+		LoopInLastHop:    lastHop,
+		LoopInRouteHints: hints,
 	}
 
 	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
