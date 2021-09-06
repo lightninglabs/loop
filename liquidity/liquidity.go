@@ -386,6 +386,10 @@ type Manager struct {
 	// current liquidity balance.
 	cfg *Config
 
+	// builder is the swap builder responsible for creating swaps of our
+	// chosen type for us.
+	builder swapBuilder
+
 	// params is the set of parameters we are currently using. These may be
 	// updated at runtime.
 	params Parameters
@@ -424,8 +428,9 @@ func (m *Manager) Run(ctx context.Context) error {
 // NewManager creates a liquidity manager which has no rules set.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
-		cfg:    cfg,
-		params: defaultParameters,
+		cfg:     cfg,
+		params:  defaultParameters,
+		builder: newLoopOutBuilder(cfg),
 	}
 }
 
@@ -616,14 +621,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	// estimate is to sweep within our target number of confirmations. If
 	// This fee exceeds the fee limit we have set, we will not suggest any
 	// swaps at present.
-	estimate, err := m.cfg.Lnd.WalletKit.EstimateFee(
-		ctx, m.params.SweepConfTarget,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := m.params.FeeLimit.mayLoopOut(estimate); err != nil {
+	if err := m.builder.maySwap(ctx, m.params); err != nil {
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
 			return m.singleReasonSuggestion(reasonErr.reason), nil
@@ -635,7 +633,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Get the current server side restrictions, combined with the client
 	// set restrictions, if any.
-	restrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
+	restrictions, err := m.getSwapRestrictions(ctx, m.builder.swapType())
 	if err != nil {
 		return nil, err
 	}
@@ -846,65 +844,24 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	balance *balances, rule *ThresholdRule, restrictions *Restrictions,
 	autoloop bool) (swapSuggestion, error) {
 
-	// Check whether we can perform a swap.
-	err := traffic.maySwap(balance.pubkey, balance.channels)
+	// First, check whether this peer/channel combination is already in use
+	// for our swap.
+	err := m.builder.inUse(traffic, balance.pubkey, balance.channels)
 	if err != nil {
 		return nil, err
 	}
 
-	// We can have nil suggestions in the case where no action is
-	// required, so we skip over them.
+	// Next, get the amount that we need to swap for this entity, skipping
+	// over it if no change in liquidity is required.
 	amount := rule.swapAmount(balance, restrictions)
 	if amount == 0 {
 		return nil, newReasonError(ReasonLiquidityOk)
 	}
 
-	swap, err := m.loopOutSwap(ctx, amount, balance, autoloop)
-	if err != nil {
-		return nil, err
-	}
-
-	return &loopOutSwapSuggestion{
-		OutRequest: *swap,
-	}, nil
-}
-
-// loopOutSwap creates a loop out swap with the amount provided for the balance
-// described by the balance set provided. A reason that indicates whether we
-// can swap is returned. If this value is not ReasonNone, there is no possible
-// swap and the loop out request returned will be nil.
-func (m *Manager) loopOutSwap(ctx context.Context, amount btcutil.Amount,
-	balance *balances, autoloop bool) (*loop.OutRequest, error) {
-
-	quote, err := m.cfg.LoopOutQuote(
-		ctx, &loop.LoopOutQuoteRequest{
-			Amount:                  amount,
-			SweepConfTarget:         m.params.SweepConfTarget,
-			SwapPublicationDeadline: m.cfg.Clock.Now(),
-		},
+	return m.builder.buildSwap(
+		ctx, balance.pubkey, balance.channels, amount, autoloop,
+		m.params,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Debugf("quote for suggestion: %v, swap fee: %v, "+
-		"miner fee: %v, prepay: %v", amount, quote.SwapFee,
-		quote.MinerFee, quote.PrepayAmount)
-
-	// Check that the estimated fees for the suggested swap are
-	// below the fee limits configured by the manager.
-	if err := m.params.FeeLimit.loopOutLimits(amount, quote); err != nil {
-		return nil, err
-	}
-
-	outRequest, err := m.makeLoopOutRequest(
-		ctx, amount, balance, quote, autoloop,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &outRequest, nil
 }
 
 // getSwapRestrictions queries the server for its latest swap size restrictions,
@@ -940,58 +897,6 @@ func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
 	}
 
 	return restrictions, nil
-}
-
-// makeLoopOutRequest creates a loop out request from a suggestion. Since we
-// do not get any information about our off-chain routing fees when we request
-// a quote, we just set our prepay and route maximum fees directly from the
-// amounts we expect to route. The estimation we use elsewhere is the repo is
-// route-independent, which is a very poor estimation so we don't bother with
-// checking against this inaccurate constant. We use the exact prepay amount
-// and swap fee given to us by the server, but use our maximum miner fee anyway
-// to give us some leeway when performing the swap. We take an auto-out which
-// determines whether we set a label identifying this swap as automatically
-// dispatched, and decides whether we set a sweep address (we don't bother for
-// non-auto requests, because the client api will set it anyway).
-func (m *Manager) makeLoopOutRequest(ctx context.Context,
-	amount btcutil.Amount, balance *balances, quote *loop.LoopOutQuote,
-	autoloop bool) (loop.OutRequest, error) {
-
-	prepayMaxFee, routeMaxFee, minerFee := m.params.FeeLimit.loopOutFees(
-		amount, quote,
-	)
-
-	var chanSet loopdb.ChannelSet
-	for _, channel := range balance.channels {
-		chanSet = append(chanSet, channel.ToUint64())
-	}
-
-	// Create a request with our calculated routing fees. We can use the
-	// swap fee, prepay amount and miner fee from the quote because we have
-	// already validated them.
-	request := loop.OutRequest{
-		Amount:              amount,
-		OutgoingChanSet:     chanSet,
-		MaxPrepayRoutingFee: prepayMaxFee,
-		MaxSwapRoutingFee:   routeMaxFee,
-		MaxMinerFee:         minerFee,
-		MaxSwapFee:          quote.SwapFee,
-		MaxPrepayAmount:     quote.PrepayAmount,
-		SweepConfTarget:     m.params.SweepConfTarget,
-		Initiator:           autoloopSwapInitiator,
-	}
-
-	if autoloop {
-		request.Label = labels.AutoloopLabel(swap.TypeOut)
-
-		addr, err := m.cfg.Lnd.WalletKit.NextAddr(ctx)
-		if err != nil {
-			return loop.OutRequest{}, err
-		}
-		request.DestAddr = addr
-	}
-
-	return request, nil
 }
 
 // worstCaseOutFees calculates the largest possible fees for a loop out swap,
@@ -1175,38 +1080,6 @@ func newSwapTraffic() *swapTraffic {
 		ongoingLoopIn:  make(map[route.Vertex]bool),
 		failedLoopOut:  make(map[lnwire.ShortChannelID]time.Time),
 	}
-}
-
-// maySwap returns a boolean that indicates whether we may perform a swap for a
-// peer and its set of channels.
-func (s *swapTraffic) maySwap(peer route.Vertex,
-	channels []lnwire.ShortChannelID) error {
-
-	for _, chanID := range channels {
-		lastFail, recentFail := s.failedLoopOut[chanID]
-		if recentFail {
-			log.Debugf("Channel: %v not eligible for suggestions, was "+
-				"part of a failed swap at: %v", chanID, lastFail)
-
-			return newReasonError(ReasonFailureBackoff)
-		}
-
-		if s.ongoingLoopOut[chanID] {
-			log.Debugf("Channel: %v not eligible for suggestions, "+
-				"ongoing loop out utilizing channel", chanID)
-
-			return newReasonError(ReasonLoopOut)
-		}
-	}
-
-	if s.ongoingLoopIn[peer] {
-		log.Debugf("Peer: %x not eligible for suggestions ongoing "+
-			"loop in utilizing peer", peer)
-
-		return newReasonError(ReasonLoopIn)
-	}
-
-	return nil
 }
 
 // satPerKwToSatPerVByte converts sat per kWeight to sat per vByte.

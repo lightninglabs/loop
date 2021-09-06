@@ -1,8 +1,11 @@
 package liquidity
 
 import (
+	"context"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -29,6 +32,32 @@ type FeeLimit interface {
 	// a swap amount and quote.
 	loopOutFees(amount btcutil.Amount, quote *loop.LoopOutQuote) (
 		btcutil.Amount, btcutil.Amount, btcutil.Amount)
+}
+
+// swapBuilder is an interface used to build our different swap types.
+type swapBuilder interface {
+	// swapType returns the swap type that the builder is responsible for
+	// creating.
+	swapType() swap.Type
+
+	// maySwap checks whether we can currently execute a swap, examining
+	// the current on-chain fee conditions against relevant to our swap
+	// type against our fee restrictions.
+	maySwap(ctx context.Context, params Parameters) error
+
+	// inUse examines our current swap traffic to determine whether we
+	// should suggest the builder's type of swap for the peer and channels
+	// suggested.
+	inUse(traffic *swapTraffic, peer route.Vertex,
+		channels []lnwire.ShortChannelID) error
+
+	// buildSwap creates a swap for the target peer/channels provided. The
+	// autoloop boolean indicates whether this swap will actually be
+	// executed, because there are some calls we can leave out if this swap
+	// is just for a dry run.
+	buildSwap(ctx context.Context, peer route.Vertex,
+		channels []lnwire.ShortChannelID, amount btcutil.Amount,
+		autoloop bool, params Parameters) (swapSuggestion, error)
 }
 
 // swapSuggestion is an interface implemented by suggested swaps for our
