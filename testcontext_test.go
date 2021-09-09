@@ -53,6 +53,7 @@ func newSwapClient(config *clientConfig) *Client {
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
 		cancelSwap:        config.Server.CancelLoopOutSwap,
+		getHints:          config.Server.loopOutHints,
 	})
 
 	return &Client{

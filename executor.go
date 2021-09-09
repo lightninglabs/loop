@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
@@ -28,6 +29,9 @@ type executorConfig struct {
 	routingHints    bool
 
 	cancelSwap func(ctx context.Context, details *outCancelDetails) error
+
+	getHints func(context.Context, btcutil.Amount, int) (
+		[]*loopOutHint, error)
 }
 
 // executor is responsible for executing swaps.
@@ -149,6 +153,7 @@ func (s *executor) run(mainCtx context.Context,
 					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
 					routingHints:    s.executorConfig.routingHints,
 					cancelSwap:      s.executorConfig.cancelSwap,
+					getHints:        s.executorConfig.getHints,
 				}, height)
 				if err != nil && err != context.Canceled {
 					log.Errorf("Execute error: %v", err)

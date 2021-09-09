@@ -152,6 +152,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		loopOutMaxParts:   cfg.LoopOutMaxParts,
 		routingHints:      cfg.LoopOutRoutingHints,
 		cancelSwap:        swapServerClient.CancelLoopOutSwap,
+		getHints:          swapServerClient.loopOutHints,
 	})
 
 	client := &Client{

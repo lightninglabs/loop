@@ -87,6 +87,8 @@ type executeConfig struct {
 	loopOutMaxParts uint32
 	routingHints    bool
 	cancelSwap      func(context.Context, *outCancelDetails) error
+	getHints        func(context.Context, btcutil.Amount, int) (
+		[]*loopOutHint, error)
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
