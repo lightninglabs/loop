@@ -17,14 +17,15 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 	func(), error) {
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:   config.Server.Host,
-		ProxyAddress:    config.Server.Proxy,
-		SwapServerNoTLS: config.Server.NoTLS,
-		TLSPathServer:   config.Server.TLSPath,
-		Lnd:             lnd,
-		MaxLsatCost:     btcutil.Amount(config.MaxLSATCost),
-		MaxLsatFee:      btcutil.Amount(config.MaxLSATFee),
-		LoopOutMaxParts: config.LoopOutMaxParts,
+		ServerAddress:       config.Server.Host,
+		ProxyAddress:        config.Server.Proxy,
+		SwapServerNoTLS:     config.Server.NoTLS,
+		TLSPathServer:       config.Server.TLSPath,
+		Lnd:                 lnd,
+		MaxLsatCost:         btcutil.Amount(config.MaxLSATCost),
+		MaxLsatFee:          btcutil.Amount(config.MaxLSATFee),
+		LoopOutMaxParts:     config.LoopOutMaxParts,
+		LoopOutRoutingHints: config.LoopOutRoutingHints,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(config.DataDir, clientConfig)

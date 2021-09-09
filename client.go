@@ -107,6 +107,10 @@ type ClientConfig struct {
 	// for a loop out swap. When greater than one, a multi-part payment may
 	// be attempted.
 	LoopOutMaxParts uint32
+
+	// LoopOutRoutingHints indicates whether to use server-provided routing
+	// hints to improve off-chain routing.
+	LoopOutRoutingHints bool
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -146,6 +150,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
 		loopOutMaxParts:   cfg.LoopOutMaxParts,
+		routingHints:      cfg.LoopOutRoutingHints,
 		cancelSwap:        swapServerClient.CancelLoopOutSwap,
 	})
 

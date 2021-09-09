@@ -129,7 +129,8 @@ type Config struct {
 	MaxLSATCost uint32 `long:"maxlsatcost" description:"Maximum cost in satoshis that loopd is going to pay for an LSAT token automatically. Does not include routing fees."`
 	MaxLSATFee  uint32 `long:"maxlsatfee" description:"Maximum routing fee in satoshis that we are willing to pay while paying for an LSAT token."`
 
-	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
+	LoopOutMaxParts     uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
+	LoopOutRoutingHints bool   `long:"loopouthints" description:"Whether to use server-provided hints to improve the success rate of off-chain routing. Note that enabling this setting will apply updates to lnd's mission control state."`
 
 	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
 

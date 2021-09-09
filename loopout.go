@@ -85,6 +85,7 @@ type executeConfig struct {
 	blockEpochChan  <-chan interface{}
 	timerFactory    func(d time.Duration) <-chan time.Time
 	loopOutMaxParts uint32
+	routingHints    bool
 	cancelSwap      func(context.Context, *outCancelDetails) error
 }
 

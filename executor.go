@@ -25,6 +25,7 @@ type executorConfig struct {
 	createExpiryTimer func(expiry time.Duration) <-chan time.Time
 
 	loopOutMaxParts uint32
+	routingHints    bool
 
 	cancelSwap func(ctx context.Context, details *outCancelDetails) error
 }
@@ -146,6 +147,7 @@ func (s *executor) run(mainCtx context.Context,
 					blockEpochChan:  queue.ChanOut(),
 					timerFactory:    s.executorConfig.createExpiryTimer,
 					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
+					routingHints:    s.executorConfig.routingHints,
 					cancelSwap:      s.executorConfig.cancelSwap,
 				}, height)
 				if err != nil && err != context.Canceled {
