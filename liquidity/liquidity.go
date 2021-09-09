@@ -445,7 +445,7 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 		return err
 	}
 
-	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx, false, false)
 	if err != nil {
 		return err
 	}
@@ -680,7 +680,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return m.singleReasonSuggestion(ReasonInFlight), nil
 	}
 
-	channels, err := m.cfg.Lnd.Client.ListChannels(ctx)
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx, false, false)
 	if err != nil {
 		return nil, err
 	}

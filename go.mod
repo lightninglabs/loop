@@ -12,7 +12,7 @@ require (
 	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/lndclient v0.11.1-9
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210728112744-ebabda671786
+	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210802115842-44971f0c46c9
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/clock v1.0.1
 	github.com/lightningnetwork/lnd/queue v1.0.4
@@ -27,3 +27,5 @@ require (
 )
 
 go 1.15
+
+replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20210913105254-cbf865affa56
