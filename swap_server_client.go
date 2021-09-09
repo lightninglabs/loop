@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tor"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -86,6 +87,9 @@ type swapServerClient interface {
 	// CancelLoopOutSwap cancels a loop out swap.
 	CancelLoopOutSwap(ctx context.Context,
 		details *outCancelDetails) error
+
+	loopOutHints(ctx context.Context,
+		amount btcutil.Amount, shards int) ([]*loopOutHint, error)
 }
 
 type grpcSwapServerClient struct {
@@ -646,6 +650,53 @@ func rpcRouteCancel(details *outCancelDetails) (
 	}
 
 	return resp, nil
+}
+
+type loopOutHint struct {
+	fromNode   route.Vertex
+	toNode     route.Vertex
+	failAmt    lnwire.MilliSatoshi
+	successAmt lnwire.MilliSatoshi
+	timestamp  time.Time
+}
+
+// loopOutHints provides routing hints for loop out off-chain routing.
+func (s *grpcSwapServerClient) loopOutHints(ctx context.Context,
+	amount btcutil.Amount, shards int) ([]*loopOutHint, error) {
+
+	req := &looprpc.LoopOutHintsRequest{
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		AmtSat:          uint64(amount),
+		Shards:          uint32(shards),
+	}
+
+	resp, err := s.server.LoopOutHints(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	hints := make([]*loopOutHint, len(resp.Hints))
+	for i, hint := range resp.Hints {
+		from, err := route.NewVertexFromBytes(hint.FromNode)
+		if err != nil {
+			return nil, err
+		}
+
+		to, err := route.NewVertexFromBytes(hint.ToNode)
+		if err != nil {
+			return nil, err
+		}
+
+		hints[i] = &loopOutHint{
+			fromNode:   from,
+			toNode:     to,
+			failAmt:    lnwire.MilliSatoshi(hint.FailMsat),
+			successAmt: lnwire.MilliSatoshi(hint.SuccessMsat),
+			timestamp:  time.Unix(int64(hint.Timestamp), 0),
+		}
+	}
+
+	return hints, nil
 }
 
 // getSwapServerConn returns a connection to the swap server. A non-empty

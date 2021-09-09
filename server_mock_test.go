@@ -242,3 +242,9 @@ func (s *serverMock) Probe(ctx context.Context, amt btcutil.Amount,
 
 	return nil
 }
+
+func (s *serverMock) loopOutHints(_ context.Context, _ btcutil.Amount,
+	_ int) ([]*loopOutHint, error) {
+
+	return nil, nil
+}
