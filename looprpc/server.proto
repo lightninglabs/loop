@@ -33,6 +33,8 @@ service SwapServer {
         returns (CancelLoopOutSwapResponse);
 
     rpc Probe (ServerProbeRequest) returns (ServerProbeResponse);
+
+    rpc LoopOutHints (LoopOutHintsRequest) returns (LoopOutHintsResponse);
 }
 
 /**
@@ -453,4 +455,40 @@ message ServerProbeRequest {
 }
 
 message ServerProbeResponse {
+}
+
+message LoopOutHintsRequest {
+    /// The protocol version that the client adheres to.
+    ProtocolVersion protocol_version = 1;
+
+    // The amount that is being routed in satoshis.
+    uint64 amt_sat = 2;
+
+    // The number of shards that it is being split into.
+    uint32 shards = 3;
+}
+
+message LoopOutHint {
+    // The node that payments originated from.
+    bytes from_node = 1;
+
+    // The node that payments were sent to.
+    bytes to_node = 2;
+
+    // The amount that can successfully be forwarded on from_node -> to_node.
+    uint64 success_msat = 3;
+
+    // The amount that cannot be forwarded on from_node -> to_node.
+    uint64 fail_msat = 4;
+
+    // The timestamp for these results.
+    uint64 timestamp = 5;
+}
+
+message LoopOutHintsResponse {
+    // A set of hints to facilitate loop out routing.
+    repeated LoopOutHint hints = 1;
+
+    // The version of route hints being used by the server.
+    uint32 version = 2;
 }

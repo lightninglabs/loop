@@ -1942,6 +1942,213 @@ func (*ServerProbeResponse) Descriptor() ([]byte, []int) {
 	return file_server_proto_rawDescGZIP(), []int{22}
 }
 
+type LoopOutHintsRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	/// The protocol version that the client adheres to.
+	ProtocolVersion ProtocolVersion `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3,enum=looprpc.ProtocolVersion" json:"protocol_version,omitempty"`
+	// The amount that is being routed in satoshis.
+	AmtSat uint64 `protobuf:"varint,2,opt,name=amt_sat,json=amtSat,proto3" json:"amt_sat,omitempty"`
+	// The number of shards that it is being split into.
+	Shards uint32 `protobuf:"varint,3,opt,name=shards,proto3" json:"shards,omitempty"`
+}
+
+func (x *LoopOutHintsRequest) Reset() {
+	*x = LoopOutHintsRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_server_proto_msgTypes[23]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *LoopOutHintsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoopOutHintsRequest) ProtoMessage() {}
+
+func (x *LoopOutHintsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_server_proto_msgTypes[23]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoopOutHintsRequest.ProtoReflect.Descriptor instead.
+func (*LoopOutHintsRequest) Descriptor() ([]byte, []int) {
+	return file_server_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *LoopOutHintsRequest) GetProtocolVersion() ProtocolVersion {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return ProtocolVersion_LEGACY
+}
+
+func (x *LoopOutHintsRequest) GetAmtSat() uint64 {
+	if x != nil {
+		return x.AmtSat
+	}
+	return 0
+}
+
+func (x *LoopOutHintsRequest) GetShards() uint32 {
+	if x != nil {
+		return x.Shards
+	}
+	return 0
+}
+
+type LoopOutHint struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// The node that payments originated from.
+	FromNode []byte `protobuf:"bytes,1,opt,name=from_node,json=fromNode,proto3" json:"from_node,omitempty"`
+	// The node that payments were sent to.
+	ToNode []byte `protobuf:"bytes,2,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	// The amount that can successfully be forwarded on from_node -> to_node.
+	SuccessMsat uint64 `protobuf:"varint,3,opt,name=success_msat,json=successMsat,proto3" json:"success_msat,omitempty"`
+	// The amount that cannot be forwarded on from_node -> to_node.
+	FailMsat uint64 `protobuf:"varint,4,opt,name=fail_msat,json=failMsat,proto3" json:"fail_msat,omitempty"`
+	// The timestamp for these results.
+	Timestamp uint64 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+}
+
+func (x *LoopOutHint) Reset() {
+	*x = LoopOutHint{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_server_proto_msgTypes[24]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *LoopOutHint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoopOutHint) ProtoMessage() {}
+
+func (x *LoopOutHint) ProtoReflect() protoreflect.Message {
+	mi := &file_server_proto_msgTypes[24]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoopOutHint.ProtoReflect.Descriptor instead.
+func (*LoopOutHint) Descriptor() ([]byte, []int) {
+	return file_server_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *LoopOutHint) GetFromNode() []byte {
+	if x != nil {
+		return x.FromNode
+	}
+	return nil
+}
+
+func (x *LoopOutHint) GetToNode() []byte {
+	if x != nil {
+		return x.ToNode
+	}
+	return nil
+}
+
+func (x *LoopOutHint) GetSuccessMsat() uint64 {
+	if x != nil {
+		return x.SuccessMsat
+	}
+	return 0
+}
+
+func (x *LoopOutHint) GetFailMsat() uint64 {
+	if x != nil {
+		return x.FailMsat
+	}
+	return 0
+}
+
+func (x *LoopOutHint) GetTimestamp() uint64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+type LoopOutHintsResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// A set of hints to facilitate loop out routing.
+	Hints []*LoopOutHint `protobuf:"bytes,1,rep,name=hints,proto3" json:"hints,omitempty"`
+	// The version of route hints being used by the server.
+	Version uint32 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+}
+
+func (x *LoopOutHintsResponse) Reset() {
+	*x = LoopOutHintsResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_server_proto_msgTypes[25]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *LoopOutHintsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoopOutHintsResponse) ProtoMessage() {}
+
+func (x *LoopOutHintsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_server_proto_msgTypes[25]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoopOutHintsResponse.ProtoReflect.Descriptor instead.
+func (*LoopOutHintsResponse) Descriptor() ([]byte, []int) {
+	return file_server_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *LoopOutHintsResponse) GetHints() []*LoopOutHint {
+	if x != nil {
+		return x.Hints
+	}
+	return nil
+}
+
+func (x *LoopOutHintsResponse) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
 var File_server_proto protoreflect.FileDescriptor
 
 var file_server_proto_rawDesc = []byte{
@@ -2171,7 +2378,32 @@ var file_server_proto_rawDesc = []byte{
 	0x32, 0x12, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x52, 0x6f, 0x75, 0x74, 0x65,
 	0x48, 0x69, 0x6e, 0x74, 0x52, 0x0a, 0x72, 0x6f, 0x75, 0x74, 0x65, 0x48, 0x69, 0x6e, 0x74, 0x73,
 	0x22, 0x15, 0x0a, 0x13, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x50, 0x72, 0x6f, 0x62, 0x65, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2a, 0xc2, 0x01, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x8b, 0x01, 0x0a, 0x13, 0x4c, 0x6f, 0x6f, 0x70,
+	0x4f, 0x75, 0x74, 0x48, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
+	0x43, 0x0a, 0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x76, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x18, 0x2e, 0x6c, 0x6f, 0x6f, 0x70,
+	0x72, 0x70, 0x63, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x52, 0x0f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72,
+	0x73, 0x69, 0x6f, 0x6e, 0x12, 0x17, 0x0a, 0x07, 0x61, 0x6d, 0x74, 0x5f, 0x73, 0x61, 0x74, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x06, 0x61, 0x6d, 0x74, 0x53, 0x61, 0x74, 0x12, 0x16, 0x0a,
+	0x06, 0x73, 0x68, 0x61, 0x72, 0x64, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x06, 0x73,
+	0x68, 0x61, 0x72, 0x64, 0x73, 0x22, 0xa1, 0x01, 0x0a, 0x0b, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75,
+	0x74, 0x48, 0x69, 0x6e, 0x74, 0x12, 0x1b, 0x0a, 0x09, 0x66, 0x72, 0x6f, 0x6d, 0x5f, 0x6e, 0x6f,
+	0x64, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x08, 0x66, 0x72, 0x6f, 0x6d, 0x4e, 0x6f,
+	0x64, 0x65, 0x12, 0x17, 0x0a, 0x07, 0x74, 0x6f, 0x5f, 0x6e, 0x6f, 0x64, 0x65, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0c, 0x52, 0x06, 0x74, 0x6f, 0x4e, 0x6f, 0x64, 0x65, 0x12, 0x21, 0x0a, 0x0c, 0x73,
+	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5f, 0x6d, 0x73, 0x61, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x0b, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x4d, 0x73, 0x61, 0x74, 0x12, 0x1b,
+	0x0a, 0x09, 0x66, 0x61, 0x69, 0x6c, 0x5f, 0x6d, 0x73, 0x61, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x08, 0x66, 0x61, 0x69, 0x6c, 0x4d, 0x73, 0x61, 0x74, 0x12, 0x1c, 0x0a, 0x09, 0x74,
+	0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09,
+	0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x22, 0x5c, 0x0a, 0x14, 0x4c, 0x6f, 0x6f,
+	0x70, 0x4f, 0x75, 0x74, 0x48, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x2a, 0x0a, 0x05, 0x68, 0x69, 0x6e, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
+	0x32, 0x14, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x6f, 0x6f, 0x70, 0x4f,
+	0x75, 0x74, 0x48, 0x69, 0x6e, 0x74, 0x52, 0x05, 0x68, 0x69, 0x6e, 0x74, 0x73, 0x12, 0x18, 0x0a,
+	0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x07,
+	0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x2a, 0xc2, 0x01, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74,
 	0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x0a, 0x0a, 0x06, 0x4c,
 	0x45, 0x47, 0x41, 0x43, 0x59, 0x10, 0x00, 0x12, 0x12, 0x0a, 0x0e, 0x4d, 0x55, 0x4c, 0x54, 0x49,
 	0x5f, 0x4c, 0x4f, 0x4f, 0x50, 0x5f, 0x4f, 0x55, 0x54, 0x10, 0x01, 0x12, 0x19, 0x0a, 0x15, 0x4e,
@@ -2235,7 +2467,7 @@ var file_server_proto_rawDesc = []byte{
 	0x4d, 0x45, 0x4e, 0x54, 0x5f, 0x44, 0x45, 0x54, 0x41, 0x49, 0x4c, 0x53, 0x10, 0x04, 0x12, 0x2b,
 	0x0a, 0x27, 0x4c, 0x4e, 0x44, 0x5f, 0x46, 0x41, 0x49, 0x4c, 0x55, 0x52, 0x45, 0x5f, 0x52, 0x45,
 	0x41, 0x53, 0x4f, 0x4e, 0x5f, 0x49, 0x4e, 0x53, 0x55, 0x46, 0x46, 0x49, 0x43, 0x49, 0x45, 0x4e,
-	0x54, 0x5f, 0x42, 0x41, 0x4c, 0x41, 0x4e, 0x43, 0x45, 0x10, 0x05, 0x32, 0xcf, 0x07, 0x0a, 0x0a,
+	0x54, 0x5f, 0x42, 0x41, 0x4c, 0x41, 0x4e, 0x43, 0x45, 0x10, 0x05, 0x32, 0x9c, 0x08, 0x0a, 0x0a,
 	0x53, 0x77, 0x61, 0x70, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x12, 0x4f, 0x0a, 0x0c, 0x4c, 0x6f,
 	0x6f, 0x70, 0x4f, 0x75, 0x74, 0x54, 0x65, 0x72, 0x6d, 0x73, 0x12, 0x22, 0x2e, 0x6c, 0x6f, 0x6f,
 	0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x4c, 0x6f, 0x6f, 0x70, 0x4f,
@@ -2296,10 +2528,15 @@ var file_server_proto_rawDesc = []byte{
 	0x62, 0x65, 0x12, 0x1b, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x72,
 	0x76, 0x65, 0x72, 0x50, 0x72, 0x6f, 0x62, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
 	0x1c, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72,
-	0x50, 0x72, 0x6f, 0x62, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x27, 0x5a,
-	0x25, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68,
-	0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73, 0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x2f, 0x6c,
-	0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x50, 0x72, 0x6f, 0x62, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4b, 0x0a,
+	0x0c, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75, 0x74, 0x48, 0x69, 0x6e, 0x74, 0x73, 0x12, 0x1c, 0x2e,
+	0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75, 0x74, 0x48,
+	0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x6c, 0x6f,
+	0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75, 0x74, 0x48, 0x69, 0x6e,
+	0x74, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x27, 0x5a, 0x25, 0x67, 0x69,
+	0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69,
+	0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73, 0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x2f, 0x6c, 0x6f, 0x6f, 0x70,
+	0x72, 0x70, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -2315,7 +2552,7 @@ func file_server_proto_rawDescGZIP() []byte {
 }
 
 var file_server_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_server_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_server_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_server_proto_goTypes = []interface{}{
 	(ProtocolVersion)(0),                      // 0: looprpc.ProtocolVersion
 	(ServerSwapState)(0),                      // 1: looprpc.ServerSwapState
@@ -2344,14 +2581,17 @@ var file_server_proto_goTypes = []interface{}{
 	(*CancelLoopOutSwapResponse)(nil),         // 24: looprpc.CancelLoopOutSwapResponse
 	(*ServerProbeRequest)(nil),                // 25: looprpc.ServerProbeRequest
 	(*ServerProbeResponse)(nil),               // 26: looprpc.ServerProbeResponse
-	(*RouteHint)(nil),                         // 27: looprpc.RouteHint
+	(*LoopOutHintsRequest)(nil),               // 27: looprpc.LoopOutHintsRequest
+	(*LoopOutHint)(nil),                       // 28: looprpc.LoopOutHint
+	(*LoopOutHintsResponse)(nil),              // 29: looprpc.LoopOutHintsResponse
+	(*RouteHint)(nil),                         // 30: looprpc.RouteHint
 }
 var file_server_proto_depIdxs = []int32{
 	0,  // 0: looprpc.ServerLoopOutRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 1: looprpc.ServerLoopOutQuoteRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 2: looprpc.ServerLoopOutTermsRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 3: looprpc.ServerLoopInRequest.protocol_version:type_name -> looprpc.ProtocolVersion
-	27, // 4: looprpc.ServerLoopInQuoteRequest.route_hints:type_name -> looprpc.RouteHint
+	30, // 4: looprpc.ServerLoopInQuoteRequest.route_hints:type_name -> looprpc.RouteHint
 	0,  // 5: looprpc.ServerLoopInQuoteRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 6: looprpc.ServerLoopInTermsRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 7: looprpc.ServerLoopOutPushPreimageRequest.protocol_version:type_name -> looprpc.ProtocolVersion
@@ -2364,34 +2604,38 @@ var file_server_proto_depIdxs = []int32{
 	0,  // 14: looprpc.CancelLoopOutSwapRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	21, // 15: looprpc.CancelLoopOutSwapRequest.route_cancel:type_name -> looprpc.RouteCancel
 	0,  // 16: looprpc.ServerProbeRequest.protocol_version:type_name -> looprpc.ProtocolVersion
-	27, // 17: looprpc.ServerProbeRequest.route_hints:type_name -> looprpc.RouteHint
-	8,  // 18: looprpc.SwapServer.LoopOutTerms:input_type -> looprpc.ServerLoopOutTermsRequest
-	4,  // 19: looprpc.SwapServer.NewLoopOutSwap:input_type -> looprpc.ServerLoopOutRequest
-	16, // 20: looprpc.SwapServer.LoopOutPushPreimage:input_type -> looprpc.ServerLoopOutPushPreimageRequest
-	6,  // 21: looprpc.SwapServer.LoopOutQuote:input_type -> looprpc.ServerLoopOutQuoteRequest
-	14, // 22: looprpc.SwapServer.LoopInTerms:input_type -> looprpc.ServerLoopInTermsRequest
-	10, // 23: looprpc.SwapServer.NewLoopInSwap:input_type -> looprpc.ServerLoopInRequest
-	12, // 24: looprpc.SwapServer.LoopInQuote:input_type -> looprpc.ServerLoopInQuoteRequest
-	18, // 25: looprpc.SwapServer.SubscribeLoopOutUpdates:input_type -> looprpc.SubscribeUpdatesRequest
-	18, // 26: looprpc.SwapServer.SubscribeLoopInUpdates:input_type -> looprpc.SubscribeUpdatesRequest
-	23, // 27: looprpc.SwapServer.CancelLoopOutSwap:input_type -> looprpc.CancelLoopOutSwapRequest
-	25, // 28: looprpc.SwapServer.Probe:input_type -> looprpc.ServerProbeRequest
-	9,  // 29: looprpc.SwapServer.LoopOutTerms:output_type -> looprpc.ServerLoopOutTerms
-	5,  // 30: looprpc.SwapServer.NewLoopOutSwap:output_type -> looprpc.ServerLoopOutResponse
-	17, // 31: looprpc.SwapServer.LoopOutPushPreimage:output_type -> looprpc.ServerLoopOutPushPreimageResponse
-	7,  // 32: looprpc.SwapServer.LoopOutQuote:output_type -> looprpc.ServerLoopOutQuote
-	15, // 33: looprpc.SwapServer.LoopInTerms:output_type -> looprpc.ServerLoopInTerms
-	11, // 34: looprpc.SwapServer.NewLoopInSwap:output_type -> looprpc.ServerLoopInResponse
-	13, // 35: looprpc.SwapServer.LoopInQuote:output_type -> looprpc.ServerLoopInQuoteResponse
-	19, // 36: looprpc.SwapServer.SubscribeLoopOutUpdates:output_type -> looprpc.SubscribeLoopOutUpdatesResponse
-	20, // 37: looprpc.SwapServer.SubscribeLoopInUpdates:output_type -> looprpc.SubscribeLoopInUpdatesResponse
-	24, // 38: looprpc.SwapServer.CancelLoopOutSwap:output_type -> looprpc.CancelLoopOutSwapResponse
-	26, // 39: looprpc.SwapServer.Probe:output_type -> looprpc.ServerProbeResponse
-	29, // [29:40] is the sub-list for method output_type
-	18, // [18:29] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	30, // 17: looprpc.ServerProbeRequest.route_hints:type_name -> looprpc.RouteHint
+	0,  // 18: looprpc.LoopOutHintsRequest.protocol_version:type_name -> looprpc.ProtocolVersion
+	28, // 19: looprpc.LoopOutHintsResponse.hints:type_name -> looprpc.LoopOutHint
+	8,  // 20: looprpc.SwapServer.LoopOutTerms:input_type -> looprpc.ServerLoopOutTermsRequest
+	4,  // 21: looprpc.SwapServer.NewLoopOutSwap:input_type -> looprpc.ServerLoopOutRequest
+	16, // 22: looprpc.SwapServer.LoopOutPushPreimage:input_type -> looprpc.ServerLoopOutPushPreimageRequest
+	6,  // 23: looprpc.SwapServer.LoopOutQuote:input_type -> looprpc.ServerLoopOutQuoteRequest
+	14, // 24: looprpc.SwapServer.LoopInTerms:input_type -> looprpc.ServerLoopInTermsRequest
+	10, // 25: looprpc.SwapServer.NewLoopInSwap:input_type -> looprpc.ServerLoopInRequest
+	12, // 26: looprpc.SwapServer.LoopInQuote:input_type -> looprpc.ServerLoopInQuoteRequest
+	18, // 27: looprpc.SwapServer.SubscribeLoopOutUpdates:input_type -> looprpc.SubscribeUpdatesRequest
+	18, // 28: looprpc.SwapServer.SubscribeLoopInUpdates:input_type -> looprpc.SubscribeUpdatesRequest
+	23, // 29: looprpc.SwapServer.CancelLoopOutSwap:input_type -> looprpc.CancelLoopOutSwapRequest
+	25, // 30: looprpc.SwapServer.Probe:input_type -> looprpc.ServerProbeRequest
+	27, // 31: looprpc.SwapServer.LoopOutHints:input_type -> looprpc.LoopOutHintsRequest
+	9,  // 32: looprpc.SwapServer.LoopOutTerms:output_type -> looprpc.ServerLoopOutTerms
+	5,  // 33: looprpc.SwapServer.NewLoopOutSwap:output_type -> looprpc.ServerLoopOutResponse
+	17, // 34: looprpc.SwapServer.LoopOutPushPreimage:output_type -> looprpc.ServerLoopOutPushPreimageResponse
+	7,  // 35: looprpc.SwapServer.LoopOutQuote:output_type -> looprpc.ServerLoopOutQuote
+	15, // 36: looprpc.SwapServer.LoopInTerms:output_type -> looprpc.ServerLoopInTerms
+	11, // 37: looprpc.SwapServer.NewLoopInSwap:output_type -> looprpc.ServerLoopInResponse
+	13, // 38: looprpc.SwapServer.LoopInQuote:output_type -> looprpc.ServerLoopInQuoteResponse
+	19, // 39: looprpc.SwapServer.SubscribeLoopOutUpdates:output_type -> looprpc.SubscribeLoopOutUpdatesResponse
+	20, // 40: looprpc.SwapServer.SubscribeLoopInUpdates:output_type -> looprpc.SubscribeLoopInUpdatesResponse
+	24, // 41: looprpc.SwapServer.CancelLoopOutSwap:output_type -> looprpc.CancelLoopOutSwapResponse
+	26, // 42: looprpc.SwapServer.Probe:output_type -> looprpc.ServerProbeResponse
+	29, // 43: looprpc.SwapServer.LoopOutHints:output_type -> looprpc.LoopOutHintsResponse
+	32, // [32:44] is the sub-list for method output_type
+	20, // [20:32] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_server_proto_init() }
@@ -2677,6 +2921,42 @@ func file_server_proto_init() {
 				return nil
 			}
 		}
+		file_server_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*LoopOutHintsRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_server_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*LoopOutHint); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_server_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*LoopOutHintsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_server_proto_msgTypes[19].OneofWrappers = []interface{}{
 		(*CancelLoopOutSwapRequest_RouteCancel)(nil),
@@ -2687,7 +2967,7 @@ func file_server_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_server_proto_rawDesc,
 			NumEnums:      4,
-			NumMessages:   23,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

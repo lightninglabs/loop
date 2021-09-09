@@ -29,6 +29,7 @@ type SwapServerClient interface {
 	SubscribeLoopInUpdates(ctx context.Context, in *SubscribeUpdatesRequest, opts ...grpc.CallOption) (SwapServer_SubscribeLoopInUpdatesClient, error)
 	CancelLoopOutSwap(ctx context.Context, in *CancelLoopOutSwapRequest, opts ...grpc.CallOption) (*CancelLoopOutSwapResponse, error)
 	Probe(ctx context.Context, in *ServerProbeRequest, opts ...grpc.CallOption) (*ServerProbeResponse, error)
+	LoopOutHints(ctx context.Context, in *LoopOutHintsRequest, opts ...grpc.CallOption) (*LoopOutHintsResponse, error)
 }
 
 type swapServerClient struct {
@@ -184,6 +185,15 @@ func (c *swapServerClient) Probe(ctx context.Context, in *ServerProbeRequest, op
 	return out, nil
 }
 
+func (c *swapServerClient) LoopOutHints(ctx context.Context, in *LoopOutHintsRequest, opts ...grpc.CallOption) (*LoopOutHintsResponse, error) {
+	out := new(LoopOutHintsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutHints", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -199,6 +209,7 @@ type SwapServerServer interface {
 	SubscribeLoopInUpdates(*SubscribeUpdatesRequest, SwapServer_SubscribeLoopInUpdatesServer) error
 	CancelLoopOutSwap(context.Context, *CancelLoopOutSwapRequest) (*CancelLoopOutSwapResponse, error)
 	Probe(context.Context, *ServerProbeRequest) (*ServerProbeResponse, error)
+	LoopOutHints(context.Context, *LoopOutHintsRequest) (*LoopOutHintsResponse, error)
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -238,6 +249,9 @@ func (UnimplementedSwapServerServer) CancelLoopOutSwap(context.Context, *CancelL
 }
 func (UnimplementedSwapServerServer) Probe(context.Context, *ServerProbeRequest) (*ServerProbeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
+}
+func (UnimplementedSwapServerServer) LoopOutHints(context.Context, *LoopOutHintsRequest) (*LoopOutHintsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopOutHints not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -456,6 +470,24 @@ func _SwapServer_Probe_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_LoopOutHints_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoopOutHintsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopOutHints(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopOutHints",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopOutHints(ctx, req.(*LoopOutHintsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -498,6 +530,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Probe",
 			Handler:    _SwapServer_Probe_Handler,
+		},
+		{
+			MethodName: "LoopOutHints",
+			Handler:    _SwapServer_LoopOutHints_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
