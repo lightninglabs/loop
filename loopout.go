@@ -535,8 +535,51 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 	return s.sendUpdate(ctx)
 }
 
+func (s *loopOutSwap) getRouteHints(ctx context.Context) error {
+	if !s.executeConfig.routingHints {
+		s.log.Infof("Routing hints disabled, not adding hints")
+		return nil
+	}
+
+	hints, err := s.executeConfig.getHints(
+		// TODO[carla]: decode invoice, amt requested is != amt routed.
+		ctx, s.LoopOutContract.AmountRequested,
+		int(s.executeConfig.loopOutMaxParts),
+	)
+	if err != nil {
+		return err
+	}
+
+	s.log.Infof("Applying: %v routing hints", len(hints))
+
+	entries := make([]*lndclient.MissionControlEntry, len(hints))
+	for i, hint := range hints {
+		entries[i] = &lndclient.MissionControlEntry{
+			NodeFrom:    hint.fromNode,
+			NodeTo:      hint.toNode,
+			FailTime:    hint.timestamp,
+			FailAmt:     hint.failAmt,
+			SuccessTime: hint.timestamp,
+			SuccessAmt:  hint.successAmt,
+		}
+	}
+
+	if err := s.lnd.Router.ImportMissionControl(ctx, entries); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // payInvoices pays both swap invoices.
 func (s *loopOutSwap) payInvoices(ctx context.Context) {
+	// Before we pay our invoices, try to get routing hints that will assist
+	// with pathfinding. It is not critical is this operation fails, so we
+	// just log any errors.
+	if err := s.getRouteHints(ctx); err != nil {
+		s.log.Warnf("Could not get routing hints: %v", err)
+	}
+
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
 
