@@ -29,3 +29,5 @@ This file tracks release notes for the loop client.
 #### Bug Fixes
 
 #### Maintenance
+
+* Updated compile time dependencies of `lnd` to `v0.14.0-beta.rc1`.
