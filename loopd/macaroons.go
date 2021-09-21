@@ -3,6 +3,7 @@ package loopd
 import (
 	"context"
 	"fmt"
+	"github.com/lightningnetwork/lnd/kvdb"
 	"io/ioutil"
 	"os"
 
@@ -151,18 +152,25 @@ var (
 // exist yet. If macaroons are disabled in general in the configuration, none of
 // these actions are taken.
 func (d *Daemon) startMacaroonService() error {
-	// Create the macaroon authentication/authorization service.
-	var err error
-	d.macaroonService, err = macaroons.NewService(
-		d.cfg.DataDir, loopMacaroonLocation, false,
-		loopdb.DefaultLoopDBTimeout, macaroons.IPLockChecker,
-	)
+	backend, err := kvdb.GetBoltBackend(&kvdb.BoltBackendConfig{
+		DBPath:     d.cfg.DataDir,
+		DBFileName: "macaroons.db",
+		DBTimeout:  loopdb.DefaultLoopDBTimeout,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to load macaroon db: %v", err)
+	}
 	if err == bbolt.ErrTimeout {
 		return fmt.Errorf("%w: couldn't obtain exclusive lock on "+
 			"%s/%s, timed out after %v", bbolt.ErrTimeout,
 			d.cfg.DataDir, "macaroons.db",
 			loopdb.DefaultLoopDBTimeout)
 	}
+
+	// Create the macaroon authentication/authorization service.
+	d.macaroonService, err = macaroons.NewService(
+		backend, loopMacaroonLocation, false, macaroons.IPLockChecker,
+	)
 	if err != nil {
 		return fmt.Errorf("unable to set up macaroon authentication: "+
 			"%v", err)
@@ -225,7 +233,7 @@ func (d *Daemon) macaroonInterceptor() ([]grpc.ServerOption, error) {
 		RequiredPermissions[endpoint] = perm
 	}
 
-	interceptor := rpcperms.NewInterceptorChain(log, false)
+	interceptor := rpcperms.NewInterceptorChain(log, false, nil)
 	err := interceptor.Start()
 	if err != nil {
 		return nil, err
