@@ -105,11 +105,11 @@ var (
 		}},
 	}
 
-	// allPermissions is the list of all existing permissions that exist
+	// AllPermissions is the list of all existing permissions that exist
 	// for loopd's RPC. The default macaroon that is created on startup
 	// contains all these permissions and is therefore equivalent to lnd's
 	// admin.macaroon but for loop.
-	allPermissions = []bakery.Op{{
+	AllPermissions = []bakery.Op{{
 		Entity: "loop",
 		Action: "out",
 	}, {
@@ -195,9 +195,9 @@ func (d *Daemon) startMacaroonService() error {
 		// existing permissions (equivalent to the admin.macaroon in
 		// lnd). Custom macaroons can be created through the bakery
 		// RPC. Add our debug permissions if required.
-		allPermissions = append(allPermissions, debugPermissions...)
+		AllPermissions = append(AllPermissions, debugPermissions...)
 		loopMac, err := d.macaroonService.Oven.NewMacaroon(
-			idCtx, bakery.LatestVersion, nil, allPermissions...,
+			idCtx, bakery.LatestVersion, nil, AllPermissions...,
 		)
 		if err != nil {
 			return err
