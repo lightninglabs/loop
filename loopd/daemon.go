@@ -131,7 +131,7 @@ func (d *Daemon) Start() error {
 	// server client, the swap client RPC server instance and our main swap
 	// and error handlers. If this fails, then nothing has been started yet
 	// and we can just return the error.
-	err = d.initialize()
+	err = d.initialize(true)
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started as a standalone Loop daemon, most
 		// likely LiT is already running and blocking the DB
@@ -163,7 +163,9 @@ func (d *Daemon) Start() error {
 // create its own gRPC server but registers to an existing one. The same goes
 // for REST (if enabled), instead of creating an own mux and HTTP server, we
 // register to an existing one.
-func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices) error {
+func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
+	createDefaultMacaroonFile bool) error {
+
 	// There should be no reason to start the daemon twice. Therefore return
 	// an error if that's tried. This is mostly to guard against Start and
 	// StartAsSubserver both being called.
@@ -179,7 +181,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices) error {
 	// the swap server client, the RPC server instance and our main swap
 	// handlers. If this fails, then nothing has been started yet and we can
 	// just return the error.
-	err := d.initialize()
+	err := d.initialize(createDefaultMacaroonFile)
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started inside LiT so there most likely is
 		// another standalone Loop process blocking the DB.
@@ -339,7 +341,7 @@ func (d *Daemon) startWebServers() error {
 // the swap client RPC server instance and our main swap and error handlers. If
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
-func (d *Daemon) initialize() error {
+func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
 	if d.cfg.Server.Host == "" {
@@ -370,7 +372,7 @@ func (d *Daemon) initialize() error {
 
 	// Start the macaroon service and let it create its default macaroon in
 	// case it doesn't exist yet.
-	err = d.startMacaroonService()
+	err = d.startMacaroonService(createDefaultMacaroonFile)
 	if err != nil {
 		// The client is the only thing we started yet, so if we clean
 		// up its connection now, nothing else needs to be shut down at
