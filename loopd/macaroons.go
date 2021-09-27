@@ -151,7 +151,7 @@ var (
 // unlocks the macaroon database and creates the default macaroon if it doesn't
 // exist yet. If macaroons are disabled in general in the configuration, none of
 // these actions are taken.
-func (d *Daemon) startMacaroonService() error {
+func (d *Daemon) startMacaroonService(noMacaroonCreation bool) error {
 	backend, err := kvdb.GetBoltBackend(&kvdb.BoltBackendConfig{
 		DBPath:     d.cfg.DataDir,
 		DBFileName: "macaroons.db",
@@ -182,8 +182,10 @@ func (d *Daemon) startMacaroonService() error {
 		return fmt.Errorf("unable to unlock macaroon DB: %v", err)
 	}
 
-	// Create macaroon files for loop CLI to use if they don't exist.
-	if !lnrpc.FileExists(d.cfg.MacaroonPath) {
+	// If a macaroon string was passed into pool, then we already have a
+	// macaroon and don't need to create macaroon files. Otherwise, we'll
+	// create macaroon files for loop CLI to use if they don't exist.
+	if !noMacaroonCreation && !lnrpc.FileExists(d.cfg.MacaroonPath) {
 		// We don't offer the ability to rotate macaroon root keys yet,
 		// so just use the default one since the service expects some
 		// value to be set.
