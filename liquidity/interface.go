@@ -1,8 +1,11 @@
 package liquidity
 
 import (
+	"context"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -31,6 +34,32 @@ type FeeLimit interface {
 		btcutil.Amount, btcutil.Amount, btcutil.Amount)
 }
 
+// swapBuilder is an interface used to build our different swap types.
+type swapBuilder interface {
+	// swapType returns the swap type that the builder is responsible for
+	// creating.
+	swapType() swap.Type
+
+	// maySwap checks whether we can currently execute a swap, examining
+	// the current on-chain fee conditions against relevant to our swap
+	// type against our fee restrictions.
+	maySwap(ctx context.Context, params Parameters) error
+
+	// inUse examines our current swap traffic to determine whether we
+	// should suggest the builder's type of swap for the peer and channels
+	// suggested.
+	inUse(traffic *swapTraffic, peer route.Vertex,
+		channels []lnwire.ShortChannelID) error
+
+	// buildSwap creates a swap for the target peer/channels provided. The
+	// autoloop boolean indicates whether this swap will actually be
+	// executed, because there are some calls we can leave out if this swap
+	// is just for a dry run.
+	buildSwap(ctx context.Context, peer route.Vertex,
+		channels []lnwire.ShortChannelID, amount btcutil.Amount,
+		autoloop bool, params Parameters) (swapSuggestion, error)
+}
+
 // swapSuggestion is an interface implemented by suggested swaps for our
 // different swap types. This interface is used to allow us to handle different
 // swap types with the same autoloop logic.
@@ -49,56 +78,4 @@ type swapSuggestion interface {
 	// of known channel IDs to peers as an argument so that channel peers
 	// can be looked up.
 	peers(knownChans map[uint64]route.Vertex) []route.Vertex
-}
-
-// Compile-time assertion that loopOutSwapSuggestion satisfies the
-// swapSuggestion interface.
-var _ swapSuggestion = (*loopOutSwapSuggestion)(nil)
-
-type loopOutSwapSuggestion struct {
-	loop.OutRequest
-}
-
-func (l *loopOutSwapSuggestion) amount() btcutil.Amount {
-	return l.Amount
-}
-
-func (l *loopOutSwapSuggestion) fees() btcutil.Amount {
-	return worstCaseOutFees(
-		l.MaxPrepayRoutingFee, l.MaxSwapRoutingFee, l.MaxSwapFee,
-		l.MaxMinerFee, l.MaxPrepayAmount,
-	)
-}
-
-func (l *loopOutSwapSuggestion) channels() []lnwire.ShortChannelID {
-	channels := make([]lnwire.ShortChannelID, len(l.OutgoingChanSet))
-
-	for i, id := range l.OutgoingChanSet {
-		channels[i] = lnwire.NewShortChanIDFromInt(id)
-	}
-
-	return channels
-}
-
-// peers returns the set of peers that the loop out swap is restricted to.
-func (l *loopOutSwapSuggestion) peers(
-	knownChans map[uint64]route.Vertex) []route.Vertex {
-
-	peers := make(map[route.Vertex]struct{}, len(knownChans))
-
-	for _, channel := range l.OutgoingChanSet {
-		peer, ok := knownChans[channel]
-		if !ok {
-			log.Warnf("peer for channel: %v unknown", channel)
-		}
-
-		peers[peer] = struct{}{}
-	}
-
-	peerList := make([]route.Vertex, 0, len(peers))
-	for peer := range peers {
-		peerList = append(peerList, peer)
-	}
-
-	return peerList
 }
