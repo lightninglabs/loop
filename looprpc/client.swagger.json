@@ -224,6 +224,13 @@
             "required": false,
             "type": "string",
             "format": "byte"
+          },
+          {
+            "name": "private",
+            "description": "Private indicates whether the destination node should be considered\nprivate. In which case, loop will generate hophints to assist with\nprobing and payment.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -344,6 +351,13 @@
             "required": false,
             "type": "string",
             "format": "byte"
+          },
+          {
+            "name": "private",
+            "description": "Private indicates whether the destination node should be considered\nprivate. In which case, loop will generate hophints to assist with\nprobing and payment.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -756,6 +770,17 @@
         "initiator": {
           "type": "string",
           "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
+        },
+        "route_hints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcRouteHint"
+          },
+          "description": "Optional route hints to reach the destination through private channels."
+        },
+        "private": {
+          "type": "boolean",
+          "description": "Private indicates whether the destination node should be considered\nprivate. In which case, loop will generate hophints to assist with\nprobing and payment."
         }
       }
     },

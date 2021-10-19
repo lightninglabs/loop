@@ -483,7 +483,11 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
-	var lastHop *route.Vertex
+	var (
+		routeHints [][]zpay32.HopHint
+		lastHop    *route.Vertex
+	)
+
 	if req.LoopInLastHop != nil {
 		lastHopVertex, err := route.NewVertexFromBytes(
 			req.LoopInLastHop,
@@ -491,13 +495,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-
 		lastHop = &lastHopVertex
 	}
 
-	routeHints, err := unmarshallRouteHints(req.LoopInRouteHints)
-	if err != nil {
-		return nil, err
+	if len(req.LoopInRouteHints) != 0 {
+		routeHints, err = unmarshallRouteHints(req.LoopInRouteHints)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
@@ -506,10 +511,12 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		ExternalHtlc:   req.ExternalHtlc,
 		LastHop:        lastHop,
 		RouteHints:     routeHints,
+		Private:        req.Private,
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	return &looprpc.InQuoteResponse{
 		HtlcPublishFeeSat: int64(quote.MinerFee),
 		SwapFeeSat:        int64(quote.SwapFee),
@@ -613,6 +620,11 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		return nil, err
 	}
 
+	routeHints, err := unmarshallRouteHints(in.RouteHints)
+	if err != nil {
+		return nil, err
+	}
+
 	req := &loop.LoopInRequest{
 		Amount:         btcutil.Amount(in.Amt),
 		MaxMinerFee:    btcutil.Amount(in.MaxMinerFee),
@@ -621,6 +633,8 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		ExternalHtlc:   in.ExternalHtlc,
 		Label:          in.Label,
 		Initiator:      in.Initiator,
+		Private:        in.Private,
+		RouteHints:     routeHints,
 	}
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)

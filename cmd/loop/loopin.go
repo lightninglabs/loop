@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/lightninglabs/loop"
@@ -134,12 +133,12 @@ func loopIn(ctx *cli.Context) error {
 
 		lastHop = lastHopVertex[:]
 	}
-	var hints []*looprpc.RouteHint
-	if ctx.IsSet(routeHints.Name) {
-		err = json.Unmarshal([]byte(ctx.String(routeHints.Name)), &hints)
-		if err != nil {
-			return fmt.Errorf("unable to parse json: %v", err)
-		}
+
+	// Private and routehints are mutually exclusive as setting private
+	// means we retrieve our own routehints from the connected node.
+	hints, err := validateRouteHints(ctx)
+	if err != nil {
+		return err
 	}
 
 	quoteReq := &looprpc.QuoteRequest{
@@ -148,6 +147,7 @@ func loopIn(ctx *cli.Context) error {
 		ExternalHtlc:     external,
 		LoopInLastHop:    lastHop,
 		LoopInRouteHints: hints,
+		Private:          ctx.Bool(privateFlag.Name),
 	}
 
 	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
@@ -184,6 +184,8 @@ func loopIn(ctx *cli.Context) error {
 		Label:          label,
 		Initiator:      defaultInitiator,
 		LastHop:        lastHop,
+		RouteHints:     hints,
+		Private:        ctx.Bool(privateFlag.Name),
 	}
 
 	resp, err := client.LoopIn(context.Background(), req)

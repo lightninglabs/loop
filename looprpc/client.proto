@@ -264,6 +264,18 @@ message LoopInRequest {
     triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
     */
     string initiator = 8;
+
+    /*
+    Optional route hints to reach the destination through private channels.
+    */
+    repeated RouteHint route_hints = 9;
+
+    /*
+    Private indicates whether the destination node should be considered
+    private. In which case, loop will generate hophints to assist with
+    probing and payment.
+    */
+    bool private = 10;
 }
 
 message SwapResponse {
@@ -580,6 +592,13 @@ message QuoteRequest {
     Optional route hints to reach the destination through private channels.
     */
     repeated RouteHint loop_in_route_hints = 6;
+
+    /*
+    Private indicates whether the destination node should be considered
+    private. In which case, loop will generate hophints to assist with
+    probing and payment.
+    */
+    bool private = 7;
 }
 
 message InQuoteResponse {

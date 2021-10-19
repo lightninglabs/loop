@@ -31,6 +31,8 @@ var quoteInCommand = cli.Command{
 		},
 		confTargetFlag,
 		verboseFlag,
+		privateFlag,
+		routeHintsFlag,
 	},
 	Action: quoteIn,
 }
@@ -53,9 +55,18 @@ func quoteIn(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
+	// Private and routehints are mutually exclusive as setting private
+	// means we retrieve our own routehints from the connected node.
+	hints, err := validateRouteHints(ctx)
+	if err != nil {
+		return err
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
-		Amt:        int64(amt),
-		ConfTarget: int32(ctx.Uint64("conf_target")),
+		Amt:              int64(amt),
+		ConfTarget:       int32(ctx.Uint64("conf_target")),
+		LoopInRouteHints: hints,
+		Private:          ctx.Bool(privateFlag.Name),
 	}
 
 	if ctx.IsSet(lastHopFlag.Name) {
