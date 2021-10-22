@@ -37,6 +37,12 @@ var (
 		Usage: "Route hints that can each be individually used " +
 			"to assist in reaching the invoice's destination.",
 	}
+	privateFlag = cli.BoolFlag{
+		Name: "private",
+		Usage: "Generates and passes routehints. Should be used " +
+			"if the connected node is only reachable via private " +
+			"channels",
+	}
 
 	loopInCommand = cli.Command{
 		Name:      "in",
@@ -68,6 +74,7 @@ var (
 			labelFlag,
 			verboseFlag,
 			routeHintsFlag,
+			privateFlag,
 		},
 		Action: loopIn,
 	}
