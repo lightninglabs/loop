@@ -1111,7 +1111,7 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 		return 0, err
 	}
 
-	channels, err := lnd.ListChannels(ctx)
+	channels, err := lnd.ListChannels(ctx, false, false)
 	if err != nil {
 		return 0, err
 	}
