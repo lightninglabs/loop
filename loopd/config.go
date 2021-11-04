@@ -72,6 +72,11 @@ var (
 	DefaultMacaroonPath = filepath.Join(
 		LoopDirBase, DefaultNetwork, DefaultMacaroonFilename,
 	)
+
+	// DefaultAutogenValidity is the default validity of a self-signed
+	// certificate. The value corresponds to 14 months
+	// (14 months * 30 days * 24 hours).
+	DefaultAutogenValidity = 14 * 30 * 24 * time.Hour
 )
 
 type lndConfig struct {
@@ -345,7 +350,7 @@ func loadCertWithCreate(cfg *Config) (tls.Certificate, *x509.Certificate,
 			defaultSelfSignedOrganization, cfg.TLSCertPath,
 			cfg.TLSKeyPath, cfg.TLSExtraIPs,
 			cfg.TLSExtraDomains, cfg.TLSDisableAutofill,
-			cert.DefaultAutogenValidity,
+			DefaultAutogenValidity,
 		)
 		if err != nil {
 			return tls.Certificate{}, nil, err

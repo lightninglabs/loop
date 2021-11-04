@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -85,6 +86,7 @@ type Daemon struct {
 	restCtxCancel func()
 
 	macaroonService *macaroons.Service
+	macaroonDB      kvdb.Backend
 }
 
 // New creates a new instance of the loop client daemon.
