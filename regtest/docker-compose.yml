@@ -26,7 +26,7 @@ services:
       - HOME=/home/bitcoin
 
   lndserver:
-    image: lightninglabs/lnd:v0.12.1-beta
+    image: lightninglabs/lnd:v0.13.4-beta
     restart: unless-stopped
     networks:
       - regtest
@@ -65,7 +65,7 @@ services:
       - "--lnd.tlspath=/root/.lnd/tls.cert"
 
   lndclient:
-    image: lightninglabs/lnd:v0.12.1-beta
+    image: lightninglabs/lnd:v0.13.4-beta
     restart: unless-stopped
     networks:
       - regtest
