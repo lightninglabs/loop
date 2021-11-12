@@ -11,7 +11,7 @@ import (
 )
 
 // view prints all swaps currently in the database.
-func view(config *Config, lisCfg *listenerCfg) error {
+func view(config *Config, lisCfg *ListenerCfg) error {
 	network := lndclient.Network(config.Network)
 
 	lnd, err := lisCfg.getLnd(network, config.Lnd)

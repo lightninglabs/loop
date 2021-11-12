@@ -34,8 +34,8 @@ var (
 	errOnlyStartOnce = fmt.Errorf("daemon can only be started once")
 )
 
-// listenerCfg holds closures used to retrieve listeners for the gRPC services.
-type listenerCfg struct {
+// ListenerCfg holds closures used to retrieve listeners for the gRPC services.
+type ListenerCfg struct {
 	// grpcListener returns a TLS listener to use for the gRPC server, based
 	// on the passed TLS configuration.
 	grpcListener func(*tls.Config) (net.Listener, error)
@@ -66,7 +66,7 @@ type Daemon struct {
 	ErrChan chan error
 
 	cfg             *Config
-	listenerCfg     *listenerCfg
+	listenerCfg     *ListenerCfg
 	internalErrChan chan error
 
 	lnd           *lndclient.GrpcLndServices
@@ -90,7 +90,7 @@ type Daemon struct {
 }
 
 // New creates a new instance of the loop client daemon.
-func New(config *Config, lisCfg *listenerCfg) *Daemon {
+func New(config *Config, lisCfg *ListenerCfg) *Daemon {
 	return &Daemon{
 		// We send exactly one error on this channel if something goes
 		// wrong at runtime. Or a nil value if the shutdown was
