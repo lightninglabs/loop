@@ -73,6 +73,7 @@ var loopOutCommand = cli.Command{
 				"Not setting this flag therefore might " +
 				"result in a lower swap fee.",
 		},
+		forceFlag,
 		labelFlag,
 		verboseFlag,
 	},
@@ -176,11 +177,15 @@ func loopOut(ctx *cli.Context) error {
 			ctx.Int64("max_swap_routing_fee"),
 		)
 	}
-	err = displayOutDetails(
-		limits, warning, quoteReq, quote, ctx.Bool("verbose"),
-	)
-	if err != nil {
-		return err
+
+	// Skip showing details if configured
+	if !(ctx.Bool("force") || ctx.Bool("f")) {
+		err = displayOutDetails(
+			limits, warning, quoteReq, quote, ctx.Bool("verbose"),
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
