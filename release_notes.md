@@ -30,4 +30,5 @@ This file tracks release notes for the loop client.
 
 #### Maintenance
 
-* Updated compile time dependencies of `lnd` to `v0.14.0-beta.rc1`.
+* Updated compile time dependencies of `lnd` to `v0.14.0-beta` to ensure
+  compatibility.
