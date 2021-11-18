@@ -18,17 +18,6 @@ This file tracks release notes for the loop client.
 
 #### Breaking Changes
 
-* Failing to load configuration file specified by `--configfile` for any
-  reason is now hard error. If you've used `--configfile` to mean "optional
-  extra configuration" you will need to create an empty file. This was done in
-  [#413](https://github.com/lightninglabs/loop/pull/413) to improve error
-  reporting and avoid confusion. Similarly, failure to load any configuration
-  file for reason other than NotFound is hard error, though this is not strictly
-  breaking because such scenario would be already broken later.
-
 #### Bug Fixes
 
 #### Maintenance
-
-* Updated compile time dependencies of `lnd` to `v0.14.0-beta` to ensure
-  compatibility.
