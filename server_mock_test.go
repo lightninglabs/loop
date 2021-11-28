@@ -242,3 +242,15 @@ func (s *serverMock) Probe(ctx context.Context, amt btcutil.Amount,
 
 	return nil
 }
+
+func (s *serverMock) RecommendRoutingPlugin(_ context.Context, _ lntypes.Hash) (
+	RoutingPluginType, error) {
+
+	return RoutingPluginNone, nil
+}
+
+func (s *serverMock) ReportRoutingResult(_ context.Context, _ lntypes.Hash,
+	_ RoutingPluginType, _ bool, _ int32, _ int64) error {
+
+	return nil
+}
