@@ -84,3 +84,9 @@ rpc-check: rpc
 rpc-js-compile:
 	@$(call print, "Compiling JSON/WASM stubs.")
 	GOOS=js GOARCH=wasm $(GOBUILD) $(PKG)/looprpc
+
+
+clean:
+	@$(call print, "Cleaning up.")
+	rm -f ./loop-debug ./loopd-debug
+	rm -rf ./vendor
