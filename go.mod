@@ -12,10 +12,10 @@ require (
 	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/lndclient v0.14.0-5
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.14.0-beta
+	github.com/lightningnetwork/lnd v0.14.1-beta
 	github.com/lightningnetwork/lnd/cert v1.1.0
 	github.com/lightningnetwork/lnd/clock v1.1.0
-	github.com/lightningnetwork/lnd/kvdb v1.2.0
+	github.com/lightningnetwork/lnd/kvdb v1.2.1
 	github.com/lightningnetwork/lnd/queue v1.1.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/stretchr/testify v1.7.0
@@ -26,9 +26,5 @@ require (
 	gopkg.in/macaroon-bakery.v2 v2.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 )
-
-// A PR was merged without bumping the kvdb module version. We'll be able to
-// remove this once 0.14.1-beta is out.
-replace github.com/lightningnetwork/lnd/kvdb => github.com/lightningnetwork/lnd/kvdb v1.2.1
 
 go 1.15
