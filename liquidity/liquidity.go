@@ -639,7 +639,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary, err := m.checkExistingAutoLoops(ctx, loopOut)
+	summary, err := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
 	if err != nil {
 		return nil, err
 	}
@@ -958,7 +958,8 @@ func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
 // total for our set of ongoing, automatically dispatched swaps as well as a
 // current in-flight count.
 func (m *Manager) checkExistingAutoLoops(ctx context.Context,
-	loopOuts []*loopdb.LoopOut) (*existingAutoLoopSummary, error) {
+	loopOuts []*loopdb.LoopOut, loopIns []*loopdb.LoopIn) (
+	*existingAutoLoopSummary, error) {
 
 	var summary existingAutoLoopSummary
 
@@ -994,6 +995,28 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 			)
 		} else if !out.LastUpdateTime().Before(m.params.AutoFeeStartDate) {
 			summary.spentFees += out.State().Cost.Total()
+		}
+	}
+
+	for _, in := range loopIns {
+		if in.Contract.Label != labels.AutoloopLabel(swap.TypeIn) {
+			continue
+		}
+
+		pending := in.State().State.Type() == loopdb.StateTypePending
+		inBudget := !in.LastUpdateTime().Before(m.params.AutoFeeStartDate)
+
+		// If an autoloop is in a pending state, we always count it in
+		// our current budget, and record the worst-case fees for it,
+		// because we do not know how it will resolve.
+		if pending {
+			summary.inFlightCount++
+			summary.pendingFees += worstCaseInFees(
+				in.Contract.MaxMinerFee, in.Contract.MaxSwapFee,
+				defaultLoopInSweepFee,
+			)
+		} else if inBudget {
+			summary.spentFees += in.State().Cost.Total()
 		}
 	}
 

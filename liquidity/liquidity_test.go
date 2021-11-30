@@ -107,6 +107,13 @@ var (
 		OutgoingChanSet: loopdb.ChannelSet{999},
 	}
 
+	autoInContract = &loopdb.LoopInContract{
+		SwapContract: loopdb.SwapContract{
+			Label:          labels.AutoloopLabel(swap.TypeIn),
+			InitiationTime: testBudgetStart,
+		},
+	}
+
 	testRestrictions = NewRestrictions(1, 10000)
 
 	// noneDisqualified can be used in tests where we don't have any
@@ -1123,9 +1130,10 @@ func TestFeeBudget(t *testing.T) {
 // that are allowed.
 func TestInFlightLimit(t *testing.T) {
 	tests := []struct {
-		name          string
-		maxInFlight   int
-		existingSwaps []*loopdb.LoopOut
+		name            string
+		maxInFlight     int
+		existingSwaps   []*loopdb.LoopOut
+		existingInSwaps []*loopdb.LoopIn
 		// peerRules will only be set (instead of test default values)
 		// is it is non-nil.
 		peerRules   map[route.Vertex]*SwapRule
@@ -1194,8 +1202,10 @@ func TestInFlightLimit(t *testing.T) {
 				{
 					Contract: autoOutContract,
 				},
+			},
+			existingInSwaps: []*loopdb.LoopIn{
 				{
-					Contract: autoOutContract,
+					Contract: autoInContract,
 				},
 			},
 			suggestions: &Suggestions{
@@ -1246,6 +1256,9 @@ func TestInFlightLimit(t *testing.T) {
 			cfg, lnd := newTestConfig()
 			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
 				return testCase.existingSwaps, nil
+			}
+			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+				return testCase.existingInSwaps, nil
 			}
 
 			lnd.Channels = []lndclient.ChannelInfo{
@@ -1559,6 +1572,181 @@ func TestFeePercentage(t *testing.T) {
 			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.suggestions, nil,
+			)
+		})
+	}
+}
+
+// TestBudgetWithLoopin tests that our autoloop budget accounts for loop in
+// swaps that have been automatically dispatched. It tests out swaps that have
+// already completed and those that are pending, inside and outside of our
+// budget period to ensure that we account for all relevant swaps.
+func TestBudgetWithLoopin(t *testing.T) {
+	var (
+		budget btcutil.Amount = 10000
+
+		outsideBudget = testBudgetStart.Add(-5)
+		insideBudget  = testBudgetStart.Add(5)
+
+		contractOutsideBudget = &loopdb.LoopInContract{
+			SwapContract: loopdb.SwapContract{
+				InitiationTime: outsideBudget,
+				MaxSwapFee:     budget,
+			},
+			Label: labels.AutoloopLabel(swap.TypeIn),
+		}
+
+		// Set our spend equal to our budget so we don't need to
+		// calculate exact costs.
+		eventOutsideBudget = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				Cost: loopdb.SwapCost{
+					Server: budget,
+				},
+				State: loopdb.StateSuccess,
+			},
+			Time: outsideBudget,
+		}
+
+		successWithinBudget = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				Cost: loopdb.SwapCost{
+					Server: budget,
+				},
+				State: loopdb.StateSuccess,
+			},
+			Time: insideBudget,
+		}
+
+		okQuote = &loop.LoopOutQuote{
+			SwapFee:      15,
+			PrepayAmount: 30,
+			MinerFee:     1,
+		}
+
+		rec = loop.OutRequest{
+			Amount:          7500,
+			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
+			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
+			MaxSwapFee:      okQuote.SwapFee,
+			MaxPrepayAmount: okQuote.PrepayAmount,
+			SweepConfTarget: defaultConfTarget,
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		testPPM uint64 = 100000
+	)
+
+	rec.MaxPrepayRoutingFee, rec.MaxSwapRoutingFee = testPPMFees(
+		testPPM, okQuote, 7500,
+	)
+
+	tests := []struct {
+		name string
+
+		// loopIns is the set of loop in swaps that the client has
+		// performed.
+		loopIns []*loopdb.LoopIn
+
+		// suggestions is the set of swaps that we expect to be
+		// suggested given our current traffic.
+		suggestions *Suggestions
+	}{
+		{
+			name: "completed swap outside of budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							eventOutsideBudget,
+						},
+					},
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				OutSwaps: []loop.OutRequest{
+					rec,
+				},
+				DisqualifiedChans: noneDisqualified,
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name: "completed within budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							successWithinBudget,
+						},
+					},
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonBudgetElapsed,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name: "pending created before budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonBudgetElapsed,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			// Set our channel and rules so that we will need to
+			// swap 7500 sats and our fee limit is 10% of that
+			// amount (750 sats).
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1,
+			}
+
+			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+				return testCase.loopIns, nil
+			}
+
+			cfg.LoopOutQuote = func(_ context.Context,
+				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
+				error) {
+
+				return okQuote, nil
+			}
+
+			params := defaultParameters
+			params.AutoFeeBudget = budget
+			params.AutoFeeStartDate = testBudgetStart
+
+			params.FeeLimit = NewFeePortion(testPPM)
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+				chanID1: chanRule,
+			}
+
+			// Allow more than one in flight swap, to ensure that
+			// we restrict based on budget, not in-flight.
+			params.MaxAutoInFlight = 2
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
