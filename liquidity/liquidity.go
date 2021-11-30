@@ -386,10 +386,6 @@ type Manager struct {
 	// current liquidity balance.
 	cfg *Config
 
-	// builder is the swap builder responsible for creating swaps of our
-	// chosen type for us.
-	builder swapBuilder
-
 	// params is the set of parameters we are currently using. These may be
 	// updated at runtime.
 	params Parameters
@@ -428,9 +424,8 @@ func (m *Manager) Run(ctx context.Context) error {
 // NewManager creates a liquidity manager which has no rules set.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
-		cfg:     cfg,
-		params:  defaultParameters,
-		builder: newLoopOutBuilder(cfg),
+		cfg:    cfg,
+		params: defaultParameters,
 	}
 }
 
@@ -617,23 +612,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return m.singleReasonSuggestion(ReasonBudgetNotStarted), nil
 	}
 
-	// Before we get any swap suggestions, we check what the current fee
-	// estimate is to sweep within our target number of confirmations. If
-	// This fee exceeds the fee limit we have set, we will not suggest any
-	// swaps at present.
-	if err := m.builder.maySwap(ctx, m.params); err != nil {
-		var reasonErr *reasonError
-		if errors.As(err, &reasonErr) {
-			return m.singleReasonSuggestion(reasonErr.reason), nil
-
-		}
-
-		return nil, err
-	}
-
-	// Get the current server side restrictions, combined with the client
-	// set restrictions, if any.
-	restrictions, err := m.getSwapRestrictions(ctx, m.builder.swapType())
+	// Get restrictions placed on swaps by the server.
+	outRestrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +701,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		}
 
 		suggestion, err := m.suggestSwap(
-			ctx, traffic, balances, rule, restrictions, autoloop,
+			ctx, traffic, balances, rule, outRestrictions,
+			autoloop,
 		)
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
@@ -746,7 +727,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		}
 
 		suggestion, err := m.suggestSwap(
-			ctx, traffic, balance, rule, restrictions, autoloop,
+			ctx, traffic, balance, rule, outRestrictions,
+			autoloop,
 		)
 
 		var reasonErr *reasonError
@@ -841,12 +823,34 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // suggestSwap checks whether we can currently perform a swap, and creates a
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
-	balance *balances, rule *SwapRule, restrictions *Restrictions,
+	balance *balances, rule *SwapRule, outRestrictions *Restrictions,
 	autoloop bool) (swapSuggestion, error) {
+
+	var (
+		builder      swapBuilder
+		restrictions *Restrictions
+	)
+
+	switch rule.Type {
+	case swap.TypeOut:
+		builder = newLoopOutBuilder(m.cfg)
+		restrictions = outRestrictions
+
+	default:
+		return nil, fmt.Errorf("unsupported swap type: %v", rule.Type)
+	}
+
+	// Before we get any swap suggestions, we check what the current fee
+	// estimate is to sweep within our target number of confirmations. If
+	// This fee exceeds the fee limit we have set, we will not suggest any
+	// swaps at present.
+	if err := builder.maySwap(ctx, m.params); err != nil {
+		return nil, err
+	}
 
 	// First, check whether this peer/channel combination is already in use
 	// for our swap.
-	err := m.builder.inUse(traffic, balance.pubkey, balance.channels)
+	err := builder.inUse(traffic, balance.pubkey, balance.channels)
 	if err != nil {
 		return nil, err
 	}
@@ -858,7 +862,7 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 		return nil, newReasonError(ReasonLiquidityOk)
 	}
 
-	return m.builder.buildSwap(
+	return builder.buildSwap(
 		ctx, balance.pubkey, balance.channels, amount, autoloop,
 		m.params,
 	)
