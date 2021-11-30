@@ -27,7 +27,7 @@ func TestAutoLoopDisabled(t *testing.T) {
 	}
 
 	params := defaultParameters
-	params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+	params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 		chanID1: chanRule,
 	}
 
@@ -95,7 +95,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
 			),
-			ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 				chanID2: chanRule,
 			},
@@ -312,10 +312,10 @@ func TestCompositeRules(t *testing.T) {
 			MaxAutoInFlight:  2,
 			FailureBackOff:   time.Hour,
 			SweepConfTarget:  10,
-			ChannelRules: map[lnwire.ShortChannelID]*ThresholdRule{
+			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			},
-			PeerRules: map[route.Vertex]*ThresholdRule{
+			PeerRules: map[route.Vertex]*SwapRule{
 				peer2: chanRule,
 			},
 		}

@@ -47,7 +47,10 @@ var (
 	}
 
 	// chanRule is a rule that produces chan1Rec.
-	chanRule = NewThresholdRule(50, 0)
+	chanRule = &SwapRule{
+		ThresholdRule: NewThresholdRule(50, 0),
+		Type:          swap.TypeOut,
+	}
 
 	testQuote = &loop.LoopOutQuote{
 		SwapFee:      btcutil.Amount(5),
@@ -188,7 +191,10 @@ func TestParameters(t *testing.T) {
 	require.Equal(t, defaultParameters, startParams)
 
 	// Mutate the parameters returned by our get function.
-	startParams.ChannelRules[chanID] = NewThresholdRule(1, 1)
+	startParams.ChannelRules[chanID] = &SwapRule{
+		ThresholdRule: NewThresholdRule(1, 1),
+		Type:          swap.TypeOut,
+	}
 
 	// Make sure that we have not mutated the liquidity manager's params
 	// by making this change.
@@ -197,9 +203,13 @@ func TestParameters(t *testing.T) {
 
 	// Provide a valid set of parameters and validate assert that they are
 	// set.
-	originalRule := NewThresholdRule(10, 10)
+	originalRule := &SwapRule{
+		ThresholdRule: NewThresholdRule(10, 10),
+		Type:          swap.TypeOut,
+	}
+
 	expected := defaultParameters
-	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+	expected.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 		chanID: originalRule,
 	}
 
@@ -208,15 +218,21 @@ func TestParameters(t *testing.T) {
 
 	// Check that changing the parameters we just set does not mutate
 	// our liquidity manager's parameters.
-	expected.ChannelRules[chanID] = NewThresholdRule(11, 11)
+	expected.ChannelRules[chanID] = &SwapRule{
+		ThresholdRule: NewThresholdRule(11, 11),
+		Type:          swap.TypeOut,
+	}
 
 	params = manager.GetParameters()
 	require.NoError(t, err)
 	require.Equal(t, originalRule, params.ChannelRules[chanID])
 
 	// Set invalid parameters and assert that we fail.
-	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
-		lnwire.NewShortChanIDFromInt(0): NewThresholdRule(1, 2),
+	expected.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+		lnwire.NewShortChanIDFromInt(0): {
+			ThresholdRule: NewThresholdRule(1, 2),
+			Type:          swap.TypeOut,
+		},
 	}
 	err = manager.SetParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
@@ -310,7 +326,7 @@ func TestRestrictedSuggestions(t *testing.T) {
 			),
 		}
 
-		chanRules = map[lnwire.ShortChannelID]*ThresholdRule{
+		chanRules = map[lnwire.ShortChannelID]*SwapRule{
 			chanID1: chanRule,
 			chanID2: chanRule,
 		}
@@ -321,8 +337,8 @@ func TestRestrictedSuggestions(t *testing.T) {
 		channels  []lndclient.ChannelInfo
 		loopOut   []*loopdb.LoopOut
 		loopIn    []*loopdb.LoopIn
-		chanRules map[lnwire.ShortChannelID]*ThresholdRule
-		peerRules map[route.Vertex]*ThresholdRule
+		chanRules map[lnwire.ShortChannelID]*SwapRule
+		peerRules map[route.Vertex]*SwapRule
 		expected  *Suggestions
 	}{
 		{
@@ -511,8 +527,11 @@ func TestRestrictedSuggestions(t *testing.T) {
 					Contract: chan1Out,
 				},
 			},
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(0, 50),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(0, 50),
+					Type:          swap.TypeOut,
+				},
 			},
 			expected: &Suggestions{
 				DisqualifiedChans: noneDisqualified,
@@ -629,7 +648,7 @@ func TestSweepFeeLimit(t *testing.T) {
 				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
 				ppmToSat(7500, defaultRoutingFeePPM)
 
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -654,21 +673,21 @@ func TestSuggestSwaps(t *testing.T) {
 	tests := []struct {
 		name        string
 		channels    []lndclient.ChannelInfo
-		rules       map[lnwire.ShortChannelID]*ThresholdRule
-		peerRules   map[route.Vertex]*ThresholdRule
+		rules       map[lnwire.ShortChannelID]*SwapRule
+		peerRules   map[route.Vertex]*SwapRule
 		suggestions *Suggestions
 		err         error
 	}{
 		{
 			name:     "no rules",
 			channels: singleChannel,
-			rules:    map[lnwire.ShortChannelID]*ThresholdRule{},
+			rules:    map[lnwire.ShortChannelID]*SwapRule{},
 			err:      ErrNoRules,
 		},
 		{
 			name:     "loop out",
 			channels: singleChannel,
-			rules: map[lnwire.ShortChannelID]*ThresholdRule{
+			rules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			},
 			suggestions: &Suggestions{
@@ -682,8 +701,11 @@ func TestSuggestSwaps(t *testing.T) {
 		{
 			name:     "no rule for channel",
 			channels: singleChannel,
-			rules: map[lnwire.ShortChannelID]*ThresholdRule{
-				chanID2: NewThresholdRule(10, 10),
+			rules: map[lnwire.ShortChannelID]*SwapRule{
+				chanID2: {
+					ThresholdRule: NewThresholdRule(10, 10),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: noneDisqualified,
@@ -715,9 +737,15 @@ func TestSuggestSwaps(t *testing.T) {
 					RemoteBalance: 3000,
 				},
 			},
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(80, 0),
-				peer2: NewThresholdRule(40, 50),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(80, 0),
+					Type:          swap.TypeOut,
+				},
+				peer2: {
+					ThresholdRule: NewThresholdRule(40, 50),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -869,7 +897,7 @@ func TestFeeLimits(t *testing.T) {
 				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
 				ppmToSat(7500, defaultRoutingFeePPM)
 
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -1061,7 +1089,7 @@ func TestFeeBudget(t *testing.T) {
 			}
 
 			params := defaultParameters
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 				chanID2: chanRule,
 			}
@@ -1100,7 +1128,7 @@ func TestInFlightLimit(t *testing.T) {
 		existingSwaps []*loopdb.LoopOut
 		// peerRules will only be set (instead of test default values)
 		// is it is non-nil.
-		peerRules   map[route.Vertex]*ThresholdRule
+		peerRules   map[route.Vertex]*SwapRule
 		suggestions *Suggestions
 	}{
 		{
@@ -1189,9 +1217,15 @@ func TestInFlightLimit(t *testing.T) {
 			// Create two peer-level rules, both in need of a swap,
 			// but peer 1 needs a larger swap so will be
 			// prioritized.
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(50, 0),
-				peer2: NewThresholdRule(40, 0),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(50, 0),
+					Type:          swap.TypeOut,
+				},
+				peer2: {
+					ThresholdRule: NewThresholdRule(40, 0),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -1224,7 +1258,7 @@ func TestInFlightLimit(t *testing.T) {
 				params.PeerRules = testCase.peerRules
 			} else {
 				params.ChannelRules =
-					map[lnwire.ShortChannelID]*ThresholdRule{
+					map[lnwire.ShortChannelID]*SwapRule{
 						chanID1: chanRule,
 						chanID2: chanRule,
 					}
@@ -1364,7 +1398,7 @@ func TestSizeRestrictions(t *testing.T) {
 
 			params := defaultParameters
 			params.ClientRestrictions = testCase.clientRestrictions
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -1522,7 +1556,7 @@ func TestFeePercentage(t *testing.T) {
 
 			params := defaultParameters
 			params.FeeLimit = NewFeePortion(testCase.feePPM)
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -1572,7 +1606,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 		}
 
 		params := defaultParameters
-		params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+		params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 			chanID1: chanRule,
 			chanID2: chanRule,
 		}

@@ -750,7 +750,7 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 }
 
 func newRPCRule(channelID uint64, peer []byte,
-	rule *liquidity.ThresholdRule) *looprpc.LiquidityRule {
+	rule *liquidity.SwapRule) *looprpc.LiquidityRule {
 
 	return &looprpc.LiquidityRule{
 		ChannelId:         channelID,
@@ -781,10 +781,10 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 		AutoFeeBudget:   btcutil.Amount(in.Parameters.AutoloopBudgetSat),
 		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
 		ChannelRules: make(
-			map[lnwire.ShortChannelID]*liquidity.ThresholdRule,
+			map[lnwire.ShortChannelID]*liquidity.SwapRule,
 		),
 		PeerRules: make(
-			map[route.Vertex]*liquidity.ThresholdRule,
+			map[route.Vertex]*liquidity.SwapRule,
 		),
 		ClientRestrictions: liquidity.Restrictions{
 			Minimum: btcutil.Amount(in.Parameters.MinSwapAmount),
@@ -890,16 +890,19 @@ func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
 }
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.
-func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.ThresholdRule, error) {
+func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.SwapRule, error) {
 	switch rule.Type {
 	case looprpc.LiquidityRuleType_UNKNOWN:
 		return nil, fmt.Errorf("rule type field must be set")
 
 	case looprpc.LiquidityRuleType_THRESHOLD:
-		return liquidity.NewThresholdRule(
-			int(rule.IncomingThreshold),
-			int(rule.OutgoingThreshold),
-		), nil
+		return &liquidity.SwapRule{
+			ThresholdRule: liquidity.NewThresholdRule(
+				int(rule.IncomingThreshold),
+				int(rule.OutgoingThreshold),
+			),
+			Type: swap.TypeOut,
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown rule: %T", rule)

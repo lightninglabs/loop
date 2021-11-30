@@ -97,8 +97,8 @@ var (
 	defaultParameters = Parameters{
 		AutoFeeBudget:   defaultBudget,
 		MaxAutoInFlight: defaultMaxInFlight,
-		ChannelRules:    make(map[lnwire.ShortChannelID]*ThresholdRule),
-		PeerRules:       make(map[route.Vertex]*ThresholdRule),
+		ChannelRules:    make(map[lnwire.ShortChannelID]*SwapRule),
+		PeerRules:       make(map[route.Vertex]*SwapRule),
 		FailureBackOff:  defaultFailureBackoff,
 		SweepConfTarget: defaultConfTarget,
 		FeeLimit:        defaultFeePortion(),
@@ -216,13 +216,13 @@ type Parameters struct {
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed. These rules and PeerRules are
 	// exclusively set to prevent overlap between peer and channel rules.
-	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
+	ChannelRules map[lnwire.ShortChannelID]*SwapRule
 
 	// PeerRules maps a peer's pubkey to a rule that applies to all the
 	// channels that we have with the peer collectively. These rules and
 	// ChannelRules are exclusively set to prevent overlap between peer
 	// and channel rules map to avoid ambiguity.
-	PeerRules map[route.Vertex]*ThresholdRule
+	PeerRules map[route.Vertex]*SwapRule
 }
 
 // String returns the string representation of our parameters.
@@ -473,7 +473,7 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 func cloneParameters(params Parameters) Parameters {
 	paramCopy := params
 	paramCopy.ChannelRules = make(
-		map[lnwire.ShortChannelID]*ThresholdRule,
+		map[lnwire.ShortChannelID]*SwapRule,
 		len(params.ChannelRules),
 	)
 
@@ -483,7 +483,7 @@ func cloneParameters(params Parameters) Parameters {
 	}
 
 	paramCopy.PeerRules = make(
-		map[route.Vertex]*ThresholdRule,
+		map[route.Vertex]*SwapRule,
 		len(params.PeerRules),
 	)
 
@@ -841,7 +841,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // suggestSwap checks whether we can currently perform a swap, and creates a
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
-	balance *balances, rule *ThresholdRule, restrictions *Restrictions,
+	balance *balances, rule *SwapRule, restrictions *Restrictions,
 	autoloop bool) (swapSuggestion, error) {
 
 	// First, check whether this peer/channel combination is already in use

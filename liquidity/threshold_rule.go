@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/swap"
 )
 
 var (
@@ -18,6 +19,12 @@ var (
 	errInvalidThresholdSum = errors.New("sum of incoming and outgoing " +
 		"percentages must be < 100")
 )
+
+// SwapRule is a liquidity rule with a specific swap type.
+type SwapRule struct {
+	*ThresholdRule
+	swap.Type
+}
 
 // ThresholdRule is a liquidity rule that implements minimum incoming and
 // outgoing liquidity threshold.
