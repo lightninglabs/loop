@@ -1084,17 +1084,28 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 	}
 
 	for _, in := range loopIn {
-		// Skip completed swaps, they can't affect our channel balances.
-		if in.State().State.Type() != loopdb.StateTypePending {
-			continue
-		}
-
 		// Skip over swaps that may come through any peer.
 		if in.Contract.LastHop == nil {
 			continue
 		}
 
-		traffic.ongoingLoopIn[*in.Contract.LastHop] = true
+		pubkey := *in.Contract.LastHop
+
+		switch {
+		// Include any pending swaps in our ongoing set of swaps.
+		case in.State().State.Type() == loopdb.StateTypePending:
+			traffic.ongoingLoopIn[pubkey] = true
+
+		// If a swap failed with an on-chain timeout, the server could
+		// not route to us. We add it to our backoff list so that
+		// there's some time for routing conditions to improve.
+		case in.State().State == loopdb.StateFailTimeout:
+			failedAt := in.LastUpdate().Time
+
+			if failedAt.After(failureCutoff) {
+				traffic.failedLoopIn[pubkey] = failedAt
+			}
+		}
 	}
 
 	return traffic
@@ -1105,6 +1116,7 @@ type swapTraffic struct {
 	ongoingLoopOut map[lnwire.ShortChannelID]bool
 	ongoingLoopIn  map[route.Vertex]bool
 	failedLoopOut  map[lnwire.ShortChannelID]time.Time
+	failedLoopIn   map[route.Vertex]time.Time
 }
 
 func newSwapTraffic() *swapTraffic {
@@ -1112,6 +1124,7 @@ func newSwapTraffic() *swapTraffic {
 		ongoingLoopOut: make(map[lnwire.ShortChannelID]bool),
 		ongoingLoopIn:  make(map[route.Vertex]bool),
 		failedLoopOut:  make(map[lnwire.ShortChannelID]time.Time),
+		failedLoopIn:   make(map[route.Vertex]time.Time),
 	}
 }
 

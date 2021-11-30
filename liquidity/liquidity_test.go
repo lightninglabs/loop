@@ -1817,3 +1817,184 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	require.Equal(t, expectedErr, err)
 	require.Equal(t, expected, actual)
 }
+
+// TestCurrentTraffic tests recording of our current set of ongoing swaps.
+func TestCurrentTraffic(t *testing.T) {
+	var (
+		backoff        = time.Hour * 5
+		withinBackoff  = testTime.Add(time.Hour * -1)
+		outsideBackoff = testTime.Add(backoff * -2)
+
+		success = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateSuccess,
+				},
+			},
+		}
+
+		failedInBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailOffchainPayments,
+				},
+				Time: withinBackoff,
+			},
+		}
+
+		failedOutsideBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailOffchainPayments,
+				},
+				Time: outsideBackoff,
+			},
+		}
+
+		failedTimeoutInBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailTimeout,
+				},
+				Time: withinBackoff,
+			},
+		}
+
+		failedTimeoutOutsideBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailTimeout,
+				},
+				Time: outsideBackoff,
+			},
+		}
+	)
+
+	tests := []struct {
+		name     string
+		loopOut  []*loopdb.LoopOut
+		loopIn   []*loopdb.LoopIn
+		expected *swapTraffic
+	}{
+		{
+			name: "completed swaps ignored",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Loop: loopdb.Loop{
+						Events: success,
+					},
+					Contract: &loopdb.LoopOutContract{},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: success,
+					},
+					Contract: &loopdb.LoopInContract{},
+				},
+			},
+			expected: newSwapTraffic(),
+		},
+		{
+			// No events indicates that the swap is still pending.
+			name: "pending swaps included",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID1.ToUint64(),
+						},
+					},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer2,
+					},
+				},
+			},
+			expected: &swapTraffic{
+				ongoingLoopOut: map[lnwire.ShortChannelID]bool{
+					chanID1: true,
+				},
+				ongoingLoopIn: map[route.Vertex]bool{
+					peer2: true,
+				},
+				// Make empty maps so that we can assert equal.
+				failedLoopOut: make(
+					map[lnwire.ShortChannelID]time.Time,
+				),
+				failedLoopIn: make(map[route.Vertex]time.Time),
+			},
+		},
+		{
+			name: "failure backoff included",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID1.ToUint64(),
+						},
+					},
+					Loop: loopdb.Loop{
+						Events: failedInBackoff,
+					},
+				},
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID2.ToUint64(),
+						},
+					},
+					Loop: loopdb.Loop{
+						Events: failedOutsideBackoff,
+					},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer1,
+					},
+					Loop: loopdb.Loop{
+						Events: failedTimeoutInBackoff,
+					},
+				},
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer2,
+					},
+					Loop: loopdb.Loop{
+						Events: failedTimeoutOutsideBackoff,
+					},
+				},
+			},
+			expected: &swapTraffic{
+				ongoingLoopOut: make(
+					map[lnwire.ShortChannelID]bool,
+				),
+				ongoingLoopIn: make(map[route.Vertex]bool),
+				failedLoopOut: map[lnwire.ShortChannelID]time.Time{
+					chanID1: withinBackoff,
+				},
+				failedLoopIn: map[route.Vertex]time.Time{
+					peer1: withinBackoff,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		cfg, _ := newTestConfig()
+		m := NewManager(cfg)
+
+		params := m.GetParameters()
+		params.FailureBackOff = backoff
+		require.NoError(t, m.SetParameters(context.Background(), params))
+
+		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
+		require.Equal(t, testCase.expected, actual)
+	}
+}
