@@ -81,6 +81,12 @@ const (
 	// autoloopSwapInitiator is the value we send in the initiator field of
 	// a swap request when issuing an automatic swap.
 	autoloopSwapInitiator = "autoloop"
+
+	// We use a static fee rate to estimate our sweep fee, because we
+	// can't realistically estimate what our fee estimate will be by the
+	// time we reach timeout. We set this to a high estimate so that we can
+	// account for worst-case fees, (1250 * 4 / 1000) = 50 sat/byte.
+	defaultLoopInSweepFee = chainfee.SatPerKWeight(1250)
 )
 
 var (
