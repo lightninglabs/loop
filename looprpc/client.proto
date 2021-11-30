@@ -843,6 +843,9 @@ message LiquidityRule {
     */
     uint64 channel_id = 1;
 
+    // The type of swap that will be dispatched for this rule.
+    SwapType swap_type = 6;
+
     /*
     The public key of the peer that this rule should be applied to. This field
     may not be set when the channel id field is set.

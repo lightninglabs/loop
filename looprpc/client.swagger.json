@@ -672,6 +672,10 @@
           "format": "uint64",
           "description": "The short channel ID of the channel that this rule should be applied to.\nThis field may not be set when the pubkey field is set."
         },
+        "swap_type": {
+          "$ref": "#/definitions/looprpcSwapType",
+          "description": "The type of swap that will be dispatched for this rule."
+        },
         "pubkey": {
           "type": "string",
           "format": "byte",

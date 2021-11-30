@@ -752,13 +752,20 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 func newRPCRule(channelID uint64, peer []byte,
 	rule *liquidity.SwapRule) *looprpc.LiquidityRule {
 
-	return &looprpc.LiquidityRule{
+	rpcRule := &looprpc.LiquidityRule{
 		ChannelId:         channelID,
 		Pubkey:            peer,
 		Type:              looprpc.LiquidityRuleType_THRESHOLD,
 		IncomingThreshold: uint32(rule.MinimumIncoming),
 		OutgoingThreshold: uint32(rule.MinimumOutgoing),
+		SwapType:          looprpc.SwapType_LOOP_OUT,
 	}
+
+	if rule.Type == swap.TypeIn {
+		rpcRule.SwapType = looprpc.SwapType_LOOP_IN
+	}
+
+	return rpcRule
 }
 
 // SetLiquidityParams attempts to set our current liquidity manager's
@@ -891,6 +898,11 @@ func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.
 func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.SwapRule, error) {
+	swapType := swap.TypeOut
+	if rule.SwapType == looprpc.SwapType_LOOP_IN {
+		swapType = swap.TypeIn
+	}
+
 	switch rule.Type {
 	case looprpc.LiquidityRuleType_UNKNOWN:
 		return nil, fmt.Errorf("rule type field must be set")
@@ -901,7 +913,7 @@ func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.SwapRule, error) {
 				int(rule.IncomingThreshold),
 				int(rule.OutgoingThreshold),
 			),
-			Type: swap.TypeOut,
+			Type: swapType,
 		}, nil
 
 	default:

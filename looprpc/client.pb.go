@@ -2299,6 +2299,8 @@ type LiquidityRule struct {
 	//The short channel ID of the channel that this rule should be applied to.
 	//This field may not be set when the pubkey field is set.
 	ChannelId uint64 `protobuf:"varint,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	// The type of swap that will be dispatched for this rule.
+	SwapType SwapType `protobuf:"varint,6,opt,name=swap_type,json=swapType,proto3,enum=looprpc.SwapType" json:"swap_type,omitempty"`
 	//
 	//The public key of the peer that this rule should be applied to. This field
 	//may not be set when the channel id field is set.
@@ -2356,6 +2358,13 @@ func (x *LiquidityRule) GetChannelId() uint64 {
 		return x.ChannelId
 	}
 	return 0
+}
+
+func (x *LiquidityRule) GetSwapType() SwapType {
+	if x != nil {
+		return x.SwapType
+	}
+	return SwapType_LOOP_OUT
 }
 
 func (x *LiquidityRule) GetPubkey() []byte {
@@ -2905,10 +2914,13 @@ var file_client_proto_rawDesc = []byte{
 	0x6e, 0x53, 0x77, 0x61, 0x70, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x26, 0x0a, 0x0f, 0x6d,
 	0x61, 0x78, 0x5f, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x0f,
 	0x20, 0x01, 0x28, 0x04, 0x52, 0x0d, 0x6d, 0x61, 0x78, 0x53, 0x77, 0x61, 0x70, 0x41, 0x6d, 0x6f,
-	0x75, 0x6e, 0x74, 0x22, 0xd4, 0x01, 0x0a, 0x0d, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74,
+	0x75, 0x6e, 0x74, 0x22, 0x84, 0x02, 0x0a, 0x0d, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74,
 	0x79, 0x52, 0x75, 0x6c, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x63, 0x68, 0x61, 0x6e, 0x6e, 0x65, 0x6c,
 	0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x63, 0x68, 0x61, 0x6e, 0x6e,
-	0x65, 0x6c, 0x49, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x70, 0x75, 0x62, 0x6b, 0x65, 0x79, 0x18, 0x05,
+	0x65, 0x6c, 0x49, 0x64, 0x12, 0x2e, 0x0a, 0x09, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x74, 0x79, 0x70,
+	0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x11, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70,
+	0x63, 0x2e, 0x53, 0x77, 0x61, 0x70, 0x54, 0x79, 0x70, 0x65, 0x52, 0x08, 0x73, 0x77, 0x61, 0x70,
+	0x54, 0x79, 0x70, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x70, 0x75, 0x62, 0x6b, 0x65, 0x79, 0x18, 0x05,
 	0x20, 0x01, 0x28, 0x0c, 0x52, 0x06, 0x70, 0x75, 0x62, 0x6b, 0x65, 0x79, 0x12, 0x2e, 0x0a, 0x04,
 	0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x1a, 0x2e, 0x6c, 0x6f, 0x6f,
 	0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x52, 0x75,
@@ -3122,44 +3134,45 @@ var file_client_proto_depIdxs = []int32{
 	32, // 5: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
 	23, // 6: looprpc.TokensResponse.tokens:type_name -> looprpc.LsatToken
 	26, // 7: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
-	3,  // 8: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
-	25, // 9: looprpc.SetLiquidityParamsRequest.parameters:type_name -> looprpc.LiquidityParameters
-	4,  // 10: looprpc.Disqualified.reason:type_name -> looprpc.AutoReason
-	5,  // 11: looprpc.SuggestSwapsResponse.loop_out:type_name -> looprpc.LoopOutRequest
-	30, // 12: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
-	5,  // 13: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
-	6,  // 14: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
-	8,  // 15: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
-	10, // 16: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
-	12, // 17: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
-	13, // 18: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
-	16, // 19: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
-	13, // 20: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
-	16, // 21: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
-	19, // 22: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	21, // 23: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
-	24, // 24: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
-	27, // 25: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
-	29, // 26: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
-	7,  // 27: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
-	7,  // 28: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
-	9,  // 29: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
-	11, // 30: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
-	9,  // 31: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
-	15, // 32: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
-	18, // 33: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
-	14, // 34: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
-	17, // 35: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
-	20, // 36: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	22, // 37: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
-	25, // 38: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
-	28, // 39: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
-	31, // 40: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
-	27, // [27:41] is the sub-list for method output_type
-	13, // [13:27] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	0,  // 8: looprpc.LiquidityRule.swap_type:type_name -> looprpc.SwapType
+	3,  // 9: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
+	25, // 10: looprpc.SetLiquidityParamsRequest.parameters:type_name -> looprpc.LiquidityParameters
+	4,  // 11: looprpc.Disqualified.reason:type_name -> looprpc.AutoReason
+	5,  // 12: looprpc.SuggestSwapsResponse.loop_out:type_name -> looprpc.LoopOutRequest
+	30, // 13: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
+	5,  // 14: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
+	6,  // 15: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
+	8,  // 16: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
+	10, // 17: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
+	12, // 18: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
+	13, // 19: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
+	16, // 20: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
+	13, // 21: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
+	16, // 22: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
+	19, // 23: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
+	21, // 24: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	24, // 25: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
+	27, // 26: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
+	29, // 27: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
+	7,  // 28: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
+	7,  // 29: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
+	9,  // 30: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
+	11, // 31: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
+	9,  // 32: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
+	15, // 33: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
+	18, // 34: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
+	14, // 35: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
+	17, // 36: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
+	20, // 37: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
+	22, // 38: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	25, // 39: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
+	28, // 40: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
+	31, // 41: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
+	28, // [28:42] is the sub-list for method output_type
+	14, // [14:28] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
