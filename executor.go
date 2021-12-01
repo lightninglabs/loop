@@ -26,6 +26,10 @@ type executorConfig struct {
 
 	loopOutMaxParts uint32
 
+	totalPaymentTimeout time.Duration
+
+	maxPaymentRetries int
+
 	cancelSwap func(ctx context.Context, details *outCancelDetails) error
 }
 
@@ -141,12 +145,14 @@ func (s *executor) run(mainCtx context.Context,
 				defer s.wg.Done()
 
 				err := newSwap.execute(mainCtx, &executeConfig{
-					statusChan:      statusChan,
-					sweeper:         s.sweeper,
-					blockEpochChan:  queue.ChanOut(),
-					timerFactory:    s.executorConfig.createExpiryTimer,
-					loopOutMaxParts: s.executorConfig.loopOutMaxParts,
-					cancelSwap:      s.executorConfig.cancelSwap,
+					statusChan:         statusChan,
+					sweeper:            s.sweeper,
+					blockEpochChan:     queue.ChanOut(),
+					timerFactory:       s.executorConfig.createExpiryTimer,
+					loopOutMaxParts:    s.executorConfig.loopOutMaxParts,
+					totalPaymentTimout: s.executorConfig.totalPaymentTimeout,
+					maxPaymentRetries:  s.executorConfig.maxPaymentRetries,
+					cancelSwap:         s.executorConfig.cancelSwap,
 				}, height)
 				if err != nil && err != context.Canceled {
 					log.Errorf("Execute error: %v", err)

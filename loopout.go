@@ -52,15 +52,6 @@ var (
 	//
 	// TODO(wilmer): tune?
 	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
-
-	// totalPaymentTimeout is the total timeout used for the loop out
-	// offchain payment.
-	totalPaymentTimeout = time.Minute * 60
-
-	// maxPaymentRetries is the maximum number of times the client will
-	// attempt to pay the invoice before failing the swap. This retry limit
-	// only applies to when the client uses a routing helper plugin.
-	maxPaymentRetries = 3
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -87,12 +78,14 @@ type loopOutSwap struct {
 
 // executeConfig contains extra configuration to execute the swap.
 type executeConfig struct {
-	sweeper         *sweep.Sweeper
-	statusChan      chan<- SwapInfo
-	blockEpochChan  <-chan interface{}
-	timerFactory    func(d time.Duration) <-chan time.Time
-	loopOutMaxParts uint32
-	cancelSwap      func(context.Context, *outCancelDetails) error
+	sweeper            *sweep.Sweeper
+	statusChan         chan<- SwapInfo
+	blockEpochChan     <-chan interface{}
+	timerFactory       func(d time.Duration) <-chan time.Time
+	loopOutMaxParts    uint32
+	totalPaymentTimout time.Duration
+	maxPaymentRetries  int
+	cancelSwap         func(context.Context, *outCancelDetails) error
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
@@ -683,6 +676,8 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	}
 
 	maxRetries := 1
+	paymentTimeout := s.executeConfig.totalPaymentTimout
+
 	// Attempt to acquire and initialize the routing plugin.
 	routingPlugin, err := AcquireRoutingPlugin(
 		ctx, pluginType, *s.lnd, target, nil, amt,
@@ -695,11 +690,11 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		s.log.Infof("Acquired routing plugin %v for payment %v",
 			pluginType, hash.String())
 
-		maxRetries = maxPaymentRetries
+		maxRetries = s.executeConfig.maxPaymentRetries
+		paymentTimeout /= time.Duration(maxRetries)
 		defer ReleaseRoutingPlugin(ctx)
 	}
 
-	paymentTimeout := totalPaymentTimeout / time.Duration(maxRetries)
 	req := lndclient.SendPaymentRequest{
 		MaxFee:          maxFee,
 		Invoice:         invoice,

@@ -108,6 +108,14 @@ type ClientConfig struct {
 	// for a loop out swap. When greater than one, a multi-part payment may
 	// be attempted.
 	LoopOutMaxParts uint32
+
+	// TotalPaymentTimeout is the total amount of time until we time out
+	// off-chain payments (used in loop out).
+	TotalPaymentTimeout time.Duration
+
+	// MaxPaymentRetries is the maximum times we retry an off-chain payment
+	// (used in loop out).
+	MaxPaymentRetries int
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -142,12 +150,14 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 	}
 
 	executor := newExecutor(&executorConfig{
-		lnd:               cfg.Lnd,
-		store:             store,
-		sweeper:           sweeper,
-		createExpiryTimer: config.CreateExpiryTimer,
-		loopOutMaxParts:   cfg.LoopOutMaxParts,
-		cancelSwap:        swapServerClient.CancelLoopOutSwap,
+		lnd:                 cfg.Lnd,
+		store:               store,
+		sweeper:             sweeper,
+		createExpiryTimer:   config.CreateExpiryTimer,
+		loopOutMaxParts:     cfg.LoopOutMaxParts,
+		totalPaymentTimeout: cfg.TotalPaymentTimeout,
+		maxPaymentRetries:   cfg.MaxPaymentRetries,
+		cancelSwap:          swapServerClient.CancelLoopOutSwap,
 	})
 
 	client := &Client{
