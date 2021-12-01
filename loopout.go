@@ -590,7 +590,8 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 		s.LoopOutContract.OutgoingChanSet, pluginType,
 	)
 
-	// Pay the prepay invoice. Won't use the routing plugin here.
+	// Pay the prepay invoice. Won't use the routing plugin here as the
+	// prepay is trivially small and shouldn't normally need any help.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
@@ -670,7 +671,9 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
 	chainParams := s.lnd.ChainParams
-	target, hash, amt, err := swap.DecodeInvoice(chainParams, invoice)
+	target, routeHints, hash, amt, err := swap.DecodeInvoice(
+		chainParams, invoice,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +683,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 
 	// Attempt to acquire and initialize the routing plugin.
 	routingPlugin, err := AcquireRoutingPlugin(
-		ctx, pluginType, *s.lnd, target, nil, amt,
+		ctx, pluginType, *s.lnd, target, routeHints, amt,
 	)
 	if err != nil {
 		return nil, err
@@ -1314,7 +1317,7 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams
 
-	_, swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
+	_, _, swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.swapInvoice,
 	)
 	if err != nil {
@@ -1327,7 +1330,7 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 			swapInvoiceHash, swapHash)
 	}
 
-	_, _, prepayInvoiceAmt, err := swap.DecodeInvoice(
+	_, _, _, prepayInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.prepayInvoice,
 	)
 	if err != nil {

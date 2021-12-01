@@ -30,18 +30,18 @@ func FeeRateAsPercentage(feeRate int64) float64 {
 
 // DecodeInvoice gets the destination, hash and the amount of an invoice.
 // It requires an amount to be specified.
-func DecodeInvoice(params *chaincfg.Params,
-	payReq string) (route.Vertex, lntypes.Hash, btcutil.Amount, error) {
+func DecodeInvoice(params *chaincfg.Params, payReq string) (route.Vertex,
+	[][]zpay32.HopHint, lntypes.Hash, btcutil.Amount, error) {
 
 	swapPayReq, err := zpay32.Decode(
 		payReq, params,
 	)
 	if err != nil {
-		return route.Vertex{}, lntypes.Hash{}, 0, err
+		return route.Vertex{}, nil, lntypes.Hash{}, 0, err
 	}
 
 	if swapPayReq.MilliSat == nil {
-		return route.Vertex{}, lntypes.Hash{}, 0,
+		return route.Vertex{}, nil, lntypes.Hash{}, 0,
 			errors.New("no amount in invoice")
 	}
 
@@ -52,5 +52,6 @@ func DecodeInvoice(params *chaincfg.Params,
 	destPubKey := swapPayReq.Destination.SerializeCompressed()
 	copy(destination[:], destPubKey)
 
-	return destination, hash, swapPayReq.MilliSat.ToSatoshis(), nil
+	return destination, swapPayReq.RouteHints, hash,
+		swapPayReq.MilliSat.ToSatoshis(), nil
 }
