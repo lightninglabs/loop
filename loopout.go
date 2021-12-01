@@ -53,9 +53,14 @@ var (
 	// TODO(wilmer): tune?
 	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
 
-	// paymentTimeout is the timeout for the loop out payment loop as
-	// communicated to lnd.
-	paymentTimeout = time.Minute * 30
+	// totalPaymentTimeout is the total timeout used for the loop out
+	// offchain payment.
+	totalPaymentTimeout = time.Minute * 60
+
+	// maxPaymentRetries is the maximum number of times the client will
+	// attempt to pay the invoice before failing the swap. This retry limit
+	// only applies to when the client uses a routing helper plugin.
+	maxPaymentRetries = 3
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -71,6 +76,8 @@ type loopOutSwap struct {
 
 	// htlcTxHash is the confirmed htlc tx id.
 	htlcTxHash *chainhash.Hash
+
+	swapInvoicePaymentAddr [32]byte
 
 	swapPaymentChan chan paymentResult
 	prePaymentChan  chan paymentResult
@@ -198,10 +205,18 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	// Log htlc address for debugging.
 	swapKit.log.Infof("Htlc address: %v", htlc.Address)
 
+	// Obtain the payment addr since we'll need it later for routing plugin
+	// recommendation and possibly for cancel.
+	paymentAddr, err := obtainSwapPaymentAddr(contract.SwapInvoice, cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	swap := &loopOutSwap{
-		LoopOutContract: contract,
-		swapKit:         *swapKit,
-		htlc:            htlc,
+		LoopOutContract:        contract,
+		swapKit:                *swapKit,
+		htlc:                   htlc,
+		swapInvoicePaymentAddr: *paymentAddr,
 	}
 
 	// Persist the data before exiting this function, so that the caller
@@ -244,11 +259,21 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	// Log htlc address for debugging.
 	swapKit.log.Infof("Htlc address: %v", htlc.Address)
 
+	// Obtain the payment addr since we'll need it later for routing plugin
+	// recommendation and possibly for cancel.
+	paymentAddr, err := obtainSwapPaymentAddr(
+		pend.Contract.SwapInvoice, cfg,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create the swap.
 	swap := &loopOutSwap{
-		LoopOutContract: *pend.Contract,
-		swapKit:         *swapKit,
-		htlc:            htlc,
+		LoopOutContract:        *pend.Contract,
+		swapKit:                *swapKit,
+		htlc:                   htlc,
+		swapInvoicePaymentAddr: *paymentAddr,
 	}
 
 	lastUpdate := pend.LastUpdate()
@@ -261,6 +286,24 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	}
 
 	return swap, nil
+}
+
+// obtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
+func obtainSwapPaymentAddr(swapInvoice string, cfg *swapConfig) (
+	*[32]byte, error) {
+
+	swapPayReq, err := zpay32.Decode(
+		swapInvoice, cfg.lnd.ChainParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if swapPayReq.PaymentAddr == nil {
+		return nil, fmt.Errorf("expected payment address for invoice")
+	}
+
+	return swapPayReq.PaymentAddr, nil
 }
 
 // sendUpdate reports an update to the swap state.
@@ -537,16 +580,28 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Pay the swap invoice.
 	s.log.Infof("Sending swap payment %v", s.SwapInvoice)
 
+	// Ask the server if it recommends using a routing plugin.
+	pluginType, err := s.swapKit.server.RecommendRoutingPlugin(
+		ctx, s.swapInfo().SwapHash, s.swapInvoicePaymentAddr,
+	)
+	if err != nil {
+		s.log.Warnf("Server couldn't recommend routing plugin: %v", err)
+		pluginType = RoutingPluginNone
+	} else {
+		s.log.Infof("Server recommended routing plugin: %v", pluginType)
+	}
+
+	// Use the recommended routing plugin.
 	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.LoopOutContract.OutgoingChanSet,
+		s.LoopOutContract.OutgoingChanSet, pluginType,
 	)
 
-	// Pay the prepay invoice.
+	// Pay the prepay invoice. Won't use the routing plugin here.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
-		nil,
+		nil, RoutingPluginNone,
 	)
 }
 
@@ -573,8 +628,8 @@ func (p paymentResult) failure() error {
 
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
-	maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet) chan paymentResult {
+	maxFee btcutil.Amount, outgoingChanIds loopdb.ChannelSet,
+	pluginType RoutingPluginType) chan paymentResult {
 
 	resultChan := make(chan paymentResult)
 	sendResult := func(result paymentResult) {
@@ -588,7 +643,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 		var result paymentResult
 
 		status, err := s.payInvoiceAsync(
-			ctx, invoice, maxFee, outgoingChanIds,
+			ctx, invoice, maxFee, outgoingChanIds, pluginType,
 		)
 		if err != nil {
 			result.err = err
@@ -616,16 +671,35 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	invoice string, maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet) (*lndclient.PaymentStatus, error) {
+	outgoingChanIds loopdb.ChannelSet, pluginType RoutingPluginType) (
+	*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
 	chainParams := s.lnd.ChainParams
-	hash, _, err := swap.DecodeInvoice(chainParams, invoice)
+	target, hash, amt, err := swap.DecodeInvoice(chainParams, invoice)
 	if err != nil {
 		return nil, err
 	}
 
+	maxRetries := 1
+	// Attempt to acquire and initialize the routing plugin.
+	routingPlugin, err := AcquireRoutingPlugin(
+		ctx, pluginType, *s.lnd, target, nil, amt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if routingPlugin != nil {
+		s.log.Infof("Acquired routing plugin %v for payment %v",
+			pluginType, hash.String())
+
+		maxRetries = maxPaymentRetries
+		defer ReleaseRoutingPlugin(ctx)
+	}
+
+	paymentTimeout := totalPaymentTimeout / time.Duration(maxRetries)
 	req := lndclient.SendPaymentRequest{
 		MaxFee:          maxFee,
 		Invoice:         invoice,
@@ -635,12 +709,75 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	}
 
 	// Lookup state of the swap payment.
-	paymentStateCtx, cancel := context.WithCancel(ctx)
+	payCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	payStatusChan, payErrChan, err := s.lnd.Router.SendPayment(
-		paymentStateCtx, req,
+	start := time.Now()
+	paymentStatus, attempts, err := s.sendPaymentWithRetry(
+		payCtx, hash, &req, maxRetries, routingPlugin, pluginType,
 	)
+
+	dt := time.Since(start)
+	paymentSuccess := err == nil &&
+		paymentStatus.State == lnrpc.Payment_SUCCEEDED
+
+	if err := s.swapKit.server.ReportRoutingResult(
+		ctx, s.swapInfo().SwapHash, s.swapInvoicePaymentAddr, pluginType,
+		paymentSuccess, int32(attempts), dt.Milliseconds(),
+	); err != nil {
+		s.log.Warnf("Failed to report routing result: %v", err)
+	}
+
+	return paymentStatus, err
+}
+
+// sendPaymentWithRetry will send the payment, optionally with the passed
+// routing plugin retrying at most maxRetries times.
+func (s *loopOutSwap) sendPaymentWithRetry(ctx context.Context,
+	hash lntypes.Hash, req *lndclient.SendPaymentRequest, maxRetries int,
+	routingPlugin RoutingPlugin, pluginType RoutingPluginType) (
+	*lndclient.PaymentStatus, int, error) {
+
+	tryCount := 1
+	for {
+		s.log.Infof("Payment (%v) try count %v/%v (plugin=%v)",
+			hash.String(), tryCount, maxRetries,
+			pluginType.String())
+
+		if routingPlugin != nil {
+			if err := routingPlugin.BeforePayment(
+				ctx, tryCount, maxRetries,
+			); err != nil {
+				return nil, tryCount, err
+			}
+		}
+
+		var err error
+		paymentStatus, err := s.awaitSendPayment(ctx, hash, req)
+		if err != nil {
+			return nil, tryCount, err
+		}
+
+		// Payment has succeeded, we can return here.
+		if paymentStatus.State == lnrpc.Payment_SUCCEEDED {
+			return paymentStatus, tryCount, nil
+		}
+
+		// Retry if the payment has timed out, or return here.
+		if tryCount > maxRetries || paymentStatus.FailureReason !=
+			lnrpc.PaymentFailureReason_FAILURE_REASON_TIMEOUT {
+
+			return paymentStatus, tryCount, nil
+		}
+
+		tryCount++
+	}
+}
+
+func (s *loopOutSwap) awaitSendPayment(ctx context.Context, hash lntypes.Hash,
+	req *lndclient.SendPaymentRequest) (*lndclient.PaymentStatus, error) {
+
+	payStatusChan, payErrChan, err := s.lnd.Router.SendPayment(ctx, *req)
 	if err != nil {
 		return nil, err
 	}
@@ -665,15 +802,16 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 				return nil, errors.New("unknown payment state")
 			}
 
-		// Abort the swap in case of an error. An unknown payment error
-		// from TrackPayment is no longer expected here.
+		// Abort the swap in case of an error. An unknown
+		// payment error from TrackPayment is no longer expected
+		// here.
 		case err := <-payErrChan:
 			if err != channeldb.ErrAlreadyPaid {
 				return nil, err
 			}
 
 			payStatusChan, payErrChan, err =
-				s.lnd.Router.TrackPayment(paymentStateCtx, hash)
+				s.lnd.Router.TrackPayment(ctx, hash)
 			if err != nil {
 				return nil, err
 			}
@@ -997,22 +1135,9 @@ func (s *loopOutSwap) failOffChain(ctx context.Context, paymentType paymentType,
 	// Set our state to failed off chain timeout.
 	s.state = loopdb.StateFailOffchainPayments
 
-	swapPayReq, err := zpay32.Decode(
-		s.LoopOutContract.SwapInvoice, s.swapConfig.lnd.ChainParams,
-	)
-	if err != nil {
-		s.log.Errorf("could not decode swap invoice: %v", err)
-		return
-	}
-
-	if swapPayReq.PaymentAddr == nil {
-		s.log.Errorf("expected payment address for invoice")
-		return
-	}
-
 	details := &outCancelDetails{
 		hash:        s.hash,
-		paymentAddr: *swapPayReq.PaymentAddr,
+		paymentAddr: s.swapInvoicePaymentAddr,
 		metadata: routeCancelMetadata{
 			paymentType:   paymentType,
 			failureReason: status.FailureReason,
@@ -1194,7 +1319,7 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams
 
-	swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
+	_, swapInvoiceHash, swapInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.swapInvoice,
 	)
 	if err != nil {
@@ -1207,7 +1332,7 @@ func validateLoopOutContract(lnd *lndclient.LndServices,
 			swapInvoiceHash, swapHash)
 	}
 
-	_, prepayInvoiceAmt, err := swap.DecodeInvoice(
+	_, _, prepayInvoiceAmt, err := swap.DecodeInvoice(
 		chainParams, response.prepayInvoice,
 	)
 	if err != nil {
