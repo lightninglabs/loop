@@ -93,18 +93,18 @@ func TestValidateThreshold(t *testing.T) {
 	}
 }
 
-// TestLoopOutAmount tests assessing of a set of balances to determine whether
-// we should perform a loop out.
-func TestLoopOutAmount(t *testing.T) {
+// TestCalculateAmount tests calculation of the amount we recommend for a given
+// set of balances and threshold rule.
+func TestCalculateAmount(t *testing.T) {
 	tests := []struct {
 		name        string
-		minIncoming int
-		minOutgoing int
+		minIncoming uint64
+		minOutgoing uint64
 		balances    *balances
 		amt         btcutil.Amount
 	}{
 		{
-			name: "insufficient surplus",
+			name: "insufficient outgoing",
 			balances: &balances{
 				capacity: 100,
 				incoming: 20,
@@ -166,8 +166,9 @@ func TestLoopOutAmount(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			amt := loopOutSwapAmount(
-				test.balances, test.minIncoming,
+			amt := calculateSwapAmount(
+				test.balances.incoming, test.balances.outgoing,
+				test.balances.capacity, test.minIncoming,
 				test.minOutgoing,
 			)
 			require.Equal(t, test.amt, amt)

@@ -223,6 +223,27 @@ func (f *FeeCategoryLimit) loopOutLimits(amount btcutil.Amount,
 	return nil
 }
 
+func (f *FeeCategoryLimit) loopInLimits(amount btcutil.Amount,
+	quote *loop.LoopInQuote) error {
+
+	maxServerFee := ppmToSat(amount, f.MaximumSwapFeePPM)
+	if quote.SwapFee > maxServerFee {
+		log.Debugf("quoted swap fee: %v > maximum swap fee: %v",
+			quote.SwapFee, maxServerFee)
+
+		return newReasonError(ReasonSwapFee)
+	}
+
+	if quote.MinerFee > f.MaximumMinerFee {
+		log.Debugf("quoted miner fee: %v > maximum miner "+
+			"fee: %v", quote.MinerFee, f.MaximumMinerFee)
+
+		return newReasonError(ReasonMinerFee)
+	}
+
+	return nil
+}
+
 // loopOutFees returns the prepay and routing and miner fees we are willing to
 // pay for a loop out swap.
 func (f *FeeCategoryLimit) loopOutFees(amount btcutil.Amount,
@@ -383,4 +404,43 @@ func splitOffChain(available, prepayAmt,
 // scaleMinerFee scales our miner fee by our constant multiplier.
 func scaleMinerFee(estimate btcutil.Amount) btcutil.Amount {
 	return estimate * btcutil.Amount(minerMultiplier)
+}
+
+func (f *FeePortion) loopInLimits(amount btcutil.Amount,
+	quote *loop.LoopInQuote) error {
+
+	// Calculate the total amount that this swap may spend in fees, as a
+	// portion of the swap amount.
+	totalFeeSpend := ppmToSat(amount, f.PartsPerMillion)
+
+	// Check individual fee components so that we can give more specific
+	// feedback.
+	if quote.MinerFee > totalFeeSpend {
+		log.Debugf("miner fee: %v greater than fee limit: %v, at "+
+			"%v ppm", quote.MinerFee, totalFeeSpend,
+			f.PartsPerMillion)
+
+		return newReasonError(ReasonMinerFee)
+	}
+
+	if quote.SwapFee > totalFeeSpend {
+		log.Debugf("swap fee: %v greater than fee limit: %v, at "+
+			"%v ppm", quote.SwapFee, totalFeeSpend,
+			f.PartsPerMillion)
+
+		return newReasonError(ReasonSwapFee)
+	}
+
+	fees := worstCaseInFees(
+		quote.MinerFee, quote.SwapFee, defaultLoopInSweepFee,
+	)
+
+	if fees > totalFeeSpend {
+		log.Debugf("total fees for swap: %v > fee limit: %v, at "+
+			"%v ppm", fees, totalFeeSpend, f.PartsPerMillion)
+
+		return newReasonError(ReasonFeePPMInsufficient)
+	}
+
+	return nil
 }

@@ -81,6 +81,12 @@ const (
 	// autoloopSwapInitiator is the value we send in the initiator field of
 	// a swap request when issuing an automatic swap.
 	autoloopSwapInitiator = "autoloop"
+
+	// We use a static fee rate to estimate our sweep fee, because we
+	// can't realistically estimate what our fee estimate will be by the
+	// time we reach timeout. We set this to a high estimate so that we can
+	// account for worst-case fees, (1250 * 4 / 1000) = 50 sat/byte.
+	defaultLoopInSweepFee = chainfee.SatPerKWeight(1250)
 )
 
 var (
@@ -97,8 +103,8 @@ var (
 	defaultParameters = Parameters{
 		AutoFeeBudget:   defaultBudget,
 		MaxAutoInFlight: defaultMaxInFlight,
-		ChannelRules:    make(map[lnwire.ShortChannelID]*ThresholdRule),
-		PeerRules:       make(map[route.Vertex]*ThresholdRule),
+		ChannelRules:    make(map[lnwire.ShortChannelID]*SwapRule),
+		PeerRules:       make(map[route.Vertex]*SwapRule),
 		FailureBackOff:  defaultFailureBackoff,
 		SweepConfTarget: defaultConfTarget,
 		FeeLimit:        defaultFeePortion(),
@@ -216,13 +222,13 @@ type Parameters struct {
 	// ChannelRules maps a short channel ID to a rule that describes how we
 	// would like liquidity to be managed. These rules and PeerRules are
 	// exclusively set to prevent overlap between peer and channel rules.
-	ChannelRules map[lnwire.ShortChannelID]*ThresholdRule
+	ChannelRules map[lnwire.ShortChannelID]*SwapRule
 
 	// PeerRules maps a peer's pubkey to a rule that applies to all the
 	// channels that we have with the peer collectively. These rules and
 	// ChannelRules are exclusively set to prevent overlap between peer
 	// and channel rules map to avoid ambiguity.
-	PeerRules map[route.Vertex]*ThresholdRule
+	PeerRules map[route.Vertex]*SwapRule
 }
 
 // String returns the string representation of our parameters.
@@ -386,10 +392,6 @@ type Manager struct {
 	// current liquidity balance.
 	cfg *Config
 
-	// builder is the swap builder responsible for creating swaps of our
-	// chosen type for us.
-	builder swapBuilder
-
 	// params is the set of parameters we are currently using. These may be
 	// updated at runtime.
 	params Parameters
@@ -428,9 +430,8 @@ func (m *Manager) Run(ctx context.Context) error {
 // NewManager creates a liquidity manager which has no rules set.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
-		cfg:     cfg,
-		params:  defaultParameters,
-		builder: newLoopOutBuilder(cfg),
+		cfg:    cfg,
+		params: defaultParameters,
 	}
 }
 
@@ -473,7 +474,7 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 func cloneParameters(params Parameters) Parameters {
 	paramCopy := params
 	paramCopy.ChannelRules = make(
-		map[lnwire.ShortChannelID]*ThresholdRule,
+		map[lnwire.ShortChannelID]*SwapRule,
 		len(params.ChannelRules),
 	)
 
@@ -483,7 +484,7 @@ func cloneParameters(params Parameters) Parameters {
 	}
 
 	paramCopy.PeerRules = make(
-		map[route.Vertex]*ThresholdRule,
+		map[route.Vertex]*SwapRule,
 		len(params.PeerRules),
 	)
 
@@ -617,23 +618,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return m.singleReasonSuggestion(ReasonBudgetNotStarted), nil
 	}
 
-	// Before we get any swap suggestions, we check what the current fee
-	// estimate is to sweep within our target number of confirmations. If
-	// This fee exceeds the fee limit we have set, we will not suggest any
-	// swaps at present.
-	if err := m.builder.maySwap(ctx, m.params); err != nil {
-		var reasonErr *reasonError
-		if errors.As(err, &reasonErr) {
-			return m.singleReasonSuggestion(reasonErr.reason), nil
-
-		}
-
-		return nil, err
-	}
-
-	// Get the current server side restrictions, combined with the client
-	// set restrictions, if any.
-	restrictions, err := m.getSwapRestrictions(ctx, m.builder.swapType())
+	// Get restrictions placed on swaps by the server.
+	outRestrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +639,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary, err := m.checkExistingAutoLoops(ctx, loopOut)
+	summary, err := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +707,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		}
 
 		suggestion, err := m.suggestSwap(
-			ctx, traffic, balances, rule, restrictions, autoloop,
+			ctx, traffic, balances, rule, outRestrictions,
+			autoloop,
 		)
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
@@ -746,7 +733,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		}
 
 		suggestion, err := m.suggestSwap(
-			ctx, traffic, balance, rule, restrictions, autoloop,
+			ctx, traffic, balance, rule, outRestrictions,
+			autoloop,
 		)
 
 		var reasonErr *reasonError
@@ -841,12 +829,34 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // suggestSwap checks whether we can currently perform a swap, and creates a
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
-	balance *balances, rule *ThresholdRule, restrictions *Restrictions,
+	balance *balances, rule *SwapRule, outRestrictions *Restrictions,
 	autoloop bool) (swapSuggestion, error) {
+
+	var (
+		builder      swapBuilder
+		restrictions *Restrictions
+	)
+
+	switch rule.Type {
+	case swap.TypeOut:
+		builder = newLoopOutBuilder(m.cfg)
+		restrictions = outRestrictions
+
+	default:
+		return nil, fmt.Errorf("unsupported swap type: %v", rule.Type)
+	}
+
+	// Before we get any swap suggestions, we check what the current fee
+	// estimate is to sweep within our target number of confirmations. If
+	// This fee exceeds the fee limit we have set, we will not suggest any
+	// swaps at present.
+	if err := builder.maySwap(ctx, m.params); err != nil {
+		return nil, err
+	}
 
 	// First, check whether this peer/channel combination is already in use
 	// for our swap.
-	err := m.builder.inUse(traffic, balance.pubkey, balance.channels)
+	err := builder.inUse(traffic, balance.pubkey, balance.channels)
 	if err != nil {
 		return nil, err
 	}
@@ -858,7 +868,7 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 		return nil, newReasonError(ReasonLiquidityOk)
 	}
 
-	return m.builder.buildSwap(
+	return builder.buildSwap(
 		ctx, balance.pubkey, balance.channels, amount, autoloop,
 		m.params,
 	)
@@ -948,7 +958,8 @@ func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
 // total for our set of ongoing, automatically dispatched swaps as well as a
 // current in-flight count.
 func (m *Manager) checkExistingAutoLoops(ctx context.Context,
-	loopOuts []*loopdb.LoopOut) (*existingAutoLoopSummary, error) {
+	loopOuts []*loopdb.LoopOut, loopIns []*loopdb.LoopIn) (
+	*existingAutoLoopSummary, error) {
 
 	var summary existingAutoLoopSummary
 
@@ -984,6 +995,28 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 			)
 		} else if !out.LastUpdateTime().Before(m.params.AutoFeeStartDate) {
 			summary.spentFees += out.State().Cost.Total()
+		}
+	}
+
+	for _, in := range loopIns {
+		if in.Contract.Label != labels.AutoloopLabel(swap.TypeIn) {
+			continue
+		}
+
+		pending := in.State().State.Type() == loopdb.StateTypePending
+		inBudget := !in.LastUpdateTime().Before(m.params.AutoFeeStartDate)
+
+		// If an autoloop is in a pending state, we always count it in
+		// our current budget, and record the worst-case fees for it,
+		// because we do not know how it will resolve.
+		if pending {
+			summary.inFlightCount++
+			summary.pendingFees += worstCaseInFees(
+				in.Contract.MaxMinerFee, in.Contract.MaxSwapFee,
+				defaultLoopInSweepFee,
+			)
+		} else if inBudget {
+			summary.spentFees += in.State().Cost.Total()
 		}
 	}
 
@@ -1051,17 +1084,28 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 	}
 
 	for _, in := range loopIn {
-		// Skip completed swaps, they can't affect our channel balances.
-		if in.State().State.Type() != loopdb.StateTypePending {
-			continue
-		}
-
 		// Skip over swaps that may come through any peer.
 		if in.Contract.LastHop == nil {
 			continue
 		}
 
-		traffic.ongoingLoopIn[*in.Contract.LastHop] = true
+		pubkey := *in.Contract.LastHop
+
+		switch {
+		// Include any pending swaps in our ongoing set of swaps.
+		case in.State().State.Type() == loopdb.StateTypePending:
+			traffic.ongoingLoopIn[pubkey] = true
+
+		// If a swap failed with an on-chain timeout, the server could
+		// not route to us. We add it to our backoff list so that
+		// there's some time for routing conditions to improve.
+		case in.State().State == loopdb.StateFailTimeout:
+			failedAt := in.LastUpdate().Time
+
+			if failedAt.After(failureCutoff) {
+				traffic.failedLoopIn[pubkey] = failedAt
+			}
+		}
 	}
 
 	return traffic
@@ -1072,6 +1116,7 @@ type swapTraffic struct {
 	ongoingLoopOut map[lnwire.ShortChannelID]bool
 	ongoingLoopIn  map[route.Vertex]bool
 	failedLoopOut  map[lnwire.ShortChannelID]time.Time
+	failedLoopIn   map[route.Vertex]time.Time
 }
 
 func newSwapTraffic() *swapTraffic {
@@ -1079,6 +1124,7 @@ func newSwapTraffic() *swapTraffic {
 		ongoingLoopOut: make(map[lnwire.ShortChannelID]bool),
 		ongoingLoopIn:  make(map[route.Vertex]bool),
 		failedLoopOut:  make(map[lnwire.ShortChannelID]time.Time),
+		failedLoopIn:   make(map[route.Vertex]time.Time),
 	}
 }
 

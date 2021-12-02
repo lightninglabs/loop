@@ -168,6 +168,7 @@ func setRule(ctx *cli.Context) error {
 	newRule := &looprpc.LiquidityRule{
 		ChannelId: chanID,
 		Type:      looprpc.LiquidityRuleType_THRESHOLD,
+		SwapType:  looprpc.SwapType_LOOP_OUT,
 	}
 
 	if pubkeyRule {

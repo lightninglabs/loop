@@ -47,7 +47,10 @@ var (
 	}
 
 	// chanRule is a rule that produces chan1Rec.
-	chanRule = NewThresholdRule(50, 0)
+	chanRule = &SwapRule{
+		ThresholdRule: NewThresholdRule(50, 0),
+		Type:          swap.TypeOut,
+	}
 
 	testQuote = &loop.LoopOutQuote{
 		SwapFee:      btcutil.Amount(5),
@@ -102,6 +105,13 @@ var (
 			InitiationTime: testBudgetStart,
 		},
 		OutgoingChanSet: loopdb.ChannelSet{999},
+	}
+
+	autoInContract = &loopdb.LoopInContract{
+		SwapContract: loopdb.SwapContract{
+			Label:          labels.AutoloopLabel(swap.TypeIn),
+			InitiationTime: testBudgetStart,
+		},
 	}
 
 	testRestrictions = NewRestrictions(1, 10000)
@@ -188,7 +198,10 @@ func TestParameters(t *testing.T) {
 	require.Equal(t, defaultParameters, startParams)
 
 	// Mutate the parameters returned by our get function.
-	startParams.ChannelRules[chanID] = NewThresholdRule(1, 1)
+	startParams.ChannelRules[chanID] = &SwapRule{
+		ThresholdRule: NewThresholdRule(1, 1),
+		Type:          swap.TypeOut,
+	}
 
 	// Make sure that we have not mutated the liquidity manager's params
 	// by making this change.
@@ -197,9 +210,13 @@ func TestParameters(t *testing.T) {
 
 	// Provide a valid set of parameters and validate assert that they are
 	// set.
-	originalRule := NewThresholdRule(10, 10)
+	originalRule := &SwapRule{
+		ThresholdRule: NewThresholdRule(10, 10),
+		Type:          swap.TypeOut,
+	}
+
 	expected := defaultParameters
-	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+	expected.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 		chanID: originalRule,
 	}
 
@@ -208,15 +225,21 @@ func TestParameters(t *testing.T) {
 
 	// Check that changing the parameters we just set does not mutate
 	// our liquidity manager's parameters.
-	expected.ChannelRules[chanID] = NewThresholdRule(11, 11)
+	expected.ChannelRules[chanID] = &SwapRule{
+		ThresholdRule: NewThresholdRule(11, 11),
+		Type:          swap.TypeOut,
+	}
 
 	params = manager.GetParameters()
 	require.NoError(t, err)
 	require.Equal(t, originalRule, params.ChannelRules[chanID])
 
 	// Set invalid parameters and assert that we fail.
-	expected.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
-		lnwire.NewShortChanIDFromInt(0): NewThresholdRule(1, 2),
+	expected.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+		lnwire.NewShortChanIDFromInt(0): {
+			ThresholdRule: NewThresholdRule(1, 2),
+			Type:          swap.TypeOut,
+		},
 	}
 	err = manager.SetParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
@@ -310,7 +333,7 @@ func TestRestrictedSuggestions(t *testing.T) {
 			),
 		}
 
-		chanRules = map[lnwire.ShortChannelID]*ThresholdRule{
+		chanRules = map[lnwire.ShortChannelID]*SwapRule{
 			chanID1: chanRule,
 			chanID2: chanRule,
 		}
@@ -321,8 +344,8 @@ func TestRestrictedSuggestions(t *testing.T) {
 		channels  []lndclient.ChannelInfo
 		loopOut   []*loopdb.LoopOut
 		loopIn    []*loopdb.LoopIn
-		chanRules map[lnwire.ShortChannelID]*ThresholdRule
-		peerRules map[route.Vertex]*ThresholdRule
+		chanRules map[lnwire.ShortChannelID]*SwapRule
+		peerRules map[route.Vertex]*SwapRule
 		expected  *Suggestions
 	}{
 		{
@@ -511,8 +534,11 @@ func TestRestrictedSuggestions(t *testing.T) {
 					Contract: chan1Out,
 				},
 			},
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(0, 50),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(0, 50),
+					Type:          swap.TypeOut,
+				},
 			},
 			expected: &Suggestions{
 				DisqualifiedChans: noneDisqualified,
@@ -629,7 +655,7 @@ func TestSweepFeeLimit(t *testing.T) {
 				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
 				ppmToSat(7500, defaultRoutingFeePPM)
 
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -654,21 +680,21 @@ func TestSuggestSwaps(t *testing.T) {
 	tests := []struct {
 		name        string
 		channels    []lndclient.ChannelInfo
-		rules       map[lnwire.ShortChannelID]*ThresholdRule
-		peerRules   map[route.Vertex]*ThresholdRule
+		rules       map[lnwire.ShortChannelID]*SwapRule
+		peerRules   map[route.Vertex]*SwapRule
 		suggestions *Suggestions
 		err         error
 	}{
 		{
 			name:     "no rules",
 			channels: singleChannel,
-			rules:    map[lnwire.ShortChannelID]*ThresholdRule{},
+			rules:    map[lnwire.ShortChannelID]*SwapRule{},
 			err:      ErrNoRules,
 		},
 		{
 			name:     "loop out",
 			channels: singleChannel,
-			rules: map[lnwire.ShortChannelID]*ThresholdRule{
+			rules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			},
 			suggestions: &Suggestions{
@@ -682,8 +708,11 @@ func TestSuggestSwaps(t *testing.T) {
 		{
 			name:     "no rule for channel",
 			channels: singleChannel,
-			rules: map[lnwire.ShortChannelID]*ThresholdRule{
-				chanID2: NewThresholdRule(10, 10),
+			rules: map[lnwire.ShortChannelID]*SwapRule{
+				chanID2: {
+					ThresholdRule: NewThresholdRule(10, 10),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: noneDisqualified,
@@ -715,9 +744,15 @@ func TestSuggestSwaps(t *testing.T) {
 					RemoteBalance: 3000,
 				},
 			},
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(80, 0),
-				peer2: NewThresholdRule(40, 50),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(80, 0),
+					Type:          swap.TypeOut,
+				},
+				peer2: {
+					ThresholdRule: NewThresholdRule(40, 50),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -869,7 +904,7 @@ func TestFeeLimits(t *testing.T) {
 				ppmToSat(7500, defaultPrepayRoutingFeePPM) +
 				ppmToSat(7500, defaultRoutingFeePPM)
 
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -1061,7 +1096,7 @@ func TestFeeBudget(t *testing.T) {
 			}
 
 			params := defaultParameters
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 				chanID2: chanRule,
 			}
@@ -1095,12 +1130,13 @@ func TestFeeBudget(t *testing.T) {
 // that are allowed.
 func TestInFlightLimit(t *testing.T) {
 	tests := []struct {
-		name          string
-		maxInFlight   int
-		existingSwaps []*loopdb.LoopOut
+		name            string
+		maxInFlight     int
+		existingSwaps   []*loopdb.LoopOut
+		existingInSwaps []*loopdb.LoopIn
 		// peerRules will only be set (instead of test default values)
 		// is it is non-nil.
-		peerRules   map[route.Vertex]*ThresholdRule
+		peerRules   map[route.Vertex]*SwapRule
 		suggestions *Suggestions
 	}{
 		{
@@ -1166,8 +1202,10 @@ func TestInFlightLimit(t *testing.T) {
 				{
 					Contract: autoOutContract,
 				},
+			},
+			existingInSwaps: []*loopdb.LoopIn{
 				{
-					Contract: autoOutContract,
+					Contract: autoInContract,
 				},
 			},
 			suggestions: &Suggestions{
@@ -1189,9 +1227,15 @@ func TestInFlightLimit(t *testing.T) {
 			// Create two peer-level rules, both in need of a swap,
 			// but peer 1 needs a larger swap so will be
 			// prioritized.
-			peerRules: map[route.Vertex]*ThresholdRule{
-				peer1: NewThresholdRule(50, 0),
-				peer2: NewThresholdRule(40, 0),
+			peerRules: map[route.Vertex]*SwapRule{
+				peer1: {
+					ThresholdRule: NewThresholdRule(50, 0),
+					Type:          swap.TypeOut,
+				},
+				peer2: {
+					ThresholdRule: NewThresholdRule(40, 0),
+					Type:          swap.TypeOut,
+				},
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -1213,6 +1257,9 @@ func TestInFlightLimit(t *testing.T) {
 			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
 				return testCase.existingSwaps, nil
 			}
+			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+				return testCase.existingInSwaps, nil
+			}
 
 			lnd.Channels = []lndclient.ChannelInfo{
 				channel1, channel2,
@@ -1224,7 +1271,7 @@ func TestInFlightLimit(t *testing.T) {
 				params.PeerRules = testCase.peerRules
 			} else {
 				params.ChannelRules =
-					map[lnwire.ShortChannelID]*ThresholdRule{
+					map[lnwire.ShortChannelID]*SwapRule{
 						chanID1: chanRule,
 						chanID2: chanRule,
 					}
@@ -1364,7 +1411,7 @@ func TestSizeRestrictions(t *testing.T) {
 
 			params := defaultParameters
 			params.ClientRestrictions = testCase.clientRestrictions
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
 
@@ -1522,9 +1569,184 @@ func TestFeePercentage(t *testing.T) {
 
 			params := defaultParameters
 			params.FeeLimit = NewFeePortion(testCase.feePPM)
-			params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			}
+
+			testSuggestSwaps(
+				t, newSuggestSwapsSetup(cfg, lnd, params),
+				testCase.suggestions, nil,
+			)
+		})
+	}
+}
+
+// TestBudgetWithLoopin tests that our autoloop budget accounts for loop in
+// swaps that have been automatically dispatched. It tests out swaps that have
+// already completed and those that are pending, inside and outside of our
+// budget period to ensure that we account for all relevant swaps.
+func TestBudgetWithLoopin(t *testing.T) {
+	var (
+		budget btcutil.Amount = 10000
+
+		outsideBudget = testBudgetStart.Add(-5)
+		insideBudget  = testBudgetStart.Add(5)
+
+		contractOutsideBudget = &loopdb.LoopInContract{
+			SwapContract: loopdb.SwapContract{
+				InitiationTime: outsideBudget,
+				MaxSwapFee:     budget,
+			},
+			Label: labels.AutoloopLabel(swap.TypeIn),
+		}
+
+		// Set our spend equal to our budget so we don't need to
+		// calculate exact costs.
+		eventOutsideBudget = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				Cost: loopdb.SwapCost{
+					Server: budget,
+				},
+				State: loopdb.StateSuccess,
+			},
+			Time: outsideBudget,
+		}
+
+		successWithinBudget = &loopdb.LoopEvent{
+			SwapStateData: loopdb.SwapStateData{
+				Cost: loopdb.SwapCost{
+					Server: budget,
+				},
+				State: loopdb.StateSuccess,
+			},
+			Time: insideBudget,
+		}
+
+		okQuote = &loop.LoopOutQuote{
+			SwapFee:      15,
+			PrepayAmount: 30,
+			MinerFee:     1,
+		}
+
+		rec = loop.OutRequest{
+			Amount:          7500,
+			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
+			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
+			MaxSwapFee:      okQuote.SwapFee,
+			MaxPrepayAmount: okQuote.PrepayAmount,
+			SweepConfTarget: defaultConfTarget,
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		testPPM uint64 = 100000
+	)
+
+	rec.MaxPrepayRoutingFee, rec.MaxSwapRoutingFee = testPPMFees(
+		testPPM, okQuote, 7500,
+	)
+
+	tests := []struct {
+		name string
+
+		// loopIns is the set of loop in swaps that the client has
+		// performed.
+		loopIns []*loopdb.LoopIn
+
+		// suggestions is the set of swaps that we expect to be
+		// suggested given our current traffic.
+		suggestions *Suggestions
+	}{
+		{
+			name: "completed swap outside of budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							eventOutsideBudget,
+						},
+					},
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				OutSwaps: []loop.OutRequest{
+					rec,
+				},
+				DisqualifiedChans: noneDisqualified,
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name: "completed within budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: []*loopdb.LoopEvent{
+							successWithinBudget,
+						},
+					},
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonBudgetElapsed,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+		{
+			name: "pending created before budget",
+			loopIns: []*loopdb.LoopIn{
+				{
+					Contract: contractOutsideBudget,
+				},
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
+					chanID1: ReasonBudgetElapsed,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, lnd := newTestConfig()
+
+			// Set our channel and rules so that we will need to
+			// swap 7500 sats and our fee limit is 10% of that
+			// amount (750 sats).
+			lnd.Channels = []lndclient.ChannelInfo{
+				channel1,
+			}
+
+			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+				return testCase.loopIns, nil
+			}
+
+			cfg.LoopOutQuote = func(_ context.Context,
+				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
+				error) {
+
+				return okQuote, nil
+			}
+
+			params := defaultParameters
+			params.AutoFeeBudget = budget
+			params.AutoFeeStartDate = testBudgetStart
+
+			params.FeeLimit = NewFeePortion(testPPM)
+			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+				chanID1: chanRule,
+			}
+
+			// Allow more than one in flight swap, to ensure that
+			// we restrict based on budget, not in-flight.
+			params.MaxAutoInFlight = 2
 
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
@@ -1572,7 +1794,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 		}
 
 		params := defaultParameters
-		params.ChannelRules = map[lnwire.ShortChannelID]*ThresholdRule{
+		params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 			chanID1: chanRule,
 			chanID2: chanRule,
 		}
@@ -1594,4 +1816,185 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	actual, err := manager.SuggestSwaps(context.Background(), false)
 	require.Equal(t, expectedErr, err)
 	require.Equal(t, expected, actual)
+}
+
+// TestCurrentTraffic tests recording of our current set of ongoing swaps.
+func TestCurrentTraffic(t *testing.T) {
+	var (
+		backoff        = time.Hour * 5
+		withinBackoff  = testTime.Add(time.Hour * -1)
+		outsideBackoff = testTime.Add(backoff * -2)
+
+		success = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateSuccess,
+				},
+			},
+		}
+
+		failedInBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailOffchainPayments,
+				},
+				Time: withinBackoff,
+			},
+		}
+
+		failedOutsideBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailOffchainPayments,
+				},
+				Time: outsideBackoff,
+			},
+		}
+
+		failedTimeoutInBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailTimeout,
+				},
+				Time: withinBackoff,
+			},
+		}
+
+		failedTimeoutOutsideBackoff = []*loopdb.LoopEvent{
+			{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateFailTimeout,
+				},
+				Time: outsideBackoff,
+			},
+		}
+	)
+
+	tests := []struct {
+		name     string
+		loopOut  []*loopdb.LoopOut
+		loopIn   []*loopdb.LoopIn
+		expected *swapTraffic
+	}{
+		{
+			name: "completed swaps ignored",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Loop: loopdb.Loop{
+						Events: success,
+					},
+					Contract: &loopdb.LoopOutContract{},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Loop: loopdb.Loop{
+						Events: success,
+					},
+					Contract: &loopdb.LoopInContract{},
+				},
+			},
+			expected: newSwapTraffic(),
+		},
+		{
+			// No events indicates that the swap is still pending.
+			name: "pending swaps included",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID1.ToUint64(),
+						},
+					},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer2,
+					},
+				},
+			},
+			expected: &swapTraffic{
+				ongoingLoopOut: map[lnwire.ShortChannelID]bool{
+					chanID1: true,
+				},
+				ongoingLoopIn: map[route.Vertex]bool{
+					peer2: true,
+				},
+				// Make empty maps so that we can assert equal.
+				failedLoopOut: make(
+					map[lnwire.ShortChannelID]time.Time,
+				),
+				failedLoopIn: make(map[route.Vertex]time.Time),
+			},
+		},
+		{
+			name: "failure backoff included",
+			loopOut: []*loopdb.LoopOut{
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID1.ToUint64(),
+						},
+					},
+					Loop: loopdb.Loop{
+						Events: failedInBackoff,
+					},
+				},
+				{
+					Contract: &loopdb.LoopOutContract{
+						OutgoingChanSet: []uint64{
+							chanID2.ToUint64(),
+						},
+					},
+					Loop: loopdb.Loop{
+						Events: failedOutsideBackoff,
+					},
+				},
+			},
+			loopIn: []*loopdb.LoopIn{
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer1,
+					},
+					Loop: loopdb.Loop{
+						Events: failedTimeoutInBackoff,
+					},
+				},
+				{
+					Contract: &loopdb.LoopInContract{
+						LastHop: &peer2,
+					},
+					Loop: loopdb.Loop{
+						Events: failedTimeoutOutsideBackoff,
+					},
+				},
+			},
+			expected: &swapTraffic{
+				ongoingLoopOut: make(
+					map[lnwire.ShortChannelID]bool,
+				),
+				ongoingLoopIn: make(map[route.Vertex]bool),
+				failedLoopOut: map[lnwire.ShortChannelID]time.Time{
+					chanID1: withinBackoff,
+				},
+				failedLoopIn: map[route.Vertex]time.Time{
+					peer1: withinBackoff,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		cfg, _ := newTestConfig()
+		m := NewManager(cfg)
+
+		params := m.GetParameters()
+		params.FailureBackOff = backoff
+		require.NoError(t, m.SetParameters(context.Background(), params))
+
+		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
+		require.Equal(t, testCase.expected, actual)
+	}
 }
