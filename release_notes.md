@@ -16,6 +16,10 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* Loop client now supports optional routing plugins to improve off-chain payment
+  reliability. One such plugin that the client implemenets will gradually prefer
+  increasingly more expensive routes in case payments using cheap routes time out.
+
 #### Breaking Changes
 
 #### Bug Fixes
