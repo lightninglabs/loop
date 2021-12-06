@@ -20,4 +20,6 @@ This file tracks release notes for the loop client.
 
 #### Bug Fixes
 
+* Fixed issue where loop assumes the mainnet location for lnd.macaroonpath regardless of passed network parameters.
+
 #### Maintenance
