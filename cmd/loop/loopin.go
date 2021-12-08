@@ -32,6 +32,11 @@ var (
 			labels.MaxLength, labels.Reserved),
 	}
 
+	forceFlag = cli.BoolFlag{
+		Name:  "force, f",
+		Usage: "Assumes yes during confirmation. Using this option will result in an immediate swap",
+	}
+
 	loopInCommand = cli.Command{
 		Name:      "in",
 		Usage:     "perform an on-chain to off-chain swap (loop in)",
@@ -60,6 +65,7 @@ var (
 			confTargetFlag,
 			lastHopFlag,
 			labelFlag,
+			forceFlag,
 			verboseFlag,
 		},
 		Action: loopIn,
@@ -148,9 +154,13 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(quote)
-	err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
-	if err != nil {
-		return err
+
+	// Skip showing details if configured
+	if !(ctx.Bool("force") || ctx.Bool("f")) {
+		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
+		if err != nil {
+			return err
+		}
 	}
 
 	req := &looprpc.LoopInRequest{
