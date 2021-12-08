@@ -25,9 +25,9 @@ import (
 )
 
 var (
-	// maxMsgRecvSize is the largest message our REST proxy will receive. We
+	// MaxMsgRecvSize is the largest message our REST proxy will receive. We
 	// set this to 200MiB atm.
-	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
+	MaxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 
 	// errOnlyStartOnce is the error that is returned if the daemon is
 	// started more than once.
@@ -260,7 +260,7 @@ func (d *Daemon) startWebServers() error {
 	}
 	proxyOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(*restClientCreds),
-		grpc.WithDefaultCallOptions(maxMsgRecvSize),
+		grpc.WithDefaultCallOptions(MaxMsgRecvSize),
 	}
 
 	// With TLS enabled by default, we cannot call 0.0.0.0 internally from

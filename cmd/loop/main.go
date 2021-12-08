@@ -40,9 +40,9 @@ var (
 
 	defaultSwapWaitTime = 30 * time.Minute
 
-	// maxMsgRecvSize is the largest message our client will receive. We
+	// MaxMsgRecvSize is the largest message our client will receive. We
 	// set this to 200MiB atm.
-	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
+	MaxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)
 
 	// defaultMacaroonTimeout is the default macaroon timeout in seconds
 	// that we set when sending it over the line.
@@ -378,7 +378,7 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	}
 
 	opts := []grpc.DialOption{
-		grpc.WithDefaultCallOptions(maxMsgRecvSize),
+		grpc.WithDefaultCallOptions(MaxMsgRecvSize),
 		macOption,
 	}
 
