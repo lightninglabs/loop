@@ -14,6 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"golang.org/x/net/context"
 )
@@ -178,6 +179,53 @@ func (h *mockLightningClient) ListTransactions(
 	h.lnd.lock.Unlock()
 
 	return txs, nil
+}
+
+// GetNodeInfo retrieves info on the node, and if includeChannels is True,
+// will return other channels the node may have with other peers
+func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
+	pubKeyBytes route.Vertex, includeChannels bool) (*lndclient.NodeInfo, error) {
+
+	nodeInfo := lndclient.NodeInfo{}
+
+	if !includeChannels {
+		return nil, nil
+	}
+
+	nodePubKey, err := route.NewVertexFromStr(h.lnd.NodePubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	// NodeInfo.Channels should only contain channels which: do not belong
+	// to the queried node; are not private; have the provided vertex as a
+	// participant
+	for _, edge := range h.lnd.ChannelEdges {
+		if (edge.Node1 == pubKeyBytes || edge.Node2 == pubKeyBytes) &&
+			(edge.Node1 != nodePubKey || edge.Node2 != nodePubKey) {
+
+			for _, channel := range h.lnd.Channels {
+				if channel.ChannelID == edge.ChannelID && !channel.Private {
+					nodeInfo.Channels = append(nodeInfo.Channels, *edge)
+				}
+			}
+		}
+	}
+
+	nodeInfo.ChannelCount = len(nodeInfo.Channels)
+
+	return &nodeInfo, nil
+}
+
+// GetChanInfo retrieves all the info the node has on the given channel
+func (h *mockLightningClient) GetChanInfo(ctx context.Context,
+	channelID uint64) (*lndclient.ChannelEdge, error) {
+
+	var channelEdge *lndclient.ChannelEdge
+	if channelEdge, ok := h.lnd.ChannelEdges[channelID]; ok {
+		return channelEdge, nil
+	}
+	return channelEdge, fmt.Errorf("not found")
 }
 
 // ListChannels retrieves all channels of the backing lnd node.

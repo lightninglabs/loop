@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc/status"
 )
 
@@ -561,6 +562,30 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	if request.Amount > terms.MaxSwapAmount {
 		return nil, ErrSwapAmountTooHigh
+	}
+
+	// Private and routehints are mutually exclusive as setting private
+	// means we retrieve our own routehints from the connected node.
+	if len(request.RouteHints) != 0 && request.Private {
+		return nil, fmt.Errorf("private and route_hints both set")
+	}
+
+	if request.Private {
+		// If last_hop is set, we'll only add channels with peers
+		// set to the last_hop parameter
+		includeNodes := make(map[route.Vertex]struct{})
+		if request.LastHop != nil {
+			includeNodes[*request.LastHop] = struct{}{}
+		}
+
+		// Because the Private flag is set, we'll generate our own
+		// set of hop hints and use that
+		request.RouteHints, err = SelectHopHints(
+			ctx, s.lndServices, request.Amount, DefaultMaxHopHints, includeNodes,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	quote, err := s.Server.GetLoopInQuote(

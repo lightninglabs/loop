@@ -31,6 +31,17 @@ var (
 			"with our reserved prefix: %v.",
 			labels.MaxLength, labels.Reserved),
 	}
+	routeHintsFlag = cli.StringSliceFlag{
+		Name: "route_hints",
+		Usage: "Route hints that can each be individually used " +
+			"to assist in reaching the invoice's destination.",
+	}
+	privateFlag = cli.BoolFlag{
+		Name: "private",
+		Usage: "Generates and passes routehints. Should be used " +
+			"if the connected node is only reachable via private " +
+			"channels",
+	}
 
 	forceFlag = cli.BoolFlag{
 		Name:  "force, f",
@@ -67,6 +78,8 @@ var (
 			labelFlag,
 			forceFlag,
 			verboseFlag,
+			routeHintsFlag,
+			privateFlag,
 		},
 		Action: loopIn,
 	}
@@ -127,11 +140,20 @@ func loopIn(ctx *cli.Context) error {
 		lastHop = lastHopVertex[:]
 	}
 
+	// Private and routehints are mutually exclusive as setting private
+	// means we retrieve our own routehints from the connected node.
+	hints, err := validateRouteHints(ctx)
+	if err != nil {
+		return err
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
-		Amt:           int64(amt),
-		ConfTarget:    htlcConfTarget,
-		ExternalHtlc:  external,
-		LoopInLastHop: lastHop,
+		Amt:              int64(amt),
+		ConfTarget:       htlcConfTarget,
+		ExternalHtlc:     external,
+		LoopInLastHop:    lastHop,
+		LoopInRouteHints: hints,
+		Private:          ctx.Bool(privateFlag.Name),
 	}
 
 	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
@@ -172,6 +194,8 @@ func loopIn(ctx *cli.Context) error {
 		Label:          label,
 		Initiator:      defaultInitiator,
 		LastHop:        lastHop,
+		RouteHints:     hints,
+		Private:        ctx.Bool(privateFlag.Name),
 	}
 
 	resp, err := client.LoopIn(context.Background(), req)

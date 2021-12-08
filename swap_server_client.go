@@ -231,6 +231,14 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		req.LastHop = lastHop[:]
 	}
 
+	if routeHints != nil {
+		rh, err := marshallRouteHints(routeHints)
+		if err != nil {
+			return nil, err
+		}
+		req.RouteHints = rh
+	}
+
 	quoteResp, err := s.server.LoopInQuote(rpcCtx, req)
 	if err != nil {
 		return nil, err

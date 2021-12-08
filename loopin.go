@@ -23,6 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 var (
@@ -80,6 +81,33 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	currentHeight int32, request *LoopInRequest) (*loopInInitResult,
 	error) {
 
+	var err error
+
+	// Private and routehints are mutually exclusive as setting private
+	// means we retrieve our own routehints from the connected node.
+	if len(request.RouteHints) != 0 && request.Private {
+		return nil, fmt.Errorf("private and route_hints both set")
+	}
+
+	// If Private is set, we generate route hints
+	if request.Private {
+		// If last_hop is set, we'll only add channels with peers
+		// set to the last_hop parameter
+		includeNodes := make(map[route.Vertex]struct{})
+		if request.LastHop != nil {
+			includeNodes[*request.LastHop] = struct{}{}
+		}
+
+		// Because the Private flag is set, we'll generate our own
+		// set of hop hints
+		request.RouteHints, err = SelectHopHints(
+			globalCtx, cfg.lnd, request.Amount, DefaultMaxHopHints, includeNodes,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
 	// request that we send to the server. We pass nil as optional route
@@ -89,7 +117,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// route hints.
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
-		nil,
+		request.RouteHints,
 	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)
@@ -129,10 +157,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Create the swap invoice in lnd.
 	_, swapInvoice, err := cfg.lnd.Client.AddInvoice(
 		globalCtx, &invoicesrpc.AddInvoiceData{
-			Preimage: &swapPreimage,
-			Value:    lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
-			Memo:     "swap",
-			Expiry:   3600 * 24 * 365,
+			Preimage:   &swapPreimage,
+			Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+			Memo:       "swap",
+			Expiry:     3600 * 24 * 365,
+			RouteHints: request.RouteHints,
 		},
 	)
 	if err != nil {
@@ -148,10 +177,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	log.Infof("Creating probe invoice %v", probeHash)
 	probeInvoice, err := cfg.lnd.Invoices.AddHoldInvoice(
 		globalCtx, &invoicesrpc.AddInvoiceData{
-			Hash:   &probeHash,
-			Value:  lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
-			Memo:   "loop in probe",
-			Expiry: 3600,
+			Hash:       &probeHash,
+			Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+			Memo:       "loop in probe",
+			Expiry:     3600,
+			RouteHints: request.RouteHints,
 		},
 	)
 	if err != nil {

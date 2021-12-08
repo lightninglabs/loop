@@ -207,6 +207,15 @@ type LoopInRequest struct {
 	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
 	// appended to the user agent string.
 	Initiator string
+
+	// Private indicates whether the destination node should be considered
+	// private. In which case, loop will generate hophints to assist with
+	// probing and payment.
+	Private bool
+
+	// RouteHints are optional route hints to reach the destination through
+	// private channels.
+	RouteHints [][]zpay32.HopHint
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.
@@ -253,6 +262,11 @@ type LoopInQuoteRequest struct {
 	// RouteHints are optional route hints to reach the destination through
 	// private channels.
 	RouteHints [][]zpay32.HopHint
+
+	// Private indicates whether the destination node should be considered
+	// private. In which case, loop will generate hophints to assist with
+	// probing and payment.
+	Private bool
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost

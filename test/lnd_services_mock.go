@@ -164,6 +164,7 @@ type LndMockServices struct {
 	Invoices map[lntypes.Hash]*lndclient.Invoice
 
 	Channels         []lndclient.ChannelInfo
+	ChannelEdges     map[uint64]*lndclient.ChannelEdge
 	ClosedChannels   []lndclient.ClosedChannel
 	ForwardingEvents []lndclient.ForwardingEvent
 	Payments         []lndclient.Payment
