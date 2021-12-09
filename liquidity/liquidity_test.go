@@ -1596,8 +1596,10 @@ func TestBudgetWithLoopin(t *testing.T) {
 			SwapContract: loopdb.SwapContract{
 				InitiationTime: outsideBudget,
 				MaxSwapFee:     budget,
+				Label: labels.AutoloopLabel(
+					swap.TypeIn,
+				),
 			},
-			Label: labels.AutoloopLabel(swap.TypeIn),
 		}
 
 		// Set our spend equal to our budget so we don't need to
