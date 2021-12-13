@@ -26,10 +26,6 @@ type LoopInContract struct {
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
 	ExternalHtlc bool
-
-	// Label contains an optional label for the swap. Note that this field
-	// is stored separately to the rest of the contract on disk.
-	Label string
 }
 
 // LoopIn is a combination of the contract and the updates.
