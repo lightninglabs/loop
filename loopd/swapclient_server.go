@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -525,7 +526,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 }
 
 // unmarshallRouteHints unmarshalls a list of route hints.
-func unmarshallRouteHints(rpcRouteHints []*looprpc.RouteHint) (
+func unmarshallRouteHints(rpcRouteHints []*swapserverrpc.RouteHint) (
 	[][]zpay32.HopHint, error) {
 
 	routeHints := make([][]zpay32.HopHint, 0, len(rpcRouteHints))
@@ -548,7 +549,7 @@ func unmarshallRouteHints(rpcRouteHints []*looprpc.RouteHint) (
 }
 
 // unmarshallHopHint unmarshalls a single hop hint.
-func unmarshallHopHint(rpcHint *looprpc.HopHint) (zpay32.HopHint, error) {
+func unmarshallHopHint(rpcHint *swapserverrpc.HopHint) (zpay32.HopHint, error) {
 	pubBytes, err := hex.DecodeString(rpcHint.NodeId)
 	if err != nil {
 		return zpay32.HopHint{}, err

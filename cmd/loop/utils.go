@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/urfave/cli"
 )
 
@@ -12,8 +12,8 @@ import (
 // the RouteHints flag. We don't allow both options to be set as these options
 // are alternatives to each other. Private autogenerates hopHints while
 // RouteHints are manually passed.
-func validateRouteHints(ctx *cli.Context) ([]*looprpc.RouteHint, error) {
-	var hints []*looprpc.RouteHint
+func validateRouteHints(ctx *cli.Context) ([]*swapserverrpc.RouteHint, error) {
+	var hints []*swapserverrpc.RouteHint
 
 	if ctx.IsSet(routeHintsFlag.Name) {
 		if ctx.IsSet(privateFlag.Name) {

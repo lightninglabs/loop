@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "common.proto";
+import "swapserverrpc/common.proto";
 
 package looprpc;
 
@@ -268,7 +268,7 @@ message LoopInRequest {
     /*
     Optional route hints to reach the destination through private channels.
     */
-    repeated RouteHint route_hints = 9;
+    repeated looprpc.RouteHint route_hints = 9;
 
     /*
     Private indicates whether the destination node should be considered
@@ -591,7 +591,7 @@ message QuoteRequest {
     /*
     Optional route hints to reach the destination through private channels.
     */
-    repeated RouteHint loop_in_route_hints = 6;
+    repeated looprpc.RouteHint loop_in_route_hints = 6;
 
     /*
     Private indicates whether the destination node should be considered
@@ -678,7 +678,7 @@ message ProbeRequest {
     /*
     Optional route hints to reach the destination through private channels.
     */
-    repeated RouteHint route_hints = 3;
+    repeated looprpc.RouteHint route_hints = 3;
 }
 
 message ProbeResponse {
