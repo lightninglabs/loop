@@ -75,6 +75,7 @@ install:
 
 rpc:
 	@$(call print, "Compiling protos.")
+	cd ./swapserverrpc; ./gen_protos_docker.sh
 	cd ./looprpc; ./gen_protos_docker.sh
 
 rpc-check: rpc
@@ -85,6 +86,9 @@ rpc-js-compile:
 	@$(call print, "Compiling JSON/WASM stubs.")
 	GOOS=js GOARCH=wasm $(GOBUILD) $(PKG)/looprpc
 
+rpc-format:
+	cd ./looprpc; find . -name "*.proto" | xargs clang-format --style=file -i
+	cd ./swapserverrpc; find . -name "*.proto" | xargs clang-format --style=file -i
 
 clean:
 	@$(call print, "Cleaning up.")
