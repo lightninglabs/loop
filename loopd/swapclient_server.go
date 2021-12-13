@@ -17,7 +17,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/looprpc"
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -60,8 +60,8 @@ var (
 // swapClientServer implements the grpc service exposed by loopd.
 type swapClientServer struct {
 	// Required by the grpc-gateway/v2 library for forward compatibility.
-	looprpc.UnimplementedSwapClientServer
-	looprpc.UnimplementedDebugServer
+	clientrpc.UnimplementedSwapClientServer
+	clientrpc.UnimplementedDebugServer
 
 	network          lndclient.Network
 	impl             *loop.Client
@@ -80,8 +80,8 @@ type swapClientServer struct {
 // onwards, progress can be tracked via the LoopOutStatus stream that is
 // returned from Monitor().
 func (s *swapClientServer) LoopOut(ctx context.Context,
-	in *looprpc.LoopOutRequest) (
-	*looprpc.SwapResponse, error) {
+	in *clientrpc.LoopOutRequest) (
+	*clientrpc.SwapResponse, error) {
 
 	log.Infof("Loop out request received")
 
@@ -146,7 +146,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.SwapResponse{
+	return &clientrpc.SwapResponse{
 		Id:               info.SwapHash.String(),
 		IdBytes:          info.SwapHash[:],
 		HtlcAddress:      info.HtlcAddressP2WSH.String(),
@@ -156,11 +156,11 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 }
 
 func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
-	*looprpc.SwapStatus, error) {
+	*clientrpc.SwapStatus, error) {
 
 	var (
-		state         looprpc.SwapState
-		failureReason = looprpc.FailureReason_FAILURE_REASON_NONE
+		state         clientrpc.SwapState
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_NONE
 	)
 
 	// Set our state var for non-failure states. If we get a failure, we
@@ -170,37 +170,37 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	// states, and set our failed state for all of them.
 	switch loopSwap.State {
 	case loopdb.StateInitiated:
-		state = looprpc.SwapState_INITIATED
+		state = clientrpc.SwapState_INITIATED
 
 	case loopdb.StatePreimageRevealed:
-		state = looprpc.SwapState_PREIMAGE_REVEALED
+		state = clientrpc.SwapState_PREIMAGE_REVEALED
 
 	case loopdb.StateHtlcPublished:
-		state = looprpc.SwapState_HTLC_PUBLISHED
+		state = clientrpc.SwapState_HTLC_PUBLISHED
 
 	case loopdb.StateInvoiceSettled:
-		state = looprpc.SwapState_INVOICE_SETTLED
+		state = clientrpc.SwapState_INVOICE_SETTLED
 
 	case loopdb.StateSuccess:
-		state = looprpc.SwapState_SUCCESS
+		state = clientrpc.SwapState_SUCCESS
 
 	case loopdb.StateFailOffchainPayments:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_OFFCHAIN
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_OFFCHAIN
 
 	case loopdb.StateFailTimeout:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_TIMEOUT
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_TIMEOUT
 
 	case loopdb.StateFailSweepTimeout:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_SWEEP_TIMEOUT
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_SWEEP_TIMEOUT
 
 	case loopdb.StateFailInsufficientValue:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_INSUFFICIENT_VALUE
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_INSUFFICIENT_VALUE
 
 	case loopdb.StateFailTemporary:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_TEMPORARY
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_TEMPORARY
 
 	case loopdb.StateFailIncorrectHtlcAmt:
-		failureReason = looprpc.FailureReason_FAILURE_REASON_INCORRECT_AMOUNT
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_INCORRECT_AMOUNT
 
 	default:
 		return nil, fmt.Errorf("unknown swap state: %v", loopSwap.State)
@@ -208,16 +208,16 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 	// If we have a failure reason, we have a failure state, so should use
 	// our catchall failed state.
-	if failureReason != looprpc.FailureReason_FAILURE_REASON_NONE {
-		state = looprpc.SwapState_FAILED
+	if failureReason != clientrpc.FailureReason_FAILURE_REASON_NONE {
+		state = clientrpc.SwapState_FAILED
 	}
 
-	var swapType looprpc.SwapType
+	var swapType clientrpc.SwapType
 	var htlcAddress, htlcAddressP2WSH, htlcAddressNP2WSH string
 
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
-		swapType = looprpc.SwapType_LOOP_IN
+		swapType = clientrpc.SwapType_LOOP_IN
 		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 
 		if loopSwap.ExternalHtlc {
@@ -228,7 +228,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		}
 
 	case swap.TypeOut:
-		swapType = looprpc.SwapType_LOOP_OUT
+		swapType = clientrpc.SwapType_LOOP_OUT
 		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 		htlcAddress = htlcAddressP2WSH
 
@@ -236,7 +236,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		return nil, errors.New("unknown swap type")
 	}
 
-	return &looprpc.SwapStatus{
+	return &clientrpc.SwapStatus{
 		Amt:               int64(loopSwap.AmountRequested),
 		Id:                loopSwap.SwapHash.String(),
 		IdBytes:           loopSwap.SwapHash[:],
@@ -256,8 +256,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 }
 
 // Monitor will return a stream of swap updates for currently active swaps.
-func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
-	server looprpc.SwapClient_MonitorServer) error {
+func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
+	server clientrpc.SwapClient_MonitorServer) error {
 
 	log.Infof("Monitor request received")
 
@@ -358,10 +358,10 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 // ListSwaps returns a list of all currently known swaps and their current
 // status.
 func (s *swapClientServer) ListSwaps(_ context.Context,
-	_ *looprpc.ListSwapsRequest) (*looprpc.ListSwapsResponse, error) {
+	_ *clientrpc.ListSwapsRequest) (*clientrpc.ListSwapsResponse, error) {
 
 	var (
-		rpcSwaps = make([]*looprpc.SwapStatus, len(s.swaps))
+		rpcSwaps = make([]*clientrpc.SwapStatus, len(s.swaps))
 		idx      = 0
 		err      error
 	)
@@ -381,12 +381,12 @@ func (s *swapClientServer) ListSwaps(_ context.Context,
 		}
 		idx++
 	}
-	return &looprpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+	return &clientrpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
 }
 
 // SwapInfo returns all known details about a single swap.
 func (s *swapClientServer) SwapInfo(_ context.Context,
-	req *looprpc.SwapInfoRequest) (*looprpc.SwapStatus, error) {
+	req *clientrpc.SwapInfoRequest) (*clientrpc.SwapStatus, error) {
 
 	swapHash, err := lntypes.MakeHash(req.Id)
 	if err != nil {
@@ -404,7 +404,7 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
-	req *looprpc.TermsRequest) (*looprpc.OutTermsResponse, error) {
+	req *clientrpc.TermsRequest) (*clientrpc.OutTermsResponse, error) {
 
 	log.Infof("Loop out terms request received")
 
@@ -414,7 +414,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.OutTermsResponse{
+	return &clientrpc.OutTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 		MinCltvDelta:  terms.MinCltvDelta,
@@ -425,7 +425,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 // LoopOutQuote returns a quote for a loop out swap with the provided
 // parameters.
 func (s *swapClientServer) LoopOutQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.OutQuoteResponse, error) {
+	req *clientrpc.QuoteRequest) (*clientrpc.OutQuoteResponse, error) {
 
 	confTarget, err := validateConfTarget(
 		req.ConfTarget, loop.DefaultSweepConfTarget,
@@ -444,7 +444,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.OutQuoteResponse{
+	return &clientrpc.OutQuoteResponse{
 		HtlcSweepFeeSat: int64(quote.MinerFee),
 		PrepayAmtSat:    int64(quote.PrepayAmount),
 		SwapFeeSat:      int64(quote.SwapFee),
@@ -455,7 +455,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 
 // GetTerms returns the terms that the server enforces for swaps.
 func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
-	req *looprpc.TermsRequest) (*looprpc.InTermsResponse, error) {
+	req *clientrpc.TermsRequest) (*clientrpc.InTermsResponse, error) {
 
 	log.Infof("Loop in terms request received")
 
@@ -465,7 +465,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.InTermsResponse{
+	return &clientrpc.InTermsResponse{
 		MinSwapAmount: int64(terms.MinSwapAmount),
 		MaxSwapAmount: int64(terms.MaxSwapAmount),
 	}, nil
@@ -473,7 +473,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 
 // GetQuote returns a quote for a swap with the provided parameters.
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
-	req *looprpc.QuoteRequest) (*looprpc.InQuoteResponse, error) {
+	req *clientrpc.QuoteRequest) (*clientrpc.InQuoteResponse, error) {
 
 	log.Infof("Loop in quote request received")
 
@@ -518,7 +518,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.InQuoteResponse{
+	return &clientrpc.InQuoteResponse{
 		HtlcPublishFeeSat: int64(quote.MinerFee),
 		SwapFeeSat:        int64(quote.SwapFee),
 		ConfTarget:        htlcConfTarget,
@@ -572,7 +572,7 @@ func unmarshallHopHint(rpcHint *swapserverrpc.HopHint) (zpay32.HopHint, error) {
 // Probe requests the server to probe the client's node to test inbound
 // liquidity.
 func (s *swapClientServer) Probe(ctx context.Context,
-	req *looprpc.ProbeRequest) (*looprpc.ProbeResponse, error) {
+	req *clientrpc.ProbeRequest) (*clientrpc.ProbeResponse, error) {
 
 	log.Infof("Probe request received")
 
@@ -600,12 +600,12 @@ func (s *swapClientServer) Probe(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.ProbeResponse{}, nil
+	return &clientrpc.ProbeResponse{}, nil
 }
 
 func (s *swapClientServer) LoopIn(ctx context.Context,
-	in *looprpc.LoopInRequest) (
-	*looprpc.SwapResponse, error) {
+	in *clientrpc.LoopInRequest) (
+	*clientrpc.SwapResponse, error) {
 
 	log.Infof("Loop in request received")
 
@@ -650,7 +650,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		return nil, err
 	}
 
-	response := &looprpc.SwapResponse{
+	response := &clientrpc.SwapResponse{
 		Id:               swapInfo.SwapHash.String(),
 		IdBytes:          swapInfo.SwapHash[:],
 		HtlcAddressP2Wsh: swapInfo.HtlcAddressP2WSH.String(),
@@ -669,7 +669,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 // GetLsatTokens returns all tokens that are contained in the LSAT token store.
 func (s *swapClientServer) GetLsatTokens(ctx context.Context,
-	_ *looprpc.TokensRequest) (*looprpc.TokensResponse, error) {
+	_ *clientrpc.TokensRequest) (*clientrpc.TokensResponse, error) {
 
 	log.Infof("Get LSAT tokens request received")
 
@@ -678,14 +678,14 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 		return nil, err
 	}
 
-	rpcTokens := make([]*looprpc.LsatToken, len(tokens))
+	rpcTokens := make([]*clientrpc.LsatToken, len(tokens))
 	idx := 0
 	for key, token := range tokens {
 		macBytes, err := token.BaseMacaroon().MarshalBinary()
 		if err != nil {
 			return nil, err
 		}
-		rpcTokens[idx] = &looprpc.LsatToken{
+		rpcTokens[idx] = &clientrpc.LsatToken{
 			BaseMacaroon:       macBytes,
 			PaymentHash:        token.PaymentHash[:],
 			PaymentPreimage:    token.Preimage[:],
@@ -698,26 +698,26 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 		idx++
 	}
 
-	return &looprpc.TokensResponse{Tokens: rpcTokens}, nil
+	return &clientrpc.TokensResponse{Tokens: rpcTokens}, nil
 }
 
 // GetLiquidityParams gets our current liquidity manager's parameters.
 func (s *swapClientServer) GetLiquidityParams(_ context.Context,
-	_ *looprpc.GetLiquidityParamsRequest) (*looprpc.LiquidityParameters,
+	_ *clientrpc.GetLiquidityParamsRequest) (*clientrpc.LiquidityParameters,
 	error) {
 
 	cfg := s.liquidityMgr.GetParameters()
 
 	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
 
-	rpcCfg := &looprpc.LiquidityParameters{
+	rpcCfg := &clientrpc.LiquidityParameters{
 		SweepConfTarget:   cfg.SweepConfTarget,
 		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
 		Autoloop:          cfg.Autoloop,
 		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
 		AutoMaxInFlight:   uint64(cfg.MaxAutoInFlight),
 		Rules: make(
-			[]*looprpc.LiquidityRule, 0, totalRules,
+			[]*clientrpc.LiquidityRule, 0, totalRules,
 		),
 		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
 		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
@@ -765,19 +765,19 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 }
 
 func newRPCRule(channelID uint64, peer []byte,
-	rule *liquidity.SwapRule) *looprpc.LiquidityRule {
+	rule *liquidity.SwapRule) *clientrpc.LiquidityRule {
 
-	rpcRule := &looprpc.LiquidityRule{
+	rpcRule := &clientrpc.LiquidityRule{
 		ChannelId:         channelID,
 		Pubkey:            peer,
-		Type:              looprpc.LiquidityRuleType_THRESHOLD,
+		Type:              clientrpc.LiquidityRuleType_THRESHOLD,
 		IncomingThreshold: uint32(rule.MinimumIncoming),
 		OutgoingThreshold: uint32(rule.MinimumOutgoing),
-		SwapType:          looprpc.SwapType_LOOP_OUT,
+		SwapType:          clientrpc.SwapType_LOOP_OUT,
 	}
 
 	if rule.Type == swap.TypeIn {
-		rpcRule.SwapType = looprpc.SwapType_LOOP_IN
+		rpcRule.SwapType = clientrpc.SwapType_LOOP_IN
 	}
 
 	return rpcRule
@@ -786,7 +786,7 @@ func newRPCRule(channelID uint64, peer []byte,
 // SetLiquidityParams attempts to set our current liquidity manager's
 // parameters.
 func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
-	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
+	in *clientrpc.SetLiquidityParamsRequest) (*clientrpc.SetLiquidityParamsResponse,
 	error) {
 
 	feeLimit, err := rpcToFee(in.Parameters)
@@ -869,12 +869,12 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 		return nil, err
 	}
 
-	return &looprpc.SetLiquidityParamsResponse{}, nil
+	return &clientrpc.SetLiquidityParamsResponse{}, nil
 }
 
 // rpcToFee converts the values provided over rpc to a fee limit interface,
 // failing if an inconsistent set of fields are set.
-func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
+func rpcToFee(req *clientrpc.LiquidityParameters) (liquidity.FeeLimit,
 	error) {
 
 	// Check which fee limit type we have values set for. If any fields
@@ -912,17 +912,17 @@ func rpcToFee(req *looprpc.LiquidityParameters) (liquidity.FeeLimit,
 }
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.
-func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.SwapRule, error) {
+func rpcToRule(rule *clientrpc.LiquidityRule) (*liquidity.SwapRule, error) {
 	swapType := swap.TypeOut
-	if rule.SwapType == looprpc.SwapType_LOOP_IN {
+	if rule.SwapType == clientrpc.SwapType_LOOP_IN {
 		swapType = swap.TypeIn
 	}
 
 	switch rule.Type {
-	case looprpc.LiquidityRuleType_UNKNOWN:
+	case clientrpc.LiquidityRuleType_UNKNOWN:
 		return nil, fmt.Errorf("rule type field must be set")
 
-	case looprpc.LiquidityRuleType_THRESHOLD:
+	case clientrpc.LiquidityRuleType_THRESHOLD:
 		return &liquidity.SwapRule{
 			ThresholdRule: liquidity.NewThresholdRule(
 				int(rule.IncomingThreshold),
@@ -940,7 +940,7 @@ func rpcToRule(rule *looprpc.LiquidityRule) (*liquidity.SwapRule, error) {
 // SuggestSwaps provides a list of suggested swaps based on lnd's current
 // channel balances and rules set by the liquidity manager.
 func (s *swapClientServer) SuggestSwaps(ctx context.Context,
-	_ *looprpc.SuggestSwapsRequest) (*looprpc.SuggestSwapsResponse, error) {
+	_ *clientrpc.SuggestSwapsRequest) (*clientrpc.SuggestSwapsResponse, error) {
 
 	suggestions, err := s.liquidityMgr.SuggestSwaps(ctx, false)
 	switch err {
@@ -954,12 +954,12 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	}
 
 	var (
-		loopOut      []*looprpc.LoopOutRequest
-		disqualified []*looprpc.Disqualified
+		loopOut      []*clientrpc.LoopOutRequest
+		disqualified []*clientrpc.Disqualified
 	)
 
 	for _, swap := range suggestions.OutSwaps {
-		loopOut = append(loopOut, &looprpc.LoopOutRequest{
+		loopOut = append(loopOut, &clientrpc.LoopOutRequest{
 			Amt:                 int64(swap.Amount),
 			OutgoingChanSet:     swap.OutgoingChanSet,
 			MaxSwapFee:          int64(swap.MaxSwapFee),
@@ -977,7 +977,7 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			return nil, err
 		}
 
-		exclChan := &looprpc.Disqualified{
+		exclChan := &clientrpc.Disqualified{
 			Reason:    autoloopReason,
 			ChannelId: id.ToUint64(),
 		}
@@ -991,7 +991,7 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			return nil, err
 		}
 
-		exclChan := &looprpc.Disqualified{
+		exclChan := &clientrpc.Disqualified{
 			Reason: autoloopReason,
 			Pubkey: pubkey[:],
 		}
@@ -999,55 +999,55 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		disqualified = append(disqualified, exclChan)
 	}
 
-	return &looprpc.SuggestSwapsResponse{
+	return &clientrpc.SuggestSwapsResponse{
 		LoopOut:      loopOut,
 		Disqualified: disqualified,
 	}, nil
 }
 
-func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
+func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
 	switch reason {
 	case liquidity.ReasonNone:
-		return looprpc.AutoReason_AUTO_REASON_UNKNOWN, nil
+		return clientrpc.AutoReason_AUTO_REASON_UNKNOWN, nil
 
 	case liquidity.ReasonBudgetNotStarted:
-		return looprpc.AutoReason_AUTO_REASON_BUDGET_NOT_STARTED, nil
+		return clientrpc.AutoReason_AUTO_REASON_BUDGET_NOT_STARTED, nil
 
 	case liquidity.ReasonSweepFees:
-		return looprpc.AutoReason_AUTO_REASON_SWEEP_FEES, nil
+		return clientrpc.AutoReason_AUTO_REASON_SWEEP_FEES, nil
 
 	case liquidity.ReasonBudgetElapsed:
-		return looprpc.AutoReason_AUTO_REASON_BUDGET_ELAPSED, nil
+		return clientrpc.AutoReason_AUTO_REASON_BUDGET_ELAPSED, nil
 
 	case liquidity.ReasonInFlight:
-		return looprpc.AutoReason_AUTO_REASON_IN_FLIGHT, nil
+		return clientrpc.AutoReason_AUTO_REASON_IN_FLIGHT, nil
 
 	case liquidity.ReasonSwapFee:
-		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
+		return clientrpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
 
 	case liquidity.ReasonMinerFee:
-		return looprpc.AutoReason_AUTO_REASON_MINER_FEE, nil
+		return clientrpc.AutoReason_AUTO_REASON_MINER_FEE, nil
 
 	case liquidity.ReasonPrepay:
-		return looprpc.AutoReason_AUTO_REASON_PREPAY, nil
+		return clientrpc.AutoReason_AUTO_REASON_PREPAY, nil
 
 	case liquidity.ReasonFailureBackoff:
-		return looprpc.AutoReason_AUTO_REASON_FAILURE_BACKOFF, nil
+		return clientrpc.AutoReason_AUTO_REASON_FAILURE_BACKOFF, nil
 
 	case liquidity.ReasonLoopOut:
-		return looprpc.AutoReason_AUTO_REASON_LOOP_OUT, nil
+		return clientrpc.AutoReason_AUTO_REASON_LOOP_OUT, nil
 
 	case liquidity.ReasonLoopIn:
-		return looprpc.AutoReason_AUTO_REASON_LOOP_IN, nil
+		return clientrpc.AutoReason_AUTO_REASON_LOOP_IN, nil
 
 	case liquidity.ReasonLiquidityOk:
-		return looprpc.AutoReason_AUTO_REASON_LIQUIDITY_OK, nil
+		return clientrpc.AutoReason_AUTO_REASON_LIQUIDITY_OK, nil
 
 	case liquidity.ReasonBudgetInsufficient:
-		return looprpc.AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT, nil
+		return clientrpc.AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT, nil
 
 	case liquidity.ReasonFeePPMInsufficient:
-		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
+		return clientrpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
 
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
@@ -1126,7 +1126,7 @@ func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
 // address and label of the loop out request. It also checks that the requested
 // loop amount is valid given the available balance.
 func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
-	chainParams *chaincfg.Params, req *looprpc.LoopOutRequest,
+	chainParams *chaincfg.Params, req *clientrpc.LoopOutRequest,
 	sweepAddr btcutil.Address, maxParts uint32) (int32, error) {
 
 	// Check that the provided destination address has the correct format
