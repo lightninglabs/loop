@@ -11,6 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/lndclient v0.14.0-5
+	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.14.1-beta
 	github.com/lightningnetwork/lnd/cert v1.1.0
@@ -28,3 +29,5 @@ require (
 )
 
 go 1.15
+
+replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
