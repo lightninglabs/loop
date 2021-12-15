@@ -183,6 +183,10 @@ type Config struct {
 	LoopOut func(ctx context.Context, request *loop.OutRequest) (
 		*loop.LoopOutSwapInfo, error)
 
+	// LoopIn dispatches a loop in swap.
+	LoopIn func(ctx context.Context,
+		request *loop.LoopInRequest) (*loop.LoopInSwapInfo, error)
+
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
 
@@ -322,6 +326,11 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 	for channel, rule := range p.ChannelRules {
 		if channel.ToUint64() == 0 {
 			return ErrZeroChannelID
+		}
+
+		if rule.Type == swap.TypeIn {
+			return errors.New("channel level rules not supported for " +
+				"loop in swaps, only peer-level rules allowed")
 		}
 
 		if err := rule.validate(); err != nil {
@@ -526,7 +535,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		// If we don't actually have dispatch of swaps enabled, log
 		// suggestions.
 		if !m.params.Autoloop {
-			log.Debugf("recommended autoloop: %v sats over "+
+			log.Debugf("recommended autoloop out: %v sats over "+
 				"%v", swap.Amount, swap.OutgoingChanSet)
 
 			continue
@@ -542,6 +551,27 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		log.Infof("loop out automatically dispatched: hash: %v, "+
 			"address: %v", loopOut.SwapHash,
 			loopOut.HtlcAddressP2WSH)
+	}
+
+	for _, in := range suggestion.InSwaps {
+		// If we don't actually have dispatch of swaps enabled, log
+		// suggestions.
+		if !m.params.Autoloop {
+			log.Debugf("recommended autoloop in: %v sats over "+
+				"%v", in.Amount, in.LastHop)
+
+			continue
+		}
+
+		in := in
+		loopIn, err := m.cfg.LoopIn(ctx, &in)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("loop in automatically dispatched: hash: %v, "+
+			"address: %v", loopIn.SwapHash,
+			loopIn.HtlcAddressNP2WSH)
 	}
 
 	return nil
@@ -564,6 +594,9 @@ type Suggestions struct {
 	// OutSwaps is the set of loop out swaps that we suggest executing.
 	OutSwaps []loop.OutRequest
 
+	// InSwaps is the set of loop in swaps that we suggest executing.
+	InSwaps []loop.LoopInRequest
+
 	// DisqualifiedChans maps the set of channels that we do not recommend
 	// swaps on to the reason that we did not recommend a swap.
 	DisqualifiedChans map[lnwire.ShortChannelID]Reason
@@ -581,12 +614,16 @@ func newSuggestions() *Suggestions {
 }
 
 func (s *Suggestions) addSwap(swap swapSuggestion) error {
-	out, ok := swap.(*loopOutSwapSuggestion)
-	if !ok {
+	switch t := swap.(type) {
+	case *loopOutSwapSuggestion:
+		s.OutSwaps = append(s.OutSwaps, t.OutRequest)
+
+	case *loopInSwapSuggestion:
+		s.InSwaps = append(s.InSwaps, t.LoopInRequest)
+
+	default:
 		return fmt.Errorf("unexpected swap type: %T", swap)
 	}
-
-	s.OutSwaps = append(s.OutSwaps, out.OutRequest)
 
 	return nil
 }
@@ -638,6 +675,11 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 	// Get restrictions placed on swaps by the server.
 	outRestrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
+	if err != nil {
+		return nil, err
+	}
+
+	inRestrictions, err := m.getSwapRestrictions(ctx, swap.TypeIn)
 	if err != nil {
 		return nil, err
 	}
@@ -726,7 +768,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 		suggestion, err := m.suggestSwap(
 			ctx, traffic, balances, rule, outRestrictions,
-			autoloop,
+			inRestrictions, autoloop,
 		)
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
@@ -752,7 +794,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 		suggestion, err := m.suggestSwap(
 			ctx, traffic, balance, rule, outRestrictions,
-			autoloop,
+			inRestrictions, autoloop,
 		)
 
 		var reasonErr *reasonError
@@ -848,17 +890,23 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	balance *balances, rule *SwapRule, outRestrictions *Restrictions,
-	autoloop bool) (swapSuggestion, error) {
+	inRestrictions *Restrictions, autoloop bool) (swapSuggestion, error) {
 
 	var (
 		builder      swapBuilder
 		restrictions *Restrictions
 	)
 
+	// Get an appropriate builder and set of restrictions based on our swap
+	// type.
 	switch rule.Type {
 	case swap.TypeOut:
 		builder = newLoopOutBuilder(m.cfg)
 		restrictions = outRestrictions
+
+	case swap.TypeIn:
+		builder = newLoopInBuilder(m.cfg)
+		restrictions = inRestrictions
 
 	default:
 		return nil, fmt.Errorf("unsupported swap type: %v", rule.Type)
@@ -881,7 +929,7 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 
 	// Next, get the amount that we need to swap for this entity, skipping
 	// over it if no change in liquidity is required.
-	amount := rule.swapAmount(balance, restrictions)
+	amount := rule.swapAmount(balance, restrictions, rule.Type)
 	if amount == 0 {
 		return nil, newReasonError(ReasonLiquidityOk)
 	}

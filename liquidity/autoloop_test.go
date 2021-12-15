@@ -50,13 +50,22 @@ func TestAutoLoopDisabled(t *testing.T) {
 	// loop in/out swaps. We expect a swap for our channel to be suggested,
 	// but do not expect any swaps to be executed, since autoloop is
 	// disabled by default.
-	c.autoloop(1, chan1Rec.Amount+1, nil, quotes, nil)
+	step := &autoloopStep{
+		minAmt:    1,
+		maxAmt:    chan1Rec.Amount + 1,
+		quotesOut: quotes,
+	}
+	c.autoloop(step)
 
 	// Trigger another autoloop, this time setting our server restrictions
 	// to have a minimum swap amount greater than the amount that we need
 	// to swap. In this case we don't even expect to get a quote, because
 	// our suggested swap is beneath the minimum swap size.
-	c.autoloop(chan1Rec.Amount+1, chan1Rec.Amount+2, nil, nil, nil)
+	step = &autoloopStep{
+		minAmt: chan1Rec.Amount + 1,
+		maxAmt: chan1Rec.Amount + 2,
+	}
+	c.autoloop(step)
 
 	c.stop()
 }
@@ -192,7 +201,13 @@ func TestAutoLoopEnabled(t *testing.T) {
 
 	// Tick our autolooper with no existing swaps, we expect a loop out
 	// swap to be dispatched for each channel.
-	c.autoloop(1, amt+1, nil, quotes, loopOuts)
+	step := &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		quotesOut:   quotes,
+		expectedOut: loopOuts,
+	}
+	c.autoloop(step)
 
 	// Tick again with both of our swaps in progress. We haven't shifted our
 	// channel balances at all, so swaps should still be suggested, but we
@@ -202,7 +217,12 @@ func TestAutoLoopEnabled(t *testing.T) {
 		existingSwapFromRequest(chan2Swap, testTime, nil),
 	}
 
-	c.autoloop(1, amt+1, existing, nil, nil)
+	step = &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		existingOut: existing,
+	}
+	c.autoloop(step)
 
 	// Now, we update our channel 2 swap to have failed due to off chain
 	// failure and our first swap to have succeeded.
@@ -255,7 +275,14 @@ func TestAutoLoopEnabled(t *testing.T) {
 	// We tick again, this time we expect another swap on channel 1 (which
 	// still has balances which reflect that we need to swap), but nothing
 	// for channel 2, since it has had a failure.
-	c.autoloop(1, amt+1, existing, quotes, loopOuts)
+	step = &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		existingOut: existing,
+		quotesOut:   quotes,
+		expectedOut: loopOuts,
+	}
+	c.autoloop(step)
 
 	// Now, we progress our time so that we have sufficiently backed off
 	// for channel 2, and could perform another swap.
@@ -269,7 +296,13 @@ func TestAutoLoopEnabled(t *testing.T) {
 		existingSwapFromRequest(chan2Swap, testTime, failedOffChain),
 	}
 
-	c.autoloop(1, amt+1, existing, quotes, nil)
+	step = &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		existingOut: existing,
+		quotesOut:   quotes,
+	}
+	c.autoloop(step)
 
 	c.stop()
 }
@@ -427,7 +460,13 @@ func TestCompositeRules(t *testing.T) {
 	// swap to be dispatched for each of our rules. We set our server side
 	// maximum to be greater than the swap amount for our peer swap (which
 	// is the larger of the two swaps).
-	c.autoloop(1, peerAmount+1, nil, quotes, loopOuts)
+	step := &autoloopStep{
+		minAmt:      1,
+		maxAmt:      peerAmount + 1,
+		quotesOut:   quotes,
+		expectedOut: loopOuts,
+	}
+	c.autoloop(step)
 
 	c.stop()
 }

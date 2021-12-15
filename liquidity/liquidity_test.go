@@ -1446,7 +1446,7 @@ func TestSizeRestrictions(t *testing.T) {
 
 				mockServer.On(
 					"Restrictions", mock.Anything,
-					swap.TypeOut,
+					mock.Anything,
 				).Return(&restrictions, nil)
 			}
 
