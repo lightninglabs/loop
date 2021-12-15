@@ -292,6 +292,11 @@ var setParamsCommand = cli.Command{
 			Usage: "the maximum amount in satoshis that the " +
 				"autoloop client will dispatch per-swap",
 		},
+		cli.IntFlag{
+			Name: "htlc_conf",
+			Usage: "the confirmation target for loop in on-chain " +
+				"htlcs",
+		},
 	},
 	Action: setParams,
 }
@@ -419,6 +424,11 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("maxamt") {
 		params.MaxSwapAmount = ctx.Uint64("maxamt")
+		flagSet = true
+	}
+
+	if ctx.IsSet("htlc_conf") {
+		params.HtlcConfTarget = int32(ctx.Int("htlc_conf"))
 		flagSet = true
 	}
 
