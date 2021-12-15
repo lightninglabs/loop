@@ -99,6 +99,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 				chanID1: chanRule,
 				chanID2: chanRule,
 			},
+			HtlcConfTarget: defaultHtlcConfTarget,
 		}
 	)
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
@@ -318,6 +319,7 @@ func TestCompositeRules(t *testing.T) {
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer2: chanRule,
 			},
+			HtlcConfTarget: defaultHtlcConfTarget,
 		}
 	)
 

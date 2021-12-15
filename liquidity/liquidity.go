@@ -90,6 +90,10 @@ const (
 )
 
 var (
+	// defaultHtlcConfTarget is the default confirmation target we use for
+	// loop in swap htlcs, set to the same default at the client.
+	defaultHtlcConfTarget = loop.DefaultHtlcConfTarget
+
 	// defaultBudget is the default autoloop budget we set. This budget will
 	// only be used for automatically dispatched swaps if autoloop is
 	// explicitly enabled, so we are happy to set a non-zero value here. The
@@ -107,6 +111,7 @@ var (
 		PeerRules:       make(map[route.Vertex]*SwapRule),
 		FailureBackOff:  defaultFailureBackoff,
 		SweepConfTarget: defaultConfTarget,
+		HtlcConfTarget:  defaultHtlcConfTarget,
 		FeeLimit:        defaultFeePortion(),
 	}
 
@@ -170,6 +175,10 @@ type Config struct {
 	LoopOutQuote func(ctx context.Context,
 		request *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote, error)
 
+	// LoopInQuote provides a quote for a loop in swap.
+	LoopInQuote func(ctx context.Context,
+		request *loop.LoopInQuoteRequest) (*loop.LoopInQuote, error)
+
 	// LoopOut dispatches a loop out.
 	LoopOut func(ctx context.Context, request *loop.OutRequest) (
 		*loop.LoopOutSwapInfo, error)
@@ -212,6 +221,10 @@ type Parameters struct {
 	// transaction in. This value affects the on chain fees we will pay.
 	SweepConfTarget int32
 
+	// HtlcConfTarget is the confirmation target that we use for publishing
+	// loop in swap htlcs on chain.
+	HtlcConfTarget int32
+
 	// FeeLimit controls the fee limit we place on swaps.
 	FeeLimit FeeLimit
 
@@ -249,10 +262,11 @@ func (p Parameters) String() string {
 	}
 
 	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+
-		"sweep conf target: %v, fees: %v, auto budget: %v, budget "+
-		"start: %v, max auto in flight: %v, minimum swap size=%v, "+
-		"maximum swap size=%v", strings.Join(ruleList, ","),
-		p.FailureBackOff, p.SweepConfTarget, p.FeeLimit,
+		"sweep conf target: %v, htlc conf target: %v,fees: %v, "+
+		"auto budget: %v, budget start: %v, max auto in flight: %v, "+
+		"minimum swap size=%v, maximum swap size=%v",
+		strings.Join(ruleList, ","), p.FailureBackOff,
+		p.SweepConfTarget, p.HtlcConfTarget, p.FeeLimit,
 		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight,
 		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
 }
@@ -327,6 +341,10 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 	if p.SweepConfTarget < minConfs {
 		return fmt.Errorf("confirmation target must be at least: %v",
 			minConfs)
+	}
+
+	if p.HtlcConfTarget < 1 {
+		return fmt.Errorf("htlc confirmation target must be > 0")
 	}
 
 	if err := p.FeeLimit.validate(); err != nil {

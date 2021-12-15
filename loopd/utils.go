@@ -65,6 +65,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		Lnd:                  client.LndServices,
 		Clock:                clock.NewDefaultClock(),
 		LoopOutQuote:         client.LoopOutQuote,
+		LoopInQuote:          client.LoopInQuote,
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		MinimumConfirmations: minConfTarget,
