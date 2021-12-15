@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/stretchr/testify/require"
 )
 
@@ -249,6 +250,7 @@ func TestSuggestSwap(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			swap := test.rule.swapAmount(
 				test.channel, test.outRestrictions,
+				swap.TypeOut,
 			)
 			require.Equal(t, test.swap, swap)
 		})

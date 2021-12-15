@@ -675,6 +675,11 @@
           "type": "string",
           "format": "uint64",
           "description": "The maximum amount, expressed in satoshis, that the autoloop client will\ndispatch a swap for. This value is subject to the server-side limits\nspecified by the LoopOutTerms endpoint."
+        },
+        "htlc_conf_target": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The confirmation target for loop in on-chain htlcs."
         }
       }
     },
@@ -998,6 +1003,13 @@
             "$ref": "#/definitions/looprpcLoopOutRequest"
           },
           "description": "The set of recommended loop outs."
+        },
+        "loop_in": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLoopInRequest"
+          },
+          "title": "The set of recommended loop in swaps"
         },
         "disqualified": {
           "type": "array",

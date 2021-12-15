@@ -48,6 +48,14 @@ var setLiquidityRuleCommand = cli.Command{
 	Description: "Update or remove the liquidity rule for a channel/peer.",
 	ArgsUsage:   "{shortchanid |  peerpubkey}",
 	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "type",
+			Usage: "the type of swap to perform, set to 'out' " +
+				"for acquiring inbound liquidity or 'in' for " +
+				"acquiring outbound liquidity.",
+			Value: "out",
+		},
+
 		cli.IntFlag{
 			Name: "incoming_threshold",
 			Usage: "the minimum percentage of incoming liquidity " +
@@ -168,7 +176,18 @@ func setRule(ctx *cli.Context) error {
 	newRule := &looprpc.LiquidityRule{
 		ChannelId: chanID,
 		Type:      looprpc.LiquidityRuleType_THRESHOLD,
-		SwapType:  looprpc.SwapType_LOOP_OUT,
+	}
+	if ctx.IsSet("type") {
+		switch ctx.String("type") {
+		case "in":
+			newRule.SwapType = looprpc.SwapType_LOOP_IN
+
+		case "out":
+			newRule.SwapType = looprpc.SwapType_LOOP_OUT
+
+		default:
+			return errors.New("please set type to in or out")
+		}
 	}
 
 	if pubkeyRule {
@@ -291,6 +310,11 @@ var setParamsCommand = cli.Command{
 			Name: "maxamt",
 			Usage: "the maximum amount in satoshis that the " +
 				"autoloop client will dispatch per-swap",
+		},
+		cli.IntFlag{
+			Name: "htlc_conf",
+			Usage: "the confirmation target for loop in on-chain " +
+				"htlcs",
 		},
 	},
 	Action: setParams,
@@ -419,6 +443,11 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("maxamt") {
 		params.MaxSwapAmount = ctx.Uint64("maxamt")
+		flagSet = true
+	}
+
+	if ctx.IsSet("htlc_conf") {
+		params.HtlcConfTarget = int32(ctx.Int("htlc_conf"))
 		flagSet = true
 	}
 

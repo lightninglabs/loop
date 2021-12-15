@@ -72,7 +72,7 @@ func (r *ThresholdRule) validate() error {
 // swapAmount suggests a swap based on the liquidity thresholds configured,
 // returning zero if no swap is recommended.
 func (r *ThresholdRule) swapAmount(channel *balances,
-	restrictions *Restrictions) btcutil.Amount {
+	restrictions *Restrictions, swapType swap.Type) btcutil.Amount {
 
 	var (
 		// For loop out swaps, we want to adjust our incoming liquidity
@@ -94,6 +94,14 @@ func (r *ThresholdRule) swapAmount(channel *balances,
 		// is our reserve percentage.
 		reservePercentage = uint64(r.MinimumOutgoing)
 	)
+
+	// For loop in swaps, we reverse our target and reserve values.
+	if swapType == swap.TypeIn {
+		targetBalance = channel.outgoing
+		targetPercentage = uint64(r.MinimumOutgoing)
+		reserveBalance = channel.incoming
+		reservePercentage = uint64(r.MinimumIncoming)
+	}
 
 	// Examine our total balance and required ratios to decide whether we
 	// need to swap.

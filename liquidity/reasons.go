@@ -65,6 +65,10 @@ const (
 	// ReasonFeePPMInsufficient indicates that the fees a swap would require
 	// are greater than the portion of swap amount allocated to fees.
 	ReasonFeePPMInsufficient
+
+	// ReasonLoopInUnreachable indicates that the server does not have a
+	// path to the client, so cannot perform a loop in swap at this time.
+	ReasonLoopInUnreachable
 )
 
 // String returns a string representation of a reason.
@@ -111,6 +115,9 @@ func (r Reason) String() string {
 
 	case ReasonFeePPMInsufficient:
 		return "fee portion insufficient"
+
+	case ReasonLoopInUnreachable:
+		return "loop in unreachable"
 
 	default:
 		return "unknown"

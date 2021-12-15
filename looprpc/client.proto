@@ -848,6 +848,11 @@ message LiquidityParameters {
     specified by the LoopOutTerms endpoint.
     */
     uint64 max_swap_amount = 15;
+
+    /*
+    The confirmation target for loop in on-chain htlcs.
+    */
+    int32 htlc_conf_target = 17;
 }
 
 enum LiquidityRuleType {
@@ -1011,6 +1016,11 @@ message SuggestSwapsResponse {
     The set of recommended loop outs.
     */
     repeated LoopOutRequest loop_out = 1;
+
+    /*
+    The set of recommended loop in swaps
+    */
+    repeated LoopInRequest loop_in = 3;
 
     /*
     Disqualified contains the set of channels that swaps are not recommended

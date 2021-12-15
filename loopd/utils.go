@@ -39,6 +39,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
+		LoopIn:         client.LoopIn,
 		Restrictions: func(ctx context.Context,
 			swapType swap.Type) (*liquidity.Restrictions, error) {
 
@@ -65,6 +66,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		Lnd:                  client.LndServices,
 		Clock:                clock.NewDefaultClock(),
 		LoopOutQuote:         client.LoopOutQuote,
+		LoopInQuote:          client.LoopInQuote,
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		MinimumConfirmations: minConfTarget,
