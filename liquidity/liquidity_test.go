@@ -16,6 +16,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1292,6 +1293,19 @@ func TestInFlightLimit(t *testing.T) {
 	}
 }
 
+type mockServer struct {
+	mock.Mock
+}
+
+// Restrictions mocks a call to the server to get swap size restrictions.
+func (m *mockServer) Restrictions(ctx context.Context, swapType swap.Type) (
+	*Restrictions, error) {
+
+	args := m.Called(ctx, swapType)
+
+	return args.Get(0).(*Restrictions), args.Error(1)
+}
+
 // TestSizeRestrictions tests the use of client-set size restrictions on swaps.
 func TestSizeRestrictions(t *testing.T) {
 	var (
@@ -1321,9 +1335,7 @@ func TestSizeRestrictions(t *testing.T) {
 		// has configured.
 		clientRestrictions Restrictions
 
-		// server holds the server's mocked responses to our terms
-		// endpoint.
-		serverRestrictions []Restrictions
+		prepareMock func(m *mockServer)
 
 		// suggestions is the set of suggestions we expect.
 		suggestions *Suggestions
@@ -1335,9 +1347,6 @@ func TestSizeRestrictions(t *testing.T) {
 			name: "minimum more than server, swap happens",
 			clientRestrictions: Restrictions{
 				Minimum: 7000,
-			},
-			serverRestrictions: []Restrictions{
-				serverRestrictions, serverRestrictions,
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -1352,9 +1361,6 @@ func TestSizeRestrictions(t *testing.T) {
 			clientRestrictions: Restrictions{
 				Minimum: 8000,
 			},
-			serverRestrictions: []Restrictions{
-				serverRestrictions, serverRestrictions,
-			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
 					chanID1: ReasonLiquidityOk,
@@ -1366,9 +1372,6 @@ func TestSizeRestrictions(t *testing.T) {
 			name: "maximum less than server, swap happens",
 			clientRestrictions: Restrictions{
 				Maximum: 7000,
-			},
-			serverRestrictions: []Restrictions{
-				serverRestrictions, serverRestrictions,
 			},
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
@@ -1387,12 +1390,26 @@ func TestSizeRestrictions(t *testing.T) {
 				Minimum: 6500,
 				Maximum: 9000,
 			},
-			serverRestrictions: []Restrictions{
-				serverRestrictions,
-				{
-					Minimum: 5000,
-					Maximum: 6000,
-				},
+			prepareMock: func(m *mockServer) {
+				restrictions := serverRestrictions
+
+				m.On(
+					"Restrictions", mock.Anything,
+					swap.TypeOut,
+				).Return(
+					&restrictions, nil,
+				).Once()
+
+				m.On(
+					"Restrictions", mock.Anything,
+					swap.TypeOut,
+				).Return(
+					&Restrictions{
+						Minimum: 5000,
+						Maximum: 6000,
+					}, nil,
+				).Once()
+
 			},
 			suggestions:   nil,
 			expectedError: ErrMaxExceedsServer,
@@ -1415,27 +1432,32 @@ func TestSizeRestrictions(t *testing.T) {
 				chanID1: chanRule,
 			}
 
-			// callCount tracks the number of calls we make to
-			// our restrictions endpoint.
-			var callCount int
+			// Use a mock that has our expected calls for the test
+			// case set to provide server restrictions.
+			mockServer := &mockServer{}
 
-			cfg.Restrictions = func(_ context.Context, _ swap.Type) (
-				*Restrictions, error) {
+			// If the test wants us to prime the mock, use its
+			// function, otherwise just return our default
+			// restrictions.
+			if testCase.prepareMock != nil {
+				testCase.prepareMock(mockServer)
+			} else {
+				restrictions := serverRestrictions
 
-				restrictions := testCase.serverRestrictions[callCount]
-				callCount++
-
-				return &restrictions, nil
+				mockServer.On(
+					"Restrictions", mock.Anything,
+					swap.TypeOut,
+				).Return(&restrictions, nil)
 			}
+
+			cfg.Restrictions = mockServer.Restrictions
+
 			testSuggestSwaps(
 				t, newSuggestSwapsSetup(cfg, lnd, params),
 				testCase.suggestions, testCase.expectedError,
 			)
 
-			require.Equal(
-				t, callCount, len(testCase.serverRestrictions),
-				"too many restrictions provided by mock",
-			)
+			mockServer.AssertExpectations(t)
 		})
 	}
 }
