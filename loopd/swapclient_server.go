@@ -719,8 +719,9 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		Rules: make(
 			[]*clientrpc.LiquidityRule, 0, totalRules,
 		),
-		MinSwapAmount: uint64(cfg.ClientRestrictions.Minimum),
-		MaxSwapAmount: uint64(cfg.ClientRestrictions.Maximum),
+		MinSwapAmount:  uint64(cfg.ClientRestrictions.Minimum),
+		MaxSwapAmount:  uint64(cfg.ClientRestrictions.Maximum),
+		HtlcConfTarget: cfg.HtlcConfTarget,
 	}
 
 	switch f := cfg.FeeLimit.(type) {
@@ -812,6 +813,7 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 			Minimum: btcutil.Amount(in.Parameters.MinSwapAmount),
 			Maximum: btcutil.Amount(in.Parameters.MaxSwapAmount),
 		},
+		HtlcConfTarget: in.Parameters.HtlcConfTarget,
 	}
 
 	// Zero unix time is different to zero golang time.
