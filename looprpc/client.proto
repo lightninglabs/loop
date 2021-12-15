@@ -1013,6 +1013,11 @@ message SuggestSwapsResponse {
     repeated LoopOutRequest loop_out = 1;
 
     /*
+    The set of recommended loop in swaps
+    */
+    repeated LoopInRequest loop_in = 3;
+
+    /*
     Disqualified contains the set of channels that swaps are not recommended
     for.
     */

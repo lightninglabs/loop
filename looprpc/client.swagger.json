@@ -999,6 +999,13 @@
           },
           "description": "The set of recommended loop outs."
         },
+        "loop_in": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcLoopInRequest"
+          },
+          "title": "The set of recommended loop in swaps"
+        },
         "disqualified": {
           "type": "array",
           "items": {

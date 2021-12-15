@@ -953,13 +953,17 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		return nil, err
 	}
 
-	var (
-		loopOut      []*clientrpc.LoopOutRequest
-		disqualified []*clientrpc.Disqualified
-	)
+	resp := &clientrpc.SuggestSwapsResponse{
+		LoopOut: make(
+			[]*clientrpc.LoopOutRequest, len(suggestions.OutSwaps),
+		),
+		LoopIn: make(
+			[]*clientrpc.LoopInRequest, len(suggestions.InSwaps),
+		),
+	}
 
-	for _, swap := range suggestions.OutSwaps {
-		loopOut = append(loopOut, &clientrpc.LoopOutRequest{
+	for i, swap := range suggestions.OutSwaps {
+		resp.LoopOut[i] = &clientrpc.LoopOutRequest{
 			Amt:                 int64(swap.Amount),
 			OutgoingChanSet:     swap.OutgoingChanSet,
 			MaxSwapFee:          int64(swap.MaxSwapFee),
@@ -968,7 +972,22 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			MaxSwapRoutingFee:   int64(swap.MaxSwapRoutingFee),
 			MaxPrepayRoutingFee: int64(swap.MaxPrepayRoutingFee),
 			SweepConfTarget:     swap.SweepConfTarget,
-		})
+		}
+	}
+
+	for i, swap := range suggestions.InSwaps {
+		loopIn := &clientrpc.LoopInRequest{
+			Amt:            int64(swap.Amount),
+			MaxSwapFee:     int64(swap.MaxSwapFee),
+			MaxMinerFee:    int64(swap.MaxMinerFee),
+			HtlcConfTarget: swap.HtlcConfTarget,
+		}
+
+		if swap.LastHop != nil {
+			loopIn.LastHop = swap.LastHop[:]
+		}
+
+		resp.LoopIn[i] = loopIn
 	}
 
 	for id, reason := range suggestions.DisqualifiedChans {
@@ -982,7 +1001,7 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			ChannelId: id.ToUint64(),
 		}
 
-		disqualified = append(disqualified, exclChan)
+		resp.Disqualified = append(resp.Disqualified, exclChan)
 	}
 
 	for pubkey, reason := range suggestions.DisqualifiedPeers {
@@ -996,13 +1015,10 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			Pubkey: pubkey[:],
 		}
 
-		disqualified = append(disqualified, exclChan)
+		resp.Disqualified = append(resp.Disqualified, exclChan)
 	}
 
-	return &clientrpc.SuggestSwapsResponse{
-		LoopOut:      loopOut,
-		Disqualified: disqualified,
-	}, nil
+	return resp, nil
 }
 
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
