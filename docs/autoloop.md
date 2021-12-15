@@ -9,6 +9,16 @@ following command:
 loop setparams --autoloop=true
 ```
 
+At present, autoloop can be configured to either acquire incoming liquidity 
+using loop out, or acquire outgoing liquidity using loop in. It cannot support
+automated swaps in both directions. To set the type of swaps you would like 
+to automatically dispatch, use:
+```
+loop setparams --type={in|out}
+```
+
+Autoloop will perform loop out swaps *by default*.
+
 Swaps that are dispatched by the autolooper can be identified in the output of 
 `ListSwaps` by their label field, which will contain: `[reserved]: autoloop-out`.
 
@@ -286,7 +296,9 @@ following reasons will be displayed:
 * Fee insufficient: if the fees that a swap will cost are more than the
   percentage of total swap amount that we allow, this reason will be displayed.
   See [fees](#fees) to update this value.
-
+* Loop in unreachable: if the client node is unreachable by the server 
+  off-chain, this reason will be displayed. Try improving the connectivity of
+  your node so that it is reachable by the loop server.
 
 Further details for all of these reasons can be found in loopd's debug level 
 logs.
