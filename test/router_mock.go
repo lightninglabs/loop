@@ -42,3 +42,66 @@ func (r *mockRouter) TrackPayment(ctx context.Context,
 
 	return statusChan, errorChan, nil
 }
+
+func (r *mockRouter) QueryMissionControl(ctx context.Context) (
+	[]lndclient.MissionControlEntry, error) {
+
+	return r.lnd.MissionControlState, nil
+}
+
+// ImpotMissionControl is a mocked reimplementation of the pair import.
+// Reference: lnd/router/missioncontrol_state.go:importSnapshot().
+func (r *mockRouter) ImportMissionControl(ctx context.Context,
+	entries []lndclient.MissionControlEntry) error {
+
+	for _, entry := range entries {
+		found := false
+		for i := range r.lnd.MissionControlState {
+			current := &r.lnd.MissionControlState[i]
+			if entry.NodeFrom == current.NodeFrom &&
+				entry.NodeTo == current.NodeTo {
+
+				// Mark that the entry has been found and updated.
+				found = true
+
+				// Import failure result first. We ignore failure
+				// relax interval here for convenience.
+				current.FailTime = entry.FailTime
+				current.FailAmt = entry.FailAmt
+
+				switch {
+				case entry.FailAmt == 0:
+					current.SuccessAmt = 0
+
+				case entry.FailAmt <= current.SuccessAmt:
+					current.SuccessAmt = entry.FailAmt - 1
+				}
+
+				// Import success result second.
+				current.SuccessTime = entry.SuccessTime
+				if entry.SuccessAmt > current.SuccessAmt {
+					current.SuccessAmt = entry.SuccessAmt
+				}
+
+				if !current.FailTime.IsZero() &&
+					entry.SuccessAmt >= current.FailAmt {
+
+					current.FailAmt = entry.SuccessAmt + 1
+				}
+			}
+		}
+
+		if !found {
+			r.lnd.MissionControlState = append(
+				r.lnd.MissionControlState, entry,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (r *mockRouter) ResetMissionControl(ctx context.Context) error {
+	r.lnd.MissionControlState = []lndclient.MissionControlEntry{}
+	return nil
+}
