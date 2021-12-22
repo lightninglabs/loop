@@ -161,6 +161,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 
 	cleanup := func() {
 		swapServerClient.stop()
+		store.Close()
 	}
 
 	return client, cleanup, nil
