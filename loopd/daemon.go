@@ -399,7 +399,7 @@ func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
 		// The client and the macaroon service are the only things we
 		// started yet, so if we clean that up now, nothing else needs
 		// to be shut down at this point.
-		if err := d.stopMacaroonService(); err != nil {
+		if err := d.StopMacaroonService(); err != nil {
 			log.Errorf("Error shutting down macaroon service: %v",
 				err)
 		}
@@ -520,7 +520,7 @@ func (d *Daemon) stop() {
 		d.restCtxCancel()
 	}
 
-	err := d.macaroonService.Close()
+	err := d.StopMacaroonService()
 	if err != nil {
 		log.Errorf("Error stopping macaroon service: %v", err)
 	}

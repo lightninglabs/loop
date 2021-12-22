@@ -24,4 +24,6 @@ This file tracks release notes for the loop client.
 
 #### Bug Fixes
 
+* Close local databases when loopd daemon is stopped programmatically.
+
 #### Maintenance

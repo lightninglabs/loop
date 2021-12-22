@@ -224,8 +224,8 @@ func (d *Daemon) startMacaroonService(createDefaultMacaroonFile bool) error {
 	return nil
 }
 
-// stopMacaroonService closes the macaroon database.
-func (d *Daemon) stopMacaroonService() error {
+// StopMacaroonService closes the macaroon database.
+func (d *Daemon) StopMacaroonService() error {
 	var shutdownErr error
 	if err := d.macaroonService.Close(); err != nil {
 		log.Errorf("Error closing macaroon service: %v", err)
