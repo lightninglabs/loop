@@ -95,7 +95,7 @@ loop setparams --sweepconf={target in blocks}
 The mempool often clears overnight, or on the weekends when fewer people are 
 using chain space. This is an opportune time for the autolooper to dispatch a 
 swap on your behalf while you sleep! Before dispatching a swap, the autolooper 
-will get a fee estimate for you on-chain sweep transaction (using its 
+will get a fee estimate for your on-chain sweep transaction (using its 
 `sweepconftarget`), and check it against the limit that has been configured. 
 The `sweeplimit` parameter can be set to configure the autolooper to only 
 dispatch in low-fee environments.
