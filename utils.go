@@ -18,6 +18,23 @@ var (
 	DefaultMaxHopHints = 20
 )
 
+// chanCanBeHopHint checks whether the passed channel could be used as a private
+// hophint.
+func chanCanBeHopHint(chanInfo *lndclient.ChannelInfo) bool {
+	return chanInfo.Private && chanInfo.Active
+}
+
+// chanRemotePolicy selectes the correct remote routing policy.
+func chanRemotePolicy(remotePub route.Vertex,
+	edgeInfo *lndclient.ChannelEdge) *lndclient.RoutingPolicy {
+
+	if remotePub == edgeInfo.Node1 {
+		return edgeInfo.Node1Policy
+	}
+
+	return edgeInfo.Node2Policy
+}
+
 // SelectHopHints is a direct port of the SelectHopHints found in lnd. It was
 // reimplemented because the current implementation in LND relies on internals
 // not externalized through the API. Hopefully in the future SelectHopHints
@@ -44,49 +61,34 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 	// through GetChanInfo
 	chanInfoCache := make(map[uint64]*lndclient.ChannelEdge)
 
-	// skipCache is a simple cache which holds the indice of any
-	// channel we've added to final hopHints
+	// skipCache is a simple cache which holds the indices of any channel
+	// that we should skip when doing the second round of channel selection.
 	skipCache := make(map[int]struct{})
 
 	hopHints := make([][]zpay32.HopHint, 0, numMaxHophints)
 
 	for i, channel := range openChannels {
+		channel := channel
+
 		// In this first pass, we'll ignore all channels in
 		// isolation that can't satisfy this payment.
 
-		// Retrieve extra info for each channel not available in
-		// listChannels
-		chanInfo, err := lnd.Client.GetChanInfo(ctx, channel.ChannelID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Cache the GetChanInfo result since it might be useful
-		chanInfoCache[channel.ChannelID] = chanInfo
-
-		// Skip if channel can't forward payment
-		if channel.RemoteBalance < amtMSat {
-			log.Debugf(
-				"Skipping ChannelID: %v for hints as "+
-					"remote balance (%v sats) "+
-					"insufficient appears to be private",
-				channel.ChannelID, channel.RemoteBalance,
-			)
+		// Skip public or inactive channels.
+		if !chanCanBeHopHint(&channel) {
+			log.Debugf("SelectHopHints: skipping ChannelID: %v, " +
+				"as is not eligible for a private hop hint")
+			skipCache[i] = struct{}{}
 			continue
 		}
+
 		// If includeNodes is set, we'll only add channels with peers in
 		// includeNodes. This is done to respect the last_hop parameter.
 		if len(includeNodes) > 0 {
 			if _, ok := includeNodes[channel.PubKeyBytes]; !ok {
+				skipCache[i] = struct{}{}
 				continue
 			}
 		}
-
-		// Mark the index to skip so we can skip it on the next
-		// iteration if needed. We'll skip all channels that make
-		// it past this point as they'll likely belong to private
-		// nodes or be selected.
-		skipCache[i] = struct{}{}
 
 		// We want to prevent leaking private nodes, which we define as
 		// nodes with only private channels.
@@ -102,8 +104,8 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 		// fail.
 		status, ok := status.FromError(err)
 		if ok && status.Code() == codes.NotFound {
-			log.Warnf("Skipping ChannelID: %v for hints as peer "+
-				"(NodeID: %v) is not found: %v",
+			log.Warnf("SelectHopHints: skipping ChannelID: %v, "+
+				"as peer (NodeID: %v) is not found: %v",
 				channel.ChannelID, channel.PubKeyBytes.String(),
 				err)
 			continue
@@ -113,34 +115,67 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 
 		if len(nodeInfo.Channels) == 0 {
 			log.Infof(
-				"Skipping ChannelID: %v for hints as peer "+
-					"(NodeID: %v) appears to be private",
+				"SelectHopHints: skipping ChannelID: %v as "+
+					"peer (NodeID: %v) appears to be private",
 				channel.ChannelID, channel.PubKeyBytes.String(),
+			)
+
+			// Skip this channel since the remote node is private.
+			skipCache[i] = struct{}{}
+			continue
+		}
+
+		// Retrieve extra info for each channel not available in
+		// listChannels.
+		chanInfo, err := lnd.Client.GetChanInfo(ctx, channel.ChannelID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Cache the GetChanInfo result since it might be useful
+		chanInfoCache[channel.ChannelID] = chanInfo
+
+		// Skip if channel can't forward payment
+		if channel.RemoteBalance < amtMSat {
+			log.Debugf(
+				"SelectHopHints: skipping ChannelID: %v, as "+
+					"the remote balance (%v sats) is "+
+					"insufficient", channel.ChannelID,
+				channel.RemoteBalance,
 			)
 			continue
 		}
 
-		nodeID, err := btcec.ParsePubKey(
+		// Now, we'll need to determine which is the correct policy.
+		policy := chanRemotePolicy(channel.PubKeyBytes, chanInfo)
+		if policy == nil {
+			continue
+		}
+
+		nodePubKey, err := btcec.ParsePubKey(
 			channel.PubKeyBytes[:], btcec.S256(),
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		// Now that we now this channel use usable, add it as a hop
-		// hint and the indexes we'll use later.
+		// Now that we know this channel is usable, add it as a hop
+		// hint and the indices we'll use later.
 		hopHints = append(hopHints, []zpay32.HopHint{{
-			NodeID:      nodeID,
+			NodeID:      nodePubKey,
 			ChannelID:   channel.ChannelID,
-			FeeBaseMSat: uint32(chanInfo.Node2Policy.FeeBaseMsat),
+			FeeBaseMSat: uint32(policy.FeeBaseMsat),
 			FeeProportionalMillionths: uint32(
-				chanInfo.Node2Policy.FeeRateMilliMsat,
+				policy.FeeRateMilliMsat,
 			),
-			CLTVExpiryDelta: uint16(
-				chanInfo.Node2Policy.TimeLockDelta),
+			CLTVExpiryDelta: uint16(policy.TimeLockDelta),
 		}})
 
 		totalHintBandwidth += channel.RemoteBalance
+
+		// Mark the index to skip so we can skip it on the next
+		// iteration.
+		skipCache[i] = struct{}{}
 	}
 
 	// If we have enough hop hints at this point, then we'll exit early.
@@ -165,13 +200,21 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 			break
 		}
 
-		// Skip the channel if we already selected it.
+		// Channels of private nodes, inactive, or public channels or
+		// those that have already been selected can be skipped in this
+		// iteration.
 		if _, ok := skipCache[i]; ok {
 			continue
 		}
 
 		channel := openChannels[i]
 		chanInfo := chanInfoCache[channel.ChannelID]
+
+		// Now, we'll need to determine which is the correct policy.
+		policy := chanRemotePolicy(channel.PubKeyBytes, chanInfo)
+		if policy == nil {
+			continue
+		}
 
 		nodeID, err := btcec.ParsePubKey(
 			channel.PubKeyBytes[:], btcec.S256())
@@ -184,12 +227,11 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 		hopHints = append(hopHints, []zpay32.HopHint{{
 			NodeID:      nodeID,
 			ChannelID:   channel.ChannelID,
-			FeeBaseMSat: uint32(chanInfo.Node2Policy.FeeBaseMsat),
+			FeeBaseMSat: uint32(policy.FeeBaseMsat),
 			FeeProportionalMillionths: uint32(
-				chanInfo.Node2Policy.FeeRateMilliMsat,
+				policy.FeeRateMilliMsat,
 			),
-			CLTVExpiryDelta: uint16(
-				chanInfo.Node2Policy.TimeLockDelta),
+			CLTVExpiryDelta: uint16(policy.TimeLockDelta),
 		}})
 
 		// As we've just added a new hop hint, we'll accumulate it's

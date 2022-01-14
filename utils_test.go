@@ -17,10 +17,12 @@ import (
 )
 
 var (
-	chanID1 = lnwire.NewShortChanIDFromInt(1)
-	chanID2 = lnwire.NewShortChanIDFromInt(2)
-	chanID3 = lnwire.NewShortChanIDFromInt(3)
-	chanID4 = lnwire.NewShortChanIDFromInt(4)
+	chanID0 = lnwire.NewShortChanIDFromInt(10)
+	chanID1 = lnwire.NewShortChanIDFromInt(11)
+	chanID2 = lnwire.NewShortChanIDFromInt(12)
+	chanID3 = lnwire.NewShortChanIDFromInt(13)
+	chanID4 = lnwire.NewShortChanIDFromInt(14)
+	chanID5 = lnwire.NewShortChanIDFromInt(15)
 
 	// To generate a nodeID we'll have to perform a few steps.
 	//
@@ -79,28 +81,60 @@ var (
 	}
 	peer2, _ = route.NewVertexFromBytes(pubKeyPeer2.SerializeCompressed())
 
-	// Construct channel1 which will be returned my listChannels and
-	// channelEdge1 which will be returned by getChanInfo
-	chan1Capacity = btcutil.Amount(10000)
-	channel1      = lndclient.ChannelInfo{
+	capacity = btcutil.Amount(10000)
+
+	// Channel0 is a public active channel with peer1 with 10k remote
+	// capacity.
+	channel0 = lndclient.ChannelInfo{
 		Active:        true,
+		Private:       false,
+		ChannelID:     chanID0.ToUint64(),
+		PubKeyBytes:   peer1,
+		LocalBalance:  0,
+		RemoteBalance: capacity,
+		Capacity:      capacity,
+	}
+	channelEdge0 = lndclient.ChannelEdge{
+		ChannelID: chanID0.ToUint64(),
+		ChannelPoint: "b121f1d368b8f60648970bc36b37e7b9700d" +
+			"ed098c60b027e42e9c648e297501:0",
+		Capacity: capacity,
+		Node1:    peer1,
+		Node2:    origin,
+		Node1Policy: &lndclient.RoutingPolicy{
+			FeeBaseMsat:      0,
+			FeeRateMilliMsat: 0,
+			TimeLockDelta:    140,
+		},
+		Node2Policy: &lndclient.RoutingPolicy{
+			FeeBaseMsat:      0,
+			FeeRateMilliMsat: 0,
+			TimeLockDelta:    140,
+		},
+	}
+
+	// Channel1 is a private active channel with peer1 with 10k remote
+	// capacity.
+	channel1 = lndclient.ChannelInfo{
+		Active:        true,
+		Private:       true,
 		ChannelID:     chanID1.ToUint64(),
 		PubKeyBytes:   peer1,
-		LocalBalance:  10000,
-		RemoteBalance: 0,
-		Capacity:      chan1Capacity,
+		LocalBalance:  0,
+		RemoteBalance: capacity,
+		Capacity:      capacity,
 	}
 	channelEdge1 = lndclient.ChannelEdge{
 		ChannelID: chanID1.ToUint64(),
 		ChannelPoint: "b121f1d368b8f60648970bc36b37e7b9700d" +
 			"ed098c60b027e42e9c648e297502:0",
-		Capacity: chan1Capacity,
-		Node1:    origin,
-		Node2:    peer1,
+		Capacity: capacity,
+		Node1:    peer1,
+		Node2:    origin,
 		Node1Policy: &lndclient.RoutingPolicy{
-			FeeBaseMsat:      0,
-			FeeRateMilliMsat: 0,
-			TimeLockDelta:    144,
+			FeeBaseMsat:      1,
+			FeeRateMilliMsat: 1,
+			TimeLockDelta:    141,
 		},
 		Node2Policy: &lndclient.RoutingPolicy{
 			FeeBaseMsat:      0,
@@ -109,22 +143,22 @@ var (
 		},
 	}
 
-	// Construct channel2 which will be returned my listChannels and
-	// channelEdge2 which will be returned by getChanInfo
-	chan2Capacity = btcutil.Amount(10000)
-	channel2      = lndclient.ChannelInfo{
+	// Channel2 is a private active channel with peer2 with 10k remote
+	// capacity.
+	channel2 = lndclient.ChannelInfo{
 		Active:        true,
-		ChannelID:     chanID1.ToUint64(),
+		Private:       true,
+		ChannelID:     chanID2.ToUint64(),
 		PubKeyBytes:   peer2,
 		LocalBalance:  0,
-		RemoteBalance: 10000,
-		Capacity:      chan1Capacity,
+		RemoteBalance: capacity,
+		Capacity:      capacity,
 	}
 	channelEdge2 = lndclient.ChannelEdge{
 		ChannelID: chanID2.ToUint64(),
 		ChannelPoint: "b121f1d368b8f60648970bc36b37e7b9700d" +
 			"ed098c60b027e42e9c648e297502:0",
-		Capacity: chan2Capacity,
+		Capacity: capacity,
 		Node1:    origin,
 		Node2:    peer2,
 		Node1Policy: &lndclient.RoutingPolicy{
@@ -133,34 +167,34 @@ var (
 			TimeLockDelta:    144,
 		},
 		Node2Policy: &lndclient.RoutingPolicy{
-			FeeBaseMsat:      0,
-			FeeRateMilliMsat: 0,
-			TimeLockDelta:    144,
+			FeeBaseMsat:      2,
+			FeeRateMilliMsat: 2,
+			TimeLockDelta:    142,
 		},
 	}
 
-	// Construct channel3 which will be returned my listChannels and
-	// channelEdge3 which will be returned by getChanInfo
-	chan3Capacity = btcutil.Amount(10000)
-	channel3      = lndclient.ChannelInfo{
-		Active:        true,
+	// Channel3 is a private inactive channel with peer2 with 0 remote
+	// capacity.
+	channel3 = lndclient.ChannelInfo{
+		Active:        false,
+		Private:       true,
 		ChannelID:     chanID3.ToUint64(),
 		PubKeyBytes:   peer2,
-		LocalBalance:  10000,
+		LocalBalance:  capacity,
 		RemoteBalance: 0,
-		Capacity:      chan1Capacity,
+		Capacity:      capacity,
 	}
 	channelEdge3 = lndclient.ChannelEdge{
 		ChannelID: chanID3.ToUint64(),
 		ChannelPoint: "b121f1d368b8f60648970bc36b37e7b9700d" +
 			"ed098c60b027e42e9c648e297502:0",
-		Capacity: chan3Capacity,
-		Node1:    origin,
-		Node2:    peer2,
+		Capacity: capacity,
+		Node1:    peer2,
+		Node2:    origin,
 		Node1Policy: &lndclient.RoutingPolicy{
-			FeeBaseMsat:      0,
-			FeeRateMilliMsat: 0,
-			TimeLockDelta:    144,
+			FeeBaseMsat:      3,
+			FeeRateMilliMsat: 3,
+			TimeLockDelta:    143,
 		},
 		Node2Policy: &lndclient.RoutingPolicy{
 			FeeBaseMsat:      0,
@@ -169,22 +203,22 @@ var (
 		},
 	}
 
-	// Construct channel4 which will be returned my listChannels and
-	// channelEdge4 which will be returned by getChanInfo
-	chan4Capacity = btcutil.Amount(10000)
-	channel4      = lndclient.ChannelInfo{
+	// Channel4 is a private active channel with peer2 with 5k remote
+	// capacity.
+	channel4 = lndclient.ChannelInfo{
 		Active:        true,
+		Private:       true,
 		ChannelID:     chanID4.ToUint64(),
 		PubKeyBytes:   peer2,
-		LocalBalance:  10000,
-		RemoteBalance: 0,
-		Capacity:      chan4Capacity,
+		LocalBalance:  capacity / 2,
+		RemoteBalance: capacity / 2,
+		Capacity:      capacity,
 	}
 	channelEdge4 = lndclient.ChannelEdge{
 		ChannelID: chanID4.ToUint64(),
 		ChannelPoint: "6fe4408bba52c0a0ee15365e107105de" +
 			"fabfc70c497556af69351c4cfbc167b:0",
-		Capacity: chan1Capacity,
+		Capacity: capacity,
 		Node1:    origin,
 		Node2:    peer2,
 		Node1Policy: &lndclient.RoutingPolicy{
@@ -193,9 +227,39 @@ var (
 			TimeLockDelta:    144,
 		},
 		Node2Policy: &lndclient.RoutingPolicy{
+			FeeBaseMsat:      4,
+			FeeRateMilliMsat: 4,
+			TimeLockDelta:    144,
+		},
+	}
+
+	// Channel5 is a public active channel with peer2 with 5k remote
+	// capacity. It is useful to make peer2 public (give the testcase).
+	channel5 = lndclient.ChannelInfo{
+		Active:        true,
+		Private:       false,
+		ChannelID:     chanID5.ToUint64(),
+		PubKeyBytes:   peer2,
+		LocalBalance:  capacity / 2,
+		RemoteBalance: capacity / 2,
+		Capacity:      capacity,
+	}
+	channelEdge5 = lndclient.ChannelEdge{
+		ChannelID: chanID5.ToUint64(),
+		ChannelPoint: "abcde52c0a0ee15365e107105de" +
+			"fabfc70c497556af69351c4cfbc167b:0",
+		Capacity: capacity,
+		Node1:    origin,
+		Node2:    peer2,
+		Node1Policy: &lndclient.RoutingPolicy{
 			FeeBaseMsat:      0,
 			FeeRateMilliMsat: 0,
 			TimeLockDelta:    144,
+		},
+		Node2Policy: &lndclient.RoutingPolicy{
+			FeeBaseMsat:      5,
+			FeeRateMilliMsat: 5,
+			TimeLockDelta:    145,
 		},
 	}
 )
@@ -211,67 +275,120 @@ func TestSelectHopHints(t *testing.T) {
 		includeNodes     map[route.Vertex]struct{}
 		expectedError    error
 	}{
-		// 3 inputs set assumes the host node has 3 channels to chose
-		// from. Only channel 2 with peer 2 is ideal, however we should
-		// still include the other 2 after in the order they were
-		// provided just in case
+		// Chan2: private, active, remote balance OK
+		// Chan3: private, !active
+		// Chan4: private, active, small remote balance (second round).
+		// Chan5: public, active => makes peer2 public.
 		{
-			name: "3 inputs set",
+			name: "2 out of 4 selected",
 			channels: []lndclient.ChannelInfo{
 				channel2,
 				channel3,
 				channel4,
+				channel5,
 			},
 			channelEdges: map[uint64]*lndclient.ChannelEdge{
 				channel2.ChannelID: &channelEdge2,
 				channel3.ChannelID: &channelEdge3,
 				channel4.ChannelID: &channelEdge4,
+				channel5.ChannelID: &channelEdge5,
 			},
 			expectedHopHints: [][]zpay32.HopHint{
 				{{
 					NodeID:                    pubKeyPeer2,
 					ChannelID:                 channel2.ChannelID,
-					FeeBaseMSat:               0,
-					FeeProportionalMillionths: 0,
-					CLTVExpiryDelta:           144,
-				}},
-				{{
-					NodeID:                    pubKeyPeer2,
-					ChannelID:                 channel3.ChannelID,
-					FeeBaseMSat:               0,
-					FeeProportionalMillionths: 0,
-					CLTVExpiryDelta:           144,
+					FeeBaseMSat:               2,
+					FeeProportionalMillionths: 2,
+					CLTVExpiryDelta:           142,
 				}},
 				{{
 					NodeID:                    pubKeyPeer2,
 					ChannelID:                 channel4.ChannelID,
-					FeeBaseMSat:               0,
-					FeeProportionalMillionths: 0,
+					FeeBaseMSat:               4,
+					FeeProportionalMillionths: 4,
 					CLTVExpiryDelta:           144,
 				}},
 			},
-			amtMSat:        chan1Capacity,
+			amtMSat:        capacity,
 			numMaxHophints: 20,
 			includeNodes:   make(map[route.Vertex]struct{}),
 			expectedError:  nil,
 		},
+		// A variation of the above test case but nodes are filtered so
+		// we only add channel 1 (as channel 0 is public making peer1
+		// public).
 		{
-			name: "invalid set",
+			name: "1 out of 6 selected",
+			channels: []lndclient.ChannelInfo{
+				channel0,
+				channel1,
+				channel2,
+				channel3,
+				channel4,
+				channel5,
+			},
+			channelEdges: map[uint64]*lndclient.ChannelEdge{
+				channel0.ChannelID: &channelEdge0,
+				channel1.ChannelID: &channelEdge1,
+				channel2.ChannelID: &channelEdge2,
+				channel3.ChannelID: &channelEdge3,
+				channel4.ChannelID: &channelEdge4,
+				channel5.ChannelID: &channelEdge5,
+			},
+			expectedHopHints: [][]zpay32.HopHint{
+				{{
+					NodeID:                    pubKeyPeer1,
+					ChannelID:                 channel1.ChannelID,
+					FeeBaseMSat:               1,
+					FeeProportionalMillionths: 1,
+					CLTVExpiryDelta:           141,
+				}},
+			},
+			amtMSat:        capacity,
+			numMaxHophints: 20,
+			includeNodes: map[route.Vertex]struct{}{
+				peer1: {},
+			},
+			expectedError: nil,
+		},
+
+		// Chan1: private, active, remote balance OK => node not public
+		{
+			name: "1 private chan",
 			channels: []lndclient.ChannelInfo{
 				channel1,
 			},
 			channelEdges: map[uint64]*lndclient.ChannelEdge{
 				channel1.ChannelID: &channelEdge1,
 			},
+			expectedHopHints: [][]zpay32.HopHint{},
+			amtMSat:          capacity,
+			numMaxHophints:   20,
+			includeNodes:     make(map[route.Vertex]struct{}),
+			expectedError:    nil,
+		},
+		// Chan4: private, active, small remote balance (second round).
+		// Chan5: public, active => makes peer2 public.
+		{
+			name: "1 out of 2 selected",
+			channels: []lndclient.ChannelInfo{
+				channel4,
+				channel5,
+			},
+			channelEdges: map[uint64]*lndclient.ChannelEdge{
+				channel4.ChannelID: &channelEdge4,
+				channel5.ChannelID: &channelEdge5,
+			},
 			expectedHopHints: [][]zpay32.HopHint{
 				{{
-					NodeID:                    pubKeyPeer1,
-					ChannelID:                 channel1.ChannelID,
-					FeeBaseMSat:               0,
-					FeeProportionalMillionths: 0,
+					NodeID:                    pubKeyPeer2,
+					ChannelID:                 channel4.ChannelID,
+					FeeBaseMSat:               4,
+					FeeProportionalMillionths: 4,
 					CLTVExpiryDelta:           144,
 				}},
-			}, amtMSat: chan1Capacity,
+			},
+			amtMSat:        capacity,
 			numMaxHophints: 20,
 			includeNodes:   make(map[route.Vertex]struct{}),
 			expectedError:  nil,
