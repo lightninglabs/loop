@@ -163,7 +163,7 @@ func (d *Daemon) Start() error {
 // for REST (if enabled), instead of creating an own mux and HTTP server, we
 // register to an existing one.
 func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
-	createDefaultMacaroonFile bool) error {
+	withMacaroonService bool) error {
 
 	// There should be no reason to start the daemon twice. Therefore return
 	// an error if that's tried. This is mostly to guard against Start and
@@ -180,7 +180,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// the swap server client, the RPC server instance and our main swap
 	// handlers. If this fails, then nothing has been started yet and we can
 	// just return the error.
-	err := d.initialize(createDefaultMacaroonFile)
+	err := d.initialize(withMacaroonService)
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started inside LiT so there most likely is
 		// another standalone Loop process blocking the DB.
@@ -347,7 +347,7 @@ func (d *Daemon) startWebServers() error {
 // the swap client RPC server instance and our main swap and error handlers. If
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
-func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
+func (d *Daemon) initialize(withMacaroonService bool) error {
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
 	if d.cfg.Server.Host == "" {
@@ -382,7 +382,7 @@ func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
 		RequiredPermissions[endpoint] = perm
 	}
 
-	if createDefaultMacaroonFile {
+	if withMacaroonService {
 		// Start the macaroon service and let it create its default
 		// macaroon in case it doesn't exist yet.
 		d.macaroonService, err = lndclient.NewMacaroonService(
