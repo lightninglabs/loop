@@ -1,3 +1,4 @@
+//go:build dev
 // +build dev
 
 package loopd
@@ -18,13 +19,6 @@ var (
 			Entity: "debug",
 			Action: "write",
 		}},
-	}
-
-	debugPermissions = []bakery.Op{
-		{
-			Entity: "debug",
-			Action: "write",
-		},
 	}
 )
 

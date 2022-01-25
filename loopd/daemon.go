@@ -15,8 +15,8 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -85,8 +85,7 @@ type Daemon struct {
 	restListener  net.Listener
 	restCtxCancel func()
 
-	macaroonService *macaroons.Service
-	macaroonDB      kvdb.Backend
+	macaroonService *lndclient.MacaroonService
 }
 
 // New creates a new instance of the loop client daemon.
@@ -164,7 +163,7 @@ func (d *Daemon) Start() error {
 // for REST (if enabled), instead of creating an own mux and HTTP server, we
 // register to an existing one.
 func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
-	createDefaultMacaroonFile bool) error {
+	withMacaroonService bool) error {
 
 	// There should be no reason to start the daemon twice. Therefore return
 	// an error if that's tried. This is mostly to guard against Start and
@@ -181,7 +180,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// the swap server client, the RPC server instance and our main swap
 	// handlers. If this fails, then nothing has been started yet and we can
 	// just return the error.
-	err := d.initialize(createDefaultMacaroonFile)
+	err := d.initialize(withMacaroonService)
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started inside LiT so there most likely is
 		// another standalone Loop process blocking the DB.
@@ -200,6 +199,10 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 func (d *Daemon) ValidateMacaroon(ctx context.Context,
 	requiredPermissions []bakery.Op, fullMethod string) error {
 
+	if d.macaroonService == nil {
+		return fmt.Errorf("macaroon service has not been initialised")
+	}
+
 	// Delegate the call to loop's own macaroon validator service.
 	return d.macaroonService.ValidateMacaroon(
 		ctx, requiredPermissions, fullMethod,
@@ -213,11 +216,14 @@ func (d *Daemon) startWebServers() error {
 	// With our client created, let's now finish setting up and start our
 	// RPC server. First we add the security interceptor to our gRPC server
 	// options that checks the macaroons for validity.
-	serverOpts, err := d.macaroonInterceptor()
+	unaryInterceptor, streamInterceptor, err := d.macaroonService.Interceptors()
 	if err != nil {
 		return fmt.Errorf("error with macaroon interceptor: %v", err)
 	}
-	d.grpcServer = grpc.NewServer(serverOpts...)
+	d.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(unaryInterceptor),
+		grpc.StreamInterceptor(streamInterceptor),
+	)
 	looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
 	// Register our debug server if it is compiled in.
@@ -341,7 +347,7 @@ func (d *Daemon) startWebServers() error {
 // the swap client RPC server instance and our main swap and error handlers. If
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
-func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
+func (d *Daemon) initialize(withMacaroonService bool) error {
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
 	if d.cfg.Server.Host == "" {
@@ -370,15 +376,43 @@ func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
 	// stop on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
 
-	// Start the macaroon service and let it create its default macaroon in
-	// case it doesn't exist yet.
-	err = d.startMacaroonService(createDefaultMacaroonFile)
-	if err != nil {
-		// The client is the only thing we started yet, so if we clean
-		// up its connection now, nothing else needs to be shut down at
-		// this point.
-		clientCleanup()
-		return err
+	// Add our debug permissions to our main set of required permissions
+	// if compiled in.
+	for endpoint, perm := range debugRequiredPermissions {
+		RequiredPermissions[endpoint] = perm
+	}
+
+	if withMacaroonService {
+		// Start the macaroon service and let it create its default
+		// macaroon in case it doesn't exist yet.
+		d.macaroonService, err = lndclient.NewMacaroonService(
+			&lndclient.MacaroonServiceConfig{
+				DBPath:           d.cfg.DataDir,
+				DBFileName:       "macaroons.db",
+				DBTimeout:        loopdb.DefaultLoopDBTimeout,
+				MacaroonLocation: loopMacaroonLocation,
+				MacaroonPath:     d.cfg.MacaroonPath,
+				Checkers: []macaroons.Checker{
+					macaroons.IPLockChecker,
+				},
+				RequiredPerms: RequiredPermissions,
+				DBPassword:    macDbDefaultPw,
+				LndClient:     &d.lnd.LndServices,
+				EphemeralKey:  lndclient.SharedKeyNUMS,
+				KeyLocator:    lndclient.SharedKeyLocator,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		if err = d.macaroonService.Start(); err != nil {
+			// The client is the only thing we started yet, so if we
+			// clean up its connection now, nothing else needs to be
+			// shut down at this point.
+			clientCleanup()
+			return err
+		}
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -396,10 +430,15 @@ func (d *Daemon) initialize(createDefaultMacaroonFile bool) error {
 	// Retrieve all currently existing swaps from the database.
 	swapsList, err := d.impl.FetchSwaps()
 	if err != nil {
+		if d.macaroonService == nil {
+			clientCleanup()
+			return err
+		}
+
 		// The client and the macaroon service are the only things we
 		// started yet, so if we clean that up now, nothing else needs
 		// to be shut down at this point.
-		if err := d.StopMacaroonService(); err != nil {
+		if err := d.macaroonService.Stop(); err != nil {
 			log.Errorf("Error shutting down macaroon service: %v",
 				err)
 		}
@@ -520,9 +559,11 @@ func (d *Daemon) stop() {
 		d.restCtxCancel()
 	}
 
-	err := d.StopMacaroonService()
-	if err != nil {
-		log.Errorf("Error stopping macaroon service: %v", err)
+	if d.macaroonService != nil {
+		err := d.macaroonService.Stop()
+		if err != nil {
+			log.Errorf("Error stopping macaroon service: %v", err)
+		}
 	}
 
 	// Next, shut down the connections to lnd and the swap server.

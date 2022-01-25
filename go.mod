@@ -10,13 +10,12 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.6-beta
-	github.com/lightninglabs/lndclient v0.14.0-5
+	github.com/lightninglabs/lndclient v0.14.0-8
 	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.14.1-beta
 	github.com/lightningnetwork/lnd/cert v1.1.0
 	github.com/lightningnetwork/lnd/clock v1.1.0
-	github.com/lightningnetwork/lnd/kvdb v1.2.1
 	github.com/lightningnetwork/lnd/queue v1.1.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/stretchr/testify v1.7.0
