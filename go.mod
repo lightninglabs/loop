@@ -13,13 +13,13 @@ require (
 	github.com/lightninglabs/lndclient v0.14.0-8
 	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.14.1-beta
+	github.com/lightningnetwork/lnd v0.14.2-beta.rc1
 	github.com/lightningnetwork/lnd/cert v1.1.0
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/stretchr/testify v1.7.0
-	github.com/urfave/cli v1.20.0
+	github.com/urfave/cli v1.22.4
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
@@ -30,3 +30,6 @@ require (
 go 1.15
 
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
+
+// TODO(bhandras): remove once v0.14.2-beta is tagged.
+replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.14.1-beta.0.20220131141659-60625b6c1a0b
