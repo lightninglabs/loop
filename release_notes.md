@@ -20,6 +20,8 @@ This file tracks release notes for the loop client.
   `loop setrule --type=in`. At present, autoloop can only be set to loop out 
   *or* loop in, and cannot manage liquidity in both directions.
 
+* Use LND's hop hint selector when doing private loop-ins.
+
 #### Breaking Changes
 
 #### Bug Fixes
