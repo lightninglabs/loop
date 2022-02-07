@@ -15,17 +15,9 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-* Loop in functionality has been added to AutoLoop. This feature can be enabled
-  to acquire outgoing capacity on your node automatically, using 
-  `loop setrule --type=in`. At present, autoloop can only be set to loop out 
-  *or* loop in, and cannot manage liquidity in both directions.
-
-* Use LND's hop hint selector when doing private loop-ins.
 
 #### Breaking Changes
 
 #### Bug Fixes
-
-* Close local databases when loopd daemon is stopped programmatically.
 
 #### Maintenance
