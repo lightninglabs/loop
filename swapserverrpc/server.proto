@@ -343,6 +343,11 @@ enum ServerSwapState {
     single swap.
     */
     SERVER_FAILED_MULTIPLE_SWAP_SCRIPTS = 15;
+
+    /*
+    The swap failed during creation.
+    */
+    SERVER_FAILED_INITIALIZATION = 16;
 }
 
 message SubscribeLoopOutUpdatesResponse {
