@@ -23,6 +23,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 		ProtocolVersionMultiLoopIn,
 		ProtocolVersionLoopOutCancel,
 		ProtocolVersionProbe,
+		ProtocolVersionRoutingPlugin,
 	}
 
 	rpcVersions := [...]looprpc.ProtocolVersion{
@@ -35,6 +36,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 		looprpc.ProtocolVersion_MULTI_LOOP_IN,
 		looprpc.ProtocolVersion_LOOP_OUT_CANCEL,
 		looprpc.ProtocolVersion_PROBE,
+		looprpc.ProtocolVersion_ROUTING_PLUGIN,
 	}
 
 	require.Equal(t, len(versions), len(rpcVersions))

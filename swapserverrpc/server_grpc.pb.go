@@ -29,6 +29,8 @@ type SwapServerClient interface {
 	SubscribeLoopInUpdates(ctx context.Context, in *SubscribeUpdatesRequest, opts ...grpc.CallOption) (SwapServer_SubscribeLoopInUpdatesClient, error)
 	CancelLoopOutSwap(ctx context.Context, in *CancelLoopOutSwapRequest, opts ...grpc.CallOption) (*CancelLoopOutSwapResponse, error)
 	Probe(ctx context.Context, in *ServerProbeRequest, opts ...grpc.CallOption) (*ServerProbeResponse, error)
+	RecommendRoutingPlugin(ctx context.Context, in *RecommendRoutingPluginReq, opts ...grpc.CallOption) (*RecommendRoutingPluginRes, error)
+	ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error)
 }
 
 type swapServerClient struct {
@@ -184,6 +186,24 @@ func (c *swapServerClient) Probe(ctx context.Context, in *ServerProbeRequest, op
 	return out, nil
 }
 
+func (c *swapServerClient) RecommendRoutingPlugin(ctx context.Context, in *RecommendRoutingPluginReq, opts ...grpc.CallOption) (*RecommendRoutingPluginRes, error) {
+	out := new(RecommendRoutingPluginRes)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/RecommendRoutingPlugin", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapServerClient) ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error) {
+	out := new(ReportRoutingResultRes)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/ReportRoutingResult", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -199,6 +219,8 @@ type SwapServerServer interface {
 	SubscribeLoopInUpdates(*SubscribeUpdatesRequest, SwapServer_SubscribeLoopInUpdatesServer) error
 	CancelLoopOutSwap(context.Context, *CancelLoopOutSwapRequest) (*CancelLoopOutSwapResponse, error)
 	Probe(context.Context, *ServerProbeRequest) (*ServerProbeResponse, error)
+	RecommendRoutingPlugin(context.Context, *RecommendRoutingPluginReq) (*RecommendRoutingPluginRes, error)
+	ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error)
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -238,6 +260,12 @@ func (UnimplementedSwapServerServer) CancelLoopOutSwap(context.Context, *CancelL
 }
 func (UnimplementedSwapServerServer) Probe(context.Context, *ServerProbeRequest) (*ServerProbeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
+}
+func (UnimplementedSwapServerServer) RecommendRoutingPlugin(context.Context, *RecommendRoutingPluginReq) (*RecommendRoutingPluginRes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecommendRoutingPlugin not implemented")
+}
+func (UnimplementedSwapServerServer) ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportRoutingResult not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -456,6 +484,42 @@ func _SwapServer_Probe_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_RecommendRoutingPlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecommendRoutingPluginReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).RecommendRoutingPlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/RecommendRoutingPlugin",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).RecommendRoutingPlugin(ctx, req.(*RecommendRoutingPluginReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapServer_ReportRoutingResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRoutingResultReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).ReportRoutingResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/ReportRoutingResult",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).ReportRoutingResult(ctx, req.(*ReportRoutingResultReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -498,6 +562,14 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Probe",
 			Handler:    _SwapServer_Probe_Handler,
+		},
+		{
+			MethodName: "RecommendRoutingPlugin",
+			Handler:    _SwapServer_RecommendRoutingPlugin_Handler,
+		},
+		{
+			MethodName: "ReportRoutingResult",
+			Handler:    _SwapServer_ReportRoutingResult_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -47,13 +47,17 @@ const (
 	// the server to perform a probe to test inbound liquidty.
 	ProtocolVersionProbe ProtocolVersion = 8
 
+	// The client may ask the server to use a custom routing helper plugin
+	// in order to enhance off-chain payments corresponding to a swap.
+	ProtocolVersionRoutingPlugin = 9
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_PROBE
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_ROUTING_PLUGIN
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
@@ -94,6 +98,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionProbe:
 		return "Probe"
+
+	case ProtocolVersionRoutingPlugin:
+		return "Routing Plugin"
 
 	default:
 		return "Unknown"

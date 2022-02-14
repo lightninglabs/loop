@@ -186,10 +186,14 @@ func (h *mockLightningClient) ListTransactions(
 func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
 	pubKeyBytes route.Vertex, includeChannels bool) (*lndclient.NodeInfo, error) {
 
-	nodeInfo := lndclient.NodeInfo{}
+	nodeInfo := &lndclient.NodeInfo{
+		Node: &lndclient.Node{
+			PubKey: pubKeyBytes,
+		},
+	}
 
 	if !includeChannels {
-		return nil, nil
+		return nodeInfo, nil
 	}
 
 	nodePubKey, err := route.NewVertexFromStr(h.lnd.NodePubkey)
@@ -214,7 +218,7 @@ func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
 
 	nodeInfo.ChannelCount = len(nodeInfo.Channels)
 
-	return &nodeInfo, nil
+	return nodeInfo, nil
 }
 
 // GetChanInfo retrieves all the info the node has on the given channel

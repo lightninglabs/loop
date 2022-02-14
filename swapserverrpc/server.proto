@@ -37,6 +37,12 @@ service SwapServer {
         returns (CancelLoopOutSwapResponse);
 
     rpc Probe (ServerProbeRequest) returns (ServerProbeResponse);
+
+    rpc RecommendRoutingPlugin (RecommendRoutingPluginReq)
+        returns (RecommendRoutingPluginRes);
+
+    rpc ReportRoutingResult (ReportRoutingResultReq)
+        returns (ReportRoutingResultRes);
 }
 
 /**
@@ -82,6 +88,10 @@ enum ProtocolVersion {
     // The client is able to ask the server to probe to test inbound
     // liquidity.
     PROBE = 8;
+
+    // The client may ask the server to use a custom routing helper plugin in
+    // order to enhance off-chain payments corresponding to a swap.
+    ROUTING_PLUGIN = 9;
 }
 
 message ServerLoopOutRequest {
@@ -457,4 +467,54 @@ message ServerProbeRequest {
 }
 
 message ServerProbeResponse {
+}
+
+message RecommendRoutingPluginReq {
+    ProtocolVersion protocol_version = 1;
+
+    // The hash of the swap requesting a routing plugin.
+    bytes swap_hash = 2;
+
+    // The payment address for the swap invoice, used to ensure that only the
+    // swap owner can request routing plugin recommendation.
+    bytes payment_address = 3;
+}
+
+enum RoutingPlugin {
+    // Client won't use any plugins to help with payment routing.
+    NONE = 0;
+
+    // Client will try more expensive routes for off-chain payments.
+    LOW_HIGH = 1;
+}
+
+message RecommendRoutingPluginRes {
+    // The routing plugin to use for off-chain payments.
+    RoutingPlugin plugin = 1;
+}
+
+message ReportRoutingResultReq {
+    ProtocolVersion protocol_version = 1;
+
+    // The swap hash.
+    bytes swap_hash = 2;
+
+    // The payment address for the swap invoice, used to ensure that only the
+    // swap owner can report routing result.
+    bytes payment_address = 3;
+
+    // The routing plugin that was used.
+    RoutingPlugin plugin = 4;
+
+    // Whether this payment succeeded.
+    bool success = 5;
+
+    // The number of payment attempts using the plugin.
+    int32 attempts = 6;
+
+    // Total time used in milliseconds.
+    int64 total_time = 7;
+}
+
+message ReportRoutingResultRes {
 }

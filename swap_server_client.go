@@ -43,6 +43,30 @@ var (
 		"be provided")
 )
 
+// RoutingPluginType represents the routing plugin type directly.
+type RoutingPluginType uint8
+
+const (
+	// RoutingPluginNone is recommended when the client shouldn't use any
+	// routing plugin.
+	RoutingPluginNone RoutingPluginType = 0
+
+	// RoutingPluginLowHigh is recommended when the client should use
+	// low-high routing method.
+	RoutingPluginLowHigh RoutingPluginType = 1
+)
+
+// String pretty prints a RoutingPluginType.
+func (r RoutingPluginType) String() string {
+	switch r {
+	case RoutingPluginLowHigh:
+		return "Low/High"
+
+	default:
+		return "None"
+	}
+}
+
 type swapServerClient interface {
 	GetLoopOutTerms(ctx context.Context) (
 		*LoopOutTerms, error)
@@ -86,6 +110,17 @@ type swapServerClient interface {
 	// CancelLoopOutSwap cancels a loop out swap.
 	CancelLoopOutSwap(ctx context.Context,
 		details *outCancelDetails) error
+
+	// RecommendRoutingPlugin asks the server for routing plugin
+	// recommendation for off-chain payment(s) of a swap.
+	RecommendRoutingPlugin(ctx context.Context, swapHash lntypes.Hash,
+		paymentAddr [32]byte) (RoutingPluginType, error)
+
+	// ReportRoutingResult reports a routing result corresponding to a swap.
+	ReportRoutingResult(ctx context.Context,
+		swapHash lntypes.Hash, paymentAddr [32]byte,
+		plugin RoutingPluginType, success bool, attempts int32,
+		totalTime int64) error
 }
 
 type grpcSwapServerClient struct {
@@ -616,6 +651,72 @@ func (s *grpcSwapServerClient) CancelLoopOutSwap(ctx context.Context,
 	}
 
 	_, err = s.server.CancelLoopOutSwap(ctx, req)
+	return err
+}
+
+// RecommendRoutingPlugin asks the server for routing plugin recommendation for
+// off-chain payment(s) of a swap.
+func (s *grpcSwapServerClient) RecommendRoutingPlugin(ctx context.Context,
+	swapHash lntypes.Hash, paymentAddr [32]byte) (RoutingPluginType, error) {
+
+	req := &looprpc.RecommendRoutingPluginReq{
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		SwapHash:        swapHash[:],
+		PaymentAddress:  paymentAddr[:],
+	}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	res, err := s.server.RecommendRoutingPlugin(rpcCtx, req)
+	if err != nil {
+		return RoutingPluginNone, err
+	}
+
+	var plugin RoutingPluginType
+	switch res.Plugin {
+	case looprpc.RoutingPlugin_NONE:
+		plugin = RoutingPluginNone
+
+	case looprpc.RoutingPlugin_LOW_HIGH:
+		plugin = RoutingPluginLowHigh
+
+	default:
+		log.Warnf("Recommended routing plugin is unknown: %v", plugin)
+		plugin = RoutingPluginNone
+	}
+
+	return plugin, nil
+}
+
+// ReportRoutingResult reports a routing result corresponding to a swap.
+func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
+	swapHash lntypes.Hash, paymentAddr [32]byte, plugin RoutingPluginType,
+	success bool, attempts int32, totalTime int64) error {
+
+	var rpcRoutingPlugin looprpc.RoutingPlugin
+	switch plugin {
+	case RoutingPluginLowHigh:
+		rpcRoutingPlugin = looprpc.RoutingPlugin_LOW_HIGH
+
+	default:
+		rpcRoutingPlugin = looprpc.RoutingPlugin_NONE
+	}
+
+	req := &looprpc.ReportRoutingResultReq{
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		SwapHash:        swapHash[:],
+		PaymentAddress:  paymentAddr[:],
+		Plugin:          rpcRoutingPlugin,
+		Success:         success,
+		Attempts:        attempts,
+		TotalTime:       totalTime,
+	}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	_, err := s.server.ReportRoutingResult(rpcCtx, req)
 	return err
 }
 
