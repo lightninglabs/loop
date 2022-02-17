@@ -587,7 +587,7 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Use the recommended routing plugin.
 	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.LoopOutContract.OutgoingChanSet, pluginType,
+		s.LoopOutContract.OutgoingChanSet, pluginType, true,
 	)
 
 	// Pay the prepay invoice. Won't use the routing plugin here as the
@@ -595,7 +595,7 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
-		nil, RoutingPluginNone,
+		nil, RoutingPluginNone, false,
 	)
 }
 
@@ -623,7 +623,8 @@ func (p paymentResult) failure() error {
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount, outgoingChanIds loopdb.ChannelSet,
-	pluginType RoutingPluginType) chan paymentResult {
+	pluginType RoutingPluginType,
+	reportPluginResult bool) chan paymentResult {
 
 	resultChan := make(chan paymentResult)
 	sendResult := func(result paymentResult) {
@@ -638,6 +639,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 
 		status, err := s.payInvoiceAsync(
 			ctx, invoice, maxFee, outgoingChanIds, pluginType,
+			reportPluginResult,
 		)
 		if err != nil {
 			result.err = err
@@ -665,8 +667,8 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	invoice string, maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet, pluginType RoutingPluginType) (
-	*lndclient.PaymentStatus, error) {
+	outgoingChanIds loopdb.ChannelSet, pluginType RoutingPluginType,
+	reportPluginResult bool) (*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
@@ -719,11 +721,21 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	paymentSuccess := err == nil &&
 		paymentStatus.State == lnrpc.Payment_SUCCEEDED
 
-	if err := s.swapKit.server.ReportRoutingResult(
-		ctx, s.swapInfo().SwapHash, s.swapInvoicePaymentAddr, pluginType,
-		paymentSuccess, int32(attempts), dt.Milliseconds(),
-	); err != nil {
-		s.log.Warnf("Failed to report routing result: %v", err)
+	if reportPluginResult {
+		// If the plugin couldn't be acquired then override the reported
+		// plugin type to RoutingPluginNone.
+		reportType := pluginType
+		if routingPlugin == nil {
+			reportType = RoutingPluginNone
+		}
+
+		if err := s.swapKit.server.ReportRoutingResult(
+			ctx, s.swapInfo().SwapHash, s.swapInvoicePaymentAddr,
+			reportType, paymentSuccess, int32(attempts),
+			dt.Milliseconds(),
+		); err != nil {
+			s.log.Warnf("Failed to report routing result: %v", err)
+		}
 	}
 
 	return paymentStatus, err
