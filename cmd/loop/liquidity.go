@@ -232,7 +232,7 @@ var setParamsCommand = cli.Command{
 			Usage: "the limit placed on our estimated sweep fee " +
 				"in sat/vByte.",
 		},
-		cli.IntFlag{
+		cli.Float64Flag{
 			Name: "feepercent",
 			Usage: "the maximum percentage of swap amount to be " +
 				"used across all fee categories",
