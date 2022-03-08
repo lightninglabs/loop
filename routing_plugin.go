@@ -566,7 +566,7 @@ func (r *lowToHighRoutingPlugin) BeforePayment(ctx context.Context,
 		return ErrRoutingPluginNoMoreRetries
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries, false)
 	if err != nil {
 		return err
 	}
@@ -647,7 +647,7 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 		}
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries, false)
 	if err != nil {
 		return err
 	}
