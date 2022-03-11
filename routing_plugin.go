@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/btcsuite/btclog"
 	"github.com/btcsuite/btcutil"
@@ -520,13 +519,10 @@ func (r *lowToHighRoutingPlugin) BeforePayment(ctx context.Context,
 	limit := minFee +
 		((maxFee-minFee)/int64(maxAttempts))*int64(currAttempt)
 
-	// Create a timestamp just slightly in the future as Mission Control
-	// stores timestamps with sub second precision where as we send a unix
-	// timestamp it may occur that we can't override the last entries as
-	// they have the same unix timestamp.
-	// TODO(bhandras): not very reliable, ideally we'd need a force import
-	// for MC.
-	now := r.clock.Now().Add(time.Second)
+	// With the forced MC import we can safely set the pair history
+	// timestamps to the current time as import will always just override
+	// current MC state.
+	now := r.clock.Now()
 
 	allowed := 0
 	entries := make(
@@ -566,7 +562,7 @@ func (r *lowToHighRoutingPlugin) BeforePayment(ctx context.Context,
 		return ErrRoutingPluginNoMoreRetries
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries, false)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries, true)
 	if err != nil {
 		return err
 	}
@@ -606,10 +602,10 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 		return nil
 	}
 
-	// Roll the entry times forward (to be able to override recent updates).
-	// Use the "time travel" trick which is required to make overrides
-	// succeed.
-	now := r.clock.Now().Add(time.Second)
+	// With the forced import we're safe to just set the pair history
+	// timestamps to the current time as import will always succeed and
+	// override current MC state.
+	now := r.clock.Now()
 	entries := make(
 		[]lndclient.MissionControlEntry, 0, len(r.nodesByMaxFee),
 	)
@@ -647,7 +643,7 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 		}
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries, false)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries, true)
 	if err != nil {
 		return err
 	}
