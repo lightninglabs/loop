@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/loopdb"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -381,7 +381,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	copy(senderKey[:], swapResp.SenderKey)
 
 	// Validate sender key.
-	_, err = btcec.ParsePubKey(senderKey[:], btcec.S256())
+	_, err = btcec.ParsePubKey(senderKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
@@ -441,7 +441,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	copy(receiverKey[:], swapResp.ReceiverKey)
 
 	// Validate receiver key.
-	_, err = btcec.ParsePubKey(receiverKey[:], btcec.S256())
+	_, err = btcec.ParsePubKey(receiverKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}

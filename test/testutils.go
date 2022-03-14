@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -44,10 +44,9 @@ func EncodePayReq(payReq *zpay32.Invoice) (string, error) {
 	reqString, err := payReq.Encode(
 		zpay32.MessageSigner{
 			SignCompact: func(hash []byte) ([]byte, error) {
-				// btcec.SignCompact returns a
+				// ecdsa.SignCompact returns a
 				// pubkey-recoverable signature
-				sig, err := btcec.SignCompact(
-					btcec.S256(),
+				sig, err := ecdsa.SignCompact(
 					privKey,
 					payReq.PaymentHash[:],
 					true,

@@ -1,8 +1,8 @@
 package loopdb
 
 import (
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
 )
 
 // SwapState indicates the current state of a swap. This enumeration is the
