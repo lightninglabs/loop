@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -53,7 +53,7 @@ func (s *Sweeper) CreateSweepTx(
 
 	// Generate a signature for the swap htlc transaction.
 
-	key, err := btcec.ParsePubKey(keyBytes[:], btcec.S256())
+	key, err := btcec.ParsePubKey(keyBytes[:])
 	if err != nil {
 		return nil, err
 	}

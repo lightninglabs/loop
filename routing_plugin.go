@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btclog"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/clock"
@@ -562,7 +562,7 @@ func (r *lowToHighRoutingPlugin) BeforePayment(ctx context.Context,
 		return ErrRoutingPluginNoMoreRetries
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries, true)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries)
 	if err != nil {
 		return err
 	}
@@ -643,7 +643,7 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 		}
 	}
 
-	err := r.lnd.Router.ImportMissionControl(ctx, entries, true)
+	err := r.lnd.Router.ImportMissionControl(ctx, entries)
 	if err != nil {
 		return err
 	}

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -23,11 +23,11 @@ var (
 	eugene   = route.Vertex{5}
 	loopNode = route.Vertex{99}
 
-	privFrank, _ = btcec.NewPrivateKey(btcec.S256())
+	privFrank, _ = btcec.NewPrivateKey()
 	frankPubKey  = privFrank.PubKey()
 	frank        = route.NewVertex(frankPubKey)
 
-	privGeorge, _ = btcec.NewPrivateKey(btcec.S256())
+	privGeorge, _ = btcec.NewPrivateKey()
 	georgePubKey  = privGeorge.PubKey()
 	george        = route.NewVertex(georgePubKey)
 )
