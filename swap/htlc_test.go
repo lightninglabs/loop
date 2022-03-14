@@ -156,6 +156,10 @@ func TestHtlcV2(t *testing.T) {
 		Privkeys: []*btcec.PrivateKey{receiverPrivKey},
 	}
 
+	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
+		htlc.PkScript, int64(htlcValue),
+	)
+
 	signTx := func(tx *wire.MsgTx, pubkey *btcec.PublicKey,
 		signer *input.MockSigner) (input.Signature, error) {
 
@@ -167,8 +171,10 @@ func TestHtlcV2(t *testing.T) {
 			WitnessScript: htlc.Script(),
 			Output:        htlcOutput,
 			HashType:      txscript.SigHashAll,
-			SigHashes:     txscript.NewTxSigHashes(tx),
-			InputIndex:    0,
+			SigHashes: txscript.NewTxSigHashes(
+				tx, prevOutFetcher,
+			),
+			InputIndex: 0,
 		}
 
 		return signer.SignOutputRaw(tx, signDesc)
@@ -306,7 +312,7 @@ func TestHtlcV2(t *testing.T) {
 				return txscript.NewEngine(
 					htlc.PkScript, sweepTx, 0,
 					txscript.StandardVerifyFlags, nil,
-					nil, int64(htlcValue),
+					nil, int64(htlcValue), prevOutFetcher,
 				)
 			}
 
