@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -114,7 +115,7 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 		return lntypes.Hash{}, "", err
 	}
 
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
+	privKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		return lntypes.Hash{}, "", err
 	}
@@ -122,12 +123,14 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 	payReqString, err := payReq.Encode(
 		zpay32.MessageSigner{
 			SignCompact: func(hash []byte) ([]byte, error) {
-				// btcec.SignCompact returns a pubkey-recoverable signature
-				sig, err := btcec.SignCompact(
-					btcec.S256(), privKey, hash, true,
+				// ecdsa.SignCompact returns a
+				// pubkey-recoverable signature.
+				sig, err := ecdsa.SignCompact(
+					privKey, hash, true,
 				)
 				if err != nil {
-					return nil, fmt.Errorf("can't sign the hash: %v", err)
+					return nil, fmt.Errorf("can't sign "+
+						"the hash: %v", err)
 				}
 
 				return sig, nil

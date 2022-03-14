@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -306,7 +306,8 @@ func TestHtlcV2(t *testing.T) {
 				return txscript.NewEngine(
 					htlc.PkScript, sweepTx, 0,
 					txscript.StandardVerifyFlags, nil,
-					nil, int64(htlcValue))
+					nil, int64(htlcValue),
+				)
 			}
 
 			assertEngineExecution(t, testCase.valid, newEngine)
