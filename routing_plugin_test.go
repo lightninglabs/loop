@@ -81,8 +81,6 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 	target := loopNode
 	amt := btcutil.Amount(50)
 	testTime := time.Now().UTC()
-	// We expect Mission Control entries to be set to now + 1 sec.
-	testTimeMc := testTime.Add(time.Second)
 
 	tests := []struct {
 		name                        string
@@ -168,7 +166,7 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					NodeTo:      dave,
 					FailTime:    time.Time{},
 					FailAmt:     0,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  10000,
 				},
 			},
@@ -210,14 +208,14 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					{
 						NodeFrom: bob,
 						NodeTo:   dave,
-						FailTime: testTimeMc,
+						FailTime: testTime,
 						FailAmt:  1,
 					},
 					// Encourage Charlie - Dave
 					{
 						NodeFrom:    charlie,
 						NodeTo:      dave,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  1000000,
 					},
 				},
@@ -228,15 +226,15 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					NodeTo:      dave,
 					FailTime:    time.Time{},
 					FailAmt:     0,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  10000,
 				},
 				{
 					NodeFrom:    charlie,
 					NodeTo:      dave,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     1000001,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  1000000,
 				},
 			},
@@ -283,13 +281,13 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					{
 						NodeFrom:    bob,
 						NodeTo:      dave,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  999000,
 					},
 					{
 						NodeFrom:    charlie,
 						NodeTo:      dave,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  999000,
 					},
 				},
@@ -304,17 +302,17 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 				{
 					NodeFrom:    bob,
 					NodeTo:      dave,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  999000,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     999001,
 				},
 				{
 					NodeFrom:    charlie,
 					NodeTo:      dave,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  999000,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     999001,
 				},
 			},
@@ -375,21 +373,21 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					{
 						NodeFrom: bob,
 						NodeTo:   eugene,
-						FailTime: testTimeMc,
+						FailTime: testTime,
 						FailAmt:  1,
 					},
 					// Encourage Charlie - Eugene
 					{
 						NodeFrom:    charlie,
 						NodeTo:      eugene,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  1000000,
 					},
 					// Encourage Dave - Eugene
 					{
 						NodeFrom:    dave,
 						NodeTo:      eugene,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  1000000,
 					},
 				},
@@ -399,21 +397,21 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					{
 						NodeFrom: bob,
 						NodeTo:   eugene,
-						FailTime: testTimeMc,
+						FailTime: testTime,
 						FailAmt:  1,
 					},
 					// Discourage Charlie - Eugene
 					{
 						NodeFrom: charlie,
 						NodeTo:   eugene,
-						FailTime: testTimeMc,
+						FailTime: testTime,
 						FailAmt:  1,
 					},
 					// Encourage Dave - Eugene
 					{
 						NodeFrom:    dave,
 						NodeTo:      eugene,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  1000000,
 					},
 				},
@@ -422,9 +420,9 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 				{
 					NodeFrom:    bob,
 					NodeTo:      eugene,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     1000001,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  1000000,
 				},
 				{
@@ -432,15 +430,15 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					NodeTo:      eugene,
 					FailTime:    time.Time{},
 					FailAmt:     0,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  10000,
 				},
 				{
 					NodeFrom:    dave,
 					NodeTo:      eugene,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     1000001,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  1000000,
 				},
 			},
@@ -500,14 +498,14 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 					{
 						NodeFrom: frank,
 						NodeTo:   george,
-						FailTime: testTimeMc,
+						FailTime: testTime,
 						FailAmt:  1,
 					},
 					// Encourage Dave - George
 					{
 						NodeFrom:    dave,
 						NodeTo:      george,
-						SuccessTime: testTimeMc,
+						SuccessTime: testTime,
 						SuccessAmt:  1000000,
 					},
 				},
@@ -522,17 +520,17 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 				{
 					NodeFrom:    frank,
 					NodeTo:      george,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     1000001,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  1000000,
 				},
 				{
 					NodeFrom:    dave,
 					NodeTo:      george,
-					FailTime:    testTimeMc,
+					FailTime:    testTime,
 					FailAmt:     1000001,
-					SuccessTime: testTimeMc,
+					SuccessTime: testTime,
 					SuccessAmt:  1000000,
 				},
 			},

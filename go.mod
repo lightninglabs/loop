@@ -11,10 +11,10 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.6-beta
-	github.com/lightninglabs/lndclient v0.14.0-8
+	github.com/lightninglabs/lndclient v0.14.2-3
 	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.14.2-beta.rc1
+	github.com/lightningnetwork/lnd v0.14.2-beta
 	github.com/lightningnetwork/lnd/cert v1.1.0
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
@@ -32,5 +32,5 @@ go 1.15
 
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
-// TODO(bhandras): remove once v0.14.2-beta is tagged.
+// TODO(bhandras): remove once v0.14.3-beta or v0.15.0-beta is tagged.
 replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.14.1-beta.0.20220131141659-60625b6c1a0b

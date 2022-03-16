@@ -548,8 +548,8 @@ github.com/lightninglabs/aperture v0.1.6-beta/go.mod h1:9xl4mx778ZAzrB87nLHMqk+X
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI/f/O0Avg7t8sqkPo78HFzjmeYFl6DPnc=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lndclient v0.11.0-4/go.mod h1:8/cTKNwgL87NX123gmlv3Xh6p1a7pvzu+40Un3PhHiI=
-github.com/lightninglabs/lndclient v0.14.0-8 h1:vdwV6yFU4A7BjG2V8cpI8Kqdl2M0NSfsA+RWR+JGTko=
-github.com/lightninglabs/lndclient v0.14.0-8/go.mod h1:YIE/Yac69hIMiq9cm/ZC2sP4F0Llv3tC4hZGfgOhdeY=
+github.com/lightninglabs/lndclient v0.14.2-3 h1:19HWiGCUNejCAm9Ffl5Y56A8u6ZDhhfyjPSDbMDmjuw=
+github.com/lightninglabs/lndclient v0.14.2-3/go.mod h1:8fu/+OAK1PqUx9oglz5p0WPOSAwKBUwrC3q3D1yi6Oo=
 github.com/lightninglabs/neutrino v0.12.1/go.mod h1:GlKninWpRBbL7b8G0oQ36/8downfnFwKsr0hbRA6E/E=
 github.com/lightninglabs/neutrino v0.13.0 h1:j3PKWEJCwqwMn/qLASz2j0IuCF6AumS9DaM0i0pM/nY=
 github.com/lightninglabs/neutrino v0.13.0/go.mod h1:GlKninWpRBbL7b8G0oQ36/8downfnFwKsr0hbRA6E/E=
@@ -568,7 +568,6 @@ github.com/lightningnetwork/lnd/clock v1.1.0/go.mod h1:KnQudQ6w0IAMZi1SgvecLZQZ4
 github.com/lightningnetwork/lnd/healthcheck v1.0.0/go.mod h1:u92p1JGFJNMSkMvztKEwmt1P3TRnLeJBXZ3M85xkU1E=
 github.com/lightningnetwork/lnd/healthcheck v1.2.0 h1:00bkNn+hGJM9j3Ht+ulf8YNcSx1HEYSDv5pf4HB1/uQ=
 github.com/lightningnetwork/lnd/healthcheck v1.2.0/go.mod h1:WSz3lsUjErJQZ3gb+zW32nM3WIHNiZ3A40GVoaQY5wU=
-github.com/lightningnetwork/lnd/kvdb v1.2.0/go.mod h1:4DW7zc9AWqqJBvwhSE251VasYikTELItN70hESIt9RU=
 github.com/lightningnetwork/lnd/kvdb v1.3.0 h1:0sadTsmfIoorGvd2zf09q/H7sxa/OU48NCpCQUPNN48=
 github.com/lightningnetwork/lnd/kvdb v1.3.0/go.mod h1:x+IpsuDynubjokUofavLXroeGfS/WrqUXXTK6vN/gp4=
 github.com/lightningnetwork/lnd/queue v1.0.1/go.mod h1:vaQwexir73flPW43Mrm7JOgJHmcEFBWWSl9HlyASoms=
