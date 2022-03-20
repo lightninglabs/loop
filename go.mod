@@ -9,10 +9,11 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.17-beta.0.20220325093943-42b9d4c1be7f
+	github.com/lightninglabs/aperture v0.1.17-beta.0.20220328072456-4a2632d0be38
 	github.com/lightninglabs/lndclient v0.15.0-0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display

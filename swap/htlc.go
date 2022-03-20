@@ -7,17 +7,26 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-// ErrNoSharedKey is returned when a script version does not support use of a
-// shared key.
-var ErrNoSharedKey = errors.New("shared key not supported for script version")
+var (
+	// ErrNoSharedKey is returned when a script version does not support
+	// use of a shared key.
+	ErrNoSharedKey = errors.New("shared key not supported for script " +
+		"version")
+
+	// ErrSharedKeyRequired is returned when a script version requires a
+	// shared key.
+	ErrSharedKeyRequired = errors.New("shared key required")
+)
 
 // HtlcOutputType defines the output type of the htlc that is published.
 type HtlcOutputType uint8
@@ -29,6 +38,9 @@ const (
 	// HtlcNP2WSH is a nested pay-to-witness-script-hash output that can be
 	// paid to be legacy wallets.
 	HtlcNP2WSH
+
+	// HtlcP2TR is a pay-to-taproot output with three separate spend paths.
+	HtlcP2TR
 )
 
 // ScriptVersion defines the HTLC script version.
@@ -40,17 +52,21 @@ const (
 
 	// HtlcV2 refers to the improved version of the HTLC script.
 	HtlcV2
+
+	// HtlcV3 refers to an upgraded version of HtlcV2 implemented with
+	// tapscript.
+	HtlcV3
 )
 
 // htlcScript defines an interface for the different HTLC implementations.
 type HtlcScript interface {
 	// genSuccessWitness returns the success script to spend this htlc with
 	// the preimage.
-	genSuccessWitness(receiverSig []byte, preimage lntypes.Preimage) wire.TxWitness
+	genSuccessWitness(receiverSig []byte, preimage lntypes.Preimage) (wire.TxWitness, error)
 
 	// GenTimeoutWitness returns the timeout script to spend this htlc after
 	// timeout.
-	GenTimeoutWitness(senderSig []byte) wire.TxWitness
+	GenTimeoutWitness(senderSig []byte) (wire.TxWitness, error)
 
 	// IsSuccessWitness checks whether the given stack is valid for
 	// redeeming the htlc.
@@ -111,12 +127,17 @@ func (h HtlcOutputType) String() string {
 	case HtlcNP2WSH:
 		return "NP2WSH"
 
+	case HtlcP2TR:
+		return "P2TR"
+
 	default:
 		return "unknown"
 	}
 }
 
-// NewHtlc returns a new instance.
+// NewHtlc returns a new instance. For V1 and V2 scripts, receiver and sender
+// keys are expected to be in ecdsa compressed format. For V3 scripts, keys are
+// expected to be raw private key bytes.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
 	senderKey, receiverKey [33]byte, sharedKey *btcec.PublicKey,
 	hash lntypes.Hash, outputType HtlcOutputType,
@@ -145,6 +166,14 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		htlc, err = newHTLCScriptV2(
 			cltvExpiry, senderKey, receiverKey, hash,
 		)
+	case HtlcV3:
+		if sharedKey == nil {
+			return nil, ErrSharedKeyRequired
+		}
+
+		htlc, err = newHTLCScriptV3(
+			cltvExpiry, senderKey, receiverKey, sharedKey, hash,
+		)
 
 	default:
 		return nil, ErrInvalidScriptVersion
@@ -154,18 +183,18 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		return nil, err
 	}
 
-	p2wshPkScript, err := input.WitnessScriptHash(htlc.Script())
-	if err != nil {
-		return nil, err
-	}
-
 	var pkScript, sigScript []byte
 	var address btcutil.Address
 
 	switch outputType {
 	case HtlcNP2WSH:
+		pks, err := input.WitnessScriptHash(htlc.Script())
+		if err != nil {
+			return nil, err
+		}
+
 		// Generate p2sh script for p2wsh (nested).
-		p2wshPkScriptHash := sha256.Sum256(p2wshPkScript)
+		p2wshPkScriptHash := sha256.Sum256(pks)
 		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
 
 		builder := txscript.NewScriptBuilder()
@@ -184,26 +213,50 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		// the p2wsh witness program corresponding to the matching
 		// public key of this address.
 		sigScript, err = txscript.NewScriptBuilder().
-			AddData(p2wshPkScript).
+			AddData(pks).
 			Script()
 		if err != nil {
 			return nil, err
 		}
 
 		address, err = btcutil.NewAddressScriptHash(
-			p2wshPkScript, chainParams,
+			pkScript, chainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 	case HtlcP2WSH:
-		pkScript = p2wshPkScript
+		pkScript, err = input.WitnessScriptHash(htlc.Script())
+		if err != nil {
+			return nil, err
+		}
 
 		address, err = btcutil.NewAddressWitnessScriptHash(
-			p2wshPkScript[2:],
+			pkScript[2:],
 			chainParams,
 		)
+		if err != nil {
+			return nil, err
+		}
+	case HtlcP2TR:
+		// Confirm we have a v3 htlc.
+		var trHtlc *HtlcScriptV3
+		trHtlc, ok := htlc.(*HtlcScriptV3)
+		if !ok {
+			return nil, errors.New("taproot output selected for nontaproot htlc")
+		}
+
+		// Generate a tapscript address from our tree.
+		address, err = btcutil.NewAddressTaproot(
+			schnorr.SerializePubKey(trHtlc.TaprootKey), &chaincfg.RegressionNetParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Generate locking script.
+		pkScript, err = txscript.PayToAddrScript(address)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +285,7 @@ func (h *Htlc) GenSuccessWitness(receiverSig []byte,
 		return nil, errors.New("preimage doesn't match hash")
 	}
 
-	return h.genSuccessWitness(receiverSig, preimage), nil
+	return h.genSuccessWitness(receiverSig, preimage)
 }
 
 // AddSuccessToEstimator adds a successful spend to a weight estimator.
@@ -322,26 +375,27 @@ func newHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
 // genSuccessWitness returns the success script to spend this htlc with
 // the preimage.
 func (h *HtlcScriptV1) genSuccessWitness(receiverSig []byte,
-	preimage lntypes.Preimage) wire.TxWitness {
+	preimage lntypes.Preimage) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = append(receiverSig, byte(txscript.SigHashAll))
 	witnessStack[1] = preimage[:]
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV1) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
+func (h *HtlcScriptV1) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = append(senderSig, byte(txscript.SigHashAll))
 	witnessStack[1] = []byte{0}
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // IsSuccessWitness checks whether the given stack is valid for redeeming the
@@ -456,14 +510,14 @@ func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
 // genSuccessWitness returns the success script to spend this htlc with
 // the preimage.
 func (h *HtlcScriptV2) genSuccessWitness(receiverSig []byte,
-	preimage lntypes.Preimage) wire.TxWitness {
+	preimage lntypes.Preimage) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = preimage[:]
 	witnessStack[1] = append(receiverSig, byte(txscript.SigHashAll))
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // IsSuccessWitness checks whether the given stack is valid for redeeming the
@@ -476,7 +530,8 @@ func (h *HtlcScriptV2) IsSuccessWitness(witness wire.TxWitness) bool {
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV2) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
+func (h *HtlcScriptV2) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 4)
 	witnessStack[0] = append(senderSig, byte(txscript.SigHashAll))
@@ -484,7 +539,7 @@ func (h *HtlcScriptV2) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
 	witnessStack[2] = []byte{}
 	witnessStack[3] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // Script returns the htlc script.
@@ -523,5 +578,209 @@ func (h *HtlcScriptV2) MaxTimeoutWitnessSize() int {
 
 // SuccessSequence returns the sequence to spend this htlc in the success case.
 func (h *HtlcScriptV2) SuccessSequence() uint32 {
+	return 1
+}
+
+// HtlcScriptV3 encapsulates the htlc v3 script.
+type HtlcScriptV3 struct {
+	timeoutScript  []byte
+	claimScript    []byte
+	TaprootKey     *secp.PublicKey
+	InternalPubKey *secp.PublicKey
+	SenderKey      [33]byte
+}
+
+// newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
+func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
+	receiverHtlcKey [33]byte, sharedKey *btcec.PublicKey,
+	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+
+	// Schnorr keys have implicit sign, remove the sign byte from our
+	// compressed key.
+	var schnorrSenderKey, schnorrReceiverKey [32]byte
+	copy(schnorrSenderKey[:], senderHtlcKey[1:])
+	copy(schnorrReceiverKey[:], receiverHtlcKey[1:])
+
+	// Create our claim path script, we'll use this separately
+	// later on to generate the claim path leaf.
+	claimPathScript, err := GenClaimPathScript(schnorrReceiverKey, swapHash)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create our timeout path leaf, we'll use this separately
+	// later on to generate the timeout path leaf.
+	timeoutPathScript, err := GenTimeoutPathScript(
+		schnorrSenderKey, int64(cltvExpiry),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Assemble our taproot script tree from our leaves.
+	tree := txscript.AssembleTaprootScriptTree(
+		txscript.NewBaseTapLeaf(claimPathScript),
+		txscript.NewBaseTapLeaf(timeoutPathScript),
+	)
+
+	rootHash := tree.RootNode.TapHash()
+
+	// Calculate top level taproot key, using our shared key as the internal
+	// key.
+	taprootKey := txscript.ComputeTaprootOutputKey(
+		sharedKey, rootHash[:],
+	)
+
+	return &HtlcScriptV3{
+		timeoutScript:  timeoutPathScript,
+		claimScript:    claimPathScript,
+		TaprootKey:     taprootKey,
+		InternalPubKey: sharedKey,
+		SenderKey:      senderHtlcKey,
+	}, nil
+}
+
+// GenTimeoutPathScript constructs an HtlcScript for the timeout payment path.
+//
+//	<senderHtlcKey> OP_CHECKSIGVERIFY <cltvExpiry> OP_CHECKLOCKTIMEVERIFY
+func GenTimeoutPathScript(
+	senderHtlcKey [32]byte, cltvExpiry int64) ([]byte, error) {
+
+	builder := txscript.NewScriptBuilder()
+	builder.AddData(senderHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddInt64(cltvExpiry)
+	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
+	return builder.Script()
+}
+
+// GenClaimPathScript constructs an HtlcScript for the claim payment path.
+//
+//	<receiverHtlcKey> OP_CHECKSIGVERIFY
+//	OP_SIZE 32 OP_EQUALVERIFY
+//	OP_HASH160 <ripemd160h(swapHash)> OP_EQUALVERIFY
+//	1
+//	OP_CHECKSEQUENCEVERIFY
+func GenClaimPathScript(
+	receiverHtlcKey [32]byte, swapHash lntypes.Hash) ([]byte, error) {
+	builder := txscript.NewScriptBuilder()
+
+	builder.AddData(receiverHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddOp(txscript.OP_SIZE)
+	builder.AddInt64(32)
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddOp(txscript.OP_HASH160)
+	builder.AddData(input.Ripemd160H(swapHash[:]))
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddInt64(1)
+	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
+	return builder.Script()
+}
+
+// genControlBlock constructs the control block with the specified.
+func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
+	var outputKeyYIsOdd bool
+
+	if h.TaprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
+		outputKeyYIsOdd = true
+	}
+
+	leaf := txscript.NewBaseTapLeaf(leafScript)
+	proof := leaf.TapHash()
+
+	controlBlock := txscript.ControlBlock{
+		InternalKey:     h.InternalPubKey,
+		OutputKeyYIsOdd: outputKeyYIsOdd,
+		LeafVersion:     txscript.BaseLeafVersion,
+		InclusionProof:  proof[:],
+	}
+	controlBlockBytes, err := controlBlock.ToBytes()
+
+	if err != nil {
+		return nil, err
+	}
+	return controlBlockBytes, nil
+}
+
+// genSuccessWitness returns the success script to spend this htlc with
+// the preimage.
+func (h *HtlcScriptV3) genSuccessWitness(
+	receiverSig []byte, preimage lntypes.Preimage) (wire.TxWitness, error) {
+
+	controlBlockBytes, err := h.genControlBlock(h.timeoutScript)
+	if err != nil {
+		return nil, err
+	}
+	return wire.TxWitness{
+		preimage[:],
+		receiverSig,
+		h.claimScript,
+		controlBlockBytes,
+	}, nil
+}
+
+// GenTimeoutWitness returns the timeout script to spend this htlc after
+// timeout.
+func (h *HtlcScriptV3) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
+
+	controlBlockBytes, err := h.genControlBlock(h.claimScript)
+	if err != nil {
+		return nil, err
+	}
+	return wire.TxWitness{
+		senderSig,
+		h.timeoutScript,
+		controlBlockBytes,
+	}, nil
+}
+
+// IsSuccessWitness checks whether the given stack is valid for
+// redeeming the htlc.
+func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
+	return len(witness) == 4
+}
+
+// Script is not implemented, but necessary to conform to interface.
+func (h *HtlcScriptV3) Script() []byte {
+	return nil
+}
+
+// MaxSuccessWitnessSize returns the maximum witness size for the
+// success case witness.
+func (h *HtlcScriptV3) MaxSuccessWitnessSize() int {
+	// Calculate maximum success witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - sig_length: 1 byte
+	// - sig: 73 bytes
+	// - preimage_length: 1 byte
+	// - preimage: 32 bytes
+	// - witness_script_length: 1 byte
+	// - witness_script: len(script) bytes
+	// - control_block_length: 1 byte
+	// - control_block: 4129 bytes
+	return 1 + 1 + 73 + 1 + 32 + 1 + len(h.claimScript) + 1 + 4129
+}
+
+// MaxTimeoutWitnessSize returns the maximum witness size for the
+// timeout case witness.
+func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
+	// Calculate maximum timeout witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - sig_length: 1 byte
+	// - sig: 73 bytes
+	// - witness_script_length: 1 byte
+	// - witness_script: len(script) bytes
+	// - control_block_length: 1 byte
+	// - control_block: 4129 bytes
+	return 1 + 1 + 73 + 1 + len(h.timeoutScript) + 1 + 4129
+}
+
+// SuccessSequence returns the sequence to spend this htlc in the
+// success case.
+func (h *HtlcScriptV3) SuccessSequence() uint32 {
 	return 1
 }
