@@ -3,15 +3,18 @@ package swap
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -313,6 +316,233 @@ func TestHtlcV2(t *testing.T) {
 					htlc.PkScript, sweepTx, 0,
 					txscript.StandardVerifyFlags, nil,
 					nil, int64(htlcValue), prevOutFetcher)
+			}
+
+			assertEngineExecution(t, testCase.valid, newEngine)
+		})
+	}
+}
+
+/*
+	CLAIM PATH
+
+	<reciever_key> OP_CHECKSIGVERIFY OP_SIZE 20 OP_EQUALVERIFY OP_RIPEMD160 <hash> OP_EQUALVERIFY 1 OP_CHECKSEQUENCEVERIFY
+*/
+func createClaimPathLeaf(t *testing.T, recieverHtlcKey [32]byte, swapHash lntypes.Hash) (txscript.TapLeaf, []byte) {
+	builder := txscript.NewScriptBuilder()
+
+	builder.AddData(recieverHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddOp(txscript.OP_SIZE)
+	builder.AddInt64(32)
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddOp(txscript.OP_HASH160)
+	builder.AddData(input.Ripemd160H(swapHash[:]))
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddInt64(1)
+	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
+	script, err := builder.Script()
+	require.NoError(t, err)
+
+	return txscript.NewBaseTapLeaf(script), script
+}
+
+/*
+	TIMEOUT PATH
+
+	<timeout_key> OP_CHECKSIGVERIFY <timeout height> OP_CHECKLOCKTIMEVERIFY
+*/
+func createTimeoutPathLeaf(
+	t *testing.T, senderHtlcKey [32]byte, timeoutHeight int64) (txscript.TapLeaf, []byte) {
+
+	// Let's add a second script output as well to test the partial reveal.
+	builder := txscript.NewScriptBuilder()
+	builder.AddData(senderHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddInt64(timeoutHeight)
+	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
+
+	script, err := builder.Script()
+	require.NoError(t, err)
+	return txscript.NewBaseTapLeaf(script), script
+}
+
+func CreateKey(index int32) (*btcec.PrivateKey, *btcec.PublicKey) {
+	// Avoid all zeros, because it results in an invalid key.
+	privKey, pubKey := btcec.PrivKeyFromBytes(
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, byte(index + 1)})
+	return privKey, pubKey
+}
+
+func TestHtlcV3(t *testing.T) {
+
+	// const (
+	// 	htlcValue  = btcutil.Amount(1 * 10e8)
+	// 	cltvExpiry = 24
+	// )
+
+	// var (
+	// 	preimage    = [32]byte{1, 2, 3}
+	// 	senderKey   [32]byte
+	// 	receiverKey [32]byte
+	// )
+
+	// For the next step, we need a public key. Let's use a special family
+	// for this.
+	randomPub, _ := hex.DecodeString(
+		"03fcb7d1b502bd59f4dbc6cf503e5c280189e0e6dd2d10c4c14d97ed8611" +
+			"a99178",
+	)
+
+	internalPubKey, err := btcec.ParsePubKey(randomPub)
+	require.NoError(t, err)
+
+	preimage := [32]byte{1, 2, 3}
+	p := lntypes.Preimage(preimage)
+	hashedPreimage := sha256.Sum256(p[:])
+
+	senderPrivKey, senderPubKey := CreateKey(1)
+	receiverPrivKey, receiverPubKey := CreateKey(2)
+
+	locktime := 10
+
+	var (
+		senderKey   [32]byte
+		receiverKey [32]byte
+	)
+	copy(senderKey[:], schnorr.SerializePubKey(senderPubKey))
+	copy(receiverKey[:], schnorr.SerializePubKey(receiverPubKey))
+
+	claimPathLeaf, claimPathScript := createClaimPathLeaf(
+		t, senderKey, hashedPreimage,
+	)
+	timeoutPathLeaf, timeoutPathScript := createTimeoutPathLeaf(
+		t, receiverKey, int64(locktime),
+	)
+
+	tree := txscript.AssembleTaprootScriptTree(
+		claimPathLeaf, timeoutPathLeaf,
+	)
+
+	rootHash := tree.RootNode.TapHash()
+	taprootKey := txscript.ComputeTaprootOutputKey(
+		internalPubKey, rootHash[:],
+	)
+
+	// Generate a tapscript address from our tree
+	tapScriptAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(taprootKey), &chaincfg.RegressionNetParams,
+	)
+	require.NoError(t, err)
+	p2trPkScript, err := txscript.PayToAddrScript(tapScriptAddr)
+	require.NoError(t, err)
+
+	value := int64(800_000 - 500) // TODO(guggero): Calculate actual fee.
+
+	tx := wire.NewMsgTx(2)
+	tx.LockTime = uint32(locktime)
+	tx.TxIn = []*wire.TxIn{{
+		PreviousOutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash(sha256.Sum256([]byte{1, 2, 3})),
+			Index: 50,
+		},
+		Sequence: 10,
+	}}
+	tx.TxOut = []*wire.TxOut{{
+		PkScript: []byte{0, 20, 2, 141, 221, 230, 144, 171, 89, 230, 219, 198, 90, 157, 110, 89, 89, 67, 128, 16, 150, 186},
+		Value:    value,
+	}}
+
+	// With the commitment computed we can obtain the bit that denotes if
+	// the resulting key has an odd y coordinate or not.
+	var outputKeyYIsOdd bool
+	if taprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
+		outputKeyYIsOdd = true
+	}
+
+	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
+		p2trPkScript, 800_000,
+	)
+	hashCache := txscript.NewTxSigHashes(
+		tx, prevOutFetcher,
+	)
+
+	testCases := []struct {
+		name    string
+		witness func(*testing.T) wire.TxWitness
+		valid   bool
+	}{
+		{
+			"claim path spend",
+			func(t *testing.T) wire.TxWitness {
+				proof := timeoutPathLeaf.TapHash()
+				controlBlock := txscript.ControlBlock{
+					InternalKey:     internalPubKey,
+					OutputKeyYIsOdd: outputKeyYIsOdd,
+					LeafVersion:     txscript.BaseLeafVersion,
+					InclusionProof:  proof[:],
+				}
+				controlBlockBytes, err := controlBlock.ToBytes()
+				require.NoError(t, err)
+
+				senderSig, err := txscript.RawTxInTapscriptSignature(
+					tx, hashCache, 0, int64(value), p2trPkScript, claimPathLeaf,
+					txscript.SigHashDefault, senderPrivKey,
+				)
+
+				require.NoError(t, err)
+
+				return wire.TxWitness{
+					preimage[:],
+					senderSig,
+					claimPathScript,
+					controlBlockBytes,
+				}
+			}, true,
+		},
+		{
+			"timeout path spend",
+			func(t *testing.T) wire.TxWitness {
+				proof := claimPathLeaf.TapHash()
+				controlBlock := txscript.ControlBlock{
+					InternalKey:     internalPubKey,
+					OutputKeyYIsOdd: outputKeyYIsOdd,
+					LeafVersion:     txscript.BaseLeafVersion,
+					InclusionProof:  proof[:],
+				}
+				controlBlockBytes, err := controlBlock.ToBytes()
+				require.NoError(t, err)
+
+				recipientSig, err := txscript.RawTxInTapscriptSignature(
+					tx, hashCache, 0, int64(value), p2trPkScript, timeoutPathLeaf,
+					txscript.SigHashDefault, receiverPrivKey,
+				)
+
+				require.NoError(t, err)
+
+				return wire.TxWitness{
+					recipientSig,
+					timeoutPathScript,
+					controlBlockBytes,
+				}
+			}, true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			tx.TxIn[0].Witness = testCase.witness(t)
+
+			newEngine := func() (*txscript.Engine, error) {
+				return txscript.NewEngine(
+					p2trPkScript, tx, 0,
+					txscript.StandardVerifyFlags, nil,
+					hashCache, int64(value), prevOutFetcher)
 			}
 
 			assertEngineExecution(t, testCase.valid, newEngine)
