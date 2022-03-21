@@ -20,11 +20,11 @@ type SwapContract struct {
 
 	// SenderKey is the key of the sender that will be used in the on-chain
 	// HTLC.
-	SenderKey [33]byte
+	SenderKey []byte
 
 	// ReceiverKey is the of the receiver that will be used in the on-chain
 	// HTLC.
-	ReceiverKey [33]byte
+	ReceiverKey []byte
 
 	// CltvExpiry is the total absolute CLTV expiry of the swap.
 	CltvExpiry int32

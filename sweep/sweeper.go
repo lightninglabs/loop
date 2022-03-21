@@ -23,7 +23,7 @@ type Sweeper struct {
 func (s *Sweeper) CreateSweepTx(
 	globalCtx context.Context, height int32, sequence uint32,
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
-	keyBytes [33]byte,
+	keyBytes []byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
 	amount, fee btcutil.Amount,
 	destAddr btcutil.Address) (*wire.MsgTx, error) {
@@ -53,7 +53,7 @@ func (s *Sweeper) CreateSweepTx(
 
 	// Generate a signature for the swap htlc transaction.
 
-	key, err := btcec.ParsePubKey(keyBytes[:])
+	key, err := btcec.ParsePubKey(keyBytes)
 	if err != nil {
 		return nil, err
 	}

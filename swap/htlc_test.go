@@ -3,7 +3,6 @@ package swap
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -128,19 +127,11 @@ func TestHtlcV2(t *testing.T) {
 	senderPrivKey, senderPubKey := test.CreateKey(1)
 	receiverPrivKey, receiverPubKey := test.CreateKey(2)
 
-	var (
-		senderKey   [33]byte
-		receiverKey [33]byte
-	)
-	copy(senderKey[:], senderPubKey.SerializeCompressed())
-	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
-
 	hash := sha256.Sum256(testPreimage[:])
 
 	// Create the htlc.
 	htlc, err := NewHtlc(
-		HtlcV2, testCltvExpiry,
-		senderKey, receiverKey, hash,
+		HtlcV2, testCltvExpiry, senderPubKey.SerializeCompressed(), receiverPubKey.SerializeCompressed(), hash,
 		HtlcP2WSH, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
@@ -276,12 +267,12 @@ func TestHtlcV2(t *testing.T) {
 			// key.
 			"timeout case cannot spend with wrong key",
 			func(t *testing.T) wire.TxWitness {
-				bogusKey := [33]byte{0xb, 0xa, 0xd}
+				bogusKey := []byte{0xb, 0xa, 0xd}
 
 				// Create the htlc with the bogus key.
 				htlc, err = NewHtlc(
 					HtlcV2, testCltvExpiry,
-					bogusKey, receiverKey, hash,
+					bogusKey, receiverPubKey.SerializeCompressed(), hash,
 					HtlcP2WSH, &chaincfg.MainNetParams,
 				)
 				require.NoError(t, err)
@@ -323,50 +314,6 @@ func TestHtlcV2(t *testing.T) {
 	}
 }
 
-/*
-	CLAIM PATH
-
-	<reciever_key> OP_CHECKSIGVERIFY OP_SIZE 20 OP_EQUALVERIFY OP_RIPEMD160 <hash> OP_EQUALVERIFY 1 OP_CHECKSEQUENCEVERIFY
-*/
-func createClaimPathLeaf(t *testing.T, recieverHtlcKey [32]byte, swapHash lntypes.Hash) (txscript.TapLeaf, []byte) {
-	builder := txscript.NewScriptBuilder()
-
-	builder.AddData(recieverHtlcKey[:])
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-	builder.AddOp(txscript.OP_SIZE)
-	builder.AddInt64(32)
-	builder.AddOp(txscript.OP_EQUALVERIFY)
-	builder.AddOp(txscript.OP_HASH160)
-	builder.AddData(input.Ripemd160H(swapHash[:]))
-	builder.AddOp(txscript.OP_EQUALVERIFY)
-	builder.AddInt64(1)
-	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
-	script, err := builder.Script()
-	require.NoError(t, err)
-
-	return txscript.NewBaseTapLeaf(script), script
-}
-
-/*
-	TIMEOUT PATH
-
-	<timeout_key> OP_CHECKSIGVERIFY <timeout height> OP_CHECKLOCKTIMEVERIFY
-*/
-func createTimeoutPathLeaf(
-	t *testing.T, senderHtlcKey [32]byte, timeoutHeight int64) (txscript.TapLeaf, []byte) {
-
-	// Let's add a second script output as well to test the partial reveal.
-	builder := txscript.NewScriptBuilder()
-	builder.AddData(senderHtlcKey[:])
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-	builder.AddInt64(timeoutHeight)
-	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
-
-	script, err := builder.Script()
-	require.NoError(t, err)
-	return txscript.NewBaseTapLeaf(script), script
-}
-
 func CreateKey(index int32) (*btcec.PrivateKey, *btcec.PublicKey) {
 	// Avoid all zeros, because it results in an invalid key.
 	privKey, pubKey := btcec.PrivKeyFromBytes(
@@ -378,72 +325,33 @@ func CreateKey(index int32) (*btcec.PrivateKey, *btcec.PublicKey) {
 }
 
 func TestHtlcV3(t *testing.T) {
-
-	// const (
-	// 	htlcValue  = btcutil.Amount(1 * 10e8)
-	// 	cltvExpiry = 24
-	// )
-
-	// var (
-	// 	preimage    = [32]byte{1, 2, 3}
-	// 	senderKey   [32]byte
-	// 	receiverKey [32]byte
-	// )
-
-	// For the next step, we need a public key. Let's use a special family
-	// for this.
-	randomPub, _ := hex.DecodeString(
-		"03fcb7d1b502bd59f4dbc6cf503e5c280189e0e6dd2d10c4c14d97ed8611" +
-			"a99178",
-	)
-
-	internalPubKey, err := btcec.ParsePubKey(randomPub)
-	require.NoError(t, err)
-
 	preimage := [32]byte{1, 2, 3}
 	p := lntypes.Preimage(preimage)
 	hashedPreimage := sha256.Sum256(p[:])
+	value := int64(800_000 - 500) // TODO(guggero): Calculate actual fee.
 
 	senderPrivKey, senderPubKey := CreateKey(1)
 	receiverPrivKey, receiverPubKey := CreateKey(2)
 
-	locktime := 10
+	cltvExpiry := int32(10)
 
-	var (
-		senderKey   [32]byte
-		receiverKey [32]byte
-	)
-	copy(senderKey[:], schnorr.SerializePubKey(senderPubKey))
-	copy(receiverKey[:], schnorr.SerializePubKey(receiverPubKey))
+	shnorrSenderKey := schnorr.SerializePubKey(senderPubKey)
+	schnorrReceiverKey := schnorr.SerializePubKey(receiverPubKey)
 
-	claimPathLeaf, claimPathScript := createClaimPathLeaf(
-		t, senderKey, hashedPreimage,
-	)
-	timeoutPathLeaf, timeoutPathScript := createTimeoutPathLeaf(
-		t, receiverKey, int64(locktime),
-	)
-
-	tree := txscript.AssembleTaprootScriptTree(
-		claimPathLeaf, timeoutPathLeaf,
-	)
-
-	rootHash := tree.RootNode.TapHash()
-	taprootKey := txscript.ComputeTaprootOutputKey(
-		internalPubKey, rootHash[:],
-	)
-
-	// Generate a tapscript address from our tree
-	tapScriptAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(taprootKey), &chaincfg.RegressionNetParams,
+	htlc, err := NewHtlc(
+		HtlcV3, cltvExpiry, shnorrSenderKey, schnorrReceiverKey, hashedPreimage, HtlcP2TR, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
-	p2trPkScript, err := txscript.PayToAddrScript(tapScriptAddr)
-	require.NoError(t, err)
 
-	value := int64(800_000 - 500) // TODO(guggero): Calculate actual fee.
+	var trAddress *btcutil.AddressTaproot
+	trAddress, ok := htlc.Address.(*btcutil.AddressTaproot)
+	require.True(t, ok)
+
+	p2trPkScript, err := txscript.PayToAddrScript(trAddress)
+	require.NoError(t, err)
 
 	tx := wire.NewMsgTx(2)
-	tx.LockTime = uint32(locktime)
+	tx.LockTime = uint32(cltvExpiry)
 	tx.TxIn = []*wire.TxIn{{
 		PreviousOutPoint: wire.OutPoint{
 			Hash:  chainhash.Hash(sha256.Sum256([]byte{1, 2, 3})),
@@ -456,19 +364,24 @@ func TestHtlcV3(t *testing.T) {
 		Value:    value,
 	}}
 
-	// With the commitment computed we can obtain the bit that denotes if
-	// the resulting key has an odd y coordinate or not.
-	var outputKeyYIsOdd bool
-	if taprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
-		outputKeyYIsOdd = true
-	}
-
 	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
 		p2trPkScript, 800_000,
 	)
 	hashCache := txscript.NewTxSigHashes(
 		tx, prevOutFetcher,
 	)
+
+	signTx := func(
+		tx *wire.MsgTx, privateKey *secp.PrivateKey, leaf txscript.TapLeaf) []byte {
+
+		sig, err := txscript.RawTxInTapscriptSignature(
+			tx, hashCache, 0, int64(value), p2trPkScript, leaf,
+			txscript.SigHashDefault, privateKey,
+		)
+		require.NoError(t, err)
+
+		return sig
+	}
 
 	testCases := []struct {
 		name    string
@@ -478,56 +391,33 @@ func TestHtlcV3(t *testing.T) {
 		{
 			"claim path spend",
 			func(t *testing.T) wire.TxWitness {
-				proof := timeoutPathLeaf.TapHash()
-				controlBlock := txscript.ControlBlock{
-					InternalKey:     internalPubKey,
-					OutputKeyYIsOdd: outputKeyYIsOdd,
-					LeafVersion:     txscript.BaseLeafVersion,
-					InclusionProof:  proof[:],
-				}
-				controlBlockBytes, err := controlBlock.ToBytes()
-				require.NoError(t, err)
+				tx.TxIn[0].Sequence = htlc.SuccessSequence()
 
-				senderSig, err := txscript.RawTxInTapscriptSignature(
-					tx, hashCache, 0, int64(value), p2trPkScript, claimPathLeaf,
-					txscript.SigHashDefault, senderPrivKey,
+				var trHtlc *HtlcScriptV3
+				trHtlc, ok := htlc.HtlcScript.(*HtlcScriptV3)
+				require.True(t, ok)
+
+				sig := signTx(
+					tx, senderPrivKey, txscript.NewBaseTapLeaf(trHtlc.claimScript),
 				)
 
-				require.NoError(t, err)
-
-				return wire.TxWitness{
-					preimage[:],
-					senderSig,
-					claimPathScript,
-					controlBlockBytes,
-				}
+				return htlc.genSuccessWitness(sig, preimage)
 			}, true,
 		},
 		{
 			"timeout path spend",
 			func(t *testing.T) wire.TxWitness {
-				proof := claimPathLeaf.TapHash()
-				controlBlock := txscript.ControlBlock{
-					InternalKey:     internalPubKey,
-					OutputKeyYIsOdd: outputKeyYIsOdd,
-					LeafVersion:     txscript.BaseLeafVersion,
-					InclusionProof:  proof[:],
-				}
-				controlBlockBytes, err := controlBlock.ToBytes()
-				require.NoError(t, err)
+				tx.TxIn[0].Sequence = htlc.SuccessSequence()
 
-				recipientSig, err := txscript.RawTxInTapscriptSignature(
-					tx, hashCache, 0, int64(value), p2trPkScript, timeoutPathLeaf,
-					txscript.SigHashDefault, receiverPrivKey,
+				var trHtlc *HtlcScriptV3
+				trHtlc, ok := htlc.HtlcScript.(*HtlcScriptV3)
+				require.True(t, ok)
+
+				sig := signTx(
+					tx, receiverPrivKey, txscript.NewBaseTapLeaf(trHtlc.timeoutScript),
 				)
 
-				require.NoError(t, err)
-
-				return wire.TxWitness{
-					recipientSig,
-					timeoutPathScript,
-					controlBlockBytes,
-				}
+				return htlc.GenTimeoutWitness(sig)
 			}, true,
 		},
 	}

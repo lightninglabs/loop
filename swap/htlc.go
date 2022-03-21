@@ -89,7 +89,7 @@ type Htlc struct {
 }
 
 var (
-	quoteKey [33]byte
+	quoteKey []byte
 
 	quoteHash lntypes.Hash
 
@@ -136,7 +136,7 @@ func (h HtlcOutputType) String() string {
 
 // NewHtlc returns a new instance.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
-	senderKey, receiverKey [33]byte,
+	senderKey, receiverKey []byte,
 	hash lntypes.Hash, outputType HtlcOutputType,
 	chainParams *chaincfg.Params) (*Htlc, error) {
 
@@ -226,7 +226,7 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		}
 
 		// Generate a tapscript address from our tree
-		address, err := btcutil.NewAddressTaproot(
+		address, err = btcutil.NewAddressTaproot(
 			schnorr.SerializePubKey(trHtlc.taprootKey), &chaincfg.RegressionNetParams,
 		)
 		if err != nil {
@@ -323,7 +323,7 @@ type HtlcScriptV1 struct {
 // OP_ENDIF
 // OP_CHECKSIG
 func newHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
-	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV1, error) {
+	receiverHtlcKey []byte, swapHash lntypes.Hash) (*HtlcScriptV1, error) {
 
 	builder := txscript.NewScriptBuilder()
 
@@ -337,7 +337,7 @@ func newHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
 	builder.AddData(input.Ripemd160H(swapHash[:]))
 	builder.AddOp(txscript.OP_EQUALVERIFY)
 
-	builder.AddData(receiverHtlcKey[:])
+	builder.AddData(receiverHtlcKey)
 
 	builder.AddOp(txscript.OP_ELSE)
 
@@ -347,7 +347,7 @@ func newHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
 	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
 	builder.AddOp(txscript.OP_DROP)
 
-	builder.AddData(senderHtlcKey[:])
+	builder.AddData(senderHtlcKey)
 
 	builder.AddOp(txscript.OP_ENDIF)
 
@@ -440,7 +440,7 @@ func (h *HtlcScriptV1) SuccessSequence() uint32 {
 // HtlcScriptV2 encapsulates the htlc v2 script.
 type HtlcScriptV2 struct {
 	script    []byte
-	senderKey [33]byte
+	senderKey []byte
 }
 
 // newHTLCScriptV2 construct an HtlcScipt with the HTLC V2 witness script.
@@ -453,17 +453,17 @@ type HtlcScriptV2 struct {
 //   OP_CHECKSEQUENCEVERIFY
 // OP_ENDIF
 func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
-	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV2, error) {
+	receiverHtlcKey []byte, swapHash lntypes.Hash) (*HtlcScriptV2, error) {
 
 	builder := txscript.NewScriptBuilder()
-	builder.AddData(receiverHtlcKey[:])
+	builder.AddData(receiverHtlcKey)
 	builder.AddOp(txscript.OP_CHECKSIG)
 
 	builder.AddOp(txscript.OP_NOTIF)
 
 	builder.AddOp(txscript.OP_DUP)
 	builder.AddOp(txscript.OP_HASH160)
-	senderHtlcKeyHash := sha256.Sum256(senderHtlcKey[:])
+	senderHtlcKeyHash := sha256.Sum256(senderHtlcKey)
 	builder.AddData(input.Ripemd160H(senderHtlcKeyHash[:]))
 
 	builder.AddOp(txscript.OP_EQUALVERIFY)
@@ -576,11 +576,11 @@ type HtlcScriptV3 struct {
 	claimScript    []byte
 	taprootKey     *secp.PublicKey
 	internalPubKey *secp.PublicKey
-	senderKey      [33]byte
+	senderKey      []byte
 }
 
 func newHTLCScriptV3(
-	cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+	cltvExpiry int32, receiverHtlcKey, senderHtlcKey []byte, swapHash lntypes.Hash) (*HtlcScriptV3, error) {
 
 	/*
 		CLAIM PATH
@@ -589,7 +589,7 @@ func newHTLCScriptV3(
 	*/
 	builder := txscript.NewScriptBuilder()
 
-	builder.AddData(receiverHtlcKey[:])
+	builder.AddData(receiverHtlcKey)
 	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
 	builder.AddOp(txscript.OP_SIZE)
 	builder.AddInt64(32)
@@ -611,7 +611,7 @@ func newHTLCScriptV3(
 		<timeout_key> OP_CHECKSIGVERIFY <timeout height> OP_CHECKLOCKTIMEVERIFY
 	*/
 	builder = txscript.NewScriptBuilder()
-	builder.AddData(senderHtlcKey[:])
+	builder.AddData(senderHtlcKey)
 	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
 	builder.AddInt64(int64(cltvExpiry))
 	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
@@ -627,9 +627,12 @@ func newHTLCScriptV3(
 	)
 
 	internalPubKey, err := btcec.ParsePubKey(randomPub)
+	if err != nil {
+		return nil, err
+	}
 
 	tree := txscript.AssembleTaprootScriptTree(
-		txscript.NewBaseTapLeaf(timeoutPathScript),
+		txscript.NewBaseTapLeaf(claimPathScript),
 		txscript.NewBaseTapLeaf(timeoutPathScript),
 	)
 
@@ -671,13 +674,13 @@ func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 	return controlBlockBytes, nil
 }
 
-func (h *HtlcScriptV3) genSuccessWitness(receiverSig []byte, preimage lntypes.Preimage) wire.TxWitness {
+func (h *HtlcScriptV3) genSuccessWitness(signature []byte, preimage lntypes.Preimage) wire.TxWitness {
 
 	// TODO: Unsilence errors
-	controlBlockBytes, _ := h.genControlBlock(h.claimScript)
+	controlBlockBytes, _ := h.genControlBlock(h.timeoutScript)
 	return wire.TxWitness{
 		preimage[:],
-		receiverSig,
+		signature,
 		h.claimScript,
 		controlBlockBytes,
 	}
@@ -686,7 +689,7 @@ func (h *HtlcScriptV3) genSuccessWitness(receiverSig []byte, preimage lntypes.Pr
 func (h *HtlcScriptV3) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
 
 	// TODO: Unsilence errors
-	controlBlockBytes, _ := h.genControlBlock(h.timeoutScript)
+	controlBlockBytes, _ := h.genControlBlock(h.claimScript)
 	return wire.TxWitness{
 		senderSig,
 		h.timeoutScript,
@@ -711,5 +714,5 @@ func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
 }
 
 func (h *HtlcScriptV3) SuccessSequence() uint32 {
-	return 0
+	return 10
 }

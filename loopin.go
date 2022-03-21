@@ -151,8 +151,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	if err != nil {
 		return nil, err
 	}
+
+	senderKeySlice := keyDesc.PubKey.SerializeCompressed()
+
 	var senderKey [33]byte
-	copy(senderKey[:], keyDesc.PubKey.SerializeCompressed())
+	copy(senderKey[:], senderKeySlice)
 
 	// Create the swap invoice in lnd.
 	_, swapInvoice, err := cfg.lnd.Client.AddInvoice(
@@ -236,8 +239,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
-			ReceiverKey:      swapResp.receiverKey,
-			SenderKey:        senderKey,
+			ReceiverKey:      swapResp.receiverKey[:],
+			SenderKey:        senderKeySlice,
 			Preimage:         swapPreimage,
 			AmountRequested:  request.Amount,
 			CltvExpiry:       swapResp.expiry,
