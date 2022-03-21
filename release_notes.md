@@ -25,4 +25,7 @@ This file tracks release notes for the loop client.
 
 #### Bug Fixes
 
+* Loop now supports being hooked up to a remote signing pair of `lnd` nodes,
+  as long as `lnd` is `v0.14.3-beta` or later.
+
 #### Maintenance
