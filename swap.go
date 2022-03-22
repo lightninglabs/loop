@@ -53,17 +53,20 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 func GetHtlcScriptVersion(
 	protocolVersion loopdb.ProtocolVersion) swap.ScriptVersion {
 
-	if protocolVersion != loopdb.ProtocolVersionUnrecorded &&
-		protocolVersion >= loopdb.ProtocolVersionHtlcV2 {
+	if protocolVersion >= loopdb.ProtocolVersionHtlcV2 &&
+		protocolVersion < loopdb.ProtocolVersionTaproot {
+		// Protocol versions 5 through 9 only support v2 HTLCs
 
-		// Use HTLC v2 script only if we know the swap was initiated
-		// with a client that supports HTLC v2. Unrecorded protocol
-		// version implies that there was no protocol version stored
-		// along side a serialized swap that we're resuming in which
-		// case the swap was initiated with HTLC v1 script.
 		return swap.HtlcV2
+
+	} else if protocolVersion == loopdb.ProtocolVersionTaproot {
+		// Only Protocol version 10 supports v3 HTLCs
+
+		return swap.HtlcV3
 	}
 
+	// All other cases, including versions 0 through 4 and 11 to max int
+	// should be considered legacy v1 HTLCs
 	return swap.HtlcV1
 }
 

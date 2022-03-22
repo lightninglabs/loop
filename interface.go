@@ -298,6 +298,9 @@ type LoopInSwapInfo struct { // nolint
 	// where the loop-in funds may be paid.
 	HtlcAddressNP2WSH btcutil.Address
 
+	// TODO(arshbot): docs
+	HtlcAddressP2TR btcutil.Address
+
 	// ServerMessages is the human-readable message received from the loop
 	// server.
 	ServerMessage string
@@ -312,6 +315,9 @@ type LoopOutSwapInfo struct { // nolint:golint
 	// HtlcAddressP2WSH contains the native segwit swap htlc address that
 	// the server will publish to.
 	HtlcAddressP2WSH btcutil.Address
+
+	// TODO(arshbot): docs
+	HtlcAddressP2TR btcutil.Address
 
 	// ServerMessages is the human-readable message received from the loop
 	// server.
@@ -350,6 +356,9 @@ type SwapInfo struct {
 	// HtlcAddressNP2WSH stores the address of the NP2WSH (nested segwit)
 	// swap htlc. This is only used for external loop-in.
 	HtlcAddressNP2WSH btcutil.Address
+
+	// TODO(arshbot): docs
+	HtlcAddressP2TR btcutil.Address
 
 	// ExternalHtlc is set to true for external loop-in swaps.
 	ExternalHtlc bool

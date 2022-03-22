@@ -51,13 +51,15 @@ const (
 	// in order to enhance off-chain payments corresponding to a swap.
 	ProtocolVersionRoutingPlugin = 9
 
+	ProtocolVersionTaproot ProtocolVersion = 10
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_ROUTING_PLUGIN
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_TAPROOT
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
@@ -101,6 +103,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionRoutingPlugin:
 		return "Routing Plugin"
+
+	case ProtocolVersionTaproot:
+		return "Taproot Loop Out"
 
 	default:
 		return "Unknown"

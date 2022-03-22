@@ -113,8 +113,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	if err != nil {
 		return nil, err
 	}
-	var receiverKey [33]byte
-	copy(receiverKey[:], keyDesc.PubKey.SerializeCompressed())
+
+	receiverKey := keyDesc.PubKey.SerializeCompressed()
 
 	// Post the swap parameters to the swap server. The response contains
 	// the server revocation key and the swap and prepay invoices.
@@ -190,7 +190,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	swapKit.lastUpdateTime = initiationTime
 
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := swapKit.getHtlc(swap.HtlcP2TR)
 	if err != nil {
 		return nil, err
 	}

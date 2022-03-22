@@ -92,6 +92,8 @@ enum ProtocolVersion {
     // The client may ask the server to use a custom routing helper plugin in
     // order to enhance off-chain payments corresponding to a swap.
     ROUTING_PLUGIN = 9;
+
+    TAPROOT = 10;
 }
 
 message ServerLoopOutRequest {

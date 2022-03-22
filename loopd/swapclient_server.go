@@ -147,11 +147,11 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	return &clientrpc.SwapResponse{
-		Id:               info.SwapHash.String(),
-		IdBytes:          info.SwapHash[:],
-		HtlcAddress:      info.HtlcAddressP2WSH.String(),
-		HtlcAddressP2Wsh: info.HtlcAddressP2WSH.String(),
-		ServerMessage:    info.ServerMessage,
+		Id:              info.SwapHash.String(),
+		IdBytes:         info.SwapHash[:],
+		HtlcAddress:     info.HtlcAddressP2TR.String(),
+		HtlcAddressP2Tr: info.HtlcAddressP2TR.String(),
+		ServerMessage:   info.ServerMessage,
 	}, nil
 }
 

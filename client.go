@@ -405,9 +405,9 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
 	return &LoopOutSwapInfo{
-		SwapHash:         swap.hash,
-		HtlcAddressP2WSH: swap.htlc.Address,
-		ServerMessage:    initResult.serverMessage,
+		SwapHash:        swap.hash,
+		HtlcAddressP2TR: swap.htlc.Address,
+		ServerMessage:   initResult.serverMessage,
 	}, nil
 }
 

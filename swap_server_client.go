@@ -87,7 +87,7 @@ type swapServerClient interface {
 
 	NewLoopOutSwap(ctx context.Context,
 		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-		receiverKey [33]byte, swapPublicationDeadline time.Time,
+		receiverKey []byte, swapPublicationDeadline time.Time,
 		initiator string) (*newLoopOutResponse, error)
 
 	PushLoopOutPreimage(ctx context.Context,
@@ -357,7 +357,7 @@ func (s *grpcSwapServerClient) Probe(ctx context.Context, amt btcutil.Amount,
 
 func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-	receiverKey [33]byte, swapPublicationDeadline time.Time,
+	receiverKey []byte, swapPublicationDeadline time.Time,
 	initiator string) (*newLoopOutResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
@@ -366,7 +366,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		&looprpc.ServerLoopOutRequest{
 			SwapHash:                swapHash[:],
 			Amt:                     uint64(amount),
-			ReceiverKey:             receiverKey[:],
+			ReceiverKey:             receiverKey,
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
 			Expiry:                  expiry,
@@ -377,11 +377,8 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		return nil, err
 	}
 
-	var senderKey [33]byte
-	copy(senderKey[:], swapResp.SenderKey)
-
 	// Validate sender key.
-	_, err = btcec.ParsePubKey(senderKey[:])
+	_, err = btcec.ParsePubKey(swapResp.SenderKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
@@ -389,7 +386,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	return &newLoopOutResponse{
 		swapInvoice:   swapResp.SwapInvoice,
 		prepayInvoice: swapResp.PrepayInvoice,
-		senderKey:     senderKey,
+		senderKey:     swapResp.SenderKey,
 		serverMessage: swapResp.ServerMessage,
 	}, nil
 }
@@ -835,7 +832,7 @@ func isErrConClosing(err error) bool {
 type newLoopOutResponse struct {
 	swapInvoice   string
 	prepayInvoice string
-	senderKey     [33]byte
+	senderKey     []byte
 	serverMessage string
 }
 

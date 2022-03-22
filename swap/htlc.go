@@ -42,7 +42,7 @@ const (
 	// HtlcV2 refers to the improved version of the HTLC script.
 	HtlcV2
 
-	HtlcV3
+	HtlcV3 = 10
 )
 
 // htlcScript defines an interface for the different HTLC implementations.
@@ -114,25 +114,13 @@ func (h HtlcOutputType) String() string {
 	case HtlcNP2WSH:
 		return "NP2WSH"
 
+	case HtlcP2TR:
+		return "HtlcP2TR"
+
 	default:
 		return "unknown"
 	}
 }
-
-// func newSegwitHtlc(cltvExpiry int32, senderHtlcKey,
-// 	receiverHtlcKey [33]byte, swapHash lntypes.Hash) {
-
-// 	var htlc
-// 	switch version {
-// 	case HtlcV1:
-// 		htlc, err = newHTLCScriptV1(
-// 			cltvExpiry, senderKey, receiverKey, hash,
-// 		)
-
-// 	case HtlcV2:
-// 		htlc, err = newHTLCScriptV2(
-// 			cltvExpiry, senderKey, receiverKey, hash,
-// }
 
 // NewHtlc returns a new instance.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
@@ -222,17 +210,21 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		var trHtlc *HtlcScriptV3
 		trHtlc, ok := htlc.(*HtlcScriptV3)
 		if !ok {
-			return nil, errors.New("Taproot output selected for nontaproot htlc")
+			return nil, errors.New("taproot output selected for nontaproot htlc")
 		}
 
 		// Generate a tapscript address from our tree
 		address, err = btcutil.NewAddressTaproot(
-			schnorr.SerializePubKey(trHtlc.taprootKey), &chaincfg.RegressionNetParams,
+			schnorr.SerializePubKey(trHtlc.taprootKey), chainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
+
 		pkScript, err = txscript.PayToAddrScript(address)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.New("unknown output type")
 	}

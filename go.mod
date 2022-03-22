@@ -10,7 +10,7 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
@@ -23,6 +23,7 @@ require (
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
+	github.com/lightningnetwork/lnd/tor v1.0.0
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli v1.22.4
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
@@ -36,24 +37,7 @@ go 1.15
 
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
-replace (
-	github.com/lightningnetwork/lnd => github.com/guggero/lnd v0.11.0-beta.rc4.0.20220317165841-f317f1bc152d
-	github.com/lightningnetwork/lnd/cert => github.com/guggero/lnd/cert v1.0.4-0.20220309180237-7dfe4018ce2f
-	github.com/lightningnetwork/lnd/healthcheck => github.com/guggero/lnd/healthcheck v0.0.0-20220309180237-7dfe4018ce2f
-	github.com/lightningnetwork/lnd/tlv => github.com/guggero/lnd/tlv v0.0.0-20220309180237-7dfe4018ce2f
-)
-
-replace (
-	github.com/btcsuite/btcd => github.com/arshbot/btcd v0.22.0-beta.0.20220310092746-12c6b5570848
-	github.com/btcsuite/btcd/btcec/v2 => github.com/Roasbeef/btcd/btcec/v2 v2.0.0-20220225020451-4629cbd4eb52
-	github.com/btcsuite/btcd/btcutil => github.com/arshbot/btcd/btcutil v1.1.1-0.20220310092746-7d121ce37f2a
-	github.com/btcsuite/btcd/chaincfg/chainhash => github.com/arshbot/btcd/chaincfg/chainhash v0.0.0-20220310092746-97d068e90261
-)
-
-replace (
-	github.com/btcsuite/btcwallet => github.com/guggero/btcwallet v0.13.1-0.20220307185840-2b6e334b8c63
-	github.com/btcsuite/btcwallet/wallet/txauthor => github.com/guggero/btcwallet/wallet/txauthor v1.1.1-0.20220307185840-2b6e334b8c63
-)
+replace github.com/lightningnetwork/lnd => github.com/guggero/lnd v0.11.0-beta.rc4.0.20220322204826-af4562a8b1b2
 
 replace github.com/lightninglabs/lndclient => github.com/lightninglabs/lndclient v1.0.1-0.20220316193259-eeb62a615ee6
 

@@ -317,8 +317,10 @@ message SwapResponse {
     */
     string htlc_address_p2wsh = 5;
 
+    string htlc_address_p2tr = 6;
+
     // A human-readable message received from the loop server.
-    string server_message = 6;
+    string server_message = 7;
 }
 
 message MonitorRequest {
@@ -380,6 +382,8 @@ message SwapStatus {
     htlc address.
     */
     string htlc_address = 7 [deprecated = true];
+
+    string htlc_address_p2tr = 16;
 
     // HTLC address (native segwit), used in loop-in and loop-out swaps.
     string htlc_address_p2wsh = 12;
