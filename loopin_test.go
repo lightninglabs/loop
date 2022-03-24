@@ -345,8 +345,8 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	ctx := newLoopInTestContext(t)
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
-	senderKey := [33]byte{4}
-	receiverKey := [33]byte{5}
+	senderKey := []byte{4}
+	receiverKey := []byte{5}
 
 	contract := &loopdb.LoopInContract{
 		HtlcConfTarget: 2,

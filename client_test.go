@@ -216,12 +216,10 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	}
 
 	_, senderPubKey := test.CreateKey(1)
-	var senderKey [33]byte
-	copy(senderKey[:], senderPubKey.SerializeCompressed())
+	senderKey := senderPubKey.SerializeCompressed()
 
 	_, receiverPubKey := test.CreateKey(2)
-	var receiverKey [33]byte
-	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
+	receiverKey := receiverPubKey.SerializeCompressed()
 
 	update := loopdb.LoopEvent{
 		SwapStateData: loopdb.SwapStateData{

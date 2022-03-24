@@ -211,26 +211,54 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	if failureReason != clientrpc.FailureReason_FAILURE_REASON_NONE {
 		state = clientrpc.SwapState_FAILED
 	}
-
+	scriptVer := loop.GetHtlcScriptVersion(loopSwap.ProtocolVersion)
 	var swapType clientrpc.SwapType
-	var htlcAddress, htlcAddressP2WSH, htlcAddressNP2WSH string
-
+	var htlcAddress, htlcAddressP2WSH, htlcAddressP2TR, htlcAddressNP2WSH string
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
 		swapType = clientrpc.SwapType_LOOP_IN
 		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 
+		// Determine which address to set depending on script version.
+		// If the loop in is external, we'll default to v1
 		if loopSwap.ExternalHtlc {
 			htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
 			htlcAddress = htlcAddressNP2WSH
-		} else {
+		}
+
+		switch scriptVer {
+		case swap.HtlcV1:
+			htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
+			htlcAddress = htlcAddressNP2WSH
+
+		case swap.HtlcV2:
+			htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 			htlcAddress = htlcAddressP2WSH
+
+		case swap.HtlcV3:
+			htlcAddressP2TR = loopSwap.HtlcAddressP2TR.EncodeAddress()
+			htlcAddress = htlcAddressP2TR
+
+		default:
+			return nil, errors.New("unknown script version")
 		}
 
 	case swap.TypeOut:
 		swapType = clientrpc.SwapType_LOOP_OUT
-		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
-		htlcAddress = htlcAddressP2WSH
+
+		switch scriptVer {
+		case swap.HtlcV2:
+			htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+			htlcAddress = htlcAddressP2WSH
+
+		case swap.HtlcV3:
+			htlcAddressP2TR = loopSwap.HtlcAddressP2TR.EncodeAddress()
+			htlcAddress = htlcAddressP2TR
+
+		default:
+			return nil, errors.New("unknown script version")
+
+		}
 
 	default:
 		return nil, errors.New("unknown swap type")
@@ -245,6 +273,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		InitiationTime:    loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime:    loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:       htlcAddress,
+		HtlcAddressP2Tr:   htlcAddressP2TR,
 		HtlcAddressP2Wsh:  htlcAddressP2WSH,
 		HtlcAddressNp2Wsh: htlcAddressNP2WSH,
 		Type:              swapType,

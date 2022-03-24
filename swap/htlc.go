@@ -215,7 +215,7 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 
 		// Generate a tapscript address from our tree
 		address, err = btcutil.NewAddressTaproot(
-			schnorr.SerializePubKey(trHtlc.taprootKey), chainParams,
+			schnorr.SerializePubKey(trHtlc.TaprootKey), chainParams,
 		)
 		if err != nil {
 			return nil, err
@@ -239,24 +239,6 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		Address:     address,
 		SigScript:   sigScript,
 	}, nil
-
-	/*
-		{
-			HtlcScript:
-				timeoutScript  []byte
-				claimScript    []byte
-				internalPubKey *secp.PublicKey
-				senderKey      [33]byte
-			},
-			Hash:        preimage,
-			Version:     HtlcV3,
-			PkScript:    p2trPkScript or nil
-			OutputType:  HtlcP2WSH,
-			ChainParams: chainParams,
-			Address:     tapScriptAddr,
-			SigScript:   nil,
-		}
-	*/
 }
 
 // GenSuccessWitness returns the success script to spend this htlc with
@@ -564,11 +546,11 @@ func (h *HtlcScriptV2) SuccessSequence() uint32 {
 
 // HtlcScriptV2 encapsulates the htlc v2 script.
 type HtlcScriptV3 struct {
-	timeoutScript  []byte
-	claimScript    []byte
-	taprootKey     *secp.PublicKey
-	internalPubKey *secp.PublicKey
-	senderKey      []byte
+	TimeoutScript  []byte
+	ClaimScript    []byte
+	TaprootKey     *secp.PublicKey
+	InternalPubKey *secp.PublicKey
+	SenderKey      []byte
 }
 
 func newHTLCScriptV3(
@@ -634,18 +616,18 @@ func newHTLCScriptV3(
 	)
 
 	return &HtlcScriptV3{
-		timeoutScript:  timeoutPathScript,
-		claimScript:    claimPathScript,
-		taprootKey:     taprootKey,
-		internalPubKey: internalPubKey,
-		senderKey:      senderHtlcKey,
+		TimeoutScript:  timeoutPathScript,
+		ClaimScript:    claimPathScript,
+		TaprootKey:     taprootKey,
+		InternalPubKey: internalPubKey,
+		SenderKey:      senderHtlcKey,
 	}, nil
 }
 
 func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 	var outputKeyYIsOdd bool
 
-	if h.taprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
+	if h.TaprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
 		outputKeyYIsOdd = true
 	}
 
@@ -653,7 +635,7 @@ func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 	proof := leaf.TapHash()
 
 	controlBlock := txscript.ControlBlock{
-		InternalKey:     h.internalPubKey,
+		InternalKey:     h.InternalPubKey,
 		OutputKeyYIsOdd: outputKeyYIsOdd,
 		LeafVersion:     txscript.BaseLeafVersion,
 		InclusionProof:  proof[:],
@@ -668,23 +650,23 @@ func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 
 func (h *HtlcScriptV3) genSuccessWitness(signature []byte, preimage lntypes.Preimage) wire.TxWitness {
 
-	// TODO: Unsilence errors
-	controlBlockBytes, _ := h.genControlBlock(h.timeoutScript)
+	// TODO(arshbot): Unsilence errors
+	controlBlockBytes, _ := h.genControlBlock(h.TimeoutScript)
 	return wire.TxWitness{
 		preimage[:],
 		signature,
-		h.claimScript,
+		h.ClaimScript,
 		controlBlockBytes,
 	}
 }
 
 func (h *HtlcScriptV3) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
 
-	// TODO: Unsilence errors
-	controlBlockBytes, _ := h.genControlBlock(h.claimScript)
+	// TODO(arshbot): Unsilence errors
+	controlBlockBytes, _ := h.genControlBlock(h.ClaimScript)
 	return wire.TxWitness{
 		senderSig,
-		h.timeoutScript,
+		h.TimeoutScript,
 		controlBlockBytes,
 	}
 }
@@ -706,5 +688,5 @@ func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
 }
 
 func (h *HtlcScriptV3) SuccessSequence() uint32 {
-	return 10
+	return 1
 }

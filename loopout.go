@@ -304,7 +304,7 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 	info := s.swapInfo()
 	s.log.Infof("Loop out swap state: %v", info.State)
 
-	info.HtlcAddressP2WSH = s.htlc.Address
+	info.HtlcAddressP2TR = s.htlc.Address
 
 	select {
 	case s.statusChan <- *info:
@@ -488,6 +488,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	htlcOutpoint, htlcValue, err := swap.GetScriptOutput(
 		txConf.Tx, s.htlc.PkScript,
 	)
+
 	if err != nil {
 		return err
 	}
@@ -857,6 +858,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
+
 	htlcConfChan, htlcErrChan, err :=
 		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
 			ctx, s.htlcTxHash, s.htlc.PkScript,
@@ -950,6 +952,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			// Unexpected error on the confirm channel happened,
 			// abandon the swap.
 			case err := <-htlcErrChan:
+				s.log.Infof(err.Error())
 				return nil, err
 
 			// Htlc got confirmed, continue to sweeping.
@@ -1284,10 +1287,20 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		}
 	}
 
+	// TODO(arshbot): replace with a more holistic Script func
+	var witnessScript []byte
+	var trHtlc *swap.HtlcScriptV3
+	trHtlc, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
+	if !ok {
+		witnessScript = s.htlc.Script()
+	} else {
+		witnessScript = trHtlc.ClaimScript
+	}
+
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, s.htlc.SuccessSequence(), s.htlc, htlcOutpoint,
-		s.ReceiverKey, witnessFunc, htlcValue, fee, s.DestAddr,
+		s.ReceiverKey, witnessScript, witnessFunc, htlcValue, fee, s.DestAddr,
 	)
 	if err != nil {
 		return err

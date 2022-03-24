@@ -71,7 +71,7 @@ func newServerMock(lnd *test.LndMockServices) *serverMock {
 }
 
 func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
-	amount btcutil.Amount, _ int32, _ [33]byte, _ time.Time,
+	amount btcutil.Amount, _ int32, _ []byte, _ time.Time,
 	_ string) (*newLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)
@@ -92,11 +92,8 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 		return nil, err
 	}
 
-	var senderKeyArray [33]byte
-	copy(senderKeyArray[:], senderKey.SerializeCompressed())
-
 	return &newLoopOutResponse{
-		senderKey:     senderKeyArray,
+		senderKey:     senderKey.SerializeCompressed(),
 		swapInvoice:   swapPayReqString,
 		prepayInvoice: prePayReqString,
 	}, nil

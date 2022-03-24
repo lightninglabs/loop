@@ -398,7 +398,7 @@ func TestHtlcV3(t *testing.T) {
 				require.True(t, ok)
 
 				sig := signTx(
-					tx, senderPrivKey, txscript.NewBaseTapLeaf(trHtlc.claimScript),
+					tx, senderPrivKey, txscript.NewBaseTapLeaf(trHtlc.ClaimScript),
 				)
 
 				return htlc.genSuccessWitness(sig, preimage)
@@ -414,7 +414,7 @@ func TestHtlcV3(t *testing.T) {
 				require.True(t, ok)
 
 				sig := signTx(
-					tx, receiverPrivKey, txscript.NewBaseTapLeaf(trHtlc.timeoutScript),
+					tx, receiverPrivKey, txscript.NewBaseTapLeaf(trHtlc.TimeoutScript),
 				)
 
 				return htlc.GenTimeoutWitness(sig)

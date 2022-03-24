@@ -58,6 +58,8 @@ type loopInSwap struct {
 
 	htlc *swap.Htlc
 
+	htlcP2TR *swap.Htlc
+
 	htlcP2WSH *swap.Htlc
 
 	htlcNP2WSH *swap.Htlc
@@ -405,6 +407,11 @@ func validateLoopInContract(lnd *lndclient.LndServices,
 // initHtlcs creates and updates the native and nested segwit htlcs
 // of the loopInSwap.
 func (s *loopInSwap) initHtlcs() error {
+	htlcP2TR, err := s.swapKit.getHtlc(swap.HtlcP2TR)
+	if err != nil {
+		return err
+	}
+
 	htlcP2WSH, err := s.swapKit.getHtlc(swap.HtlcP2WSH)
 	if err != nil {
 		return err
@@ -418,7 +425,9 @@ func (s *loopInSwap) initHtlcs() error {
 	// Log htlc addresses for debugging.
 	s.swapKit.log.Infof("Htlc address (P2WSH): %v", htlcP2WSH.Address)
 	s.swapKit.log.Infof("Htlc address (NP2WSH): %v", htlcNP2WSH.Address)
+	s.swapKit.log.Infof("P2TR address (NP2WSH): %v", htlcP2TR.Address)
 
+	s.htlcP2TR = htlcP2TR
 	s.htlcP2WSH = htlcP2WSH
 	s.htlcNP2WSH = htlcNP2WSH
 
@@ -432,6 +441,7 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 
 	info.HtlcAddressP2WSH = s.htlcP2WSH.Address
 	info.HtlcAddressNP2WSH = s.htlcNP2WSH.Address
+	info.HtlcAddressP2TR = s.htlcP2TR.Address
 	info.ExternalHtlc = s.ExternalHtlc
 
 	select {
@@ -600,15 +610,8 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 
 	notifier := s.lnd.ChainNotifier
 
-	confChanP2WSH, confErrP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, s.htlcTxHash, s.htlcP2WSH.PkScript, 1, s.InitiationHeight,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	confChanNP2WSH, confErrNP2WSH, err := notifier.RegisterConfirmationsNtfn(
-		ctx, s.htlcTxHash, s.htlcNP2WSH.PkScript, 1, s.InitiationHeight,
+	confChanP2TR, confErrP2TR, err := notifier.RegisterConfirmationsNtfn(
+		ctx, s.htlcTxHash, s.htlcP2TR.PkScript, 1, s.InitiationHeight,
 	)
 	if err != nil {
 		return nil, err
@@ -618,22 +621,13 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 	for conf == nil {
 		select {
 
-		// P2WSH htlc confirmed.
-		case conf = <-confChanP2WSH:
-			s.htlc = s.htlcP2WSH
-			s.log.Infof("P2WSH htlc confirmed")
-
-		// NP2WSH htlc confirmed.
-		case conf = <-confChanNP2WSH:
-			s.htlc = s.htlcNP2WSH
-			s.log.Infof("NP2WSH htlc confirmed")
+		// P2TR htlc confirmed.
+		case conf = <-confChanP2TR:
+			s.htlc = s.htlcP2TR
+			s.log.Infof("P2TR htlc confirmed")
 
 		// Conf ntfn error.
-		case err := <-confErrP2WSH:
-			return nil, err
-
-		// Conf ntfn error.
-		case err := <-confErrNP2WSH:
+		case err = <-confErrP2TR:
 			return nil, err
 
 		// Keep up with block height.
@@ -692,10 +686,10 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 
 	s.log.Infof("Publishing on chain HTLC with fee rate %v", feeRate)
 
-	// Internal loop-in is always P2WSH.
+	// Internal loop-in is always P2TR.
 	tx, err := s.lnd.WalletKit.SendOutputs(
 		ctx, []*wire.TxOut{{
-			PkScript: s.htlcP2WSH.PkScript,
+			PkScript: s.htlcP2TR.PkScript,
 			Value:    int64(s.LoopInContract.AmountRequested),
 		}}, feeRate, labels.LoopInHtlcLabel(swap.ShortHash(&s.hash)),
 	)
@@ -944,10 +938,20 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		return s.htlc.GenTimeoutWitness(sig), nil
 	}
 
+	// TODO(arshbot): replace with a more holistic Script func
+	var witnessScript []byte
+	var trHtlc *swap.HtlcScriptV3
+	trHtlc, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
+	if !ok {
+		witnessScript = s.htlc.Script()
+	} else {
+		witnessScript = trHtlc.TimeoutScript
+	}
+
 	sequence := uint32(0)
 	timeoutTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, sequence, s.htlc, *htlcOutpoint, s.SenderKey,
-		witnessFunc, htlcValue, fee, s.timeoutAddr,
+		witnessScript, witnessFunc, htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
 		return 0, err
