@@ -49,7 +49,7 @@ func (r *mockRouter) QueryMissionControl(ctx context.Context) (
 	return r.lnd.MissionControlState, nil
 }
 
-// ImpotMissionControl is a mocked reimplementation of the pair import.
+// ImportMissionControl is a mocked reimplementation of the pair import.
 // Reference: lnd/router/missioncontrol_state.go:importSnapshot().
 func (r *mockRouter) ImportMissionControl(ctx context.Context,
 	entries []lndclient.MissionControlEntry, force bool) error {

@@ -187,7 +187,7 @@ func (s *LndMockServices) NotifyHeight(height int32) error {
 	return nil
 }
 
-// AddRelevantTx marks the given transaction as relevant.
+// AddTx marks the given transaction as relevant.
 func (s *LndMockServices) AddTx(tx *wire.MsgTx) {
 	s.lock.Lock()
 	s.Transactions = append(s.Transactions, lndclient.Transaction{
