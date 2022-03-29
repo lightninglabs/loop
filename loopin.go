@@ -965,14 +965,18 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		return 0, err
 	}
 
+	// Create a function that will assemble our timeout witness.
 	witnessFunc := func(sig []byte) (wire.TxWitness, error) {
 		return s.htlc.GenTimeoutWitness(sig)
 	}
 
+	// Retrieve the full script required to unlock the output.
+	redeemScript := s.htlc.TimeoutScript()
+
 	sequence := uint32(0)
 	timeoutTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, sequence, s.htlc, *htlcOutpoint, s.SenderKey,
-		witnessFunc, htlcValue, fee, s.timeoutAddr,
+		redeemScript, witnessFunc, htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
 		return 0, err

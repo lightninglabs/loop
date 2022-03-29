@@ -23,7 +23,7 @@ type Sweeper struct {
 func (s *Sweeper) CreateSweepTx(
 	globalCtx context.Context, height int32, sequence uint32,
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
-	keyBytes [33]byte,
+	keyBytes [33]byte, witnessScript []byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
 	amount, fee btcutil.Amount,
 	destAddr btcutil.Address) (*wire.MsgTx, error) {
@@ -59,20 +59,30 @@ func (s *Sweeper) CreateSweepTx(
 	}
 
 	signDesc := lndclient.SignDescriptor{
-		WitnessScript: htlc.Script(),
+		WitnessScript: witnessScript,
 		Output: &wire.TxOut{
 			Value:    int64(amount),
 			PkScript: htlc.PkScript,
 		},
-		HashType:   txscript.SigHashAll,
+		HashType:   htlc.SigHash(),
 		InputIndex: 0,
 		KeyDesc: keychain.KeyDescriptor{
 			PubKey: key,
 		},
 	}
 
+	// We need our previous outputs for taproot spends, and there's no
+	// harm including them for segwit v0, so we always inlucde our prevOut.
+	prevOut := []*wire.TxOut{
+		{
+			Value:    int64(amount),
+			PkScript: htlc.PkScript,
+		},
+	}
+
 	rawSigs, err := s.Lnd.Signer.SignOutputRaw(
-		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc}, nil,
+		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
+		prevOut,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("signing: %v", err)
