@@ -298,6 +298,21 @@ func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) {
 
 	case HtlcNP2WSH:
 		estimator.AddNestedP2WSHInput(maxSuccessWitnessSize)
+
+	case HtlcP2TR:
+		claimLeaf := txscript.NewBaseTapLeaf(
+			h.HtlcScript.SuccessScript(),
+		)
+
+		// TODO - find a cleaner way rather than cast to get internal
+		// pubkey?
+		htlcV3 := h.HtlcScript.(*HtlcScriptV3)
+
+		tapScript := input.TapscriptPartialReveal(
+			htlcV3.InternalPubKey, claimLeaf, claimLeaf.TapHash(),
+		)
+
+		estimator.AddTapscriptInput(maxSuccessWitnessSize, tapScript)
 	}
 }
 
@@ -311,6 +326,23 @@ func (h *Htlc) AddTimeoutToEstimator(estimator *input.TxWeightEstimator) {
 
 	case HtlcNP2WSH:
 		estimator.AddNestedP2WSHInput(maxTimeoutWitnessSize)
+
+	case HtlcP2TR:
+		timeoutLeaf := txscript.NewBaseTapLeaf(
+			h.HtlcScript.TimeoutScript(),
+		)
+
+		// TODO - find a cleaner way rather than cast to get internal
+		// pubkey?
+		htlcV3 := h.HtlcScript.(*HtlcScriptV3)
+
+		tapScript := input.TapscriptPartialReveal(
+			htlcV3.InternalPubKey, timeoutLeaf,
+			timeoutLeaf.TapHash(),
+		)
+
+		estimator.AddTapscriptInput(maxTimeoutWitnessSize, tapScript)
+
 	}
 }
 
