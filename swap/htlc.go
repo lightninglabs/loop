@@ -75,6 +75,11 @@ type HtlcScript interface {
 	// Script returns the htlc script.
 	Script() []byte
 
+	// lockingConditions return the address, pkScript and sigScript (if
+	// required) for a htlc script.
+	lockingConditions(HtlcOutputType, *chaincfg.Params) (btcutil.Address,
+		[]byte, []byte, error)
+
 	// MaxSuccessWitnessSize returns the maximum witness size for the
 	// success case witness.
 	MaxSuccessWitnessSize() int
@@ -183,85 +188,11 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		return nil, err
 	}
 
-	var pkScript, sigScript []byte
-	var address btcutil.Address
-
-	switch outputType {
-	case HtlcNP2WSH:
-		pks, err := input.WitnessScriptHash(htlc.Script())
-		if err != nil {
-			return nil, err
-		}
-
-		// Generate p2sh script for p2wsh (nested).
-		p2wshPkScriptHash := sha256.Sum256(pks)
-		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
-
-		builder := txscript.NewScriptBuilder()
-
-		builder.AddOp(txscript.OP_HASH160)
-		builder.AddData(hash160)
-		builder.AddOp(txscript.OP_EQUAL)
-
-		pkScript, err = builder.Script()
-		if err != nil {
-			return nil, err
-		}
-
-		// Generate a valid sigScript that will allow us to spend the
-		// p2sh output. The sigScript will contain only a single push of
-		// the p2wsh witness program corresponding to the matching
-		// public key of this address.
-		sigScript, err = txscript.NewScriptBuilder().
-			AddData(pks).
-			Script()
-		if err != nil {
-			return nil, err
-		}
-
-		address, err = btcutil.NewAddressScriptHash(
-			pkScript, chainParams,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-	case HtlcP2WSH:
-		pkScript, err = input.WitnessScriptHash(htlc.Script())
-		if err != nil {
-			return nil, err
-		}
-
-		address, err = btcutil.NewAddressWitnessScriptHash(
-			pkScript[2:],
-			chainParams,
-		)
-		if err != nil {
-			return nil, err
-		}
-	case HtlcP2TR:
-		// Confirm we have a v3 htlc.
-		var trHtlc *HtlcScriptV3
-		trHtlc, ok := htlc.(*HtlcScriptV3)
-		if !ok {
-			return nil, errors.New("taproot output selected for nontaproot htlc")
-		}
-
-		// Generate a tapscript address from our tree.
-		address, err = btcutil.NewAddressTaproot(
-			schnorr.SerializePubKey(trHtlc.TaprootKey), &chaincfg.RegressionNetParams,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Generate locking script.
-		pkScript, err = txscript.PayToAddrScript(address)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("unknown output type")
+	address, pkScript, sigScript, err := htlc.lockingConditions(
+		outputType, chainParams,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not get address: %w", err)
 	}
 
 	return &Htlc{
@@ -274,6 +205,79 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		Address:     address,
 		SigScript:   sigScript,
 	}, nil
+}
+
+// segwitV0LockingConditions provides the address, pkScript and sigScript (if
+// required) for the segwit v0 script and output type provided.
+func segwitV0LockingConditions(outputType HtlcOutputType,
+	chainParams *chaincfg.Params, script []byte) (btcutil.Address,
+	[]byte, []byte, error) {
+
+	switch outputType {
+	case HtlcNP2WSH:
+		pks, err := input.WitnessScriptHash(script)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Generate p2sh script for p2wsh (nested).
+		p2wshPkScriptHash := sha256.Sum256(pks)
+		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
+
+		builder := txscript.NewScriptBuilder()
+
+		builder.AddOp(txscript.OP_HASH160)
+		builder.AddData(hash160)
+		builder.AddOp(txscript.OP_EQUAL)
+
+		pkScript, err := builder.Script()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Generate a valid sigScript that will allow us to spend the
+		// p2sh output. The sigScript will contain only a single push of
+		// the p2wsh witness program corresponding to the matching
+		// public key of this address.
+		sigScript, err := txscript.NewScriptBuilder().
+			AddData(pks).
+			Script()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		address, err := btcutil.NewAddressScriptHash(
+			pkScript, chainParams,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		return address, pks, sigScript, nil
+
+	case HtlcP2WSH:
+		pkScript, err := input.WitnessScriptHash(script)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		address, err := btcutil.NewAddressWitnessScriptHash(
+			pkScript[2:],
+			chainParams,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Pay to witness script hash (segwit v0) does not need a
+		// sigScript (we provide it in the witness instead), so we
+		// return nil for our sigScript.
+		return address, pkScript, nil, nil
+
+	default:
+		return nil, nil, nil, fmt.Errorf("unexpected output type: %v",
+			outputType)
+	}
 }
 
 // GenSuccessWitness returns the success script to spend this htlc with
@@ -479,6 +483,14 @@ func (h *HtlcScriptV1) SuccessSequence() uint32 {
 	return 0
 }
 
+// lockingConditions return the address, pkScript and sigScript (if
+// required) for a htlc script.
+func (h *HtlcScriptV1) lockingConditions(htlcOutputType HtlcOutputType,
+	params *chaincfg.Params) (btcutil.Address, []byte, []byte, error) {
+
+	return segwitV0LockingConditions(htlcOutputType, params, h.script)
+}
+
 // HtlcScriptV2 encapsulates the htlc v2 script.
 type HtlcScriptV2 struct {
 	script    []byte
@@ -611,6 +623,14 @@ func (h *HtlcScriptV2) MaxTimeoutWitnessSize() int {
 // SuccessSequence returns the sequence to spend this htlc in the success case.
 func (h *HtlcScriptV2) SuccessSequence() uint32 {
 	return 1
+}
+
+// lockingConditions return the address, pkScript and sigScript (if
+// required) for a htlc script.
+func (h *HtlcScriptV2) lockingConditions(htlcOutputType HtlcOutputType,
+	params *chaincfg.Params) (btcutil.Address, []byte, []byte, error) {
+
+	return segwitV0LockingConditions(htlcOutputType, params, h.script)
 }
 
 // HtlcScriptV3 encapsulates the htlc v3 script.
@@ -815,4 +835,36 @@ func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
 // success case.
 func (h *HtlcScriptV3) SuccessSequence() uint32 {
 	return 1
+}
+
+// lockingConditions return the address, pkScript and sigScript (if required)
+// for a htlc script.
+func (h *HtlcScriptV3) lockingConditions(outputType HtlcOutputType,
+	chainParams *chaincfg.Params) (btcutil.Address, []byte, []byte, error) {
+
+	// HtlcV3 can only have taproot output type, because we utilize
+	// tapscript claim paths.
+	if outputType != HtlcP2TR {
+		return nil, nil, nil, fmt.Errorf("htlc v3 only supports P2TR "+
+			"outputs, got: %v", outputType)
+	}
+
+	// Generate a tapscript address from our tree.
+	address, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(h.TaprootKey),
+		chainParams,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Generate locking script.
+	pkScript, err := txscript.PayToAddrScript(address)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Taproot (segwit v1) does not need a sigScript (we provide it in the
+	// witness instead), so we return nil for our sigScript.
+	return address, pkScript, nil, nil
 }
