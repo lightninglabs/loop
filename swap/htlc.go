@@ -64,9 +64,6 @@ type HtlcScript interface {
 	// redeeming the htlc.
 	IsSuccessWitness(witness wire.TxWitness) bool
 
-	// Script returns the htlc script.
-	Script() []byte
-
 	// lockingConditions return the address, pkScript and sigScript (if
 	// required) for a htlc script.
 	lockingConditions(HtlcOutputType, *chaincfg.Params) (btcutil.Address,
@@ -80,9 +77,21 @@ type HtlcScript interface {
 	// timeout case witness.
 	MaxTimeoutWitnessSize() int
 
+	// TimeoutScript returns the redeem script required to unlock the htlc
+	// after timeout.
+	TimeoutScript() []byte
+
+	// SuccessScript returns the redeem script required to unlock the htlc
+	// using the preimage.
+	SuccessScript() []byte
+
 	// SuccessSequence returns the sequence to spend this htlc in the
 	// success case.
 	SuccessSequence() uint32
+
+	// SigHash is the signature hash to use for transactions spending from
+	// the htlc.
+	SigHash() txscript.SigHashType
 }
 
 // Htlc contains relevant htlc information from the receiver perspective.
@@ -290,8 +299,8 @@ func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) error {
 		if !ok {
 			return ErrInvalidOutputSelected
 		}
-		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript)
-		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript)
+		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript())
+		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript())
 		timeoutLeafHash := timeoutLeaf.TapHash()
 
 		tapscript := input.TapscriptPartialReveal(
@@ -321,8 +330,8 @@ func (h *Htlc) AddTimeoutToEstimator(estimator *input.TxWeightEstimator) error {
 		if !ok {
 			return ErrInvalidOutputSelected
 		}
-		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript)
-		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript)
+		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript())
+		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript())
 		successLeafHash := successLeaf.TapHash()
 
 		tapscript := input.TapscriptPartialReveal(
@@ -436,8 +445,19 @@ func (h *HtlcScriptV1) IsSuccessWitness(witness wire.TxWitness) bool {
 	return !isTimeoutTx
 }
 
-// Script returns the htlc script.
-func (h *HtlcScriptV1) Script() []byte {
+// TimeoutScript returns the redeem script required to unlock the htlc after
+// timeout.
+//
+// In the case of HtlcScriptV1, this is the full segwit v0 script.
+func (h *HtlcScriptV1) TimeoutScript() []byte {
+	return h.script
+}
+
+// SuccessScript returns the redeem script required to unlock the htlc using
+// the preimage.
+//
+// In the case of HtlcScriptV1, this is the full segwit v0 script.
+func (h *HtlcScriptV1) SuccessScript() []byte {
 	return h.script
 }
 
@@ -472,6 +492,11 @@ func (h *HtlcScriptV1) MaxTimeoutWitnessSize() int {
 // SuccessSequence returns the sequence to spend this htlc in the success case.
 func (h *HtlcScriptV1) SuccessSequence() uint32 {
 	return 0
+}
+
+// Sighash is the signature hash to use for transactions spending from the htlc.
+func (h *HtlcScriptV1) SigHash() txscript.SigHashType {
+	return txscript.SigHashAll
 }
 
 // lockingConditions return the address, pkScript and sigScript (if
@@ -577,8 +602,19 @@ func (h *HtlcScriptV2) GenTimeoutWitness(
 	return witnessStack, nil
 }
 
-// Script returns the htlc script.
-func (h *HtlcScriptV2) Script() []byte {
+// TimeoutScript returns the redeem script required to unlock the htlc after
+// timeout.
+//
+// In the case of HtlcScriptV2, this is the full segwit v0 script.
+func (h *HtlcScriptV2) TimeoutScript() []byte {
+	return h.script
+}
+
+// SuccessScript returns the redeem script required to unlock the htlc using
+// the preimage.
+//
+// In the case of HtlcScriptV2, this is the full segwit v0 script.
+func (h *HtlcScriptV2) SuccessScript() []byte {
 	return h.script
 }
 
@@ -616,6 +652,11 @@ func (h *HtlcScriptV2) SuccessSequence() uint32 {
 	return 1
 }
 
+// Sighash is the signature hash to use for transactions spending from the htlc.
+func (h *HtlcScriptV2) SigHash() txscript.SigHashType {
+	return txscript.SigHashAll
+}
+
 // lockingConditions return the address, pkScript and sigScript (if
 // required) for a htlc script.
 func (h *HtlcScriptV2) lockingConditions(htlcOutputType HtlcOutputType,
@@ -626,13 +667,13 @@ func (h *HtlcScriptV2) lockingConditions(htlcOutputType HtlcOutputType,
 
 // HtlcScriptV3 encapsulates the htlc v3 script.
 type HtlcScriptV3 struct {
-	// TimeoutScript is the final locking script for the timeout path which
+	// timeoutScript is the final locking script for the timeout path which
 	// is available to the sender after the set blockheight.
-	TimeoutScript []byte
+	timeoutScript []byte
 
-	// SuccessScript is the final locking script for the success path in
+	// successScript is the final locking script for the success path in
 	// which the receiver reveals the preimage.
-	SuccessScript []byte
+	successScript []byte
 
 	// InternalPubKey is the public key for the keyspend path which bypasses
 	// the above two locking scripts.
@@ -699,8 +740,8 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
 	)
 
 	return &HtlcScriptV3{
-		TimeoutScript:  timeoutPathScript,
-		SuccessScript:  successPathScript,
+		timeoutScript:  timeoutPathScript,
+		successScript:  successPathScript,
 		InternalPubKey: aggregateKey.PreTweakedKey,
 		TaprootKey:     taprootKey,
 		RootHash:       rootHash,
@@ -779,7 +820,7 @@ func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 func (h *HtlcScriptV3) genSuccessWitness(
 	receiverSig []byte, preimage lntypes.Preimage) (wire.TxWitness, error) {
 
-	controlBlockBytes, err := h.genControlBlock(h.TimeoutScript)
+	controlBlockBytes, err := h.genControlBlock(h.timeoutScript)
 	if err != nil {
 		return nil, err
 	}
@@ -787,7 +828,7 @@ func (h *HtlcScriptV3) genSuccessWitness(
 	return wire.TxWitness{
 		preimage[:],
 		receiverSig,
-		h.SuccessScript,
+		h.successScript,
 		controlBlockBytes,
 	}, nil
 }
@@ -797,14 +838,14 @@ func (h *HtlcScriptV3) genSuccessWitness(
 func (h *HtlcScriptV3) GenTimeoutWitness(
 	senderSig []byte) (wire.TxWitness, error) {
 
-	controlBlockBytes, err := h.genControlBlock(h.SuccessScript)
+	controlBlockBytes, err := h.genControlBlock(h.successScript)
 	if err != nil {
 		return nil, err
 	}
 
 	return wire.TxWitness{
 		senderSig,
-		h.TimeoutScript,
+		h.timeoutScript,
 		controlBlockBytes,
 	}, nil
 }
@@ -815,9 +856,20 @@ func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
 	return len(witness) == 4
 }
 
-// Script is not implemented, but necessary to conform to interface.
-func (h *HtlcScriptV3) Script() []byte {
-	return nil
+// TimeoutScript returns the redeem script required to unlock the htlc after
+// timeout.
+//
+// In the case of HtlcScriptV3, this is the timeout tapleaf.
+func (h *HtlcScriptV3) TimeoutScript() []byte {
+	return h.timeoutScript
+}
+
+// SuccessScript returns the redeem script required to unlock the htlc using
+// the preimage.
+//
+// In the case of HtlcScriptV3, this is the claim tapleaf.
+func (h *HtlcScriptV3) SuccessScript() []byte {
+	return h.successScript
 }
 
 // MaxSuccessWitnessSize returns the maximum witness size for the
@@ -862,6 +914,11 @@ func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
 // success case.
 func (h *HtlcScriptV3) SuccessSequence() uint32 {
 	return 1
+}
+
+// Sighash is the signature hash to use for transactions spending from the htlc.
+func (h *HtlcScriptV3) SigHash() txscript.SigHashType {
+	return txscript.SigHashDefault
 }
 
 // lockingConditions return the address, pkScript and sigScript (if required)

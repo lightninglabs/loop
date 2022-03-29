@@ -158,16 +158,17 @@ func TestHtlcV2(t *testing.T) {
 	)
 
 	signTx := func(tx *wire.MsgTx, pubkey *btcec.PublicKey,
-		signer *input.MockSigner) (input.Signature, error) {
+		signer *input.MockSigner, witnessScript []byte) (
+		input.Signature, error) {
 
 		signDesc := &input.SignDescriptor{
 			KeyDesc: keychain.KeyDescriptor{
 				PubKey: pubkey,
 			},
 
-			WitnessScript: htlc.Script(),
+			WitnessScript: witnessScript,
 			Output:        htlcOutput,
-			HashType:      txscript.SigHashAll,
+			HashType:      htlc.SigHash(),
 			SigHashes: txscript.NewTxSigHashes(
 				tx, prevOutFetcher,
 			),
@@ -189,6 +190,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.TxIn[0].Sequence = htlc.SuccessSequence()
 				sweepSig, err := signTx(
 					sweepTx, receiverPubKey, receiverSigner,
+					htlc.SuccessScript(),
 				)
 				require.NoError(t, err)
 
@@ -208,6 +210,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.TxIn[0].Sequence = 0
 				sweepSig, err := signTx(
 					sweepTx, receiverPubKey, receiverSigner,
+					htlc.SuccessScript(),
 				)
 				require.NoError(t, err)
 
@@ -226,6 +229,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.LockTime = testCltvExpiry - 1
 				sweepSig, err := signTx(
 					sweepTx, senderPubKey, senderSigner,
+					htlc.TimeoutScript(),
 				)
 				require.NoError(t, err)
 
@@ -244,6 +248,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.LockTime = testCltvExpiry
 				sweepSig, err := signTx(
 					sweepTx, senderPubKey, senderSigner,
+					htlc.TimeoutScript(),
 				)
 				require.NoError(t, err)
 
@@ -262,6 +267,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.LockTime = testCltvExpiry
 				sweepSig, err := signTx(
 					sweepTx, receiverPubKey, receiverSigner,
+					htlc.TimeoutScript(),
 				)
 				require.NoError(t, err)
 
@@ -297,6 +303,7 @@ func TestHtlcV2(t *testing.T) {
 				sweepTx.LockTime = testCltvExpiry
 				sweepSig, err := signTx(
 					sweepTx, senderPubKey, senderSigner,
+					htlc.TimeoutScript(),
 				)
 				require.NoError(t, err)
 
@@ -390,7 +397,7 @@ func TestHtlcV3(t *testing.T) {
 
 		sig, err := txscript.RawTxInTapscriptSignature(
 			tx, hashCache, 0, value, p2trPkScript, leaf,
-			txscript.SigHashDefault, privateKey,
+			htlc.SigHash(), privateKey,
 		)
 		require.NoError(t, err)
 
@@ -415,7 +422,7 @@ func TestHtlcV3(t *testing.T) {
 				sig := signTx(
 					tx, receiverPrivKey,
 					txscript.NewBaseTapLeaf(
-						trHtlc.SuccessScript,
+						trHtlc.SuccessScript(),
 					),
 				)
 				witness, err := htlc.genSuccessWitness(
@@ -439,7 +446,7 @@ func TestHtlcV3(t *testing.T) {
 				sig := signTx(
 					tx, receiverPrivKey,
 					txscript.NewBaseTapLeaf(
-						trHtlc.SuccessScript,
+						trHtlc.SuccessScript(),
 					),
 				)
 				witness, err := htlc.genSuccessWitness(
@@ -463,7 +470,7 @@ func TestHtlcV3(t *testing.T) {
 				sig := signTx(
 					tx, senderPrivKey,
 					txscript.NewBaseTapLeaf(
-						trHtlc.TimeoutScript,
+						trHtlc.TimeoutScript(),
 					),
 				)
 
@@ -486,7 +493,7 @@ func TestHtlcV3(t *testing.T) {
 				sig := signTx(
 					tx, senderPrivKey,
 					txscript.NewBaseTapLeaf(
-						trHtlc.TimeoutScript,
+						trHtlc.TimeoutScript(),
 					),
 				)
 
@@ -509,7 +516,7 @@ func TestHtlcV3(t *testing.T) {
 				sig := signTx(
 					tx, receiverPrivKey,
 					txscript.NewBaseTapLeaf(
-						trHtlc.TimeoutScript,
+						trHtlc.TimeoutScript(),
 					),
 				)
 

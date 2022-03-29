@@ -1240,6 +1240,9 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 		return s.htlc.GenSuccessWitness(sig, s.Preimage)
 	}
 
+	// Retrieve the full script required to unlock the output.
+	redeemScript := s.htlc.SuccessScript()
+
 	remainingBlocks := s.CltvExpiry - s.height
 	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
 	preimageRevealed := s.state == loopdb.StatePreimageRevealed
@@ -1296,7 +1299,8 @@ func (s *loopOutSwap) sweep(ctx context.Context,
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, s.htlc.SuccessSequence(), s.htlc, htlcOutpoint,
-		s.ReceiverKey, witnessFunc, htlcValue, fee, s.DestAddr,
+		s.ReceiverKey, redeemScript, witnessFunc, htlcValue, fee,
+		s.DestAddr,
 	)
 	if err != nil {
 		return err
