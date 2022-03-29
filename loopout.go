@@ -209,7 +209,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	swapKit.lastUpdateTime = initiationTime
 
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := swapKit.getHtlc(swap.HtlcP2TR)
 	if err != nil {
 		return nil, err
 	}
@@ -280,8 +280,14 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 		&pend.Contract.SwapContract, session,
 	)
 
+	// Default to using P2WSH for legacy HTLCv2, and P2TR for HTLCV3.
+	outputType := swap.HtlcP2WSH
+	if pend.Contract.ProtocolVersion >= loopdb.ProtocolVersionHtlcV3 {
+		outputType = swap.HtlcP2TR
+	}
+
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := swapKit.getHtlc(outputType)
 	if err != nil {
 		return nil, err
 	}

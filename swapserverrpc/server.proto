@@ -92,6 +92,9 @@ enum ProtocolVersion {
     // The client may ask the server to use a custom routing helper plugin in
     // order to enhance off-chain payments corresponding to a swap.
     ROUTING_PLUGIN = 9;
+
+    // The client will use the new v3 (taproot) HTLC scripts.
+    HTLC_V3 = 10;
 }
 
 message ServerLoopOutRequest {
