@@ -16,16 +16,8 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
-* Loop client now supports optional routing plugins to improve off-chain payment
-  reliability. One such plugin that the client implemenets will gradually prefer
-  increasingly more expensive routes in case payments using cheap routes time out.
-  Note that with this addition the minimum required LND version is LND 0.14.2-beta.
-
 #### Breaking Changes
 
 #### Bug Fixes
-
-* Loop now supports being hooked up to a remote signing pair of `lnd` nodes,
-  as long as `lnd` is `v0.14.3-beta` or later.
 
 #### Maintenance
