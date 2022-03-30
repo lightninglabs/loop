@@ -72,7 +72,7 @@ func (s *Sweeper) CreateSweepTx(
 	}
 
 	rawSigs, err := s.Lnd.Signer.SignOutputRaw(
-		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
+		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc}, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("signing: %v", err)

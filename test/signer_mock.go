@@ -14,10 +14,14 @@ import (
 
 type mockSigner struct {
 	lnd *LndMockServices
+
+	// TODO: remove and mock out all musig calls.
+	lndclient.SignerClient
 }
 
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor, _ []*wire.TxOut) (
+	[][]byte, error) {
 
 	s.lnd.SignOutputRawChannel <- SignOutputRawRequest{
 		Tx:              tx,
