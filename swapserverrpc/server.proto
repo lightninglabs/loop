@@ -135,6 +135,10 @@ message ServerLoopOutResponse {
 
     // A human-readable message from the loop server.
     string server_message = 5;
+
+    // Nonce is the server's public nonce that can be used to produce musig2
+    // signatures.
+    bytes nonce = 6;
 }
 
 message ServerLoopOutQuoteRequest {

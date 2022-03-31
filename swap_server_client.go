@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/loopdb"
@@ -386,11 +387,20 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		return nil, fmt.Errorf("invalid sender key: %v", err)
 	}
 
+	if len(swapResp.Nonce) != musig2.PubNonceSize {
+		return nil, fmt.Errorf("unexpected nonce length: %v",
+			len(swapResp.Nonce))
+	}
+
+	var nonce [musig2.PubNonceSize]byte
+	copy(nonce[:], swapResp.Nonce)
+
 	return &newLoopOutResponse{
 		swapInvoice:   swapResp.SwapInvoice,
 		prepayInvoice: swapResp.PrepayInvoice,
 		senderKey:     senderKey,
 		serverMessage: swapResp.ServerMessage,
+		nonce:         nonce,
 	}, nil
 }
 
@@ -837,6 +847,7 @@ type newLoopOutResponse struct {
 	prepayInvoice string
 	senderKey     [33]byte
 	serverMessage string
+	nonce         [musig2.PubNonceSize]byte
 }
 
 type newLoopInResponse struct {
