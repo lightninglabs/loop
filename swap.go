@@ -76,8 +76,8 @@ func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
 	return swap.NewHtlc(
 		GetHtlcScriptVersion(s.contract.ProtocolVersion),
 		s.contract.CltvExpiry, s.contract.SenderKey,
-		s.contract.ReceiverKey, s.hash, outputType,
-		s.swapConfig.lnd.ChainParams,
+		s.contract.ReceiverKey, s.musig2Session.CombinedKey, s.hash,
+		outputType, s.swapConfig.lnd.ChainParams,
 	)
 }
 

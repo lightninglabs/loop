@@ -137,7 +137,7 @@ func TestHtlcV2(t *testing.T) {
 	// Create the htlc.
 	htlc, err := NewHtlc(
 		HtlcV2, testCltvExpiry,
-		senderKey, receiverKey, hash,
+		senderKey, receiverKey, nil, hash,
 		HtlcP2WSH, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)

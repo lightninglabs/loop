@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
@@ -13,6 +14,10 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
+
+// ErrNoSharedKey is returned when a script version does not support use of a
+// shared key.
+var ErrNoSharedKey = errors.New("shared key not supported for script version")
 
 // HtlcOutputType defines the output type of the htlc that is published.
 type HtlcOutputType uint8
@@ -90,7 +95,7 @@ var (
 	// script size.
 	QuoteHtlc, _ = NewHtlc(
 		HtlcV2,
-		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
+		^int32(0), quoteKey, quoteKey, nil, quoteHash, HtlcP2WSH,
 		&chaincfg.MainNetParams,
 	)
 
@@ -113,7 +118,7 @@ func (h HtlcOutputType) String() string {
 
 // NewHtlc returns a new instance.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
-	senderKey, receiverKey [33]byte,
+	senderKey, receiverKey [33]byte, sharedKey *btcec.PublicKey,
 	hash lntypes.Hash, outputType HtlcOutputType,
 	chainParams *chaincfg.Params) (*Htlc, error) {
 
@@ -124,11 +129,19 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 
 	switch version {
 	case HtlcV1:
+		if sharedKey != nil {
+			return nil, ErrNoSharedKey
+		}
+
 		htlc, err = newHTLCScriptV1(
 			cltvExpiry, senderKey, receiverKey, hash,
 		)
 
 	case HtlcV2:
+		if sharedKey != nil {
+			return nil, ErrNoSharedKey
+		}
+
 		htlc, err = newHTLCScriptV2(
 			cltvExpiry, senderKey, receiverKey, hash,
 		)

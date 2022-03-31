@@ -195,7 +195,8 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		htlc, err := swap.NewHtlc(
 			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
+			swp.Contract.ReceiverKey, nil,
+			swp.Hash, swap.HtlcP2WSH,
 			s.lndServices.ChainParams,
 		)
 		if err != nil {
@@ -216,8 +217,8 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		htlcNP2WSH, err := swap.NewHtlc(
 			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcNP2WSH,
-			s.lndServices.ChainParams,
+			swp.Contract.ReceiverKey, nil,
+			swp.Hash, swap.HtlcNP2WSH, s.lndServices.ChainParams,
 		)
 		if err != nil {
 			return nil, err
@@ -226,8 +227,8 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 		htlcP2WSH, err := swap.NewHtlc(
 			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
-			s.lndServices.ChainParams,
+			swp.Contract.ReceiverKey, nil,
+			swp.Hash, swap.HtlcP2WSH, s.lndServices.ChainParams,
 		)
 		if err != nil {
 			return nil, err
