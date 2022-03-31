@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/mempool"
@@ -19,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -248,9 +250,17 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		},
 	}
 
+	// TODO - add nonce to server reponse and add to session
+	session, err := swap.NewMusig2Session(
+		globalCtx, cfg.lnd, keyDesc, swapResp.receiverKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	swapKit := newSwapKit(
 		swapHash, swap.TypeIn,
-		cfg, &contract.SwapContract,
+		cfg, &contract.SwapContract, session,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
@@ -349,16 +359,34 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 
 // resumeLoopInSwap returns a swap object representing a pending swap that has
 // been restored from the database.
-func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
+func resumeLoopInSwap(ctx context.Context, cfg *swapConfig,
 	pend *loopdb.LoopIn) (*loopInSwap, error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
 	log.Infof("Resuming loop in swap %v", hash)
 
+	pubkey, err := btcec.ParsePubKey(pend.Contract.SenderKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	keyDesc := &keychain.KeyDescriptor{
+		PubKey: pubkey,
+		// TODO - NB! get locator for key, otherwise we won't resume
+		// session with the right key.
+		KeyLocator: keychain.KeyLocator{},
+	}
+	session, err := swap.NewMusig2Session(
+		ctx, cfg.lnd, keyDesc, pend.Contract.ReceiverKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	swapKit := newSwapKit(
 		hash, swap.TypeIn, cfg,
-		&pend.Contract.SwapContract,
+		&pend.Contract.SwapContract, session,
 	)
 
 	swap := &loopInSwap{

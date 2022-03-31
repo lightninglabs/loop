@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -20,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -153,6 +156,22 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		confs = loopdb.DefaultLoopOutHtlcConfirmations
 	}
 
+	// Create a musig session using the key and nonce shared from the
+	// server.
+	var serverNonce [musig2.PubNonceSize]byte
+	copy(serverNonce[:], swapResp.nonce[:])
+
+	opt := lndclient.MusigNonceOpt([][musig2.PubNonceSize]byte{
+		serverNonce,
+	})
+
+	session, err := swap.NewMusig2Session(
+		globalCtx, cfg.lnd, keyDesc, swapResp.senderKey, opt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Instantiate a struct that contains all required data to start the
 	// swap.
 	initiationTime := time.Now()
@@ -184,7 +203,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	swapKit := newSwapKit(
 		swapHash, swap.TypeOut,
-		cfg, &contract.SwapContract,
+		cfg, &contract.SwapContract, session,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
@@ -238,9 +257,27 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 
 	log.Infof("Resuming loop out swap %v", hash)
 
+	pubkey, err := btcec.ParsePubKey(pend.Contract.ReceiverKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	keyDesc := &keychain.KeyDescriptor{
+		PubKey: pubkey,
+		// TODO - get key locator or we will resume with the wrong
+		// key!!
+		KeyLocator: keychain.KeyLocator{},
+	}
+	session, err := swap.NewMusig2Session(
+		reqContext, cfg.lnd, keyDesc, pend.Contract.SenderKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	swapKit := newSwapKit(
 		hash, swap.TypeOut, cfg,
-		&pend.Contract.SwapContract,
+		&pend.Contract.SwapContract, session,
 	)
 
 	// Create the htlc.

@@ -28,10 +28,13 @@ type swapKit struct {
 	swapType swap.Type
 
 	swapConfig
+
+	musig2Session *lndclient.MuSig2Session
 }
 
 func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
-	contract *loopdb.SwapContract) *swapKit {
+	contract *loopdb.SwapContract,
+	session *lndclient.MuSig2Session) *swapKit {
 
 	log := &swap.PrefixLog{
 		Hash:   hash,
@@ -39,12 +42,13 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 	}
 
 	return &swapKit{
-		swapConfig: *cfg,
-		hash:       hash,
-		log:        log,
-		state:      loopdb.StateInitiated,
-		contract:   contract,
-		swapType:   swapType,
+		swapConfig:    *cfg,
+		hash:          hash,
+		log:           log,
+		state:         loopdb.StateInitiated,
+		contract:      contract,
+		swapType:      swapType,
+		musig2Session: session,
 	}
 }
 
