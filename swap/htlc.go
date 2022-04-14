@@ -141,18 +141,18 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		return nil, err
 	}
 
-	p2wshPkScript, err := input.WitnessScriptHash(htlc.Script())
-	if err != nil {
-		return nil, err
-	}
-
 	var pkScript, sigScript []byte
 	var address btcutil.Address
 
 	switch outputType {
 	case HtlcNP2WSH:
+		pkScript, err = input.WitnessScriptHash(htlc.Script())
+		if err != nil {
+			return nil, err
+		}
+
 		// Generate p2sh script for p2wsh (nested).
-		p2wshPkScriptHash := sha256.Sum256(p2wshPkScript)
+		p2wshPkScriptHash := sha256.Sum256(pkScript)
 		hash160 := input.Ripemd160H(p2wshPkScriptHash[:])
 
 		builder := txscript.NewScriptBuilder()
@@ -161,7 +161,7 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		builder.AddData(hash160)
 		builder.AddOp(txscript.OP_EQUAL)
 
-		pkScript, err = builder.Script()
+		nestedPkScript, err := builder.Script()
 		if err != nil {
 			return nil, err
 		}
@@ -171,24 +171,27 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		// the p2wsh witness program corresponding to the matching
 		// public key of this address.
 		sigScript, err = txscript.NewScriptBuilder().
-			AddData(p2wshPkScript).
+			AddData(pkScript).
 			Script()
 		if err != nil {
 			return nil, err
 		}
 
 		address, err = btcutil.NewAddressScriptHash(
-			p2wshPkScript, chainParams,
+			nestedPkScript, chainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 	case HtlcP2WSH:
-		pkScript = p2wshPkScript
+		pkScript, err = input.WitnessScriptHash(htlc.Script())
+		if err != nil {
+			return nil, err
+		}
 
 		address, err = btcutil.NewAddressWitnessScriptHash(
-			p2wshPkScript[2:],
+			pkScript[2:],
 			chainParams,
 		)
 		if err != nil {
