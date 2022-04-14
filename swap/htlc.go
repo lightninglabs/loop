@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 
+	btcec "github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -24,6 +27,9 @@ const (
 	// HtlcNP2WSH is a nested pay-to-witness-script-hash output that can be
 	// paid to be legacy wallets.
 	HtlcNP2WSH
+
+	// HtlcP2TR is a pay-to-taproot output with three separate spend paths.
+	HtlcP2TR
 )
 
 // ScriptVersion defines the HTLC script version.
@@ -35,17 +41,22 @@ const (
 
 	// HtlcV2 refers to the improved version of the HTLC script.
 	HtlcV2
+
+	// HtlcV3 refers to an upgraded version of HtlcV2 implemented with
+	// tapscript.
+	HtlcV3
 )
 
 // htlcScript defines an interface for the different HTLC implementations.
 type HtlcScript interface {
 	// genSuccessWitness returns the success script to spend this htlc with
 	// the preimage.
-	genSuccessWitness(receiverSig []byte, preimage lntypes.Preimage) wire.TxWitness
+	genSuccessWitness(receiverSig []byte,
+		preimage lntypes.Preimage) (wire.TxWitness, error)
 
 	// GenTimeoutWitness returns the timeout script to spend this htlc after
 	// timeout.
-	GenTimeoutWitness(senderSig []byte) wire.TxWitness
+	GenTimeoutWitness(senderSig []byte) (wire.TxWitness, error)
 
 	// IsSuccessWitness checks whether the given stack is valid for
 	// redeeming the htlc.
@@ -90,7 +101,7 @@ var (
 	// script size.
 	QuoteHtlc, _ = NewHtlc(
 		HtlcV2,
-		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
+		^int32(0), quoteKey, quoteKey, nil, quoteHash, HtlcP2WSH,
 		&chaincfg.MainNetParams,
 	)
 
@@ -111,9 +122,10 @@ func (h HtlcOutputType) String() string {
 	}
 }
 
-// NewHtlc returns a new instance.
+// NewHtlc returns a new instance. For V1 and V2 scripts, receiver and sender
+// keys are expected to be in compressed format.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
-	senderKey, receiverKey [33]byte,
+	senderKey, receiverKey [33]byte, sharedKey *btcec.PublicKey,
 	hash lntypes.Hash, outputType HtlcOutputType,
 	chainParams *chaincfg.Params) (*Htlc, error) {
 
@@ -131,6 +143,12 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 	case HtlcV2:
 		htlc, err = newHTLCScriptV2(
 			cltvExpiry, senderKey, receiverKey, hash,
+		)
+
+	case HtlcV3:
+		htlc, err = newHTLCScriptV3(
+			cltvExpiry, senderKey, receiverKey,
+			sharedKey, hash,
 		)
 
 	default:
@@ -197,6 +215,30 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 		if err != nil {
 			return nil, err
 		}
+
+	case HtlcP2TR:
+		// Confirm we have a v3 htlc.
+		trHtlc, ok := htlc.(*HtlcScriptV3)
+		if !ok {
+			return nil, errors.New(
+				"taproot output selected for non taproot htlc",
+			)
+		}
+
+		// Generate a tapscript address from our HTLC's taptree.
+		address, err = btcutil.NewAddressTaproot(
+			schnorr.SerializePubKey(trHtlc.TaprootKey), chainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Generate locking script.
+		pkScript, err = txscript.PayToAddrScript(address)
+		if err != nil {
+			return nil, err
+		}
+
 	default:
 		return nil, errors.New("unknown output type")
 	}
@@ -222,7 +264,7 @@ func (h *Htlc) GenSuccessWitness(receiverSig []byte,
 		return nil, errors.New("preimage doesn't match hash")
 	}
 
-	return h.genSuccessWitness(receiverSig, preimage), nil
+	return h.genSuccessWitness(receiverSig, preimage)
 }
 
 // AddSuccessToEstimator adds a successful spend to a weight estimator.
@@ -312,26 +354,27 @@ func newHTLCScriptV1(cltvExpiry int32, senderHtlcKey,
 // genSuccessWitness returns the success script to spend this htlc with
 // the preimage.
 func (h *HtlcScriptV1) genSuccessWitness(receiverSig []byte,
-	preimage lntypes.Preimage) wire.TxWitness {
+	preimage lntypes.Preimage) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = append(receiverSig, byte(txscript.SigHashAll))
 	witnessStack[1] = preimage[:]
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV1) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
+func (h *HtlcScriptV1) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = append(senderSig, byte(txscript.SigHashAll))
 	witnessStack[1] = []byte{0}
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // IsSuccessWitness checks whether the given stack is valid for redeeming the
@@ -446,14 +489,14 @@ func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
 // genSuccessWitness returns the success script to spend this htlc with
 // the preimage.
 func (h *HtlcScriptV2) genSuccessWitness(receiverSig []byte,
-	preimage lntypes.Preimage) wire.TxWitness {
+	preimage lntypes.Preimage) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 3)
 	witnessStack[0] = preimage[:]
 	witnessStack[1] = append(receiverSig, byte(txscript.SigHashAll))
 	witnessStack[2] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // IsSuccessWitness checks whether the given stack is valid for redeeming the
@@ -466,7 +509,8 @@ func (h *HtlcScriptV2) IsSuccessWitness(witness wire.TxWitness) bool {
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV2) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
+func (h *HtlcScriptV2) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
 
 	witnessStack := make(wire.TxWitness, 4)
 	witnessStack[0] = append(senderSig, byte(txscript.SigHashAll))
@@ -474,7 +518,7 @@ func (h *HtlcScriptV2) GenTimeoutWitness(senderSig []byte) wire.TxWitness {
 	witnessStack[2] = []byte{}
 	witnessStack[3] = h.script
 
-	return witnessStack
+	return witnessStack, nil
 }
 
 // Script returns the htlc script.
@@ -513,5 +557,241 @@ func (h *HtlcScriptV2) MaxTimeoutWitnessSize() int {
 
 // SuccessSequence returns the sequence to spend this htlc in the success case.
 func (h *HtlcScriptV2) SuccessSequence() uint32 {
+	return 1
+}
+
+// HtlcScriptV3 encapsulates the htlc v3 script.
+type HtlcScriptV3 struct {
+	// The final locking script for the timeout path which is available to
+	// the sender after the set blockheight.
+	TimeoutScript []byte
+
+	// The final locking script for the success path in which the receiver
+	// reveals the preimage.
+	SuccessScript []byte
+
+	// The public key for the keyspend path which bypasses the above two
+	// locking scripts.
+	InternalPubKey *btcec.PublicKey
+
+	// The taproot public key which is created with the above 3 inputs.
+	TaprootKey *btcec.PublicKey
+}
+
+// newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
+func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
+	receiverHtlcKey [33]byte, sharedKey *btcec.PublicKey,
+	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+
+	receiverPubKey, err := btcec.ParsePubKey(
+		receiverHtlcKey[:],
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	senderPubKey, err := btcec.ParsePubKey(
+		senderHtlcKey[:],
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var schnorrSenderKey, schnorrReceiverKey [32]byte
+	copy(schnorrSenderKey[:], schnorr.SerializePubKey(senderPubKey))
+	copy(schnorrReceiverKey[:], schnorr.SerializePubKey(receiverPubKey))
+
+	// Create our success path script, we'll use this separately
+	// to generate the success path leaf.
+	successPathScript, err := GenSuccessPathScript(
+		schnorrReceiverKey, swapHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create our timeout path leaf, we'll use this separately
+	// to generate the timeout path leaf.
+	timeoutPathScript, err := GenTimeoutPathScript(
+		schnorrSenderKey, int64(cltvExpiry),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Assemble our taproot script tree from our leaves.
+	tree := txscript.AssembleTaprootScriptTree(
+		txscript.NewBaseTapLeaf(successPathScript),
+		txscript.NewBaseTapLeaf(timeoutPathScript),
+	)
+
+	rootHash := tree.RootNode.TapHash()
+
+	// Calculate top level taproot key.
+	taprootKey := txscript.ComputeTaprootOutputKey(
+		sharedKey, rootHash[:],
+	)
+
+	return &HtlcScriptV3{
+		TimeoutScript:  timeoutPathScript,
+		SuccessScript:  successPathScript,
+		InternalPubKey: sharedKey,
+		TaprootKey:     taprootKey,
+	}, nil
+}
+
+// GenTimeoutPathScript constructs an HtlcScript for the timeout payment path.
+// Largest possible bytesize of the script is 32 + 1 + 2 + 1 = 36.
+//
+//	<senderHtlcKey> OP_CHECKSIGVERIFY <cltvExpiry> OP_CHECKLOCKTIMEVERIFY
+func GenTimeoutPathScript(
+	senderHtlcKey [32]byte, cltvExpiry int64) ([]byte, error) {
+
+	builder := txscript.NewScriptBuilder()
+	builder.AddData(senderHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddInt64(cltvExpiry)
+	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
+	return builder.Script()
+}
+
+// GenSuccessPathScript constructs an HtlcScript for the success payment path.
+// Largest possible bytesize of the script is 32 + 5*1 + 20 + 3*1 = 60.
+//
+//	<receiverHtlcKey> OP_CHECKSIGVERIFY
+//	OP_SIZE 32 OP_EQUALVERIFY
+//	OP_HASH160 <ripemd160h(swapHash)> OP_EQUALVERIFY
+//	1 OP_CHECKSEQUENCEVERIFY
+func GenSuccessPathScript(
+	receiverHtlcKey [32]byte, swapHash lntypes.Hash) ([]byte, error) {
+	builder := txscript.NewScriptBuilder()
+
+	builder.AddData(receiverHtlcKey[:])
+	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
+	builder.AddOp(txscript.OP_SIZE)
+	builder.AddInt64(32)
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddOp(txscript.OP_HASH160)
+	builder.AddData(input.Ripemd160H(swapHash[:]))
+	builder.AddOp(txscript.OP_EQUALVERIFY)
+	builder.AddInt64(1)
+	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
+
+	return builder.Script()
+}
+
+// genControlBlock constructs the control block with the depth 1 leaf of the
+// unused path to compute the proof. For example if spending path a of (root ->
+// a, root -> b), genControlBlock(b.Script) would be used to create the
+// controlBlock for a.
+func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
+	var outputKeyYIsOdd bool
+
+	// Check for odd bit.
+	if h.TaprootKey.SerializeCompressed()[0] == secp.PubKeyFormatCompressedOdd {
+		outputKeyYIsOdd = true
+	}
+
+	// Generate proof with unused script path.
+	leaf := txscript.NewBaseTapLeaf(leafScript)
+	proof := leaf.TapHash()
+
+	controlBlock := txscript.ControlBlock{
+		InternalKey:     h.InternalPubKey,
+		OutputKeyYIsOdd: outputKeyYIsOdd,
+		LeafVersion:     txscript.BaseLeafVersion,
+		InclusionProof:  proof[:],
+	}
+
+	return controlBlock.ToBytes()
+}
+
+// genSuccessWitness returns the success script to spend this htlc with
+// the preimage.
+func (h *HtlcScriptV3) genSuccessWitness(
+	receiverSig []byte, preimage lntypes.Preimage) (wire.TxWitness, error) {
+
+	controlBlockBytes, err := h.genControlBlock(h.TimeoutScript)
+	if err != nil {
+		return nil, err
+	}
+
+	return wire.TxWitness{
+		preimage[:],
+		receiverSig,
+		h.SuccessScript,
+		controlBlockBytes,
+	}, nil
+}
+
+// GenTimeoutWitness returns the timeout script to spend this htlc after
+// timeout.
+func (h *HtlcScriptV3) GenTimeoutWitness(
+	senderSig []byte) (wire.TxWitness, error) {
+
+	controlBlockBytes, err := h.genControlBlock(h.SuccessScript)
+	if err != nil {
+		return nil, err
+	}
+
+	return wire.TxWitness{
+		senderSig,
+		h.TimeoutScript,
+		controlBlockBytes,
+	}, nil
+}
+
+// IsSuccessWitness checks whether the given stack is valid for
+// redeeming the htlc.
+func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
+	return len(witness) == 4
+}
+
+// Script is not implemented, but necessary to conform to interface.
+func (h *HtlcScriptV3) Script() []byte {
+	return nil
+}
+
+// MaxSuccessWitnessSize returns the maximum witness size for the
+// success case witness.
+func (h *HtlcScriptV3) MaxSuccessWitnessSize() int {
+	// Calculate maximum success witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - sigLength: 1 byte
+	// - sig: 64 bytes
+	// - preimage_length: 1 byte
+	// - preimage: 32 bytes
+	// - witness_script_length: 1 byte
+	// - witness_script: 60 bytes
+	// - control_block_length: 1 byte
+	// - control_block: 65 bytes
+	//	- leafVersionAndParity: 1
+	//	- internalPubkey: 32
+	//	- proof: 32
+	return 1 + 1 + 64 + 1 + 32 + 1 + 60 + 1 + 65
+}
+
+// MaxTimeoutWitnessSize returns the maximum witness size for the
+// timeout case witness.
+func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
+	// Calculate maximum timeout witness size
+	//
+	// - number_of_witness_elements: 1 byte
+	// - sigLength: 1 byte
+	// - sig: 64 bytes
+	// - witness_script_length: 1 byte
+	// - witness_script: 36 bytes
+	// - control_block_length: 1 byte
+	// - control_block: 65 bytes
+	//	- leafVersionAndParity: 1
+	//	- internalPubkey: 32
+	//	- proof: 32
+	return 1 + 1 + 64 + 1 + 36 + 1 + 65
+}
+
+// SuccessSequence returns the sequence to spend this htlc in the
+// success case.
+func (h *HtlcScriptV3) SuccessSequence() uint32 {
 	return 1
 }

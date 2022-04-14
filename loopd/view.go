@@ -54,7 +54,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
-			s.Hash, swap.HtlcP2WSH, chainParams,
+			nil, s.Hash, swap.HtlcP2WSH, chainParams,
 		)
 		if err != nil {
 			return err
@@ -106,7 +106,7 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
-			s.Hash, swap.HtlcNP2WSH, chainParams,
+			nil, s.Hash, swap.HtlcNP2WSH, chainParams,
 		)
 		if err != nil {
 			return err
