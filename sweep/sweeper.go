@@ -92,7 +92,7 @@ func (s *Sweeper) CreateSweepTx(
 // function that is expected to add the weight of the input to the weight
 // estimator.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
-	addInputEstimate func(*input.TxWeightEstimator),
+	addInputEstimate func(*input.TxWeightEstimator) error,
 	destAddr btcutil.Address, sweepConfTarget int32) (
 	btcutil.Amount, error) {
 
@@ -117,7 +117,11 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 		return 0, fmt.Errorf("unknown address type %T", destAddr)
 	}
 
-	addInputEstimate(&weightEstimate)
+	err = addInputEstimate(&weightEstimate)
+	if err != nil {
+		return 0, err
+	}
+
 	weight := weightEstimate.Weight()
 
 	return feeRate.FeeForWeight(int64(weight)), nil
