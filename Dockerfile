@@ -1,4 +1,4 @@
-FROM golang:1.17-alpine as builder
+FROM --platform=${BUILDPLATFORM} golang:1.17-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop
@@ -18,7 +18,7 @@ RUN apk add --no-cache --update alpine-sdk \
 &&  make install
 
 # Start a new, final image to reduce size.
-FROM alpine as final
+FROM --platform=${BUILDPLATFORM} alpine as final
 
 # Expose lnd ports (server, rpc).
 EXPOSE 8081 11010
