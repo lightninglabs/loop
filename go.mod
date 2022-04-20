@@ -1,23 +1,21 @@
 module github.com/lightninglabs/loop
 
 require (
-	github.com/btcsuite/btcd v0.22.0-beta.0.20220316175102-8d5c75c28923
-	github.com/btcsuite/btcd/btcec/v2 v2.1.3
-	github.com/btcsuite/btcd/btcutil v1.1.1
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
+	github.com/btcsuite/btcd v0.22.0-beta.0.20220207191057-4dc4ff7963b4
+	github.com/btcsuite/btcd/btcec/v2 v2.1.0
+	github.com/btcsuite/btcd/btcutil v1.1.0
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.17-beta.0.20220328072456-4a2632d0be38
+	github.com/lightninglabs/aperture v0.1.17-beta.0.20220325093943-42b9d4c1be7f
 	github.com/lightninglabs/lndclient v0.15.0-0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.0
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.14.1-beta.0.20220328072343-6e2214fd0fc0
+	github.com/lightningnetwork/lnd v0.14.1-beta.0.20220324135938-0dcaa511a249
 	github.com/lightningnetwork/lnd/cert v1.1.1
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
