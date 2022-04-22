@@ -2,6 +2,7 @@ package liquidity
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -266,29 +267,48 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 	// recommended swaps. Note that this differs from our set of expected
 	// swaps because we may get quotes for suggested swaps but then just
 	// log them.
+	var check bool
 	for _, expected := range step.quotesIn {
 		request := <-c.quoteRequestIn
-		assert.Equal(
-			c.t, expected.request.Amount, request.Amount,
-		)
 
-		assert.Equal(
-			c.t, expected.request.HtlcConfTarget,
-			request.HtlcConfTarget,
-		)
+		check = false
+		for _, expected := range step.quotesIn {
+			if expected.request.Amount == request.Amount {
+				check = true
+			}
+		}
+		assert.True(c.t, check)
+
+		check = false
+		for _, expected := range step.quotesIn {
+			if expected.request.HtlcConfTarget == request.HtlcConfTarget {
+				check = true
+			}
+		}
+		assert.True(c.t, check)
 
 		c.quotesIn <- expected.quote
 	}
 
 	for _, expected := range step.quotesOut {
 		request := <-c.quoteRequest
-		assert.Equal(
-			c.t, expected.request.Amount, request.Amount,
-		)
-		assert.Equal(
-			c.t, expected.request.SweepConfTarget,
-			request.SweepConfTarget,
-		)
+
+		check = false
+		for _, expected := range step.quotesOut {
+			if expected.request.Amount == request.Amount {
+				check = true
+			}
+		}
+		assert.True(c.t, check)
+
+		check = false
+		for _, expected := range step.quotesOut {
+			if expected.request.SweepConfTarget == request.SweepConfTarget {
+				check = true
+			}
+		}
+		assert.True(c.t, check)
+
 		c.quotes <- expected.quote
 	}
 
@@ -300,14 +320,27 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 		// provide the address that is obtained by the mock wallet kit.
 		actual.DestAddr = nil
 
-		assert.Equal(c.t, expected.request, actual)
+		check = false
+		for _, expected := range step.expectedOut {
+			if reflect.DeepEqual(expected.request, actual) {
+				check = true
+			}
+		}
+		assert.True(c.t, check)
+
 		c.loopOut <- expected.response
 	}
 
 	for _, expected := range step.expectedIn {
 		actual := <-c.inRequest
 
-		assert.Equal(c.t, expected.request, actual)
+		check = false
+		for _, expected := range step.expectedIn {
+			if reflect.DeepEqual(expected.request, actual) {
+				check = true
+			}
+		}
+		assert.Truef(c.t, check, "Expected:\n%v\n\nBut got:\n%v\n", expected.request, actual)
 
 		c.loopIn <- expected.response
 	}
