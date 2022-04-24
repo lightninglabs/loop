@@ -32,4 +32,7 @@ require (
 	gopkg.in/macaroon.v2 v2.1.0
 )
 
+// TODO(bhandras): remove when the next swapserverrpc is tagged.
+replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
+
 go 1.16

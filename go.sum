@@ -485,8 +485,6 @@ github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2/go.mod h1:ant
 github.com/lightninglabs/lndclient v0.15.0-0/go.mod h1:ORS/YFe9hAXlzN/Uj+gvTmrnXEml6yD6dWwzCjpTJyQ=
 github.com/lightninglabs/lndclient v0.15.0-6 h1:wFNmHtZSV54FzPZsPOX3/rwRIRUlLJLvWB760hzPCag=
 github.com/lightninglabs/lndclient v0.15.0-6/go.mod h1:bQrzrVGpBuaM2c6mapsAdbnhsXJydOU6gFAKvevEzgo=
-github.com/lightninglabs/loop/swapserverrpc v1.0.1 h1:z99vrpRgQ834FC/C0Qx8HLtE0RX0WBDa1gAu7yOGPsg=
-github.com/lightninglabs/loop/swapserverrpc v1.0.1/go.mod h1:imy1/sqnb70EEyBKMo4pHwwLBPW8uYahWZ8s+1Xcq1o=
 github.com/lightninglabs/neutrino v0.13.2/go.mod h1:Cv/v8oHiPhuGiGvGgO+rIMhwCwEdsQFu6as840i2afw=
 github.com/lightninglabs/neutrino v0.14.1 h1:ALFckeS3CPmWZmX75vxZaWvz2TUebuASH+CR4cqVo18=
 github.com/lightninglabs/neutrino v0.14.1/go.mod h1:SV9ccrw2m6t6UvJX8xB//W0Dv+LEwMTbjg4V/Fb5KwU=

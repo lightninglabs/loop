@@ -51,13 +51,17 @@ const (
 	// in order to enhance off-chain payments corresponding to a swap.
 	ProtocolVersionRoutingPlugin = 9
 
+	// ProtocolVersionHtlcV3 indicates that the client will now use the new
+	// HTLC v3 (P2TR) script for swaps.
+	ProtocolVersionHtlcV3 = 10
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
 	// CurrentRPCProtocolVersion defines the version of the RPC protocol
 	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_ROUTING_PLUGIN
+	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V3
 
 	// CurrentInternalProtocolVersion defines the RPC current protocol in
 	// the internal representation.
@@ -101,6 +105,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionRoutingPlugin:
 		return "Routing Plugin"
+
+	case ProtocolVersionHtlcV3:
+		return "HTLC V3"
 
 	default:
 		return "Unknown"
