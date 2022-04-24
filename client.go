@@ -213,35 +213,56 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 	}
 
 	for _, swp := range loopInSwaps {
-		htlcNP2WSH, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
-			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcNP2WSH,
-			s.lndServices.ChainParams,
-		)
-		if err != nil {
-			return nil, err
+		swapInfo := &SwapInfo{
+			SwapType:      swap.TypeIn,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlcP2WSH, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
-			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
-			s.lndServices.ChainParams,
+		scriptVersion := GetHtlcScriptVersion(
+			swp.Contract.SwapContract.ProtocolVersion,
 		)
-		if err != nil {
-			return nil, err
+
+		if scriptVersion == swap.HtlcV3 {
+			htlcP2TR, err := swap.NewHtlc(
+				swap.HtlcV3, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcP2TR,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			swapInfo.HtlcAddressP2TR = htlcP2TR.Address
+		} else {
+			htlcNP2WSH, err := swap.NewHtlc(
+				swap.HtlcV1, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcNP2WSH,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			htlcP2WSH, err := swap.NewHtlc(
+				swap.HtlcV2, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcP2WSH,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			swapInfo.HtlcAddressP2WSH = htlcP2WSH.Address
+			swapInfo.HtlcAddressNP2WSH = htlcNP2WSH.Address
 		}
 
-		swaps = append(swaps, &SwapInfo{
-			SwapType:          swap.TypeIn,
-			SwapContract:      swp.Contract.SwapContract,
-			SwapStateData:     swp.State(),
-			SwapHash:          swp.Hash,
-			LastUpdate:        swp.LastUpdateTime(),
-			HtlcAddressP2WSH:  htlcP2WSH.Address,
-			HtlcAddressNP2WSH: htlcNP2WSH.Address,
-		})
+		swaps = append(swaps, swapInfo)
 	}
 
 	return swaps, nil
@@ -546,11 +567,17 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
 	swapInfo := &LoopInSwapInfo{
-		SwapHash:          swap.hash,
-		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
-		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
-		ServerMessage:     initResult.serverMessage,
+		SwapHash:      swap.hash,
+		ServerMessage: initResult.serverMessage,
 	}
+
+	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
+		swapInfo.HtlcAddressNP2WSH = swap.htlcNP2WSH.Address
+		swapInfo.HtlcAddressP2WSH = swap.htlcP2WSH.Address
+	} else {
+		swapInfo.HtlcAddressP2TR = swap.htlcP2TR.Address
+	}
+
 	return swapInfo, nil
 }
 

@@ -73,6 +73,12 @@ func GetHtlcScriptVersion(
 	return swap.HtlcV3
 }
 
+// IsTaproot returns true if the swap referenced by the passed swap contract
+// uses the v3 (taproot) htlc.
+func IsTaprootSwap(swapContract *loopdb.SwapContract) bool {
+	return GetHtlcScriptVersion(swapContract.ProtocolVersion) == swap.HtlcV3
+}
+
 // getHtlc composes and returns the on-chain swap script.
 func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
 	return swap.NewHtlc(

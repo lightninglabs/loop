@@ -345,12 +345,17 @@ func logSwap(swap *looprpc.SwapStatus) {
 		fmt.Printf("%v %v %v %v -",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
 			swap.Type, swapState, btcutil.Amount(swap.Amt))
+
 		if swap.HtlcAddressP2Wsh != "" {
 			fmt.Printf(" P2WSH: %v", swap.HtlcAddressP2Wsh)
 		}
 
 		if swap.HtlcAddressNp2Wsh != "" {
 			fmt.Printf(" NP2WSH: %v", swap.HtlcAddressNp2Wsh)
+		}
+
+		if swap.HtlcAddressP2Tr != "" {
+			fmt.Printf(" P2TR: %v", swap.HtlcAddressP2Tr)
 		}
 	}
 

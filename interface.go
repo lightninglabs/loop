@@ -298,6 +298,9 @@ type LoopInSwapInfo struct { // nolint
 	// where the loop-in funds may be paid.
 	HtlcAddressNP2WSH btcutil.Address
 
+	// HtlcAddresP2TR contains the v3 (pay to taproot) htlc address.
+	HtlcAddressP2TR btcutil.Address
+
 	// ServerMessages is the human-readable message received from the loop
 	// server.
 	ServerMessage string
@@ -350,6 +353,10 @@ type SwapInfo struct {
 	// HtlcAddressNP2WSH stores the address of the NP2WSH (nested segwit)
 	// swap htlc. This is only used for external loop-in.
 	HtlcAddressNP2WSH btcutil.Address
+
+	// HtlcAddressP2TR stores the address of the P2TR (taproot) swap htlc.
+	// This is used for both internal and external loop-in and loop out.
+	HtlcAddressP2TR btcutil.Address
 
 	// ExternalHtlc is set to true for external loop-in swaps.
 	ExternalHtlc bool

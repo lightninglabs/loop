@@ -217,20 +217,33 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	}
 
 	var swapType clientrpc.SwapType
-	var htlcAddress, htlcAddressP2WSH, htlcAddressNP2WSH string
+	var (
+		htlcAddress       string
+		htlcAddressP2TR   string
+		htlcAddressP2WSH  string
+		htlcAddressNP2WSH string
+	)
 	var outGoingChanSet []uint64
 	var lastHop []byte
 
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
 		swapType = clientrpc.SwapType_LOOP_IN
-		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 
-		if loopSwap.ExternalHtlc {
-			htlcAddressNP2WSH = loopSwap.HtlcAddressNP2WSH.EncodeAddress()
-			htlcAddress = htlcAddressNP2WSH
+		if loopSwap.HtlcAddressP2TR != nil {
+			htlcAddressP2TR = loopSwap.HtlcAddressP2TR.EncodeAddress()
+			htlcAddress = htlcAddressP2TR
 		} else {
-			htlcAddress = htlcAddressP2WSH
+			htlcAddressP2WSH =
+				loopSwap.HtlcAddressP2WSH.EncodeAddress()
+
+			if loopSwap.ExternalHtlc {
+				htlcAddressNP2WSH =
+					loopSwap.HtlcAddressNP2WSH.EncodeAddress()
+				htlcAddress = htlcAddressNP2WSH
+			} else {
+				htlcAddress = htlcAddressP2WSH
+			}
 		}
 
 		if loopSwap.LastHop != nil {
@@ -257,6 +270,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		InitiationTime:    loopSwap.InitiationTime.UnixNano(),
 		LastUpdateTime:    loopSwap.LastUpdate.UnixNano(),
 		HtlcAddress:       htlcAddress,
+		HtlcAddressP2Tr:   htlcAddressP2TR,
 		HtlcAddressP2Wsh:  htlcAddressP2WSH,
 		HtlcAddressNp2Wsh: htlcAddressNP2WSH,
 		Type:              swapType,
@@ -618,8 +632,7 @@ func (s *swapClientServer) Probe(ctx context.Context,
 }
 
 func (s *swapClientServer) LoopIn(ctx context.Context,
-	in *clientrpc.LoopInRequest) (
-	*clientrpc.SwapResponse, error) {
+	in *clientrpc.LoopInRequest) (*clientrpc.SwapResponse, error) {
 
 	log.Infof("Loop in request received")
 
@@ -665,17 +678,25 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	}
 
 	response := &clientrpc.SwapResponse{
-		Id:               swapInfo.SwapHash.String(),
-		IdBytes:          swapInfo.SwapHash[:],
-		HtlcAddressP2Wsh: swapInfo.HtlcAddressP2WSH.String(),
-		ServerMessage:    swapInfo.ServerMessage,
+		Id:            swapInfo.SwapHash.String(),
+		IdBytes:       swapInfo.SwapHash[:],
+		ServerMessage: swapInfo.ServerMessage,
 	}
 
-	if req.ExternalHtlc {
-		response.HtlcAddressNp2Wsh = swapInfo.HtlcAddressNP2WSH.String()
-		response.HtlcAddress = response.HtlcAddressNp2Wsh // nolint:staticcheck
+	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
+		if req.ExternalHtlc {
+			np2wshAddr := swapInfo.HtlcAddressNP2WSH.String()
+			response.HtlcAddress = np2wshAddr
+			response.HtlcAddressNp2Wsh = np2wshAddr
+		} else {
+			p2wshAddr := swapInfo.HtlcAddressP2WSH.String()
+			response.HtlcAddress = p2wshAddr
+			response.HtlcAddressP2Wsh = p2wshAddr
+		}
 	} else {
-		response.HtlcAddress = response.HtlcAddressP2Wsh // nolint:staticcheck
+		p2trAddr := swapInfo.HtlcAddressP2TR.String()
+		response.HtlcAddress = p2trAddr
+		response.HtlcAddressP2Tr = p2trAddr
 	}
 
 	return response, nil
