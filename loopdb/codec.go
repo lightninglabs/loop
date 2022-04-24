@@ -1,7 +1,11 @@
 package loopdb
 
 import (
+	"bytes"
 	"fmt"
+
+	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // itob returns an 8-byte big endian representation of v.
@@ -39,4 +43,40 @@ func MarshalProtocolVersion(version ProtocolVersion) []byte {
 	byteOrder.PutUint32(versionBytes[:], uint32(version))
 
 	return versionBytes[:]
+}
+
+// MarshalKeyLocator marshals a keychain.KeyLocator to a byte slice.
+func MarshalKeyLocator(keyLocator keychain.KeyLocator) ([]byte, error) {
+	var (
+		scratch [8]byte
+		buf     bytes.Buffer
+	)
+
+	err := channeldb.EKeyLocator(&buf, &keyLocator, &scratch)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// UnmarshalKeyLocator unmarshals a keychain.KeyLocator from a byte slice.
+func UnmarshalKeyLocator(data []byte) (keychain.KeyLocator, error) {
+	if data == nil {
+		return keychain.KeyLocator{}, nil
+	}
+
+	var (
+		scratch    [8]byte
+		keyLocator keychain.KeyLocator
+	)
+
+	err := channeldb.DKeyLocator(
+		bytes.NewReader(data), &keyLocator, &scratch, 8,
+	)
+	if err != nil {
+		return keychain.KeyLocator{}, err
+	}
+
+	return keyLocator, nil
 }

@@ -1,8 +1,10 @@
 package loopdb
 
 import (
+	"math"
 	"testing"
 
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,5 +51,48 @@ func TestProtocolVersionMarshalUnMarshal(t *testing.T) {
 		version, err = UnmarshalProtocolVersion(invalidSlice)
 		require.Error(t, err, "expected invalid size")
 		require.Equal(t, ProtocolVersionUnrecorded, version)
+	}
+}
+
+// TestKeyLocatorMarshalUnMarshal tests that marshalling and unmarshalling
+// keychain.KeyLocator works correctly.
+func TestKeyLocatorMarshalUnMarshal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		keyLoc keychain.KeyLocator
+	}{
+		{
+			// Test that an empty keylocator is serialized and
+			// deserialized correctly.
+			keyLoc: keychain.KeyLocator{},
+		},
+		{
+			// Test that the max value keylocator is serialized and
+			// deserialized correctly.
+			keyLoc: keychain.KeyLocator{
+				Family: keychain.KeyFamily(math.MaxUint32),
+				Index:  math.MaxUint32,
+			},
+		},
+		{
+			// Test that an arbitrary keylocator is serialized and
+			// deserialized correctly.
+			keyLoc: keychain.KeyLocator{
+				Family: keychain.KeyFamily(5),
+				Index:  7,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		buf, err := MarshalKeyLocator(test.keyLoc)
+		require.NoError(t, err)
+
+		keyLoc, err := UnmarshalKeyLocator(buf)
+		require.NoError(t, err)
+		require.Equal(t, test.keyLoc, keyLoc)
 	}
 }
