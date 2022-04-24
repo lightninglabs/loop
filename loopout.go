@@ -183,14 +183,20 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit := newSwapKit(
-		swapHash, swap.TypeOut,
-		cfg, &contract.SwapContract,
+		swapHash, swap.TypeOut, cfg, &contract.SwapContract,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
 
+	scriptVersion := GetHtlcScriptVersion(loopdb.CurrentProtocolVersion())
+	outputType := swap.HtlcP2TR
+	if scriptVersion != swap.HtlcV3 {
+		// Default to using P2WSH for legacy htlcs.
+		outputType = swap.HtlcP2WSH
+	}
+
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := swapKit.getHtlc(outputType)
 	if err != nil {
 		return nil, err
 	}
@@ -239,12 +245,18 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 	log.Infof("Resuming loop out swap %v", hash)
 
 	swapKit := newSwapKit(
-		hash, swap.TypeOut, cfg,
-		&pend.Contract.SwapContract,
+		hash, swap.TypeOut, cfg, &pend.Contract.SwapContract,
 	)
 
+	scriptVersion := GetHtlcScriptVersion(pend.Contract.ProtocolVersion)
+	outputType := swap.HtlcP2TR
+	if scriptVersion != swap.HtlcV3 {
+		// Default to using P2WSH for legacy htlcs.
+		outputType = swap.HtlcP2WSH
+	}
+
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := swapKit.getHtlc(outputType)
 	if err != nil {
 		return nil, err
 	}

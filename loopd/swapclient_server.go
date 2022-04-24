@@ -150,13 +150,21 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		return nil, err
 	}
 
-	return &clientrpc.SwapResponse{
-		Id:               info.SwapHash.String(),
-		IdBytes:          info.SwapHash[:],
-		HtlcAddress:      info.HtlcAddressP2WSH.String(),
-		HtlcAddressP2Wsh: info.HtlcAddressP2WSH.String(),
-		ServerMessage:    info.ServerMessage,
-	}, nil
+	htlcAddress := info.HtlcAddress.String()
+	resp := &clientrpc.SwapResponse{
+		Id:            info.SwapHash.String(),
+		IdBytes:       info.SwapHash[:],
+		HtlcAddress:   htlcAddress,
+		ServerMessage: info.ServerMessage,
+	}
+
+	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
+		resp.HtlcAddressP2Wsh = htlcAddress
+	} else {
+		resp.HtlcAddressP2Tr = htlcAddress
+	}
+
+	return resp, nil
 }
 
 func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
@@ -252,8 +260,13 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 	case swap.TypeOut:
 		swapType = clientrpc.SwapType_LOOP_OUT
-		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
-		htlcAddress = htlcAddressP2WSH
+		if loopSwap.HtlcAddressP2WSH != nil {
+			htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+			htlcAddress = htlcAddressP2WSH
+		} else {
+			htlcAddressP2TR = loopSwap.HtlcAddressP2TR.EncodeAddress()
+			htlcAddress = htlcAddressP2TR
+		}
 
 		outGoingChanSet = loopSwap.OutgoingChanSet
 

@@ -312,9 +312,9 @@ type LoopOutSwapInfo struct { // nolint:revive
 	// SwapHash contains the sha256 hash of the swap preimage.
 	SwapHash lntypes.Hash
 
-	// HtlcAddressP2WSH contains the native segwit swap htlc address that
-	// the server will publish to.
-	HtlcAddressP2WSH btcutil.Address
+	// HtlcAddress contains the swap htlc address that the server will
+	// publish to.
+	HtlcAddress btcutil.Address
 
 	// ServerMessages is the human-readable message received from the loop
 	// server.

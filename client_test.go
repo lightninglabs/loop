@@ -159,6 +159,7 @@ func TestLoopOutResume(t *testing.T) {
 	storedVersion := []loopdb.ProtocolVersion{
 		loopdb.ProtocolVersionUnrecorded,
 		loopdb.ProtocolVersionHtlcV2,
+		loopdb.ProtocolVersionHtlcV3,
 	}
 
 	for _, version := range storedVersion {
@@ -283,9 +284,15 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	// Assert that the loopout htlc equals to the expected one.
 	scriptVersion := GetHtlcScriptVersion(protocolVersion)
+
+	outputType := swap.HtlcP2TR
+	if scriptVersion != swap.HtlcV3 {
+		outputType = swap.HtlcP2WSH
+	}
+
 	htlc, err := swap.NewHtlc(
 		scriptVersion, pendingSwap.Contract.CltvExpiry, senderKey,
-		receiverKey, hash, swap.HtlcP2WSH, &chaincfg.TestNet3Params,
+		receiverKey, hash, outputType, &chaincfg.TestNet3Params,
 	)
 	require.NoError(t, err)
 	require.Equal(t, htlc.PkScript, confIntent.PkScript)
@@ -345,8 +352,15 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 		ctx.T.Fatalf("client not sweeping from htlc tx")
 	}
 
-	preImageIndex := 1
-	if scriptVersion == swap.HtlcV2 {
+	var preImageIndex int
+	switch scriptVersion {
+	case swap.HtlcV1:
+		preImageIndex = 1
+
+	case swap.HtlcV2:
+		preImageIndex = 0
+
+	case swap.HtlcV3:
 		preImageIndex = 0
 	}
 

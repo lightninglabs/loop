@@ -24,6 +24,22 @@ import (
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
 // to the point where the off-chain payments are made.
 func TestLoopOutPaymentParameters(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testLoopOutPaymentParameters(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testLoopOutPaymentParameters(t)
+	})
+}
+
+// TestLoopOutPaymentParameters tests the first part of the loop out process up
+// to the point where the off-chain payments are made.
+func testLoopOutPaymentParameters(t *testing.T) {
+
 	defer test.Guard(t)()
 
 	// Set up test context objects.
@@ -144,6 +160,19 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 // TestLateHtlcPublish tests that the client is not revealing the preimage if
 // there are not enough blocks left.
 func TestLateHtlcPublish(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testLateHtlcPublish(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testLateHtlcPublish(t)
+	})
+}
+
+func testLateHtlcPublish(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -232,6 +261,19 @@ func TestLateHtlcPublish(t *testing.T) {
 // TestCustomSweepConfTarget ensures we are able to sweep a Loop Out HTLC with a
 // custom confirmation target.
 func TestCustomSweepConfTarget(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testCustomSweepConfTarget(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testCustomSweepConfTarget(t)
+	})
+}
+
+func testCustomSweepConfTarget(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -433,6 +475,19 @@ func TestCustomSweepConfTarget(t *testing.T) {
 // to start with a fee rate that will be too high, then progress to an
 // acceptable one.
 func TestPreimagePush(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testPreimagePush(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testPreimagePush(t)
+	})
+}
+
+func testPreimagePush(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -604,6 +659,19 @@ func TestPreimagePush(t *testing.T) {
 // we have revealed our preimage, demonstrating that we do not reveal our
 // preimage once we've reached our expiry height.
 func TestExpiryBeforeReveal(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testExpiryBeforeReveal(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testExpiryBeforeReveal(t)
+	})
+}
+
+func testExpiryBeforeReveal(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -719,6 +787,19 @@ func TestExpiryBeforeReveal(t *testing.T) {
 // TestFailedOffChainCancelation tests sending of a cancelation message to
 // the server when a swap fails due to off-chain routing.
 func TestFailedOffChainCancelation(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testFailedOffChainCancelation(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testFailedOffChainCancelation(t)
+	})
+}
+
+func testFailedOffChainCancelation(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()

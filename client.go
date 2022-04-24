@@ -192,24 +192,39 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 	swaps := make([]*SwapInfo, 0, len(loopInSwaps)+len(loopOutSwaps))
 
 	for _, swp := range loopOutSwaps {
+		swapInfo := &SwapInfo{
+			SwapType:      swap.TypeOut,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
+		}
+		scriptVersion := GetHtlcScriptVersion(
+			swp.Contract.ProtocolVersion,
+		)
+
+		outputType := swap.HtlcP2WSH
+		if scriptVersion == swap.HtlcV3 {
+			outputType = swap.HtlcP2TR
+		}
+
 		htlc, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
+			scriptVersion,
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
-			s.lndServices.ChainParams,
+			swp.Contract.ReceiverKey, swp.Hash,
+			outputType, s.lndServices.ChainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		swaps = append(swaps, &SwapInfo{
-			SwapType:         swap.TypeOut,
-			SwapContract:     swp.Contract.SwapContract,
-			SwapStateData:    swp.State(),
-			SwapHash:         swp.Hash,
-			LastUpdate:       swp.LastUpdateTime(),
-			HtlcAddressP2WSH: htlc.Address,
-		})
+		if outputType == swap.HtlcP2TR {
+			swapInfo.HtlcAddressP2TR = htlc.Address
+		} else {
+			swapInfo.HtlcAddressP2WSH = htlc.Address
+		}
+
+		swaps = append(swaps, swapInfo)
 	}
 
 	for _, swp := range loopInSwaps {
@@ -426,9 +441,9 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
 	return &LoopOutSwapInfo{
-		SwapHash:         swap.hash,
-		HtlcAddressP2WSH: swap.htlc.Address,
-		ServerMessage:    initResult.serverMessage,
+		SwapHash:      swap.hash,
+		HtlcAddress:   swap.htlc.Address,
+		ServerMessage: initResult.serverMessage,
 	}, nil
 }
 
