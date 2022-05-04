@@ -43,6 +43,8 @@ service SwapServer {
 
     rpc ReportRoutingResult (ReportRoutingResultReq)
         returns (ReportRoutingResultRes);
+
+    rpc MuSig2SignSweep (MuSig2SignSweepReq) returns (MuSig2SignSweepRes);
 }
 
 /**
@@ -525,4 +527,29 @@ message ReportRoutingResultReq {
 }
 
 message ReportRoutingResultRes {
+}
+
+message MuSig2SignSweepReq {
+    ProtocolVersion protocol_version = 1;
+
+    // The swap hash.
+    bytes swap_hash = 2;
+
+    // The payment address for the swap invoice, used to ensure that only the
+    // swap owner can obtain the partial signature.
+    bytes payment_address = 3;
+
+    // The local public nonce.
+    bytes nonce = 4;
+
+    // The sighash of the htlc sweep.
+    bytes sig_hash = 5;
+}
+
+message MuSig2SignSweepRes {
+    // The server side public nonce.
+    bytes nonce = 1;
+
+    // The partial signature of the server for the requested sighash.
+    bytes partial_signature = 2;
 }

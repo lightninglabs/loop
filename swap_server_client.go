@@ -121,6 +121,13 @@ type swapServerClient interface {
 		swapHash lntypes.Hash, paymentAddr [32]byte,
 		plugin RoutingPluginType, success bool, attempts int32,
 		totalTime int64) error
+
+	// MuSig2SignSweep calls the server to cooperatively sign the MuSig2
+	// htlc spend. Returns the server's nonce and partial signature.
+	MuSig2SignSweep(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sigHash []byte) (
+		[]byte, []byte, error)
 }
 
 type grpcSwapServerClient struct {
@@ -718,6 +725,32 @@ func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
 
 	_, err := s.server.ReportRoutingResult(rpcCtx, req)
 	return err
+}
+
+// MuSig2SignSweep calls the server to cooperatively sign the MuSig2 htlc
+// spend. Returns the server's nonce and partial signature.
+func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce []byte, sigHash []byte) (
+	[]byte, []byte, error) {
+
+	req := &looprpc.MuSig2SignSweepReq{
+		ProtocolVersion: looprpc.ProtocolVersion(protocolVersion),
+		SwapHash:        swapHash[:],
+		PaymentAddress:  paymentAddr[:],
+		Nonce:           nonce,
+		SigHash:         sigHash,
+	}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	res, err := s.server.MuSig2SignSweep(rpcCtx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return res.Nonce, res.PartialSignature, nil
 }
 
 func rpcRouteCancel(details *outCancelDetails) (

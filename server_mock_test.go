@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -252,4 +253,10 @@ func (s *serverMock) ReportRoutingResult(_ context.Context, _ lntypes.Hash,
 	_ [32]byte, _ RoutingPluginType, _ bool, _ int32, _ int64) error {
 
 	return nil
+}
+
+func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion,
+	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte, []byte, error) {
+
+	return nil, nil, nil
 }
