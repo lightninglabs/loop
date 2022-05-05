@@ -39,7 +39,6 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 // TestLoopOutPaymentParameters tests the first part of the loop out process up
 // to the point where the off-chain payments are made.
 func testLoopOutPaymentParameters(t *testing.T) {
-
 	defer test.Guard(t)()
 
 	// Set up test context objects.
@@ -372,13 +371,33 @@ func testCustomSweepConfTarget(t *testing.T) {
 	expiryChan <- time.Now()
 
 	// Expect a signing request for the HTLC success transaction.
-	<-ctx.Lnd.SignOutputRawChannel
+	if !IsTaprootSwap(&swap.SwapContract) {
+		<-ctx.Lnd.SignOutputRawChannel
+	}
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
 	status := <-statusChan
 	if status.State != loopdb.StatePreimageRevealed {
 		t.Fatalf("expected state %v, got %v",
 			loopdb.StatePreimageRevealed, status.State)
+	}
+
+	// When using taproot htlcs the flow is different as we do reveal the
+	// preimage before sweeping in order for the server to trust us with
+	// our MuSig2 signing attempts.
+	if IsTaprootSwap(&swap.SwapContract) {
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+
+		// Try MuSig2 signing first and fail it so that we go for a
+		// normal sweep.
+		for i := 0; i < maxMusigSweepRetries; i++ {
+			expiryChan <- time.Now()
+			preimage := <-server.preimagePush
+			require.Equal(t, swap.Preimage, preimage)
+		}
+
+		<-ctx.Lnd.SignOutputRawChannel
 	}
 
 	// assertSweepTx performs some sanity checks on a sweep transaction to
@@ -424,8 +443,10 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	// Once we have published an on chain sweep, we expect a preimage to
 	// have been pushed to our server.
-	preimage := <-server.preimagePush
-	require.Equal(t, swap.Preimage, preimage)
+	if !IsTaprootSwap(&swap.SwapContract) {
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+	}
 
 	// Now that we have pushed our preimage to the sever, we send an update
 	// indicating that our off chain htlc is settled. We do this so that
@@ -581,6 +602,36 @@ func testPreimagePush(t *testing.T) {
 	// preimage is not revealed, we also do not expect a preimage push.
 	expiryChan <- testTime
 
+	// When using taproot htlcs the flow is different as we do reveal the
+	// preimage before sweeping in order for the server to trust us with
+	// our MuSig2 signing attempts.
+	if IsTaprootSwap(&swap.SwapContract) {
+		cfg.store.(*storeMock).assertLoopOutState(
+			loopdb.StatePreimageRevealed,
+		)
+		status := <-statusChan
+		require.Equal(
+			t, status.State, loopdb.StatePreimageRevealed,
+		)
+
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+
+		// Try MuSig2 signing first and fail it so that we go for a
+		// normal sweep.
+		for i := 0; i < maxMusigSweepRetries; i++ {
+			expiryChan <- time.Now()
+
+			preimage := <-server.preimagePush
+			require.Equal(t, swap.Preimage, preimage)
+		}
+
+		<-ctx.Lnd.SignOutputRawChannel
+
+		// We expect the sweep tx to have been published.
+		ctx.ReceiveTx()
+	}
+
 	// Since we don't have a reliable mechanism to non-intrusively avoid
 	// races by setting the fee estimate too soon, let's sleep here a bit
 	// to ensure the first sweep fails.
@@ -597,30 +648,45 @@ func testPreimagePush(t *testing.T) {
 	blockEpochChan <- ctx.Lnd.Height + 2
 	expiryChan <- testTime
 
+	if IsTaprootSwap(&swap.SwapContract) {
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+	}
+
 	// Expect a signing request for the HTLC success transaction.
 	<-ctx.Lnd.SignOutputRawChannel
 
-	// This is the first time we have swept, so we expect our preimage
-	// revealed state to be set.
-	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
-	status := <-statusChan
-	require.Equal(
-		t, status.State, loopdb.StatePreimageRevealed,
-	)
+	if !IsTaprootSwap(&swap.SwapContract) {
+		// This is the first time we have swept, so we expect our
+		// preimage revealed state to be set.
+		cfg.store.(*storeMock).assertLoopOutState(
+			loopdb.StatePreimageRevealed,
+		)
+		status := <-statusChan
+		require.Equal(
+			t, status.State, loopdb.StatePreimageRevealed,
+		)
+	}
 
 	// We expect the sweep tx to have been published.
 	ctx.ReceiveTx()
 
-	// Once we have published an on chain sweep, we expect a preimage to
-	// have been pushed to the server after the sweep.
-	preimage := <-server.preimagePush
-	require.Equal(t, swap.Preimage, preimage)
+	if !IsTaprootSwap(&swap.SwapContract) {
+		// Once we have published an on chain sweep, we expect a
+		// preimage to have been pushed to the server after the sweep.
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+	}
 
 	// To mock a server failure, we do not send a payment settled update
 	// for our off chain payment yet. We also do not confirm our sweep on
 	// chain yet so we can test our preimage push retry logic. Instead, we
 	// tick the expiry chan again to prompt another sweep.
 	expiryChan <- testTime
+	if IsTaprootSwap(&swap.SwapContract) {
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+	}
 
 	// We expect another signing request for out sweep, and publish of our
 	// sweep transaction.
@@ -630,8 +696,11 @@ func testPreimagePush(t *testing.T) {
 	// Since we have not yet been notified of an off chain settle, and we
 	// have attempted to sweep again, we expect another preimage push
 	// attempt.
-	preimage = <-server.preimagePush
-	require.Equal(t, swap.Preimage, preimage)
+
+	if !IsTaprootSwap(&swap.SwapContract) {
+		preimage := <-server.preimagePush
+		require.Equal(t, swap.Preimage, preimage)
+	}
 
 	// This time, we send a payment succeeded update into our payment stream
 	// to reflect that the server received our preimage push and settled off
@@ -652,7 +721,7 @@ func testPreimagePush(t *testing.T) {
 	ctx.NotifySpend(sweepTx, 0)
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
-	status = <-statusChan
+	status := <-statusChan
 	require.Equal(
 		t, status.State, loopdb.StateSuccess,
 	)
@@ -668,12 +737,11 @@ func TestExpiryBeforeReveal(t *testing.T) {
 		testExpiryBeforeReveal(t)
 	})
 
-	t.Run("experimental protocol", func(t *testing.T) {
-		loopdb.EnableExperimentalProtocol()
-		defer loopdb.ResetCurrentProtocolVersion()
-
-		testExpiryBeforeReveal(t)
-	})
+	// Note that there's no point of testing this case with the new
+	// protocol where we use taproot htlc and attempt MuSig2 sweep. The
+	// reason is that the preimage is revealed to the server once the
+	// htlc is confirmed in order to facilitate the cooperative signing of
+	// the sweep transaction.
 }
 
 func testExpiryBeforeReveal(t *testing.T) {

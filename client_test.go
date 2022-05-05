@@ -309,7 +309,6 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	// Because there is no reliable payment yet, an invoice is assumed to be
 	// paid after resume.
-
 	testLoopOutSuccess(ctx, amt, hash,
 		func(r error) {},
 		func(r error) {},
@@ -336,12 +335,29 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// Publish tick.
 	ctx.expiryChan <- testTime
 
-	// Expect a signing request.
-	<-ctx.Lnd.SignOutputRawChannel
+	// Expect a signing request in the non taproot case.
+	if scriptVersion != swap.HtlcV3 {
+		<-ctx.Lnd.SignOutputRawChannel
+	}
 
 	if !preimageRevealed {
 		ctx.assertStatus(loopdb.StatePreimageRevealed)
 		ctx.assertStorePreimageReveal()
+	}
+
+	// When using taproot htlcs the flow is different as we do reveal the
+	// preimage before sweeping in order for the server to trust us with
+	// our MuSig2 signing attempts.
+	if scriptVersion == swap.HtlcV3 {
+		ctx.assertPreimagePush(testPreimage)
+
+		// Try MuSig2 signing first and fail it so that we go for a
+		// normal sweep.
+		for i := 0; i < maxMusigSweepRetries; i++ {
+			ctx.expiryChan <- testTime
+			ctx.assertPreimagePush(testPreimage)
+		}
+		<-ctx.Lnd.SignOutputRawChannel
 	}
 
 	// Expect client on-chain sweep of HTLC.
@@ -376,10 +392,11 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	preimage, err := lntypes.MakePreimage(clientPreImage)
 	require.NoError(ctx.T, err)
 
-	ctx.assertPreimagePush(preimage)
-
-	// Simulate server pulling payment.
-	signalSwapPaymentResult(nil)
+	if scriptVersion != swap.HtlcV3 {
+		ctx.assertPreimagePush(preimage)
+		// Simulate server pulling payment.
+		signalSwapPaymentResult(nil)
+	}
 
 	ctx.NotifySpend(sweepTx, 0)
 

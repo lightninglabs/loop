@@ -866,7 +866,9 @@ func (h *HtlcScriptV3) GenTimeoutWitness(
 // IsSuccessWitness checks whether the given stack is valid for
 // redeeming the htlc.
 func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
-	return len(witness) == 4
+	// The witness has four elements if this is a script spend or one
+	// element if this is a keyspend.
+	return len(witness) == 4 || len(witness) == 1
 }
 
 // TimeoutScript returns the redeem script required to unlock the htlc after

@@ -19,6 +19,66 @@ type Sweeper struct {
 	Lnd *lndclient.LndServices
 }
 
+// CreateUnsignedTaprootKeySpendSweepTx creates a taproot htlc sweep tx using
+// keyspend. Returns the raw unsigned txn and the sighash or an error.
+func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
+	ctx context.Context, lockTime uint32,
+	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
+	amount, fee btcutil.Amount, destAddr btcutil.Address) (
+	*wire.MsgTx, []byte, error) {
+
+	if htlc.Version != swap.HtlcV3 {
+		return nil, nil, fmt.Errorf("invalid htlc version")
+	}
+
+	// Compose tx.
+	sweepTx := wire.NewMsgTx(2)
+	sweepTx.LockTime = lockTime
+
+	// Add HTLC input.
+	sweepTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: htlcOutpoint,
+		SignatureScript:  htlc.SigScript,
+	})
+
+	// Add output for the destination address.
+	sweepPkScript, err := txscript.PayToAddrScript(destAddr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sweepTx.AddTxOut(&wire.TxOut{
+		PkScript: sweepPkScript,
+		Value:    int64(amount - fee),
+	})
+
+	// We need our previous outputs for taproot spends, and there's no
+	// harm including them for segwit v0, so we always include our prevOut.
+	prevOut := []*wire.TxOut{
+		{
+			Value:    int64(amount),
+			PkScript: htlc.PkScript,
+		},
+	}
+
+	// We now need to create the raw sighash of the transaction, as that
+	// will be the message we're signing collaboratively.
+	prevOutputFetcher := txscript.NewCannedPrevOutputFetcher(
+		prevOut[0].PkScript, prevOut[0].Value,
+	)
+	sigHashes := txscript.NewTxSigHashes(sweepTx, prevOutputFetcher)
+
+	taprootSigHash, err := txscript.CalcTaprootSignatureHash(
+		sigHashes, txscript.SigHashDefault, sweepTx, 0,
+		prevOutputFetcher,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sweepTx, taprootSigHash, nil
+}
+
 // CreateSweepTx creates an htlc sweep tx.
 func (s *Sweeper) CreateSweepTx(
 	globalCtx context.Context, height int32, sequence uint32,
