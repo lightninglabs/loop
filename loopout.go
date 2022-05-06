@@ -899,7 +899,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			return nil, nil
 		}
 		s.log.Infof("Waiting for either htlc on-chain confirmation or " +
-			" off-chain payment failure")
+			"off-chain payment failure")
 	loop:
 		for {
 			select {
