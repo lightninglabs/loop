@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 
-	btcec "github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -106,7 +108,7 @@ var (
 	// script size.
 	QuoteHtlc, _ = NewHtlc(
 		HtlcV2,
-		^int32(0), quoteKey, quoteKey, nil, quoteHash, HtlcP2WSH,
+		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
 		&chaincfg.MainNetParams,
 	)
 
@@ -119,17 +121,6 @@ var (
 	// selected for a v1 or v2 script.
 	ErrInvalidOutputSelected = fmt.Errorf("taproot output selected for " +
 		"non taproot htlc")
-
-	// ErrSharedKeyNotNeeded is returned when a shared key is provided for
-	// either the v1 or v2 script. Shared key is only necessary for the v3
-	// script.
-	ErrSharedKeyNotNeeded = fmt.Errorf("shared key not supported for " +
-		"script version")
-
-	// ErrSharedKeyRequired is returned when a script version requires a
-	// shared key.
-	ErrSharedKeyRequired = fmt.Errorf("shared key required for script " +
-		"version")
 )
 
 // String returns the string value of HtlcOutputType.
@@ -152,9 +143,8 @@ func (h HtlcOutputType) String() string {
 // NewHtlc returns a new instance. For v3 scripts, an internal pubkey generated
 // by both participants must be provided.
 func NewHtlc(version ScriptVersion, cltvExpiry int32,
-	senderKey, receiverKey [33]byte, sharedKey *btcec.PublicKey,
-	hash lntypes.Hash, outputType HtlcOutputType,
-	chainParams *chaincfg.Params) (*Htlc, error) {
+	senderKey, receiverKey [33]byte, hash lntypes.Hash,
+	outputType HtlcOutputType, chainParams *chaincfg.Params) (*Htlc, error) {
 
 	var (
 		err  error
@@ -163,28 +153,18 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 
 	switch version {
 	case HtlcV1:
-		if sharedKey != nil {
-			return nil, ErrSharedKeyNotNeeded
-		}
 		htlc, err = newHTLCScriptV1(
 			cltvExpiry, senderKey, receiverKey, hash,
 		)
 
 	case HtlcV2:
-		if sharedKey != nil {
-			return nil, ErrSharedKeyNotNeeded
-		}
 		htlc, err = newHTLCScriptV2(
 			cltvExpiry, senderKey, receiverKey, hash,
 		)
 
 	case HtlcV3:
-		if sharedKey == nil {
-			return nil, ErrSharedKeyRequired
-		}
 		htlc, err = newHTLCScriptV3(
-			cltvExpiry, senderKey, receiverKey,
-			sharedKey, hash,
+			cltvExpiry, senderKey, receiverKey, hash,
 		)
 
 	default:
@@ -646,49 +626,51 @@ func (h *HtlcScriptV2) lockingConditions(htlcOutputType HtlcOutputType,
 
 // HtlcScriptV3 encapsulates the htlc v3 script.
 type HtlcScriptV3 struct {
-	// The final locking script for the timeout path which is available to
-	// the sender after the set blockheight.
+	// TimeoutScript is the final locking script for the timeout path which
+	// is available to the sender after the set blockheight.
 	TimeoutScript []byte
 
-	// The final locking script for the success path in which the receiver
-	// reveals the preimage.
+	// SuccessScript is the final locking script for the success path in
+	// which the receiver reveals the preimage.
 	SuccessScript []byte
 
-	// The public key for the keyspend path which bypasses the above two
-	// locking scripts.
+	// InternalPubKey is the public key for the keyspend path which bypasses
+	// the above two locking scripts.
 	InternalPubKey *btcec.PublicKey
 
-	// The taproot public key which is created with the above 3 inputs.
+	// TaprootKey is the taproot public key which is created with the above
+	// 3 inputs.
 	TaprootKey *btcec.PublicKey
+
+	// RootHash is the root hash of the taptree.
+	RootHash chainhash.Hash
 }
 
 // newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
-func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
-	receiverHtlcKey [33]byte, sharedKey *btcec.PublicKey,
+func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
 	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
 
-	receiverPubKey, err := btcec.ParsePubKey(
-		receiverHtlcKey[:],
-	)
+	senderPubKey, err := schnorr.ParsePubKey(senderHtlcKey[1:])
 	if err != nil {
 		return nil, err
 	}
 
-	senderPubKey, err := btcec.ParsePubKey(
-		senderHtlcKey[:],
-	)
+	receiverPubKey, err := schnorr.ParsePubKey(receiverHtlcKey[1:])
 	if err != nil {
 		return nil, err
 	}
 
-	var schnorrSenderKey, schnorrReceiverKey [32]byte
-	copy(schnorrSenderKey[:], schnorr.SerializePubKey(senderPubKey))
-	copy(schnorrReceiverKey[:], schnorr.SerializePubKey(receiverPubKey))
+	aggregateKey, _, _, err := musig2.AggregateKeys(
+		[]*btcec.PublicKey{senderPubKey, receiverPubKey}, true,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create our success path script, we'll use this separately
 	// to generate the success path leaf.
 	successPathScript, err := GenSuccessPathScript(
-		schnorrReceiverKey, swapHash,
+		receiverPubKey, swapHash,
 	)
 	if err != nil {
 		return nil, err
@@ -697,7 +679,7 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
 	// Create our timeout path leaf, we'll use this separately
 	// to generate the timeout path leaf.
 	timeoutPathScript, err := GenTimeoutPathScript(
-		schnorrSenderKey, int64(cltvExpiry),
+		senderPubKey, int64(cltvExpiry),
 	)
 	if err != nil {
 		return nil, err
@@ -713,14 +695,15 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
 
 	// Calculate top level taproot key.
 	taprootKey := txscript.ComputeTaprootOutputKey(
-		sharedKey, rootHash[:],
+		aggregateKey.PreTweakedKey, rootHash[:],
 	)
 
 	return &HtlcScriptV3{
 		TimeoutScript:  timeoutPathScript,
 		SuccessScript:  successPathScript,
-		InternalPubKey: sharedKey,
+		InternalPubKey: aggregateKey.PreTweakedKey,
 		TaprootKey:     taprootKey,
+		RootHash:       rootHash,
 	}, nil
 }
 
@@ -728,11 +711,11 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey,
 // Largest possible bytesize of the script is 32 + 1 + 2 + 1 = 36.
 //
 //	<senderHtlcKey> OP_CHECKSIGVERIFY <cltvExpiry> OP_CHECKLOCKTIMEVERIFY
-func GenTimeoutPathScript(
-	senderHtlcKey [32]byte, cltvExpiry int64) ([]byte, error) {
+func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey, cltvExpiry int64) (
+	[]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
-	builder.AddData(senderHtlcKey[:])
+	builder.AddData(schnorr.SerializePubKey(senderHtlcKey))
 	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
 	builder.AddInt64(cltvExpiry)
 	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
@@ -746,12 +729,12 @@ func GenTimeoutPathScript(
 //	OP_SIZE 32 OP_EQUALVERIFY
 //	OP_HASH160 <ripemd160h(swapHash)> OP_EQUALVERIFY
 //	1 OP_CHECKSEQUENCEVERIFY
-func GenSuccessPathScript(receiverHtlcKey [32]byte,
+func GenSuccessPathScript(receiverHtlcKey *btcec.PublicKey,
 	swapHash lntypes.Hash) ([]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
 
-	builder.AddData(receiverHtlcKey[:])
+	builder.AddData(schnorr.SerializePubKey(receiverHtlcKey))
 	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
 	builder.AddOp(txscript.OP_SIZE)
 	builder.AddInt64(32)

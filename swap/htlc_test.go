@@ -3,12 +3,10 @@ package swap
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -137,7 +135,7 @@ func TestHtlcV2(t *testing.T) {
 
 	// Create the htlc.
 	htlc, err := NewHtlc(
-		HtlcV2, testCltvExpiry, senderKey, receiverKey, nil, hash,
+		HtlcV2, testCltvExpiry, senderKey, receiverKey, hash,
 		HtlcP2WSH, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
@@ -285,7 +283,7 @@ func TestHtlcV2(t *testing.T) {
 				// Create the htlc with the bogus key.
 				htlc, err = NewHtlc(
 					HtlcV2, testCltvExpiry,
-					bogusKey, receiverKey, nil, hash,
+					bogusKey, receiverKey, hash,
 					HtlcP2WSH, &chaincfg.MainNetParams,
 				)
 				require.NoError(t, err)
@@ -352,17 +350,8 @@ func TestHtlcV3(t *testing.T) {
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
 	copy(senderKey[:], senderPubKey.SerializeCompressed())
 
-	randomSharedKey, err := hex.DecodeString(
-		"03fcb7d1b502bd59f4dbc6cf503e5c280189e0e6dd2d10c4c14d97ed8611" +
-			"a99178",
-	)
-	require.NoError(t, err)
-
-	randomSharedPubKey, err := btcec.ParsePubKey(randomSharedKey)
-	require.NoError(t, err)
-
 	htlc, err := NewHtlc(
-		HtlcV3, cltvExpiry, senderKey, receiverKey, randomSharedPubKey,
+		HtlcV3, cltvExpiry, senderKey, receiverKey,
 		hashedPreimage, HtlcP2TR, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
@@ -544,18 +533,9 @@ func TestHtlcV3(t *testing.T) {
 					bogusKey.SerializeCompressed(),
 				)
 
-				var shnorrSenderKey [32]byte
-				copy(
-					shnorrSenderKey[:],
-					schnorr.SerializePubKey(
-						senderPubKey,
-					),
-				)
-
 				htlc, err := NewHtlc(
 					HtlcV3, cltvExpiry, bogusKeyBytes,
-					receiverKey, randomSharedPubKey,
-					hashedPreimage, HtlcP2TR,
+					receiverKey, hashedPreimage, HtlcP2TR,
 					&chaincfg.MainNetParams,
 				)
 				require.NoError(t, err)
@@ -576,7 +556,7 @@ func TestHtlcV3(t *testing.T) {
 				)
 
 				timeoutScript, err := GenTimeoutPathScript(
-					shnorrSenderKey, int64(cltvExpiry),
+					senderPubKey, int64(cltvExpiry),
 				)
 				require.NoError(t, err)
 

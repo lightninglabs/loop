@@ -284,7 +284,7 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	scriptVersion := GetHtlcScriptVersion(protocolVersion)
 	htlc, err := swap.NewHtlc(
 		scriptVersion, pendingSwap.Contract.CltvExpiry, senderKey,
-		receiverKey, nil, hash, swap.HtlcP2WSH, &chaincfg.TestNet3Params,
+		receiverKey, hash, swap.HtlcP2WSH, &chaincfg.TestNet3Params,
 	)
 	require.NoError(t, err)
 	require.Equal(t, htlc.PkScript, confIntent.PkScript)
