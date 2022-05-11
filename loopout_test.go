@@ -581,6 +581,11 @@ func testPreimagePush(t *testing.T) {
 	// preimage is not revealed, we also do not expect a preimage push.
 	expiryChan <- testTime
 
+	// Since we don't have a reliable mechanism to non-intrusively avoid
+	// races by setting the fee estimate too soon, let's sleep here a bit
+	// to ensure the first sweep fails.
+	time.Sleep(500 * time.Millisecond)
+
 	// Now we decrease our fees for the swap's confirmation target to less
 	// than the maximum miner fee.
 	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
@@ -759,6 +764,11 @@ func testExpiryBeforeReveal(t *testing.T) {
 	// Tick the expiry channel. Because our max miner fee is too high, we
 	// won't attempt a sweep at this point.
 	expiryChan <- testTime
+
+	// Since we don't have a reliable mechanism to non-intrusively avoid
+	// races by setting the fee estimate too soon, let's sleep here a bit
+	// to ensure the first sweep fails.
+	time.Sleep(500 * time.Millisecond)
 
 	// Now we decrease our conf target to less than our max miner fee.
 	lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
