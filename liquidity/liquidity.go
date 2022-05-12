@@ -34,8 +34,11 @@ package liquidity
 
 import (
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -438,6 +441,11 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.cfg.AutoloopTicker.Resume()
 	defer m.cfg.AutoloopTicker.Stop()
 
+	// Before we start, load the parameters.
+	if err := m.LoadParameters(); err != nil {
+		log.Errorf("load parameters failed: %v", err)
+	}
+
 	for {
 		select {
 		case <-m.cfg.AutoloopTicker.Ticks():
@@ -453,6 +461,11 @@ func (m *Manager) Run(ctx context.Context) error {
 			}
 
 		case <-ctx.Done():
+			// Before we quit, save the parameters.
+			if err := m.SaveParameters(); err != nil {
+				log.Errorf("save parameters failed: %v", err)
+			}
+
 			return ctx.Err()
 		}
 	}
@@ -499,6 +512,45 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 	return nil
 }
 
+// LoadParameters loads the parameters saved in the file specified by the
+// config.
+func (m *Manager) LoadParameters() error {
+	m.paramsLock.Lock()
+	defer m.paramsLock.Unlock()
+
+	params, err := decodeParams(m.cfg.LiquidityParamsPath)
+
+	// We will get an EOF if it's first time loading the params from the
+	// file. In this case, we will do nothing and let the manager use the
+	// default params.
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+
+	// Otherwise return the error as it's unexpected.
+	if err != nil {
+		return fmt.Errorf("failed to load params: %w", err)
+	}
+
+	// Attach the saved params.
+	m.params = cloneParameters(params)
+	return nil
+}
+
+// SaveParameters saves the manager's parameters to the file specified by the
+// config.
+func (m *Manager) SaveParameters() error {
+	m.paramsLock.Lock()
+	defer m.paramsLock.Unlock()
+
+	err := encodeParams(m.cfg.LiquidityParamsPath, m.params)
+	if err != nil {
+		return fmt.Errorf("failed to save params: %w", err)
+	}
+
+	return nil
+}
+
 // cloneParameters creates a deep clone of a parameters struct so that callers
 // cannot mutate our parameters. Although our parameters struct itself is not
 // a reference, we still need to clone the contents of maps.
@@ -525,6 +577,42 @@ func cloneParameters(params Parameters) Parameters {
 	}
 
 	return paramCopy
+}
+
+// encodeParams encodes the given parameters and saves it to a file.
+func encodeParams(filepath string, p Parameters) error {
+	// Create the file if not exists, otherwise open it.
+	file, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return fmt.Errorf("cannot create params file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	if err := encoder.Encode(p); err != nil {
+		return fmt.Errorf("encoding params error: %w", err)
+	}
+
+	return nil
+}
+
+// decodeParams reads the file and decodes a Parameters struct.
+func decodeParams(filepath string) (Parameters, error) {
+	var p Parameters
+
+	// Create the file or truncate the old file.
+	file, err := os.Create(filepath)
+	if err != nil {
+		return p, fmt.Errorf("cannot create params file: %w", err)
+	}
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&p); err != nil {
+		return p, fmt.Errorf("decoding params error: %w", err)
+	}
+
+	return p, nil
 }
 
 // autoloop gets a set of suggested swaps and dispatches them automatically if
@@ -1211,4 +1299,14 @@ func ppmToSat(amount btcutil.Amount, ppm uint64) btcutil.Amount {
 
 func mSatToSatoshis(amount lnwire.MilliSatoshi) btcutil.Amount {
 	return btcutil.Amount(amount / 1000)
+}
+
+func init() {
+	// Init custom structs for gob.
+	//
+	// NOTE: we need to use pointers here to make sure the interface check
+	// passes.
+	gob.Register(&SwapRule{})
+	gob.Register(&FeePortion{})
+	gob.Register(&FeeCategoryLimit{})
 }

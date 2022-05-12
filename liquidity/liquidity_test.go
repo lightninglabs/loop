@@ -2,6 +2,7 @@ package liquidity
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -244,6 +245,63 @@ func TestParameters(t *testing.T) {
 	}
 	err = manager.SetParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
+}
+
+// TestPersistParameters tests loading and saving from a file.
+func TestPersistParameters(t *testing.T) {
+	// Overwrite the filepath.
+	paramsFile := "liquidity_params.gob.test"
+
+	// Remove the test file when test finishes.
+	defer func() {
+		require.NoError(t, os.Remove(paramsFile))
+	}()
+
+	cfg, _ := newTestConfig()
+	cfg.LiquidityParamsPath = paramsFile
+	manager := NewManager(cfg)
+
+	// Load params for the first time, which should end up not touching the
+	// manager's params.
+	err := manager.LoadParameters()
+	require.NoError(t, err)
+
+	// Check the params are not changed.
+	startParams := manager.GetParameters()
+	require.Equal(t, defaultParameters, startParams)
+
+	// Save params should give us no error.
+	err = manager.SaveParameters()
+	require.NoError(t, err)
+
+	// We now update the manager's parameters.
+	chanID := lnwire.NewShortChanIDFromInt(1)
+	originalRule := &SwapRule{
+		ThresholdRule: NewThresholdRule(10, 10),
+		Type:          swap.TypeOut,
+	}
+
+	// Create a new parameters struct.
+	expected := defaultParameters
+	expected.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+		chanID: originalRule,
+	}
+
+	// Set the params.
+	err = manager.SetParameters(context.Background(), expected)
+	require.NoError(t, err)
+
+	// Now save the updated params.
+	err = manager.SaveParameters()
+	require.NoError(t, err)
+
+	// Load the params again which updates the manager's params.
+	err = manager.LoadParameters()
+	require.NoError(t, err)
+
+	// Validate that the manager has the updated params.
+	params := manager.GetParameters()
+	require.Equal(t, expected, params)
 }
 
 // TestValidateRestrictions tests validating client restrictions against a set
