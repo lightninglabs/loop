@@ -59,18 +59,50 @@ const (
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
 
-	// CurrentRPCProtocolVersion defines the version of the RPC protocol
-	// that is currently supported by the loop client.
-	CurrentRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V3
+	// stableRPCProtocolVersion defines the current stable RPC protocol
+	// version.
+	stableRPCProtocolVersion = looprpc.ProtocolVersion_ROUTING_PLUGIN
 
-	// CurrentInternalProtocolVersion defines the RPC current protocol in
-	// the internal representation.
-	CurrentInternalProtocolVersion = ProtocolVersion(CurrentRPCProtocolVersion)
+	// experimentalRPCProtocolVersion defines the RPC protocol version that
+	// includes all currently experimentally released features.
+	experimentalRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V3
 )
+
+var (
+	// currentRPCProtocolVersion holds the version of the RPC protocol
+	// that the client selected to use for new swaps. Shouldn't be lower
+	// than the previous protocol version.
+	currentRPCProtocolVersion = stableRPCProtocolVersion
+)
+
+// CurrentRPCProtocolVersion returns the RPC protocol version selected to be
+// used for new swaps.
+func CurrentRPCProtocolVersion() looprpc.ProtocolVersion {
+	return currentRPCProtocolVersion
+}
+
+// CurrentProtocolVersion returns the internal protocol version selected to be
+// used for new swaps.
+func CurrentProtocolVersion() ProtocolVersion {
+	return ProtocolVersion(currentRPCProtocolVersion)
+}
+
+// EnableExperimentalProtocol sets the current protocol version to include all
+// experimental features. Do not call this function directly: used in loopd and
+// unit tests only.
+func EnableExperimentalProtocol() {
+	currentRPCProtocolVersion = experimentalRPCProtocolVersion
+}
+
+// ResetCurrentProtocolVersion resets the current protocol version to the stable
+// protocol. Note: used in integration tests only!
+func ResetCurrentProtocolVersion() {
+	currentRPCProtocolVersion = stableRPCProtocolVersion
+}
 
 // Valid returns true if the value of the ProtocolVersion is valid.
 func (p ProtocolVersion) Valid() bool {
-	return p <= CurrentInternalProtocolVersion
+	return p <= ProtocolVersion(experimentalRPCProtocolVersion)
 }
 
 // String returns the string representation of a protocol version.

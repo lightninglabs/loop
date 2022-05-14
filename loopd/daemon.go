@@ -348,6 +348,12 @@ func (d *Daemon) startWebServers() error {
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
 func (d *Daemon) initialize(withMacaroonService bool) error {
+	if d.cfg.EnableExperimental {
+		loopdb.EnableExperimentalProtocol()
+	}
+
+	log.Infof("Protocol version: %v", loopdb.CurrentProtocolVersion())
+
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
 	if d.cfg.Server.Host == "" {

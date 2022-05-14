@@ -177,7 +177,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			MaxMinerFee:      request.MaxMinerFee,
 			MaxSwapFee:       request.MaxSwapFee,
 			Label:            request.Label,
-			ProtocolVersion:  loopdb.CurrentInternalProtocolVersion,
+			ProtocolVersion:  loopdb.CurrentProtocolVersion(),
 		},
 		OutgoingChanSet: chanSet,
 	}

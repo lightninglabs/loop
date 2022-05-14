@@ -174,7 +174,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		},
 	)
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 		&looprpc.ServerLoopOutQuoteRequest{
 			Amt:                     uint64(amt),
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
-			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion(),
 			Expiry:                  expiry,
 		},
 	)
@@ -231,7 +231,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		},
 	)
 	if err != nil {
@@ -258,7 +258,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 
 	req := &looprpc.ServerLoopInQuoteRequest{
 		Amt:             uint64(amt),
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		Pubkey:          pubKey[:],
 	}
 
@@ -343,7 +343,7 @@ func (s *grpcSwapServerClient) Probe(ctx context.Context, amt btcutil.Amount,
 	req := &looprpc.ServerProbeRequest{
 		Amt:             uint64(amt),
 		Target:          target[:],
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		RouteHints:      rpcRouteHints,
 	}
 
@@ -368,7 +368,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 			Amt:                     uint64(amount),
 			ReceiverKey:             receiverKey[:],
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
-			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion(),
 			Expiry:                  expiry,
 			UserAgent:               UserAgent(initiator),
 		},
@@ -403,7 +403,7 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 
 	_, err := s.server.LoopOutPushPreimage(rpcCtx,
 		&looprpc.ServerLoopOutPushPreimageRequest{
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 			Preimage:        preimage[:],
 		},
 	)
@@ -424,7 +424,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		Amt:             uint64(amount),
 		SenderKey:       senderKey[:],
 		SwapInvoice:     swapInvoice,
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		ProbeInvoice:    probeInvoice,
 		UserAgent:       UserAgent(initiator),
 	}
@@ -469,7 +469,7 @@ func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
 
 	resp, err := s.server.SubscribeLoopInUpdates(
 		ctx, &looprpc.SubscribeUpdatesRequest{
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 			SwapHash:        hash[:],
 		},
 	)
@@ -500,7 +500,7 @@ func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
 
 	resp, err := s.server.SubscribeLoopOutUpdates(
 		ctx, &looprpc.SubscribeUpdatesRequest{
-			ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 			SwapHash:        hash[:],
 		},
 	)
@@ -639,7 +639,7 @@ func (s *grpcSwapServerClient) CancelLoopOutSwap(ctx context.Context,
 	details *outCancelDetails) error {
 
 	req := &looprpc.CancelLoopOutSwapRequest{
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		SwapHash:        details.hash[:],
 		PaymentAddress:  details.paymentAddr[:],
 	}
@@ -660,7 +660,7 @@ func (s *grpcSwapServerClient) RecommendRoutingPlugin(ctx context.Context,
 	swapHash lntypes.Hash, paymentAddr [32]byte) (RoutingPluginType, error) {
 
 	req := &looprpc.RecommendRoutingPluginReq{
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		SwapHash:        swapHash[:],
 		PaymentAddress:  paymentAddr[:],
 	}
@@ -704,7 +704,7 @@ func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
 	}
 
 	req := &looprpc.ReportRoutingResultReq{
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion,
+		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		SwapHash:        swapHash[:],
 		PaymentAddress:  paymentAddr[:],
 		Plugin:          rpcRoutingPlugin,
