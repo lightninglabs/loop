@@ -682,7 +682,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	//
 	// TODO(guggero): Thread through error code from lnd to avoid string
 	// matching.
-	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
+	minerFee, err := s.estimateFee(
 		ctx, request.Amount, request.HtlcConfTarget,
 	)
 	if err != nil && strings.Contains(err.Error(), "insufficient funds") {
@@ -701,6 +701,39 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		MinerFee:  minerFee,
 		CltvDelta: quote.CltvDelta,
 	}, nil
+}
+
+// estimateFee is a helper method to estimate the total fee for paying the
+// passed amount with the given conf target. It'll assume taproot destination
+// if the protocol version indicates that we're using taproot htlcs.
+func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
+	confTarget int32) (btcutil.Amount, error) {
+
+	var (
+		address btcutil.Address
+		err     error
+	)
+	// Generate a dummy address for fee estimation.
+	witnessProg := [32]byte{}
+
+	scriptVersion := GetHtlcScriptVersion(
+		loopdb.CurrentProtocolVersion(),
+	)
+
+	if scriptVersion != swap.HtlcV3 {
+		address, err = btcutil.NewAddressWitnessScriptHash(
+			witnessProg[:], s.lndServices.ChainParams,
+		)
+	} else {
+		address, err = btcutil.NewAddressTaproot(
+			witnessProg[:], s.lndServices.ChainParams,
+		)
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	return s.lndServices.Client.EstimateFee(ctx, address, amt, confTarget)
 }
 
 // LoopInTerms returns the terms on which the server executes swaps.
