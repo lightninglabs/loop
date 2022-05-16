@@ -45,9 +45,9 @@ var (
 	defaultConfirmations = int32(loopdb.DefaultLoopOutHtlcConfirmations)
 )
 
-// TestSuccess tests the loop out happy flow, using a custom htlc confirmation
-// target.
-func TestSuccess(t *testing.T) {
+// TestLoopOutSuccess tests the loop out happy flow, using a custom htlc
+// confirmation target.
+func TestLoopOutSuccess(t *testing.T) {
 	defer test.Guard(t)()
 
 	ctx := createClientTestContext(t, nil)
@@ -70,15 +70,15 @@ func TestSuccess(t *testing.T) {
 	// Expect client to register for conf.
 	confIntent := ctx.AssertRegisterConf(false, req.HtlcConfirmations)
 
-	testSuccess(ctx, testRequest.Amount, info.SwapHash,
+	testLoopOutSuccess(ctx, testRequest.Amount, info.SwapHash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
 		confIntent, swap.HtlcV2,
 	)
 }
 
-// TestFailOffchain tests the handling of swap for which the server failed the
-// payments.
-func TestFailOffchain(t *testing.T) {
+// TestLoopOutFailOffchain tests the handling of swap for which the server
+// failed the payments.
+func TestLoopOutFailOffchain(t *testing.T) {
 	defer test.Guard(t)()
 
 	ctx := createClientTestContext(t, nil)
@@ -110,8 +110,9 @@ func TestFailOffchain(t *testing.T) {
 	ctx.finish()
 }
 
-// TestWrongAmount asserts that the client checks the server invoice amounts.
-func TestFailWrongAmount(t *testing.T) {
+// TestLoopOutWrongAmount asserts that the client checks the server invoice
+// amounts.
+func TestLoopOutFailWrongAmount(t *testing.T) {
 	defer test.Guard(t)()
 
 	test := func(t *testing.T, modifier func(*serverMock),
@@ -148,9 +149,9 @@ func TestFailWrongAmount(t *testing.T) {
 
 }
 
-// TestResume tests that swaps in various states are properly resumed after a
-// restart.
-func TestResume(t *testing.T) {
+// TestLoopOutResume tests that swaps in various states are properly resumed
+// after a restart.
+func TestLoopOutResume(t *testing.T) {
 	defer test.Guard(t)()
 
 	defaultConfs := loopdb.DefaultLoopOutHtlcConfirmations
@@ -165,26 +166,26 @@ func TestResume(t *testing.T) {
 
 		t.Run(version.String(), func(t *testing.T) {
 			t.Run("not expired", func(t *testing.T) {
-				testResume(
+				testLoopOutResume(
 					t, defaultConfs, false, false, true,
 					version,
 				)
 			})
 			t.Run("not expired, custom confirmations",
 				func(t *testing.T) {
-					testResume(
+					testLoopOutResume(
 						t, 3, false, false, true,
 						version,
 					)
 				})
 			t.Run("expired not revealed", func(t *testing.T) {
-				testResume(
+				testLoopOutResume(
 					t, defaultConfs, true, false, false,
 					version,
 				)
 			})
 			t.Run("expired revealed", func(t *testing.T) {
-				testResume(
+				testLoopOutResume(
 					t, defaultConfs, true, true, true,
 					version,
 				)
@@ -193,7 +194,7 @@ func TestResume(t *testing.T) {
 	}
 }
 
-func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
+func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	expectSuccess bool, protocolVersion loopdb.ProtocolVersion) {
 
 	defer test.Guard(t)()
@@ -302,7 +303,7 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	// Because there is no reliable payment yet, an invoice is assumed to be
 	// paid after resume.
 
-	testSuccess(ctx, amt, hash,
+	testLoopOutSuccess(ctx, amt, hash,
 		func(r error) {},
 		func(r error) {},
 		preimageRevealed,
@@ -310,7 +311,7 @@ func testResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	)
 }
 
-func testSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
+func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	signalPrepaymentResult, signalSwapPaymentResult func(error),
 	preimageRevealed bool, confIntent *test.ConfRegistration,
 	scriptVersion swap.ScriptVersion) {
