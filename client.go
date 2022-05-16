@@ -499,7 +499,23 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 
 	log.Infof("Offchain swap destination: %x", quote.SwapPaymentDest)
 
-	swapFee := quote.SwapFee
+	minerFee, err := s.getLoopOutSweepFee(ctx, request.SweepConfTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopOutQuote{
+		SwapFee:         quote.SwapFee,
+		MinerFee:        minerFee,
+		PrepayAmount:    quote.PrepayAmount,
+		SwapPaymentDest: quote.SwapPaymentDest,
+	}, nil
+}
+
+// getLoopOutSweepFee is a helper method to estimate the loop out htlc sweep
+// fee to a p2wsh address.
+func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
+	btcutil.Amount, error) {
 
 	// Generate dummy p2wsh address for fee estimation. The p2wsh address
 	// type is chosen because it adds the most weight of all output types
@@ -509,23 +525,21 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		wsh[:], s.lndServices.ChainParams,
 	)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	minerFee, err := s.sweeper.GetSweepFee(
-		ctx, swap.QuoteHtlc.AddSuccessToEstimator,
-		p2wshAddress, request.SweepConfTarget,
+	scriptVersion := GetHtlcScriptVersion(
+		loopdb.CurrentProtocolVersion(),
 	)
-	if err != nil {
-		return nil, err
+
+	htlc := swap.QuoteHtlcP2TR
+	if scriptVersion != swap.HtlcV3 {
+		htlc = swap.QuoteHtlcP2WSH
 	}
 
-	return &LoopOutQuote{
-		SwapFee:         swapFee,
-		MinerFee:        minerFee,
-		PrepayAmount:    quote.PrepayAmount,
-		SwapPaymentDest: quote.SwapPaymentDest,
-	}, nil
+	return s.sweeper.GetSweepFee(
+		ctx, htlc.AddSuccessToEstimator, p2wshAddress, confTarget,
+	)
 }
 
 // LoopOutTerms returns the terms on which the server executes swaps.
