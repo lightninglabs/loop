@@ -16,6 +16,9 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* A new config option, `liquidityparamspath` is added to enable persisting
+  customized liquidity parameters on disk.
+
 #### Breaking Changes
 
 #### Bug Fixes
