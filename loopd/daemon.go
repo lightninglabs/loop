@@ -419,7 +419,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	d.swapClientServer = swapClientServer{
 		network:      lndclient.Network(d.cfg.Network),
 		impl:         swapclient,
-		liquidityMgr: getLiquidityManager(swapclient),
+		liquidityMgr: getLiquidityManager(swapclient, d.cfg),
 		lnd:          &d.lnd.LndServices,
 		swaps:        make(map[lntypes.Hash]loop.SwapInfo),
 		subscribers:  make(map[int]chan<- interface{}),

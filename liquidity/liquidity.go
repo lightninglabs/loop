@@ -193,6 +193,10 @@ type Config struct {
 	// MinimumConfirmations is the minimum number of confirmations we allow
 	// setting for sweep target.
 	MinimumConfirmations int32
+
+	// LiquidityParamsPath specifies a filepath that's used to save the
+	// manager's `Parameters` on disk.
+	LiquidityParamsPath string
 }
 
 // Parameters is a set of parameters provided by the user which guide

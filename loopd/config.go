@@ -87,6 +87,16 @@ var (
 	// certificate. The value corresponds to 14 months
 	// (14 months * 30 days * 24 hours).
 	DefaultAutogenValidity = 14 * 30 * 24 * time.Hour
+
+	// defaultLiquidityParamsFilename specifies the filename used to store
+	// the liquidity params.
+	defaultLiquidityParamsFilename = "liquidity_params.gob"
+
+	// defaultLiquidityParamsPath specifies the default filepath used to
+	// store the liquidity params.
+	defaultLiquidityParamsPath = filepath.Join(
+		LoopDirBase, DefaultNetwork, defaultLiquidityParamsFilename,
+	)
 )
 
 type lndConfig struct {
@@ -154,6 +164,8 @@ type Config struct {
 	Server *loopServerConfig `group:"server" namespace:"server"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
+
+	LiquidityParamsPath string `long:"liquidityparamspath" description:"Path to save the liquidity parameters specified by users."`
 }
 
 const (
@@ -189,6 +201,7 @@ func DefaultConfig() Config {
 			Host:         "localhost:10009",
 			MacaroonPath: DefaultLndMacaroonPath,
 		},
+		LiquidityParamsPath: defaultLiquidityParamsPath,
 	}
 }
 
@@ -201,6 +214,9 @@ func Validate(cfg *Config) error {
 	cfg.TLSCertPath = lncfg.CleanAndExpandPath(cfg.TLSCertPath)
 	cfg.TLSKeyPath = lncfg.CleanAndExpandPath(cfg.TLSKeyPath)
 	cfg.MacaroonPath = lncfg.CleanAndExpandPath(cfg.MacaroonPath)
+	cfg.LiquidityParamsPath = lncfg.CleanAndExpandPath(
+		cfg.LiquidityParamsPath,
+	)
 
 	// Since our loop directory overrides our log/data dir values, make sure
 	// that they are not set when loop dir is set. We hard here rather than
@@ -233,6 +249,12 @@ func Validate(cfg *Config) error {
 				"please only set one value")
 		}
 
+		if cfg.LiquidityParamsPath != defaultLiquidityParamsPath {
+			return fmt.Errorf("loopdir overwrites " +
+				"liquidityparamspath, please only set one " +
+				"value")
+		}
+
 		// Once we are satisfied that no other config value was set, we
 		// replace them with our loop dir.
 		cfg.DataDir = cfg.LoopDir
@@ -260,6 +282,11 @@ func Validate(cfg *Config) error {
 	if cfg.MacaroonPath == DefaultMacaroonPath {
 		cfg.MacaroonPath = filepath.Join(
 			cfg.DataDir, DefaultMacaroonFilename,
+		)
+	}
+	if cfg.LiquidityParamsPath != defaultLiquidityParamsPath {
+		cfg.LiquidityParamsPath = filepath.Join(
+			cfg.DataDir, defaultLiquidityParamsFilename,
 		)
 	}
 

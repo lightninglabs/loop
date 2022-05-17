@@ -37,7 +37,7 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 	return swapClient, cleanUp, nil
 }
 
-func getLiquidityManager(client *loop.Client) *liquidity.Manager {
+func getLiquidityManager(client *loop.Client, cfg *Config) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
@@ -72,6 +72,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		MinimumConfirmations: minConfTarget,
+		LiquidityParamsPath:  cfg.LiquidityParamsPath,
 	}
 
 	return liquidity.NewManager(mngrCfg)
