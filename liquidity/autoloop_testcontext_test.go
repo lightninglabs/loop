@@ -179,7 +179,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	// Create a manager with our test config and set our starting set of
 	// parameters.
 	testCtx.manager = NewManager(cfg)
-	err := testCtx.manager.SetParameters(context.Background(), parameters)
+	err := testCtx.manager.setParameters(context.Background(), parameters)
 	assert.NoError(t, err)
 	<-done
 	return testCtx

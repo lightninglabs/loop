@@ -52,6 +52,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/ticker"
+
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 )
 
 const (
@@ -239,9 +241,24 @@ func (m *Manager) GetParameters() Parameters {
 	return cloneParameters(m.params)
 }
 
+// SetParameters takes an RPC request and calls the internal method to set
+// parameters for the manager.
+func (m *Manager) SetParameters(ctx context.Context,
+	req *clientrpc.LiquidityParameters) error {
+
+	params, err := rpcToParameters(req)
+	if err != nil {
+		return err
+	}
+
+	return m.setParameters(ctx, *params)
+}
+
 // SetParameters updates our current set of parameters if the new parameters
 // provided are valid.
-func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
+func (m *Manager) setParameters(ctx context.Context,
+	params Parameters) error {
+
 	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return err
@@ -252,7 +269,9 @@ func (m *Manager) SetParameters(ctx context.Context, params Parameters) error {
 		return err
 	}
 
-	err = params.validate(m.cfg.MinimumConfirmations, channels, restrictions)
+	err = params.validate(
+		m.cfg.MinimumConfirmations, channels, restrictions,
+	)
 	if err != nil {
 		return err
 	}

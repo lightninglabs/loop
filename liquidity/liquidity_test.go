@@ -221,7 +221,7 @@ func TestParameters(t *testing.T) {
 		chanID: originalRule,
 	}
 
-	err := manager.SetParameters(context.Background(), expected)
+	err := manager.setParameters(context.Background(), expected)
 	require.NoError(t, err)
 
 	// Check that changing the parameters we just set does not mutate
@@ -242,7 +242,7 @@ func TestParameters(t *testing.T) {
 			Type:          swap.TypeOut,
 		},
 	}
-	err = manager.SetParameters(context.Background(), expected)
+	err = manager.setParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
 }
 
@@ -1778,7 +1778,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	// them to use the rules set by the test.
 	manager := NewManager(setup.cfg)
 
-	err := manager.SetParameters(context.Background(), setup.params)
+	err := manager.setParameters(context.Background(), setup.params)
 	require.NoError(t, err)
 
 	actual, err := manager.SuggestSwaps(context.Background(), false)
@@ -1960,7 +1960,7 @@ func TestCurrentTraffic(t *testing.T) {
 
 		params := m.GetParameters()
 		params.FailureBackOff = backoff
-		require.NoError(t, m.SetParameters(context.Background(), params))
+		require.NoError(t, m.setParameters(context.Background(), params))
 
 		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
 		require.Equal(t, testCase.expected, actual)

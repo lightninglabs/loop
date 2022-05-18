@@ -21,8 +21,6 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
-	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -806,152 +804,12 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	in *clientrpc.SetLiquidityParamsRequest) (*clientrpc.SetLiquidityParamsResponse,
 	error) {
 
-	feeLimit, err := rpcToFee(in.Parameters)
+	err := s.liquidityMgr.SetParameters(ctx, in.Parameters)
 	if err != nil {
 		return nil, err
 	}
 
-	params := liquidity.Parameters{
-		FeeLimit:        feeLimit,
-		SweepConfTarget: in.Parameters.SweepConfTarget,
-		FailureBackOff: time.Duration(in.Parameters.FailureBackoffSec) *
-			time.Second,
-		Autoloop:        in.Parameters.Autoloop,
-		AutoFeeBudget:   btcutil.Amount(in.Parameters.AutoloopBudgetSat),
-		MaxAutoInFlight: int(in.Parameters.AutoMaxInFlight),
-		ChannelRules: make(
-			map[lnwire.ShortChannelID]*liquidity.SwapRule,
-		),
-		PeerRules: make(
-			map[route.Vertex]*liquidity.SwapRule,
-		),
-		ClientRestrictions: liquidity.Restrictions{
-			Minimum: btcutil.Amount(in.Parameters.MinSwapAmount),
-			Maximum: btcutil.Amount(in.Parameters.MaxSwapAmount),
-		},
-		HtlcConfTarget: in.Parameters.HtlcConfTarget,
-	}
-
-	// Zero unix time is different to zero golang time.
-	if in.Parameters.AutoloopBudgetStartSec != 0 {
-		params.AutoFeeStartDate = time.Unix(
-			int64(in.Parameters.AutoloopBudgetStartSec), 0,
-		)
-	}
-
-	for _, rule := range in.Parameters.Rules {
-		peerRule := rule.Pubkey != nil
-		chanRule := rule.ChannelId != 0
-
-		liquidityRule, err := rpcToRule(rule)
-		if err != nil {
-			return nil, err
-		}
-
-		switch {
-		case peerRule && chanRule:
-			return nil, fmt.Errorf("cannot set channel: %v and "+
-				"peer: %v fields in rule", rule.ChannelId,
-				rule.Pubkey)
-
-		case peerRule:
-			pubkey, err := route.NewVertexFromBytes(rule.Pubkey)
-			if err != nil {
-				return nil, err
-			}
-
-			if _, ok := params.PeerRules[pubkey]; ok {
-				return nil, fmt.Errorf("multiple rules set "+
-					"for peer: %v", pubkey)
-			}
-
-			params.PeerRules[pubkey] = liquidityRule
-
-		case chanRule:
-			shortID := lnwire.NewShortChanIDFromInt(rule.ChannelId)
-
-			if _, ok := params.ChannelRules[shortID]; ok {
-				return nil, fmt.Errorf("multiple rules set "+
-					"for channel: %v", shortID)
-			}
-
-			params.ChannelRules[shortID] = liquidityRule
-
-		default:
-			return nil, errors.New("please set channel id or " +
-				"pubkey for rule")
-		}
-	}
-
-	if err := s.liquidityMgr.SetParameters(ctx, params); err != nil {
-		return nil, err
-	}
-
 	return &clientrpc.SetLiquidityParamsResponse{}, nil
-}
-
-// rpcToFee converts the values provided over rpc to a fee limit interface,
-// failing if an inconsistent set of fields are set.
-func rpcToFee(req *clientrpc.LiquidityParameters) (liquidity.FeeLimit,
-	error) {
-
-	// Check which fee limit type we have values set for. If any fields
-	// relevant to our individual categories are set, we count that type
-	// as set.
-	isFeePPM := req.FeePpm != 0
-	isCategories := req.MaxSwapFeePpm != 0 || req.MaxRoutingFeePpm != 0 ||
-		req.MaxPrepayRoutingFeePpm != 0 || req.MaxMinerFeeSat != 0 ||
-		req.MaxPrepaySat != 0 || req.SweepFeeRateSatPerVbyte != 0
-
-	switch {
-	case isFeePPM && isCategories:
-		return nil, errors.New("set either fee ppm, or individual " +
-			"fee categories")
-	case isFeePPM:
-		return liquidity.NewFeePortion(req.FeePpm), nil
-
-	case isCategories:
-		satPerVbyte := chainfee.SatPerKVByte(
-			req.SweepFeeRateSatPerVbyte * 1000,
-		)
-
-		return liquidity.NewFeeCategoryLimit(
-			req.MaxSwapFeePpm,
-			req.MaxRoutingFeePpm,
-			req.MaxPrepayRoutingFeePpm,
-			btcutil.Amount(req.MaxMinerFeeSat),
-			btcutil.Amount(req.MaxPrepaySat),
-			satPerVbyte.FeePerKWeight(),
-		), nil
-
-	default:
-		return nil, errors.New("no fee categories set")
-	}
-}
-
-// rpcToRule switches on rpc rule type to convert to our rule interface.
-func rpcToRule(rule *clientrpc.LiquidityRule) (*liquidity.SwapRule, error) {
-	swapType := swap.TypeOut
-	if rule.SwapType == clientrpc.SwapType_LOOP_IN {
-		swapType = swap.TypeIn
-	}
-
-	switch rule.Type {
-	case clientrpc.LiquidityRuleType_UNKNOWN:
-		return nil, fmt.Errorf("rule type field must be set")
-
-	case clientrpc.LiquidityRuleType_THRESHOLD:
-		return &liquidity.SwapRule{
-			ThresholdRule: liquidity.NewThresholdRule(
-				int(rule.IncomingThreshold),
-				int(rule.OutgoingThreshold),
-			),
-			Type: swapType,
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown rule: %T", rule)
-	}
 }
 
 // SuggestSwaps provides a list of suggested swaps based on lnd's current
