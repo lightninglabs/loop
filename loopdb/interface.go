@@ -33,6 +33,20 @@ type SwapStore interface {
 	UpdateLoopIn(hash lntypes.Hash, time time.Time,
 		state SwapStateData) error
 
+	// PutLiquidityParams writes the serialized `manager.Parameters` bytes
+	// into the bucket.
+	//
+	// NOTE: it's the caller's responsibility to encode the param. Atm,
+	// it's encoding using the proto package's `Marshal` method.
+	PutLiquidityParams(params []byte) error
+
+	// FetchLiquidityParams reads the serialized `manager.Parameters` bytes
+	// from the bucket.
+	//
+	// NOTE: it's the caller's responsibility to decode the param. Atm,
+	// it's decoding using the proto package's `Unmarshal` method.
+	FetchLiquidityParams() ([]byte, error)
+
 	// Close closes the underlying database.
 	Close() error
 }
