@@ -26,6 +26,10 @@ var (
 		[]byte{123}, &chaincfg.MainNetParams,
 	)
 
+	nodepubkeyAddr, _ = btcutil.DecodeAddress(
+		mock_lnd.NewMockLnd().NodePubkey, &chaincfg.MainNetParams,
+	)
+
 	chanID1 = lnwire.NewShortChanIDFromInt(1)
 	chanID2 = lnwire.NewShortChanIDFromInt(2)
 	chanID3 = lnwire.NewShortChanIDFromInt(3)
@@ -443,6 +447,13 @@ func TestValidateLoopOutRequest(t *testing.T) {
 			amount:         11000,
 			maxParts:       5,
 			err:            errBalanceTooLow,
+			expectedTarget: 0,
+		},
+		{
+			name:           "node pubkey as dest addr",
+			chain:          chaincfg.MainNetParams,
+			destAddr:       nodepubkeyAddr,
+			err:            errInvalidAddress,
 			expectedTarget: 0,
 		},
 	}
