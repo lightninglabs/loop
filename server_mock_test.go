@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"

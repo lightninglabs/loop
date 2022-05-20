@@ -90,7 +90,6 @@ func TestLoopOutStore(t *testing.T) {
 	t.Run("labelled swap", func(t *testing.T) {
 		testLoopOutStore(t, &labelledSwap)
 	})
-
 }
 
 // testLoopOutStore tests the basic functionality of the current bbolt

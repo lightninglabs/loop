@@ -114,6 +114,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	if !reflect.DeepEqual(
 		[]uint64(req.OutgoingChanSet), swapPayment.OutgoingChanIds,
 	) {
+
 		t.Fatalf("Unexpected outgoing channel set")
 	}
 

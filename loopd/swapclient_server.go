@@ -314,7 +314,7 @@ func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
 	}
 
 	// Concatenate both sets.
-	filteredSwaps := append(pendingSwaps, completedSwaps...)
+	filteredSwaps := append(pendingSwaps, completedSwaps...) // nolint: gocritic
 
 	// Sort again, but this time old to new.
 	sort.Slice(filteredSwaps, func(i, j int) bool {
@@ -936,7 +936,6 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*liquidity.SwapRule, error) {
 	default:
 		return nil, fmt.Errorf("unknown rule: %T", rule)
 	}
-
 }
 
 // SuggestSwaps provides a list of suggested swaps based on lnd's current

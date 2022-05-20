@@ -257,7 +257,6 @@ func testLoopInTimeout(t *testing.T,
 	// Expect a signing request for the htlc tx output value.
 	signReq := <-ctx.lnd.SignOutputRawChannel
 	if signReq.SignDescriptors[0].Output.Value != htlcTx.TxOut[0].Value {
-
 		t.Fatal("invalid signing amount")
 	}
 

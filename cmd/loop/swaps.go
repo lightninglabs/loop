@@ -60,7 +60,7 @@ func swapInfo(ctx *cli.Context) error {
 		id = ctx.String("id")
 	case ctx.NArg() > 0:
 		id = args[0]
-		args = args.Tail()
+		args = args.Tail() // nolint:wastedassign
 	default:
 		// Show command help if no arguments and flags were provided.
 		return cli.ShowCommandHelp(ctx, "swapinfo")

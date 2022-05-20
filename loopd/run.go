@@ -103,6 +103,7 @@ func NewListenerConfig(config *Config, rpcCfg RPCConfig) *ListenerCfg {
 			if rpcCfg.LndConn != nil {
 				svcCfg.Dialer = func(context.Context, string) (
 					net.Conn, error) {
+
 					return rpcCfg.LndConn, nil
 				}
 			}

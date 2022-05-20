@@ -305,7 +305,7 @@ type LoopInSwapInfo struct { // nolint
 
 // LoopOutSwapInfo contains essential information of a loop-out swap after the
 // swap is initiated.
-type LoopOutSwapInfo struct { // nolint:golint
+type LoopOutSwapInfo struct { // nolint:revive
 	// SwapHash contains the sha256 hash of the swap preimage.
 	SwapHash lntypes.Hash
 

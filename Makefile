@@ -1,10 +1,16 @@
 .DEFAULT_GOAL := build
 
 PKG := github.com/lightninglabs/loop
+TOOLS_DIR := tools
 
 GOTEST := GO111MODULE=on go test -v
 
+
+GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
+
 GO_BIN := ${GOPATH}/bin
+GOIMPORTS_BIN := $(GO_BIN)/gosimports
+
 GOBUILD := GO111MODULE=on go build -v
 GOINSTALL := GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
@@ -13,20 +19,22 @@ COMMIT := $(shell git describe --abbrev=40 --dirty)
 LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT)"
 DEV_TAGS = dev
 
-GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*" -not -name "*pb.go" -not -name "*pb.gw.go" -not -name "*.pb.json.go")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 
-LINT_BIN := $(GO_BIN)/golangci-lint
-LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
-LINT_COMMIT := v1.18.0
-LINT = $(LINT_BIN) run -v
-
-DEPGET := cd /tmp && GO111MODULE=on go get -v
 XARGS := xargs -L 1
 
 TEST_FLAGS = -test.timeout=20m
 
 UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) $(TEST_FLAGS)
+
+# Linting uses a lot of memory, so keep it under control by limiting the number
+# of workers if requested.
+ifneq ($(workers),)
+LINT_WORKERS = --concurrency=$(workers)
+endif
+
+DOCKER_TOOLS = docker run -v $$(pwd):/build loop-tools
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
@@ -34,30 +42,14 @@ define print
 	echo $(GREEN)$1$(NC)
 endef
 
-$(LINT_BIN):
-	@$(call print, "Fetching linter")
-	$(DEPGET) $(LINT_PKG)@$(LINT_COMMIT)
+# ============
+# DEPENDENCIES
+# ============
 
-unit: 
-	@$(call print, "Running unit tests.")
-	$(UNIT)
+$(GOIMPORTS_BIN):
+	@$(call print, "Installing goimports.")
+	cd $(TOOLS_DIR); go install -trimpath $(GOIMPORTS_PKG)
 
-fmt:
-	@$(call print, "Formatting source.")
-	gofmt -l -w -s $(GOFILES_NOVENDOR)
-
-lint: $(LINT_BIN)
-	@$(call print, "Linting source.")
-	$(LINT)
-
-mod-tidy:
-	@$(call print, "Tidying modules.")
-	$(GOMOD) tidy
-
-mod-check:
-	@$(call print, "Checking modules.")
-	$(GOMOD) tidy
-	if test -n "$$(git status | grep -e "go.mod\|go.sum")"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
 # ============
 # INSTALLATION
@@ -94,3 +86,40 @@ clean:
 	@$(call print, "Cleaning up.")
 	rm -f ./loop-debug ./loopd-debug
 	rm -rf ./vendor
+
+# =======
+# TESTING
+# =======
+
+unit: 
+	@$(call print, "Running unit tests.")
+	$(UNIT)
+
+# =========
+# UTILITIES
+# =========
+
+fmt: $(GOIMPORTS_BIN)
+	@$(call print, "Fixing imports.")
+	gosimports -w $(GOFILES_NOVENDOR)
+	@$(call print, "Formatting source.")
+	gofmt -l -w -s $(GOFILES_NOVENDOR)
+
+lint: docker-tools
+	@$(call print, "Linting source.")
+	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
+
+docker-tools:
+	@$(call print, "Building tools docker image.")
+	docker build -q -t loop-tools $(TOOLS_DIR)
+
+mod-tidy:
+	@$(call print, "Tidying modules.")
+	$(GOMOD) tidy
+
+mod-check:
+	@$(call print, "Checking modules.")
+	$(GOMOD) tidy
+	if test -n "$$(git status | grep -e "go.mod\|go.sum")"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
+
+

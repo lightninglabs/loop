@@ -476,7 +476,6 @@ func setParams(ctx *cli.Context) error {
 	// so that it does not need to be manually updated.
 	case categoriesSet:
 		params.FeePpm = 0
-
 	}
 	// Update our parameters to our mutated values.
 	_, err = client.SetLiquidityParams(

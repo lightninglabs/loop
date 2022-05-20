@@ -152,7 +152,6 @@ func calculateSwapAmount(targetAmount, reserveAmount,
 	// cannot take any further action.
 	case reserveAmount <= reserveMinimum:
 		return 0
-
 	}
 
 	// Express our minimum reserve amount as a maximum target amount.

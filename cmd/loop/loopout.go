@@ -161,7 +161,7 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	// Show a warning if a slow swap was requested.
-	warning := ""
+	var warning string
 	if fast {
 		warning = "Fast swap requested."
 	} else {
