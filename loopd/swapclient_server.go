@@ -936,7 +936,6 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*liquidity.SwapRule, error) {
 	default:
 		return nil, fmt.Errorf("unknown rule: %T", rule)
 	}
-
 }
 
 // SuggestSwaps provides a list of suggested swaps based on lnd's current

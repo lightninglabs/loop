@@ -262,7 +262,6 @@ func (p Parameters) String() string {
 		ruleList = append(
 			ruleList, fmt.Sprintf("Peer: %v: %v", peer, rule),
 		)
-
 	}
 
 	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+

@@ -503,7 +503,7 @@ type HtlcScriptV2 struct {
 // OP_ELSE
 //   OP_SIZE <20> OP_EQUALVERIFY OP_HASH160 <ripemd(swapHash)> OP_EQUALVERIFY 1
 //   OP_CHECKSEQUENCEVERIFY
-// OP_ENDIF
+// OP_ENDIF .
 func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
 	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV2, error) {
 

@@ -19,7 +19,7 @@ import (
 //              "human-readable": Hex("102030"),
 //              Hex("1111"): Hex("5783492373"),
 //      },
-// }
+// } .
 func DumpDB(tx *bbolt.Tx) error { // nolint: unused
 	return tx.ForEach(func(k []byte, bucket *bbolt.Bucket) error {
 		key := toString(k)
@@ -95,9 +95,7 @@ func restoreDB(bucket *bbolt.Bucket, data map[string]interface{}) error {
 			}
 			continue
 		}
-
 		switch value := v.(type) {
-
 		// Key contains value.
 		case string:
 			err := bucket.Put(key, []byte(value))

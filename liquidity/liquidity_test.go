@@ -1409,7 +1409,6 @@ func TestSizeRestrictions(t *testing.T) {
 						Maximum: 6000,
 					}, nil,
 				).Once()
-
 			},
 			suggestions:   nil,
 			expectedError: ErrMaxExceedsServer,
@@ -1582,7 +1581,6 @@ func TestFeePercentage(t *testing.T) {
 				error) {
 
 				return testCase.quote, nil
-
 			}
 
 			lnd.Channels = []lndclient.ChannelInfo{

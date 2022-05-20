@@ -185,7 +185,7 @@ func (h *mockLightningClient) ListTransactions(
 }
 
 // GetNodeInfo retrieves info on the node, and if includeChannels is True,
-// will return other channels the node may have with other peers
+// will return other channels the node may have with other peers.
 func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
 	pubKeyBytes route.Vertex, includeChannels bool) (*lndclient.NodeInfo, error) {
 
@@ -224,7 +224,7 @@ func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
 	return nodeInfo, nil
 }
 
-// GetChanInfo retrieves all the info the node has on the given channel
+// GetChanInfo retrieves all the info the node has on the given channel.
 func (h *mockLightningClient) GetChanInfo(ctx context.Context,
 	channelID uint64) (*lndclient.ChannelEdge, error) {
 

@@ -41,7 +41,6 @@ func (s *PrefixLog) Errorf(format string, params ...interface{}) {
 		fmt.Sprintf("%v %s", ShortHash(&s.Hash), format),
 		params...,
 	)
-
 }
 
 // ShortHash returns a shortened version of the hash suitable for use in

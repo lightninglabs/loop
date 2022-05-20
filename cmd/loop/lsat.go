@@ -49,7 +49,6 @@ func listAuth(ctx *cli.Context) error {
 
 	tokens := make([]*printableToken, len(resp.Tokens))
 	for i, t := range resp.Tokens {
-
 		mac := &macaroon.Macaroon{}
 		err := mac.UnmarshalBinary(t.BaseMacaroon)
 		if err != nil {

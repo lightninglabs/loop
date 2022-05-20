@@ -26,7 +26,7 @@ import (
 // asserting the result matches the validity expectation. In the case where it
 // doesn't match the expectation, it executes the script step-by-step and
 // prints debug information to stdout.
-// This code is adopted from: lnd/input/script_utils_test.go
+// This code is adopted from: lnd/input/script_utils_test.go .
 func assertEngineExecution(t *testing.T, valid bool,
 	newEngine func() (*txscript.Engine, error)) {
 
@@ -200,7 +200,6 @@ func TestHtlcV2(t *testing.T) {
 				require.NoError(t, err)
 
 				return witness
-
 			}, true,
 		},
 		{
