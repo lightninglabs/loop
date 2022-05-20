@@ -314,7 +314,7 @@ func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
 	}
 
 	// Concatenate both sets.
-	filteredSwaps := append(pendingSwaps, completedSwaps...)
+	filteredSwaps := append(pendingSwaps, completedSwaps...) // nolint: gocritic
 
 	// Sort again, but this time old to new.
 	sort.Slice(filteredSwaps, func(i, j int) bool {

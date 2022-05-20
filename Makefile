@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := build
 
 PKG := github.com/lightninglabs/loop
+TOOLS_DIR := tools
 
 GOTEST := GO111MODULE=on go test -v
 
@@ -16,17 +17,19 @@ DEV_TAGS = dev
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 
-LINT_BIN := $(GO_BIN)/golangci-lint
-LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
-LINT_COMMIT := v1.18.0
-LINT = $(LINT_BIN) run -v
-
-DEPGET := cd /tmp && GO111MODULE=on go get -v
 XARGS := xargs -L 1
 
 TEST_FLAGS = -test.timeout=20m
 
 UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) $(TEST_FLAGS)
+
+# Linting uses a lot of memory, so keep it under control by limiting the number
+# of workers if requested.
+ifneq ($(workers),)
+LINT_WORKERS = --concurrency=$(workers)
+endif
+
+DOCKER_TOOLS = docker run -v $$(pwd):/build loop-tools
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
@@ -46,9 +49,13 @@ fmt:
 	@$(call print, "Formatting source.")
 	gofmt -l -w -s $(GOFILES_NOVENDOR)
 
-lint: $(LINT_BIN)
+lint: docker-tools
 	@$(call print, "Linting source.")
-	$(LINT)
+	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
+
+docker-tools:
+	@$(call print, "Building tools docker image.")
+	docker build -q -t loop-tools $(TOOLS_DIR)
 
 mod-tidy:
 	@$(call print, "Tidying modules.")
