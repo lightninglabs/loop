@@ -16,6 +16,9 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* User-specified liquidity parameters are persisted on disk to enable the
+  liquidity manager's config to surive after a restart.
+
 #### Breaking Changes
 
 #### Bug Fixes
