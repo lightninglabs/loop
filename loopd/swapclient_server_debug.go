@@ -7,10 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 var (
