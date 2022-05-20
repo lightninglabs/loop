@@ -52,6 +52,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/ticker"
+	"google.golang.org/protobuf/proto"
 
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 )
@@ -181,6 +182,18 @@ type Config struct {
 	// MinimumConfirmations is the minimum number of confirmations we allow
 	// setting for sweep target.
 	MinimumConfirmations int32
+
+	// PutLiquidityParams writes the serialized `Parameters` into db.
+	//
+	// NOTE: the params are encoded using `proto.Marshal` over an RPC
+	// request.
+	PutLiquidityParams func(params []byte) error
+
+	// FetchLiquidityParams reads the serialized `Parameters` from db.
+	//
+	// NOTE: the params are decoded using `proto.Unmarshal` over a
+	// serialized RPC request.
+	FetchLiquidityParams func() ([]byte, error)
 }
 
 // Manager contains a set of desired liquidity rules for our channel
@@ -204,6 +217,19 @@ type Manager struct {
 func (m *Manager) Run(ctx context.Context) error {
 	m.cfg.AutoloopTicker.Resume()
 	defer m.cfg.AutoloopTicker.Stop()
+
+	// Before we start the main loop, load the params from db.
+	req, err := m.loadParams()
+	if err != nil {
+		return err
+	}
+
+	// Set the params if there's one.
+	if req != nil {
+		if err := m.SetParameters(ctx, req); err != nil {
+			return err
+		}
+	}
 
 	for {
 		select {
@@ -251,7 +277,18 @@ func (m *Manager) SetParameters(ctx context.Context,
 		return err
 	}
 
-	return m.setParameters(ctx, *params)
+	if err := m.setParameters(ctx, *params); err != nil {
+		return err
+	}
+
+	// Save the params on disk.
+	//
+	// NOTE: alternatively we can save the bytes in memory and persist them
+	// on disk during shutdown to save us some IO cost from hitting the db.
+	// Since setting params is NOT a frequent action, it's should put
+	// little pressure on our db. Only when performance becomes an issue,
+	// we can then apply the alternative.
+	return m.saveParams(req)
 }
 
 // SetParameters updates our current set of parameters if the new parameters
@@ -280,7 +317,47 @@ func (m *Manager) setParameters(ctx context.Context,
 	defer m.paramsLock.Unlock()
 
 	m.params = cloneParameters(params)
+
 	return nil
+}
+
+// saveParams marshals an RPC request and saves it to db.
+func (m *Manager) saveParams(req proto.Message) error {
+	// Marshal the params.
+	paramsBytes, err := proto.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	// Save the params on disk.
+	if err := m.cfg.PutLiquidityParams(paramsBytes); err != nil {
+		return fmt.Errorf("failed to save params: %v", err)
+	}
+
+	return nil
+}
+
+// loadParams unmarshals a serialized RPC request from db and returns the RPC
+// request.
+func (m *Manager) loadParams() (*clientrpc.LiquidityParameters, error) {
+	paramsBytes, err := m.cfg.FetchLiquidityParams()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read params: %v", err)
+	}
+
+	// Return early if there's nothing saved.
+	if paramsBytes == nil {
+		return nil, nil
+	}
+
+	// Unmarshal the params.
+	req := &clientrpc.LiquidityParameters{}
+	err = proto.Unmarshal(paramsBytes, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal params: %v", err)
+	}
+
+	return req, nil
 }
 
 // autoloop gets a set of suggested swaps and dispatches them automatically if

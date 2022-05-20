@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -244,6 +245,58 @@ func TestParameters(t *testing.T) {
 	}
 	err = manager.setParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
+}
+
+// TestPersistParams tests reading and writing of parameters for our manager.
+func TestPersistParams(t *testing.T) {
+	rpcParams := &clientrpc.LiquidityParameters{
+		FeePpm:          100,
+		AutoMaxInFlight: 10,
+		HtlcConfTarget:  2,
+	}
+	cfg, _ := newTestConfig()
+	manager := NewManager(cfg)
+
+	var paramsBytes []byte
+
+	// Mock the read method to return empty data.
+	manager.cfg.FetchLiquidityParams = func() ([]byte, error) {
+		return paramsBytes, nil
+	}
+
+	// Test the nil params is returned.
+	req, err := manager.loadParams()
+	require.Nil(t, req)
+	require.NoError(t, err)
+
+	// Mock the write method to return no error.
+	manager.cfg.PutLiquidityParams = func(data []byte) error {
+		paramsBytes = data
+		return nil
+	}
+
+	// Test save the message.
+	err = manager.saveParams(rpcParams)
+	require.NoError(t, err)
+
+	// Test the nil params is returned.
+	req, err = manager.loadParams()
+	require.NoError(t, err)
+
+	// Check the specified fields are set as expected.
+	require.Equal(t, rpcParams.FeePpm, req.FeePpm)
+	require.Equal(t, rpcParams.AutoMaxInFlight, req.AutoMaxInFlight)
+	require.Equal(t, rpcParams.HtlcConfTarget, req.HtlcConfTarget)
+
+	// Check the unspecified fields are using empty values.
+	require.False(t, req.Autoloop)
+	require.Empty(t, req.Rules)
+	require.Zero(t, req.AutoloopBudgetSat)
+
+	// Finally, check the loaded request can be used to set params without
+	// error.
+	err = manager.SetParameters(context.Background(), req)
+	require.NoError(t, err)
 }
 
 // TestRestrictedSuggestions tests getting of swap suggestions when we have

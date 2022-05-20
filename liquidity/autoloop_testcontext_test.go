@@ -166,6 +166,12 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		MinimumConfirmations: loop.DefaultSweepConfTarget,
 		Lnd:                  &testCtx.lnd.LndServices,
 		Clock:                testCtx.testClock,
+		PutLiquidityParams: func(_ []byte) error {
+			return nil
+		},
+		FetchLiquidityParams: func() ([]byte, error) {
+			return nil, nil
+		},
 	}
 
 	// SetParameters needs to make a call to our mocked restrictions call,
