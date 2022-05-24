@@ -55,6 +55,12 @@ var (
 	errBalanceTooLow = errors.New(
 		"channel balance too low for loop out amount",
 	)
+
+	// errInvalidAddress is returned when the destination address is of
+	// an unsupported format such as P2PK or P2TR addresses.
+	errInvalidAddress = errors.New(
+		"invalid or unsupported address",
+	)
 )
 
 // swapClientServer implements the grpc service exposed by loopd.
@@ -1151,6 +1157,18 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	if !sweepAddr.IsForNet(chainParams) {
 		return 0, fmt.Errorf("%w: Current active network is %s",
 			errIncorrectChain, chainParams.Name)
+	}
+
+	// Check that the provided destination address is a supported
+	// address format.
+	switch sweepAddr.(type) {
+	case *btcutil.AddressWitnessScriptHash,
+		*btcutil.AddressWitnessPubKeyHash,
+		*btcutil.AddressScriptHash,
+		*btcutil.AddressPubKeyHash:
+
+	default:
+		return 0, errInvalidAddress
 	}
 
 	// Check that the label is valid.
