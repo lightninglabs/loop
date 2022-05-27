@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,9 +35,14 @@ func TestLoopInSuccess(t *testing.T) {
 
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
+	expectedLastHop := &route.Vertex{0x02}
+
+	req := &testLoopInRequest
+	req.LastHop = expectedLastHop
+
 	initResult, err := newLoopInSwap(
 		context.Background(), cfg,
-		height, &testLoopInRequest,
+		height, req,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +60,14 @@ func TestLoopInSuccess(t *testing.T) {
 		errChan <- err
 	}()
 
-	ctx.assertState(loopdb.StateInitiated)
+	swapInfo := <-ctx.statusChan
+	require.Equal(t, loopdb.StateInitiated, swapInfo.State)
+
+	// Check that the SwapInfo contains the provided last hop.
+	require.Equal(t, expectedLastHop, swapInfo.LastHop)
+
+	// Check that the SwapInfo does not contain an outgoing chan set.
+	require.Nil(t, swapInfo.OutgoingChanSet)
 
 	ctx.assertState(loopdb.StateHtlcPublished)
 	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)

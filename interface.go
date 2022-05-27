@@ -353,6 +353,15 @@ type SwapInfo struct {
 
 	// ExternalHtlc is set to true for external loop-in swaps.
 	ExternalHtlc bool
+
+	// LastHop optionally specifies the last hop to use for the loop in
+	// payment. On a loop out this field is nil.
+	LastHop *route.Vertex
+
+	// OutgoingChanSet optionally specifies the short channel ids of the
+	// channels that may be used to loop out. On a loop in this field
+	// is nil.
+	OutgoingChanSet loopdb.ChannelSet
 }
 
 // LastUpdate returns the last update time of the swap
