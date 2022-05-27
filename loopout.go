@@ -306,6 +306,15 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 
 	info.HtlcAddressP2WSH = s.htlc.Address
 
+	// In order to avoid potentially dangerous ownership sharing
+	// we copy the outgoing channel set.
+	if s.OutgoingChanSet != nil {
+		outgoingChanSet := make(loopdb.ChannelSet, len(s.OutgoingChanSet))
+		copy(outgoingChanSet[:], s.OutgoingChanSet[:])
+
+		info.OutgoingChanSet = outgoingChanSet
+	}
+
 	select {
 	case s.statusChan <- *info:
 	case <-ctx.Done():
