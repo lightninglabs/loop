@@ -214,6 +214,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 	var swapType clientrpc.SwapType
 	var htlcAddress, htlcAddressP2WSH, htlcAddressNP2WSH string
+	var outGoingChanSet []uint64
+	var lastHop []byte
 
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
@@ -227,10 +229,16 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 			htlcAddress = htlcAddressP2WSH
 		}
 
+		if loopSwap.LastHop != nil {
+			lastHop = loopSwap.LastHop[:]
+		}
+
 	case swap.TypeOut:
 		swapType = clientrpc.SwapType_LOOP_OUT
 		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
 		htlcAddress = htlcAddressP2WSH
+
+		outGoingChanSet = loopSwap.OutgoingChanSet
 
 	default:
 		return nil, errors.New("unknown swap type")
@@ -252,6 +260,8 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		CostOnchain:       int64(loopSwap.Cost.Onchain),
 		CostOffchain:      int64(loopSwap.Cost.Offchain),
 		Label:             loopSwap.Label,
+		LastHop:           lastHop,
+		OutgoingChanSet:   outGoingChanSet,
 	}, nil
 }
 
