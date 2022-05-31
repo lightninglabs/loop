@@ -52,9 +52,11 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 
 	const maxParts = 5
 
+	chanSet := loopdb.ChannelSet{2, 3}
+
 	// Initiate the swap.
 	req := *testRequest
-	req.OutgoingChanSet = loopdb.ChannelSet{2, 3}
+	req.OutgoingChanSet = chanSet
 
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, &req,
@@ -89,6 +91,12 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	if state.State != loopdb.StateInitiated {
 		t.Fatal("unexpected state")
 	}
+
+	// Check that the SwapInfo contains the outgoing chan set
+	require.Equal(t, chanSet, state.OutgoingChanSet)
+
+	// Check that the SwapInfo does not contain a last hop
+	require.Nil(t, state.LastHop)
 
 	// Intercept the swap and prepay payments. Order is undefined.
 	payments := []test.RouterPaymentChannelMessage{

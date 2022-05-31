@@ -431,6 +431,14 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 	info.HtlcAddressNP2WSH = s.htlcNP2WSH.Address
 	info.ExternalHtlc = s.ExternalHtlc
 
+	// In order to avoid potentially dangerous ownership sharing
+	// we copy the last hop vertex.
+	if s.LastHop != nil {
+		lastHop := &route.Vertex{}
+		copy(lastHop[:], s.LastHop[:])
+		info.LastHop = lastHop
+	}
+
 	select {
 	case s.statusChan <- *info:
 	case <-ctx.Done():

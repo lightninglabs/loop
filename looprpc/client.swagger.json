@@ -1129,6 +1129,19 @@
           "format": "int64",
           "title": "Off-chain routing fees"
         },
+        "last_hop": {
+          "type": "string",
+          "format": "byte",
+          "description": "Optional last hop if provided in the loop in request."
+        },
+        "outgoing_chan_set": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "Optional outgoing channel set if provided in the loop out request."
+        },
         "label": {
           "type": "string",
           "description": "An optional label given to the swap on creation."
