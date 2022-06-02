@@ -72,7 +72,7 @@ func (s *Sweeper) CreateSweepTx(
 	}
 
 	rawSigs, err := s.Lnd.Signer.SignOutputRaw(
-		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
+		globalCtx, sweepTx, []*lndclient.SignDescriptor{&signDesc}, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("signing: %v", err)
@@ -97,7 +97,7 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	btcutil.Amount, error) {
 
 	// Get fee estimate from lnd.
-	feeRate, err := s.Lnd.WalletKit.EstimateFee(ctx, sweepConfTarget)
+	feeRate, err := s.Lnd.WalletKit.EstimateFeeRate(ctx, sweepConfTarget)
 	if err != nil {
 		return 0, fmt.Errorf("estimate fee: %v", err)
 	}

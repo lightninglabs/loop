@@ -40,7 +40,7 @@ func (b *loopOutBuilder) swapType() swap.Type {
 // For loop out, we check whether the fees required for our on-chain sweep
 // transaction exceed our fee limits.
 func (b *loopOutBuilder) maySwap(ctx context.Context, params Parameters) error {
-	estimate, err := b.cfg.Lnd.WalletKit.EstimateFee(
+	estimate, err := b.cfg.Lnd.WalletKit.EstimateFeeRate(
 		ctx, params.SweepConfTarget,
 	)
 	if err != nil {

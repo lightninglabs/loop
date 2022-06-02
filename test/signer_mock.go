@@ -17,7 +17,8 @@ type mockSigner struct {
 }
 
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor,
+	_ []*wire.TxOut) ([][]byte, error) {
 
 	s.lnd.SignOutputRawChannel <- SignOutputRawRequest{
 		Tx:              tx,
@@ -56,4 +57,53 @@ func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
 	*keychain.KeyLocator) ([32]byte, error) {
 
 	return [32]byte{4, 5, 6}, nil
+}
+
+// MuSig2CreateSession creates a new MuSig2 signing session using the local
+// key identified by the key locator. The complete list of all public keys of
+// all signing parties must be provided, including the public key of the local
+// signing key. If nonces of other parties are already known, they can be
+// submitted as well to reduce the number of method calls necessary later on.
+func (s *mockSigner) MuSig2CreateSession(context.Context, *keychain.KeyLocator,
+	[][32]byte, ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo,
+	error) {
+
+	return nil, nil
+}
+
+// MuSig2RegisterNonces registers one or more public nonces of other signing
+// participants for a session identified by its ID. This method returns true
+// once we have all nonces for all other signing participants.
+func (s *mockSigner) MuSig2RegisterNonces(context.Context, [32]byte,
+	[][66]byte) (bool, error) {
+
+	return false, nil
+}
+
+// MuSig2Sign creates a partial signature using the local signing key
+// that was specified when the session was created. This can only be
+// called when all public nonces of all participants are known and have
+// been registered with the session. If this node isn't responsible for
+// combining all the partial signatures, then the cleanup parameter
+// should be set, indicating that the session can be removed from memory
+// once the signature was produced.
+func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
+	bool) ([]byte, error) {
+
+	return nil, nil
+}
+
+// MuSig2CombineSig combines the given partial signature(s) with the
+// local one, if it already exists. Once a partial signature of all
+// participants is registered, the final signature will be combined and
+// returned.
+func (s *mockSigner) MuSig2CombineSig(context.Context, [32]byte,
+	[][]byte) (bool, []byte, error) {
+
+	return false, nil, nil
+}
+
+// MuSig2Cleanup removes a session from memory to free up resources.
+func (s *mockSigner) MuSig2Cleanup(context.Context, [32]byte) error {
+	return nil
 }

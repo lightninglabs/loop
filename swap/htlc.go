@@ -309,9 +309,10 @@ func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) error {
 		}
 		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript)
 		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript)
+		timeoutLeafHash := timeoutLeaf.TapHash()
+
 		tapscript := input.TapscriptPartialReveal(
-			trHtlc.InternalPubKey, successLeaf,
-			timeoutLeaf.TapHash(),
+			trHtlc.InternalPubKey, successLeaf, timeoutLeafHash[:],
 		)
 
 		estimator.AddTapscriptInput(maxSuccessWitnessSize, tapscript)
@@ -339,9 +340,10 @@ func (h *Htlc) AddTimeoutToEstimator(estimator *input.TxWeightEstimator) error {
 		}
 		successLeaf := txscript.NewBaseTapLeaf(trHtlc.SuccessScript)
 		timeoutLeaf := txscript.NewBaseTapLeaf(trHtlc.TimeoutScript)
+		successLeafHash := successLeaf.TapHash()
+
 		tapscript := input.TapscriptPartialReveal(
-			trHtlc.InternalPubKey, timeoutLeaf,
-			successLeaf.TapHash(),
+			trHtlc.InternalPubKey, timeoutLeaf, successLeafHash[:],
 		)
 
 		estimator.AddTapscriptInput(maxTimeoutWitnessSize, tapscript)
