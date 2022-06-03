@@ -129,8 +129,8 @@ func (m *mockWalletKit) setFeeEstimate(confTarget int32, fee chainfee.SatPerKWei
 	m.feeEstimates[confTarget] = fee
 }
 
-func (m *mockWalletKit) EstimateFee(ctx context.Context, confTarget int32) (
-	chainfee.SatPerKWeight, error) {
+func (m *mockWalletKit) EstimateFeeRate(ctx context.Context,
+	confTarget int32) (chainfee.SatPerKWeight, error) {
 
 	m.feeEstimateLock.Lock()
 	defer m.feeEstimateLock.Unlock()

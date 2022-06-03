@@ -680,7 +680,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	}
 
 	// Get fee estimate from lnd.
-	feeRate, err := s.lnd.WalletKit.EstimateFee(
+	feeRate, err := s.lnd.WalletKit.EstimateFeeRate(
 		ctx, s.LoopInContract.HtlcConfTarget,
 	)
 	if err != nil {

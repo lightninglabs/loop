@@ -359,7 +359,7 @@ func TestCustomSweepConfTarget(t *testing.T) {
 		)
 
 		weight := blockchain.GetTransactionWeight(btcutil.NewTx(sweepTx))
-		feeRate, err := ctx.Lnd.WalletKit.EstimateFee(
+		feeRate, err := ctx.Lnd.WalletKit.EstimateFeeRate(
 			context.Background(), expConfTarget,
 		)
 		if err != nil {
