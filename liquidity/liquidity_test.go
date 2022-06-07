@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -221,7 +222,7 @@ func TestParameters(t *testing.T) {
 		chanID: originalRule,
 	}
 
-	err := manager.SetParameters(context.Background(), expected)
+	err := manager.setParameters(context.Background(), expected)
 	require.NoError(t, err)
 
 	// Check that changing the parameters we just set does not mutate
@@ -242,62 +243,60 @@ func TestParameters(t *testing.T) {
 			Type:          swap.TypeOut,
 		},
 	}
-	err = manager.SetParameters(context.Background(), expected)
+	err = manager.setParameters(context.Background(), expected)
 	require.Equal(t, ErrZeroChannelID, err)
 }
 
-// TestValidateRestrictions tests validating client restrictions against a set
-// of server restrictions.
-func TestValidateRestrictions(t *testing.T) {
-	tests := []struct {
-		name   string
-		client *Restrictions
-		server *Restrictions
-		err    error
-	}{
-		{
-			name: "client invalid",
-			client: &Restrictions{
-				Minimum: 100,
-				Maximum: 1,
-			},
-			server: testRestrictions,
-			err:    ErrMinimumExceedsMaximumAmt,
-		},
-		{
-			name: "maximum exceeds server",
-			client: &Restrictions{
-				Maximum: 2000,
-			},
-			server: &Restrictions{
-				Minimum: 1000,
-				Maximum: 1500,
-			},
-			err: ErrMaxExceedsServer,
-		},
-		{
-			name: "minimum less than server",
-			client: &Restrictions{
-				Minimum: 500,
-			},
-			server: &Restrictions{
-				Minimum: 1000,
-				Maximum: 1500,
-			},
-			err: ErrMinLessThanServer,
-		},
+// TestPersistParams tests reading and writing of parameters for our manager.
+func TestPersistParams(t *testing.T) {
+	rpcParams := &clientrpc.LiquidityParameters{
+		FeePpm:          100,
+		AutoMaxInFlight: 10,
+		HtlcConfTarget:  2,
+	}
+	cfg, _ := newTestConfig()
+	manager := NewManager(cfg)
+
+	var paramsBytes []byte
+
+	// Mock the read method to return empty data.
+	manager.cfg.FetchLiquidityParams = func() ([]byte, error) {
+		return paramsBytes, nil
 	}
 
-	for _, testCase := range tests {
-		testCase := testCase
+	// Test the nil params is returned.
+	req, err := manager.loadParams()
+	require.Nil(t, req)
+	require.NoError(t, err)
 
-		t.Run(testCase.name, func(t *testing.T) {
-			err := validateRestrictions(
-				testCase.server, testCase.client,
-			)
-			require.Equal(t, testCase.err, err)
-		})
+	// Mock the write method to return no error.
+	manager.cfg.PutLiquidityParams = func(data []byte) error {
+		paramsBytes = data
+		return nil
 	}
+
+	// Test save the message.
+	err = manager.saveParams(rpcParams)
+	require.NoError(t, err)
+
+	// Test the nil params is returned.
+	req, err = manager.loadParams()
+	require.NoError(t, err)
+
+	// Check the specified fields are set as expected.
+	require.Equal(t, rpcParams.FeePpm, req.FeePpm)
+	require.Equal(t, rpcParams.AutoMaxInFlight, req.AutoMaxInFlight)
+	require.Equal(t, rpcParams.HtlcConfTarget, req.HtlcConfTarget)
+
+	// Check the unspecified fields are using empty values.
+	require.False(t, req.Autoloop)
+	require.Empty(t, req.Rules)
+	require.Zero(t, req.AutoloopBudgetSat)
+
+	// Finally, check the loaded request can be used to set params without
+	// error.
+	err = manager.SetParameters(context.Background(), req)
+	require.NoError(t, err)
 }
 
 // TestRestrictedSuggestions tests getting of swap suggestions when we have
@@ -1832,7 +1831,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	// them to use the rules set by the test.
 	manager := NewManager(setup.cfg)
 
-	err := manager.SetParameters(context.Background(), setup.params)
+	err := manager.setParameters(context.Background(), setup.params)
 	require.NoError(t, err)
 
 	actual, err := manager.SuggestSwaps(context.Background(), false)
@@ -2014,7 +2013,7 @@ func TestCurrentTraffic(t *testing.T) {
 
 		params := m.GetParameters()
 		params.FailureBackOff = backoff
-		require.NoError(t, m.SetParameters(context.Background(), params))
+		require.NoError(t, m.setParameters(context.Background(), params))
 
 		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
 		require.Equal(t, testCase.expected, actual)

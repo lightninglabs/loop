@@ -72,6 +72,8 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		MinimumConfirmations: minConfTarget,
+		PutLiquidityParams:   client.Store.PutLiquidityParams,
+		FetchLiquidityParams: client.Store.FetchLiquidityParams,
 	}
 
 	return liquidity.NewManager(mngrCfg)

@@ -94,6 +94,14 @@ var (
 	// value: uint32 confirmation value
 	confirmationsKey = []byte("confirmations")
 
+	// liquidtyBucket is a root bucket used to save liquidity manager
+	// related info.
+	liquidityBucket = []byte("liquidity")
+
+	// liquidtyParamsKey specifies the key used to store the liquidity
+	// parameters.
+	liquidtyParamsKey = []byte("params")
+
 	byteOrder = binary.BigEndian
 
 	keyLength = 33
@@ -186,6 +194,12 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 		}
 
 		_, err = tx.CreateBucketIfNotExists(loopInBucketKey)
+		if err != nil {
+			return err
+		}
+
+		// Create liquidity manager's bucket.
+		_, err = tx.CreateBucketIfNotExists(liquidityBucket)
 		if err != nil {
 			return err
 		}
@@ -711,4 +725,42 @@ func (s *boltSwapStore) UpdateLoopIn(hash lntypes.Hash, time time.Time,
 // NOTE: Part of the loopdb.SwapStore interface.
 func (s *boltSwapStore) Close() error {
 	return s.db.Close()
+}
+
+// PutLiquidityParams writes the serialized `manager.Parameters` bytes into the
+// bucket.
+//
+// NOTE: it's the caller's responsibility to encode the param. Atm, it's
+// encoding using the proto package's `Marshal` method.
+func (s *boltSwapStore) PutLiquidityParams(params []byte) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Read the root bucket.
+		rootBucket := tx.Bucket(liquidityBucket)
+		if rootBucket == nil {
+			return errors.New("liquidity bucket does not exist")
+		}
+		return rootBucket.Put(liquidtyParamsKey, params)
+	})
+}
+
+// FetchLiquidityParams reads the serialized `manager.Parameters` bytes from
+// the bucket.
+//
+// NOTE: it's the caller's responsibility to decode the param. Atm, it's
+// decoding using the proto package's `Unmarshal` method.
+func (s *boltSwapStore) FetchLiquidityParams() ([]byte, error) {
+	var params []byte
+
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		// Read the root bucket.
+		rootBucket := tx.Bucket(liquidityBucket)
+		if rootBucket == nil {
+			return errors.New("liquidity bucket does not exist")
+		}
+
+		params = rootBucket.Get(liquidtyParamsKey)
+		return nil
+	})
+
+	return params, err
 }

@@ -471,3 +471,31 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 		t.Fatal("invalid outgoing channel")
 	}
 }
+
+// TestLiquidityParams checks that reading and writing to liquidty bucket are
+// as expected.
+func TestLiquidityParams(t *testing.T) {
+	tempDirName, err := ioutil.TempDir("", "clientstore")
+	require.NoError(t, err, "failed to db")
+	defer os.RemoveAll(tempDirName)
+
+	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
+	require.NoError(t, err, "failed to create store")
+
+	// Test when there's no params saved before, an empty bytes is
+	// returned.
+	params, err := store.FetchLiquidityParams()
+	require.NoError(t, err, "failed to fetch params")
+	require.Empty(t, params, "expect empty bytes")
+
+	params = []byte("test")
+
+	// Test we can save the params.
+	err = store.PutLiquidityParams(params)
+	require.NoError(t, err, "failed to put params")
+
+	// Now fetch the db again should return the above saved bytes.
+	paramsRead, err := store.FetchLiquidityParams()
+	require.NoError(t, err, "failed to fetch params")
+	require.Equal(t, params, paramsRead, "unexpected return value")
+}

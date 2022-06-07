@@ -171,6 +171,22 @@ func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
 	return nil
 }
 
+// PutLiquidityParams writes the serialized `manager.Parameters` bytes into the
+// bucket.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) PutLiquidityParams(params []byte) error {
+	return nil
+}
+
+// FetchLiquidityParams reads the serialized `manager.Parameters` bytes from
+// the bucket.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) FetchLiquidityParams() ([]byte, error) {
+	return nil, nil
+}
+
 func (s *storeMock) Close() error {
 	return nil
 }

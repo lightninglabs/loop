@@ -223,9 +223,12 @@ func setRule(ctx *cli.Context) error {
 }
 
 var setParamsCommand = cli.Command{
-	Name:        "setparams",
-	Usage:       "update the parameters set for the liquidity manager",
-	Description: "Updates the parameters set for the liquidity manager.",
+	Name:  "setparams",
+	Usage: "update the parameters set for the liquidity manager",
+	Description: "Updates the parameters set for the liquidity manager. " +
+		"Note the parameters are persisted in db to save the trouble " +
+		"of setting them again upon loopd restart. To get the " +
+		"default values, use `getparams` before any `setparams`.",
 	Flags: []cli.Flag{
 		cli.IntFlag{
 			Name: "sweeplimit",

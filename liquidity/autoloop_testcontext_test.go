@@ -166,6 +166,12 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		MinimumConfirmations: loop.DefaultSweepConfTarget,
 		Lnd:                  &testCtx.lnd.LndServices,
 		Clock:                testCtx.testClock,
+		PutLiquidityParams: func(_ []byte) error {
+			return nil
+		},
+		FetchLiquidityParams: func() ([]byte, error) {
+			return nil, nil
+		},
 	}
 
 	// SetParameters needs to make a call to our mocked restrictions call,
@@ -179,7 +185,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	// Create a manager with our test config and set our starting set of
 	// parameters.
 	testCtx.manager = NewManager(cfg)
-	err := testCtx.manager.SetParameters(context.Background(), parameters)
+	err := testCtx.manager.setParameters(context.Background(), parameters)
 	assert.NoError(t, err)
 	<-done
 	return testCtx
