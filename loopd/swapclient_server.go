@@ -885,9 +885,12 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 			return nil, err
 		}
 
+		clonedPubkey := route.Vertex{}
+		copy(clonedPubkey[:], pubkey[:])
+
 		exclChan := &clientrpc.Disqualified{
 			Reason: autoloopReason,
-			Pubkey: pubkey[:],
+			Pubkey: clonedPubkey[:],
 		}
 
 		resp.Disqualified = append(resp.Disqualified, exclChan)
