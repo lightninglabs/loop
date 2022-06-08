@@ -22,5 +22,5 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
-
+* The `SuggestSwaps` rpc now returns the correct peer pubkeys in the disqualified  list.
 #### Maintenance
