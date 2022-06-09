@@ -3,9 +3,11 @@ package test
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
@@ -68,7 +70,21 @@ func (s *mockSigner) MuSig2CreateSession(context.Context, *keychain.KeyLocator,
 	[][32]byte, ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo,
 	error) {
 
-	return nil, nil
+	const testPubKey = "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	combinedKey, err := schnorr.ParsePubKey(pubKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &input.MuSig2SessionInfo{
+		CombinedKey:   combinedKey,
+		HaveAllNonces: true,
+	}, nil
 }
 
 // MuSig2RegisterNonces registers one or more public nonces of other signing
@@ -77,7 +93,7 @@ func (s *mockSigner) MuSig2CreateSession(context.Context, *keychain.KeyLocator,
 func (s *mockSigner) MuSig2RegisterNonces(context.Context, [32]byte,
 	[][66]byte) (bool, error) {
 
-	return false, nil
+	return true, nil
 }
 
 // MuSig2Sign creates a partial signature using the local signing key
