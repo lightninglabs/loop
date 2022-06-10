@@ -71,6 +71,13 @@ func (s *Sweeper) CreateSweepTx(
 		},
 	}
 
+	// Update the sign method from the default witness_v0 if this is a
+	// taproot htlc. Note that we'll always be doing script spend when
+	// sweeping a taproot htlc using the CreateSweepTx function.
+	if htlc.Version == swap.HtlcV3 {
+		signDesc.SignMethod = input.TaprootScriptSpendSignMethod
+	}
+
 	// We need our previous outputs for taproot spends, and there's no
 	// harm including them for segwit v0, so we always include our prevOut.
 	prevOut := []*wire.TxOut{
