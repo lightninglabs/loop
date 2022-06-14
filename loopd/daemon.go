@@ -15,6 +15,7 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -379,7 +380,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Add our debug permissions to our main set of required permissions
 	// if compiled in.
 	for endpoint, perm := range debugRequiredPermissions {
-		RequiredPermissions[endpoint] = perm
+		perms.RequiredPermissions[endpoint] = perm
 	}
 
 	if withMacaroonService {
@@ -395,7 +396,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				Checkers: []macaroons.Checker{
 					macaroons.IPLockChecker,
 				},
-				RequiredPerms: RequiredPermissions,
+				RequiredPerms: perms.RequiredPermissions,
 				DBPassword:    macDbDefaultPw,
 				LndClient:     &d.lnd.LndServices,
 				EphemeralKey:  lndclient.SharedKeyNUMS,
