@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -158,6 +160,18 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		totalPaymentTimeout: cfg.TotalPaymentTimeout,
 		maxPaymentRetries:   cfg.MaxPaymentRetries,
 		cancelSwap:          swapServerClient.CancelLoopOutSwap,
+		verifySchnorrSig: func(pubKey *btcec.PublicKey, hash, sig []byte) error {
+			schnorrSig, err := schnorr.ParseSignature(sig)
+			if err != nil {
+				return err
+			}
+
+			if !schnorrSig.Verify(hash, pubKey) {
+				return fmt.Errorf("invalid signature")
+			}
+
+			return nil
+		},
 	})
 
 	client := &Client{

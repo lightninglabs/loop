@@ -116,7 +116,7 @@ func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
 func (s *mockSigner) MuSig2CombineSig(context.Context, [32]byte,
 	[][]byte) (bool, []byte, error) {
 
-	return false, nil, nil
+	return true, nil, nil
 }
 
 // MuSig2Cleanup removes a session from memory to free up resources.

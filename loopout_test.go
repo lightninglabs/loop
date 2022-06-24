@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
@@ -87,12 +88,13 @@ func testLoopOutPaymentParameters(t *testing.T) {
 
 	go func() {
 		err := swap.execute(swapCtx, &executeConfig{
-			statusChan:      statusChan,
-			sweeper:         sweeper,
-			blockEpochChan:  blockEpochChan,
-			timerFactory:    timerFactory,
-			loopOutMaxParts: maxParts,
-			cancelSwap:      server.CancelLoopOutSwap,
+			statusChan:       statusChan,
+			sweeper:          sweeper,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			loopOutMaxParts:  maxParts,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, height)
 		if err != nil {
 			log.Error(err)
@@ -209,11 +211,12 @@ func testLateHtlcPublish(t *testing.T) {
 	errChan := make(chan error)
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			sweeper:        sweeper,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			cancelSwap:     server.CancelLoopOutSwap,
+			statusChan:       statusChan,
+			sweeper:          sweeper,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, height)
 		if err != nil {
 			log.Error(err)
@@ -320,11 +323,12 @@ func testCustomSweepConfTarget(t *testing.T) {
 	errChan := make(chan error)
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			sweeper:        sweeper,
-			cancelSwap:     server.CancelLoopOutSwap,
+			statusChan:       statusChan,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			sweeper:          sweeper,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
@@ -550,11 +554,12 @@ func testPreimagePush(t *testing.T) {
 	errChan := make(chan error)
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			sweeper:        sweeper,
-			cancelSwap:     server.CancelLoopOutSwap,
+			statusChan:       statusChan,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			sweeper:          sweeper,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
@@ -783,10 +788,11 @@ func testExpiryBeforeReveal(t *testing.T) {
 	errChan := make(chan error)
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
-			statusChan:     statusChan,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			sweeper:        sweeper,
+			statusChan:       statusChan,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			sweeper:          sweeper,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, ctx.Lnd.Height)
 		if err != nil {
 			log.Error(err)
@@ -909,11 +915,12 @@ func testFailedOffChainCancelation(t *testing.T) {
 	errChan := make(chan error)
 	go func() {
 		cfg := &executeConfig{
-			statusChan:     statusChan,
-			sweeper:        sweeper,
-			blockEpochChan: blockEpochChan,
-			timerFactory:   timerFactory,
-			cancelSwap:     server.CancelLoopOutSwap,
+			statusChan:       statusChan,
+			sweeper:          sweeper,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}
 
 		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
@@ -1009,5 +1016,176 @@ func testFailedOffChainCancelation(t *testing.T) {
 	)
 	state = <-statusChan
 	require.Equal(t, state.State, loopdb.StateFailOffchainPayments)
+	require.NoError(t, <-errChan)
+}
+
+// TestLoopOutMuSig2Sweep tests the loop out sweep flow when the MuSig2 signing
+// process is successful.
+func TestLoopOutMuSig2Sweep(t *testing.T) {
+	defer test.Guard(t)()
+
+	// TODO(bhandras): remove when MuSig2 is default.
+	loopdb.EnableExperimentalProtocol()
+	defer loopdb.ResetCurrentProtocolVersion()
+
+	lnd := test.NewMockLnd()
+	ctx := test.NewContext(t, lnd)
+	server := newServerMock(lnd)
+
+	testReq := *testRequest
+	testReq.SweepConfTarget = 10
+	testReq.Expiry = ctx.Lnd.Height + testLoopOutMinOnChainCltvDelta
+
+	// We set our mock fee estimate for our target sweep confs to be our
+	// max miner fee * 2. With MuSig2 we still expect that the client will
+	// publish the sweep but with the fee clamped to the maximum allowed
+	// miner fee as the preimage is revealed before the sweep txn is
+	// published.
+	ctx.Lnd.SetFeeEstimate(
+		testReq.SweepConfTarget, chainfee.SatPerKWeight(
+			testReq.MaxMinerFee*2,
+		),
+	)
+
+	cfg := newSwapConfig(
+		&lnd.LndServices, newStoreMock(t), server,
+	)
+
+	initResult, err := newLoopOutSwap(
+		context.Background(), cfg, ctx.Lnd.Height, &testReq,
+	)
+	require.NoError(t, err)
+	swap := initResult.swap
+
+	// Set up the required dependencies to execute the swap.
+	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
+	blockEpochChan := make(chan interface{})
+	statusChan := make(chan SwapInfo)
+	expiryChan := make(chan time.Time)
+	timerFactory := func(_ time.Duration) <-chan time.Time {
+		return expiryChan
+	}
+
+	errChan := make(chan error)
+
+	// Mock a successful signature verify to make sure we don't fail
+	// creating the MuSig2 sweep.
+	mockVerifySchnorrSigSuccess := func(pubKey *btcec.PublicKey, hash,
+		sig []byte) error {
+
+		return nil
+	}
+
+	go func() {
+		err := swap.execute(context.Background(), &executeConfig{
+			statusChan:       statusChan,
+			blockEpochChan:   blockEpochChan,
+			timerFactory:     timerFactory,
+			sweeper:          sweeper,
+			cancelSwap:       server.CancelLoopOutSwap,
+			verifySchnorrSig: mockVerifySchnorrSigSuccess,
+		}, ctx.Lnd.Height)
+		if err != nil {
+			log.Error(err)
+		}
+		errChan <- err
+	}()
+
+	// The swap should be found in its initial state.
+	cfg.store.(*storeMock).assertLoopOutStored()
+	state := <-statusChan
+	require.Equal(t, loopdb.StateInitiated, state.State)
+
+	// We'll then pay both the swap and prepay invoice, which should trigger
+	// the server to publish the on-chain HTLC.
+	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+
+	signalSwapPaymentResult(nil)
+	signalPrepaymentResult(nil)
+
+	// Notify the confirmation notification for the HTLC.
+	ctx.AssertRegisterConf(false, defaultConfirmations)
+
+	blockEpochChan <- ctx.Lnd.Height + 1
+
+	htlcTx := wire.NewMsgTx(2)
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    int64(swap.AmountRequested),
+		PkScript: swap.htlc.PkScript,
+	})
+
+	ctx.NotifyConf(htlcTx)
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	// Assert that we made a query to track our payment, as required for
+	// preimage push tracking.
+	trackPayment := ctx.AssertTrackPayment()
+
+	// Tick the expiry channel, we are still using our client confirmation
+	// target at this stage which has fees higher than our max acceptable
+	// fee. We do not expect a sweep attempt at this point. Since our
+	// preimage is not revealed, we also do not expect a preimage push.
+	expiryChan <- testTime
+
+	// When using taproot htlcs the flow is different as we do reveal the
+	// preimage before sweeping in order for the server to trust us with
+	// our MuSig2 signing attempts.
+	cfg.store.(*storeMock).assertLoopOutState(
+		loopdb.StatePreimageRevealed,
+	)
+	status := <-statusChan
+	require.Equal(
+		t, status.State, loopdb.StatePreimageRevealed,
+	)
+
+	preimage := <-server.preimagePush
+	require.Equal(t, swap.Preimage, preimage)
+
+	// We expect the sweep tx to have been published.
+	ctx.ReceiveTx()
+
+	// Since we don't have a reliable mechanism to non-intrusively avoid
+	// races by setting the fee estimate too soon, let's sleep here a bit
+	// to ensure the first sweep fails.
+	time.Sleep(500 * time.Millisecond)
+
+	// Now we decrease our fees for the swap's confirmation target to less
+	// than the maximum miner fee.
+	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
+		testReq.MaxMinerFee/2,
+	))
+
+	// Now when we report a new block and tick our expiry fee timer, and
+	// fees are acceptably low so we expect our sweep to be published.
+	blockEpochChan <- ctx.Lnd.Height + 2
+	expiryChan <- testTime
+
+	preimage = <-server.preimagePush
+	require.Equal(t, swap.Preimage, preimage)
+
+	// We expect the sweep tx to have been published.
+	sweepTx := ctx.ReceiveTx()
+
+	// This time, we send a payment succeeded update into our payment stream
+	// to reflect that the server received our preimage push and settled off
+	// chain.
+	trackPayment.Updates <- lndclient.PaymentStatus{
+		State: lnrpc.Payment_SUCCEEDED,
+	}
+
+	// Make sure our sweep tx has a single witness indicating keyspend.
+	require.Len(t, sweepTx.TxIn[0].Witness, 1)
+
+	// Finally, we put this swap out of its misery and notify a successful
+	// spend our our sweepTx and assert that the swap succeeds.
+	ctx.NotifySpend(sweepTx, 0)
+
+	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
+	status = <-statusChan
+	require.Equal(t, status.State, loopdb.StateSuccess)
 	require.NoError(t, <-errChan)
 }

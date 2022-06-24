@@ -2,9 +2,11 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
@@ -40,6 +42,15 @@ type testContext struct {
 	stop       func()
 }
 
+// mockVerifySchnorrSigFail is used to simulate failed taproot keyspend
+// signature verification. If passed to the executeConfig we'll test an
+// uncooperative server and will fall back to scriptspend sweep.
+func mockVerifySchnorrSigFail(pubKey *btcec.PublicKey, hash,
+	sig []byte) error {
+
+	return fmt.Errorf("invalid sig")
+}
+
 func newSwapClient(config *clientConfig) *Client {
 	sweeper := &sweep.Sweeper{
 		Lnd: config.LndServices,
@@ -53,6 +64,7 @@ func newSwapClient(config *clientConfig) *Client {
 		sweeper:           sweeper,
 		createExpiryTimer: config.CreateExpiryTimer,
 		cancelSwap:        config.Server.CancelLoopOutSwap,
+		verifySchnorrSig:  mockVerifySchnorrSigFail,
 	})
 
 	return &Client{

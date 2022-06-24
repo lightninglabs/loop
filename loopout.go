@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -96,6 +96,7 @@ type executeConfig struct {
 	totalPaymentTimout time.Duration
 	maxPaymentRetries  int
 	cancelSwap         func(context.Context, *outCancelDetails) error
+	verifySchnorrSig   func(pubKey *btcec.PublicKey, hash, sig []byte) error
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
@@ -1437,13 +1438,11 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 
 	// To be sure that we're good, parse and validate that the combined
 	// signature is indeed valid for the sig hash and the internal pubkey.
-	sig, err := schnorr.ParseSignature(finalSig)
+	err = s.executeConfig.verifySchnorrSig(
+		htlc.TaprootKey, sigHash, finalSig,
+	)
 	if err != nil {
 		return nil, err
-	}
-
-	if !sig.Verify(sigHash, htlc.TaprootKey) {
-		return nil, fmt.Errorf("invalid combined signature")
 	}
 
 	// Now that we know the signature is correct, we can fill it in to our
