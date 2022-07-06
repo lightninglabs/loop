@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -158,6 +160,18 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 		totalPaymentTimeout: cfg.TotalPaymentTimeout,
 		maxPaymentRetries:   cfg.MaxPaymentRetries,
 		cancelSwap:          swapServerClient.CancelLoopOutSwap,
+		verifySchnorrSig: func(pubKey *btcec.PublicKey, hash, sig []byte) error {
+			schnorrSig, err := schnorr.ParseSignature(sig)
+			if err != nil {
+				return err
+			}
+
+			if !schnorrSig.Verify(hash, pubKey) {
+				return fmt.Errorf("invalid signature")
+			}
+
+			return nil
+		},
 	})
 
 	client := &Client{
@@ -192,56 +206,92 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 	swaps := make([]*SwapInfo, 0, len(loopInSwaps)+len(loopOutSwaps))
 
 	for _, swp := range loopOutSwaps {
+		swapInfo := &SwapInfo{
+			SwapType:      swap.TypeOut,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
+		}
+		scriptVersion := GetHtlcScriptVersion(
+			swp.Contract.ProtocolVersion,
+		)
+
+		outputType := swap.HtlcP2WSH
+		if scriptVersion == swap.HtlcV3 {
+			outputType = swap.HtlcP2TR
+		}
+
 		htlc, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
+			scriptVersion,
 			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
-			s.lndServices.ChainParams,
+			swp.Contract.ReceiverKey, swp.Hash,
+			outputType, s.lndServices.ChainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		swaps = append(swaps, &SwapInfo{
-			SwapType:         swap.TypeOut,
-			SwapContract:     swp.Contract.SwapContract,
-			SwapStateData:    swp.State(),
-			SwapHash:         swp.Hash,
-			LastUpdate:       swp.LastUpdateTime(),
-			HtlcAddressP2WSH: htlc.Address,
-		})
+		if outputType == swap.HtlcP2TR {
+			swapInfo.HtlcAddressP2TR = htlc.Address
+		} else {
+			swapInfo.HtlcAddressP2WSH = htlc.Address
+		}
+
+		swaps = append(swaps, swapInfo)
 	}
 
 	for _, swp := range loopInSwaps {
-		htlcNP2WSH, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
-			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcNP2WSH,
-			s.lndServices.ChainParams,
-		)
-		if err != nil {
-			return nil, err
+		swapInfo := &SwapInfo{
+			SwapType:      swap.TypeIn,
+			SwapContract:  swp.Contract.SwapContract,
+			SwapStateData: swp.State(),
+			SwapHash:      swp.Hash,
+			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlcP2WSH, err := swap.NewHtlc(
-			GetHtlcScriptVersion(swp.Contract.ProtocolVersion),
-			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash, swap.HtlcP2WSH,
-			s.lndServices.ChainParams,
+		scriptVersion := GetHtlcScriptVersion(
+			swp.Contract.SwapContract.ProtocolVersion,
 		)
-		if err != nil {
-			return nil, err
+
+		if scriptVersion == swap.HtlcV3 {
+			htlcP2TR, err := swap.NewHtlc(
+				swap.HtlcV3, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcP2TR,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			swapInfo.HtlcAddressP2TR = htlcP2TR.Address
+		} else {
+			htlcNP2WSH, err := swap.NewHtlc(
+				swap.HtlcV1, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcNP2WSH,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			htlcP2WSH, err := swap.NewHtlc(
+				swap.HtlcV2, swp.Contract.CltvExpiry,
+				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
+				swp.Hash, swap.HtlcP2WSH,
+				s.lndServices.ChainParams,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			swapInfo.HtlcAddressP2WSH = htlcP2WSH.Address
+			swapInfo.HtlcAddressNP2WSH = htlcNP2WSH.Address
 		}
 
-		swaps = append(swaps, &SwapInfo{
-			SwapType:          swap.TypeIn,
-			SwapContract:      swp.Contract.SwapContract,
-			SwapStateData:     swp.State(),
-			SwapHash:          swp.Hash,
-			LastUpdate:        swp.LastUpdateTime(),
-			HtlcAddressP2WSH:  htlcP2WSH.Address,
-			HtlcAddressNP2WSH: htlcNP2WSH.Address,
-		})
+		swaps = append(swaps, swapInfo)
 	}
 
 	return swaps, nil
@@ -405,9 +455,9 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
 	return &LoopOutSwapInfo{
-		SwapHash:         swap.hash,
-		HtlcAddressP2WSH: swap.htlc.Address,
-		ServerMessage:    initResult.serverMessage,
+		SwapHash:      swap.hash,
+		HtlcAddress:   swap.htlc.Address,
+		ServerMessage: initResult.serverMessage,
 	}, nil
 }
 
@@ -463,7 +513,23 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 
 	log.Infof("Offchain swap destination: %x", quote.SwapPaymentDest)
 
-	swapFee := quote.SwapFee
+	minerFee, err := s.getLoopOutSweepFee(ctx, request.SweepConfTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopOutQuote{
+		SwapFee:         quote.SwapFee,
+		MinerFee:        minerFee,
+		PrepayAmount:    quote.PrepayAmount,
+		SwapPaymentDest: quote.SwapPaymentDest,
+	}, nil
+}
+
+// getLoopOutSweepFee is a helper method to estimate the loop out htlc sweep
+// fee to a p2wsh address.
+func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
+	btcutil.Amount, error) {
 
 	// Generate dummy p2wsh address for fee estimation. The p2wsh address
 	// type is chosen because it adds the most weight of all output types
@@ -473,23 +539,21 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		wsh[:], s.lndServices.ChainParams,
 	)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	minerFee, err := s.sweeper.GetSweepFee(
-		ctx, swap.QuoteHtlc.AddSuccessToEstimator,
-		p2wshAddress, request.SweepConfTarget,
+	scriptVersion := GetHtlcScriptVersion(
+		loopdb.CurrentProtocolVersion(),
 	)
-	if err != nil {
-		return nil, err
+
+	htlc := swap.QuoteHtlcP2TR
+	if scriptVersion != swap.HtlcV3 {
+		htlc = swap.QuoteHtlcP2WSH
 	}
 
-	return &LoopOutQuote{
-		SwapFee:         swapFee,
-		MinerFee:        minerFee,
-		PrepayAmount:    quote.PrepayAmount,
-		SwapPaymentDest: quote.SwapPaymentDest,
-	}, nil
+	return s.sweeper.GetSweepFee(
+		ctx, htlc.AddSuccessToEstimator, p2wshAddress, confTarget,
+	)
 }
 
 // LoopOutTerms returns the terms on which the server executes swaps.
@@ -546,11 +610,17 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	// Return hash so that the caller can identify this swap in the updates
 	// stream.
 	swapInfo := &LoopInSwapInfo{
-		SwapHash:          swap.hash,
-		HtlcAddressP2WSH:  swap.htlcP2WSH.Address,
-		HtlcAddressNP2WSH: swap.htlcNP2WSH.Address,
-		ServerMessage:     initResult.serverMessage,
+		SwapHash:      swap.hash,
+		ServerMessage: initResult.serverMessage,
 	}
+
+	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
+		swapInfo.HtlcAddressNP2WSH = swap.htlcNP2WSH.Address
+		swapInfo.HtlcAddressP2WSH = swap.htlcP2WSH.Address
+	} else {
+		swapInfo.HtlcAddressP2TR = swap.htlcP2TR.Address
+	}
+
 	return swapInfo, nil
 }
 
@@ -626,7 +696,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	//
 	// TODO(guggero): Thread through error code from lnd to avoid string
 	// matching.
-	minerFee, err := s.lndServices.Client.EstimateFeeToP2WSH(
+	minerFee, err := s.estimateFee(
 		ctx, request.Amount, request.HtlcConfTarget,
 	)
 	if err != nil && strings.Contains(err.Error(), "insufficient funds") {
@@ -645,6 +715,39 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		MinerFee:  minerFee,
 		CltvDelta: quote.CltvDelta,
 	}, nil
+}
+
+// estimateFee is a helper method to estimate the total fee for paying the
+// passed amount with the given conf target. It'll assume taproot destination
+// if the protocol version indicates that we're using taproot htlcs.
+func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
+	confTarget int32) (btcutil.Amount, error) {
+
+	var (
+		address btcutil.Address
+		err     error
+	)
+	// Generate a dummy address for fee estimation.
+	witnessProg := [32]byte{}
+
+	scriptVersion := GetHtlcScriptVersion(
+		loopdb.CurrentProtocolVersion(),
+	)
+
+	if scriptVersion != swap.HtlcV3 {
+		address, err = btcutil.NewAddressWitnessScriptHash(
+			witnessProg[:], s.lndServices.ChainParams,
+		)
+	} else {
+		address, err = btcutil.NewAddressTaproot(
+			witnessProg[:], s.lndServices.ChainParams,
+		)
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	return s.lndServices.Client.EstimateFee(ctx, address, amt, confTarget)
 }
 
 // LoopInTerms returns the terms on which the server executes swaps.

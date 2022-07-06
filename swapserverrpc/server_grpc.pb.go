@@ -31,6 +31,7 @@ type SwapServerClient interface {
 	Probe(ctx context.Context, in *ServerProbeRequest, opts ...grpc.CallOption) (*ServerProbeResponse, error)
 	RecommendRoutingPlugin(ctx context.Context, in *RecommendRoutingPluginReq, opts ...grpc.CallOption) (*RecommendRoutingPluginRes, error)
 	ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error)
+	MuSig2SignSweep(ctx context.Context, in *MuSig2SignSweepReq, opts ...grpc.CallOption) (*MuSig2SignSweepRes, error)
 }
 
 type swapServerClient struct {
@@ -204,6 +205,15 @@ func (c *swapServerClient) ReportRoutingResult(ctx context.Context, in *ReportRo
 	return out, nil
 }
 
+func (c *swapServerClient) MuSig2SignSweep(ctx context.Context, in *MuSig2SignSweepReq, opts ...grpc.CallOption) (*MuSig2SignSweepRes, error) {
+	out := new(MuSig2SignSweepRes)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/MuSig2SignSweep", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -221,6 +231,7 @@ type SwapServerServer interface {
 	Probe(context.Context, *ServerProbeRequest) (*ServerProbeResponse, error)
 	RecommendRoutingPlugin(context.Context, *RecommendRoutingPluginReq) (*RecommendRoutingPluginRes, error)
 	ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error)
+	MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error)
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -266,6 +277,9 @@ func (UnimplementedSwapServerServer) RecommendRoutingPlugin(context.Context, *Re
 }
 func (UnimplementedSwapServerServer) ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportRoutingResult not implemented")
+}
+func (UnimplementedSwapServerServer) MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MuSig2SignSweep not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -520,6 +534,24 @@ func _SwapServer_ReportRoutingResult_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_MuSig2SignSweep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MuSig2SignSweepReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).MuSig2SignSweep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/MuSig2SignSweep",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).MuSig2SignSweep(ctx, req.(*MuSig2SignSweepReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -570,6 +602,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportRoutingResult",
 			Handler:    _SwapServer_ReportRoutingResult_Handler,
+		},
+		{
+			MethodName: "MuSig2SignSweep",
+			Handler:    _SwapServer_MuSig2SignSweep_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

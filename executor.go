@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
@@ -31,6 +32,8 @@ type executorConfig struct {
 	maxPaymentRetries int
 
 	cancelSwap func(ctx context.Context, details *outCancelDetails) error
+
+	verifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
 }
 
 // executor is responsible for executing swaps.
@@ -153,6 +156,7 @@ func (s *executor) run(mainCtx context.Context,
 					totalPaymentTimout: s.executorConfig.totalPaymentTimeout,
 					maxPaymentRetries:  s.executorConfig.maxPaymentRetries,
 					cancelSwap:         s.executorConfig.cancelSwap,
+					verifySchnorrSig:   s.executorConfig.verifySchnorrSig,
 				}, height)
 				if err != nil && err != context.Canceled {
 					log.Errorf("Execute error: %v", err)

@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -27,6 +28,19 @@ var (
 // TestLoopInSuccess tests the success scenario where the swap completes the
 // happy flow.
 func TestLoopInSuccess(t *testing.T) {
+	t.Run("stable protocol", func(t *testing.T) {
+		testLoopInSuccess(t)
+	})
+
+	t.Run("experimental protocol", func(t *testing.T) {
+		loopdb.EnableExperimentalProtocol()
+		defer loopdb.ResetCurrentProtocolVersion()
+
+		testLoopInSuccess(t)
+	})
+}
+
+func testLoopInSuccess(t *testing.T) {
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
@@ -47,13 +61,13 @@ func TestLoopInSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	swap := initResult.swap
+	inSwap := initResult.swap
 
 	ctx.store.assertLoopInStored()
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -87,9 +101,14 @@ func TestLoopInSuccess(t *testing.T) {
 	require.NotNil(t, state.HtlcTxHash)
 	require.Equal(t, cost, state.Cost)
 
-	// Expect register for htlc conf.
+	// Expect register for htlc conf (only one, since the htlc is p2tr).
 	<-ctx.lnd.RegisterConfChannel
-	<-ctx.lnd.RegisterConfChannel
+
+	// If the swap is legacy, then we'll register two confirmation
+	// notifications.
+	if !IsTaprootSwap(&inSwap.SwapContract) {
+		<-ctx.lnd.RegisterConfChannel
+	}
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -112,8 +131,13 @@ func TestLoopInSuccess(t *testing.T) {
 
 	// Server spends htlc.
 	successTx := wire.MsgTx{}
+	witness, err := inSwap.htlc.GenSuccessWitness(
+		[]byte{}, inSwap.contract.Preimage,
+	)
+	require.NoError(t, err)
+
 	successTx.AddTxIn(&wire.TxIn{
-		Witness: [][]byte{{}, {}, {}},
+		Witness: witness,
 	})
 
 	ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
@@ -134,33 +158,52 @@ func TestLoopInSuccess(t *testing.T) {
 // and the client is forced to reclaim the funds using the timeout tx.
 func TestLoopInTimeout(t *testing.T) {
 	testAmt := int64(testLoopInRequest.Amount)
-	t.Run("internal htlc", func(t *testing.T) {
-		testLoopInTimeout(t, swap.HtlcP2WSH, 0)
-	})
+	testCases := []struct {
+		name          string
+		externalValue int64
+	}{
+		{
+			name:          "internal htlc",
+			externalValue: 0,
+		},
+		{
+			name:          "external htlc",
+			externalValue: testAmt,
+		},
+		{
+			name:          "external htlc amount too high",
+			externalValue: testAmt + 1,
+		},
+		{
+			name:          "external htlc amount too low",
+			externalValue: testAmt - 1,
+		},
+	}
 
-	outputTypes := []swap.HtlcOutputType{swap.HtlcP2WSH, swap.HtlcNP2WSH}
+	for _, next := range []bool{false, true} {
+		next := next
 
-	for _, outputType := range outputTypes {
-		outputType := outputType
-		t.Run(outputType.String(), func(t *testing.T) {
-			t.Run("external htlc", func(t *testing.T) {
-				testLoopInTimeout(t, outputType, testAmt)
+		for _, testCase := range testCases {
+			testCase := testCase
+
+			name := testCase.name
+			if next {
+				name += " experimental protocol"
+			}
+
+			t.Run(name, func(t *testing.T) {
+				if next {
+					loopdb.EnableExperimentalProtocol()
+					defer loopdb.ResetCurrentProtocolVersion()
+				}
+
+				testLoopInTimeout(t, testCase.externalValue)
 			})
-
-			t.Run("external amount too high", func(t *testing.T) {
-				testLoopInTimeout(t, outputType, testAmt+1)
-			})
-
-			t.Run("external amount too low", func(t *testing.T) {
-				testLoopInTimeout(t, outputType, testAmt-1)
-			})
-		})
+		}
 	}
 }
 
-func testLoopInTimeout(t *testing.T,
-	outputType swap.HtlcOutputType, externalValue int64) {
-
+func testLoopInTimeout(t *testing.T, externalValue int64) {
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
@@ -181,13 +224,13 @@ func testLoopInTimeout(t *testing.T,
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := initResult.swap
+	inSwap := initResult.swap
 
 	ctx.store.assertLoopInStored()
 
 	errChan := make(chan error)
 	go func() {
-		err := s.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -203,9 +246,11 @@ func testLoopInTimeout(t *testing.T,
 		htlcTx wire.MsgTx
 		cost   loopdb.SwapCost
 	)
+
 	if externalValue == 0 {
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
+
 		cost = loopdb.SwapCost{
 			Onchain: getTxFee(
 				&htlcTx, test.DefaultMockFee.FeePerKVByte(),
@@ -220,11 +265,16 @@ func testLoopInTimeout(t *testing.T,
 	} else {
 		// Create an external htlc publish tx.
 		var pkScript []byte
-		if outputType == swap.HtlcNP2WSH {
-			pkScript = s.htlcNP2WSH.PkScript
+		if !IsTaprootSwap(&inSwap.SwapContract) {
+			if req.ExternalHtlc {
+				pkScript = inSwap.htlcNP2WSH.PkScript
+			} else {
+				pkScript = inSwap.htlcP2WSH.PkScript
+			}
 		} else {
-			pkScript = s.htlcP2WSH.PkScript
+			pkScript = inSwap.htlcP2TR.PkScript
 		}
+
 		htlcTx = wire.MsgTx{
 			TxOut: []*wire.TxOut{
 				{
@@ -237,7 +287,12 @@ func testLoopInTimeout(t *testing.T,
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
-	<-ctx.lnd.RegisterConfChannel
+
+	// If the swap is legacy, then we'll register two confirmation
+	// notifications.
+	if !IsTaprootSwap(&inSwap.SwapContract) {
+		<-ctx.lnd.RegisterConfChannel
+	}
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -265,7 +320,7 @@ func testLoopInTimeout(t *testing.T,
 	ctx.assertSubscribeInvoice(ctx.server.swapHash)
 
 	// Let htlc expire.
-	ctx.blockEpochChan <- s.LoopInContract.CltvExpiry
+	ctx.blockEpochChan <- inSwap.LoopInContract.CltvExpiry
 
 	// Expect a signing request for the htlc tx output value.
 	signReq := <-ctx.lnd.SignOutputRawChannel
@@ -278,9 +333,9 @@ func testLoopInTimeout(t *testing.T,
 
 	// We can just get our sweep fee as we would in the swap code because
 	// our estimate is static.
-	fee, err := s.sweeper.GetSweepFee(
-		context.Background(), s.htlc.AddTimeoutToEstimator,
-		s.timeoutAddr, TimeoutTxConfTarget,
+	fee, err := inSwap.sweeper.GetSweepFee(
+		context.Background(), inSwap.htlc.AddTimeoutToEstimator,
+		inSwap.timeoutAddr, TimeoutTxConfTarget,
 	)
 	require.NoError(t, err)
 	cost.Onchain += fee
@@ -313,52 +368,71 @@ func TestLoopInResume(t *testing.T) {
 	storedVersion := []loopdb.ProtocolVersion{
 		loopdb.ProtocolVersionUnrecorded,
 		loopdb.ProtocolVersionHtlcV2,
+		loopdb.ProtocolVersionHtlcV3,
 	}
 
-	htlcVersion := []swap.ScriptVersion{
-		swap.HtlcV1,
-		swap.HtlcV2,
+	testCases := []struct {
+		name    string
+		state   loopdb.SwapState
+		expired bool
+	}{
+		{
+			name:    "initiated",
+			state:   loopdb.StateInitiated,
+			expired: false,
+		},
+		{
+			name:    "initiated expired",
+			state:   loopdb.StateInitiated,
+			expired: true,
+		},
+		{
+			name:    "htlc published",
+			state:   loopdb.StateHtlcPublished,
+			expired: false,
+		},
 	}
 
-	for i, version := range storedVersion {
-		version := version
-		scriptVersion := htlcVersion[i]
+	for _, next := range []bool{false, true} {
+		for _, version := range storedVersion {
+			version := version
+			for _, testCase := range testCases {
+				testCase := testCase
 
-		t.Run(version.String(), func(t *testing.T) {
-			t.Run("initiated", func(t *testing.T) {
-				testLoopInResume(
-					t, loopdb.StateInitiated, false,
-					version, scriptVersion,
+				name := fmt.Sprintf(
+					"%v %v", testCase, version.String(),
 				)
-			})
+				if next {
+					name += " next protocol"
+				}
 
-			t.Run("initiated expired", func(t *testing.T) {
-				testLoopInResume(
-					t, loopdb.StateInitiated, true,
-					version, scriptVersion,
-				)
-			})
-
-			t.Run("htlc published", func(t *testing.T) {
-				testLoopInResume(
-					t, loopdb.StateHtlcPublished, false,
-					version, scriptVersion,
-				)
-			})
-		})
+				t.Run(name, func(t *testing.T) {
+					testLoopInResume(
+						t, testCase.state,
+						testCase.expired,
+						version,
+					)
+				})
+			}
+		}
 	}
 }
 
 func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
-	storedVersion loopdb.ProtocolVersion, scriptVersion swap.ScriptVersion) {
+	storedVersion loopdb.ProtocolVersion) {
 
 	defer test.Guard(t)()
 
 	ctx := newLoopInTestContext(t)
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
 
-	senderKey := [33]byte{4}
-	receiverKey := [33]byte{5}
+	// Create sender and receiver keys.
+	_, senderPubKey := test.CreateKey(1)
+	_, receiverPubKey := test.CreateKey(2)
+
+	var senderKey, receiverKey [33]byte
+	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
+	copy(senderKey[:], senderPubKey.SerializeCompressed())
 
 	contract := &loopdb.LoopInContract{
 		HtlcConfTarget: 2,
@@ -397,9 +471,16 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
+	scriptVersion := GetHtlcScriptVersion(storedVersion)
+
+	outputType := swap.HtlcNP2WSH
+	if scriptVersion == swap.HtlcV3 {
+		outputType = swap.HtlcP2TR
+	}
+
 	htlc, err := swap.NewHtlc(
 		scriptVersion, contract.CltvExpiry, contract.SenderKey,
-		contract.ReceiverKey, testPreimage.Hash(), swap.HtlcNP2WSH,
+		contract.ReceiverKey, testPreimage.Hash(), outputType,
 		cfg.lnd.ChainParams,
 	)
 	if err != nil {
@@ -411,7 +492,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		t.Fatal(err)
 	}
 
-	swap, err := resumeLoopInSwap(
+	inSwap, err := resumeLoopInSwap(
 		context.Background(), cfg,
 		pendSwap,
 	)
@@ -428,7 +509,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(context.Background(), ctx.cfg, height)
 		if err != nil {
 			log.Error(err)
 		}
@@ -489,7 +570,12 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
-	<-ctx.lnd.RegisterConfChannel
+
+	// If the swap is legacy, then we'll register two confirmation
+	// notifications.
+	if !IsTaprootSwap(&inSwap.SwapContract) {
+		<-ctx.lnd.RegisterConfChannel
+	}
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -513,8 +599,11 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	// Server spends htlc.
 	successTx := wire.MsgTx{}
+	witness, err := htlc.GenSuccessWitness([]byte{}, testPreimage)
+	require.NoError(t, err)
+
 	successTx.AddTxIn(&wire.TxIn{
-		Witness: [][]byte{{}, {}, {}},
+		Witness: witness,
 	})
 	successTxHash := successTx.TxHash()
 

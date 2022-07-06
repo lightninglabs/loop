@@ -1,7 +1,7 @@
 module github.com/lightninglabs/loop
 
 require (
-	github.com/btcsuite/btcd v0.22.0-beta.0.20220413172512-bf64c8bdbbbf
+	github.com/btcsuite/btcd v0.23.1
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0
 	github.com/btcsuite/btcd/btcutil v1.1.1
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
@@ -31,5 +31,8 @@ require (
 	gopkg.in/macaroon-bakery.v2 v2.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 )
+
+// TODO(bhandras): remove when the next swapserverrpc is tagged.
+replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 go 1.16

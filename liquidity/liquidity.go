@@ -386,8 +386,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		}
 
 		log.Infof("loop out automatically dispatched: hash: %v, "+
-			"address: %v", loopOut.SwapHash,
-			loopOut.HtlcAddressP2WSH)
+			"address: %v", loopOut.SwapHash, loopOut.HtlcAddress)
 	}
 
 	for _, in := range suggestion.InSwaps {
@@ -407,8 +406,9 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		}
 
 		log.Infof("loop in automatically dispatched: hash: %v, "+
-			"address: %v", loopIn.SwapHash,
-			loopIn.HtlcAddressNP2WSH)
+			"address: np2wsh(%v), p2wsh(%v), p2tr(%v)",
+			loopIn.SwapHash, loopIn.HtlcAddressNP2WSH,
+			loopIn.HtlcAddressP2WSH, loopIn.HtlcAddressP2TR)
 	}
 
 	return nil

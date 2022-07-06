@@ -1044,6 +1044,10 @@
           "type": "string",
           "description": "The native segwit address of the on-chain htlc.\nUsed for both loop-in and loop-out."
         },
+        "htlc_address_p2tr": {
+          "type": "string",
+          "description": "The address of the v3 (taproot) htlc. Used for both loop-in and loop-out."
+        },
         "server_message": {
           "type": "string",
           "description": "A human-readable message received from the loop server."
@@ -1113,6 +1117,10 @@
         "htlc_address_np2wsh": {
           "type": "string",
           "description": "HTLC address (nested segwit), used in loop-in swaps only."
+        },
+        "htlc_address_p2tr": {
+          "type": "string",
+          "description": "The address of the v3 (taproot) htlc. Used for both loop-in and loop-out."
         },
         "cost_server": {
           "type": "string",

@@ -108,17 +108,30 @@ type Htlc struct {
 }
 
 var (
-	quoteKey [33]byte
+	// dummyPubKey is a valid public key use for the quote htlc
+	// construction.
+	dummyPubKey = [33]byte{
+		0x03, 0x26, 0x89, 0xc7, 0xc2, 0xda, 0xb1, 0x33, 0x09, 0xfb,
+		0x14, 0x3e, 0x0e, 0x8f, 0xe3, 0x96, 0x34, 0x25, 0x21, 0x88,
+		0x7e, 0x97, 0x66, 0x90, 0xb6, 0xb4, 0x7f, 0x5b, 0x2a, 0x4b,
+		0x7d, 0x44, 0x8e,
+	}
 
+	// quoteHash is an empty hash used for the quote htlc construction.
 	quoteHash lntypes.Hash
 
-	// QuoteHtlc is a template script just used for fee estimation. It uses
-	// the maximum value for cltv expiry to get the maximum (worst case)
-	// script size.
-	QuoteHtlc, _ = NewHtlc(
-		HtlcV2,
-		^int32(0), quoteKey, quoteKey, quoteHash, HtlcP2WSH,
-		&chaincfg.MainNetParams,
+	// QuoteHtlcP2WSH is a template script just used for sweep fee
+	// estimation.
+	QuoteHtlcP2WSH, _ = NewHtlc(
+		HtlcV2, ^int32(0), dummyPubKey, dummyPubKey, quoteHash,
+		HtlcP2WSH, &chaincfg.MainNetParams,
+	)
+
+	// QuoteHtlcP2TR is a template script just used for sweep fee
+	// estimation.
+	QuoteHtlcP2TR, _ = NewHtlc(
+		HtlcV3, ^int32(0), dummyPubKey, dummyPubKey, quoteHash,
+		HtlcP2TR, &chaincfg.MainNetParams,
 	)
 
 	// ErrInvalidScriptVersion is returned when an unknown htlc version
@@ -853,7 +866,9 @@ func (h *HtlcScriptV3) GenTimeoutWitness(
 // IsSuccessWitness checks whether the given stack is valid for
 // redeeming the htlc.
 func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
-	return len(witness) == 4
+	// The witness has four elements if this is a script spend or one
+	// element if this is a keyspend.
+	return len(witness) == 4 || len(witness) == 1
 }
 
 // TimeoutScript returns the redeem script required to unlock the htlc after

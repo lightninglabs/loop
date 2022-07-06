@@ -102,6 +102,16 @@ var (
 	// parameters.
 	liquidtyParamsKey = []byte("params")
 
+	// keyLocatorKey is the key that stores the receiver key's locator info
+	// for loop outs or the sender key's locator info for loop ins. This is
+	// required for MuSig2 swaps. Only serialized/deserialized for swaps
+	// that have protocol version >= ProtocolVersionHtlcV3.
+	//
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash] -> keyLocatorKey
+	//
+	// value: concatenation of uint32 values [family, index].
+	keyLocatorKey = []byte("keylocator")
+
 	byteOrder = binary.BigEndian
 
 	keyLength = 33
@@ -327,6 +337,16 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 				return err
 			}
 
+			// Try to unmarshal the key locator.
+			if contract.ProtocolVersion >= ProtocolVersionHtlcV3 {
+				contract.ClientKeyLocator, err = UnmarshalKeyLocator(
+					swapBucket.Get(keyLocatorKey),
+				)
+				if err != nil {
+					return err
+				}
+			}
+
 			loop := LoopOut{
 				Loop: Loop{
 					Events: updates,
@@ -464,6 +484,16 @@ func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
 				return err
 			}
 
+			// Try to unmarshal the key locator.
+			if contract.ProtocolVersion >= ProtocolVersionHtlcV3 {
+				contract.ClientKeyLocator, err = UnmarshalKeyLocator(
+					swapBucket.Get(keyLocatorKey),
+				)
+				if err != nil {
+					return err
+				}
+			}
+
 			loop := LoopIn{
 				Loop: Loop{
 					Events: updates,
@@ -583,6 +613,21 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 			return err
 		}
 
+		// Store the key locator for swaps with taproot htlc.
+		if swap.ProtocolVersion >= ProtocolVersionHtlcV3 {
+			keyLocator, err := MarshalKeyLocator(
+				swap.ClientKeyLocator,
+			)
+			if err != nil {
+				return err
+			}
+
+			err = swapBucket.Put(keyLocatorKey, keyLocator)
+			if err != nil {
+				return err
+			}
+		}
+
 		// Finally, we'll create an empty updates bucket for this swap
 		// to track any future updates to the swap itself.
 		_, err = swapBucket.CreateBucket(updatesBucketKey)
@@ -632,6 +677,21 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 		// Write label to disk if we have one.
 		if err := putLabel(swapBucket, swap.Label); err != nil {
 			return err
+		}
+
+		// Store the key locator for swaps with taproot htlc.
+		if swap.ProtocolVersion >= ProtocolVersionHtlcV3 {
+			keyLocator, err := MarshalKeyLocator(
+				swap.ClientKeyLocator,
+			)
+			if err != nil {
+				return err
+			}
+
+			err = swapBucket.Put(keyLocatorKey, keyLocator)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Finally, we'll create an empty updates bucket for this swap

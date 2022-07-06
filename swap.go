@@ -53,18 +53,30 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 func GetHtlcScriptVersion(
 	protocolVersion loopdb.ProtocolVersion) swap.ScriptVersion {
 
-	if protocolVersion != loopdb.ProtocolVersionUnrecorded &&
-		protocolVersion >= loopdb.ProtocolVersionHtlcV2 {
+	// Unrecorded protocol version implies that there was no protocol
+	// version stored along side a serialized swap that we're resuming in
+	// which case the swap was initiated with HTLC v1 script.
+	if protocolVersion == loopdb.ProtocolVersionUnrecorded {
+		return swap.HtlcV1
+	}
 
-		// Use HTLC v2 script only if we know the swap was initiated
-		// with a client that supports HTLC v2. Unrecorded protocol
-		// version implies that there was no protocol version stored
-		// along side a serialized swap that we're resuming in which
-		// case the swap was initiated with HTLC v1 script.
+	// If the swap was initiated before we had our v2 script, use v1.
+	if protocolVersion < loopdb.ProtocolVersionHtlcV2 {
+		return swap.HtlcV1
+	}
+
+	// If the swap was initiated before we had our v3 script, use v2.
+	if protocolVersion < loopdb.ProtocolVersionHtlcV3 {
 		return swap.HtlcV2
 	}
 
-	return swap.HtlcV1
+	return swap.HtlcV3
+}
+
+// IsTaproot returns true if the swap referenced by the passed swap contract
+// uses the v3 (taproot) htlc.
+func IsTaprootSwap(swapContract *loopdb.SwapContract) bool {
+	return GetHtlcScriptVersion(swapContract.ProtocolVersion) == swap.HtlcV3
 }
 
 // getHtlc composes and returns the on-chain swap script.

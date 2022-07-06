@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -25,6 +26,11 @@ type SwapContract struct {
 	// ReceiverKey is the of the receiver that will be used in the on-chain
 	// HTLC.
 	ReceiverKey [33]byte
+
+	// ClientKeyLocator is the key locator (family and index) for the client
+	// key. It is for the receiver key if this is a loop out contract, or
+	// the sender key if this is a loop in contract.
+	ClientKeyLocator keychain.KeyLocator
 
 	// CltvExpiry is the total absolute CLTV expiry of the swap.
 	CltvExpiry int32
