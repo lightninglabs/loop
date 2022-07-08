@@ -126,7 +126,7 @@ type swapServerClient interface {
 	// htlc spend. Returns the server's nonce and partial signature.
 	MuSig2SignSweep(ctx context.Context,
 		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
-		paymentAddr [32]byte, nonce []byte, sigHash []byte) (
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) (
 		[]byte, []byte, error)
 }
 
@@ -731,7 +731,7 @@ func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
 // spend. Returns the server's nonce and partial signature.
 func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
-	paymentAddr [32]byte, nonce []byte, sigHash []byte) (
+	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) (
 	[]byte, []byte, error) {
 
 	req := &looprpc.MuSig2SignSweepReq{
@@ -739,7 +739,7 @@ func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 		SwapHash:        swapHash[:],
 		PaymentAddress:  paymentAddr[:],
 		Nonce:           nonce,
-		SigHash:         sigHash,
+		SweepTxPsbt:     sweepTxPsbt,
 	}
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)

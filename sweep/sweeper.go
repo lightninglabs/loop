@@ -1,11 +1,13 @@
 package sweep
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
@@ -20,51 +22,57 @@ type Sweeper struct {
 }
 
 // CreateUnsignedTaprootKeySpendSweepTx creates a taproot htlc sweep tx using
-// keyspend. Returns the raw unsigned txn and the sighash or an error.
+// keyspend. Returns the raw unsigned txn, the psbt serialized txn, the sighash
+// or an error.
 func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
 	ctx context.Context, lockTime uint32,
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
 	amount, fee btcutil.Amount, destAddr btcutil.Address) (
-	*wire.MsgTx, []byte, error) {
+	*wire.MsgTx, []byte, []byte, error) {
 
 	if htlc.Version != swap.HtlcV3 {
-		return nil, nil, fmt.Errorf("invalid htlc version")
+		return nil, nil, nil, fmt.Errorf("invalid htlc version")
 	}
-
-	// Compose tx.
-	sweepTx := wire.NewMsgTx(2)
-	sweepTx.LockTime = lockTime
-
-	// Add HTLC input.
-	sweepTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: htlcOutpoint,
-		SignatureScript:  htlc.SigScript,
-	})
 
 	// Add output for the destination address.
 	sweepPkScript, err := txscript.PayToAddrScript(destAddr)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	sweepTx.AddTxOut(&wire.TxOut{
-		PkScript: sweepPkScript,
-		Value:    int64(amount - fee),
-	})
-
-	// We need our previous outputs for taproot spends, and there's no
-	// harm including them for segwit v0, so we always include our prevOut.
-	prevOut := []*wire.TxOut{
-		{
-			Value:    int64(amount),
-			PkScript: htlc.PkScript,
-		},
+	// Compose tx.
+	sweepTx := &wire.MsgTx{
+		Version: 2,
+		TxIn: []*wire.TxIn{{
+			PreviousOutPoint: htlcOutpoint,
+		}},
+		TxOut: []*wire.TxOut{{
+			Value:    int64(amount - fee),
+			PkScript: sweepPkScript,
+		}},
+		LockTime: lockTime,
 	}
 
-	// We now need to create the raw sighash of the transaction, as that
-	// will be the message we're signing collaboratively.
+	packet, err := psbt.NewFromUnsignedTx(sweepTx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	packet.Inputs[0].WitnessUtxo = &wire.TxOut{
+		Value:    int64(amount),
+		PkScript: htlc.PkScript,
+	}
+
+	var psbtBuf bytes.Buffer
+	err = packet.Serialize(&psbtBuf)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// We now need to create the raw sighash of the transaction, as we'll
+	// use it to create the witness for our htlc sweep.
 	prevOutputFetcher := txscript.NewCannedPrevOutputFetcher(
-		prevOut[0].PkScript, prevOut[0].Value,
+		htlc.PkScript, int64(amount),
 	)
 	sigHashes := txscript.NewTxSigHashes(sweepTx, prevOutputFetcher)
 
@@ -73,10 +81,10 @@ func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
 		prevOutputFetcher,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return sweepTx, taprootSigHash, nil
+	return sweepTx, psbtBuf.Bytes(), taprootSigHash, nil
 }
 
 // CreateSweepTx creates an htlc sweep tx.

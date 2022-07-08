@@ -256,7 +256,8 @@ func (s *serverMock) ReportRoutingResult(_ context.Context, _ lntypes.Hash,
 }
 
 func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion,
-	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte, []byte, error) {
+	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte,
+	[]byte, error) {
 
 	return nil, nil, nil
 }

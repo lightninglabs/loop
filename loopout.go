@@ -1353,7 +1353,7 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 
 	// First assemble our taproot keyspend sweep transaction and get the
 	// sig hash.
-	sweepTx, sigHash, err := s.sweeper.CreateUnsignedTaprootKeySpendSweepTx(
+	sweepTx, sweepTxPsbt, sigHash, err := s.sweeper.CreateUnsignedTaprootKeySpendSweepTx(
 		ctx, uint32(s.height), s.htlc, htlcOutpoint, htlcValue, fee,
 		s.DestAddr,
 	)
@@ -1387,7 +1387,7 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	serverNonce, serverSig, err := s.swapKit.server.MuSig2SignSweep(
 		ctx, s.SwapContract.ProtocolVersion, s.hash,
 		s.swapInvoicePaymentAddr, musig2SessionInfo.PublicNonce[:],
-		sigHash,
+		sweepTxPsbt,
 	)
 	if err != nil {
 		return nil, err
