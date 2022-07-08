@@ -20,6 +20,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -978,7 +979,10 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	if s.timeoutAddr == nil {
 		var err error
-		s.timeoutAddr, err = s.lnd.WalletKit.NextAddr(ctx)
+		s.timeoutAddr, err = s.lnd.WalletKit.NextAddr(
+			ctx, "", walletrpc.AddressType_WITNESS_PUBKEY_HASH,
+			false,
+		)
 		if err != nil {
 			return 0, err
 		}

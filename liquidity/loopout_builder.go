@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
@@ -149,7 +150,10 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	if autoloop {
 		request.Label = labels.AutoloopLabel(swap.TypeOut)
 
-		addr, err := b.cfg.Lnd.WalletKit.NextAddr(ctx)
+		addr, err := b.cfg.Lnd.WalletKit.NextAddr(
+			ctx, "", walletrpc.AddressType_WITNESS_PUBKEY_HASH,
+			false,
+		)
 		if err != nil {
 			return nil, err
 		}

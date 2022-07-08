@@ -20,6 +20,7 @@ import (
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -93,7 +94,10 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	if in.Dest == "" {
 		// Generate sweep address if none specified.
 		var err error
-		sweepAddr, err = s.lnd.WalletKit.NextAddr(context.Background())
+		sweepAddr, err = s.lnd.WalletKit.NextAddr(
+			context.Background(), "",
+			walletrpc.AddressType_WITNESS_PUBKEY_HASH, false,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("NextAddr error: %v", err)
 		}
