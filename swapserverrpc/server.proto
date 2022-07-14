@@ -530,6 +530,8 @@ message ReportRoutingResultRes {
 }
 
 message MuSig2SignSweepReq {
+    reserved 5;
+
     ProtocolVersion protocol_version = 1;
 
     // The swap hash.
@@ -542,8 +544,8 @@ message MuSig2SignSweepReq {
     // The local public nonce.
     bytes nonce = 4;
 
-    // The sighash of the htlc sweep.
-    bytes sig_hash = 5;
+    // The psbt of the sweep txn.
+    bytes sweep_tx_psbt = 6;
 }
 
 message MuSig2SignSweepRes {
