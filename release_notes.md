@@ -16,8 +16,6 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
-* P2TR HTLCs and privacy preserving and cheaper MuSig2 loopout sweeps are now supported as an experimental feature when running `loopd` with the`--experimental` flag.
-
 #### Breaking Changes
 
 #### Bug Fixes
