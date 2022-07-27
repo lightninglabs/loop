@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -1557,7 +1558,14 @@ func (s *loopOutSwap) sweepMuSig2(ctx context.Context,
 		labels.LoopOutSweepSuccess(swap.ShortHash(&s.hash)),
 	)
 	if err != nil {
-		s.log.Warnf("Publish of MuSig2 sweep failed: %v", err)
+		var sweepTxBuf bytes.Buffer
+		if err := sweepTx.Serialize(&sweepTxBuf); err != nil {
+			s.log.Warnf("Unable to serialize sweep txn: %v", err)
+		}
+
+		s.log.Warnf("Publish of MuSig2 sweep failed: %v. Raw tx: %x",
+			err, sweepTxBuf.Bytes())
+
 		return false
 	}
 
@@ -1637,7 +1645,13 @@ func (s *loopOutSwap) sweep(ctx context.Context, htlcOutpoint wire.OutPoint,
 		labels.LoopOutSweepSuccess(swap.ShortHash(&s.hash)),
 	)
 	if err != nil {
-		s.log.Warnf("Publish sweep: %v", err)
+		var sweepTxBuf bytes.Buffer
+		if err := sweepTx.Serialize(&sweepTxBuf); err != nil {
+			s.log.Warnf("Unable to serialize sweep txn: %v", err)
+		}
+
+		s.log.Warnf("Publish sweep failed: %v. Raw tx: %x",
+			err, sweepTxBuf.Bytes())
 	}
 
 	return nil
