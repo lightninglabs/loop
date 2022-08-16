@@ -1,7 +1,7 @@
 version: '3'
 services:
   bitcoind:
-    image: ruimarinho/bitcoin-core:0.21-alpine
+    image: lightninglabs/bitcoin-core
     restart: unless-stopped
     networks:
       - regtest
@@ -26,7 +26,7 @@ services:
       - HOME=/home/bitcoin
 
   lndserver:
-    image: lightninglabs/lnd:v0.13.4-beta
+    image: lightninglabs/lnd:v0.15.0-beta
     restart: unless-stopped
     networks:
       - regtest
@@ -49,7 +49,7 @@ services:
       - "--tlsextradomain=regtest_lndserver_1"
 
   loopserver:
-    image: lightninglabs/loopserver:latest
+    image: lightninglabs/loopserver
     restart: unless-stopped
     networks:
       - regtest
@@ -65,7 +65,7 @@ services:
       - "--lnd.tlspath=/root/.lnd/tls.cert"
 
   lndclient:
-    image: lightninglabs/lnd:v0.13.4-beta
+    image: lightninglabs/lnd:v0.15.0-beta
     restart: unless-stopped
     networks:
       - regtest
