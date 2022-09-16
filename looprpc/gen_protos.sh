@@ -32,7 +32,7 @@ function generate() {
   # Generate the JSON/WASM client stubs.
   falafel=$(which falafel)
   pkg="looprpc"
-  opts="package_name=$pkg,js_stubs=1,build_tags=// +build js"
+  opts="package_name=$pkg,js_stubs=1"
   protoc -I/usr/local/include -I. -I.. \
     --plugin=protoc-gen-custom=$falafel\
     --custom_out=. \
