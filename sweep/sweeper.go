@@ -198,6 +198,8 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 		weightEstimate.AddP2SHOutput()
 	case *btcutil.AddressPubKeyHash:
 		weightEstimate.AddP2PKHOutput()
+	case *btcutil.AddressTaproot:
+		weightEstimate.AddP2TROutput()
 	default:
 		return 0, fmt.Errorf("unknown address type %T", destAddr)
 	}
