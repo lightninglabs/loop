@@ -192,14 +192,22 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	switch destAddr.(type) {
 	case *btcutil.AddressWitnessScriptHash:
 		weightEstimate.AddP2WSHOutput()
+
 	case *btcutil.AddressWitnessPubKeyHash:
 		weightEstimate.AddP2WKHOutput()
+
 	case *btcutil.AddressScriptHash:
 		weightEstimate.AddP2SHOutput()
+
 	case *btcutil.AddressPubKeyHash:
 		weightEstimate.AddP2PKHOutput()
+
+	case *btcutil.AddressTaproot:
+		weightEstimate.AddP2TROutput()
+
 	default:
-		return 0, fmt.Errorf("unknown address type %T", destAddr)
+		return 0, fmt.Errorf("estimate fee: unknown address type %T",
+			destAddr)
 	}
 
 	err = addInputEstimate(&weightEstimate)
