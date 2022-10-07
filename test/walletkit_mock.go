@@ -3,9 +3,11 @@ package test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -232,4 +234,11 @@ func (m *mockWalletKit) FinalizePsbt(_ context.Context, _ *psbt.Packet,
 	_ string) (*psbt.Packet, *wire.MsgTx, error) {
 
 	return nil, nil, nil
+}
+
+// ImportPublicKey imports a public key as watch-only into the wallet.
+func (m *mockWalletKit) ImportPublicKey(ctx context.Context,
+	pubkey *btcec.PublicKey, addrType lnwallet.AddressType) error {
+
+	return fmt.Errorf("unimplemented")
 }
