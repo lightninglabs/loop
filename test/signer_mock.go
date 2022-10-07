@@ -33,7 +33,8 @@ func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 }
 
 func (s *mockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
+	signDescriptors []*lndclient.SignDescriptor,
+	prevOutputs []*wire.TxOut) ([]*input.Script, error) {
 
 	return nil, fmt.Errorf("unimplemented")
 }
