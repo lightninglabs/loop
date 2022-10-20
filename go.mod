@@ -1,7 +1,7 @@
 module github.com/lightninglabs/loop
 
 require (
-	github.com/btcsuite/btcd v0.23.1
+	github.com/btcsuite/btcd v0.23.2
 	github.com/btcsuite/btcd/btcec/v2 v2.2.1
 	github.com/btcsuite/btcd/btcutil v1.1.2
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.5
@@ -18,7 +18,7 @@ require (
 	github.com/lightninglabs/lndclient v0.15.1-5
 	github.com/lightninglabs/loop/swapserverrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.15.1-beta
+	github.com/lightningnetwork/lnd v0.15.3-beta
 	github.com/lightningnetwork/lnd/cert v1.1.1
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
