@@ -19,7 +19,5 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 #### Bug Fixes
-* Bump minimum LND version to v0.15.1-beta to avoid failed swaps due to the chain
-  backend not properly supporting taproot (fixed in: https://github.com/lightningnetwork/lnd/pull/6798).
 
 #### Maintenance
