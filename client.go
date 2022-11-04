@@ -267,16 +267,6 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 
 			swapInfo.HtlcAddressP2TR = htlcP2TR.Address
 		} else {
-			htlcNP2WSH, err := swap.NewHtlc(
-				swap.HtlcV1, swp.Contract.CltvExpiry,
-				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
-				swp.Hash, swap.HtlcNP2WSH,
-				s.lndServices.ChainParams,
-			)
-			if err != nil {
-				return nil, err
-			}
-
 			htlcP2WSH, err := swap.NewHtlc(
 				swap.HtlcV2, swp.Contract.CltvExpiry,
 				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
@@ -288,7 +278,6 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 			}
 
 			swapInfo.HtlcAddressP2WSH = htlcP2WSH.Address
-			swapInfo.HtlcAddressNP2WSH = htlcNP2WSH.Address
 		}
 
 		swaps = append(swaps, swapInfo)
@@ -615,7 +604,6 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	}
 
 	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
-		swapInfo.HtlcAddressNP2WSH = swap.htlcNP2WSH.Address
 		swapInfo.HtlcAddressP2WSH = swap.htlcP2WSH.Address
 	} else {
 		swapInfo.HtlcAddressP2TR = swap.htlcP2TR.Address

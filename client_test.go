@@ -370,9 +370,6 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 
 	var preImageIndex int
 	switch scriptVersion {
-	case swap.HtlcV1:
-		preImageIndex = 1
-
 	case swap.HtlcV2:
 		preImageIndex = 0
 

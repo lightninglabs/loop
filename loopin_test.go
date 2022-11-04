@@ -104,12 +104,6 @@ func testLoopInSuccess(t *testing.T) {
 	// Expect register for htlc conf (only one, since the htlc is p2tr).
 	<-ctx.lnd.RegisterConfChannel
 
-	// If the swap is legacy, then we'll register two confirmation
-	// notifications.
-	if !IsTaprootSwap(&inSwap.SwapContract) {
-		<-ctx.lnd.RegisterConfChannel
-	}
-
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
 		Tx: &htlcTx,
@@ -266,11 +260,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 		// Create an external htlc publish tx.
 		var pkScript []byte
 		if !IsTaprootSwap(&inSwap.SwapContract) {
-			if req.ExternalHtlc {
-				pkScript = inSwap.htlcNP2WSH.PkScript
-			} else {
-				pkScript = inSwap.htlcP2WSH.PkScript
-			}
+			pkScript = inSwap.htlcP2WSH.PkScript
 		} else {
 			pkScript = inSwap.htlcP2TR.PkScript
 		}
@@ -287,12 +277,6 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
-
-	// If the swap is legacy, then we'll register two confirmation
-	// notifications.
-	if !IsTaprootSwap(&inSwap.SwapContract) {
-		<-ctx.lnd.RegisterConfChannel
-	}
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -473,7 +457,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	scriptVersion := GetHtlcScriptVersion(storedVersion)
 
-	outputType := swap.HtlcNP2WSH
+	outputType := swap.HtlcP2WSH
 	if scriptVersion == swap.HtlcV3 {
 		outputType = swap.HtlcP2TR
 	}
@@ -570,12 +554,6 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	// Expect register for htlc conf.
 	<-ctx.lnd.RegisterConfChannel
-
-	// If the swap is legacy, then we'll register two confirmation
-	// notifications.
-	if !IsTaprootSwap(&inSwap.SwapContract) {
-		<-ctx.lnd.RegisterConfChannel
-	}
 
 	// Confirm htlc.
 	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{

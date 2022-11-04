@@ -55,9 +55,6 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 
 		var outputType swap.HtlcOutputType
 		switch scriptVersion {
-		case swap.HtlcV1:
-			outputType = swap.HtlcNP2WSH
-
 		case swap.HtlcV2:
 			outputType = swap.HtlcP2WSH
 
