@@ -17,6 +17,8 @@ This file tracks release notes for the loop client.
 #### New Features
 
 #### Breaking Changes
+* Listing loop-in swaps will not display old, nested segwit swap htlc addresses correctly anymore since
+  support for these htlc types is removed from the code base.
 
 #### Bug Fixes
 

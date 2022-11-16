@@ -350,10 +350,6 @@ func logSwap(swap *looprpc.SwapStatus) {
 			fmt.Printf(" P2WSH: %v", swap.HtlcAddressP2Wsh)
 		}
 
-		if swap.HtlcAddressNp2Wsh != "" {
-			fmt.Printf(" NP2WSH: %v", swap.HtlcAddressNp2Wsh)
-		}
-
 		if swap.HtlcAddressP2Tr != "" {
 			fmt.Printf(" P2TR: %v", swap.HtlcAddressP2Tr)
 		}

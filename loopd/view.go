@@ -49,12 +49,24 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	}
 
 	for _, s := range swaps {
+		scriptVersion := loop.GetHtlcScriptVersion(
+			s.Contract.ProtocolVersion,
+		)
+
+		var outputType swap.HtlcOutputType
+		switch scriptVersion {
+		case swap.HtlcV2:
+			outputType = swap.HtlcP2WSH
+
+		case swap.HtlcV3:
+			outputType = swap.HtlcP2TR
+		}
 		htlc, err := swap.NewHtlc(
 			loop.GetHtlcScriptVersion(s.Contract.ProtocolVersion),
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
-			s.Hash, swap.HtlcP2WSH, chainParams,
+			s.Hash, outputType, chainParams,
 		)
 		if err != nil {
 			return err
@@ -106,7 +118,7 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.CltvExpiry,
 			s.Contract.SenderKey,
 			s.Contract.ReceiverKey,
-			s.Hash, swap.HtlcNP2WSH, chainParams,
+			s.Hash, swap.HtlcP2WSH, chainParams,
 		)
 		if err != nil {
 			return err
