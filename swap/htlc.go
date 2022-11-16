@@ -114,16 +114,16 @@ var (
 
 	// QuoteHtlcP2WSH is a template script just used for sweep fee
 	// estimation.
-	QuoteHtlcP2WSH, _ = NewHtlc(
-		HtlcV2, ^int32(0), dummyPubKey, dummyPubKey, quoteHash,
-		HtlcP2WSH, &chaincfg.MainNetParams,
+	QuoteHtlcP2WSH, _ = NewHtlcV2(
+		^int32(0), dummyPubKey, dummyPubKey, quoteHash,
+		&chaincfg.MainNetParams,
 	)
 
 	// QuoteHtlcP2TR is a template script just used for sweep fee
 	// estimation.
-	QuoteHtlcP2TR, _ = NewHtlc(
-		HtlcV3, ^int32(0), dummyPubKey, dummyPubKey, quoteHash,
-		HtlcP2TR, &chaincfg.MainNetParams,
+	QuoteHtlcP2TR, _ = NewHtlcV3(
+		^int32(0), dummyPubKey, dummyPubKey, dummyPubKey, dummyPubKey,
+		quoteHash, &chaincfg.MainNetParams,
 	)
 
 	// ErrInvalidScriptVersion is returned when an unknown htlc version
@@ -135,6 +135,10 @@ var (
 	// selected for a v2 script.
 	ErrInvalidOutputSelected = fmt.Errorf("taproot output selected for " +
 		"non taproot htlc")
+
+	// ErrInvalidOutputType is returned when an unknown output type is
+	// associated with a certain swap htlc.
+	ErrInvalidOutputType = fmt.Errorf("invalid htlc output type")
 )
 
 // String returns the string value of HtlcOutputType.
@@ -151,38 +155,20 @@ func (h HtlcOutputType) String() string {
 	}
 }
 
-// NewHtlc returns a new instance. For v3 scripts, an internal pubkey generated
-// by both participants must be provided.
-func NewHtlc(version ScriptVersion, cltvExpiry int32,
-	senderKey, receiverKey [33]byte, hash lntypes.Hash,
-	outputType HtlcOutputType, chainParams *chaincfg.Params) (*Htlc, error) {
+// NewHtlcV2 returns a new V2 (P2WSH) HTLC instance.
+func NewHtlcV2(cltvExpiry int32, senderKey, receiverKey [33]byte,
+	hash lntypes.Hash, chainParams *chaincfg.Params) (*Htlc, error) {
 
-	var (
-		err  error
-		htlc HtlcScript
+	htlc, err := newHTLCScriptV2(
+		cltvExpiry, senderKey, receiverKey, hash,
 	)
-
-	switch version {
-	case HtlcV2:
-		htlc, err = newHTLCScriptV2(
-			cltvExpiry, senderKey, receiverKey, hash,
-		)
-
-	case HtlcV3:
-		htlc, err = newHTLCScriptV3(
-			cltvExpiry, senderKey, receiverKey, hash,
-		)
-
-	default:
-		return nil, ErrInvalidScriptVersion
-	}
 
 	if err != nil {
 		return nil, err
 	}
 
 	address, pkScript, sigScript, err := htlc.lockingConditions(
-		outputType, chainParams,
+		HtlcP2WSH, chainParams,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not get address: %w", err)
@@ -191,9 +177,43 @@ func NewHtlc(version ScriptVersion, cltvExpiry int32,
 	return &Htlc{
 		HtlcScript:  htlc,
 		Hash:        hash,
-		Version:     version,
+		Version:     HtlcV2,
 		PkScript:    pkScript,
-		OutputType:  outputType,
+		OutputType:  HtlcP2WSH,
+		ChainParams: chainParams,
+		Address:     address,
+		SigScript:   sigScript,
+	}, nil
+}
+
+// NewHtlcV3 returns a new V3 HTLC (P2TR) instance. Internal pubkey generated
+// by both participants must be provided.
+func NewHtlcV3(cltvExpiry int32, senderInternalKey, receiverInternalKey,
+	senderKey, receiverKey [33]byte, hash lntypes.Hash,
+	chainParams *chaincfg.Params) (*Htlc, error) {
+
+	htlc, err := newHTLCScriptV3(
+		cltvExpiry, senderInternalKey, receiverInternalKey,
+		senderKey, receiverKey, hash,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	address, pkScript, sigScript, err := htlc.lockingConditions(
+		HtlcP2TR, chainParams,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not get address: %w", err)
+	}
+
+	return &Htlc{
+		HtlcScript:  htlc,
+		Hash:        hash,
+		Version:     HtlcV3,
+		PkScript:    pkScript,
+		OutputType:  HtlcP2TR,
 		ChainParams: chainParams,
 		Address:     address,
 		SigScript:   sigScript,
@@ -481,7 +501,8 @@ type HtlcScriptV3 struct {
 }
 
 // newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
-func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
+func newHTLCScriptV3(cltvExpiry int32, senderInternalKey, receiverInternalKey,
+	senderHtlcKey, receiverHtlcKey [33]byte,
 	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
 
 	senderPubKey, err := schnorr.ParsePubKey(senderHtlcKey[1:])
@@ -490,13 +511,6 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
 	}
 
 	receiverPubKey, err := schnorr.ParsePubKey(receiverHtlcKey[1:])
-	if err != nil {
-		return nil, err
-	}
-
-	aggregateKey, _, _, err := musig2.AggregateKeys(
-		[]*btcec.PublicKey{senderPubKey, receiverPubKey}, true,
-	)
 	if err != nil {
 		return nil, err
 	}
@@ -526,6 +540,31 @@ func newHTLCScriptV3(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
 	)
 
 	rootHash := tree.RootNode.TapHash()
+
+	// Parse the pub keys used in the internal aggregate key. They are
+	// optional and may just be the same keys that are used for the script
+	// paths.
+	senderInternalPubKey, err := schnorr.ParsePubKey(senderInternalKey[1:])
+	if err != nil {
+		return nil, err
+	}
+
+	receiverInternalPubKey, err := schnorr.ParsePubKey(
+		receiverInternalKey[1:],
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate the internal aggregate key.
+	aggregateKey, _, _, err := musig2.AggregateKeys(
+		[]*btcec.PublicKey{
+			senderInternalPubKey, receiverInternalPubKey,
+		}, true,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Calculate top level taproot key.
 	taprootKey := txscript.ComputeTaprootOutputKey(

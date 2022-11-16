@@ -404,26 +404,26 @@ func validateLoopInContract(lnd *lndclient.LndServices,
 // initHtlcs creates and updates the native and nested segwit htlcs
 // of the loopInSwap.
 func (s *loopInSwap) initHtlcs() error {
-	if IsTaprootSwap(&s.SwapContract) {
-		htlcP2TR, err := s.swapKit.getHtlc(swap.HtlcP2TR)
-		if err != nil {
-			return err
-		}
-
-		s.swapKit.log.Infof("Htlc address (P2TR): %v", htlcP2TR.Address)
-		s.htlcP2TR = htlcP2TR
-
-		return nil
-	}
-
-	htlcP2WSH, err := s.swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := GetHtlc(
+		s.hash, &s.SwapContract, s.swapKit.lnd.ChainParams,
+	)
 	if err != nil {
 		return err
 	}
 
-	// Log htlc addresses for debugging.
-	s.swapKit.log.Infof("Htlc address (P2WSH): %v", htlcP2WSH.Address)
-	s.htlcP2WSH = htlcP2WSH
+	switch htlc.OutputType {
+	case swap.HtlcP2WSH:
+		s.htlcP2WSH = htlc
+
+	case swap.HtlcP2TR:
+		s.htlcP2TR = htlc
+
+	default:
+		return fmt.Errorf("invalid output type")
+	}
+
+	s.swapKit.log.Infof("Htlc address (%s): %v", htlc.OutputType,
+		htlc.Address)
 
 	return nil
 }

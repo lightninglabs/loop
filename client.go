@@ -213,29 +213,24 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 			SwapHash:      swp.Hash,
 			LastUpdate:    swp.LastUpdateTime(),
 		}
-		scriptVersion := GetHtlcScriptVersion(
-			swp.Contract.ProtocolVersion,
-		)
 
-		outputType := swap.HtlcP2WSH
-		if scriptVersion == swap.HtlcV3 {
-			outputType = swap.HtlcP2TR
-		}
-
-		htlc, err := swap.NewHtlc(
-			scriptVersion,
-			swp.Contract.CltvExpiry, swp.Contract.SenderKey,
-			swp.Contract.ReceiverKey, swp.Hash,
-			outputType, s.lndServices.ChainParams,
+		htlc, err := GetHtlc(
+			swp.Hash, &swp.Contract.SwapContract,
+			s.lndServices.ChainParams,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		if outputType == swap.HtlcP2TR {
-			swapInfo.HtlcAddressP2TR = htlc.Address
-		} else {
+		switch htlc.OutputType {
+		case swap.HtlcP2WSH:
 			swapInfo.HtlcAddressP2WSH = htlc.Address
+
+		case swap.HtlcP2TR:
+			swapInfo.HtlcAddressP2TR = htlc.Address
+
+		default:
+			return nil, swap.ErrInvalidOutputType
 		}
 
 		swaps = append(swaps, swapInfo)
@@ -250,34 +245,23 @@ func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
 			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		scriptVersion := GetHtlcScriptVersion(
-			swp.Contract.SwapContract.ProtocolVersion,
+		htlc, err := GetHtlc(
+			swp.Hash, &swp.Contract.SwapContract,
+			s.lndServices.ChainParams,
 		)
+		if err != nil {
+			return nil, err
+		}
 
-		if scriptVersion == swap.HtlcV3 {
-			htlcP2TR, err := swap.NewHtlc(
-				swap.HtlcV3, swp.Contract.CltvExpiry,
-				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
-				swp.Hash, swap.HtlcP2TR,
-				s.lndServices.ChainParams,
-			)
-			if err != nil {
-				return nil, err
-			}
+		switch htlc.OutputType {
+		case swap.HtlcP2WSH:
+			swapInfo.HtlcAddressP2WSH = htlc.Address
 
-			swapInfo.HtlcAddressP2TR = htlcP2TR.Address
-		} else {
-			htlcP2WSH, err := swap.NewHtlc(
-				swap.HtlcV2, swp.Contract.CltvExpiry,
-				swp.Contract.SenderKey, swp.Contract.ReceiverKey,
-				swp.Hash, swap.HtlcP2WSH,
-				s.lndServices.ChainParams,
-			)
-			if err != nil {
-				return nil, err
-			}
+		case swap.HtlcP2TR:
+			swapInfo.HtlcAddressP2TR = htlc.Address
 
-			swapInfo.HtlcAddressP2WSH = htlcP2WSH.Address
+		default:
+			return nil, swap.ErrInvalidOutputType
 		}
 
 		swaps = append(swaps, swapInfo)

@@ -455,21 +455,32 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
-	scriptVersion := GetHtlcScriptVersion(storedVersion)
-
-	outputType := swap.HtlcP2WSH
-	if scriptVersion == swap.HtlcV3 {
-		outputType = swap.HtlcP2TR
-	}
-
-	htlc, err := swap.NewHtlc(
-		scriptVersion, contract.CltvExpiry, contract.SenderKey,
-		contract.ReceiverKey, testPreimage.Hash(), outputType,
-		cfg.lnd.ChainParams,
+	var (
+		htlc *swap.Htlc
+		err  error
 	)
-	if err != nil {
-		t.Fatal(err)
+
+	switch GetHtlcScriptVersion(storedVersion) {
+	case swap.HtlcV2:
+		htlc, err = swap.NewHtlcV2(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, testPreimage.Hash(),
+			cfg.lnd.ChainParams,
+		)
+
+	case swap.HtlcV3:
+		htlc, err = swap.NewHtlcV3(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, contract.SenderKey,
+			contract.ReceiverKey, testPreimage.Hash(),
+			cfg.lnd.ChainParams,
+		)
+
+	default:
+		t.Fatalf("unknown HTLC script version")
 	}
+
+	require.NoError(t, err)
 
 	err = ctx.store.CreateLoopIn(testPreimage.Hash(), contract)
 	if err != nil {

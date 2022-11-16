@@ -284,16 +284,26 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	// Assert that the loopout htlc equals to the expected one.
 	scriptVersion := GetHtlcScriptVersion(protocolVersion)
+	var htlc *swap.Htlc
 
-	outputType := swap.HtlcP2TR
-	if scriptVersion != swap.HtlcV3 {
-		outputType = swap.HtlcP2WSH
+	switch scriptVersion {
+	case swap.HtlcV2:
+		htlc, err = swap.NewHtlcV2(
+			pendingSwap.Contract.CltvExpiry, senderKey,
+			receiverKey, hash, &chaincfg.TestNet3Params,
+		)
+
+	case swap.HtlcV3:
+		htlc, err = swap.NewHtlcV3(
+			pendingSwap.Contract.CltvExpiry, senderKey,
+			receiverKey, senderKey, receiverKey, hash,
+			&chaincfg.TestNet3Params,
+		)
+
+	default:
+		t.Fatalf(swap.ErrInvalidScriptVersion.Error())
 	}
 
-	htlc, err := swap.NewHtlc(
-		scriptVersion, pendingSwap.Contract.CltvExpiry, senderKey,
-		receiverKey, hash, outputType, &chaincfg.TestNet3Params,
-	)
 	require.NoError(t, err)
 	require.Equal(t, htlc.PkScript, confIntent.PkScript)
 
