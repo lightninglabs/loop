@@ -86,9 +86,11 @@ func (ctx *Context) AssertRegisterSpendNtfn(script []byte) {
 
 	select {
 	case spendIntent := <-ctx.Lnd.RegisterSpendChannel:
-		if !bytes.Equal(spendIntent.PkScript, script) {
-			ctx.T.Fatalf("server not listening for published htlc script")
-		}
+		require.Equal(
+			ctx.T, script, spendIntent.PkScript,
+			"server not listening for published htlc script",
+		)
+
 	case <-time.After(Timeout):
 		DumpGoroutines()
 		ctx.T.Fatalf("spend not subscribed to")
@@ -163,10 +165,11 @@ func (ctx *Context) AssertPaid(
 
 		payReq := ctx.DecodeInvoice(swapPayment.Invoice)
 
-		if _, ok := ctx.PaidInvoices[*payReq.Description]; ok {
-			ctx.T.Fatalf("duplicate invoice paid: %v",
-				*payReq.Description)
-		}
+		_, ok := ctx.PaidInvoices[*payReq.Description]
+		require.False(
+			ctx.T, ok,
+			"duplicate invoice paid: %v", *payReq.Description,
+		)
 
 		done := func(result error) {
 			if result != nil {
@@ -195,9 +198,10 @@ func (ctx *Context) AssertSettled(
 	select {
 	case preimage := <-ctx.Lnd.SettleInvoiceChannel:
 		hash := sha256.Sum256(preimage[:])
-		if expectedHash != hash {
-			ctx.T.Fatalf("server claims with wrong preimage")
-		}
+		require.Equal(
+			ctx.T, expectedHash, lntypes.Hash(hash),
+			"server claims with wrong preimage",
+		)
 
 		return preimage
 	case <-time.After(Timeout):
@@ -232,9 +236,8 @@ func (ctx *Context) DecodeInvoice(request string) *zpay32.Invoice {
 	ctx.T.Helper()
 
 	payReq, err := ctx.Lnd.DecodeInvoice(request)
-	if err != nil {
-		ctx.T.Fatal(err)
-	}
+	require.NoError(ctx.T, err)
+
 	return payReq
 }
 
@@ -256,7 +259,5 @@ func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
 // waits for the notification to be processed by selecting on a
 // dedicated test channel.
 func (ctx *Context) NotifyServerHeight(height int32) {
-	if err := ctx.Lnd.NotifyHeight(height); err != nil {
-		ctx.T.Fatal(err)
-	}
+	require.NoError(ctx.T, ctx.Lnd.NotifyHeight(height))
 }

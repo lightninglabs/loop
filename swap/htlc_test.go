@@ -54,9 +54,7 @@ func assertEngineExecution(t *testing.T, valid bool,
 	done := false
 	for !done {
 		dis, err := vm.DisasmPC()
-		if err != nil {
-			t.Fatalf("stepping (%v)\n", err)
-		}
+		require.NoError(t, err, "stepping")
 		debugBuf.WriteString(fmt.Sprintf("stepping %v\n", dis))
 
 		done, err = vm.Step()

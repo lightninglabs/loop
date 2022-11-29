@@ -130,16 +130,13 @@ func TestValidateConfTarget(t *testing.T) {
 				test.confTarget, defaultConf,
 			)
 
-			haveErr := err != nil
-			if haveErr != test.expectErr {
-				t.Fatalf("expected err: %v, got: %v",
-					test.expectErr, err)
+			if test.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 
-			if target != test.expectedTarget {
-				t.Fatalf("expected: %v, got: %v",
-					test.expectedTarget, target)
-			}
+			require.Equal(t, test.expectedTarget, target)
 		})
 	}
 }
@@ -199,16 +196,13 @@ func TestValidateLoopInRequest(t *testing.T) {
 				test.confTarget, external,
 			)
 
-			haveErr := err != nil
-			if haveErr != test.expectErr {
-				t.Fatalf("expected err: %v, got: %v",
-					test.expectErr, err)
+			if test.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 
-			if conf != test.expectedTarget {
-				t.Fatalf("expected: %v, got: %v",
-					test.expectedTarget, conf)
-			}
+			require.Equal(t, test.expectedTarget, conf)
 		})
 	}
 }

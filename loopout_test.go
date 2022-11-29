@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"reflect"
 	"testing"
 	"time"
 
@@ -66,7 +65,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	blockEpochChan := make(chan interface{})
 	statusChan := make(chan SwapInfo)
 
-	const maxParts = 5
+	const maxParts = uint32(5)
 
 	chanSet := loopdb.ChannelSet{2, 3}
 
@@ -77,9 +76,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, &req,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	swap := initResult.swap
 
 	// Execute the swap in its own goroutine.
@@ -105,9 +102,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	store.assertLoopOutStored()
 
 	state := <-statusChan
-	if state.State != loopdb.StateInitiated {
-		t.Fatal("unexpected state")
-	}
+	require.Equal(t, loopdb.StateInitiated, state.State)
 
 	// Check that the SwapInfo contains the outgoing chan set
 	require.Equal(t, chanSet, state.OutgoingChanSet)
@@ -130,18 +125,12 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	}
 
 	// Assert that it is sent as a multi-part payment.
-	if swapPayment.MaxParts != maxParts {
-		t.Fatalf("Expected %v parts, but got %v",
-			maxParts, swapPayment.MaxParts)
-	}
+	require.Equal(t, maxParts, swapPayment.MaxParts)
 
 	// Verify the outgoing channel set restriction.
-	if !reflect.DeepEqual(
-		[]uint64(req.OutgoingChanSet), swapPayment.OutgoingChanIds,
-	) {
-
-		t.Fatalf("Unexpected outgoing channel set")
-	}
+	require.Equal(
+		t, []uint64(req.OutgoingChanSet), swapPayment.OutgoingChanIds,
+	)
 
 	// Swap is expected to register for confirmation of the htlc. Assert
 	// this to prevent a blocked channel in the mock.
@@ -152,10 +141,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	cancel()
 
 	// Expect the swap to signal that it was cancelled.
-	err = <-errChan
-	if err != context.Canceled {
-		t.Fatal(err)
-	}
+	require.Equal(t, context.Canceled, <-errChan)
 }
 
 // TestLateHtlcPublish tests that the client is not revealing the preimage if
@@ -198,9 +184,7 @@ func testLateHtlcPublish(t *testing.T) {
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, height, testRequest,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	swap := initResult.swap
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
@@ -225,11 +209,8 @@ func testLateHtlcPublish(t *testing.T) {
 	}()
 
 	store.assertLoopOutStored()
-
-	state := <-statusChan
-	if state.State != loopdb.StateInitiated {
-		t.Fatal("unexpected state")
-	}
+	status := <-statusChan
+	require.Equal(t, loopdb.StateInitiated, status.State)
 
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
@@ -249,15 +230,9 @@ func testLateHtlcPublish(t *testing.T) {
 
 	store.assertStoreFinished(loopdb.StateFailTimeout)
 
-	status := <-statusChan
-	if status.State != loopdb.StateFailTimeout {
-		t.Fatal("unexpected state")
-	}
-
-	err = <-errChan
-	if err != nil {
-		t.Fatal(err)
-	}
+	status = <-statusChan
+	require.Equal(t, loopdb.StateFailTimeout, status.State)
+	require.NoError(t, <-errChan)
 }
 
 // TestCustomSweepConfTarget ensures we are able to sweep a Loop Out HTLC with a
@@ -304,9 +279,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	initResult, err := newLoopOutSwap(
 		context.Background(), cfg, ctx.Lnd.Height, &testReq,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	swap := initResult.swap
 
 	// Set up the required dependencies to execute the swap.
@@ -339,9 +312,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	// The swap should be found in its initial state.
 	cfg.store.(*storeMock).assertLoopOutStored()
 	state := <-statusChan
-	if state.State != loopdb.StateInitiated {
-		t.Fatal("unexpected state")
-	}
+	require.Equal(t, loopdb.StateInitiated, state.State)
 
 	// We'll then pay both the swap and prepay invoice, which should trigger
 	// the server to publish the on-chain HTLC.
@@ -381,10 +352,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
 	status := <-statusChan
-	if status.State != loopdb.StatePreimageRevealed {
-		t.Fatalf("expected state %v, got %v",
-			loopdb.StatePreimageRevealed, status.State)
-	}
+	require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
 	// When using taproot htlcs the flow is different as we do reveal the
 	// preimage before sweeping in order for the server to trust us with
@@ -410,10 +378,10 @@ func testCustomSweepConfTarget(t *testing.T) {
 		t.Helper()
 
 		sweepTx := ctx.ReceiveTx()
-		if sweepTx.TxIn[0].PreviousOutPoint.Hash != htlcTx.TxHash() {
-			t.Fatalf("expected sweep tx to spend %v, got %v",
-				htlcTx.TxHash(), sweepTx.TxIn[0].PreviousOutPoint)
-		}
+		require.Equal(
+			t, htlcTx.TxHash(),
+			sweepTx.TxIn[0].PreviousOutPoint.Hash,
+		)
 
 		// The fee used for the sweep transaction is an estimate based
 		// on the maximum witness size, so we should expect to see a
@@ -427,16 +395,14 @@ func testCustomSweepConfTarget(t *testing.T) {
 		feeRate, err := ctx.Lnd.WalletKit.EstimateFeeRate(
 			context.Background(), expConfTarget,
 		)
-		if err != nil {
-			t.Fatalf("unable to retrieve fee estimate: %v", err)
-		}
-		minFee := feeRate.FeeForWeight(weight)
-		maxFee := btcutil.Amount(float64(minFee) * 1.1)
+		require.NoError(t, err, "unable to retrieve fee estimate")
 
-		if fee < minFee && fee > maxFee {
-			t.Fatalf("expected sweep tx to have fee between %v-%v, "+
-				"got %v", minFee, maxFee, fee)
-		}
+		minFee := feeRate.FeeForWeight(weight)
+		// Just an estimate that works to sanity check fee upper bound.
+		maxFee := btcutil.Amount(float64(minFee) * 1.5)
+
+		require.GreaterOrEqual(t, fee, minFee)
+		require.LessOrEqual(t, fee, maxFee)
 
 		return sweepTx
 	}
@@ -479,14 +445,8 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
-	if status.State != loopdb.StateSuccess {
-		t.Fatalf("expected state %v, got %v", loopdb.StateSuccess,
-			status.State)
-	}
-
-	if err := <-errChan; err != nil {
-		t.Fatal(err)
-	}
+	require.Equal(t, loopdb.StateSuccess, status.State)
+	require.NoError(t, <-errChan)
 }
 
 // TestPreimagePush tests or logic that decides whether to push our preimage to
