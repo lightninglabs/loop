@@ -1,7 +1,6 @@
 package loop
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -57,9 +56,7 @@ func TestLoopOutSuccess(t *testing.T) {
 
 	// Initiate loop out.
 	info, err := ctx.swapClient.LoopOut(context.Background(), &req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	ctx.assertStored()
 	ctx.assertStatus(loopdb.StateInitiated)
@@ -84,9 +81,7 @@ func TestLoopOutFailOffchain(t *testing.T) {
 	ctx := createClientTestContext(t, nil)
 
 	_, err := ctx.swapClient.LoopOut(context.Background(), testRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	ctx.assertStored()
 	ctx.assertStatus(loopdb.StateInitiated)
@@ -208,14 +203,10 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	amt := btcutil.Amount(50000)
 
 	swapPayReq, err := getInvoice(hash, amt, swapInvoiceDesc)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	prePayReq, err := getInvoice(hash, 100, prepayInvoiceDesc)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	_, senderPubKey := test.CreateKey(1)
 	var senderKey [33]byte
@@ -284,16 +275,26 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	// Assert that the loopout htlc equals to the expected one.
 	scriptVersion := GetHtlcScriptVersion(protocolVersion)
+	var htlc *swap.Htlc
 
-	outputType := swap.HtlcP2TR
-	if scriptVersion != swap.HtlcV3 {
-		outputType = swap.HtlcP2WSH
+	switch scriptVersion {
+	case swap.HtlcV2:
+		htlc, err = swap.NewHtlcV2(
+			pendingSwap.Contract.CltvExpiry, senderKey,
+			receiverKey, hash, &chaincfg.TestNet3Params,
+		)
+
+	case swap.HtlcV3:
+		htlc, err = swap.NewHtlcV3(
+			pendingSwap.Contract.CltvExpiry, senderKey,
+			receiverKey, senderKey, receiverKey, hash,
+			&chaincfg.TestNet3Params,
+		)
+
+	default:
+		t.Fatalf(swap.ErrInvalidScriptVersion.Error())
 	}
 
-	htlc, err := swap.NewHtlc(
-		scriptVersion, pendingSwap.Contract.CltvExpiry, senderKey,
-		receiverKey, hash, outputType, &chaincfg.TestNet3Params,
-	)
 	require.NoError(t, err)
 	require.Equal(t, htlc.PkScript, confIntent.PkScript)
 
@@ -363,10 +364,11 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// Expect client on-chain sweep of HTLC.
 	sweepTx := ctx.ReceiveTx()
 
-	if !bytes.Equal(sweepTx.TxIn[0].PreviousOutPoint.Hash[:],
-		htlcOutpoint.Hash[:]) {
-		ctx.T.Fatalf("client not sweeping from htlc tx")
-	}
+	require.Equal(
+		ctx.T, htlcOutpoint.Hash[:],
+		sweepTx.TxIn[0].PreviousOutPoint.Hash[:],
+		"client not sweeping from htlc tx",
+	)
 
 	var preImageIndex int
 	switch scriptVersion {
@@ -380,9 +382,7 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// Check preimage.
 	clientPreImage := sweepTx.TxIn[0].Witness[preImageIndex]
 	clientPreImageHash := sha256.Sum256(clientPreImage)
-	if clientPreImageHash != hash {
-		ctx.T.Fatalf("incorrect preimage")
-	}
+	require.Equal(ctx.T, hash, lntypes.Hash(clientPreImageHash))
 
 	// Since we successfully published our sweep, we expect the preimage to
 	// have been pushed to our mock server.

@@ -14,6 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -29,11 +30,10 @@ var (
 
 // GetDestAddr deterministically generates a sweep address for testing.
 func GetDestAddr(t *testing.T, nr byte) btcutil.Address {
-	destAddr, err := btcutil.NewAddressScriptHash([]byte{nr},
-		&chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	destAddr, err := btcutil.NewAddressScriptHash(
+		[]byte{nr}, &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
 
 	return destAddr
 }

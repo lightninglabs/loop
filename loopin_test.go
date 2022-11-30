@@ -58,9 +58,8 @@ func testLoopInSuccess(t *testing.T) {
 		context.Background(), cfg,
 		height, req,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	inSwap := initResult.swap
 
 	ctx.store.assertLoopInStored()
@@ -142,10 +141,7 @@ func testLoopInSuccess(t *testing.T) {
 	ctx.assertState(loopdb.StateSuccess)
 	ctx.store.assertLoopInState(loopdb.StateSuccess)
 
-	err = <-errChan
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, <-errChan)
 }
 
 // TestLoopInTimeout tests scenarios where the server doesn't sweep the htlc
@@ -215,9 +211,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 		context.Background(), cfg,
 		height, &req,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	inSwap := initResult.swap
 
 	ctx.store.assertLoopInStored()
@@ -289,11 +283,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 		ctx.assertState(loopdb.StateFailIncorrectHtlcAmt)
 		ctx.store.assertLoopInState(loopdb.StateFailIncorrectHtlcAmt)
 
-		err = <-errChan
-		if err != nil {
-			t.Fatal(err)
-		}
-
+		require.NoError(t, <-errChan)
 		return
 	}
 
@@ -308,9 +298,11 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	// Expect a signing request for the htlc tx output value.
 	signReq := <-ctx.lnd.SignOutputRawChannel
-	if signReq.SignDescriptors[0].Output.Value != htlcTx.TxOut[0].Value {
-		t.Fatal("invalid signing amount")
-	}
+	require.Equal(
+		t, htlcTx.TxOut[0].Value,
+		signReq.SignDescriptors[0].Output.Value,
+		"invalid signing amount",
+	)
 
 	// Expect timeout tx to be published.
 	timeoutTx := <-ctx.lnd.TxPublishChannel
@@ -341,10 +333,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	state := ctx.store.assertLoopInState(loopdb.StateFailTimeout)
 	require.Equal(t, cost, state.Cost)
 
-	err = <-errChan
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, <-errChan)
 }
 
 // TestLoopInResume tests resuming swaps in various states.
@@ -455,34 +444,38 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
-	scriptVersion := GetHtlcScriptVersion(storedVersion)
-
-	outputType := swap.HtlcP2WSH
-	if scriptVersion == swap.HtlcV3 {
-		outputType = swap.HtlcP2TR
-	}
-
-	htlc, err := swap.NewHtlc(
-		scriptVersion, contract.CltvExpiry, contract.SenderKey,
-		contract.ReceiverKey, testPreimage.Hash(), outputType,
-		cfg.lnd.ChainParams,
+	var (
+		htlc *swap.Htlc
+		err  error
 	)
-	if err != nil {
-		t.Fatal(err)
+
+	switch GetHtlcScriptVersion(storedVersion) {
+	case swap.HtlcV2:
+		htlc, err = swap.NewHtlcV2(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, testPreimage.Hash(),
+			cfg.lnd.ChainParams,
+		)
+
+	case swap.HtlcV3:
+		htlc, err = swap.NewHtlcV3(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, contract.SenderKey,
+			contract.ReceiverKey, testPreimage.Hash(),
+			cfg.lnd.ChainParams,
+		)
+
+	default:
+		t.Fatalf("unknown HTLC script version")
 	}
+
+	require.NoError(t, err)
 
 	err = ctx.store.CreateLoopIn(testPreimage.Hash(), contract)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	inSwap, err := resumeLoopInSwap(
-		context.Background(), cfg,
-		pendSwap,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	inSwap, err := resumeLoopInSwap(context.Background(), cfg, pendSwap)
+	require.NoError(t, err)
 
 	var height int32
 	if expired {
@@ -501,10 +494,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	}()
 
 	defer func() {
-		err = <-errChan
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, <-errChan)
 
 		select {
 		case <-ctx.lnd.SendPaymentChannel:

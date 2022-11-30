@@ -63,10 +63,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 
 func (c *loopInTestContext) assertState(expectedState loopdb.SwapState) {
 	state := <-c.statusChan
-	if state.State != expectedState {
-		c.t.Fatalf("expected state %v but got %v", expectedState,
-			state.State)
-	}
+	require.Equal(c.t, expectedState, state.State)
 }
 
 // assertSubscribeInvoice asserts that the client subscribes to invoice updates

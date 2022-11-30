@@ -7,7 +7,6 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
 )
 
 // view prints all swaps currently in the database.
@@ -49,24 +48,8 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	}
 
 	for _, s := range swaps {
-		scriptVersion := loop.GetHtlcScriptVersion(
-			s.Contract.ProtocolVersion,
-		)
-
-		var outputType swap.HtlcOutputType
-		switch scriptVersion {
-		case swap.HtlcV2:
-			outputType = swap.HtlcP2WSH
-
-		case swap.HtlcV3:
-			outputType = swap.HtlcP2TR
-		}
-		htlc, err := swap.NewHtlc(
-			loop.GetHtlcScriptVersion(s.Contract.ProtocolVersion),
-			s.Contract.CltvExpiry,
-			s.Contract.SenderKey,
-			s.Contract.ReceiverKey,
-			s.Hash, outputType, chainParams,
+		htlc, err := loop.GetHtlc(
+			s.Hash, &s.Contract.SwapContract, chainParams,
 		)
 		if err != nil {
 			return err
@@ -77,7 +60,8 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.InitiationTime, s.Contract.InitiationHeight,
 		)
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
-		fmt.Printf("   Htlc address: %v\n", htlc.Address)
+		fmt.Printf("   Htlc address (%s): %v\n", htlc.OutputType,
+			htlc.Address)
 
 		fmt.Printf("   Uncharge channels: %v\n",
 			s.Contract.OutgoingChanSet)
@@ -113,12 +97,8 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	}
 
 	for _, s := range swaps {
-		htlc, err := swap.NewHtlc(
-			loop.GetHtlcScriptVersion(s.Contract.ProtocolVersion),
-			s.Contract.CltvExpiry,
-			s.Contract.SenderKey,
-			s.Contract.ReceiverKey,
-			s.Hash, swap.HtlcP2WSH, chainParams,
+		htlc, err := loop.GetHtlc(
+			s.Hash, &s.Contract.SwapContract, chainParams,
 		)
 		if err != nil {
 			return err
@@ -129,7 +109,8 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.InitiationTime, s.Contract.InitiationHeight,
 		)
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
-		fmt.Printf("   Htlc address: %v\n", htlc.Address)
+		fmt.Printf("   Htlc address (%s): %v\n", htlc.OutputType,
+			htlc.Address)
 		fmt.Printf("   Amt: %v, Expiry: %v\n",
 			s.Contract.AmountRequested, s.Contract.CltvExpiry,
 		)
