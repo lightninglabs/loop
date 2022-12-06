@@ -747,12 +747,18 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
 
+	var destaddr string
+	if cfg.DestAddr != nil {
+		destaddr = cfg.DestAddr.String()
+	}
+
 	rpcCfg := &clientrpc.LiquidityParameters{
-		SweepConfTarget:   cfg.SweepConfTarget,
-		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
-		Autoloop:          cfg.Autoloop,
-		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
-		AutoMaxInFlight:   uint64(cfg.MaxAutoInFlight),
+		SweepConfTarget:     cfg.SweepConfTarget,
+		FailureBackoffSec:   uint64(cfg.FailureBackOff.Seconds()),
+		Autoloop:            cfg.Autoloop,
+		AutoloopBudgetSat:   uint64(cfg.AutoFeeBudget),
+		AutoMaxInFlight:     uint64(cfg.MaxAutoInFlight),
+		AutoloopDestAddress: destaddr,
 		Rules: make(
 			[]*clientrpc.LiquidityRule, 0, totalRules,
 		),
