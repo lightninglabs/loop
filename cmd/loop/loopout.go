@@ -41,7 +41,7 @@ var loopOutCommand = cli.Command{
 		},
 		cli.Uint64Flag{
 			Name:  "amt",
-			Usage: "the amount in satoshis to loop out (min: 250k, max: 60m)",
+			Usage: "run the command loop terms to get the minimum & maximum amount on the server. "
 		},
 		cli.Uint64Flag{
 			Name: "htlc_confs",
