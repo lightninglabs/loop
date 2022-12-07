@@ -41,7 +41,7 @@ var loopOutCommand = cli.Command{
 		},
 		cli.Uint64Flag{
 			Name:  "amt",
-			Usage: "run the command loop terms to get the minimum & maximum amount on the server. "
+			Usage: "run the command loop terms to get the minimum & maximum amount on the server. ",
 		},
 		cli.Uint64Flag{
 			Name: "htlc_confs",
