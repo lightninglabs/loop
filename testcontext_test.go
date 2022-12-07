@@ -140,9 +140,8 @@ func (ctx *testContext) finish() {
 	ctx.stop()
 	select {
 	case err := <-ctx.runErr:
-		if err != nil {
-			ctx.T.Fatal(err)
-		}
+		require.NoError(ctx.T, err)
+
 	case <-time.After(test.Timeout):
 		ctx.T.Fatal("client not stopping")
 	}
@@ -156,19 +155,12 @@ func (ctx *testContext) finish() {
 func (ctx *testContext) notifyHeight(height int32) {
 	ctx.T.Helper()
 
-	if err := ctx.Lnd.NotifyHeight(height); err != nil {
-		ctx.T.Fatal(err)
-	}
+	require.NoError(ctx.T, ctx.Lnd.NotifyHeight(height))
 }
 
 func (ctx *testContext) assertIsDone() {
-	if err := ctx.Lnd.IsDone(); err != nil {
-		ctx.T.Fatal(err)
-	}
-
-	if err := ctx.store.isDone(); err != nil {
-		ctx.T.Fatal(err)
-	}
+	require.NoError(ctx.T, ctx.Lnd.IsDone())
+	require.NoError(ctx.T, ctx.store.isDone())
 
 	select {
 	case <-ctx.statusChan:

@@ -54,9 +54,7 @@ func assertEngineExecution(t *testing.T, valid bool,
 	done := false
 	for !done {
 		dis, err := vm.DisasmPC()
-		if err != nil {
-			t.Fatalf("stepping (%v)\n", err)
-		}
+		require.NoError(t, err, "stepping")
 		debugBuf.WriteString(fmt.Sprintf("stepping %v\n", dis))
 
 		done, err = vm.Step()
@@ -134,9 +132,9 @@ func TestHtlcV2(t *testing.T) {
 	hash := sha256.Sum256(testPreimage[:])
 
 	// Create the htlc.
-	htlc, err := NewHtlc(
-		HtlcV2, testCltvExpiry, senderKey, receiverKey, hash,
-		HtlcP2WSH, &chaincfg.MainNetParams,
+	htlc, err := NewHtlcV2(
+		testCltvExpiry, senderKey, receiverKey, hash,
+		&chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
@@ -287,10 +285,9 @@ func TestHtlcV2(t *testing.T) {
 				bogusKey := [33]byte{0xb, 0xa, 0xd}
 
 				// Create the htlc with the bogus key.
-				htlc, err = NewHtlc(
-					HtlcV2, testCltvExpiry,
-					bogusKey, receiverKey, hash,
-					HtlcP2WSH, &chaincfg.MainNetParams,
+				htlc, err = NewHtlcV2(
+					testCltvExpiry, bogusKey, receiverKey,
+					hash, &chaincfg.MainNetParams,
 				)
 				require.NoError(t, err)
 
@@ -357,9 +354,9 @@ func TestHtlcV3(t *testing.T) {
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
 	copy(senderKey[:], senderPubKey.SerializeCompressed())
 
-	htlc, err := NewHtlc(
-		HtlcV3, cltvExpiry, senderKey, receiverKey,
-		hashedPreimage, HtlcP2TR, &chaincfg.MainNetParams,
+	htlc, err := NewHtlcV3(
+		cltvExpiry, senderKey, receiverKey, senderKey, receiverKey,
+		hashedPreimage, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
@@ -540,10 +537,10 @@ func TestHtlcV3(t *testing.T) {
 					bogusKey.SerializeCompressed(),
 				)
 
-				htlc, err := NewHtlc(
-					HtlcV3, cltvExpiry, bogusKeyBytes,
-					receiverKey, hashedPreimage, HtlcP2TR,
-					&chaincfg.MainNetParams,
+				htlc, err := NewHtlcV3(
+					cltvExpiry, senderKey,
+					receiverKey, bogusKeyBytes, receiverKey,
+					hashedPreimage, &chaincfg.MainNetParams,
 				)
 				require.NoError(t, err)
 

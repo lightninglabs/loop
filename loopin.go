@@ -61,8 +61,6 @@ type loopInSwap struct {
 
 	htlcP2WSH *swap.Htlc
 
-	htlcNP2WSH *swap.Htlc
-
 	htlcP2TR *swap.Htlc
 
 	// htlcTxHash is the confirmed htlc tx id.
@@ -406,34 +404,26 @@ func validateLoopInContract(lnd *lndclient.LndServices,
 // initHtlcs creates and updates the native and nested segwit htlcs
 // of the loopInSwap.
 func (s *loopInSwap) initHtlcs() error {
-	if IsTaprootSwap(&s.SwapContract) {
-		htlcP2TR, err := s.swapKit.getHtlc(swap.HtlcP2TR)
-		if err != nil {
-			return err
-		}
-
-		s.swapKit.log.Infof("Htlc address (P2TR): %v", htlcP2TR.Address)
-		s.htlcP2TR = htlcP2TR
-
-		return nil
-	}
-
-	htlcP2WSH, err := s.swapKit.getHtlc(swap.HtlcP2WSH)
+	htlc, err := GetHtlc(
+		s.hash, &s.SwapContract, s.swapKit.lnd.ChainParams,
+	)
 	if err != nil {
 		return err
 	}
 
-	htlcNP2WSH, err := s.swapKit.getHtlc(swap.HtlcNP2WSH)
-	if err != nil {
-		return err
+	switch htlc.OutputType {
+	case swap.HtlcP2WSH:
+		s.htlcP2WSH = htlc
+
+	case swap.HtlcP2TR:
+		s.htlcP2TR = htlc
+
+	default:
+		return fmt.Errorf("invalid output type")
 	}
 
-	// Log htlc addresses for debugging.
-	s.swapKit.log.Infof("Htlc address (P2WSH): %v", htlcP2WSH.Address)
-	s.swapKit.log.Infof("Htlc address (NP2WSH): %v", htlcNP2WSH.Address)
-
-	s.htlcP2WSH = htlcP2WSH
-	s.htlcNP2WSH = htlcNP2WSH
+	s.swapKit.log.Infof("Htlc address (%s): %v", htlc.OutputType,
+		htlc.Address)
 
 	return nil
 }
@@ -447,7 +437,6 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 		info.HtlcAddressP2TR = s.htlcP2TR.Address
 	} else {
 		info.HtlcAddressP2WSH = s.htlcP2WSH.Address
-		info.HtlcAddressNP2WSH = s.htlcNP2WSH.Address
 	}
 
 	info.ExternalHtlc = s.ExternalHtlc
@@ -643,11 +632,6 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 		return nil, err
 	}
 
-	confChanNP2WSH, confErrNP2WSH, err := notifyConfirmation(s.htlcNP2WSH)
-	if err != nil {
-		return nil, err
-	}
-
 	confChanP2TR, confErrP2TR, err := notifyConfirmation(s.htlcP2TR)
 	if err != nil {
 		return nil, err
@@ -662,11 +646,6 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 			s.htlc = s.htlcP2WSH
 			s.log.Infof("P2WSH htlc confirmed")
 
-		// NP2WSH htlc confirmed.
-		case conf = <-confChanNP2WSH:
-			s.htlc = s.htlcNP2WSH
-			s.log.Infof("NP2WSH htlc confirmed")
-
 		// P2TR htlc confirmed.
 		case conf = <-confChanP2TR:
 			s.htlc = s.htlcP2TR
@@ -674,10 +653,6 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 
 		// Conf ntfn error.
 		case err := <-confErrP2WSH:
-			return nil, err
-
-		// Conf ntfn error.
-		case err := <-confErrNP2WSH:
 			return nil, err
 
 		// Conf ntfn error.

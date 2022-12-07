@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -53,18 +54,6 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 func GetHtlcScriptVersion(
 	protocolVersion loopdb.ProtocolVersion) swap.ScriptVersion {
 
-	// Unrecorded protocol version implies that there was no protocol
-	// version stored along side a serialized swap that we're resuming in
-	// which case the swap was initiated with HTLC v1 script.
-	if protocolVersion == loopdb.ProtocolVersionUnrecorded {
-		return swap.HtlcV1
-	}
-
-	// If the swap was initiated before we had our v2 script, use v1.
-	if protocolVersion < loopdb.ProtocolVersionHtlcV2 {
-		return swap.HtlcV1
-	}
-
 	// If the swap was initiated before we had our v3 script, use v2.
 	if protocolVersion < loopdb.ProtocolVersionHtlcV3 {
 		return swap.HtlcV2
@@ -79,14 +68,28 @@ func IsTaprootSwap(swapContract *loopdb.SwapContract) bool {
 	return GetHtlcScriptVersion(swapContract.ProtocolVersion) == swap.HtlcV3
 }
 
-// getHtlc composes and returns the on-chain swap script.
-func (s *swapKit) getHtlc(outputType swap.HtlcOutputType) (*swap.Htlc, error) {
-	return swap.NewHtlc(
-		GetHtlcScriptVersion(s.contract.ProtocolVersion),
-		s.contract.CltvExpiry, s.contract.SenderKey,
-		s.contract.ReceiverKey, s.hash, outputType,
-		s.swapConfig.lnd.ChainParams,
-	)
+// GetHtlc composes and returns the on-chain swap script.
+func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
+	chainParams *chaincfg.Params) (*swap.Htlc, error) {
+
+	switch GetHtlcScriptVersion(contract.ProtocolVersion) {
+	case swap.HtlcV2:
+		return swap.NewHtlcV2(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, hash,
+			chainParams,
+		)
+
+	case swap.HtlcV3:
+		return swap.NewHtlcV3(
+			contract.CltvExpiry, contract.SenderKey,
+			contract.ReceiverKey, contract.SenderKey,
+			contract.ReceiverKey, hash,
+			chainParams,
+		)
+	}
+
+	return nil, swap.ErrInvalidScriptVersion
 }
 
 // swapInfo constructs and returns a filled SwapInfo from

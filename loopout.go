@@ -201,21 +201,17 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	swapKit.lastUpdateTime = initiationTime
 
-	scriptVersion := GetHtlcScriptVersion(loopdb.CurrentProtocolVersion())
-	outputType := swap.HtlcP2TR
-	if scriptVersion != swap.HtlcV3 {
-		// Default to using P2WSH for legacy htlcs.
-		outputType = swap.HtlcP2WSH
-	}
-
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(outputType)
+	htlc, err := GetHtlc(
+		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Log htlc address for debugging.
-	swapKit.log.Infof("Htlc address: %v", htlc.Address)
+	swapKit.log.Infof("Htlc address (%s): %v", htlc.OutputType,
+		htlc.Address)
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
@@ -261,15 +257,10 @@ func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
 		hash, swap.TypeOut, cfg, &pend.Contract.SwapContract,
 	)
 
-	scriptVersion := GetHtlcScriptVersion(pend.Contract.ProtocolVersion)
-	outputType := swap.HtlcP2TR
-	if scriptVersion != swap.HtlcV3 {
-		// Default to using P2WSH for legacy htlcs.
-		outputType = swap.HtlcP2WSH
-	}
-
 	// Create the htlc.
-	htlc, err := swapKit.getHtlc(outputType)
+	htlc, err := GetHtlc(
+		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
+	)
 	if err != nil {
 		return nil, err
 	}

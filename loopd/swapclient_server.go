@@ -230,10 +230,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 	var swapType clientrpc.SwapType
 	var (
-		htlcAddress       string
-		htlcAddressP2TR   string
-		htlcAddressP2WSH  string
-		htlcAddressNP2WSH string
+		htlcAddress      string
+		htlcAddressP2TR  string
+		htlcAddressP2WSH string
 	)
 	var outGoingChanSet []uint64
 	var lastHop []byte
@@ -248,14 +247,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		} else {
 			htlcAddressP2WSH =
 				loopSwap.HtlcAddressP2WSH.EncodeAddress()
-
-			if loopSwap.ExternalHtlc {
-				htlcAddressNP2WSH =
-					loopSwap.HtlcAddressNP2WSH.EncodeAddress()
-				htlcAddress = htlcAddressNP2WSH
-			} else {
-				htlcAddress = htlcAddressP2WSH
-			}
+			htlcAddress = htlcAddressP2WSH
 		}
 
 		if loopSwap.LastHop != nil {
@@ -279,24 +271,23 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	}
 
 	return &clientrpc.SwapStatus{
-		Amt:               int64(loopSwap.AmountRequested),
-		Id:                loopSwap.SwapHash.String(),
-		IdBytes:           loopSwap.SwapHash[:],
-		State:             state,
-		FailureReason:     failureReason,
-		InitiationTime:    loopSwap.InitiationTime.UnixNano(),
-		LastUpdateTime:    loopSwap.LastUpdate.UnixNano(),
-		HtlcAddress:       htlcAddress,
-		HtlcAddressP2Tr:   htlcAddressP2TR,
-		HtlcAddressP2Wsh:  htlcAddressP2WSH,
-		HtlcAddressNp2Wsh: htlcAddressNP2WSH,
-		Type:              swapType,
-		CostServer:        int64(loopSwap.Cost.Server),
-		CostOnchain:       int64(loopSwap.Cost.Onchain),
-		CostOffchain:      int64(loopSwap.Cost.Offchain),
-		Label:             loopSwap.Label,
-		LastHop:           lastHop,
-		OutgoingChanSet:   outGoingChanSet,
+		Amt:              int64(loopSwap.AmountRequested),
+		Id:               loopSwap.SwapHash.String(),
+		IdBytes:          loopSwap.SwapHash[:],
+		State:            state,
+		FailureReason:    failureReason,
+		InitiationTime:   loopSwap.InitiationTime.UnixNano(),
+		LastUpdateTime:   loopSwap.LastUpdate.UnixNano(),
+		HtlcAddress:      htlcAddress,
+		HtlcAddressP2Tr:  htlcAddressP2TR,
+		HtlcAddressP2Wsh: htlcAddressP2WSH,
+		Type:             swapType,
+		CostServer:       int64(loopSwap.Cost.Server),
+		CostOnchain:      int64(loopSwap.Cost.Onchain),
+		CostOffchain:     int64(loopSwap.Cost.Offchain),
+		Label:            loopSwap.Label,
+		LastHop:          lastHop,
+		OutgoingChanSet:  outGoingChanSet,
 	}, nil
 }
 
@@ -701,15 +692,9 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	}
 
 	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
-		if req.ExternalHtlc {
-			np2wshAddr := swapInfo.HtlcAddressNP2WSH.String()
-			response.HtlcAddress = np2wshAddr
-			response.HtlcAddressNp2Wsh = np2wshAddr
-		} else {
-			p2wshAddr := swapInfo.HtlcAddressP2WSH.String()
-			response.HtlcAddress = p2wshAddr
-			response.HtlcAddressP2Wsh = p2wshAddr
-		}
+		p2wshAddr := swapInfo.HtlcAddressP2WSH.String()
+		response.HtlcAddress = p2wshAddr
+		response.HtlcAddressP2Wsh = p2wshAddr
 	} else {
 		p2trAddr := swapInfo.HtlcAddressP2TR.String()
 		response.HtlcAddress = p2trAddr

@@ -1034,11 +1034,7 @@
         },
         "htlc_address": {
           "type": "string",
-          "description": "DEPRECATED. This field stores the address of the onchain htlc, but\ndepending on the request, the semantics are different.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the address of the\nnested segwit (NP2WSH) htlc.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
-        },
-        "htlc_address_np2wsh": {
-          "type": "string",
-          "description": "The nested segwit address of the on-chain htlc.\nThis field remains empty for loop-out."
+          "description": "DEPRECATED. This field stores the address of the onchain htlc, but\ndepending on the request, the semantics are different.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n/    - For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
         },
         "htlc_address_p2wsh": {
           "type": "string",
@@ -1108,15 +1104,11 @@
         },
         "htlc_address": {
           "type": "string",
-          "description": "DEPRECATED:  This field stores the address of the onchain htlc.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For external loop-in htlc_address contains the nested segwit (NP2WSH)\naddress.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
+          "description": "DEPRECATED:  This field stores the address of the onchain htlc.\n- For internal loop-in htlc_address contains the address of the\nnative segwit (P2WSH) htlc.\n- For loop-out htlc_address always contains the native segwit (P2WSH)\nhtlc address."
         },
         "htlc_address_p2wsh": {
           "type": "string",
           "description": "HTLC address (native segwit), used in loop-in and loop-out swaps."
-        },
-        "htlc_address_np2wsh": {
-          "type": "string",
-          "description": "HTLC address (nested segwit), used in loop-in swaps only."
         },
         "htlc_address_p2tr": {
           "type": "string",

@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/stretchr/testify/require"
 )
 
 // storeMock implements a mock client swap store.
@@ -239,9 +240,7 @@ func (s *storeMock) assertLoopInState(
 	s.t.Helper()
 
 	state := <-s.loopInUpdateChan
-	if state.State != expectedState {
-		s.t.Fatalf("expected state %v, got %v", expectedState, state)
-	}
+	require.Equal(s.t, expectedState, state.State)
 
 	return state
 }
@@ -252,9 +251,8 @@ func (s *storeMock) assertStorePreimageReveal() {
 
 	select {
 	case state := <-s.loopOutUpdateChan:
-		if state.State != loopdb.StatePreimageRevealed {
-			s.t.Fatalf("unexpected state")
-		}
+		require.Equal(s.t, loopdb.StatePreimageRevealed, state.State)
+
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap to be marked as preimage revealed")
 	}
@@ -265,10 +263,8 @@ func (s *storeMock) assertStoreFinished(expectedResult loopdb.SwapState) {
 
 	select {
 	case state := <-s.loopOutUpdateChan:
-		if state.State != expectedResult {
-			s.t.Fatalf("expected result %v, but got %v",
-				expectedResult, state)
-		}
+		require.Equal(s.t, expectedResult, state.State)
+
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap to be finished")
 	}
