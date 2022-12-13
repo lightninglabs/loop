@@ -304,7 +304,9 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 
 		// Set our destination address to nil so that we do not need to
 		// provide the address that is obtained by the mock wallet kit.
-		actual.DestAddr = nil
+		if expected.request.DestAddr == nil {
+			actual.DestAddr = nil
+		}
 
 		assert.Equal(c.t, expected.request, actual)
 		c.loopOut <- expected.response
