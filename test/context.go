@@ -62,7 +62,6 @@ func (ctx *Context) NotifySpend(tx *wire.MsgTx, inputIndex uint32) {
 	}:
 	case <-time.After(Timeout):
 		ctx.T.Fatalf("htlc spend not consumed")
-
 	}
 }
 
@@ -76,7 +75,6 @@ func (ctx *Context) NotifyConf(tx *wire.MsgTx) {
 	}:
 	case <-time.After(Timeout):
 		ctx.T.Fatalf("htlc spend not consumed")
-
 	}
 }
 

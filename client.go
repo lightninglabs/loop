@@ -355,7 +355,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 		if pend.State().State.Type() != loopdb.StateTypePending {
 			continue
 		}
-		swap, err := resumeLoopOutSwap(ctx, swapCfg, pend)
+		swap, err := resumeLoopOutSwap(swapCfg, pend)
 		if err != nil {
 			log.Errorf("resuming loop out swap: %v", err)
 			continue

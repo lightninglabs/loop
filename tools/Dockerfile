@@ -1,4 +1,4 @@
-FROM golang:1.18.0-buster
+FROM golang:1.18
 
 RUN apt-get update && apt-get install -y git
 ENV GOCACHE=/tmp/build/.cache
@@ -11,6 +11,7 @@ RUN cd /tmp \
   && mkdir -p /tmp/build/.modcache \
   && cd /tmp/tools \
   && go install -trimpath -tags=tools github.com/golangci/golangci-lint/cmd/golangci-lint \
-  && chmod -R 777 /tmp/build/
+  && chmod -R 777 /tmp/build/ \
+  && git config --global --add safe.directory /build
 
 WORKDIR /build

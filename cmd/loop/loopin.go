@@ -94,7 +94,6 @@ func loopIn(ctx *cli.Context) error {
 		amtStr = ctx.String("amt")
 	case ctx.NArg() > 0:
 		amtStr = args[0]
-		args = args.Tail()
 	default:
 		// Show command help if no arguments and flags were provided.
 		return cli.ShowCommandHelp(ctx, "in")

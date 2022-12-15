@@ -58,7 +58,7 @@ type SwapContract struct {
 	ProtocolVersion ProtocolVersion
 }
 
-// Loop contains fields shared between LoopIn and LoopOut
+// Loop contains fields shared between LoopIn and LoopOut.
 type Loop struct {
 	Hash   lntypes.Hash
 	Events []*LoopEvent

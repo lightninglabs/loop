@@ -22,7 +22,7 @@ import (
 type HtlcOutputType uint8
 
 const (
-	// HtlcP2WSH is a pay-to-witness-script-hash output (segwit only)
+	// HtlcP2WSH is a pay-to-witness-script-hash output (segwit only).
 	HtlcP2WSH HtlcOutputType = iota
 
 	// HtlcP2TR is a pay-to-taproot output with three separate spend paths.
@@ -329,11 +329,15 @@ type HtlcScriptV2 struct {
 // newHTLCScriptV2 construct an HtlcScipt with the HTLC V2 witness script.
 //
 // <receiverHtlcKey> OP_CHECKSIG OP_NOTIF
-//   OP_DUP OP_HASH160 <HASH160(senderHtlcKey)> OP_EQUALVERIFY OP_CHECKSIGVERIFY
-//   <cltv timeout> OP_CHECKLOCKTIMEVERIFY
+//
+//	OP_DUP OP_HASH160 <HASH160(senderHtlcKey)> OP_EQUALVERIFY OP_CHECKSIGVERIFY
+//	<cltv timeout> OP_CHECKLOCKTIMEVERIFY
+//
 // OP_ELSE
-//   OP_SIZE <20> OP_EQUALVERIFY OP_HASH160 <ripemd(swapHash)> OP_EQUALVERIFY 1
-//   OP_CHECKSEQUENCEVERIFY
+//
+//	OP_SIZE <20> OP_EQUALVERIFY OP_HASH160 <ripemd(swapHash)> OP_EQUALVERIFY 1
+//	OP_CHECKSEQUENCEVERIFY
+//
 // OP_ENDIF .
 func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
 	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV2, error) {

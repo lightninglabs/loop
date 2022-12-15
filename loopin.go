@@ -221,7 +221,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Validate the response parameters the prevent us continuing with a
 	// swap that is based on parameters outside our allowed range.
-	err = validateLoopInContract(cfg.lnd, currentHeight, request, swapResp)
+	err = validateLoopInContract(currentHeight, swapResp)
 	if err != nil {
 		return nil, err
 	}
@@ -387,11 +387,7 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 
 // validateLoopInContract validates the contract parameters against our
 // request.
-func validateLoopInContract(lnd *lndclient.LndServices,
-	height int32,
-	request *LoopInRequest,
-	response *newLoopInResponse) error {
-
+func validateLoopInContract(height int32, response *newLoopInResponse) error {
 	// Verify that we are not forced to publish an htlc that locks up our
 	// funds for too long in case the server doesn't follow through.
 	if response.expiry-height > MaxLoopInAcceptDelta {
@@ -640,7 +636,6 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 	var conf *chainntnfs.TxConfirmation
 	for conf == nil {
 		select {
-
 		// P2WSH htlc confirmed.
 		case conf = <-confChanP2WSH:
 			s.htlc = s.htlcP2WSH
@@ -756,7 +751,6 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	}
 
 	return true, nil
-
 }
 
 // getTxFee calculates our fee for a transaction that we have broadcast. We use
@@ -875,7 +869,6 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				update.State)
 
 			switch update.State {
-
 			// Swap invoice was paid, so update server cost balance.
 			case channeldb.ContractSettled:
 				s.cost.Server -= update.AmtPaid

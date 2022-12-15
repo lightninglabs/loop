@@ -38,7 +38,7 @@ type executorConfig struct {
 
 // executor is responsible for executing swaps.
 //
-// TODO(roasbeef): rename to SubSwapper
+// TODO(roasbeef): rename to SubSwapper.
 type executor struct {
 	wg            sync.WaitGroup
 	newSwaps      chan genericSwap
@@ -134,9 +134,9 @@ func (s *executor) run(mainCtx context.Context,
 
 	swapDoneChan := make(chan int)
 	nextSwapID := 0
+
 	for {
 		select {
-
 		case newSwap := <-s.newSwaps:
 			queue := queue.NewConcurrentQueue(10)
 			queue.Start()
