@@ -115,7 +115,7 @@ type RouterPaymentChannelMessage struct {
 	TrackPaymentMessage
 }
 
-// SingleInvoiceSubscription contains the single invoice subscribers
+// SingleInvoiceSubscription contains the single invoice subscribers.
 type SingleInvoiceSubscription struct {
 	Hash   lntypes.Hash
 	Update chan lndclient.InvoiceUpdate

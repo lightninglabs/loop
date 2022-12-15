@@ -14,7 +14,7 @@ import (
 type swapKit struct {
 	hash lntypes.Hash
 
-	height int32
+	height int32 //nolint:structcheck
 
 	log *swap.PrefixLog
 

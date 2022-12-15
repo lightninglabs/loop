@@ -106,7 +106,8 @@ linters:
   - nilnil
   - stylecheck
   - thelper
-
+  - revive
+  
   # Additions compared to LND
   - exhaustruct
 
@@ -120,6 +121,7 @@ issues:
       - path: _test\.go
         linters:
           - forbidigo
+          - unparam
         
       # Allow fmt.Printf() in loopd
       - path: cmd/loopd/*

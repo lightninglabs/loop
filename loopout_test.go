@@ -219,7 +219,7 @@ func testLateHtlcPublish(t *testing.T) {
 	ctx.AssertRegisterConf(false, defaultConfirmations)
 
 	// // Wait too long before publishing htlc.
-	blockEpochChan <- int32(swap.CltvExpiry - 10)
+	blockEpochChan <- swap.CltvExpiry - 10
 
 	signalSwapPaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
@@ -430,7 +430,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	// confirmation target.
 	defaultConfTargetHeight := ctx.Lnd.Height +
 		testLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
-	blockEpochChan <- int32(defaultConfTargetHeight)
+	blockEpochChan <- defaultConfTargetHeight
 	expiryChan <- time.Now()
 
 	// Expect another signing request.

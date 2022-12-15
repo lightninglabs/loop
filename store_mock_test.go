@@ -246,7 +246,6 @@ func (s *storeMock) assertLoopInState(
 }
 
 func (s *storeMock) assertStorePreimageReveal() {
-
 	s.t.Helper()
 
 	select {

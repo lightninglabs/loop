@@ -141,7 +141,6 @@ func TestLoopOutFailWrongAmount(t *testing.T) {
 			m.prepayInvoiceAmt += 10
 		}, ErrPrepayAmountTooHigh)
 	})
-
 }
 
 // TestLoopOutResume tests that swaps in various states are properly resumed

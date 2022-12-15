@@ -92,7 +92,7 @@ type executeConfig struct {
 	sweeper            *sweep.Sweeper
 	statusChan         chan<- SwapInfo
 	blockEpochChan     <-chan interface{}
-	timerFactory       func(d time.Duration) <-chan time.Time
+	timerFactory       func(time.Duration) <-chan time.Time
 	loopOutMaxParts    uint32
 	totalPaymentTimout time.Duration
 	maxPaymentRetries  int
@@ -144,7 +144,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	err = validateLoopOutContract(
-		cfg.lnd, currentHeight, request, swapHash, swapResp,
+		cfg.lnd, request, swapHash, swapResp,
 	)
 	if err != nil {
 		return nil, err
@@ -246,8 +246,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 // resumeLoopOutSwap returns a swap object representing a pending swap that has
 // been restored from the database.
-func resumeLoopOutSwap(reqContext context.Context, cfg *swapConfig,
-	pend *loopdb.LoopOut) (*loopOutSwap, error) {
+func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
+) (*loopOutSwap, error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
@@ -386,7 +386,6 @@ func (s *loopOutSwap) execute(mainCtx context.Context,
 // executeAndFinalize executes a swap and awaits the definitive outcome of the
 // offchain payments. When this method returns, the swap outcome is final.
 func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
-
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(globalCtx)
 	if err != nil {
@@ -996,7 +995,6 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 		}
 
 		s.log.Infof("Swap script confirmed on chain")
-
 	} else {
 		s.log.Infof("Retrieving htlc onchain")
 		select {
@@ -1650,9 +1648,8 @@ func (s *loopOutSwap) sweep(ctx context.Context, htlcOutpoint wire.OutPoint,
 
 // validateLoopOutContract validates the contract parameters against our
 // request.
-func validateLoopOutContract(lnd *lndclient.LndServices,
-	height int32, request *OutRequest, swapHash lntypes.Hash,
-	response *newLoopOutResponse) error {
+func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
+	swapHash lntypes.Hash, response *newLoopOutResponse) error {
 
 	// Check invoice amounts.
 	chainParams := lnd.ChainParams

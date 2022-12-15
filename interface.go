@@ -363,7 +363,7 @@ type SwapInfo struct {
 	OutgoingChanSet loopdb.ChannelSet
 }
 
-// LastUpdate returns the last update time of the swap
+// LastUpdate returns the last update time of the swap.
 func (s *In) LastUpdate() time.Time {
 	return s.LastUpdateTime
 }

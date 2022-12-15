@@ -148,16 +148,6 @@ func (ctx *testContext) finish() {
 
 	ctx.assertIsDone()
 }
-
-// notifyHeight notifies swap client of the arrival of a new block and
-// waits for the notification to be processed by selecting on a dedicated
-// test channel.
-func (ctx *testContext) notifyHeight(height int32) {
-	ctx.T.Helper()
-
-	require.NoError(ctx.T, ctx.Lnd.NotifyHeight(height))
-}
-
 func (ctx *testContext) assertIsDone() {
 	require.NoError(ctx.T, ctx.Lnd.IsDone())
 	require.NoError(ctx.T, ctx.store.isDone())
@@ -185,11 +175,9 @@ func (ctx *testContext) assertStoreFinished(expectedResult loopdb.SwapState) {
 	ctx.T.Helper()
 
 	ctx.store.assertStoreFinished(expectedResult)
-
 }
 
 func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
-
 	ctx.T.Helper()
 
 	for {
