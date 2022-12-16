@@ -15,11 +15,8 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-* Autoloop now has a new parameter named `destaddr` which if set to a valid bitcoin address will direct all funds from automatically dispatched loop outs towards that address.
 
 #### Breaking Changes
-* Listing loop-in swaps will not display old, nested segwit swap htlc addresses correctly anymore since
-  support for these htlc types is removed from the code base.
 
 #### Bug Fixes
 
