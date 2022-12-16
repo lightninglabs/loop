@@ -854,6 +854,12 @@ message LiquidityParameters {
     The confirmation target for loop in on-chain htlcs.
     */
     int32 htlc_conf_target = 17;
+
+    /*
+    The destination address to use for autoloop loop outs. Set to "default" in
+    order to revert to default behavior.
+    */
+    string autoloop_dest_address = 18;
 }
 
 enum LiquidityRuleType {

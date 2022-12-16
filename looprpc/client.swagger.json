@@ -680,6 +680,10 @@
           "type": "integer",
           "format": "int32",
           "description": "The confirmation target for loop in on-chain htlcs."
+        },
+        "autoloop_dest_address": {
+          "type": "string",
+          "description": "The destination address to use for autoloop loop outs. Set to \"default\" in\norder to revert to default behavior."
         }
       }
     },

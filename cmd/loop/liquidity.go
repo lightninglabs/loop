@@ -286,6 +286,12 @@ var setParamsCommand = cli.Command{
 				"of swaps, limited to the budget set by " +
 				"autobudget",
 		},
+		cli.StringFlag{
+			Name: "destaddr",
+			Usage: "custom address to be used as destination for " +
+				"autoloop loop out, set to \"default\" in " +
+				"order to revert to default behavior",
+		},
 		cli.Uint64Flag{
 			Name: "autobudget",
 			Usage: "the maximum amount of fees in satoshis that " +
@@ -426,6 +432,11 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("autobudget") {
 		params.AutoloopBudgetSat = ctx.Uint64("autobudget")
+		flagSet = true
+	}
+
+	if ctx.IsSet("destaddr") {
+		params.AutoloopDestAddress = ctx.String("destaddr")
 		flagSet = true
 	}
 

@@ -18,9 +18,10 @@ import (
 
 var (
 	// defaultParameters contains the default parameters that we start our
-	// liquidity manger with.
+	// liquidity manager with.
 	defaultParameters = Parameters{
 		AutoFeeBudget:   defaultBudget,
+		DestAddr:        nil,
 		MaxAutoInFlight: defaultMaxInFlight,
 		ChannelRules:    make(map[lnwire.ShortChannelID]*SwapRule),
 		PeerRules:       make(map[route.Vertex]*SwapRule),
@@ -36,6 +37,10 @@ var (
 type Parameters struct {
 	// Autoloop enables automatic dispatch of swaps.
 	Autoloop bool
+
+	// DestAddr is the address to be used for sweeping the on-chain HTLC that
+	// is related with a loop out.
+	DestAddr btcutil.Address
 
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
@@ -347,12 +352,25 @@ func rpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		return nil, err
 	}
 
+	var destaddr btcutil.Address
+	if len(req.AutoloopDestAddress) != 0 {
+		if req.AutoloopDestAddress == "default" {
+			destaddr = nil
+		} else {
+			destaddr, err = btcutil.DecodeAddress(req.AutoloopDestAddress, nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	params := &Parameters{
 		FeeLimit:        feeLimit,
 		SweepConfTarget: req.SweepConfTarget,
 		FailureBackOff: time.Duration(req.FailureBackoffSec) *
 			time.Second,
 		Autoloop:        req.Autoloop,
+		DestAddr:        destaddr,
 		AutoFeeBudget:   btcutil.Amount(req.AutoloopBudgetSat),
 		MaxAutoInFlight: int(req.AutoMaxInFlight),
 		ChannelRules: make(

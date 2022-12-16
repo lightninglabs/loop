@@ -14,6 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAutoLoopDisabled tests the case where we need to perform a swap, but
@@ -301,6 +302,156 @@ func TestAutoLoopEnabled(t *testing.T) {
 		maxAmt:      amt + 1,
 		existingOut: existing,
 		quotesOut:   quotes,
+	}
+	c.autoloop(step)
+
+	c.stop()
+}
+
+// TestAutoloopAddress tests that the custom destination address feature for
+// loop out behaves as expected.
+func TestAutoloopAddress(t *testing.T) {
+	defer test.Guard(t)()
+
+	// Decode a dummy p2wkh address to use as the destination address for
+	// the swaps.
+	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
+	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	var (
+		channels = []lndclient.ChannelInfo{
+			channel1, channel2,
+		}
+
+		swapFeePPM   uint64 = 1000
+		routeFeePPM  uint64 = 1000
+		prepayFeePPM uint64 = 1000
+		prepayAmount        = btcutil.Amount(20000)
+		maxMiner            = btcutil.Amount(20000)
+
+		// Create some dummy parameters for autoloop and also specify an
+		// destination address.
+		params = Parameters{
+			Autoloop:         true,
+			AutoFeeBudget:    40066,
+			DestAddr:         addr,
+			AutoFeeStartDate: testTime,
+			MaxAutoInFlight:  2,
+			FailureBackOff:   time.Hour,
+			SweepConfTarget:  10,
+			FeeLimit: NewFeeCategoryLimit(
+				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
+				prepayAmount, 20000,
+			),
+			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			},
+			HtlcConfTarget: defaultHtlcConfTarget,
+		}
+	)
+	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	// Get parameters from manager and verify that address is set correctly.
+	params = c.manager.GetParameters()
+	require.Equal(t, params.DestAddr, addr)
+
+	// Calculate our maximum allowed fees and create quotes that fall within
+	// our budget.
+	var (
+		amt = chan1Rec.Amount
+
+		maxSwapFee = ppmToSat(amt, swapFeePPM)
+
+		quote1 = &loop.LoopOutQuote{
+			SwapFee:      maxSwapFee,
+			PrepayAmount: prepayAmount - 10,
+			MinerFee:     maxMiner - 10,
+		}
+
+		quote2 = &loop.LoopOutQuote{
+			SwapFee:      maxSwapFee,
+			PrepayAmount: prepayAmount - 20,
+			MinerFee:     maxMiner - 10,
+		}
+
+		quoteRequest = &loop.LoopOutQuoteRequest{
+			Amount:          amt,
+			SweepConfTarget: params.SweepConfTarget,
+		}
+
+		quotes = []quoteRequestResp{
+			{
+				request: quoteRequest,
+				quote:   quote1,
+			},
+			{
+				request: quoteRequest,
+				quote:   quote2,
+			},
+		}
+
+		maxRouteFee = ppmToSat(amt, routeFeePPM)
+
+		chan1Swap = &loop.OutRequest{
+			Amount: amt,
+			// Define the expected destination address.
+			DestAddr:          addr,
+			MaxSwapRoutingFee: maxRouteFee,
+			MaxPrepayRoutingFee: ppmToSat(
+				quote1.PrepayAmount, prepayFeePPM,
+			),
+			MaxSwapFee:      quote1.SwapFee,
+			MaxPrepayAmount: quote1.PrepayAmount,
+			MaxMinerFee:     maxMiner,
+			SweepConfTarget: params.SweepConfTarget,
+			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		chan2Swap = &loop.OutRequest{
+			Amount: amt,
+			// Define the expected destination address.
+			DestAddr:          addr,
+			MaxSwapRoutingFee: maxRouteFee,
+			MaxPrepayRoutingFee: ppmToSat(
+				quote2.PrepayAmount, routeFeePPM,
+			),
+			MaxSwapFee:      quote2.SwapFee,
+			MaxPrepayAmount: quote2.PrepayAmount,
+			MaxMinerFee:     maxMiner,
+			SweepConfTarget: params.SweepConfTarget,
+			OutgoingChanSet: loopdb.ChannelSet{chanID2.ToUint64()},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		loopOuts = []loopOutRequestResp{
+			{
+				request: chan1Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+			{
+				request: chan2Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{2},
+				},
+			},
+		}
+	)
+
+	step := &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		quotesOut:   quotes,
+		expectedOut: loopOuts,
 	}
 	c.autoloop(step)
 
