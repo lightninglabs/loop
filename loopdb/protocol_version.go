@@ -55,6 +55,9 @@ const (
 	// HTLC v3 (P2TR) script for swaps.
 	ProtocolVersionHtlcV3 = 10
 
+	// ProtocolVersionMuSig2 will enable MuSig2 signature scheme for loops.
+	ProtocolVersionMuSig2 ProtocolVersion = 11
+
 	// ProtocolVersionUnrecorded is set for swaps were created before we
 	// started saving protocol version with swaps.
 	ProtocolVersionUnrecorded ProtocolVersion = math.MaxUint32
@@ -140,6 +143,9 @@ func (p ProtocolVersion) String() string {
 
 	case ProtocolVersionHtlcV3:
 		return "HTLC V3"
+
+	case ProtocolVersionMuSig2:
+		return "MuSig2"
 
 	default:
 		return "Unknown"
