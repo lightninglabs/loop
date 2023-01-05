@@ -68,7 +68,7 @@ const (
 
 	// experimentalRPCProtocolVersion defines the RPC protocol version that
 	// includes all currently experimentally released features.
-	experimentalRPCProtocolVersion = looprpc.ProtocolVersion_HTLC_V3
+	experimentalRPCProtocolVersion = looprpc.ProtocolVersion_MUSIG2
 )
 
 var (

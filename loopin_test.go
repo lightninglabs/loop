@@ -343,6 +343,7 @@ func TestLoopInResume(t *testing.T) {
 		loopdb.ProtocolVersionUnrecorded,
 		loopdb.ProtocolVersionHtlcV2,
 		loopdb.ProtocolVersionHtlcV3,
+		loopdb.ProtocolVersionMuSig2,
 	}
 
 	testCases := []struct {
@@ -414,8 +415,12 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 			Preimage:        testPreimage,
 			AmountRequested: 100000,
 			CltvExpiry:      744,
-			ReceiverKey:     receiverKey,
-			SenderKey:       senderKey,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverScriptKey:      receiverKey,
+				ReceiverInternalPubKey: receiverKey,
+			},
 			MaxSwapFee:      60000,
 			MaxMinerFee:     50000,
 			ProtocolVersion: storedVersion,
@@ -453,17 +458,22 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	switch GetHtlcScriptVersion(storedVersion) {
 	case swap.HtlcV2:
 		htlc, err = swap.NewHtlcV2(
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, testPreimage.Hash(),
+			contract.CltvExpiry,
+			contract.HtlcKeys.SenderScriptKey,
+			contract.HtlcKeys.ReceiverScriptKey,
+			testPreimage.Hash(),
 			cfg.lnd.ChainParams,
 		)
 
 	case swap.HtlcV3:
 		htlc, err = swap.NewHtlcV3(
 			input.MuSig2Version040,
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, contract.SenderKey,
-			contract.ReceiverKey, testPreimage.Hash(),
+			contract.CltvExpiry,
+			contract.HtlcKeys.SenderInternalPubKey,
+			contract.HtlcKeys.ReceiverInternalPubKey,
+			contract.HtlcKeys.SenderScriptKey,
+			contract.HtlcKeys.ReceiverScriptKey,
+			testPreimage.Hash(),
 			cfg.lnd.ChainParams,
 		)
 

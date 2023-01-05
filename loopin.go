@@ -237,16 +237,20 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
-			ReceiverKey:      swapResp.receiverKey,
-			SenderKey:        senderKey,
-			ClientKeyLocator: keyDesc.KeyLocator,
-			Preimage:         swapPreimage,
-			AmountRequested:  request.Amount,
-			CltvExpiry:       swapResp.expiry,
-			MaxMinerFee:      request.MaxMinerFee,
-			MaxSwapFee:       request.MaxSwapFee,
-			Label:            request.Label,
-			ProtocolVersion:  loopdb.CurrentProtocolVersion(),
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverScriptKey:      swapResp.receiverKey,
+				ReceiverInternalPubKey: swapResp.receiverKey,
+				ClientScriptKeyLocator: keyDesc.KeyLocator,
+			},
+			Preimage:        swapPreimage,
+			AmountRequested: request.Amount,
+			CltvExpiry:      swapResp.expiry,
+			MaxMinerFee:     request.MaxMinerFee,
+			MaxSwapFee:      request.MaxSwapFee,
+			Label:           request.Label,
+			ProtocolVersion: loopdb.CurrentProtocolVersion(),
 		},
 	}
 
@@ -975,8 +979,9 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	sequence := uint32(0)
 	timeoutTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, sequence, s.htlc, *htlcOutpoint, s.SenderKey,
-		redeemScript, witnessFunc, htlcValue, fee, s.timeoutAddr,
+		ctx, s.height, sequence, s.htlc, *htlcOutpoint,
+		s.HtlcKeys.SenderScriptKey, redeemScript, witnessFunc,
+		htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
 		return 0, err

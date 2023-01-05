@@ -76,18 +76,20 @@ func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
 	switch GetHtlcScriptVersion(contract.ProtocolVersion) {
 	case swap.HtlcV2:
 		return swap.NewHtlcV2(
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, hash,
+			contract.CltvExpiry, contract.HtlcKeys.SenderScriptKey,
+			contract.HtlcKeys.ReceiverScriptKey, hash,
 			chainParams,
 		)
 
 	case swap.HtlcV3:
 		return swap.NewHtlcV3(
 			input.MuSig2Version040,
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, contract.SenderKey,
-			contract.ReceiverKey, hash,
-			chainParams,
+			contract.CltvExpiry,
+			contract.HtlcKeys.SenderInternalPubKey,
+			contract.HtlcKeys.ReceiverInternalPubKey,
+			contract.HtlcKeys.SenderScriptKey,
+			contract.HtlcKeys.ReceiverScriptKey,
+			hash, chainParams,
 		)
 	}
 

@@ -181,16 +181,20 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
-			SenderKey:        swapResp.senderKey,
-			ReceiverKey:      receiverKey,
-			ClientKeyLocator: keyDesc.KeyLocator,
-			Preimage:         swapPreimage,
-			AmountRequested:  request.Amount,
-			CltvExpiry:       request.Expiry,
-			MaxMinerFee:      request.MaxMinerFee,
-			MaxSwapFee:       request.MaxSwapFee,
-			Label:            request.Label,
-			ProtocolVersion:  loopdb.CurrentProtocolVersion(),
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        swapResp.senderKey,
+				SenderInternalPubKey:   swapResp.senderKey,
+				ReceiverScriptKey:      receiverKey,
+				ReceiverInternalPubKey: receiverKey,
+				ClientScriptKeyLocator: keyDesc.KeyLocator,
+			},
+			Preimage:        swapPreimage,
+			AmountRequested: request.Amount,
+			CltvExpiry:      request.Expiry,
+			MaxMinerFee:     request.MaxMinerFee,
+			MaxSwapFee:      request.MaxSwapFee,
+			Label:           request.Label,
+			ProtocolVersion: loopdb.CurrentProtocolVersion(),
 		},
 		OutgoingChanSet: chanSet,
 	}
@@ -1352,7 +1356,8 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	}
 
 	signers := [][]byte{
-		s.SenderKey[1:], s.ReceiverKey[1:],
+		s.HtlcKeys.SenderInternalPubKey[1:],
+		s.HtlcKeys.ReceiverInternalPubKey[1:],
 	}
 
 	htlc, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
@@ -1363,8 +1368,9 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	// Now we're creating a local MuSig2 session using the receiver key's
 	// key locator and the htlc's root hash.
 	musig2SessionInfo, err := s.lnd.Signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version040, &s.ClientKeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(htlc.RootHash[:], false),
+		ctx, input.MuSig2Version040,
+		&s.HtlcKeys.ClientScriptKeyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(htlc.RootHash[:], false),
 	)
 	if err != nil {
 		return nil, err
@@ -1609,8 +1615,8 @@ func (s *loopOutSwap) sweep(ctx context.Context, htlcOutpoint wire.OutPoint,
 	// Create sweep tx.
 	sweepTx, err := s.sweeper.CreateSweepTx(
 		ctx, s.height, s.htlc.SuccessSequence(), s.htlc,
-		htlcOutpoint, s.ReceiverKey, redeemScript, witnessFunc,
-		htlcValue, fee, s.DestAddr,
+		htlcOutpoint, s.contract.HtlcKeys.ReceiverScriptKey,
+		redeemScript, witnessFunc, htlcValue, fee, s.DestAddr,
 	)
 	if err != nil {
 		return err
