@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/mempool"
@@ -19,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -189,6 +191,23 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// Default the HTLC internal key to our sender key.
+	senderInternalPubKey := senderKey
+
+	// If this is a MuSig2 swap then we'll generate a brand new key pair
+	// and will use that as the internal key for the HTLC.
+	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
+		secret, err := sharedSecretFromHash(
+			globalCtx, cfg.lnd.Signer, swapHash,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		_, pubKey := btcec.PrivKeyFromBytes(secret[:])
+		copy(senderInternalPubKey[:], pubKey.SerializeCompressed())
+	}
+
 	// Create a cancellable context that is used for monitoring the probe.
 	probeWaitCtx, probeWaitCancel := context.WithCancel(globalCtx)
 
@@ -204,8 +223,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// htlc.
 	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
-		request.Amount, senderKey, swapInvoice, probeInvoice,
-		request.LastHop, request.Initiator,
+		request.Amount, senderKey, senderInternalPubKey, swapInvoice,
+		probeInvoice, request.LastHop, request.Initiator,
 	)
 	probeWaitCancel()
 	if err != nil {
@@ -252,6 +271,13 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			Label:           request.Label,
 			ProtocolVersion: loopdb.CurrentProtocolVersion(),
 		},
+	}
+
+	// For MuSig2 swaps we store the proper internal keys that we generated
+	// and received from the server.
+	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
+		contract.HtlcKeys.SenderInternalPubKey = senderInternalPubKey
+		contract.HtlcKeys.ReceiverInternalPubKey = swapResp.receiverInternalKey
 	}
 
 	swapKit := newSwapKit(
@@ -1030,4 +1056,19 @@ func (s *loopInSwap) persistState() error {
 func (s *loopInSwap) setState(state loopdb.SwapState) {
 	s.lastUpdateTime = time.Now()
 	s.state = state
+}
+
+// sharedSecretFromHash derives the shared secret from the swap hash using the
+// swap.KeyFamily family and zero as index.
+func sharedSecretFromHash(ctx context.Context, signer lndclient.SignerClient,
+	hash lntypes.Hash) ([32]byte, error) {
+
+	_, hashPubKey := btcec.PrivKeyFromBytes(hash[:])
+
+	return signer.DeriveSharedKey(
+		ctx, hashPubKey, &keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.KeyFamily),
+			Index:  0,
+		},
+	)
 }

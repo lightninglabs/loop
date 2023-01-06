@@ -94,10 +94,10 @@ type swapServerClient interface {
 		preimage lntypes.Preimage) error
 
 	NewLoopInSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount,
-		senderKey [33]byte, swapInvoice, probeInvoice string,
-		lastHop *route.Vertex, initiator string) (*newLoopInResponse,
-		error)
+		swapHash lntypes.Hash, amount btcutil.Amount, senderScriptKey,
+		senderInternalKey [33]byte, swapInvoice, probeInvoice string,
+		lastHop *route.Vertex, initiator string) (
+		*newLoopInResponse, error)
 
 	// SubscribeLoopOutUpdates subscribes to loop out server state.
 	SubscribeLoopOutUpdates(ctx context.Context,
@@ -419,9 +419,9 @@ func (s *grpcSwapServerClient) PushLoopOutPreimage(ctx context.Context,
 }
 
 func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
-	swapHash lntypes.Hash, amount btcutil.Amount, senderKey [33]byte,
-	swapInvoice, probeInvoice string, lastHop *route.Vertex,
-	initiator string) (*newLoopInResponse, error) {
+	swapHash lntypes.Hash, amount btcutil.Amount, senderScriptKey,
+	senderInternalKey [33]byte, swapInvoice, probeInvoice string,
+	lastHop *route.Vertex, initiator string) (*newLoopInResponse, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -429,7 +429,7 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	req := &looprpc.ServerLoopInRequest{
 		SwapHash:        swapHash[:],
 		Amt:             uint64(amount),
-		SenderKey:       senderKey[:],
+		SenderKey:       senderScriptKey[:],
 		SwapInvoice:     swapInvoice,
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		ProbeInvoice:    probeInvoice,
@@ -439,13 +439,19 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 		req.LastHop = lastHop[:]
 	}
 
+	// Set the client's internal key if this is a MuSig2 swap.
+	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
+		req.SenderInternalPubkey = senderInternalKey[:]
+	}
+
 	swapResp, err := s.server.NewLoopInSwap(rpcCtx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var receiverKey [33]byte
+	var receiverKey, receiverInternalKey [33]byte
 	copy(receiverKey[:], swapResp.ReceiverKey)
+	copy(receiverInternalKey[:], swapResp.ReceiverInternalPubkey)
 
 	// Validate receiver key.
 	_, err = btcec.ParsePubKey(receiverKey[:])
@@ -454,9 +460,10 @@ func (s *grpcSwapServerClient) NewLoopInSwap(ctx context.Context,
 	}
 
 	return &newLoopInResponse{
-		receiverKey:   receiverKey,
-		expiry:        swapResp.Expiry,
-		serverMessage: swapResp.ServerMessage,
+		receiverKey:         receiverKey,
+		receiverInternalKey: receiverInternalKey,
+		expiry:              swapResp.Expiry,
+		serverMessage:       swapResp.ServerMessage,
 	}, nil
 }
 
@@ -873,7 +880,8 @@ type newLoopOutResponse struct {
 }
 
 type newLoopInResponse struct {
-	receiverKey   [33]byte
-	expiry        int32
-	serverMessage string
+	receiverKey         [33]byte
+	receiverInternalKey [33]byte
+	expiry              int32
+	serverMessage       string
 }
