@@ -267,3 +267,9 @@ func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion
 
 	return nil, nil, nil
 }
+
+func (s *serverMock) PushKey(_ context.Context, _ loopdb.ProtocolVersion,
+	_ lntypes.Hash, _ [32]byte) error {
+
+	return nil
+}

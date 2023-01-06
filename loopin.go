@@ -839,6 +839,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 
 	htlcSpend := false
 	invoiceFinalized := false
+	htlcKeyRevealed := false
 	for !htlcSpend || !invoiceFinalized {
 		select {
 		// Spend notification error.
@@ -853,6 +854,10 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 			sweepFee, err = checkTimeout()
 			if err != nil {
 				return err
+			}
+
+			if invoiceFinalized && !htlcKeyRevealed {
+				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 			}
 
 		// The htlc spend is confirmed. Inspect the spending tx to
@@ -918,6 +923,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				}
 
 				invoiceFinalized = true
+				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 
 			// Canceled invoice has no effect on server cost
 			// balance.
@@ -931,6 +937,36 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	}
 
 	return nil
+}
+
+// tryPushHtlcKey attempts to push the htlc key to the server. If the server
+// returns an error of any kind we'll log it as a warning but won't act as
+// the swap execution can just go on without the server gaining knowledge of
+// our internal key.
+func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
+	if s.ProtocolVersion < loopdb.ProtocolVersionMuSig2 {
+		return false
+	}
+
+	log.Infof("Attempting to reveal internal HTLC key to the server")
+
+	internalPrivKey, err := sharedSecretFromHash(
+		ctx, s.swapConfig.lnd.Signer, s.hash,
+	)
+	if err != nil {
+		s.log.Warnf("Unable to derive HTLC internal private key: %v",
+			err)
+
+		return false
+	}
+
+	err = s.server.PushKey(ctx, s.ProtocolVersion, s.hash, internalPrivKey)
+	if err != nil {
+		s.log.Warnf("Internal HTLC key reveal failed: %v", err)
+		return false
+	}
+
+	return true
 }
 
 func (s *loopInSwap) processHtlcSpend(ctx context.Context,

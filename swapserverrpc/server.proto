@@ -45,6 +45,8 @@ service SwapServer {
         returns (ReportRoutingResultRes);
 
     rpc MuSig2SignSweep (MuSig2SignSweepReq) returns (MuSig2SignSweepRes);
+
+    rpc PushKey (ServerPushKeyReq) returns (ServerPushKeyRes);
 }
 
 /**
@@ -565,4 +567,18 @@ message MuSig2SignSweepRes {
 
     // The partial signature of the server for the requested sighash.
     bytes partial_signature = 2;
+}
+
+message ServerPushKeyReq {
+    // The protocol version that the client adheres to.
+    ProtocolVersion protocol_version = 1;
+
+    // The swap hash.
+    bytes swap_hash = 2;
+
+    // The client’s private key used in the HTLC’s aggregated internal key.
+    bytes internal_privkey = 3;
+}
+
+message ServerPushKeyRes {
 }

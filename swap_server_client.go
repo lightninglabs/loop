@@ -128,6 +128,12 @@ type swapServerClient interface {
 		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
 		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) (
 		[]byte, []byte, error)
+
+	// PushKey sends the client's HTLC internal key associated with the
+	// swap to the server.
+	PushKey(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		clientInternalPrivateKey [32]byte) error
 }
 
 type grpcSwapServerClient struct {
@@ -758,6 +764,25 @@ func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 	}
 
 	return res.Nonce, res.PartialSignature, nil
+}
+
+// PushKey sends the client's HTLC internal key associated with the swap to
+// the server.
+func (s *grpcSwapServerClient) PushKey(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	clientInternalPrivateKey [32]byte) error {
+
+	req := &looprpc.ServerPushKeyReq{
+		ProtocolVersion: looprpc.ProtocolVersion(protocolVersion),
+		SwapHash:        swapHash[:],
+		InternalPrivkey: clientInternalPrivateKey[:],
+	}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	_, err := s.server.PushKey(rpcCtx, req)
+	return err
 }
 
 func rpcRouteCancel(details *outCancelDetails) (
