@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -36,7 +37,8 @@ type mockWalletKit struct {
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
 
 func (m *mockWalletKit) ListUnspent(ctx context.Context, minConfs,
-	maxConfs int32) ([]*lnwallet.Utxo, error) {
+	maxConfs int32, opts ...lndclient.ListUnspentOption) (
+	[]*lnwallet.Utxo, error) {
 
 	return nil, nil
 }
@@ -157,6 +159,14 @@ func (m *mockWalletKit) ListSweeps(_ context.Context) ([]string, error) {
 	return m.lnd.Sweeps, nil
 }
 
+// ListSweepsVerbose returns a list of sweep transactions known to our node
+// with verbose information about each sweep.
+func (m *mockWalletKit) ListSweepsVerbose(ctx context.Context) (
+	[]lnwallet.TransactionDetail, error) {
+
+	return m.lnd.SweepsVerbose, nil
+}
+
 // BumpFee attempts to bump the fee of a transaction by spending one of
 // its outputs at the given fee rate. This essentially results in a
 // child-pays-for-parent (CPFP) scenario. If the given output has been
@@ -241,4 +251,12 @@ func (m *mockWalletKit) ImportPublicKey(ctx context.Context,
 	pubkey *btcec.PublicKey, addrType lnwallet.AddressType) error {
 
 	return fmt.Errorf("unimplemented")
+}
+
+// ImportTaprootScript imports a user-provided taproot script into the
+// wallet. The imported script will act as a pay-to-taproot address.
+func (m *mockWalletKit) ImportTaprootScript(ctx context.Context,
+	tapscript *waddrmgr.Tapscript) (btcutil.Address, error) {
+
+	return nil, fmt.Errorf("unimplemented")
 }

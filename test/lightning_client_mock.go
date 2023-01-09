@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightningnetwork/lnd/channeldb"
+	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -148,7 +148,7 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 		PaymentRequest: payReqString,
 		Amount:         in.Value,
 		CreationDate:   creationDate,
-		State:          channeldb.ContractOpen,
+		State:          invpkg.ContractOpen,
 		IsKeysend:      false,
 	}
 
@@ -175,7 +175,8 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 
 // ListTransactions returns all known transactions of the backing lnd node.
 func (h *mockLightningClient) ListTransactions(
-	_ context.Context, _, _ int32) ([]lndclient.Transaction, error) {
+	_ context.Context, _, _ int32, _ ...lndclient.ListTransactionsOption) (
+	[]lndclient.Transaction, error) {
 
 	h.lnd.lock.Lock()
 	txs := h.lnd.Transactions

@@ -18,7 +18,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/channeldb"
+	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -304,7 +304,7 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 			select {
 			case update := <-updateChan:
 				switch update.State {
-				case channeldb.ContractAccepted:
+				case invpkg.ContractAccepted:
 					log.Infof("Server probe successful")
 					probeResult <- nil
 
@@ -321,13 +321,13 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 
 					return
 
-				case channeldb.ContractCanceled:
+				case invpkg.ContractCanceled:
 					probeResult <- errors.New(
 						"probe invoice expired")
 
 					return
 
-				case channeldb.ContractSettled:
+				case invpkg.ContractSettled:
 					probeResult <- errors.New(
 						"impossible that probe " +
 							"invoice was settled")
@@ -870,7 +870,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 
 			switch update.State {
 			// Swap invoice was paid, so update server cost balance.
-			case channeldb.ContractSettled:
+			case invpkg.ContractSettled:
 				s.cost.Server -= update.AmtPaid
 
 				// If invoice settlement and htlc spend happen
@@ -891,7 +891,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 
 			// Canceled invoice has no effect on server cost
 			// balance.
-			case channeldb.ContractCanceled:
+			case invpkg.ContractCanceled:
 				invoiceFinalized = true
 			}
 
@@ -929,7 +929,7 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		// already settled. This means that the server didn't succeed in
 		// sweeping the htlc after paying the invoice.
 		err := s.lnd.Invoices.CancelInvoice(ctx, s.hash)
-		if err != nil && err != channeldb.ErrInvoiceAlreadySettled {
+		if err != nil && err != invpkg.ErrInvoiceAlreadySettled {
 			return err
 		}
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
-	"github.com/lightningnetwork/lnd/channeldb"
+	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -170,7 +170,7 @@ func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 	// cancel the probe payment.
 	probeSub := <-s.lnd.SingleInvoiceSubcribeChannel
 	probeSub.Update <- lndclient.InvoiceUpdate{
-		State: channeldb.ContractAccepted,
+		State: invpkg.ContractAccepted,
 	}
 	<-s.lnd.FailInvoiceChannel
 
