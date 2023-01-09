@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -82,6 +83,7 @@ func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
 
 	case swap.HtlcV3:
 		return swap.NewHtlcV3(
+			input.MuSig2Version040,
 			contract.CltvExpiry, contract.SenderKey,
 			contract.ReceiverKey, contract.SenderKey,
 			contract.ReceiverKey, hash,

@@ -122,8 +122,8 @@ var (
 	// QuoteHtlcP2TR is a template script just used for sweep fee
 	// estimation.
 	QuoteHtlcP2TR, _ = NewHtlcV3(
-		^int32(0), dummyPubKey, dummyPubKey, dummyPubKey, dummyPubKey,
-		quoteHash, &chaincfg.MainNetParams,
+		input.MuSig2Version100RC2, ^int32(0), dummyPubKey, dummyPubKey,
+		dummyPubKey, dummyPubKey, quoteHash, &chaincfg.MainNetParams,
 	)
 
 	// ErrInvalidScriptVersion is returned when an unknown htlc version
@@ -188,13 +188,13 @@ func NewHtlcV2(cltvExpiry int32, senderKey, receiverKey [33]byte,
 
 // NewHtlcV3 returns a new V3 HTLC (P2TR) instance. Internal pubkey generated
 // by both participants must be provided.
-func NewHtlcV3(cltvExpiry int32, senderInternalKey, receiverInternalKey,
-	senderKey, receiverKey [33]byte, hash lntypes.Hash,
-	chainParams *chaincfg.Params) (*Htlc, error) {
+func NewHtlcV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
+	senderInternalKey, receiverInternalKey, senderKey, receiverKey [33]byte,
+	hash lntypes.Hash, chainParams *chaincfg.Params) (*Htlc, error) {
 
 	htlc, err := newHTLCScriptV3(
-		cltvExpiry, senderInternalKey, receiverInternalKey,
-		senderKey, receiverKey, hash,
+		muSig2Version, cltvExpiry, senderInternalKey,
+		receiverInternalKey, senderKey, receiverKey, hash,
 	)
 
 	if err != nil {
@@ -504,17 +504,37 @@ type HtlcScriptV3 struct {
 	RootHash chainhash.Hash
 }
 
-// newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
-func newHTLCScriptV3(cltvExpiry int32, senderInternalKey, receiverInternalKey,
-	senderHtlcKey, receiverHtlcKey [33]byte,
-	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+// parsePubKey will parse a serialized public key into a btcec.PublicKey
+// depending on the passed MuSig2 version.
+func parsePubKey(muSig2Version input.MuSig2Version, key [33]byte) (
+	*btcec.PublicKey, error) {
 
-	senderPubKey, err := schnorr.ParsePubKey(senderHtlcKey[1:])
+	// Make sure that we have the correct public keys depending on the
+	// MuSig2 version.
+	switch muSig2Version {
+	case input.MuSig2Version100RC2:
+		return btcec.ParsePubKey(key[:])
+
+	case input.MuSig2Version040:
+		return schnorr.ParsePubKey(key[1:])
+
+	default:
+		return nil, fmt.Errorf("unsupported MuSig2 version: %v",
+			muSig2Version)
+	}
+}
+
+// newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
+func newHTLCScriptV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
+	senderInternalKey, receiverInternalKey, senderHtlcKey,
+	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+
+	senderPubKey, err := parsePubKey(muSig2Version, senderHtlcKey)
 	if err != nil {
 		return nil, err
 	}
 
-	receiverPubKey, err := schnorr.ParsePubKey(receiverHtlcKey[1:])
+	receiverPubKey, err := parsePubKey(muSig2Version, receiverHtlcKey)
 	if err != nil {
 		return nil, err
 	}
@@ -548,38 +568,41 @@ func newHTLCScriptV3(cltvExpiry int32, senderInternalKey, receiverInternalKey,
 	// Parse the pub keys used in the internal aggregate key. They are
 	// optional and may just be the same keys that are used for the script
 	// paths.
-	senderInternalPubKey, err := schnorr.ParsePubKey(senderInternalKey[1:])
-	if err != nil {
-		return nil, err
-	}
-
-	receiverInternalPubKey, err := schnorr.ParsePubKey(
-		receiverInternalKey[1:],
+	senderInternalPubKey, err := parsePubKey(
+		muSig2Version, senderInternalKey,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	receiverInternalPubKey, err := parsePubKey(
+		muSig2Version, receiverInternalKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var aggregateKey *musig2.AggregateKey
 	// Calculate the internal aggregate key.
-	aggregateKey, _, _, err := musig2.AggregateKeys(
+	aggregateKey, err = input.MuSig2CombineKeys(
+		muSig2Version,
 		[]*btcec.PublicKey{
 			senderInternalPubKey, receiverInternalPubKey,
-		}, true,
+		},
+		true,
+		&input.MuSig2Tweaks{
+			TaprootTweak: rootHash[:],
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	// Calculate top level taproot key.
-	taprootKey := txscript.ComputeTaprootOutputKey(
-		aggregateKey.PreTweakedKey, rootHash[:],
-	)
 
 	return &HtlcScriptV3{
 		timeoutScript:  timeoutPathScript,
 		successScript:  successPathScript,
 		InternalPubKey: aggregateKey.PreTweakedKey,
-		TaprootKey:     taprootKey,
+		TaprootKey:     aggregateKey.FinalKey,
 		RootHash:       rootHash,
 	}, nil
 }

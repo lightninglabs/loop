@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -459,6 +460,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	case swap.HtlcV3:
 		htlc, err = swap.NewHtlcV3(
+			input.MuSig2Version040,
 			contract.CltvExpiry, contract.SenderKey,
 			contract.ReceiverKey, contract.SenderKey,
 			contract.ReceiverKey, testPreimage.Hash(),

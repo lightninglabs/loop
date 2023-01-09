@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -285,6 +286,7 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	case swap.HtlcV3:
 		htlc, err = swap.NewHtlcV3(
+			input.MuSig2Version040,
 			pendingSwap.Contract.CltvExpiry, senderKey,
 			receiverKey, senderKey, receiverKey, hash,
 			&chaincfg.TestNet3Params,
