@@ -1355,12 +1355,28 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 		return nil, err
 	}
 
-	signers := [][]byte{
-		s.HtlcKeys.SenderInternalPubKey[1:],
-		s.HtlcKeys.ReceiverInternalPubKey[1:],
+	var (
+		signers      [][]byte
+		muSig2Verion input.MuSig2Version
+	)
+
+	// Depending on the MuSig2 version we either pass 32 byte Schnorr
+	// public keys or normal 33 byte public keys.
+	if s.ProtocolVersion >= loopdb.ProtocolVersionMuSig2 {
+		muSig2Verion = input.MuSig2Version100RC2
+		signers = [][]byte{
+			s.HtlcKeys.SenderInternalPubKey[:],
+			s.HtlcKeys.ReceiverInternalPubKey[:],
+		}
+	} else {
+		muSig2Verion = input.MuSig2Version040
+		signers = [][]byte{
+			s.HtlcKeys.SenderInternalPubKey[1:],
+			s.HtlcKeys.ReceiverInternalPubKey[1:],
+		}
 	}
 
-	htlc, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
+	htlcScript, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
 	if !ok {
 		return nil, fmt.Errorf("non taproot htlc")
 	}
@@ -1368,9 +1384,8 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	// Now we're creating a local MuSig2 session using the receiver key's
 	// key locator and the htlc's root hash.
 	musig2SessionInfo, err := s.lnd.Signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version040,
-		&s.HtlcKeys.ClientScriptKeyLocator, signers,
-		lndclient.MuSig2TaprootTweakOpt(htlc.RootHash[:], false),
+		ctx, muSig2Verion, &s.HtlcKeys.ClientScriptKeyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(htlcScript.RootHash[:], false),
 	)
 	if err != nil {
 		return nil, err
@@ -1434,7 +1449,7 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	// To be sure that we're good, parse and validate that the combined
 	// signature is indeed valid for the sig hash and the internal pubkey.
 	err = s.executeConfig.verifySchnorrSig(
-		htlc.TaprootKey, sigHash, finalSig,
+		htlcScript.TaprootKey, sigHash, finalSig,
 	)
 	if err != nil {
 		return nil, err

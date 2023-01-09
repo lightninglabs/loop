@@ -82,8 +82,15 @@ func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
 		)
 
 	case swap.HtlcV3:
+		// Swaps that implement the new MuSig2 protocol will be expected
+		// to use the 1.0RC2 MuSig2 key derivation scheme.
+		muSig2Version := input.MuSig2Version040
+		if contract.ProtocolVersion >= loopdb.ProtocolVersionMuSig2 {
+			muSig2Version = input.MuSig2Version100RC2
+		}
+
 		return swap.NewHtlcV3(
-			input.MuSig2Version040,
+			muSig2Version,
 			contract.CltvExpiry,
 			contract.HtlcKeys.SenderInternalPubKey,
 			contract.HtlcKeys.ReceiverInternalPubKey,

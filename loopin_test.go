@@ -8,10 +8,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -450,37 +448,10 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
-	var (
-		htlc *swap.Htlc
-		err  error
+	htlc, err := GetHtlc(
+		testPreimage.Hash(), &contract.SwapContract,
+		cfg.lnd.ChainParams,
 	)
-
-	switch GetHtlcScriptVersion(storedVersion) {
-	case swap.HtlcV2:
-		htlc, err = swap.NewHtlcV2(
-			contract.CltvExpiry,
-			contract.HtlcKeys.SenderScriptKey,
-			contract.HtlcKeys.ReceiverScriptKey,
-			testPreimage.Hash(),
-			cfg.lnd.ChainParams,
-		)
-
-	case swap.HtlcV3:
-		htlc, err = swap.NewHtlcV3(
-			input.MuSig2Version040,
-			contract.CltvExpiry,
-			contract.HtlcKeys.SenderInternalPubKey,
-			contract.HtlcKeys.ReceiverInternalPubKey,
-			contract.HtlcKeys.SenderScriptKey,
-			contract.HtlcKeys.ReceiverScriptKey,
-			testPreimage.Hash(),
-			cfg.lnd.ChainParams,
-		)
-
-	default:
-		t.Fatalf("unknown HTLC script version")
-	}
-
 	require.NoError(t, err)
 
 	err = ctx.store.CreateLoopIn(testPreimage.Hash(), contract)
