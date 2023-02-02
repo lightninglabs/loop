@@ -70,6 +70,36 @@ func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
 	return result, nil
 }
 
+// FetchLoopOutSwaps returns all swaps currently in the store.
+//
+// NOTE: Part of the loopdb.SwapStore interface.
+func (s *storeMock) FetchLoopOutSwap(
+	hash lntypes.Hash) (*loopdb.LoopOut, error) {
+
+	contract, ok := s.loopOutSwaps[hash]
+	if !ok {
+		return nil, errors.New("swap not found")
+	}
+
+	updates := s.loopOutUpdates[hash]
+	events := make([]*loopdb.LoopEvent, len(updates))
+	for i, u := range updates {
+		events[i] = &loopdb.LoopEvent{
+			SwapStateData: u,
+		}
+	}
+
+	swap := &loopdb.LoopOut{
+		Loop: loopdb.Loop{
+			Hash:   hash,
+			Events: events,
+		},
+		Contract: contract,
+	}
+
+	return swap, nil
+}
+
 // CreateLoopOut adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
