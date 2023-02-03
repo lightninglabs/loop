@@ -199,16 +199,30 @@ func TestAutoLoopEnabled(t *testing.T) {
 				},
 			},
 		}
+
+		singleLoopOut = &loopdb.LoopOut{
+			Loop: loopdb.Loop{
+				Events: []*loopdb.LoopEvent{
+					{
+						SwapStateData: loopdb.SwapStateData{
+							State: loopdb.StateInitiated,
+						},
+					},
+				},
+			},
+		}
 	)
 
 	// Tick our autolooper with no existing swaps, we expect a loop out
 	// swap to be dispatched for each channel.
 	step := &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		quotesOut:   quotes,
-		expectedOut: loopOuts,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		quotesOut:         quotes,
+		expectedOut:       loopOuts,
+		existingOutSingle: singleLoopOut,
 	}
+
 	c.autoloop(step)
 
 	// Tick again with both of our swaps in progress. We haven't shifted our
@@ -220,9 +234,10 @@ func TestAutoLoopEnabled(t *testing.T) {
 	}
 
 	step = &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		existingOut: existing,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		existingOut:       existing,
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 
@@ -278,11 +293,12 @@ func TestAutoLoopEnabled(t *testing.T) {
 	// still has balances which reflect that we need to swap), but nothing
 	// for channel 2, since it has had a failure.
 	step = &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		existingOut: existing,
-		quotesOut:   quotes,
-		expectedOut: loopOuts,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		existingOut:       existing,
+		quotesOut:         quotes,
+		expectedOut:       loopOuts,
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 
@@ -299,10 +315,11 @@ func TestAutoLoopEnabled(t *testing.T) {
 	}
 
 	step = &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		existingOut: existing,
-		quotesOut:   quotes,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		existingOut:       existing,
+		quotesOut:         quotes,
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 
@@ -446,13 +463,27 @@ func TestAutoloopAddress(t *testing.T) {
 				},
 			},
 		}
+
+		singleLoopOut = &loopdb.LoopOut{
+			Loop: loopdb.Loop{
+				Events: []*loopdb.LoopEvent{
+					{
+						SwapStateData: loopdb.SwapStateData{
+							State: loopdb.StateHtlcPublished,
+						},
+					},
+				},
+			},
+		}
 	)
 
 	step := &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		quotesOut:   quotes,
-		expectedOut: loopOuts,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		quotesOut:         quotes,
+		expectedOut:       loopOuts,
+		existingOutSingle: singleLoopOut,
+		keepDestAddr:      true,
 	}
 	c.autoloop(step)
 
@@ -606,6 +637,18 @@ func TestCompositeRules(t *testing.T) {
 				},
 			},
 		}
+
+		singleLoopOut = &loopdb.LoopOut{
+			Loop: loopdb.Loop{
+				Events: []*loopdb.LoopEvent{
+					{
+						SwapStateData: loopdb.SwapStateData{
+							State: loopdb.StateHtlcPublished,
+						},
+					},
+				},
+			},
+		}
 	)
 
 	// Tick our autolooper with no existing swaps, we expect a loop out
@@ -613,10 +656,11 @@ func TestCompositeRules(t *testing.T) {
 	// maximum to be greater than the swap amount for our peer swap (which
 	// is the larger of the two swaps).
 	step := &autoloopStep{
-		minAmt:      1,
-		maxAmt:      peerAmount + 1,
-		quotesOut:   quotes,
-		expectedOut: loopOuts,
+		minAmt:            1,
+		maxAmt:            peerAmount + 1,
+		quotesOut:         quotes,
+		expectedOut:       loopOuts,
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 
@@ -928,6 +972,18 @@ func TestAutoloopBothTypes(t *testing.T) {
 			Label:          labels.AutoloopLabel(swap.TypeIn),
 			Initiator:      autoloopSwapInitiator,
 		}
+
+		singleLoopOut = &loopdb.LoopOut{
+			Loop: loopdb.Loop{
+				Events: []*loopdb.LoopEvent{
+					{
+						SwapStateData: loopdb.SwapStateData{
+							State: loopdb.StateHtlcPublished,
+						},
+					},
+				},
+			},
+		}
 	)
 
 	step := &autoloopStep{
@@ -961,6 +1017,7 @@ func TestAutoloopBothTypes(t *testing.T) {
 				},
 			},
 		},
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 	c.stop()
