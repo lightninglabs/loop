@@ -335,6 +335,19 @@ func TestHtlcV2(t *testing.T) {
 
 // TestHtlcV3 tests the HTLC V3 script success and timeout spend cases.
 func TestHtlcV3(t *testing.T) {
+	versions := map[string]input.MuSig2Version{
+		"MuSig2 0.4":    input.MuSig2Version040,
+		"MuSig2 1.0RC2": input.MuSig2Version100RC2,
+	}
+
+	for name, version := range versions {
+		t.Run(name, func(t *testing.T) {
+			testHtlcV3(t, version)
+		})
+	}
+}
+
+func testHtlcV3(t *testing.T, muSig2Version input.MuSig2Version) {
 	var (
 		receiverKey [33]byte
 		senderKey   [33]byte
@@ -355,8 +368,8 @@ func TestHtlcV3(t *testing.T) {
 	copy(senderKey[:], senderPubKey.SerializeCompressed())
 
 	htlc, err := NewHtlcV3(
-		cltvExpiry, senderKey, receiverKey, senderKey, receiverKey,
-		hashedPreimage, &chaincfg.MainNetParams,
+		muSig2Version, cltvExpiry, senderKey, receiverKey, senderKey,
+		receiverKey, hashedPreimage, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
@@ -538,7 +551,7 @@ func TestHtlcV3(t *testing.T) {
 				)
 
 				htlc, err := NewHtlcV3(
-					cltvExpiry, senderKey,
+					muSig2Version, cltvExpiry, senderKey,
 					receiverKey, bogusKeyBytes, receiverKey,
 					hashedPreimage, &chaincfg.MainNetParams,
 				)

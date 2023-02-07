@@ -27,7 +27,7 @@ var (
 	LoopMinRequiredLndVersion = &verrpc.Version{
 		AppMajor: 0,
 		AppMinor: 15,
-		AppPatch: 4,
+		AppPatch: 99,
 		BuildTags: []string{
 			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
 		},

@@ -11,7 +11,8 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/input"
+	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
@@ -116,7 +117,7 @@ func testLoopInSuccess(t *testing.T) {
 
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
-	ctx.updateInvoiceState(49000, channeldb.ContractSettled)
+	ctx.updateInvoiceState(49000, invpkg.ContractSettled)
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
@@ -327,7 +328,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	<-ctx.lnd.FailInvoiceChannel
 
 	// Signal that the invoice was canceled.
-	ctx.updateInvoiceState(0, channeldb.ContractCanceled)
+	ctx.updateInvoiceState(0, invpkg.ContractCanceled)
 
 	ctx.assertState(loopdb.StateFailTimeout)
 	state := ctx.store.assertLoopInState(loopdb.StateFailTimeout)
@@ -459,6 +460,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	case swap.HtlcV3:
 		htlc, err = swap.NewHtlcV3(
+			input.MuSig2Version040,
 			contract.CltvExpiry, contract.SenderKey,
 			contract.ReceiverKey, contract.SenderKey,
 			contract.ReceiverKey, testPreimage.Hash(),
@@ -559,7 +561,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	// Server has already paid invoice before spending the htlc. Signal
 	// settled.
 	amtPaid := btcutil.Amount(49000)
-	ctx.updateInvoiceState(amtPaid, channeldb.ContractSettled)
+	ctx.updateInvoiceState(amtPaid, invpkg.ContractSettled)
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)

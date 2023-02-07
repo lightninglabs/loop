@@ -9,7 +9,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
-	"github.com/lightningnetwork/lnd/channeldb"
+	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -75,7 +75,7 @@ func (c *loopInTestContext) assertSubscribeInvoice(hash lntypes.Hash) {
 
 // updateInvoiceState mocks an update to our swap invoice state.
 func (c *loopInTestContext) updateInvoiceState(amount btcutil.Amount,
-	state channeldb.ContractState) {
+	state invpkg.ContractState) {
 
 	c.swapInvoiceSubscription.Update <- lndclient.InvoiceUpdate{
 		AmtPaid: amount,
@@ -84,8 +84,8 @@ func (c *loopInTestContext) updateInvoiceState(amount btcutil.Amount,
 
 	// If we're in a final state, close our update channels as lndclient
 	// would.
-	if state == channeldb.ContractCanceled ||
-		state == channeldb.ContractSettled {
+	if state == invpkg.ContractCanceled ||
+		state == invpkg.ContractSettled {
 
 		close(c.swapInvoiceSubscription.Update)
 		close(c.swapInvoiceSubscription.Err)

@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
@@ -156,8 +157,9 @@ type LndMockServices struct {
 	Signature    []byte
 	SignatureMsg string
 
-	Transactions []lndclient.Transaction
-	Sweeps       []string
+	Transactions  []lndclient.Transaction
+	Sweeps        []string
+	SweepsVerbose []lnwallet.TransactionDetail
 
 	// Invoices is a set of invoices that have been created by the mock,
 	// keyed by hash string.

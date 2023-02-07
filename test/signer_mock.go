@@ -40,13 +40,14 @@ func (s *mockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
 }
 
 func (s *mockSigner) SignMessage(ctx context.Context, msg []byte,
-	locator keychain.KeyLocator) ([]byte, error) {
+	locator keychain.KeyLocator, opts ...lndclient.SignMessageOption) (
+	[]byte, error) {
 
 	return s.lnd.Signature, nil
 }
 
 func (s *mockSigner) VerifyMessage(ctx context.Context, msg, sig []byte,
-	pubkey [33]byte) (bool, error) {
+	pubkey [33]byte, opts ...lndclient.VerifyMessageOption) (bool, error) {
 
 	// Make the mock somewhat functional by asserting that the message and
 	// signature is what we expect from the mock parameters.
@@ -67,9 +68,9 @@ func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
 // all signing parties must be provided, including the public key of the local
 // signing key. If nonces of other parties are already known, they can be
 // submitted as well to reduce the number of method calls necessary later on.
-func (s *mockSigner) MuSig2CreateSession(context.Context, *keychain.KeyLocator,
-	[][32]byte, ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo,
-	error) {
+func (s *mockSigner) MuSig2CreateSession(context.Context, input.MuSig2Version,
+	*keychain.KeyLocator, [][]byte, ...lndclient.MuSig2SessionOpts) (
+	*input.MuSig2SessionInfo, error) {
 
 	const testPubKey = "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
 	pubKeyBytes, err := hex.DecodeString(testPubKey)

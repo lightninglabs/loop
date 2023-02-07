@@ -1351,9 +1351,9 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 		return nil, err
 	}
 
-	var schnorrSenderKey, schnorrReceiverKey [32]byte
-	copy(schnorrSenderKey[:], s.SenderKey[1:])
-	copy(schnorrReceiverKey[:], s.ReceiverKey[1:])
+	signers := [][]byte{
+		s.SenderKey[1:], s.ReceiverKey[1:],
+	}
 
 	htlc, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
 	if !ok {
@@ -1363,9 +1363,8 @@ func (s *loopOutSwap) createMuSig2SweepTxn(
 	// Now we're creating a local MuSig2 session using the receiver key's
 	// key locator and the htlc's root hash.
 	musig2SessionInfo, err := s.lnd.Signer.MuSig2CreateSession(
-		ctx, &s.ClientKeyLocator,
-		[][32]byte{schnorrSenderKey, schnorrReceiverKey},
-		lndclient.MuSig2TaprootTweakOpt(htlc.RootHash[:], false),
+		ctx, input.MuSig2Version040, &s.ClientKeyLocator,
+		signers, lndclient.MuSig2TaprootTweakOpt(htlc.RootHash[:], false),
 	)
 	if err != nil {
 		return nil, err
