@@ -104,6 +104,10 @@ var (
 	// funding amount.
 	defaultBudget = ppmToSat(funding.MaxBtcFundingAmount, defaultFeePPM)
 
+	// defaultBudgetRefreshPeriod is the default amount of time we wait for
+	// the autoloop budget to be refreshed.
+	defaultBudgetRefreshPeriod = time.Hour * 24 * 7
+
 	// ErrZeroChannelID is returned if we get a rule for a 0 channel ID.
 	ErrZeroChannelID = fmt.Errorf("zero channel ID not allowed")
 
@@ -144,6 +148,10 @@ type Config struct {
 	// to dispatch an automated swap. We use a force ticker so that we can
 	// trigger autoloop in itests.
 	AutoloopTicker *ticker.Force
+
+	// AutoloopBudgetLastRefresh is the last time at which we refreshed
+	// our budget.
+	AutoloopBudgetLastRefresh time.Time
 
 	// Restrictions returns the restrictions that the server applies to
 	// swaps.
@@ -363,6 +371,10 @@ func (m *Manager) loadParams() (*clientrpc.LiquidityParameters, error) {
 // autoloop gets a set of suggested swaps and dispatches them automatically if
 // we have automated looping enabled.
 func (m *Manager) autoloop(ctx context.Context) error {
+	// First check if we should refresh our budget before calculating any
+	// swaps for autoloop.
+	m.refreshAutoloopBudget(ctx)
+
 	suggestion, err := m.SuggestSwaps(ctx, true)
 	if err != nil {
 		return err
@@ -504,16 +516,6 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 	// lnd and the server.
 	if !m.params.haveRules() {
 		return nil, ErrNoRules
-	}
-
-	// If our start date is in the future, we interpret this as meaning that
-	// we should start using our budget at this date. This means that we
-	// have no budget for the present, so we just return.
-	if m.params.AutoFeeStartDate.After(m.cfg.Clock.Now()) {
-		log.Debugf("autoloop fee budget start time: %v is in "+
-			"the future", m.params.AutoFeeStartDate)
-
-		return m.singleReasonSuggestion(ReasonBudgetNotStarted), nil
 	}
 
 	// Get restrictions placed on swaps by the server.
@@ -722,6 +724,12 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 				return nil, err
 			}
 		} else {
+			refreshTime := m.params.AutoFeeRefreshPeriod -
+				time.Since(m.cfg.AutoloopBudgetLastRefresh)
+
+			log.Infof("Swap fee exceeds budget, remaining budget: "+
+				"%v, swap fee %v, next budget refresh: %v",
+				available, fees, refreshTime)
 			setReason(ReasonBudgetInsufficient, swap)
 		}
 	}
@@ -902,7 +910,10 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 				out.Contract.MaxMinerFee,
 				mSatToSatoshis(prepay.Value),
 			)
-		} else if !out.LastUpdateTime().Before(m.params.AutoFeeStartDate) {
+		} else if out.LastUpdateTime().After(
+			m.cfg.AutoloopBudgetLastRefresh,
+		) {
+
 			summary.spentFees += out.State().Cost.Total()
 		}
 	}
@@ -913,7 +924,8 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 		}
 
 		pending := in.State().State.Type() == loopdb.StateTypePending
-		inBudget := !in.LastUpdateTime().Before(m.params.AutoFeeStartDate)
+		inBudget := !in.LastUpdateTime().
+			Before(m.cfg.AutoloopBudgetLastRefresh)
 
 		// If an autoloop is in a pending state, we always count it in
 		// our current budget, and record the worst-case fees for it,
@@ -1018,6 +1030,18 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 	}
 
 	return traffic
+}
+
+// refreshAutoloopBudget checks whether the elapsed time since our last autoloop
+// budget refresh is greater than our configured refresh period. If so, the last
+// refresh timestamp.
+func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
+	if time.Since(m.cfg.AutoloopBudgetLastRefresh) >
+		m.params.AutoFeeRefreshPeriod {
+
+		log.Debug("Refreshing autoloop budget")
+		m.cfg.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
+	}
 }
 
 // swapTraffic contains a summary of our current and previously failed swaps.

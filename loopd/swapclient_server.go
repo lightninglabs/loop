@@ -753,10 +753,13 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 	}
 
 	rpcCfg := &clientrpc.LiquidityParameters{
-		SweepConfTarget:     cfg.SweepConfTarget,
-		FailureBackoffSec:   uint64(cfg.FailureBackOff.Seconds()),
-		Autoloop:            cfg.Autoloop,
-		AutoloopBudgetSat:   uint64(cfg.AutoFeeBudget),
+		SweepConfTarget:   cfg.SweepConfTarget,
+		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
+		Autoloop:          cfg.Autoloop,
+		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
+		AutoloopBudgetRefreshPeriodSec: uint64(
+			cfg.AutoFeeRefreshPeriod.Seconds(),
+		),
 		AutoMaxInFlight:     uint64(cfg.MaxAutoInFlight),
 		AutoloopDestAddress: destaddr,
 		Rules: make(
@@ -784,14 +787,6 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	default:
 		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
-	}
-
-	// Zero golang time is different to a zero unix time, so we only set
-	// our start date if it is non-zero.
-	if !cfg.AutoFeeStartDate.IsZero() {
-		rpcCfg.AutoloopBudgetStartSec = uint64(
-			cfg.AutoFeeStartDate.Unix(),
-		)
 	}
 
 	for channel, rule := range cfg.ChannelRules {

@@ -298,11 +298,10 @@ var setParamsCommand = cli.Command{
 				"automatically dispatched loop out swaps may " +
 				"spend",
 		},
-		cli.Uint64Flag{
-			Name: "budgetstart",
-			Usage: "the start time for the automated loop " +
-				"out budget, expressed as a unix timestamp " +
-				"in seconds",
+		cli.DurationFlag{
+			Name: "autobudgetrefreshperiod",
+			Usage: "the time period over which the automated " +
+				"loop budget is refreshed",
 		},
 		cli.Uint64Flag{
 			Name: "autoinflight",
@@ -440,8 +439,9 @@ func setParams(ctx *cli.Context) error {
 		flagSet = true
 	}
 
-	if ctx.IsSet("budgetstart") {
-		params.AutoloopBudgetStartSec = ctx.Uint64("budgetstart")
+	if ctx.IsSet("autobudgetrefreshperiod") {
+		params.AutoloopBudgetRefreshPeriodSec =
+			uint64(ctx.Duration("autobudgetrefreshperiod").Seconds())
 		flagSet = true
 	}
 
