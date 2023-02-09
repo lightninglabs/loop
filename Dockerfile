@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM} golang:1.17-alpine as builder
+FROM --platform=${BUILDPLATFORM} golang:1.18-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop

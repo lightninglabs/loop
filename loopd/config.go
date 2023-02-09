@@ -382,8 +382,7 @@ func loadCertWithCreate(cfg *Config) (tls.Certificate, *x509.Certificate,
 
 		log.Infof("Generating TLS certificates...")
 		certBytes, keyBytes, err := cert.GenCertPair(
-			defaultSelfSignedOrganization, cfg.TLSCertPath,
-			cfg.TLSKeyPath, cfg.TLSExtraIPs,
+			defaultSelfSignedOrganization, cfg.TLSExtraIPs,
 			cfg.TLSExtraDomains, cfg.TLSDisableAutofill,
 			DefaultAutogenValidity,
 		)
