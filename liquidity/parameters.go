@@ -20,15 +20,16 @@ var (
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manager with.
 	defaultParameters = Parameters{
-		AutoFeeBudget:   defaultBudget,
-		DestAddr:        nil,
-		MaxAutoInFlight: defaultMaxInFlight,
-		ChannelRules:    make(map[lnwire.ShortChannelID]*SwapRule),
-		PeerRules:       make(map[route.Vertex]*SwapRule),
-		FailureBackOff:  defaultFailureBackoff,
-		SweepConfTarget: defaultConfTarget,
-		HtlcConfTarget:  defaultHtlcConfTarget,
-		FeeLimit:        defaultFeePortion(),
+		AutoFeeBudget:        defaultBudget,
+		AutoFeeRefreshPeriod: defaultBudgetRefreshPeriod,
+		DestAddr:             nil,
+		MaxAutoInFlight:      defaultMaxInFlight,
+		ChannelRules:         make(map[lnwire.ShortChannelID]*SwapRule),
+		PeerRules:            make(map[route.Vertex]*SwapRule),
+		FailureBackOff:       defaultFailureBackoff,
+		SweepConfTarget:      defaultConfTarget,
+		HtlcConfTarget:       defaultHtlcConfTarget,
+		FeeLimit:             defaultFeePortion(),
 	}
 )
 
@@ -44,13 +45,12 @@ type Parameters struct {
 
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
-	// will stop dispatching swaps until the budget is increased or the
-	// start date is moved.
+	// will stop dispatching swaps until the budget is refreshed.
 	AutoFeeBudget btcutil.Amount
 
-	// AutoFeeStartDate is the date from which we will include automatically
-	// dispatched swaps in our current budget, inclusive.
-	AutoFeeStartDate time.Time
+	// AutoFeeRefreshPeriod is the amount of time that must pass before the
+	// auto fee budget is refreshed.
+	AutoFeeRefreshPeriod time.Duration
 
 	// MaxAutoInFlight is the maximum number of in-flight automatically
 	// dispatched swaps we allow.
@@ -107,11 +107,11 @@ func (p Parameters) String() string {
 
 	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+
 		"sweep conf target: %v, htlc conf target: %v,fees: %v, "+
-		"auto budget: %v, budget start: %v, max auto in flight: %v, "+
+		"auto budget: %v, budget refresh: %v, max auto in flight: %v, "+
 		"minimum swap size=%v, maximum swap size=%v",
 		strings.Join(ruleList, ","), p.FailureBackOff,
 		p.SweepConfTarget, p.HtlcConfTarget, p.FeeLimit,
-		p.AutoFeeBudget, p.AutoFeeStartDate, p.MaxAutoInFlight,
+		p.AutoFeeBudget, p.AutoFeeRefreshPeriod, p.MaxAutoInFlight,
 		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
 }
 
@@ -386,11 +386,10 @@ func rpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		HtlcConfTarget: req.HtlcConfTarget,
 	}
 
-	// Zero unix time is different to zero golang time.
-	if req.AutoloopBudgetStartSec != 0 {
-		params.AutoFeeStartDate = time.Unix(
-			int64(req.AutoloopBudgetStartSec), 0,
-		)
+	if req.AutoloopBudgetRefreshPeriodSec != 0 {
+		params.AutoFeeRefreshPeriod =
+			time.Duration(req.AutoloopBudgetRefreshPeriodSec) *
+				time.Second
 	}
 
 	for _, rule := range req.Rules {

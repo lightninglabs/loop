@@ -95,12 +95,12 @@ func TestAutoLoopEnabled(t *testing.T) {
 		// autoloop budget is set to allow exactly 2 swaps at the prices
 		// that we set in our test quotes.
 		params = Parameters{
-			Autoloop:         true,
-			AutoFeeBudget:    40066,
-			AutoFeeStartDate: testTime,
-			MaxAutoInFlight:  2,
-			FailureBackOff:   time.Hour,
-			SweepConfTarget:  10,
+			Autoloop:             true,
+			AutoFeeBudget:        40066,
+			AutoFeeRefreshPeriod: testBudgetRefresh,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			SweepConfTarget:      10,
 			FeeLimit: NewFeeCategoryLimit(
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
@@ -112,6 +112,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 			HtlcConfTarget: defaultHtlcConfTarget,
 		}
 	)
+
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
 
@@ -335,13 +336,13 @@ func TestAutoloopAddress(t *testing.T) {
 		// Create some dummy parameters for autoloop and also specify an
 		// destination address.
 		params = Parameters{
-			Autoloop:         true,
-			AutoFeeBudget:    40066,
-			DestAddr:         addr,
-			AutoFeeStartDate: testTime,
-			MaxAutoInFlight:  2,
-			FailureBackOff:   time.Hour,
-			SweepConfTarget:  10,
+			Autoloop:             true,
+			AutoFeeBudget:        40066,
+			DestAddr:             addr,
+			AutoFeeRefreshPeriod: testBudgetRefresh,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			SweepConfTarget:      10,
 			FeeLimit: NewFeeCategoryLimit(
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
@@ -491,12 +492,12 @@ func TestCompositeRules(t *testing.T) {
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
 			),
-			Autoloop:         true,
-			AutoFeeBudget:    100000,
-			AutoFeeStartDate: testTime,
-			MaxAutoInFlight:  2,
-			FailureBackOff:   time.Hour,
-			SweepConfTarget:  10,
+			Autoloop:             true,
+			AutoFeeBudget:        100000,
+			AutoFeeRefreshPeriod: testBudgetRefresh,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			SweepConfTarget:      10,
 			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			},
@@ -670,13 +671,13 @@ func TestAutoLoopInEnabled(t *testing.T) {
 		peer2MaxFee = ppmToSat(peer2ExpectedAmt, swapFeePPM)
 
 		params = Parameters{
-			Autoloop:         true,
-			AutoFeeBudget:    peer1MaxFee + peer2MaxFee + 1,
-			AutoFeeStartDate: testTime,
-			MaxAutoInFlight:  2,
-			FailureBackOff:   time.Hour,
-			FeeLimit:         NewFeePortion(swapFeePPM),
-			ChannelRules:     make(map[lnwire.ShortChannelID]*SwapRule),
+			Autoloop:             true,
+			AutoFeeBudget:        peer1MaxFee + peer2MaxFee + 1,
+			AutoFeeRefreshPeriod: testBudgetRefresh,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			FeeLimit:             NewFeePortion(swapFeePPM),
+			ChannelRules:         make(map[lnwire.ShortChannelID]*SwapRule),
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer1: rule,
 				peer2: rule,
@@ -853,12 +854,12 @@ func TestAutoloopBothTypes(t *testing.T) {
 		loopInMaxFee  = ppmToSat(loopInAmount, swapFeePPM)
 
 		params = Parameters{
-			Autoloop:         true,
-			AutoFeeBudget:    loopOutMaxFee + loopInMaxFee + 1,
-			AutoFeeStartDate: testTime,
-			MaxAutoInFlight:  2,
-			FailureBackOff:   time.Hour,
-			FeeLimit:         NewFeePortion(swapFeePPM),
+			Autoloop:             true,
+			AutoFeeBudget:        loopOutMaxFee + loopInMaxFee + 1,
+			AutoFeeRefreshPeriod: testBudgetRefresh,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			FeeLimit:             NewFeePortion(swapFeePPM),
 			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: outRule,
 			},
@@ -962,6 +963,211 @@ func TestAutoloopBothTypes(t *testing.T) {
 		},
 	}
 	c.autoloop(step)
+	c.stop()
+}
+
+// TestAutoLoopRecurringBudget tests that the autolooper will perform swaps that
+// respect the fee budget, and that it will refresh the budget based on the
+// defined refresh period.
+func TestAutoLoopRecurringBudget(t *testing.T) {
+	defer test.Guard(t)()
+
+	var (
+		channels = []lndclient.ChannelInfo{
+			channel1, channel2,
+		}
+
+		swapFeePPM   uint64 = 1000
+		routeFeePPM  uint64 = 1000
+		prepayFeePPM uint64 = 1000
+		prepayAmount        = btcutil.Amount(20000)
+		maxMiner            = btcutil.Amount(20000)
+
+		params = Parameters{
+			Autoloop:             true,
+			AutoFeeBudget:        36000,
+			AutoFeeRefreshPeriod: time.Hour * 3,
+			MaxAutoInFlight:      2,
+			FailureBackOff:       time.Hour,
+			SweepConfTarget:      10,
+			FeeLimit: NewFeeCategoryLimit(
+				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
+				prepayAmount, 20000,
+			),
+			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
+				chanID1: chanRule,
+				chanID2: chanRule,
+			},
+			HtlcConfTarget: defaultHtlcConfTarget,
+		}
+	)
+
+	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	// Calculate our maximum allowed fees and create quotes that fall within
+	// our budget.
+	var (
+		amt = chan1Rec.Amount
+
+		maxSwapFee = ppmToSat(amt, swapFeePPM)
+
+		// Create a quote that is within our limits. We do not set miner
+		// fee because this value is not actually set by the server.
+		quote1 = &loop.LoopOutQuote{
+			SwapFee:      maxSwapFee,
+			PrepayAmount: prepayAmount - 10,
+			MinerFee:     maxMiner - 10,
+		}
+
+		quote2 = &loop.LoopOutQuote{
+			SwapFee:      maxSwapFee,
+			PrepayAmount: prepayAmount - 20,
+			MinerFee:     maxMiner - 10,
+		}
+
+		quoteRequest = &loop.LoopOutQuoteRequest{
+			Amount:          amt,
+			SweepConfTarget: params.SweepConfTarget,
+		}
+
+		quotes1 = []quoteRequestResp{
+			{
+				request: quoteRequest,
+				quote:   quote1,
+			},
+			{
+				request: quoteRequest,
+				quote:   quote2,
+			},
+		}
+
+		quotes2 = []quoteRequestResp{
+			{
+				request: quoteRequest,
+				quote:   quote2,
+			},
+		}
+
+		maxRouteFee = ppmToSat(amt, routeFeePPM)
+
+		chan1Swap = &loop.OutRequest{
+			Amount:            amt,
+			MaxSwapRoutingFee: maxRouteFee,
+			MaxPrepayRoutingFee: ppmToSat(
+				quote1.PrepayAmount, prepayFeePPM,
+			),
+			MaxSwapFee:      quote1.SwapFee,
+			MaxPrepayAmount: quote1.PrepayAmount,
+			MaxMinerFee:     maxMiner,
+			SweepConfTarget: params.SweepConfTarget,
+			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		chan2Swap = &loop.OutRequest{
+			Amount:            amt,
+			MaxSwapRoutingFee: maxRouteFee,
+			MaxPrepayRoutingFee: ppmToSat(
+				quote2.PrepayAmount, routeFeePPM,
+			),
+			MaxSwapFee:      quote2.SwapFee,
+			MaxPrepayAmount: quote2.PrepayAmount,
+			MaxMinerFee:     maxMiner,
+			SweepConfTarget: params.SweepConfTarget,
+			OutgoingChanSet: loopdb.ChannelSet{chanID2.ToUint64()},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		loopOuts1 = []loopOutRequestResp{
+			{
+				request: chan1Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+
+		loopOuts2 = []loopOutRequestResp{
+			{
+				request: chan2Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+	)
+
+	// Tick our autolooper with no existing swaps, we expect a loop out
+	// swap to be dispatched on first channel.
+	step := &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		quotesOut:   quotes1,
+		expectedOut: loopOuts1,
+	}
+	c.autoloop(step)
+
+	existing := []*loopdb.LoopOut{
+		existingSwapFromRequest(
+			chan1Swap, testTime, []*loopdb.LoopEvent{
+				{
+					SwapStateData: loopdb.SwapStateData{
+						State: loopdb.StateInitiated,
+					},
+					Time: testTime,
+				},
+			},
+		),
+	}
+
+	step = &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		quotesOut:   quotes2,
+		existingOut: existing,
+		expectedOut: nil,
+	}
+	// Tick again, we should expect no loop outs because our budget would be
+	// exceeded.
+	c.autoloop(step)
+
+	// Create the existing entry for the first swap, marking its last update
+	// with success and a specific timestamp.
+	existing2 := []*loopdb.LoopOut{
+		existingSwapFromRequest(
+			chan1Swap, testTime, []*loopdb.LoopEvent{
+				{
+					SwapStateData: loopdb.SwapStateData{
+						State: loopdb.StateSuccess,
+					},
+					Time: testTime,
+				},
+			},
+		),
+	}
+
+	// Apply the balance shifts on the channels in order to get the correct
+	// recommendations on next tick.
+	c.lnd.Channels[0].LocalBalance = 2500
+	c.lnd.Channels[0].RemoteBalance = 7500
+
+	// Advance time to the future, causing a budget refresh.
+	c.testClock.SetTime(testTime.Add(time.Hour * 25))
+
+	step = &autoloopStep{
+		minAmt:      1,
+		maxAmt:      amt + 1,
+		quotesOut:   quotes2,
+		existingOut: existing2,
+		expectedOut: loopOuts2,
+	}
+
+	// Tick again, we should expect a loop out to occur on the 2nd channel.
+	c.autoloop(step)
+
 	c.stop()
 }
 

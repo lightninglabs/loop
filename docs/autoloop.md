@@ -157,7 +157,7 @@ The autolooper operates within a set budget, and will stop executing swaps when
 this budget is reached. This budget includes the fees paid to the swap server, 
 on-chain sweep costs and off-chain routing fees. Note that the budget does not 
 include the actual swap amount, as this balance is simply shifted from off-chain 
-to on-chain, rather than used up. 
+to on-chain, rather than used up.
 
 The budget value is expressed in satoshis, and can be set using the `setparams` 
 loop command:
@@ -165,23 +165,20 @@ loop command:
 loop setparams --autobudget={budget in satoshis}
 ```
 
-Your autoloop budget can optionally be paired with a start time, which 
-determines the time from which we will count autoloop swaps as being part of 
-the budget. If this value is zero, it will consider all automatically 
-dispatched swaps as being part of the budget. 
+Your autoloop budget is refreshed based on a configurable interval. You can
+specify how often the budget is going to refresh by using the `setparams` loop
+command:
+```
+loop setparams --autobudgetrefreshperiod={duration in seconds}
+```
 
-The start time is expressed as a unix timestamp, and can be set using the 
-`setparams` loop command:
-```
-loop setparams --budgetstart={start time in seconds}
-```
 
 If your autolooper has used up its budget, and you would like to top it up, you 
-can do so by either increasing the overall budget amount, or by increasing the 
-start time to the present. For example, if you want to set your autolooper to 
-have a budget of 100k sats for the month, you could set the following:
+can do so by either increasing the overall budget amount, or by decreasing the 
+refresh interval. For example, if you want to set your autolooper to 
+have a budget of 100k sats per 7 days (or 604800 seconds), you could set the following:
 ```
-loop setparams --autobudget=100000 --autostart={beginning of month ts}
+loop setparams --autobudget=100000 --autobudgetrefreshperiod=604800
 ```
 
 ## Dispatch Control

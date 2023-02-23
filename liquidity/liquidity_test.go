@@ -24,6 +24,11 @@ import (
 var (
 	testTime        = time.Date(2020, 02, 13, 0, 0, 0, 0, time.UTC)
 	testBudgetStart = testTime.Add(time.Hour * -1)
+	// In order to not influence existing tests we set the budget refresh
+	// period to 10 years so that it will never be refreshed. This way the
+	// behavior of autoloop remains identical to before recurring budget was
+	// introduced.
+	testBudgetRefresh = time.Hour * 24 * 365 * 10
 
 	chanID1 = lnwire.NewShortChanIDFromInt(1)
 	chanID2 = lnwire.NewShortChanIDFromInt(2)
@@ -143,8 +148,9 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 
 			return testRestrictions, nil
 		},
-		Lnd:   &lnd.LndServices,
-		Clock: clock.NewTestClock(testTime),
+		Lnd:                       &lnd.LndServices,
+		Clock:                     clock.NewTestClock(testTime),
+		AutoloopBudgetLastRefresh: testBudgetStart,
 		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
 			return nil, nil
 		},
@@ -1100,8 +1106,8 @@ func TestFeeBudget(t *testing.T) {
 				chanID1: chanRule,
 				chanID2: chanRule,
 			}
-			params.AutoFeeStartDate = testBudgetStart
 			params.AutoFeeBudget = testCase.budget
+			params.AutoFeeRefreshPeriod = testBudgetRefresh
 			params.MaxAutoInFlight = 2
 			params.FeeLimit = NewFeeCategoryLimit(
 				defaultSwapFeePPM, defaultRoutingFeePPM,
@@ -1758,7 +1764,7 @@ func TestBudgetWithLoopin(t *testing.T) {
 
 			params := defaultParameters
 			params.AutoFeeBudget = budget
-			params.AutoFeeStartDate = testBudgetStart
+			params.AutoFeeRefreshPeriod = testBudgetRefresh
 
 			params.FeeLimit = NewFeePortion(testPPM)
 			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{

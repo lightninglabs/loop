@@ -656,11 +656,6 @@
           "format": "uint64",
           "description": "The total budget for automatically dispatched swaps since the budget start\ntime, expressed in satoshis."
         },
-        "autoloop_budget_start_sec": {
-          "type": "string",
-          "format": "uint64",
-          "description": "The start time for autoloop budget, expressed as a unix timestamp in\nseconds. If this value is 0, the budget will be applied for all\nautomatically dispatched swaps. Swaps that were completed before this date\nwill not be included in budget calculations."
-        },
         "auto_max_in_flight": {
           "type": "string",
           "format": "uint64",
@@ -684,6 +679,11 @@
         "autoloop_dest_address": {
           "type": "string",
           "description": "The destination address to use for autoloop loop outs. Set to \"default\" in\norder to revert to default behavior."
+        },
+        "autoloop_budget_refresh_period_sec": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The period over which the autoloop budget is refreshed, expressed in\nseconds."
         }
       }
     },
