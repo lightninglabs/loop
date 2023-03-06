@@ -19,7 +19,7 @@ require (
 	github.com/lightninglabs/lndclient v0.16.0-8
 	github.com/lightninglabs/loop/swapserverrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.15.0-beta.rc6.0.20230207162325-a233df99c49d
+	github.com/lightningnetwork/lnd v0.15.4-beta
 	github.com/lightningnetwork/lnd/cert v1.2.1
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
@@ -59,6 +59,7 @@ require (
 	github.com/decred/dcrd/lru v1.0.0 // indirect
 	github.com/dsnet/compress v0.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e // indirect
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -145,7 +146,6 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
-	golang.org/x/exp v0.0.0-20221111094246-ab4555d3164f // indirect
 	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
 	golang.org/x/sys v0.3.0 // indirect
