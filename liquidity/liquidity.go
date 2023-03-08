@@ -48,6 +48,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -61,6 +62,22 @@ const (
 	// defaultFailureBackoff is the default amount of time we backoff if
 	// a channel is part of a temporarily failed swap.
 	defaultFailureBackoff = time.Hour * 24
+
+	// defaultAmountBackoff is the default backoff we apply to the amount
+	// of a loop out swap that failed the off-chain payments.
+	defaultAmountBackoff = float64(0.25)
+
+	// defaultAmountBackoffRetry is the default number of times we will
+	// perform an amount backoff to a loop out swap before we give up.
+	defaultAmountBackoffRetry = 5
+
+	// defaultSwapWaitTimeout is the default maximum amount of time we
+	// wait for a swap to reach a terminal state.
+	defaultSwapWaitTimeout = time.Hour * 24
+
+	// defaultPaymentCheckInterval is the default time that passes between
+	// checks for loop out payments status.
+	defaultPaymentCheckInterval = time.Second * 2
 
 	// defaultConfTarget is the default sweep target we use for loop outs.
 	// We get our inbound liquidity quickly using preimage push, so we can
@@ -78,7 +95,7 @@ const (
 
 	// DefaultAutoloopTicker is the default amount of time between automated
 	// swap checks.
-	DefaultAutoloopTicker = time.Minute * 10
+	DefaultAutoloopTicker = time.Minute * 20
 
 	// autoloopSwapInitiator is the value we send in the initiator field of
 	// a swap request when issuing an automatic swap.
@@ -163,6 +180,10 @@ type Config struct {
 
 	// ListLoopOut returns all of the loop our swaps stored on disk.
 	ListLoopOut func() ([]*loopdb.LoopOut, error)
+
+	// GetLoopOut returns a single loop out swap based on the provided swap
+	// hash.
+	GetLoopOut func(hash lntypes.Hash) (*loopdb.LoopOut, error)
 
 	// ListLoopIn returns all of the loop in swaps stored on disk.
 	ListLoopIn func() ([]*loopdb.LoopIn, error)
@@ -399,13 +420,10 @@ func (m *Manager) autoloop(ctx context.Context) error {
 			swap.DestAddr = m.params.DestAddr
 		}
 
-		loopOut, err := m.cfg.LoopOut(ctx, &swap)
-		if err != nil {
-			return err
-		}
-
-		log.Infof("loop out automatically dispatched: hash: %v, "+
-			"address: %v", loopOut.SwapHash, loopOut.HtlcAddress)
+		go m.dispatchStickyLoopOut(
+			ctx, swap, defaultAmountBackoffRetry,
+			defaultAmountBackoff,
+		)
 	}
 
 	for _, in := range suggestion.InSwaps {
@@ -1042,6 +1060,143 @@ func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
 		log.Debug("Refreshing autoloop budget")
 		m.cfg.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
 	}
+}
+
+// dispatchStickyLoopOut attempts to dispatch a loop out swap that will
+// automatically retry its execution with an amount based backoff.
+func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
+	out loop.OutRequest, retryCount uint16, amountBackoff float64) {
+
+	for i := 0; i < int(retryCount); i++ {
+		// Dispatch the swap.
+		swap, err := m.cfg.LoopOut(ctx, &out)
+		if err != nil {
+			log.Errorf("unable to dispatch loop out, hash: %v, "+
+				"err: %v", swap.SwapHash, err)
+		}
+
+		log.Infof("loop out automatically dispatched: hash: %v, "+
+			"address: %v, amount %v", swap.SwapHash,
+			swap.HtlcAddress, out.Amount)
+
+		updates := make(chan *loopdb.SwapState, 1)
+
+		// Monitor the swap state and write the desired update to the
+		// update channel. We do not want to read all of the swap state
+		// updates, just the one that will help us assume the state of
+		// the off-chain payment.
+		go m.waitForSwapPayment(
+			ctx, swap.SwapHash, updates, defaultSwapWaitTimeout,
+		)
+
+		select {
+		case <-ctx.Done():
+			return
+
+		case update := <-updates:
+			if update == nil {
+				// If update is nil then no update occurred
+				// within the defined timeout period. It's
+				// better to return and not attempt a retry.
+				log.Debug(
+					"No payment update received for swap "+
+						"%v, skipping amount backoff",
+					swap.SwapHash,
+				)
+
+				return
+			}
+
+			if *update == loopdb.StateFailOffchainPayments {
+				// Save the old amount so we can log it.
+				oldAmt := out.Amount
+
+				// If we failed to pay the server, we will
+				// decrease the amount of the swap and try
+				// again.
+				out.Amount -= btcutil.Amount(
+					float64(out.Amount) * amountBackoff,
+				)
+
+				log.Infof("swap %v: amount backoff old amount="+
+					"%v, new amount=%v", swap.SwapHash,
+					oldAmt, out.Amount)
+
+				continue
+			} else {
+				// If the update channel did not return an
+				// off-chain payment failure we won't retry.
+				return
+			}
+		}
+	}
+}
+
+// waitForSwapPayment waits for a swap to progress beyond the stage of
+// forwarding the payment to the server through the network. It returns the
+// final update on the outcome through a channel.
+func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
+	updateChan chan *loopdb.SwapState, timeout time.Duration) {
+
+	startTime := time.Now()
+	var (
+		swap     *loopdb.LoopOut
+		err      error
+		interval time.Duration
+	)
+
+	if m.params.CustomPaymentCheckInterval != 0 {
+		interval = m.params.CustomPaymentCheckInterval
+	} else {
+		interval = defaultPaymentCheckInterval
+	}
+
+	for time.Since(startTime) < timeout {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+
+		swap, err = m.cfg.GetLoopOut(swapHash)
+		if err != nil {
+			log.Errorf(
+				"Error getting swap with hash %x: %v", swapHash,
+				err,
+			)
+			continue
+		}
+
+		// If no update has occurred yet, continue in order to wait.
+		update := swap.LastUpdate()
+		if update == nil {
+			continue
+		}
+
+		// Write the update if the swap has reached a state the helps
+		// us determine whether the off-chain payment successfully
+		// reached the destination.
+		switch update.State {
+		case loopdb.StateFailInsufficientValue:
+			fallthrough
+		case loopdb.StateSuccess:
+			fallthrough
+		case loopdb.StateFailSweepTimeout:
+			fallthrough
+		case loopdb.StateFailTimeout:
+			fallthrough
+		case loopdb.StatePreimageRevealed:
+			fallthrough
+		case loopdb.StateFailOffchainPayments:
+			updateChan <- &update.State
+			return
+		}
+	}
+
+	// If no update occurred within the defined timeout we return an empty
+	// update to the channel, causing the sticky loop out to not retry
+	// anymore.
+	updateChan <- nil
 }
 
 // swapTraffic contains a summary of our current and previously failed swaps.

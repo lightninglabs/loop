@@ -87,6 +87,10 @@ type Parameters struct {
 	// ChannelRules are exclusively set to prevent overlap between peer
 	// and channel rules map to avoid ambiguity.
 	PeerRules map[route.Vertex]*SwapRule
+
+	// CustomPaymentCheckInterval is an optional custom interval to use when
+	// checking an autoloop loop out payments' payment status.
+	CustomPaymentCheckInterval time.Duration
 }
 
 // String returns the string representation of our parameters.

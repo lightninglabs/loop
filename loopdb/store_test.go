@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -96,24 +95,20 @@ func TestLoopOutStore(t *testing.T) {
 // swap store for specific swap parameters.
 func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer os.RemoveAll(tempDirName)
 
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// First, verify that an empty database has no active swaps.
 	swaps, err := store.FetchLoopOutSwaps()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(swaps) != 0 {
-		t.Fatal("expected empty store")
-	}
+
+	require.NoError(t, err)
+	require.Empty(t, swaps)
+
+	hash := pendingSwap.Preimage.Hash()
 
 	// checkSwap is a test helper function that'll assert the state of a
 	// swap.
@@ -121,43 +116,37 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 		t.Helper()
 
 		swaps, err := store.FetchLoopOutSwaps()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
-		if len(swaps) != 1 {
-			t.Fatal("expected pending swap in store")
-		}
+		require.Len(t, swaps, 1)
 
-		swap := swaps[0].Contract
-		if !reflect.DeepEqual(swap, pendingSwap) {
-			t.Fatal("invalid pending swap data")
-		}
+		swap, err := store.FetchLoopOutSwap(hash)
+		require.NoError(t, err)
 
-		if swaps[0].State().State != expectedState {
-			t.Fatalf("expected state %v, but got %v",
-				expectedState, swaps[0].State(),
-			)
-		}
+		require.Equal(t, hash, swap.Hash)
+		require.Equal(t, hash, swaps[0].Hash)
+
+		swapContract := swap.Contract
+
+		require.Equal(t, swapContract, pendingSwap)
+
+		require.Equal(t, expectedState, swap.State().State)
 
 		if expectedState == StatePreimageRevealed {
-			require.NotNil(t, swaps[0].State().HtlcTxHash)
+			require.NotNil(t, swap.State().HtlcTxHash)
 		}
 	}
-
-	hash := pendingSwap.Preimage.Hash()
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	if err := store.CreateLoopOut(hash, pendingSwap); err != nil {
-		t.Fatal(err)
-	}
+	err = store.CreateLoopOut(hash, pendingSwap)
+	require.NoError(t, err)
+
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	if err := store.CreateLoopOut(hash, pendingSwap); err == nil {
-		t.Fatal("expected error on storing duplicate")
-	}
+	err = store.CreateLoopOut(hash, pendingSwap)
+	require.Error(t, err)
 	checkSwap(StateInitiated)
 
 	// Next, we'll update to the next state of the pre-image being
@@ -169,9 +158,8 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 			HtlcTxHash: &chainhash.Hash{1, 6, 2},
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkSwap(StatePreimageRevealed)
 
 	// Next, we'll update to the final state to ensure that the state is
@@ -182,21 +170,17 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 			State: StateFailInsufficientValue,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	checkSwap(StateFailInsufficientValue)
 
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
+	err = store.Close()
+	require.NoError(t, err)
 
 	// If we re-open the same store, then the state of the current swap
 	// should be the same.
 	store, err = NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkSwap(StateFailInsufficientValue)
 }
 
@@ -242,24 +226,18 @@ func TestLoopInStore(t *testing.T) {
 
 func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(tempDirName)
 
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// First, verify that an empty database has no active swaps.
 	swaps, err := store.FetchLoopInSwaps()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(swaps) != 0 {
-		t.Fatal("expected empty store")
-	}
+	require.NoError(t, err)
+	require.Empty(t, swaps)
+
+	hash := sha256.Sum256(testPreimage[:])
 
 	// checkSwap is a test helper function that'll assert the state of a
 	// swap.
@@ -267,39 +245,27 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 		t.Helper()
 
 		swaps, err := store.FetchLoopInSwaps()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if len(swaps) != 1 {
-			t.Fatal("expected pending swap in store")
-		}
+		require.NoError(t, err)
+		require.Len(t, swaps, 1)
 
 		swap := swaps[0].Contract
-		if !reflect.DeepEqual(swap, &pendingSwap) {
-			t.Fatal("invalid pending swap data")
-		}
 
-		if swaps[0].State().State != expectedState {
-			t.Fatalf("expected state %v, but got %v",
-				expectedState, swaps[0].State(),
-			)
-		}
+		require.Equal(t, swap, &pendingSwap)
+
+		require.Equal(t, swaps[0].State().State, expectedState)
 	}
-
-	hash := sha256.Sum256(testPreimage[:])
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	if err := store.CreateLoopIn(hash, &pendingSwap); err != nil {
-		t.Fatal(err)
-	}
+	err = store.CreateLoopIn(hash, &pendingSwap)
+	require.NoError(t, err)
+
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	if err := store.CreateLoopIn(hash, &pendingSwap); err == nil {
-		t.Fatal("expected error on storing duplicate")
-	}
+	err = store.CreateLoopIn(hash, &pendingSwap)
+	require.Error(t, err)
+
 	checkSwap(StateInitiated)
 
 	// Next, we'll update to the next state of the pre-image being
@@ -310,9 +276,8 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 			State: StatePreimageRevealed,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkSwap(StatePreimageRevealed)
 
 	// Next, we'll update to the final state to ensure that the state is
@@ -323,21 +288,17 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 			State: StateFailInsufficientValue,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	checkSwap(StateFailInsufficientValue)
 
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
+	err = store.Close()
+	require.NoError(t, err)
 
 	// If we re-open the same store, then the state of the current swap
 	// should be the same.
 	store, err = NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkSwap(StateFailInsufficientValue)
 }
 
@@ -467,9 +428,8 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 
 	// Assert that the outgoing channel is read properly.
 	expectedChannelSet := ChannelSet{5}
-	if !reflect.DeepEqual(swaps[0].Contract.OutgoingChanSet, expectedChannelSet) {
-		t.Fatal("invalid outgoing channel")
-	}
+
+	require.Equal(t, expectedChannelSet, swaps[0].Contract.OutgoingChanSet)
 }
 
 // TestLiquidityParams checks that reading and writing to liquidty bucket are

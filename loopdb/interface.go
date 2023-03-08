@@ -12,6 +12,9 @@ type SwapStore interface {
 	// FetchLoopOutSwaps returns all swaps currently in the store.
 	FetchLoopOutSwaps() ([]*LoopOut, error)
 
+	// FetchLoopOutSwap returns the loop out swap with the given hash.
+	FetchLoopOutSwap(hash lntypes.Hash) (*LoopOut, error)
+
 	// CreateLoopOut adds an initiated swap to the store.
 	CreateLoopOut(hash lntypes.Hash, swap *LoopOutContract) error
 
