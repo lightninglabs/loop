@@ -656,6 +656,11 @@
           "format": "uint64",
           "description": "The total budget for automatically dispatched swaps since the budget start\ntime, expressed in satoshis."
         },
+        "autoloop_budget_start_sec": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Deprecated, use autoloop_budget_refresh_period_sec. The start time for\nautoloop budget, expressed as a unix timestamp in seconds. If this value is\n0, the budget will be applied for all automatically dispatched swaps. Swaps\nthat were completed before this date will not be included in budget\ncalculations."
+        },
         "auto_max_in_flight": {
           "type": "string",
           "format": "uint64",
