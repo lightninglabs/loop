@@ -166,10 +166,6 @@ type Config struct {
 	// trigger autoloop in itests.
 	AutoloopTicker *ticker.Force
 
-	// AutoloopBudgetLastRefresh is the last time at which we refreshed
-	// our budget.
-	AutoloopBudgetLastRefresh time.Time
-
 	// Restrictions returns the restrictions that the server applies to
 	// swaps.
 	Restrictions func(ctx context.Context, swapType swap.Type) (
@@ -301,7 +297,7 @@ func (m *Manager) GetParameters() Parameters {
 func (m *Manager) SetParameters(ctx context.Context,
 	req *clientrpc.LiquidityParameters) error {
 
-	params, err := rpcToParameters(req)
+	params, err := RpcToParameters(req)
 	if err != nil {
 		return err
 	}
@@ -743,7 +739,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 			}
 		} else {
 			refreshTime := m.params.AutoFeeRefreshPeriod -
-				time.Since(m.cfg.AutoloopBudgetLastRefresh)
+				time.Since(m.params.AutoloopBudgetLastRefresh)
 
 			log.Infof("Swap fee exceeds budget, remaining budget: "+
 				"%v, swap fee %v, next budget refresh: %v",
@@ -929,7 +925,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 				mSatToSatoshis(prepay.Value),
 			)
 		} else if out.LastUpdateTime().After(
-			m.cfg.AutoloopBudgetLastRefresh,
+			m.params.AutoloopBudgetLastRefresh,
 		) {
 
 			summary.spentFees += out.State().Cost.Total()
@@ -943,7 +939,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 
 		pending := in.State().State.Type() == loopdb.StateTypePending
 		inBudget := !in.LastUpdateTime().
-			Before(m.cfg.AutoloopBudgetLastRefresh)
+			Before(m.params.AutoloopBudgetLastRefresh)
 
 		// If an autoloop is in a pending state, we always count it in
 		// our current budget, and record the worst-case fees for it,
@@ -1054,11 +1050,23 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 // budget refresh is greater than our configured refresh period. If so, the last
 // refresh timestamp.
 func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
-	if time.Since(m.cfg.AutoloopBudgetLastRefresh) >
+	if time.Since(m.params.AutoloopBudgetLastRefresh) >
 		m.params.AutoFeeRefreshPeriod {
 
 		log.Debug("Refreshing autoloop budget")
-		m.cfg.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
+		m.params.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
+
+		paramsRpc, err := ParametersToRpc(m.params)
+		if err != nil {
+			log.Errorf("Error converting parameters to rpc: %v",
+				err)
+			return
+		}
+
+		err = m.saveParams(paramsRpc)
+		if err != nil {
+			log.Errorf("Error saving parameters: %v", err)
+		}
 	}
 }
 

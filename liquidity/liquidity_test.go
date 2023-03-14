@@ -148,9 +148,8 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 
 			return testRestrictions, nil
 		},
-		Lnd:                       &lnd.LndServices,
-		Clock:                     clock.NewTestClock(testTime),
-		AutoloopBudgetLastRefresh: testBudgetStart,
+		Lnd:   &lnd.LndServices,
+		Clock: clock.NewTestClock(testTime),
 		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
 			return nil, nil
 		},
@@ -572,6 +571,7 @@ func TestRestrictedSuggestions(t *testing.T) {
 			lnd.Channels = testCase.channels
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			if testCase.chanRules != nil {
 				params.ChannelRules = testCase.chanRules
 			}
@@ -652,6 +652,7 @@ func TestSweepFeeLimit(t *testing.T) {
 			}
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			params.FeeLimit = defaultFeeCategoryLimit()
 
 			// Set our budget to cover a single swap with these
@@ -794,6 +795,7 @@ func TestSuggestSwaps(t *testing.T) {
 			lnd.Channels = testCase.channels
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			if testCase.rules != nil {
 				params.ChannelRules = testCase.rules
 			}
@@ -901,6 +903,7 @@ func TestFeeLimits(t *testing.T) {
 
 			// Set our params to use individual fee limits.
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			params.FeeLimit = defaultFeeCategoryLimit()
 
 			// Set our budget to cover a single swap with these
@@ -1108,6 +1111,7 @@ func TestFeeBudget(t *testing.T) {
 			}
 			params.AutoFeeBudget = testCase.budget
 			params.AutoFeeRefreshPeriod = testBudgetRefresh
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			params.MaxAutoInFlight = 2
 			params.FeeLimit = NewFeeCategoryLimit(
 				defaultSwapFeePPM, defaultRoutingFeePPM,
@@ -1272,6 +1276,7 @@ func TestInFlightLimit(t *testing.T) {
 			}
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 
 			if testCase.peerRules != nil {
 				params.PeerRules = testCase.peerRules
@@ -1431,6 +1436,7 @@ func TestSizeRestrictions(t *testing.T) {
 			}
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			params.ClientRestrictions = testCase.clientRestrictions
 			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
@@ -1593,6 +1599,7 @@ func TestFeePercentage(t *testing.T) {
 			}
 
 			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 			params.FeeLimit = NewFeePortion(testCase.feePPM)
 			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
@@ -1765,6 +1772,7 @@ func TestBudgetWithLoopin(t *testing.T) {
 			params := defaultParameters
 			params.AutoFeeBudget = budget
 			params.AutoFeeRefreshPeriod = testBudgetRefresh
+			params.AutoloopBudgetLastRefresh = testBudgetStart
 
 			params.FeeLimit = NewFeePortion(testPPM)
 			params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
@@ -1821,6 +1829,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 		}
 
 		params := defaultParameters
+		params.AutoloopBudgetLastRefresh = testBudgetStart
 		params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 			chanID1: chanRule,
 			chanID2: chanRule,

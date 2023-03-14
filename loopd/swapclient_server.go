@@ -745,81 +745,12 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 
 	cfg := s.liquidityMgr.GetParameters()
 
-	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
-
-	var destaddr string
-	if cfg.DestAddr != nil {
-		destaddr = cfg.DestAddr.String()
-	}
-
-	rpcCfg := &clientrpc.LiquidityParameters{
-		SweepConfTarget:   cfg.SweepConfTarget,
-		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
-		Autoloop:          cfg.Autoloop,
-		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
-		AutoloopBudgetRefreshPeriodSec: uint64(
-			cfg.AutoFeeRefreshPeriod.Seconds(),
-		),
-		AutoMaxInFlight:     uint64(cfg.MaxAutoInFlight),
-		AutoloopDestAddress: destaddr,
-		Rules: make(
-			[]*clientrpc.LiquidityRule, 0, totalRules,
-		),
-		MinSwapAmount:  uint64(cfg.ClientRestrictions.Minimum),
-		MaxSwapAmount:  uint64(cfg.ClientRestrictions.Maximum),
-		HtlcConfTarget: cfg.HtlcConfTarget,
-	}
-
-	switch f := cfg.FeeLimit.(type) {
-	case *liquidity.FeeCategoryLimit:
-		satPerByte := f.SweepFeeRateLimit.FeePerKVByte() / 1000
-
-		rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
-
-		rpcCfg.MaxMinerFeeSat = uint64(f.MaximumMinerFee)
-		rpcCfg.MaxSwapFeePpm = f.MaximumSwapFeePPM
-		rpcCfg.MaxRoutingFeePpm = f.MaximumRoutingFeePPM
-		rpcCfg.MaxPrepayRoutingFeePpm = f.MaximumPrepayRoutingFeePPM
-		rpcCfg.MaxPrepaySat = uint64(f.MaximumPrepay)
-
-	case *liquidity.FeePortion:
-		rpcCfg.FeePpm = f.PartsPerMillion
-
-	default:
-		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
-	}
-
-	for channel, rule := range cfg.ChannelRules {
-		rpcRule := newRPCRule(channel.ToUint64(), nil, rule)
-		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
-	}
-
-	for peer, rule := range cfg.PeerRules {
-		peer := peer
-		rpcRule := newRPCRule(0, peer[:], rule)
-		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
+	rpcCfg, err := liquidity.ParametersToRpc(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	return rpcCfg, nil
-}
-
-func newRPCRule(channelID uint64, peer []byte,
-	rule *liquidity.SwapRule) *clientrpc.LiquidityRule {
-
-	rpcRule := &clientrpc.LiquidityRule{
-		ChannelId:         channelID,
-		Pubkey:            peer,
-		Type:              clientrpc.LiquidityRuleType_THRESHOLD,
-		IncomingThreshold: uint32(rule.MinimumIncoming),
-		OutgoingThreshold: uint32(rule.MinimumOutgoing),
-		SwapType:          clientrpc.SwapType_LOOP_OUT,
-	}
-
-	if rule.Type == swap.TypeIn {
-		rpcRule.SwapType = clientrpc.SwapType_LOOP_IN
-	}
-
-	return rpcRule
 }
 
 // SetLiquidityParams attempts to set our current liquidity manager's

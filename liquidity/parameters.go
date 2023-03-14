@@ -20,16 +20,17 @@ var (
 	// defaultParameters contains the default parameters that we start our
 	// liquidity manager with.
 	defaultParameters = Parameters{
-		AutoFeeBudget:        defaultBudget,
-		AutoFeeRefreshPeriod: defaultBudgetRefreshPeriod,
-		DestAddr:             nil,
-		MaxAutoInFlight:      defaultMaxInFlight,
-		ChannelRules:         make(map[lnwire.ShortChannelID]*SwapRule),
-		PeerRules:            make(map[route.Vertex]*SwapRule),
-		FailureBackOff:       defaultFailureBackoff,
-		SweepConfTarget:      defaultConfTarget,
-		HtlcConfTarget:       defaultHtlcConfTarget,
-		FeeLimit:             defaultFeePortion(),
+		AutoFeeBudget:             defaultBudget,
+		AutoFeeRefreshPeriod:      defaultBudgetRefreshPeriod,
+		AutoloopBudgetLastRefresh: time.Now(),
+		DestAddr:                  nil,
+		MaxAutoInFlight:           defaultMaxInFlight,
+		ChannelRules:              make(map[lnwire.ShortChannelID]*SwapRule),
+		PeerRules:                 make(map[route.Vertex]*SwapRule),
+		FailureBackOff:            defaultFailureBackoff,
+		SweepConfTarget:           defaultConfTarget,
+		HtlcConfTarget:            defaultHtlcConfTarget,
+		FeeLimit:                  defaultFeePortion(),
 	}
 )
 
@@ -51,6 +52,10 @@ type Parameters struct {
 	// AutoFeeRefreshPeriod is the amount of time that must pass before the
 	// auto fee budget is refreshed.
 	AutoFeeRefreshPeriod time.Duration
+
+	// AutoloopBudgetLastRefresh is the last time at which we refreshed
+	// our budget.
+	AutoloopBudgetLastRefresh time.Time
 
 	// MaxAutoInFlight is the maximum number of in-flight automatically
 	// dispatched swaps we allow.
@@ -348,7 +353,7 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*SwapRule, error) {
 
 // rpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
 // from it.
-func rpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
+func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 	error) {
 
 	feeLimit, err := rpcToFee(req)
@@ -373,7 +378,10 @@ func rpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		SweepConfTarget: req.SweepConfTarget,
 		FailureBackOff: time.Duration(req.FailureBackoffSec) *
 			time.Second,
-		Autoloop:        req.Autoloop,
+		Autoloop: req.Autoloop,
+		AutoloopBudgetLastRefresh: time.Unix(
+			int64(req.AutoloopBudgetLastRefresh), 0,
+		),
 		DestAddr:        destaddr,
 		AutoFeeBudget:   btcutil.Amount(req.AutoloopBudgetSat),
 		MaxAutoInFlight: int(req.AutoMaxInFlight),
@@ -441,4 +449,91 @@ func rpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 	}
 
 	return params, nil
+}
+
+// ParametersToRpc takes a `Parameters` and creates a `LiquidityParameters`
+// from it.
+func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
+	error) {
+
+	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
+
+	var destaddr string
+	if cfg.DestAddr != nil {
+		destaddr = cfg.DestAddr.String()
+	}
+
+	rpcCfg := &clientrpc.LiquidityParameters{
+		SweepConfTarget:   cfg.SweepConfTarget,
+		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
+		Autoloop:          cfg.Autoloop,
+		AutoloopBudgetSat: uint64(cfg.AutoFeeBudget),
+		AutoloopBudgetRefreshPeriodSec: uint64(
+			cfg.AutoFeeRefreshPeriod.Seconds(),
+		),
+		AutoloopBudgetLastRefresh: uint64(
+			cfg.AutoloopBudgetLastRefresh.Unix(),
+		),
+		AutoMaxInFlight:     uint64(cfg.MaxAutoInFlight),
+		AutoloopDestAddress: destaddr,
+		Rules: make(
+			[]*clientrpc.LiquidityRule, 0, totalRules,
+		),
+		MinSwapAmount:  uint64(cfg.ClientRestrictions.Minimum),
+		MaxSwapAmount:  uint64(cfg.ClientRestrictions.Maximum),
+		HtlcConfTarget: cfg.HtlcConfTarget,
+	}
+
+	switch f := cfg.FeeLimit.(type) {
+	case *FeeCategoryLimit:
+		satPerByte := f.SweepFeeRateLimit.FeePerKVByte() / 1000
+
+		rpcCfg.SweepFeeRateSatPerVbyte = uint64(satPerByte)
+
+		rpcCfg.MaxMinerFeeSat = uint64(f.MaximumMinerFee)
+		rpcCfg.MaxSwapFeePpm = f.MaximumSwapFeePPM
+		rpcCfg.MaxRoutingFeePpm = f.MaximumRoutingFeePPM
+		rpcCfg.MaxPrepayRoutingFeePpm = f.MaximumPrepayRoutingFeePPM
+		rpcCfg.MaxPrepaySat = uint64(f.MaximumPrepay)
+
+	case *FeePortion:
+		rpcCfg.FeePpm = f.PartsPerMillion
+
+	default:
+		return nil, fmt.Errorf("unknown fee limit: %T", cfg.FeeLimit)
+	}
+
+	for channel, rule := range cfg.ChannelRules {
+		rpcRule := newRPCRule(channel.ToUint64(), nil, rule)
+		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
+	}
+
+	for peer, rule := range cfg.PeerRules {
+		peer := peer
+		rpcRule := newRPCRule(0, peer[:], rule)
+		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
+	}
+
+	return rpcCfg, nil
+}
+
+// newRPCRule is a helper function that creates a `LiquidityRule` based on the
+// provided `SwapRule` for the given channelID or peer.
+func newRPCRule(channelID uint64, peer []byte,
+	rule *SwapRule) *clientrpc.LiquidityRule {
+
+	rpcRule := &clientrpc.LiquidityRule{
+		ChannelId:         channelID,
+		Pubkey:            peer,
+		Type:              clientrpc.LiquidityRuleType_THRESHOLD,
+		IncomingThreshold: uint32(rule.MinimumIncoming),
+		OutgoingThreshold: uint32(rule.MinimumOutgoing),
+		SwapType:          clientrpc.SwapType_LOOP_OUT,
+	}
+
+	if rule.Type == swap.TypeIn {
+		rpcRule.SwapType = clientrpc.SwapType_LOOP_IN
+	}
+
+	return rpcRule
 }
