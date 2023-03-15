@@ -390,7 +390,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	rks, db, err := lndclient.NewBoltMacaroonStore(
-		d.cfg.DataDir, "macarooons.db", loopdb.DefaultLoopDBTimeout,
+		d.cfg.DataDir, "macaroons.db", loopdb.DefaultLoopDBTimeout,
 	)
 	if err != nil {
 		return err
