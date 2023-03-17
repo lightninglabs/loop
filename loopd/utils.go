@@ -2,7 +2,6 @@ package loopd
 
 import (
 	"context"
-	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
@@ -40,10 +39,9 @@ func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
 
 func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 	mngrCfg := &liquidity.Config{
-		AutoloopTicker:            ticker.NewForce(liquidity.DefaultAutoloopTicker),
-		AutoloopBudgetLastRefresh: time.Now(),
-		LoopOut:                   client.LoopOut,
-		LoopIn:                    client.LoopIn,
+		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
+		LoopOut:        client.LoopOut,
+		LoopIn:         client.LoopIn,
 		Restrictions: func(ctx context.Context,
 			swapType swap.Type) (*liquidity.Restrictions, error) {
 

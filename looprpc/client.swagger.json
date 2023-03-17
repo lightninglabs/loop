@@ -684,6 +684,11 @@
           "type": "string",
           "format": "uint64",
           "description": "The period over which the autoloop budget is refreshed, expressed in\nseconds."
+        },
+        "autoloop_budget_last_refresh": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The time at which the autoloop budget was last refreshed, expressed as a\nUNIX timestamp in seconds."
         }
       }
     },

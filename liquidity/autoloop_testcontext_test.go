@@ -129,8 +129,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	testCtx.lnd.Channels = channels
 
 	cfg := &Config{
-		AutoloopTicker:            ticker.NewForce(DefaultAutoloopTicker),
-		AutoloopBudgetLastRefresh: testBudgetStart,
+		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
 		Restrictions: func(_ context.Context, swapType swap.Type) (*Restrictions,
 			error) {
 

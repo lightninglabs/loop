@@ -28,6 +28,7 @@ func TestAutoLoopDisabled(t *testing.T) {
 	}
 
 	params := defaultParameters
+	params.AutoloopBudgetLastRefresh = testBudgetStart
 	params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
 		chanID1: chanRule,
 	}
@@ -95,12 +96,13 @@ func TestAutoLoopEnabled(t *testing.T) {
 		// autoloop budget is set to allow exactly 2 swaps at the prices
 		// that we set in our test quotes.
 		params = Parameters{
-			Autoloop:             true,
-			AutoFeeBudget:        40066,
-			AutoFeeRefreshPeriod: testBudgetRefresh,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			SweepConfTarget:      10,
+			Autoloop:                  true,
+			AutoFeeBudget:             40066,
+			AutoFeeRefreshPeriod:      testBudgetRefresh,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
 			FeeLimit: NewFeeCategoryLimit(
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
@@ -353,13 +355,14 @@ func TestAutoloopAddress(t *testing.T) {
 		// Create some dummy parameters for autoloop and also specify an
 		// destination address.
 		params = Parameters{
-			Autoloop:             true,
-			AutoFeeBudget:        40066,
-			DestAddr:             addr,
-			AutoFeeRefreshPeriod: testBudgetRefresh,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			SweepConfTarget:      10,
+			Autoloop:                  true,
+			AutoFeeBudget:             40066,
+			DestAddr:                  addr,
+			AutoFeeRefreshPeriod:      testBudgetRefresh,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
 			FeeLimit: NewFeeCategoryLimit(
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
@@ -523,12 +526,13 @@ func TestCompositeRules(t *testing.T) {
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,
 			),
-			Autoloop:             true,
-			AutoFeeBudget:        100000,
-			AutoFeeRefreshPeriod: testBudgetRefresh,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			SweepConfTarget:      10,
+			Autoloop:                  true,
+			AutoFeeBudget:             100000,
+			AutoFeeRefreshPeriod:      testBudgetRefresh,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
 			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: chanRule,
 			},
@@ -715,13 +719,14 @@ func TestAutoLoopInEnabled(t *testing.T) {
 		peer2MaxFee = ppmToSat(peer2ExpectedAmt, swapFeePPM)
 
 		params = Parameters{
-			Autoloop:             true,
-			AutoFeeBudget:        peer1MaxFee + peer2MaxFee + 1,
-			AutoFeeRefreshPeriod: testBudgetRefresh,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			FeeLimit:             NewFeePortion(swapFeePPM),
-			ChannelRules:         make(map[lnwire.ShortChannelID]*SwapRule),
+			Autoloop:                  true,
+			AutoFeeBudget:             peer1MaxFee + peer2MaxFee + 1,
+			AutoFeeRefreshPeriod:      testBudgetRefresh,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			FeeLimit:                  NewFeePortion(swapFeePPM),
+			ChannelRules:              make(map[lnwire.ShortChannelID]*SwapRule),
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer1: rule,
 				peer2: rule,
@@ -898,12 +903,13 @@ func TestAutoloopBothTypes(t *testing.T) {
 		loopInMaxFee  = ppmToSat(loopInAmount, swapFeePPM)
 
 		params = Parameters{
-			Autoloop:             true,
-			AutoFeeBudget:        loopOutMaxFee + loopInMaxFee + 1,
-			AutoFeeRefreshPeriod: testBudgetRefresh,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			FeeLimit:             NewFeePortion(swapFeePPM),
+			Autoloop:                  true,
+			AutoFeeBudget:             loopOutMaxFee + loopInMaxFee + 1,
+			AutoFeeRefreshPeriod:      testBudgetRefresh,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			FeeLimit:                  NewFeePortion(swapFeePPM),
 			ChannelRules: map[lnwire.ShortChannelID]*SwapRule{
 				chanID1: outRule,
 			},
@@ -1041,12 +1047,13 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 		maxMiner            = btcutil.Amount(20000)
 
 		params = Parameters{
-			Autoloop:             true,
-			AutoFeeBudget:        36000,
-			AutoFeeRefreshPeriod: time.Hour * 3,
-			MaxAutoInFlight:      2,
-			FailureBackOff:       time.Hour,
-			SweepConfTarget:      10,
+			Autoloop:                  true,
+			AutoFeeBudget:             36000,
+			AutoFeeRefreshPeriod:      time.Hour * 3,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
 			FeeLimit: NewFeeCategoryLimit(
 				swapFeePPM, routeFeePPM, prepayFeePPM, maxMiner,
 				prepayAmount, 20000,

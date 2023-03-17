@@ -858,6 +858,12 @@ message LiquidityParameters {
     seconds.
     */
     uint64 autoloop_budget_refresh_period_sec = 19;
+
+    /*
+    The time at which the autoloop budget was last refreshed, expressed as a
+    UNIX timestamp in seconds.
+    */
+    uint64 autoloop_budget_last_refresh = 20;
 }
 
 enum LiquidityRuleType {
