@@ -34,6 +34,8 @@ var (
 	}
 )
 
+const InfiniteDuration = (24 * 31 * 12 * 100) * time.Hour
+
 // Parameters is a set of parameters provided by the user which guide
 // how we assess liquidity.
 type Parameters struct {
@@ -402,6 +404,18 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		params.AutoFeeRefreshPeriod =
 			time.Duration(req.AutoloopBudgetRefreshPeriodSec) *
 				time.Second
+	}
+
+	// If an old-style budget was written to storage then express it by
+	// using the new auto budget parameters. If the newly added parameters
+	// have the 0 default value, but a budget was defined that means the
+	// client is using the old style budget parameters.
+	if req.AutoloopBudgetRefreshPeriodSec == 0 &&
+		req.AutoloopBudgetSat != 0 {
+
+		params.AutoFeeRefreshPeriod = InfiniteDuration
+		params.AutoloopBudgetLastRefresh = time.Unix(
+			int64(req.AutoloopBudgetStartSec), 0)
 	}
 
 	for _, rule := range req.Rules {
