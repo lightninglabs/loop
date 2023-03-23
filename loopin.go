@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/mempool"
@@ -19,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -189,6 +191,23 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// Default the HTLC internal key to our sender key.
+	senderInternalPubKey := senderKey
+
+	// If this is a MuSig2 swap then we'll generate a brand new key pair
+	// and will use that as the internal key for the HTLC.
+	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
+		secret, err := sharedSecretFromHash(
+			globalCtx, cfg.lnd.Signer, swapHash,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		_, pubKey := btcec.PrivKeyFromBytes(secret[:])
+		copy(senderInternalPubKey[:], pubKey.SerializeCompressed())
+	}
+
 	// Create a cancellable context that is used for monitoring the probe.
 	probeWaitCtx, probeWaitCancel := context.WithCancel(globalCtx)
 
@@ -204,8 +223,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// htlc.
 	log.Infof("Initiating swap request at height %v", currentHeight)
 	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
-		request.Amount, senderKey, swapInvoice, probeInvoice,
-		request.LastHop, request.Initiator,
+		request.Amount, senderKey, senderInternalPubKey, swapInvoice,
+		probeInvoice, request.LastHop, request.Initiator,
 	)
 	probeWaitCancel()
 	if err != nil {
@@ -237,17 +256,28 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
-			ReceiverKey:      swapResp.receiverKey,
-			SenderKey:        senderKey,
-			ClientKeyLocator: keyDesc.KeyLocator,
-			Preimage:         swapPreimage,
-			AmountRequested:  request.Amount,
-			CltvExpiry:       swapResp.expiry,
-			MaxMinerFee:      request.MaxMinerFee,
-			MaxSwapFee:       request.MaxSwapFee,
-			Label:            request.Label,
-			ProtocolVersion:  loopdb.CurrentProtocolVersion(),
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverScriptKey:      swapResp.receiverKey,
+				ReceiverInternalPubKey: swapResp.receiverKey,
+				ClientScriptKeyLocator: keyDesc.KeyLocator,
+			},
+			Preimage:        swapPreimage,
+			AmountRequested: request.Amount,
+			CltvExpiry:      swapResp.expiry,
+			MaxMinerFee:     request.MaxMinerFee,
+			MaxSwapFee:      request.MaxSwapFee,
+			Label:           request.Label,
+			ProtocolVersion: loopdb.CurrentProtocolVersion(),
 		},
+	}
+
+	// For MuSig2 swaps we store the proper internal keys that we generated
+	// and received from the server.
+	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
+		contract.HtlcKeys.SenderInternalPubKey = senderInternalPubKey
+		contract.HtlcKeys.ReceiverInternalPubKey = swapResp.receiverInternalKey
 	}
 
 	swapKit := newSwapKit(
@@ -809,6 +839,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 
 	htlcSpend := false
 	invoiceFinalized := false
+	htlcKeyRevealed := false
 	for !htlcSpend || !invoiceFinalized {
 		select {
 		// Spend notification error.
@@ -823,6 +854,10 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 			sweepFee, err = checkTimeout()
 			if err != nil {
 				return err
+			}
+
+			if invoiceFinalized && !htlcKeyRevealed {
+				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 			}
 
 		// The htlc spend is confirmed. Inspect the spending tx to
@@ -888,6 +923,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				}
 
 				invoiceFinalized = true
+				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 
 			// Canceled invoice has no effect on server cost
 			// balance.
@@ -901,6 +937,36 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	}
 
 	return nil
+}
+
+// tryPushHtlcKey attempts to push the htlc key to the server. If the server
+// returns an error of any kind we'll log it as a warning but won't act as
+// the swap execution can just go on without the server gaining knowledge of
+// our internal key.
+func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
+	if s.ProtocolVersion < loopdb.ProtocolVersionMuSig2 {
+		return false
+	}
+
+	log.Infof("Attempting to reveal internal HTLC key to the server")
+
+	internalPrivKey, err := sharedSecretFromHash(
+		ctx, s.swapConfig.lnd.Signer, s.hash,
+	)
+	if err != nil {
+		s.log.Warnf("Unable to derive HTLC internal private key: %v",
+			err)
+
+		return false
+	}
+
+	err = s.server.PushKey(ctx, s.ProtocolVersion, s.hash, internalPrivKey)
+	if err != nil {
+		s.log.Warnf("Internal HTLC key reveal failed: %v", err)
+		return false
+	}
+
+	return true
 }
 
 func (s *loopInSwap) processHtlcSpend(ctx context.Context,
@@ -975,8 +1041,9 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	sequence := uint32(0)
 	timeoutTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, sequence, s.htlc, *htlcOutpoint, s.SenderKey,
-		redeemScript, witnessFunc, htlcValue, fee, s.timeoutAddr,
+		ctx, s.height, sequence, s.htlc, *htlcOutpoint,
+		s.HtlcKeys.SenderScriptKey, redeemScript, witnessFunc,
+		htlcValue, fee, s.timeoutAddr,
 	)
 	if err != nil {
 		return 0, err
@@ -1025,4 +1092,19 @@ func (s *loopInSwap) persistState() error {
 func (s *loopInSwap) setState(state loopdb.SwapState) {
 	s.lastUpdateTime = time.Now()
 	s.state = state
+}
+
+// sharedSecretFromHash derives the shared secret from the swap hash using the
+// swap.KeyFamily family and zero as index.
+func sharedSecretFromHash(ctx context.Context, signer lndclient.SignerClient,
+	hash lntypes.Hash) ([32]byte, error) {
+
+	_, hashPubKey := btcec.PrivKeyFromBytes(hash[:])
+
+	return signer.DeriveSharedKey(
+		ctx, hashPubKey, &keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.KeyFamily),
+			Index:  0,
+		},
+	)
 }

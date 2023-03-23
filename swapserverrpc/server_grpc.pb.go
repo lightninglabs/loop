@@ -32,6 +32,7 @@ type SwapServerClient interface {
 	RecommendRoutingPlugin(ctx context.Context, in *RecommendRoutingPluginReq, opts ...grpc.CallOption) (*RecommendRoutingPluginRes, error)
 	ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(ctx context.Context, in *MuSig2SignSweepReq, opts ...grpc.CallOption) (*MuSig2SignSweepRes, error)
+	PushKey(ctx context.Context, in *ServerPushKeyReq, opts ...grpc.CallOption) (*ServerPushKeyRes, error)
 }
 
 type swapServerClient struct {
@@ -214,6 +215,15 @@ func (c *swapServerClient) MuSig2SignSweep(ctx context.Context, in *MuSig2SignSw
 	return out, nil
 }
 
+func (c *swapServerClient) PushKey(ctx context.Context, in *ServerPushKeyReq, opts ...grpc.CallOption) (*ServerPushKeyRes, error) {
+	out := new(ServerPushKeyRes)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/PushKey", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -232,6 +242,7 @@ type SwapServerServer interface {
 	RecommendRoutingPlugin(context.Context, *RecommendRoutingPluginReq) (*RecommendRoutingPluginRes, error)
 	ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error)
+	PushKey(context.Context, *ServerPushKeyReq) (*ServerPushKeyRes, error)
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -280,6 +291,9 @@ func (UnimplementedSwapServerServer) ReportRoutingResult(context.Context, *Repor
 }
 func (UnimplementedSwapServerServer) MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MuSig2SignSweep not implemented")
+}
+func (UnimplementedSwapServerServer) PushKey(context.Context, *ServerPushKeyReq) (*ServerPushKeyRes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PushKey not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -552,6 +566,24 @@ func _SwapServer_MuSig2SignSweep_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_PushKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerPushKeyReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).PushKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/PushKey",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).PushKey(ctx, req.(*ServerPushKeyReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -606,6 +638,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MuSig2SignSweep",
 			Handler:    _SwapServer_MuSig2SignSweep_Handler,
+		},
+		{
+			MethodName: "PushKey",
+			Handler:    _SwapServer_PushKey_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

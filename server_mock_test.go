@@ -151,17 +151,22 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 }
 
 func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
-	amount btcutil.Amount, _ [33]byte, swapInvoice, _ string,
+	amount btcutil.Amount, _, _ [33]byte, swapInvoice, _ string,
 	_ *route.Vertex, _ string) (*newLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
+	_, receiverInternalKey := test.CreateKey(102)
 
 	if amount != s.expectedSwapAmt {
 		return nil, errors.New("unexpected test swap amount")
 	}
 
-	var receiverKeyArray [33]byte
+	var receiverKeyArray, receiverInternalKeyArray [33]byte
 	copy(receiverKeyArray[:], receiverKey.SerializeCompressed())
+	copy(
+		receiverInternalKeyArray[:],
+		receiverInternalKey.SerializeCompressed(),
+	)
 
 	s.swapInvoice = swapInvoice
 	s.swapHash = swapHash
@@ -175,8 +180,9 @@ func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 	<-s.lnd.FailInvoiceChannel
 
 	resp := &newLoopInResponse{
-		expiry:      s.height + testChargeOnChainCltvDelta,
-		receiverKey: receiverKeyArray,
+		expiry:              s.height + testChargeOnChainCltvDelta,
+		receiverKey:         receiverKeyArray,
+		receiverInternalKey: receiverInternalKeyArray,
 	}
 
 	return resp, nil
@@ -260,4 +266,10 @@ func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion
 	[]byte, error) {
 
 	return nil, nil, nil
+}
+
+func (s *serverMock) PushKey(_ context.Context, _ loopdb.ProtocolVersion,
+	_ lntypes.Hash, _ [32]byte) error {
+
+	return nil
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -240,8 +239,12 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 				Preimage:        preimage,
 				AmountRequested: amt,
 				CltvExpiry:      744,
-				ReceiverKey:     receiverKey,
-				SenderKey:       senderKey,
+				HtlcKeys: loopdb.HtlcKeys{
+					SenderScriptKey:        senderKey,
+					SenderInternalPubKey:   senderKey,
+					ReceiverScriptKey:      receiverKey,
+					ReceiverInternalPubKey: receiverKey,
+				},
 				MaxSwapFee:      60000,
 				MaxMinerFee:     50000,
 				ProtocolVersion: protocolVersion,
@@ -273,30 +276,13 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	// Expect client to register for our expected number of confirmations.
 	confIntent := ctx.AssertRegisterConf(preimageRevealed, int32(confs))
 
-	// Assert that the loopout htlc equals to the expected one.
-	scriptVersion := GetHtlcScriptVersion(protocolVersion)
-	var htlc *swap.Htlc
-
-	switch scriptVersion {
-	case swap.HtlcV2:
-		htlc, err = swap.NewHtlcV2(
-			pendingSwap.Contract.CltvExpiry, senderKey,
-			receiverKey, hash, &chaincfg.TestNet3Params,
-		)
-
-	case swap.HtlcV3:
-		htlc, err = swap.NewHtlcV3(
-			input.MuSig2Version040,
-			pendingSwap.Contract.CltvExpiry, senderKey,
-			receiverKey, senderKey, receiverKey, hash,
-			&chaincfg.TestNet3Params,
-		)
-
-	default:
-		t.Fatalf(swap.ErrInvalidScriptVersion.Error())
-	}
-
+	htlc, err := GetHtlc(
+		hash, &pendingSwap.Contract.SwapContract,
+		&chaincfg.TestNet3Params,
+	)
 	require.NoError(t, err)
+
+	// Assert that the loopout htlc equals to the expected one.
 	require.Equal(t, htlc.PkScript, confIntent.PkScript)
 
 	signalSwapPaymentResult(nil)
@@ -315,7 +301,7 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 		func(r error) {},
 		func(r error) {},
 		preimageRevealed,
-		confIntent, scriptVersion,
+		confIntent, GetHtlcScriptVersion(protocolVersion),
 	)
 }
 

@@ -8,10 +8,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -343,6 +341,7 @@ func TestLoopInResume(t *testing.T) {
 		loopdb.ProtocolVersionUnrecorded,
 		loopdb.ProtocolVersionHtlcV2,
 		loopdb.ProtocolVersionHtlcV3,
+		loopdb.ProtocolVersionMuSig2,
 	}
 
 	testCases := []struct {
@@ -414,8 +413,12 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 			Preimage:        testPreimage,
 			AmountRequested: 100000,
 			CltvExpiry:      744,
-			ReceiverKey:     receiverKey,
-			SenderKey:       senderKey,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverScriptKey:      receiverKey,
+				ReceiverInternalPubKey: receiverKey,
+			},
 			MaxSwapFee:      60000,
 			MaxMinerFee:     50000,
 			ProtocolVersion: storedVersion,
@@ -445,32 +448,10 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
-	var (
-		htlc *swap.Htlc
-		err  error
+	htlc, err := GetHtlc(
+		testPreimage.Hash(), &contract.SwapContract,
+		cfg.lnd.ChainParams,
 	)
-
-	switch GetHtlcScriptVersion(storedVersion) {
-	case swap.HtlcV2:
-		htlc, err = swap.NewHtlcV2(
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, testPreimage.Hash(),
-			cfg.lnd.ChainParams,
-		)
-
-	case swap.HtlcV3:
-		htlc, err = swap.NewHtlcV3(
-			input.MuSig2Version040,
-			contract.CltvExpiry, contract.SenderKey,
-			contract.ReceiverKey, contract.SenderKey,
-			contract.ReceiverKey, testPreimage.Hash(),
-			cfg.lnd.ChainParams,
-		)
-
-	default:
-		t.Fatalf("unknown HTLC script version")
-	}
-
 	require.NoError(t, err)
 
 	err = ctx.store.CreateLoopIn(testPreimage.Hash(), contract)

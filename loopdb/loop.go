@@ -10,6 +10,31 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
+// HtlcKeys is a holder of all keys used when constructing the swap HTLC. Since
+// it's used for both loop in and loop out swaps it may hold partial information
+// about the sender or receiver depending on the swap type.
+type HtlcKeys struct {
+	// SenderScriptKey is the sender's public key that is used in the HTLC,
+	// specifically when constructing the script spend scripts.
+	SenderScriptKey [33]byte
+
+	// SenderInternalPubKey is the sender's internal pubkey that is used in
+	// taproot HTLCs as part of the aggregate internal key.
+	SenderInternalPubKey [33]byte
+
+	// ReceiverScriptKey is the receiver's public key that is used in the
+	// HTLC, specifically when constructing the script spend scripts.
+	ReceiverScriptKey [33]byte
+
+	// ReceiverInternalPubKey is the sender's internal pubkey that is used
+	// in taproot HTLCs as part of the aggregate internal key.
+	ReceiverInternalPubKey [33]byte
+
+	// ClientScriptKeyLocator is the client's key locator for the key used
+	// in the HTLC script spend scripts.
+	ClientScriptKeyLocator keychain.KeyLocator
+}
+
 // SwapContract contains the base data that is serialized to persistent storage
 // for pending swaps.
 type SwapContract struct {
@@ -19,18 +44,8 @@ type SwapContract struct {
 	// AmountRequested is the total amount of the swap.
 	AmountRequested btcutil.Amount
 
-	// SenderKey is the key of the sender that will be used in the on-chain
-	// HTLC.
-	SenderKey [33]byte
-
-	// ReceiverKey is the of the receiver that will be used in the on-chain
-	// HTLC.
-	ReceiverKey [33]byte
-
-	// ClientKeyLocator is the key locator (family and index) for the client
-	// key. It is for the receiver key if this is a loop out contract, or
-	// the sender key if this is a loop in contract.
-	ClientKeyLocator keychain.KeyLocator
+	// HtlcKeys holds all keys used in the swap HTLC construction.
+	HtlcKeys HtlcKeys
 
 	// CltvExpiry is the total absolute CLTV expiry of the swap.
 	CltvExpiry int32

@@ -112,9 +112,30 @@ var (
 	// value: concatenation of uint32 values [family, index].
 	keyLocatorKey = []byte("keylocator")
 
+	// senderInternalPubKeyKey is the key that stores the sender's internal
+	// public key which used when constructing the swap HTLC.
+	//
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash]
+	//                                      -> senderInternalPubKeyKey
+	// value: serialized public key.
+	senderInternalPubKeyKey = []byte("sender-internal-pubkey")
+
+	// receiverInternalPubKeyKey is the key that stores the receiver's
+	// internal public key which is used when constructing the swap HTLC.
+	//
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash]
+	//                                     -> receiverInternalPubKeyKey
+	// value: serialized public key.
+	receiverInternalPubKeyKey = []byte("receiver-internal-pubkey")
+
 	byteOrder = binary.BigEndian
 
+	// keyLength is the length of a serialized public key.
 	keyLength = 33
+
+	// errInvalidKey is returned when a serialized key is not the expected
+	// length.
+	errInvalidKey = fmt.Errorf("invalid serialized key")
 )
 
 const (
@@ -231,6 +252,95 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 		db:          bdb,
 		chainParams: chainParams,
 	}, nil
+}
+
+// marshalHtlcKeys marshals the HTLC keys of the swap contract into the swap
+// bucket.
+func marshalHtlcKeys(swapBucket *bbolt.Bucket, contract *SwapContract) error {
+	var err error
+
+	// Store the key locator for swaps that use taproot HTLCs.
+	if contract.ProtocolVersion >= ProtocolVersionHtlcV3 {
+		keyLocator, err := MarshalKeyLocator(
+			contract.HtlcKeys.ClientScriptKeyLocator,
+		)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(keyLocatorKey, keyLocator)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Store the internal keys for MuSig2 swaps.
+	if contract.ProtocolVersion >= ProtocolVersionMuSig2 {
+		// Internal pubkeys are always filled.
+		err = swapBucket.Put(
+			senderInternalPubKeyKey,
+			contract.HtlcKeys.SenderInternalPubKey[:],
+		)
+		if err != nil {
+			return err
+		}
+
+		err = swapBucket.Put(
+			receiverInternalPubKeyKey,
+			contract.HtlcKeys.ReceiverInternalPubKey[:],
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// unmarshalHtlcKeys deserializes the htlc keys from the swap bucket.
+func unmarshalHtlcKeys(swapBucket *bbolt.Bucket, contract *SwapContract) error {
+	var err error
+
+	// HTLC V3 contracts have the client script key locator stored.
+	if contract.ProtocolVersion >= ProtocolVersionHtlcV3 &&
+		ProtocolVersionUnrecorded > contract.ProtocolVersion {
+
+		contract.HtlcKeys.ClientScriptKeyLocator, err =
+			UnmarshalKeyLocator(
+				swapBucket.Get(keyLocatorKey),
+			)
+		if err != nil {
+			return err
+		}
+
+		// Default the internal scriptkeys to the sender and receiver
+		// keys.
+		contract.HtlcKeys.SenderInternalPubKey =
+			contract.HtlcKeys.SenderScriptKey
+		contract.HtlcKeys.ReceiverInternalPubKey =
+			contract.HtlcKeys.ReceiverScriptKey
+	}
+
+	// MuSig2 contracts have the internal keys stored too.
+	if contract.ProtocolVersion >= ProtocolVersionMuSig2 &&
+		ProtocolVersionUnrecorded > contract.ProtocolVersion {
+
+		// The pubkeys used for the joint HTLC internal key are always
+		// present.
+		key := swapBucket.Get(senderInternalPubKeyKey)
+		if len(key) != keyLength {
+			return errInvalidKey
+		}
+		copy(contract.HtlcKeys.SenderInternalPubKey[:], key)
+
+		key = swapBucket.Get(receiverInternalPubKeyKey)
+		if len(key) != keyLength {
+			return errInvalidKey
+		}
+		copy(contract.HtlcKeys.ReceiverInternalPubKey[:], key)
+	}
+
+	return nil
 }
 
 // FetchLoopOutSwaps returns all loop out swaps currently in the store.
@@ -435,19 +545,10 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 			return err
 		}
 
-		// Store the key locator for swaps with taproot htlc.
-		if swap.ProtocolVersion >= ProtocolVersionHtlcV3 {
-			keyLocator, err := MarshalKeyLocator(
-				swap.ClientKeyLocator,
-			)
-			if err != nil {
-				return err
-			}
-
-			err = swapBucket.Put(keyLocatorKey, keyLocator)
-			if err != nil {
-				return err
-			}
+		// Store the htlc keys and server key locator.
+		err = marshalHtlcKeys(swapBucket, &swap.SwapContract)
+		if err != nil {
+			return err
 		}
 
 		// Finally, we'll create an empty updates bucket for this swap
@@ -501,19 +602,10 @@ func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
 			return err
 		}
 
-		// Store the key locator for swaps with taproot htlc.
-		if swap.ProtocolVersion >= ProtocolVersionHtlcV3 {
-			keyLocator, err := MarshalKeyLocator(
-				swap.ClientKeyLocator,
-			)
-			if err != nil {
-				return err
-			}
-
-			err = swapBucket.Put(keyLocatorKey, keyLocator)
-			if err != nil {
-				return err
-			}
+		// Store the htlc keys and server key locator.
+		err = marshalHtlcKeys(swapBucket, &swap.SwapContract)
+		if err != nil {
+			return err
 		}
 
 		// Finally, we'll create an empty updates bucket for this swap
@@ -788,14 +880,12 @@ func (s *boltSwapStore) fetchLoopOutSwap(rootBucket *bbolt.Bucket,
 		return nil, err
 	}
 
-	// Try to unmarshal the key locator.
-	if contract.ProtocolVersion >= ProtocolVersionHtlcV3 {
-		contract.ClientKeyLocator, err = UnmarshalKeyLocator(
-			swapBucket.Get(keyLocatorKey),
-		)
-		if err != nil {
-			return nil, err
-		}
+	// Unmarshal HTLC keys if the contract is recent.
+	err = unmarshalHtlcKeys(
+		swapBucket, &contract.SwapContract,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	loop := LoopOut{
@@ -865,14 +955,12 @@ func (s *boltSwapStore) fetchLoopInSwap(rootBucket *bbolt.Bucket,
 		return nil, err
 	}
 
-	// Try to unmarshal the key locator.
-	if contract.ProtocolVersion >= ProtocolVersionHtlcV3 {
-		contract.ClientKeyLocator, err = UnmarshalKeyLocator(
-			swapBucket.Get(keyLocatorKey),
-		)
-		if err != nil {
-			return nil, err
-		}
+	// Unmarshal HTLC keys if the contract is recent.
+	err = unmarshalHtlcKeys(
+		swapBucket, &contract.SwapContract,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	loop := LoopIn{

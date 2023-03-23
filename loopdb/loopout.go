@@ -134,7 +134,7 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 
-	n, err := r.Read(contract.SenderKey[:])
+	n, err := r.Read(contract.HtlcKeys.SenderScriptKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, fmt.Errorf("sender key has invalid length")
 	}
 
-	n, err = r.Read(contract.ReceiverKey[:])
+	n, err = r.Read(contract.HtlcKeys.ReceiverScriptKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	n, err := b.Write(swap.SenderKey[:])
+	n, err := b.Write(swap.HtlcKeys.SenderScriptKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, fmt.Errorf("sender key has invalid length")
 	}
 
-	n, err = b.Write(swap.ReceiverKey[:])
+	n, err = b.Write(swap.HtlcKeys.ReceiverScriptKey[:])
 	if err != nil {
 		return nil, err
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,16 @@ var (
 	receiverKey = [33]byte{
 		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
+	}
+
+	senderInternalKey = [33]byte{
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4,
+	}
+
+	receiverInternalKey = [33]byte{
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5,
 	}
 
 	testPreimage = lntypes.Preimage([32]byte{
@@ -51,9 +62,16 @@ func TestLoopOutStore(t *testing.T) {
 			AmountRequested: 100,
 			Preimage:        testPreimage,
 			CltvExpiry:      144,
-			SenderKey:       senderKey,
-
-			ReceiverKey: receiverKey,
+			HtlcKeys: HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderInternalKey,
+				ReceiverInternalPubKey: receiverInternalKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
 			MaxMinerFee: 10,
 			MaxSwapFee:  20,
 
@@ -61,7 +79,8 @@ func TestLoopOutStore(t *testing.T) {
 
 			// Convert to/from unix to remove timezone, so that it
 			// doesn't interfere with DeepEqual.
-			InitiationTime: time.Unix(0, initiationTime.UnixNano()),
+			InitiationTime:  time.Unix(0, initiationTime.UnixNano()),
+			ProtocolVersion: ProtocolVersionMuSig2,
 		},
 		MaxPrepayRoutingFee:     40,
 		PrepayInvoice:           "prepayinvoice",
@@ -195,18 +214,27 @@ func TestLoopInStore(t *testing.T) {
 
 	pendingSwap := LoopInContract{
 		SwapContract: SwapContract{
-			AmountRequested:  100,
-			Preimage:         testPreimage,
-			CltvExpiry:       144,
-			SenderKey:        senderKey,
-			ReceiverKey:      receiverKey,
+			AmountRequested: 100,
+			Preimage:        testPreimage,
+			CltvExpiry:      144,
+			HtlcKeys: HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderInternalKey,
+				ReceiverInternalPubKey: receiverInternalKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
 			MaxMinerFee:      10,
 			MaxSwapFee:       20,
 			InitiationHeight: 99,
 
 			// Convert to/from unix to remove timezone, so that it
 			// doesn't interfere with DeepEqual.
-			InitiationTime: time.Unix(0, initiationTime.UnixNano()),
+			InitiationTime:  time.Unix(0, initiationTime.UnixNano()),
+			ProtocolVersion: ProtocolVersionMuSig2,
 		},
 		HtlcConfTarget: 2,
 		LastHop:        &lastHop,
