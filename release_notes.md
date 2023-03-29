@@ -15,9 +15,6 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-* Autoloop now uses a recurring budget. Users can now specify `autobudget` and
-`autobudgetrefreshperiod` to specify the amount of the budget and the period
-over which it will refresh.
 
 #### Breaking Changes
 

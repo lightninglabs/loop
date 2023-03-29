@@ -3,7 +3,7 @@ package loop
 // Copyright (c) 2013-2017 The btcsuite developers
 // Copyright (c) 2015-2016 The Decred developers
 // Heavily inspired by https://github.com/btcsuite/btcd/blob/master/version.go
-// Copyright (C) 2015-2020 The Lightning Network Developers
+// Copyright (C) 2015-2023 The Lightning Network Developers
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ const semanticAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 const (
 	// Note: please update release_notes.md when you change these values.
 	appMajor uint = 0
-	appMinor uint = 21
+	appMinor uint = 22
 	appPatch uint = 0
 
 	// appPreRelease MUST only contain characters from semanticAlphabet per
