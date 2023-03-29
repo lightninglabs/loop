@@ -19,13 +19,14 @@ type loopInSwapSuggestion struct {
 
 // amount returns the amount of the swap suggestion.
 func (l *loopInSwapSuggestion) amount() btcutil.Amount {
-	return l.Amount
+	return l.LoopInRequest.Amount
 }
 
 // fees returns the highest fees that we could pay for the swap suggestion.
 func (l *loopInSwapSuggestion) fees() btcutil.Amount {
 	return worstCaseInFees(
-		l.MaxMinerFee, l.MaxSwapFee, defaultLoopInSweepFee,
+		l.LoopInRequest.MaxMinerFee, l.LoopInRequest.MaxSwapFee,
+		defaultLoopInSweepFee,
 	)
 }
 
@@ -37,12 +38,12 @@ func (l *loopInSwapSuggestion) channels() []lnwire.ShortChannelID {
 
 // peers returns the peer that a loop in swap is restricted to, if it is set.
 func (l *loopInSwapSuggestion) peers(_ map[uint64]route.Vertex) []route.Vertex {
-	if l.LastHop == nil {
+	if l.LoopInRequest.LastHop == nil {
 		return nil
 	}
 
 	return []route.Vertex{
-		*l.LastHop,
+		*l.LoopInRequest.LastHop,
 	}
 }
 

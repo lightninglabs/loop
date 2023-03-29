@@ -161,7 +161,7 @@ func (ctx *Context) AssertPaid(
 				expectedMemo)
 		}
 
-		payReq := ctx.DecodeInvoice(swapPayment.Invoice)
+		payReq := ctx.DecodeInvoice(swapPayment.SendPaymentRequest.Invoice)
 
 		_, ok := ctx.PaidInvoices[*payReq.Description]
 		require.False(

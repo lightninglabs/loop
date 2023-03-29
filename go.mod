@@ -7,7 +7,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
-	github.com/btcsuite/btcwallet v0.16.6-0.20221208210930-6f3f55efb230
+	github.com/btcsuite/btcwallet v0.16.7
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
@@ -15,17 +15,17 @@ require (
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.18-beta
-	github.com/lightninglabs/lndclient v0.16.0-8
+	github.com/lightninglabs/aperture v0.1.20-beta
+	github.com/lightninglabs/lndclient v0.16.0-10
 	github.com/lightninglabs/loop/swapserverrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.15.0-beta.rc6.0.20230207162325-a233df99c49d
+	github.com/lightningnetwork/lnd v0.16.0-beta
 	github.com/lightningnetwork/lnd/cert v1.2.1
 	github.com/lightningnetwork/lnd/clock v1.1.0
 	github.com/lightningnetwork/lnd/queue v1.1.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/lightningnetwork/lnd/tor v1.1.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	github.com/urfave/cli v1.22.9
 	golang.org/x/net v0.7.0
 	google.golang.org/grpc v1.41.0
@@ -91,7 +91,8 @@ require (
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
-	github.com/lightninglabs/neutrino v0.14.2 // indirect
+	github.com/lightninglabs/neutrino v0.15.0 // indirect
+	github.com/lightninglabs/neutrino/cache v1.1.1 // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.2 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.1 // indirect
@@ -117,12 +118,11 @@ require (
 	github.com/sirupsen/logrus v1.7.0 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/objx v0.4.0 // indirect
+	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 // indirect
 	github.com/ulikunitz/xz v0.5.10 // indirect
-	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
@@ -173,5 +173,10 @@ require (
 
 // TODO(bhandras): remove when the next swapserverrpc is tagged.
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
+
+// We need to use grpc v1.39.0 because of a change in how HTTP errors are
+// formatted and sent to the client. This change was introduced in grpc v1.40.0
+// with https://github.com/grpc/grpc-go/pull/4474.
+replace google.golang.org/grpc => google.golang.org/grpc v1.39.0
 
 go 1.18

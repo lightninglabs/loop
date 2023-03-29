@@ -26,8 +26,8 @@ var (
 	// listed build tags/subservers need to be enabled.
 	LoopMinRequiredLndVersion = &verrpc.Version{
 		AppMajor: 0,
-		AppMinor: 15,
-		AppPatch: 99,
+		AppMinor: 16,
+		AppPatch: 0,
 		BuildTags: []string{
 			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
 		},

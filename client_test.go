@@ -65,7 +65,7 @@ func TestLoopOutSuccess(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf.
-	confIntent := ctx.AssertRegisterConf(false, req.HtlcConfirmations)
+	confIntent := ctx.Context.AssertRegisterConf(false, req.HtlcConfirmations)
 
 	testLoopOutSuccess(ctx, testRequest.Amount, info.SwapHash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
@@ -89,7 +89,7 @@ func TestLoopOutFailOffchain(t *testing.T) {
 	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
-	ctx.AssertRegisterConf(false, defaultConfirmations)
+	ctx.Context.AssertRegisterConf(false, defaultConfirmations)
 
 	signalSwapPaymentResult(
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
@@ -274,7 +274,9 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for our expected number of confirmations.
-	confIntent := ctx.AssertRegisterConf(preimageRevealed, int32(confs))
+	confIntent := ctx.Context.AssertRegisterConf(
+		preimageRevealed, int32(confs),
+	)
 
 	htlc, err := GetHtlc(
 		hash, &pendingSwap.Contract.SwapContract,
@@ -325,7 +327,7 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 
 	// Expect a signing request in the non taproot case.
 	if scriptVersion != swap.HtlcV3 {
-		<-ctx.Lnd.SignOutputRawChannel
+		<-ctx.Context.Lnd.SignOutputRawChannel
 	}
 
 	if !preimageRevealed {
@@ -345,14 +347,14 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 			ctx.expiryChan <- testTime
 			ctx.assertPreimagePush(testPreimage)
 		}
-		<-ctx.Lnd.SignOutputRawChannel
+		<-ctx.Context.Lnd.SignOutputRawChannel
 	}
 
 	// Expect client on-chain sweep of HTLC.
 	sweepTx := ctx.ReceiveTx()
 
 	require.Equal(
-		ctx.T, htlcOutpoint.Hash[:],
+		ctx.Context.T, htlcOutpoint.Hash[:],
 		sweepTx.TxIn[0].PreviousOutPoint.Hash[:],
 		"client not sweeping from htlc tx",
 	)
@@ -369,12 +371,12 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// Check preimage.
 	clientPreImage := sweepTx.TxIn[0].Witness[preImageIndex]
 	clientPreImageHash := sha256.Sum256(clientPreImage)
-	require.Equal(ctx.T, hash, lntypes.Hash(clientPreImageHash))
+	require.Equal(ctx.Context.T, hash, lntypes.Hash(clientPreImageHash))
 
 	// Since we successfully published our sweep, we expect the preimage to
 	// have been pushed to our mock server.
 	preimage, err := lntypes.MakePreimage(clientPreImage)
-	require.NoError(ctx.T, err)
+	require.NoError(ctx.Context.T, err)
 
 	if scriptVersion != swap.HtlcV3 {
 		ctx.assertPreimagePush(preimage)
