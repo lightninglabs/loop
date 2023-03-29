@@ -383,6 +383,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lndclient v0.16.0-10 h1:cMBJNfssBQtpgYIu23QLP/qw0ijiT5SBZffnXz8zjJk=
 github.com/lightninglabs/lndclient v0.16.0-10/go.mod h1:mqY0znSNa+M40HZowwKfno29RyZnmxoqo++BlYP82EY=
+github.com/lightninglabs/loop/swapserverrpc v1.0.4 h1:cEX+mt7xmQlEbmuQ52vOBT7l+a471v94ofdJbB6MmXs=
+github.com/lightninglabs/loop/swapserverrpc v1.0.4/go.mod h1:imy1/sqnb70EEyBKMo4pHwwLBPW8uYahWZ8s+1Xcq1o=
 github.com/lightninglabs/neutrino v0.15.0 h1:yr3uz36fLAq8hyM0TRUVlef1TRNoWAqpmmNlVtKUDtI=
 github.com/lightninglabs/neutrino v0.15.0/go.mod h1:pmjwElN/091TErtSE9Vd5W4hpxoG2/+xlb+HoPm9Gug=
 github.com/lightninglabs/neutrino/cache v1.1.1 h1:TllWOSlkABhpgbWJfzsrdUaDH2fBy/54VSIB4vVqV8M=

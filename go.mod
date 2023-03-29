@@ -17,7 +17,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.20-beta
 	github.com/lightninglabs/lndclient v0.16.0-10
-	github.com/lightninglabs/loop/swapserverrpc v1.0.1
+	github.com/lightninglabs/loop/swapserverrpc v1.0.4
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.16.0-beta
 	github.com/lightningnetwork/lnd/cert v1.2.1
@@ -170,9 +170,6 @@ require (
 	modernc.org/token v1.0.1 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
-
-// TODO(bhandras): remove when the next swapserverrpc is tagged.
-replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 // We need to use grpc v1.39.0 because of a change in how HTTP errors are
 // formatted and sent to the client. This change was introduced in grpc v1.40.0
