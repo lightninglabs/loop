@@ -20,22 +20,25 @@ type loopOutSwapSuggestion struct {
 
 // amount returns the amount being swapped.
 func (l *loopOutSwapSuggestion) amount() btcutil.Amount {
-	return l.Amount
+	return l.OutRequest.Amount
 }
 
 // fees returns the maximum fees we could possibly pay for this swap.
 func (l *loopOutSwapSuggestion) fees() btcutil.Amount {
 	return worstCaseOutFees(
-		l.MaxPrepayRoutingFee, l.MaxSwapRoutingFee, l.MaxSwapFee,
-		l.MaxMinerFee, l.MaxPrepayAmount,
+		l.OutRequest.MaxPrepayRoutingFee, l.OutRequest.MaxSwapRoutingFee,
+		l.OutRequest.MaxSwapFee, l.OutRequest.MaxMinerFee,
+		l.OutRequest.MaxPrepayAmount,
 	)
 }
 
 // channels returns the set of channels the loop out swap is restricted to.
 func (l *loopOutSwapSuggestion) channels() []lnwire.ShortChannelID {
-	channels := make([]lnwire.ShortChannelID, len(l.OutgoingChanSet))
+	channels := make(
+		[]lnwire.ShortChannelID, len(l.OutRequest.OutgoingChanSet),
+	)
 
-	for i, id := range l.OutgoingChanSet {
+	for i, id := range l.OutRequest.OutgoingChanSet {
 		channels[i] = lnwire.NewShortChanIDFromInt(id)
 	}
 
@@ -48,7 +51,7 @@ func (l *loopOutSwapSuggestion) peers(
 
 	peers := make(map[route.Vertex]struct{}, len(knownChans))
 
-	for _, channel := range l.OutgoingChanSet {
+	for _, channel := range l.OutRequest.OutgoingChanSet {
 		peer, ok := knownChans[channel]
 		if !ok {
 			log.Warnf("peer for channel: %v unknown", channel)

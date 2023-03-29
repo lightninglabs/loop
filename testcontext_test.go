@@ -140,45 +140,45 @@ func (ctx *testContext) finish() {
 	ctx.stop()
 	select {
 	case err := <-ctx.runErr:
-		require.NoError(ctx.T, err)
+		require.NoError(ctx.Context.T, err)
 
 	case <-time.After(test.Timeout):
-		ctx.T.Fatal("client not stopping")
+		ctx.Context.T.Fatal("client not stopping")
 	}
 
 	ctx.assertIsDone()
 }
 func (ctx *testContext) assertIsDone() {
-	require.NoError(ctx.T, ctx.Lnd.IsDone())
-	require.NoError(ctx.T, ctx.store.isDone())
+	require.NoError(ctx.Context.T, ctx.Context.Lnd.IsDone())
+	require.NoError(ctx.Context.T, ctx.store.isDone())
 
 	select {
 	case <-ctx.statusChan:
-		ctx.T.Fatalf("not all status updates read")
+		ctx.Context.T.Fatalf("not all status updates read")
 	default:
 	}
 }
 
 func (ctx *testContext) assertStored() {
-	ctx.T.Helper()
+	ctx.Context.T.Helper()
 
 	ctx.store.assertLoopOutStored()
 }
 
 func (ctx *testContext) assertStorePreimageReveal() {
-	ctx.T.Helper()
+	ctx.Context.T.Helper()
 
 	ctx.store.assertStorePreimageReveal()
 }
 
 func (ctx *testContext) assertStoreFinished(expectedResult loopdb.SwapState) {
-	ctx.T.Helper()
+	ctx.Context.T.Helper()
 
 	ctx.store.assertStoreFinished(expectedResult)
 }
 
 func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
-	ctx.T.Helper()
+	ctx.Context.T.Helper()
 
 	for {
 		select {
@@ -191,7 +191,7 @@ func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
 				return
 			}
 		case <-time.After(test.Timeout):
-			ctx.T.Fatalf("expected status %v not "+
+			ctx.Context.T.Fatalf("expected status %v not "+
 				"received in time", expectedState)
 		}
 	}
@@ -218,7 +218,7 @@ func (ctx *testContext) publishHtlc(script []byte,
 		Tx: &htlcTx,
 	}:
 	case <-time.After(test.Timeout):
-		ctx.T.Fatalf("htlc confirmed not consumed")
+		ctx.Context.T.Fatalf("htlc confirmed not consumed")
 	}
 
 	return wire.OutPoint{
@@ -238,7 +238,7 @@ func (ctx *testContext) trackPayment(status lnrpc.Payment_PaymentStatus) {
 	}:
 
 	case <-time.After(test.Timeout):
-		ctx.T.Fatalf("could not send payment update")
+		ctx.Context.T.Fatalf("could not send payment update")
 	}
 }
 
@@ -247,9 +247,9 @@ func (ctx *testContext) trackPayment(status lnrpc.Payment_PaymentStatus) {
 func (ctx *testContext) assertPreimagePush(preimage lntypes.Preimage) {
 	select {
 	case pushedPreimage := <-ctx.serverMock.preimagePush:
-		require.Equal(ctx.T, preimage, pushedPreimage)
+		require.Equal(ctx.Context.T, preimage, pushedPreimage)
 
 	case <-time.After(test.Timeout):
-		ctx.T.Fatalf("preimage not pushed")
+		ctx.Context.T.Fatalf("preimage not pushed")
 	}
 }
