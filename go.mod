@@ -171,9 +171,6 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-// TODO(bhandras): remove when the next swapserverrpc is tagged.
-replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
-
 // We need to use grpc v1.39.0 because of a change in how HTTP errors are
 // formatted and sent to the client. This change was introduced in grpc v1.40.0
 // with https://github.com/grpc/grpc-go/pull/4474.
