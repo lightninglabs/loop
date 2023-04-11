@@ -36,6 +36,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -201,6 +202,12 @@ type Config struct {
 	LoopIn func(ctx context.Context,
 		request *loop.LoopInRequest) (*loop.LoopInSwapInfo, error)
 
+	// LoopInTerms returns the terms for a loop in swap.
+	LoopInTerms func(ctx context.Context) (*loop.LoopInTerms, error)
+
+	// LoopOutTerms returns the terms for a loop out swap.
+	LoopOutTerms func(ctx context.Context) (*loop.LoopOutTerms, error)
+
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
 
@@ -234,6 +241,15 @@ type Manager struct {
 
 	// paramsLock is a lock for our current set of parameters.
 	paramsLock sync.Mutex
+
+	// activeStickyLoops is a counter that helps us keep track of currently
+	// active sticky loops. We use this to ensure we don't dispatch more
+	// than the max configured loops at a time.
+	activeStickyLoops int
+
+	// activeStickyLock is a lock to ensure atomic access to the
+	// activeStickyLoops counter.
+	activeStickyLock sync.Mutex
 }
 
 // Run periodically checks whether we should automatically dispatch a loop out.
@@ -259,15 +275,24 @@ func (m *Manager) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-m.cfg.AutoloopTicker.Ticks():
-			err := m.autoloop(ctx)
-			switch err {
-			case ErrNoRules:
-				log.Debugf("No rules configured for autoloop")
+			if m.params.EasyAutoloop {
+				err := m.easyAutoLoop(ctx)
+				if err != nil {
+					log.Errorf("easy autoloop failed: %v",
+						err)
+				}
+			} else {
+				err := m.autoloop(ctx)
+				switch err {
+				case ErrNoRules:
+					log.Debugf("no rules configured for " +
+						"autoloop")
 
-			case nil:
+				case nil:
 
-			default:
-				log.Errorf("autoloop failed: %v", err)
+				default:
+					log.Errorf("autoloop failed: %v", err)
+				}
 			}
 
 		case <-ctx.Done():
@@ -446,6 +471,29 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	return nil
 }
 
+// easyAutoLoop is the main entry point for the easy auto loop functionality.
+// This function will try to dispatch a swap in order to meet the easy autoloop
+// requirements. For easyAutoloop to work there needs to be an
+// EasyAutoloopTarget defined in the parameters. Easy autoloop also uses the
+// configured max inflight swaps and budget rules defined in the parameters.
+func (m *Manager) easyAutoLoop(ctx context.Context) error {
+	if !m.params.Autoloop {
+		return nil
+	}
+
+	// First check if we should refresh our budget before calculating any
+	// swaps for autoloop.
+	m.refreshAutoloopBudget(ctx)
+
+	// Dispatch the best easy autoloop swap.
+	err := m.dispatchBestEasyAutoloopSwap(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ForceAutoLoop force-ticks our auto-out ticker.
 func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	select {
@@ -455,6 +503,135 @@ func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// dispatchBestEasyAutoloopSwap tries to dispatch a swap to bring the total
+// local balance back to the target.
+func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
+	// Retrieve existing swaps.
+	loopOut, err := m.cfg.ListLoopOut()
+	if err != nil {
+		return err
+	}
+
+	loopIn, err := m.cfg.ListLoopIn()
+	if err != nil {
+		return err
+	}
+
+	// Get a summary of our existing swaps so that we can check our autoloop
+	// budget.
+	summary, err := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
+	if err != nil {
+		return err
+	}
+
+	err = m.checkSummaryBudget(summary)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.checkSummaryInflight(summary)
+	if err != nil {
+		return err
+	}
+
+	// Get all channels in order to calculate current total local balance.
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx, false, false)
+	if err != nil {
+		return err
+	}
+
+	localTotal := btcutil.Amount(0)
+	for _, channel := range channels {
+		localTotal += channel.LocalBalance
+	}
+
+	// Since we're only autolooping-out we need to check if we are below
+	// the target, meaning that we already meet the requirements.
+	if localTotal <= m.params.EasyAutoloopTarget {
+		log.Debugf("total local balance %v below target %v",
+			localTotal, m.params.EasyAutoloopTarget)
+		return nil
+	}
+
+	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
+	if err != nil {
+		return err
+	}
+
+	// Calculate the amount that we want to loop out. If it exceeds the max
+	// allowed clamp it to max.
+	amount := localTotal - m.params.EasyAutoloopTarget
+	if amount > restrictions.Maximum {
+		amount = btcutil.Amount(restrictions.Maximum)
+	}
+
+	// If the amount we want to loop out is less than the minimum we can't
+	// proceed with a swap, so we return early.
+	if amount < restrictions.Minimum {
+		log.Debugf("easy autoloop: swap amount is below minimum swap "+
+			"size, minimum=%v, need to swap %v",
+			restrictions.Minimum, amount)
+		return nil
+	}
+
+	log.Debugf("easy autoloop: local_total=%v, target=%v, "+
+		"attempting to loop out %v", localTotal,
+		m.params.EasyAutoloopTarget, amount)
+
+	// Start building that swap.
+	builder := newLoopOutBuilder(m.cfg)
+
+	channel := m.pickEasyAutoloopChannel(
+		channels, restrictions, loopOut, loopIn, amount,
+	)
+	if channel == nil {
+		return fmt.Errorf("no eligible channel for easy autoloop")
+	}
+
+	log.Debugf("easy autoloop: picked channel %v with local balance %v",
+		channel.ChannelID, channel.LocalBalance)
+
+	swapAmt, err := btcutil.NewAmount(
+		math.Min(channel.LocalBalance.ToBTC(), amount.ToBTC()),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Override our current parameters in order to use the const percent
+	// limit of easy-autoloop.
+	easyParams := m.params
+	easyParams.FeeLimit = &FeePortion{
+		PartsPerMillion: defaultFeePPM,
+	}
+
+	// Set the swap outgoing channel to the chosen channel.
+	outgoing := []lnwire.ShortChannelID{
+		lnwire.NewShortChanIDFromInt(channel.ChannelID),
+	}
+
+	suggestion, err := builder.buildSwap(
+		ctx, channel.PubKeyBytes, outgoing, swapAmt, true, easyParams,
+	)
+	if err != nil {
+		return err
+	}
+
+	swap := loop.OutRequest{}
+	if t, ok := suggestion.(*loopOutSwapSuggestion); ok {
+		swap = t.OutRequest
+	} else {
+		return fmt.Errorf("unexpected swap suggestion type: %T", t)
+	}
+
+	// Dispatch a sticky loop out.
+	go m.dispatchStickyLoopOut(
+		ctx, swap, defaultAmountBackoffRetry, defaultAmountBackoff,
+	)
+
+	return nil
 }
 
 // Suggestions provides a set of suggested swaps, and the set of channels that
@@ -563,23 +740,13 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 		return nil, err
 	}
 
-	if summary.totalFees() >= m.params.AutoFeeBudget {
-		log.Debugf("autoloop fee budget: %v exhausted, %v spent on "+
-			"completed swaps, %v reserved for ongoing swaps "+
-			"(upper limit)",
-			m.params.AutoFeeBudget, summary.spentFees,
-			summary.pendingFees)
-
+	err = m.checkSummaryBudget(summary)
+	if err != nil {
 		return m.singleReasonSuggestion(ReasonBudgetElapsed), nil
 	}
 
-	// If we have already reached our total allowed number of in flight
-	// swaps, we do not suggest any more at the moment.
-	allowedSwaps := m.params.MaxAutoInFlight - summary.inFlightCount
-	if allowedSwaps <= 0 {
-		log.Debugf("%v autoloops allowed, %v in flight",
-			m.params.MaxAutoInFlight, summary.inFlightCount)
-
+	allowedSwaps, err := m.checkSummaryInflight(summary)
+	if err != nil {
 		return m.singleReasonSuggestion(ReasonInFlight), nil
 	}
 
@@ -1058,12 +1225,31 @@ func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
 func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 	out loop.OutRequest, retryCount uint16, amountBackoff float64) {
 
+	// Check our sticky loop counter to decide whether we should continue
+	// executing this loop.
+	m.activeStickyLock.Lock()
+	if m.activeStickyLoops >= m.params.MaxAutoInFlight {
+		m.activeStickyLock.Unlock()
+		return
+	}
+
+	m.activeStickyLoops += 1
+	m.activeStickyLock.Unlock()
+
+	// No matter the outcome, decrease the counter upon exiting sticky loop.
+	defer func() {
+		m.activeStickyLock.Lock()
+		m.activeStickyLoops -= 1
+		m.activeStickyLock.Unlock()
+	}()
+
 	for i := 0; i < int(retryCount); i++ {
 		// Dispatch the swap.
 		swap, err := m.cfg.LoopOut(ctx, &out)
 		if err != nil {
-			log.Errorf("unable to dispatch loop out, hash: %v, "+
-				"err: %v", swap.SwapHash, err)
+			log.Errorf("unable to dispatch loop out, amt: %v, "+
+				"err: %v", out.Amount, err)
+			return
 		}
 
 		log.Infof("loop out automatically dispatched: hash: %v, "+
@@ -1188,6 +1374,97 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 	// update to the channel, causing the sticky loop out to not retry
 	// anymore.
 	updateChan <- nil
+}
+
+// pickEasyAutoloopChannel picks a channel to be used for an easy autoloop swap.
+// This function prioritizes channels with high local balance but also consults
+// previous failures and ongoing swaps to avoid temporary channel failures or
+// swap conflicts.
+func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
+	restrictions *Restrictions, loopOut []*loopdb.LoopOut,
+	loopIn []*loopdb.LoopIn, amount btcutil.Amount) *lndclient.ChannelInfo {
+
+	traffic := m.currentSwapTraffic(loopOut, loopIn)
+
+	// Sort the candidate channels based on descending local balance. We
+	// want to prioritize picking a channel with the highest possible local
+	// balance.
+	sort.Slice(channels, func(i, j int) bool {
+		return channels[i].LocalBalance > channels[j].LocalBalance
+	})
+
+	// Check each channel, since channels are already sorted we return the
+	// first channel that passes all checks.
+	for _, channel := range channels {
+		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+
+		if !channel.Active {
+			log.Debugf("Channel %v cannot be used for easy "+
+				"autoloop: inactive", channel.ChannelID)
+			continue
+		}
+
+		lastFail, recentFail := traffic.failedLoopOut[shortChanID]
+		if recentFail {
+			log.Debugf("Channel %v cannot be used for easy "+
+				"autoloop: last failed swap was at %v",
+				channel.ChannelID, lastFail)
+			continue
+		}
+
+		if traffic.ongoingLoopOut[shortChanID] {
+			log.Debugf("Channel %v cannot be used for easy "+
+				"autoloop: ongoing swap", channel.ChannelID)
+			continue
+		}
+
+		if channel.LocalBalance < restrictions.Minimum {
+			log.Debugf("Channel %v cannot be used for easy "+
+				"autoloop: insufficient local balance %v,"+
+				"minimum is %v, skipping remaining channels",
+				channel.ChannelID, channel.LocalBalance,
+				restrictions.Minimum)
+			return nil
+		}
+
+		return &channel
+	}
+
+	return nil
+}
+
+func (m *Manager) numActiveStickyLoops() int {
+	m.activeStickyLock.Lock()
+	defer m.activeStickyLock.Unlock()
+
+	return m.activeStickyLoops
+
+}
+
+func (m *Manager) checkSummaryBudget(summary *existingAutoLoopSummary) error {
+	if summary.totalFees() >= m.params.AutoFeeBudget {
+		return fmt.Errorf("autoloop fee budget: %v exhausted, %v spent on "+
+			"completed swaps, %v reserved for ongoing swaps "+
+			"(upper limit)",
+			m.params.AutoFeeBudget, summary.spentFees,
+			summary.pendingFees)
+
+	}
+
+	return nil
+}
+
+func (m *Manager) checkSummaryInflight(
+	summary *existingAutoLoopSummary) (int, error) {
+	// If we have already reached our total allowed number of in flight
+	// swaps we return early.
+	allowedSwaps := m.params.MaxAutoInFlight - summary.inFlightCount
+	if allowedSwaps <= 0 {
+		return 0, fmt.Errorf("%v autoloops allowed, %v in flight",
+			m.params.MaxAutoInFlight, summary.inFlightCount)
+	}
+
+	return allowedSwaps, nil
 }
 
 // swapTraffic contains a summary of our current and previously failed swaps.

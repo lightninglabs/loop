@@ -98,6 +98,14 @@ type Parameters struct {
 	// CustomPaymentCheckInterval is an optional custom interval to use when
 	// checking an autoloop loop out payments' payment status.
 	CustomPaymentCheckInterval time.Duration
+
+	// EasyAutoloop is a boolean that indicates whether we should use the
+	// easy autoloop feature.
+	EasyAutoloop bool
+
+	// EasyAutoloopTarget is the target amount of liquidity that we want to
+	// maintain in our channels.
+	EasyAutoloopTarget btcutil.Amount
 }
 
 // String returns the string representation of our parameters.
@@ -397,7 +405,9 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 			Minimum: btcutil.Amount(req.MinSwapAmount),
 			Maximum: btcutil.Amount(req.MaxSwapAmount),
 		},
-		HtlcConfTarget: req.HtlcConfTarget,
+		HtlcConfTarget:     req.HtlcConfTarget,
+		EasyAutoloop:       req.EasyAutoloop,
+		EasyAutoloopTarget: btcutil.Amount(req.EasyAutoloopLocalTargetSat),
 	}
 
 	if req.AutoloopBudgetRefreshPeriodSec != 0 {
@@ -493,9 +503,15 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		Rules: make(
 			[]*clientrpc.LiquidityRule, 0, totalRules,
 		),
-		MinSwapAmount:  uint64(cfg.ClientRestrictions.Minimum),
-		MaxSwapAmount:  uint64(cfg.ClientRestrictions.Maximum),
-		HtlcConfTarget: cfg.HtlcConfTarget,
+		MinSwapAmount: uint64(
+			cfg.ClientRestrictions.Minimum,
+		),
+		MaxSwapAmount: uint64(
+			cfg.ClientRestrictions.Maximum,
+		),
+		HtlcConfTarget:             cfg.HtlcConfTarget,
+		EasyAutoloop:               cfg.EasyAutoloop,
+		EasyAutoloopLocalTargetSat: uint64(cfg.EasyAutoloopTarget),
 	}
 
 	switch f := cfg.FeeLimit.(type) {
