@@ -694,6 +694,15 @@
           "type": "string",
           "format": "uint64",
           "description": "The time at which the autoloop budget was last refreshed, expressed as a\nUNIX timestamp in seconds."
+        },
+        "easy_autoloop": {
+          "type": "boolean",
+          "description": "Set to true to enable easy autoloop. If set, all channel/peer rules will be\noverridden and the client will automatically dispatch swaps in order to meet\nthe configured local balance target size. Currently only loop out is\nsupported, meaning that easy autoloop can only reduce the funds that are\nheld as balance in channels."
+        },
+        "easy_autoloop_local_target_sat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The local balance target size, expressed in satoshis. This is used by easy\nautoloop to determine how much liquidity should be maintained in channels."
         }
       }
     },

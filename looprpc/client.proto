@@ -873,6 +873,21 @@ message LiquidityParameters {
     UNIX timestamp in seconds.
     */
     uint64 autoloop_budget_last_refresh = 20;
+
+    /*
+    Set to true to enable easy autoloop. If set, all channel/peer rules will be
+    overridden and the client will automatically dispatch swaps in order to meet
+    the configured local balance target size. Currently only loop out is
+    supported, meaning that easy autoloop can only reduce the funds that are
+    held as balance in channels.
+    */
+    bool easy_autoloop = 21;
+
+    /*
+    The local balance target size, expressed in satoshis. This is used by easy
+    autoloop to determine how much liquidity should be maintained in channels.
+    */
+    uint64 easy_autoloop_local_target_sat = 22;
 }
 
 enum LiquidityRuleType {
