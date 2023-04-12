@@ -329,13 +329,6 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 		return newReasonError(ReasonSwapFee)
 	}
 
-	if quote.PrepayAmount > feeLimit {
-		log.Debugf("prepay amount: %v greater than fee limit: %v, at "+
-			"%v ppm", quote.PrepayAmount, feeLimit, f.PartsPerMillion)
-
-		return newReasonError(ReasonPrepay)
-	}
-
 	// If our miner and swap fee equal our limit, we will have nothing left
 	// for off-chain fees, so we fail out early.
 	if minerFee+quote.SwapFee >= feeLimit {
@@ -351,7 +344,7 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 	// Calculate the worst case fees that we could pay for this swap,
 	// ensuring that we are within our fee limit even if the swap fails.
 	fees := worstCaseOutFees(
-		prepay, route, quote.SwapFee, miner, quote.PrepayAmount,
+		prepay, route, quote.SwapFee, miner,
 	)
 
 	if fees > feeLimit {
