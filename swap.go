@@ -56,7 +56,9 @@ func GetHtlcScriptVersion(
 	protocolVersion loopdb.ProtocolVersion) swap.ScriptVersion {
 
 	// If the swap was initiated before we had our v3 script, use v2.
-	if protocolVersion < loopdb.ProtocolVersionHtlcV3 {
+	if protocolVersion < loopdb.ProtocolVersionHtlcV3 ||
+		protocolVersion == loopdb.ProtocolVersionUnrecorded {
+
 		return swap.HtlcV2
 	}
 
