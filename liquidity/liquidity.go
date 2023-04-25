@@ -845,19 +845,10 @@ func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
 // the prepay because they failed to sweep the on chain htlc. This is unlikely,
 // because we expect clients to be online to sweep, but we want to account for
 // every outcome so we include it.
-func worstCaseOutFees(prepayRouting, swapRouting, swapFee, minerFee,
-	prepayAmount btcutil.Amount) btcutil.Amount {
+func worstCaseOutFees(prepayRouting, swapRouting, swapFee,
+	minerFee btcutil.Amount) btcutil.Amount {
 
-	var (
-		successFees = prepayRouting + minerFee + swapFee + swapRouting
-		noShowFees  = prepayRouting + prepayAmount
-	)
-
-	if noShowFees > successFees {
-		return noShowFees
-	}
-
-	return successFees
+	return prepayRouting + minerFee + swapFee + swapRouting
 }
 
 // existingAutoLoopSummary provides a summary of the existing autoloops which
@@ -910,19 +901,11 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 		if out.State().State.Type() == loopdb.StateTypePending {
 			summary.inFlightCount++
 
-			prepay, err := m.cfg.Lnd.Client.DecodePaymentRequest(
-				ctx, out.Contract.PrepayInvoice,
-			)
-			if err != nil {
-				return nil, err
-			}
-
 			summary.pendingFees += worstCaseOutFees(
 				out.Contract.MaxPrepayRoutingFee,
 				out.Contract.MaxSwapRoutingFee,
 				out.Contract.MaxSwapFee,
 				out.Contract.MaxMinerFee,
-				mSatToSatoshis(prepay.Value),
 			)
 		} else if out.LastUpdateTime().After(
 			m.params.AutoloopBudgetLastRefresh,

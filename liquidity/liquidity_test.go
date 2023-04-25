@@ -1564,21 +1564,6 @@ func TestFeePercentage(t *testing.T) {
 				DisqualifiedPeers: noPeersDisqualified,
 			},
 		},
-		{
-			name:   "prepay too high",
-			feePPM: 30000,
-			quote: &loop.LoopOutQuote{
-				SwapFee:      75,
-				PrepayAmount: 300,
-				MinerFee:     1,
-			},
-			suggestions: &Suggestions{
-				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
-					chanID1: ReasonPrepay,
-				},
-				DisqualifiedPeers: noPeersDisqualified,
-			},
-		},
 	}
 
 	for _, testCase := range tests {

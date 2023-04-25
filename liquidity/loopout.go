@@ -28,7 +28,6 @@ func (l *loopOutSwapSuggestion) fees() btcutil.Amount {
 	return worstCaseOutFees(
 		l.OutRequest.MaxPrepayRoutingFee, l.OutRequest.MaxSwapRoutingFee,
 		l.OutRequest.MaxSwapFee, l.OutRequest.MaxMinerFee,
-		l.OutRequest.MaxPrepayAmount,
 	)
 }
 
