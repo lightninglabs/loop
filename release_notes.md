@@ -13,7 +13,6 @@ This file tracks release notes for the loop client.
 * Once the version bump PR is merged and tagged, add the release notes to the tag on GitHub.
 
 ## Next release
-* Set musig2 to be the default swap protocol.
 
 #### New Features
 
