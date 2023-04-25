@@ -69,7 +69,7 @@ func TestLoopOutSuccess(t *testing.T) {
 
 	testLoopOutSuccess(ctx, testRequest.Amount, info.SwapHash,
 		signalPrepaymentResult, signalSwapPaymentResult, false,
-		confIntent, swap.HtlcV2,
+		confIntent, swap.HtlcV3,
 	)
 }
 
@@ -154,6 +154,7 @@ func TestLoopOutResume(t *testing.T) {
 		loopdb.ProtocolVersionUnrecorded,
 		loopdb.ProtocolVersionHtlcV2,
 		loopdb.ProtocolVersionHtlcV3,
+		loopdb.ProtocolVersionMuSig2,
 	}
 
 	for _, version := range storedVersion {
@@ -339,13 +340,13 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// preimage before sweeping in order for the server to trust us with
 	// our MuSig2 signing attempts.
 	if scriptVersion == swap.HtlcV3 {
-		ctx.assertPreimagePush(testPreimage)
+		ctx.assertPreimagePush(ctx.store.loopOutSwaps[hash].Preimage)
 
 		// Try MuSig2 signing first and fail it so that we go for a
 		// normal sweep.
 		for i := 0; i < maxMusigSweepRetries; i++ {
 			ctx.expiryChan <- testTime
-			ctx.assertPreimagePush(testPreimage)
+			ctx.assertPreimagePush(ctx.store.loopOutSwaps[hash].Preimage)
 		}
 		<-ctx.Context.Lnd.SignOutputRawChannel
 	}
@@ -380,9 +381,10 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 
 	if scriptVersion != swap.HtlcV3 {
 		ctx.assertPreimagePush(preimage)
-		// Simulate server pulling payment.
-		signalSwapPaymentResult(nil)
 	}
+
+	// Simulate server pulling payment.
+	signalSwapPaymentResult(nil)
 
 	ctx.NotifySpend(sweepTx, 0)
 
