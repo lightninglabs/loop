@@ -64,11 +64,11 @@ const (
 
 	// stableRPCProtocolVersion defines the current stable RPC protocol
 	// version.
-	stableRPCProtocolVersion = looprpc.ProtocolVersion_ROUTING_PLUGIN
+	stableRPCProtocolVersion = looprpc.ProtocolVersion_MUSIG2
 
 	// experimentalRPCProtocolVersion defines the RPC protocol version that
 	// includes all currently experimentally released features.
-	experimentalRPCProtocolVersion = looprpc.ProtocolVersion_MUSIG2
+	experimentalRPCProtocolVersion = stableRPCProtocolVersion
 )
 
 var (

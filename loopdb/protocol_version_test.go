@@ -25,6 +25,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 		ProtocolVersionProbe,
 		ProtocolVersionRoutingPlugin,
 		ProtocolVersionHtlcV3,
+		ProtocolVersionMuSig2,
 	}
 
 	rpcVersions := [...]looprpc.ProtocolVersion{
@@ -39,6 +40,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 		looprpc.ProtocolVersion_PROBE,
 		looprpc.ProtocolVersion_ROUTING_PLUGIN,
 		looprpc.ProtocolVersion_HTLC_V3,
+		looprpc.ProtocolVersion_MUSIG2,
 	}
 
 	require.Equal(t, len(versions), len(rpcVersions))
@@ -49,7 +51,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 	// Finally test that the current version contants are up to date
 	require.Equal(t,
 		CurrentProtocolVersion(),
-		versions[len(versions)-2],
+		versions[len(versions)-1],
 	)
 
 	require.Equal(t,
