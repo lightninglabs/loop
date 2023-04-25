@@ -16,6 +16,8 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* With v0.22.2-beta loopd defaults to MuSig2 swaps for both loopin and loopout.
+
 #### Breaking Changes
 
 #### Bug Fixes
