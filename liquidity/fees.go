@@ -41,7 +41,7 @@ const (
 	// minerMultiplier is a multiplier we use to scale our miner fee to
 	// ensure that we will still be able to complete our swap in the case
 	// of a severe fee spike.
-	minerMultiplier = 100
+	minerMultiplier = 10
 
 	// defaultFeePPM is the default percentage of swap amount that we
 	// allocate to fees, 2%.

@@ -1555,7 +1555,7 @@ func TestFeePercentage(t *testing.T) {
 			quote: &loop.LoopOutQuote{
 				SwapFee:      60,
 				PrepayAmount: 30,
-				MinerFee:     1,
+				MinerFee:     10,
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
