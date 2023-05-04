@@ -19,6 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	defaultEventuallyTimeout  = time.Second * 45
+	defaultEventuallyInterval = time.Millisecond * 100
+)
+
 type autoloopTestCtx struct {
 	t         *testing.T
 	manager   *Manager
@@ -272,6 +277,15 @@ type autoloopStep struct {
 	keepDestAddr      bool
 }
 
+type easyAutoloopStep struct {
+	minAmt      btcutil.Amount
+	maxAmt      btcutil.Amount
+	existingOut []*loopdb.LoopOut
+	existingIn  []*loopdb.LoopIn
+	quotesOut   []quoteRequestResp
+	expectedOut []loopOutRequestResp
+}
+
 // autoloop walks our test context through the process of triggering our
 // autoloop functionality, providing mocked values as required. The set of
 // quotes provided indicates that we expect swap suggestions to be made (since
@@ -325,6 +339,50 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 
 	require.True(c.t, c.matchLoopOuts(step.expectedOut, step.keepDestAddr))
 	require.True(c.t, c.matchLoopIns(step.expectedIn))
+
+	require.Eventuallyf(c.t, func() bool {
+		return c.manager.numActiveStickyLoops() == 0
+	}, defaultEventuallyTimeout, defaultEventuallyInterval, "failed to"+
+		" wait for sticky loop counter")
+}
+
+// easyautoloop walks our test context through the process of triggering our
+// easy autoloop functionality, providing mocked values as required. The number
+// of values needed to mock easy autoloop are less than standard autoloop as the
+// goal of easy autoloop is to simplify its usage.
+func (c *autoloopTestCtx) easyautoloop(step *easyAutoloopStep, noop bool) {
+	// Tick our autoloop ticker to force assessing whether we want to loop.
+	c.manager.cfg.AutoloopTicker.Force <- testTime
+
+	// Provide the liquidity manager with our desired existing set of swaps.
+	c.loopOuts <- step.existingOut
+	c.loopIns <- step.existingIn
+
+	// If easy autoloop is not meant to be triggered we skip sending the
+	// mock response for restrictions, as this is never called.
+	if !noop {
+		// Send a mocked response from the server with the swap size limits.
+		c.loopOutRestrictions <- NewRestrictions(step.minAmt, step.maxAmt)
+	}
+
+	for _, expected := range step.quotesOut {
+		request := <-c.quoteRequest
+		require.Equal(
+			c.t, expected.request.Amount, request.Amount,
+		)
+
+		c.quotes <- expected.quote
+	}
+
+	for _, expected := range step.expectedOut {
+		actual := <-c.outRequest
+
+		require.Equal(c.t, expected.request.Amount, actual.Amount)
+		require.Equal(
+			c.t, expected.request.OutgoingChanSet,
+			actual.OutgoingChanSet,
+		)
+	}
 }
 
 // matchLoopOuts checks that the actual loop out requests we got match the
