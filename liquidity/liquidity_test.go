@@ -73,11 +73,13 @@ var (
 		OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
 		MaxPrepayRoutingFee: prepayFee,
 		MaxSwapRoutingFee:   routingFee,
-		MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
-		MaxSwapFee:          testQuote.SwapFee,
-		MaxPrepayAmount:     testQuote.PrepayAmount,
-		SweepConfTarget:     defaultConfTarget,
-		Initiator:           autoloopSwapInitiator,
+		MaxMinerFee: scaleMaxMinerFee(
+			scaleMinerFee(testQuote.MinerFee),
+		),
+		MaxSwapFee:      testQuote.SwapFee,
+		MaxPrepayAmount: testQuote.PrepayAmount,
+		SweepConfTarget: defaultConfTarget,
+		Initiator:       autoloopSwapInitiator,
 	}
 
 	// chan2Rec is the suggested swap for channel 2 when we use chanRule.
@@ -86,11 +88,13 @@ var (
 		OutgoingChanSet:     loopdb.ChannelSet{chanID2.ToUint64()},
 		MaxPrepayRoutingFee: prepayFee,
 		MaxSwapRoutingFee:   routingFee,
-		MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
-		MaxPrepayAmount:     testQuote.PrepayAmount,
-		MaxSwapFee:          testQuote.SwapFee,
-		SweepConfTarget:     defaultConfTarget,
-		Initiator:           autoloopSwapInitiator,
+		MaxMinerFee: scaleMaxMinerFee(
+			scaleMinerFee(testQuote.MinerFee),
+		),
+		MaxPrepayAmount: testQuote.PrepayAmount,
+		MaxSwapFee:      testQuote.SwapFee,
+		SweepConfTarget: defaultConfTarget,
+		Initiator:       autoloopSwapInitiator,
 	}
 
 	// chan1Out is a contract that uses channel 1, used to represent on
@@ -771,11 +775,13 @@ func TestSuggestSwaps(t *testing.T) {
 						},
 						MaxPrepayRoutingFee: prepay,
 						MaxSwapRoutingFee:   routing,
-						MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
-						MaxSwapFee:          testQuote.SwapFee,
-						MaxPrepayAmount:     testQuote.PrepayAmount,
-						SweepConfTarget:     defaultConfTarget,
-						Initiator:           autoloopSwapInitiator,
+						MaxMinerFee: scaleMaxMinerFee(
+							scaleMinerFee(testQuote.MinerFee),
+						),
+						MaxSwapFee:      testQuote.SwapFee,
+						MaxPrepayAmount: testQuote.PrepayAmount,
+						SweepConfTarget: defaultConfTarget,
+						Initiator:       autoloopSwapInitiator,
 					},
 				},
 				DisqualifiedChans: noneDisqualified,
@@ -1330,11 +1336,13 @@ func TestSizeRestrictions(t *testing.T) {
 			OutgoingChanSet:     loopdb.ChannelSet{chanID1.ToUint64()},
 			MaxPrepayRoutingFee: prepay,
 			MaxSwapRoutingFee:   routing,
-			MaxMinerFee:         scaleMinerFee(testQuote.MinerFee),
-			MaxSwapFee:          testQuote.SwapFee,
-			MaxPrepayAmount:     testQuote.PrepayAmount,
-			SweepConfTarget:     defaultConfTarget,
-			Initiator:           autoloopSwapInitiator,
+			MaxMinerFee: scaleMaxMinerFee(
+				scaleMinerFee(testQuote.MinerFee),
+			),
+			MaxSwapFee:      testQuote.SwapFee,
+			MaxPrepayAmount: testQuote.PrepayAmount,
+			SweepConfTarget: defaultConfTarget,
+			Initiator:       autoloopSwapInitiator,
 		}
 	)
 
@@ -1487,7 +1495,9 @@ func TestFeePercentage(t *testing.T) {
 		rec = loop.OutRequest{
 			Amount:          7500,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
-			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
+			MaxMinerFee: scaleMaxMinerFee(
+				scaleMinerFee(testQuote.MinerFee),
+			),
 			MaxSwapFee:      okQuote.SwapFee,
 			MaxPrepayAmount: okQuote.PrepayAmount,
 			SweepConfTarget: defaultConfTarget,
@@ -1650,7 +1660,9 @@ func TestBudgetWithLoopin(t *testing.T) {
 		rec = loop.OutRequest{
 			Amount:          7500,
 			OutgoingChanSet: loopdb.ChannelSet{chanID1.ToUint64()},
-			MaxMinerFee:     scaleMinerFee(okQuote.MinerFee),
+			MaxMinerFee: scaleMaxMinerFee(
+				scaleMinerFee(testQuote.MinerFee),
+			),
 			MaxSwapFee:      okQuote.SwapFee,
 			MaxPrepayAmount: okQuote.PrepayAmount,
 			SweepConfTarget: defaultConfTarget,
