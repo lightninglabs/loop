@@ -450,7 +450,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Retrieve all currently existing swaps from the database.
-	swapsList, err := d.impl.FetchSwaps()
+	swapsList, err := d.impl.FetchSwaps(d.mainCtx)
 	if err != nil {
 		if d.macaroonService == nil {
 			cleanupMacaroonStore()

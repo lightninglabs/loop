@@ -1,6 +1,7 @@
 package loopdb
 
 import (
+	"context"
 	"crypto/sha256"
 	"io/ioutil"
 	"os"
@@ -121,8 +122,10 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	require.NoError(t, err)
 
+	ctxb := context.Background()
+
 	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchLoopOutSwaps()
+	swaps, err := store.FetchLoopOutSwaps(ctxb)
 
 	require.NoError(t, err)
 	require.Empty(t, swaps)
@@ -134,12 +137,12 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 	checkSwap := func(expectedState SwapState) {
 		t.Helper()
 
-		swaps, err := store.FetchLoopOutSwaps()
+		swaps, err := store.FetchLoopOutSwaps(ctxb)
 		require.NoError(t, err)
 
 		require.Len(t, swaps, 1)
 
-		swap, err := store.FetchLoopOutSwap(hash)
+		swap, err := store.FetchLoopOutSwap(ctxb, hash)
 		require.NoError(t, err)
 
 		require.Equal(t, hash, swap.Hash)
@@ -158,20 +161,20 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	err = store.CreateLoopOut(hash, pendingSwap)
+	err = store.CreateLoopOut(ctxb, hash, pendingSwap)
 	require.NoError(t, err)
 
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	err = store.CreateLoopOut(hash, pendingSwap)
+	err = store.CreateLoopOut(ctxb, hash, pendingSwap)
 	require.Error(t, err)
 	checkSwap(StateInitiated)
 
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopOut(
-		hash, testTime,
+		ctxb, hash, testTime,
 		SwapStateData{
 			State:      StatePreimageRevealed,
 			HtlcTxHash: &chainhash.Hash{1, 6, 2},
@@ -184,7 +187,7 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopOut(
-		hash, testTime,
+		ctxb, hash, testTime,
 		SwapStateData{
 			State: StateFailInsufficientValue,
 		},
@@ -260,8 +263,10 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	require.NoError(t, err)
 
+	ctxb := context.Background()
+
 	// First, verify that an empty database has no active swaps.
-	swaps, err := store.FetchLoopInSwaps()
+	swaps, err := store.FetchLoopInSwaps(ctxb)
 	require.NoError(t, err)
 	require.Empty(t, swaps)
 
@@ -272,7 +277,7 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	checkSwap := func(expectedState SwapState) {
 		t.Helper()
 
-		swaps, err := store.FetchLoopInSwaps()
+		swaps, err := store.FetchLoopInSwaps(ctxb)
 		require.NoError(t, err)
 		require.Len(t, swaps, 1)
 
@@ -285,13 +290,13 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 
 	// If we create a new swap, then it should show up as being initialized
 	// right after.
-	err = store.CreateLoopIn(hash, &pendingSwap)
+	err = store.CreateLoopIn(ctxb, hash, &pendingSwap)
 	require.NoError(t, err)
 
 	checkSwap(StateInitiated)
 
 	// Trying to make the same swap again should result in an error.
-	err = store.CreateLoopIn(hash, &pendingSwap)
+	err = store.CreateLoopIn(ctxb, hash, &pendingSwap)
 	require.Error(t, err)
 
 	checkSwap(StateInitiated)
@@ -299,7 +304,7 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	// Next, we'll update to the next state of the pre-image being
 	// revealed. The state should be reflected here again.
 	err = store.UpdateLoopIn(
-		hash, testTime,
+		ctxb, hash, testTime,
 		SwapStateData{
 			State: StatePreimageRevealed,
 		},
@@ -311,7 +316,7 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	// Next, we'll update to the final state to ensure that the state is
 	// properly updated.
 	err = store.UpdateLoopIn(
-		hash, testTime,
+		ctxb, hash, testTime,
 		SwapStateData{
 			State: StateFailInsufficientValue,
 		},
@@ -407,6 +412,8 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 		legacyOutgoingChannel = Hex("0000000000000005")
 	)
 
+	ctxb := context.Background()
+
 	legacyDb := map[string]interface{}{
 		"loop-in": map[string]interface{}{},
 		"metadata": map[string]interface{}{
@@ -449,7 +456,7 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	swaps, err := store.FetchLoopOutSwaps()
+	swaps, err := store.FetchLoopOutSwaps(ctxb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,23 +474,25 @@ func TestLiquidityParams(t *testing.T) {
 	require.NoError(t, err, "failed to db")
 	defer os.RemoveAll(tempDirName)
 
+	ctxb := context.Background()
+
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	require.NoError(t, err, "failed to create store")
 
 	// Test when there's no params saved before, an empty bytes is
 	// returned.
-	params, err := store.FetchLiquidityParams()
+	params, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
 	require.Empty(t, params, "expect empty bytes")
 
 	params = []byte("test")
 
 	// Test we can save the params.
-	err = store.PutLiquidityParams(params)
+	err = store.PutLiquidityParams(ctxb, params)
 	require.NoError(t, err, "failed to put params")
 
 	// Now fetch the db again should return the above saved bytes.
-	paramsRead, err := store.FetchLiquidityParams()
+	paramsRead, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
 	require.Equal(t, params, paramsRead, "unexpected return value")
 }

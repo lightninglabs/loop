@@ -154,10 +154,10 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 		},
 		Lnd:   &lnd.LndServices,
 		Clock: clock.NewTestClock(testTime),
-		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
+		ListLoopOut: func(context.Context) ([]*loopdb.LoopOut, error) {
 			return nil, nil
 		},
-		ListLoopIn: func() ([]*loopdb.LoopIn, error) {
+		ListLoopIn: func(context.Context) ([]*loopdb.LoopIn, error) {
 			return nil, nil
 		},
 		LoopOutQuote: func(_ context.Context,
@@ -266,30 +266,34 @@ func TestPersistParams(t *testing.T) {
 	cfg, _ := newTestConfig()
 	manager := NewManager(cfg)
 
+	ctxb := context.Background()
+
 	var paramsBytes []byte
 
 	// Mock the read method to return empty data.
-	manager.cfg.FetchLiquidityParams = func() ([]byte, error) {
+	manager.cfg.FetchLiquidityParams = func(context.Context) ([]byte, error) {
 		return paramsBytes, nil
 	}
 
 	// Test the nil params is returned.
-	req, err := manager.loadParams()
+	req, err := manager.loadParams(ctxb)
 	require.Nil(t, req)
 	require.NoError(t, err)
 
 	// Mock the write method to return no error.
-	manager.cfg.PutLiquidityParams = func(data []byte) error {
+	manager.cfg.PutLiquidityParams = func(ctx context.Context,
+		data []byte) error {
+
 		paramsBytes = data
 		return nil
 	}
 
 	// Test save the message.
-	err = manager.saveParams(rpcParams)
+	err = manager.saveParams(ctxb, rpcParams)
 	require.NoError(t, err)
 
 	// Test the nil params is returned.
-	req, err = manager.loadParams()
+	req, err = manager.loadParams(ctxb)
 	require.NoError(t, err)
 
 	// Check the specified fields are set as expected.
@@ -565,10 +569,10 @@ func TestRestrictedSuggestions(t *testing.T) {
 			// Create a manager config which will return the test
 			// case's set of existing swaps.
 			cfg, lnd := newTestConfig()
-			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
 				return testCase.loopOut, nil
 			}
-			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
 				return testCase.loopIn, nil
 			}
 
@@ -1093,7 +1097,7 @@ func TestFeeBudget(t *testing.T) {
 				})
 			}
 
-			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
 				return swaps, nil
 			}
 
@@ -1270,10 +1274,10 @@ func TestInFlightLimit(t *testing.T) {
 
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
-			cfg.ListLoopOut = func() ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
 				return testCase.existingSwaps, nil
 			}
-			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
 				return testCase.existingInSwaps, nil
 			}
 
@@ -1755,7 +1759,7 @@ func TestBudgetWithLoopin(t *testing.T) {
 				channel1,
 			}
 
-			cfg.ListLoopIn = func() ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
 				return testCase.loopIns, nil
 			}
 

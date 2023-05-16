@@ -10,22 +10,22 @@
 //
 // Fee restrictions are placed on swap suggestions to ensure that we only
 // suggest swaps that fit the configured fee preferences.
-// - Sweep Fee Rate Limit: the maximum sat/vByte fee estimate for our sweep
-//   transaction to confirm within our configured number of confirmations
-//   that we will suggest swaps for.
-// - Maximum Swap Fee PPM: the maximum server fee, expressed as parts per
-//   million of the full swap amount
-// - Maximum Routing Fee PPM: the maximum off-chain routing fees for the swap
-//   invoice, expressed as parts per million of the swap amount.
-// - Maximum Prepay Routing Fee PPM: the maximum off-chain routing fees for the
-//   swap prepayment, expressed as parts per million of the prepay amount.
-// - Maximum Prepay: the maximum now-show fee, expressed in satoshis. This
-//   amount is only payable in the case where the swap server broadcasts a htlc
-//   and the client fails to sweep the preimage.
-// - Maximum miner fee: the maximum miner fee we are willing to pay to sweep the
-//   on chain htlc. Note that the client will use current fee estimates to
-//   sweep, so this value acts more as a sanity check in the case of a large fee
-//   spike.
+//   - Sweep Fee Rate Limit: the maximum sat/vByte fee estimate for our sweep
+//     transaction to confirm within our configured number of confirmations
+//     that we will suggest swaps for.
+//   - Maximum Swap Fee PPM: the maximum server fee, expressed as parts per
+//     million of the full swap amount
+//   - Maximum Routing Fee PPM: the maximum off-chain routing fees for the swap
+//     invoice, expressed as parts per million of the swap amount.
+//   - Maximum Prepay Routing Fee PPM: the maximum off-chain routing fees for the
+//     swap prepayment, expressed as parts per million of the prepay amount.
+//   - Maximum Prepay: the maximum now-show fee, expressed in satoshis. This
+//     amount is only payable in the case where the swap server broadcasts a htlc
+//     and the client fails to sweep the preimage.
+//   - Maximum miner fee: the maximum miner fee we are willing to pay to sweep the
+//     on chain htlc. Note that the client will use current fee estimates to
+//     sweep, so this value acts more as a sanity check in the case of a large fee
+//     spike.
 //
 // The maximum fee per-swap is calculated as follows:
 // (swap amount * serverPPM/1e6) + miner fee + (swap amount * routingPPM/1e6)
@@ -176,14 +176,14 @@ type Config struct {
 	Lnd *lndclient.LndServices
 
 	// ListLoopOut returns all of the loop our swaps stored on disk.
-	ListLoopOut func() ([]*loopdb.LoopOut, error)
+	ListLoopOut func(context.Context) ([]*loopdb.LoopOut, error)
 
 	// GetLoopOut returns a single loop out swap based on the provided swap
 	// hash.
-	GetLoopOut func(hash lntypes.Hash) (*loopdb.LoopOut, error)
+	GetLoopOut func(ctx context.Context, hash lntypes.Hash) (*loopdb.LoopOut, error)
 
 	// ListLoopIn returns all of the loop in swaps stored on disk.
-	ListLoopIn func() ([]*loopdb.LoopIn, error)
+	ListLoopIn func(ctx context.Context) ([]*loopdb.LoopIn, error)
 
 	// LoopOutQuote gets swap fee, estimated miner fee and prepay amount for
 	// a loop out swap.
@@ -219,13 +219,13 @@ type Config struct {
 	//
 	// NOTE: the params are encoded using `proto.Marshal` over an RPC
 	// request.
-	PutLiquidityParams func(params []byte) error
+	PutLiquidityParams func(ctx context.Context, params []byte) error
 
 	// FetchLiquidityParams reads the serialized `Parameters` from db.
 	//
 	// NOTE: the params are decoded using `proto.Unmarshal` over a
 	// serialized RPC request.
-	FetchLiquidityParams func() ([]byte, error)
+	FetchLiquidityParams func(ctx context.Context) ([]byte, error)
 }
 
 // Manager contains a set of desired liquidity rules for our channel
@@ -260,7 +260,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer m.cfg.AutoloopTicker.Stop()
 
 	// Before we start the main loop, load the params from db.
-	req, err := m.loadParams()
+	req, err := m.loadParams(ctx)
 	if err != nil {
 		return err
 	}
@@ -338,7 +338,7 @@ func (m *Manager) SetParameters(ctx context.Context,
 	// Since setting params is NOT a frequent action, it's should put
 	// little pressure on our db. Only when performance becomes an issue,
 	// we can then apply the alternative.
-	return m.saveParams(req)
+	return m.saveParams(ctx, req)
 }
 
 // SetParameters updates our current set of parameters if the new parameters
@@ -372,7 +372,7 @@ func (m *Manager) setParameters(ctx context.Context,
 }
 
 // saveParams marshals an RPC request and saves it to db.
-func (m *Manager) saveParams(req proto.Message) error {
+func (m *Manager) saveParams(ctx context.Context, req proto.Message) error {
 	// Marshal the params.
 	paramsBytes, err := proto.Marshal(req)
 	if err != nil {
@@ -380,7 +380,7 @@ func (m *Manager) saveParams(req proto.Message) error {
 	}
 
 	// Save the params on disk.
-	if err := m.cfg.PutLiquidityParams(paramsBytes); err != nil {
+	if err := m.cfg.PutLiquidityParams(ctx, paramsBytes); err != nil {
 		return fmt.Errorf("failed to save params: %v", err)
 	}
 
@@ -389,8 +389,10 @@ func (m *Manager) saveParams(req proto.Message) error {
 
 // loadParams unmarshals a serialized RPC request from db and returns the RPC
 // request.
-func (m *Manager) loadParams() (*clientrpc.LiquidityParameters, error) {
-	paramsBytes, err := m.cfg.FetchLiquidityParams()
+func (m *Manager) loadParams(ctx context.Context) (
+	*clientrpc.LiquidityParameters, error) {
+
+	paramsBytes, err := m.cfg.FetchLiquidityParams(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read params: %v", err)
 	}
@@ -509,12 +511,12 @@ func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 // local balance back to the target.
 func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// Retrieve existing swaps.
-	loopOut, err := m.cfg.ListLoopOut()
+	loopOut, err := m.cfg.ListLoopOut(ctx)
 	if err != nil {
 		return err
 	}
 
-	loopIn, err := m.cfg.ListLoopIn()
+	loopIn, err := m.cfg.ListLoopIn(ctx)
 	if err != nil {
 		return err
 	}
@@ -723,12 +725,12 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	// List our current set of swaps so that we can determine which channels
 	// are already being utilized by swaps. Note that these calls may race
 	// with manual initiation of swaps.
-	loopOut, err := m.cfg.ListLoopOut()
+	loopOut, err := m.cfg.ListLoopOut(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	loopIn, err := m.cfg.ListLoopIn()
+	loopIn, err := m.cfg.ListLoopIn(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1212,7 +1214,7 @@ func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
 			return
 		}
 
-		err = m.saveParams(paramsRpc)
+		err = m.saveParams(ctx, paramsRpc)
 		if err != nil {
 			log.Errorf("Error saving parameters: %v", err)
 		}
@@ -1334,7 +1336,7 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 		case <-time.After(interval):
 		}
 
-		swap, err = m.cfg.GetLoopOut(swapHash)
+		swap, err = m.cfg.GetLoopOut(ctx, swapHash)
 		if err != nil {
 			log.Errorf(
 				"Error getting swap with hash %x: %v", swapHash,

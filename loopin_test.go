@@ -395,6 +395,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	storedVersion loopdb.ProtocolVersion) {
 
 	defer test.Guard(t)()
+	ctxb := context.Background()
 
 	ctx := newLoopInTestContext(t)
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
@@ -454,7 +455,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	)
 	require.NoError(t, err)
 
-	err = ctx.store.CreateLoopIn(testPreimage.Hash(), contract)
+	err = ctx.store.CreateLoopIn(ctxb, testPreimage.Hash(), contract)
 	require.NoError(t, err)
 
 	inSwap, err := resumeLoopInSwap(context.Background(), cfg, pendSwap)

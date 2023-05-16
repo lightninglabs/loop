@@ -192,13 +192,13 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 }
 
 // FetchSwaps returns all loop in and out swaps currently in the database.
-func (s *Client) FetchSwaps() ([]*SwapInfo, error) {
-	loopOutSwaps, err := s.Store.FetchLoopOutSwaps()
+func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
+	loopOutSwaps, err := s.Store.FetchLoopOutSwaps(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	loopInSwaps, err := s.Store.FetchLoopInSwaps()
+	loopInSwaps, err := s.Store.FetchLoopInSwaps(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +292,12 @@ func (s *Client) Run(ctx context.Context,
 
 	// Query store before starting event loop to prevent new swaps from
 	// being treated as swaps that need to be resumed.
-	pendingLoopOutSwaps, err := s.Store.FetchLoopOutSwaps()
+	pendingLoopOutSwaps, err := s.Store.FetchLoopOutSwaps(mainCtx)
 	if err != nil {
 		return err
 	}
 
-	pendingLoopInSwaps, err := s.Store.FetchLoopInSwaps()
+	pendingLoopInSwaps, err := s.Store.FetchLoopInSwaps(mainCtx)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package loopdb
 
 import (
+	"context"
 	"time"
 
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -10,30 +11,32 @@ import (
 // houses information for all pending completed/failed swaps.
 type SwapStore interface {
 	// FetchLoopOutSwaps returns all swaps currently in the store.
-	FetchLoopOutSwaps() ([]*LoopOut, error)
+	FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error)
 
 	// FetchLoopOutSwap returns the loop out swap with the given hash.
-	FetchLoopOutSwap(hash lntypes.Hash) (*LoopOut, error)
+	FetchLoopOutSwap(ctx context.Context, hash lntypes.Hash) (*LoopOut, error)
 
 	// CreateLoopOut adds an initiated swap to the store.
-	CreateLoopOut(hash lntypes.Hash, swap *LoopOutContract) error
+	CreateLoopOut(ctx context.Context, hash lntypes.Hash,
+		swap *LoopOutContract) error
 
 	// UpdateLoopOut stores a new event for a target loop out swap. This
 	// appends to the event log for a particular swap as it goes through
 	// the various stages in its lifetime.
-	UpdateLoopOut(hash lntypes.Hash, time time.Time,
+	UpdateLoopOut(ctx context.Context, hash lntypes.Hash, time time.Time,
 		state SwapStateData) error
 
 	// FetchLoopInSwaps returns all swaps currently in the store.
-	FetchLoopInSwaps() ([]*LoopIn, error)
+	FetchLoopInSwaps(ctx context.Context) ([]*LoopIn, error)
 
 	// CreateLoopIn adds an initiated swap to the store.
-	CreateLoopIn(hash lntypes.Hash, swap *LoopInContract) error
+	CreateLoopIn(ctx context.Context, hash lntypes.Hash,
+		swap *LoopInContract) error
 
 	// UpdateLoopIn stores a new event for a target loop in swap. This
 	// appends to the event log for a particular swap as it goes through
 	// the various stages in its lifetime.
-	UpdateLoopIn(hash lntypes.Hash, time time.Time,
+	UpdateLoopIn(ctx context.Context, hash lntypes.Hash, time time.Time,
 		state SwapStateData) error
 
 	// PutLiquidityParams writes the serialized `manager.Parameters` bytes
@@ -41,14 +44,14 @@ type SwapStore interface {
 	//
 	// NOTE: it's the caller's responsibility to encode the param. Atm,
 	// it's encoding using the proto package's `Marshal` method.
-	PutLiquidityParams(params []byte) error
+	PutLiquidityParams(ctx context.Context, params []byte) error
 
 	// FetchLiquidityParams reads the serialized `manager.Parameters` bytes
 	// from the bucket.
 	//
 	// NOTE: it's the caller's responsibility to decode the param. Atm,
 	// it's decoding using the proto package's `Unmarshal` method.
-	FetchLiquidityParams() ([]byte, error)
+	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 
 	// Close closes the underlying database.
 	Close() error
