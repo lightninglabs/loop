@@ -1,0 +1,10 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "loopdb/sqlc/migrations"
+    queries: "loopdb/sqlc/queries"
+    gen:
+      go:
+        out: loopdb/sqlc
+        package: sqlc
+        emit_interface: true
