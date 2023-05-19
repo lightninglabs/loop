@@ -38,10 +38,14 @@ const (
 	// sweep fees, (750 * 4 /1000 = 3 sat/vByte).
 	defaultSweepFeeRateLimit = chainfee.SatPerKWeight(750)
 
-	// minerMultiplier is a multiplier we use to scale our miner fee to
-	// ensure that we will still be able to complete our swap in the case
-	// of a severe fee spike.
-	minerMultiplier = 100
+	// minerMultiplier is a multiplier we use to predict the average chain
+	// costs towards miner fees.
+	minerMultiplier = 2
+
+	// maxMinerMultiplier is the maximum multiplier we use to scale our
+	// miner fee to ensure that we will still be able to complete our swap
+	// in the case of a severe fee spike.
+	maxMinerMultiplier = 50
 
 	// defaultFeePPM is the default percentage of swap amount that we
 	// allocate to fees, 2%.
@@ -341,6 +345,12 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 
 	prepay, route, miner := f.loopOutFees(swapAmt, quote)
 
+	// Before checking our fees against our budget we remove the large
+	// multiplier from the miner fees. We do this because we want to
+	// consider the average case for our budget calculations and not the
+	// severe edge-case miner fees.
+	miner = miner / maxMinerMultiplier
+
 	// Calculate the worst case fees that we could pay for this swap,
 	// ensuring that we are within our fee limit even if the swap fails.
 	fees := worstCaseOutFees(
@@ -370,6 +380,8 @@ func (f *FeePortion) loopOutFees(amount btcutil.Amount,
 	// amounts provided by the quote to get the total available for
 	// off-chain fees.
 	feeLimit := ppmToSat(amount, f.PartsPerMillion)
+
+	// Apply the small miner multiplier for the fee budget calculations.
 	minerFee := scaleMinerFee(quote.MinerFee)
 
 	available := feeLimit - minerFee - quote.SwapFee
@@ -377,6 +389,9 @@ func (f *FeePortion) loopOutFees(amount btcutil.Amount,
 	prepayMaxFee, routeMaxFee := splitOffChain(
 		available, quote.PrepayAmount, amount,
 	)
+
+	// Apply the big miner multiplier to get the worst case miner fees.
+	minerFee = scaleMaxMinerFee(minerFee)
 
 	return prepayMaxFee, routeMaxFee, minerFee
 }
@@ -394,9 +409,18 @@ func splitOffChain(available, prepayAmt,
 	return prepayMaxFee, routeMaxFee
 }
 
-// scaleMinerFee scales our miner fee by our constant multiplier.
+// scaleMinerFee scales our miner fee by a smaller multiplier. This scale does
+// not represent the worst-case maximum miner fees, but the average expected
+// fees.
 func scaleMinerFee(estimate btcutil.Amount) btcutil.Amount {
 	return estimate * btcutil.Amount(minerMultiplier)
+}
+
+// scaleMaxMinerFee scales our miner fee by a big multiplier. The returned value
+// represents the maximum amount that we consider spending for miner fees in
+// worst-case scenarios (fee-spikes).
+func scaleMaxMinerFee(estimate btcutil.Amount) btcutil.Amount {
+	return estimate * btcutil.Amount(maxMinerMultiplier)
 }
 
 func (f *FeePortion) loopInLimits(amount btcutil.Amount,
