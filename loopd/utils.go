@@ -2,34 +2,67 @@ package loopd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
 // getClient returns an instance of the swap client.
-func getClient(config *Config, lnd *lndclient.LndServices) (*loop.Client,
+func getClient(cfg *Config, lnd *lndclient.LndServices) (*loop.Client,
 	func(), error) {
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:       config.Server.Host,
-		ProxyAddress:        config.Server.Proxy,
-		SwapServerNoTLS:     config.Server.NoTLS,
-		TLSPathServer:       config.Server.TLSPath,
+		ServerAddress:       cfg.Server.Host,
+		ProxyAddress:        cfg.Server.Proxy,
+		SwapServerNoTLS:     cfg.Server.NoTLS,
+		TLSPathServer:       cfg.Server.TLSPath,
 		Lnd:                 lnd,
-		MaxLsatCost:         btcutil.Amount(config.MaxLSATCost),
-		MaxLsatFee:          btcutil.Amount(config.MaxLSATFee),
-		LoopOutMaxParts:     config.LoopOutMaxParts,
-		TotalPaymentTimeout: config.TotalPaymentTimeout,
-		MaxPaymentRetries:   config.MaxPaymentRetries,
+		MaxLsatCost:         btcutil.Amount(cfg.MaxLSATCost),
+		MaxLsatFee:          btcutil.Amount(cfg.MaxLSATFee),
+		LoopOutMaxParts:     cfg.LoopOutMaxParts,
+		TotalPaymentTimeout: cfg.TotalPaymentTimeout,
+		MaxPaymentRetries:   cfg.MaxPaymentRetries,
 	}
 
-	swapClient, cleanUp, err := loop.NewClient(config.DataDir, clientConfig)
+	// Now that we know where the database will live, we'll go ahead and
+	// open up the default implementation of it.
+	var (
+		db  loopdb.SwapStore
+		err error
+	)
+	switch cfg.DatabaseBackend {
+	case DatabaseBackendSqlite:
+		log.Infof("Opening sqlite3 database at: %v",
+			cfg.Sqlite.DatabaseFileName)
+		db, err = loopdb.NewSqliteStore(
+			cfg.Sqlite, clientConfig.Lnd.ChainParams,
+		)
+
+	case DatabaseBackendPostgres:
+		log.Infof("Opening postgres database at: %v",
+			cfg.Postgres.DSN(true))
+		db, err = loopdb.NewPostgresStore(
+			cfg.Postgres, clientConfig.Lnd.ChainParams,
+		)
+
+	default:
+		return nil, nil, fmt.Errorf("unknown database backend: %s",
+			cfg.DatabaseBackend)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to open database: %v", err)
+	}
+
+	swapClient, cleanUp, err := loop.NewClient(
+		cfg.DataDir, db, clientConfig,
+	)
 	if err != nil {
 		return nil, nil, err
 	}

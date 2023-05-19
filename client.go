@@ -121,11 +121,9 @@ type ClientConfig struct {
 }
 
 // NewClient returns a new instance to initiate swaps with.
-func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
-	store, err := loopdb.NewBoltSwapStore(dbDir, cfg.Lnd.ChainParams)
-	if err != nil {
-		return nil, nil, err
-	}
+func NewClient(dbDir string, loopDB loopdb.SwapStore,
+	cfg *ClientConfig) (*Client, func(), error) {
+
 	lsatStore, err := lsat.NewFileStore(dbDir)
 	if err != nil {
 		return nil, nil, err
@@ -139,7 +137,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 	config := &clientConfig{
 		LndServices: cfg.Lnd,
 		Server:      swapServerClient,
-		Store:       store,
+		Store:       loopDB,
 		LsatStore:   lsatStore,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
@@ -153,7 +151,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 
 	executor := newExecutor(&executorConfig{
 		lnd:                 cfg.Lnd,
-		store:               store,
+		store:               loopDB,
 		sweeper:             sweeper,
 		createExpiryTimer:   config.CreateExpiryTimer,
 		loopOutMaxParts:     cfg.LoopOutMaxParts,
@@ -185,7 +183,7 @@ func NewClient(dbDir string, cfg *ClientConfig) (*Client, func(), error) {
 
 	cleanup := func() {
 		swapServerClient.stop()
-		store.Close()
+		loopDB.Close()
 	}
 
 	return client, cleanup, nil
