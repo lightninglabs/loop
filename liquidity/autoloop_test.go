@@ -207,7 +207,7 @@ func TestAutoLoopEnabled(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.StateInitiated,
+							State: loopdb.StateSuccess,
 						},
 					},
 				},
@@ -472,7 +472,7 @@ func TestAutoloopAddress(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.StateHtlcPublished,
+							State: loopdb.StateSuccess,
 						},
 					},
 				},
@@ -647,7 +647,7 @@ func TestCompositeRules(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.StateHtlcPublished,
+							State: loopdb.StateSuccess,
 						},
 					},
 				},
@@ -984,7 +984,7 @@ func TestAutoloopBothTypes(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.StateHtlcPublished,
+							State: loopdb.SwapState(loopdb.StateSuccess),
 						},
 					},
 				},
@@ -1162,15 +1162,28 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 				},
 			},
 		}
+
+		singleLoopOut = &loopdb.LoopOut{
+			Loop: loopdb.Loop{
+				Events: []*loopdb.LoopEvent{
+					{
+						SwapStateData: loopdb.SwapStateData{
+							State: loopdb.SwapState(loopdb.StateSuccess),
+						},
+					},
+				},
+			},
+		}
 	)
 
 	// Tick our autolooper with no existing swaps, we expect a loop out
 	// swap to be dispatched on first channel.
 	step := &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		quotesOut:   quotes1,
-		expectedOut: loopOuts1,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		quotesOut:         quotes1,
+		expectedOut:       loopOuts1,
+		existingOutSingle: singleLoopOut,
 	}
 	c.autoloop(step)
 
@@ -1188,11 +1201,12 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 	}
 
 	step = &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		quotesOut:   quotes2,
-		existingOut: existing,
-		expectedOut: nil,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		quotesOut:         quotes2,
+		existingOut:       existing,
+		expectedOut:       nil,
+		existingOutSingle: singleLoopOut,
 	}
 	// Tick again, we should expect no loop outs because our budget would be
 	// exceeded.
@@ -1222,16 +1236,188 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 	c.testClock.SetTime(testTime.Add(time.Hour * 25))
 
 	step = &autoloopStep{
-		minAmt:      1,
-		maxAmt:      amt + 1,
-		quotesOut:   quotes2,
-		existingOut: existing2,
-		expectedOut: loopOuts2,
+		minAmt:            1,
+		maxAmt:            amt + 1,
+		quotesOut:         quotes2,
+		existingOut:       existing2,
+		expectedOut:       loopOuts2,
+		existingOutSingle: singleLoopOut,
 	}
 
 	// Tick again, we should expect a loop out to occur on the 2nd channel.
 	c.autoloop(step)
 
+	c.stop()
+}
+
+// TestEasyAutoloop tests that the easy autoloop logic works as expected. This
+// involves testing that channels are correctly selected and that the balance
+// target is successfully met.
+func TestEasyAutoloop(t *testing.T) {
+	defer test.Guard(t)
+
+	// We need to change the default channels we use for tests so that they
+	// have different local balances in order to know which one is going to
+	// be selected by easy autoloop.
+	easyChannel1 := lndclient.ChannelInfo{
+		Active:        true,
+		ChannelID:     chanID1.ToUint64(),
+		PubKeyBytes:   peer1,
+		LocalBalance:  95000,
+		RemoteBalance: 0,
+		Capacity:      100000,
+	}
+
+	easyChannel2 := lndclient.ChannelInfo{
+		Active:        true,
+		ChannelID:     chanID1.ToUint64(),
+		PubKeyBytes:   peer1,
+		LocalBalance:  75000,
+		RemoteBalance: 0,
+		Capacity:      100000,
+	}
+
+	var (
+		channels = []lndclient.ChannelInfo{
+			easyChannel1, easyChannel2,
+		}
+
+		params = Parameters{
+			Autoloop:                  true,
+			AutoFeeBudget:             36000,
+			AutoFeeRefreshPeriod:      time.Hour * 3,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
+			HtlcConfTarget:            defaultHtlcConfTarget,
+			EasyAutoloop:              true,
+			EasyAutoloopTarget:        75000,
+			FeeLimit:                  defaultFeePortion(),
+		}
+	)
+
+	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	var (
+		maxAmt = 50000
+
+		chan1Swap = &loop.OutRequest{
+			Amount:          btcutil.Amount(maxAmt),
+			OutgoingChanSet: loopdb.ChannelSet{easyChannel1.ChannelID},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		quotesOut1 = []quoteRequestResp{
+			{
+				request: &loop.LoopOutQuoteRequest{
+					Amount: btcutil.Amount(maxAmt),
+				},
+				quote: &loop.LoopOutQuote{
+					SwapFee:      1,
+					PrepayAmount: 1,
+					MinerFee:     1,
+				},
+			},
+		}
+
+		loopOut1 = []loopOutRequestResp{
+			{
+				request: chan1Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+	)
+
+	// We expected one max size swap to be dispatched on our channel with
+	// the biggest local balance.
+	step := &easyAutoloopStep{
+		minAmt:      1,
+		maxAmt:      50000,
+		quotesOut:   quotesOut1,
+		expectedOut: loopOut1,
+	}
+
+	c.easyautoloop(step, false)
+	c.stop()
+
+	// In order to reflect the change on the channel balances we create a
+	// new context and restart the autolooper.
+	easyChannel1.LocalBalance -= chan1Swap.Amount
+	channels = []lndclient.ChannelInfo{
+		easyChannel1, easyChannel2,
+	}
+
+	c = newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	var (
+		amt2 = 45_000
+
+		chan2Swap = &loop.OutRequest{
+			Amount:          btcutil.Amount(amt2),
+			OutgoingChanSet: loopdb.ChannelSet{easyChannel2.ChannelID},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+
+		quotesOut2 = []quoteRequestResp{
+			{
+				request: &loop.LoopOutQuoteRequest{
+					Amount: btcutil.Amount(amt2),
+				},
+				quote: &loop.LoopOutQuote{
+					SwapFee:      1,
+					PrepayAmount: 1,
+					MinerFee:     1,
+				},
+			},
+		}
+
+		loopOut2 = []loopOutRequestResp{
+			{
+				request: chan2Swap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+	)
+
+	// We expect a swap of size 45_000 to be dispatched in order to meet the
+	// defined target of 75_000.
+	step = &easyAutoloopStep{
+		minAmt:      1,
+		maxAmt:      50000,
+		quotesOut:   quotesOut2,
+		expectedOut: loopOut2,
+	}
+
+	c.easyautoloop(step, false)
+	c.stop()
+
+	// In order to reflect the change on the channel balances we create a
+	// new context and restart the autolooper.
+	easyChannel2.LocalBalance -= btcutil.Amount(amt2)
+	channels = []lndclient.ChannelInfo{
+		easyChannel1, easyChannel2,
+	}
+
+	c = newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	// We have met the target of 75_000 so we don't expect any action from
+	// easy autoloop. That's why we set noop to true in the call below.
+	step = &easyAutoloopStep{
+		minAmt: 1,
+		maxAmt: 50000,
+	}
+
+	c.easyautoloop(step, true)
 	c.stop()
 }
 

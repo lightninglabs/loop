@@ -324,6 +324,17 @@ var setParamsCommand = cli.Command{
 			Usage: "the confirmation target for loop in on-chain " +
 				"htlcs",
 		},
+		cli.BoolFlag{
+			Name: "easyautoloop",
+			Usage: "set to true to enable easy autoloop, which " +
+				"will automatically dispatch swaps in order " +
+				"to meet the target local balance",
+		},
+		cli.Uint64Flag{
+			Name: "localbalancesat",
+			Usage: "the target size of total local balance in " +
+				"satoshis, used by easy autoloop",
+		},
 	},
 	Action: setParams,
 }
@@ -462,6 +473,17 @@ func setParams(ctx *cli.Context) error {
 
 	if ctx.IsSet("htlc_conf") {
 		params.HtlcConfTarget = int32(ctx.Int("htlc_conf"))
+		flagSet = true
+	}
+
+	if ctx.IsSet("easyautoloop") {
+		params.EasyAutoloop = ctx.Bool("easyautoloop")
+		flagSet = true
+	}
+
+	if ctx.IsSet("localbalancesat") {
+		params.EasyAutoloopLocalTargetSat =
+			ctx.Uint64("localbalancesat")
 		flagSet = true
 	}
 
