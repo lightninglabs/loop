@@ -9,6 +9,24 @@ following command:
 loop setparams --autoloop=true
 ```
 
+## Easy Autoloop
+
+If you don't want to bother with setting up specific rules for each of your
+channels and peers you can use easy autoloop. This mode of autoloop requires
+for you to set only the overall channel balance that you don't wish to exceed
+on your lightning node. For example, if you want to keep your node's total
+channel balance below 1 million satoshis you can set the following
+```
+loop setparams --autoloop=true --easyautoloop=true --localbalancesat=1000000
+```
+
+This will automatically start dispatching loop-outs whenever you exceed total
+channel balance of 1M sats. Keep in mind that on first time use this will use
+the default budget parameters. If you wish to configure a custom budget you can
+find more info in the [Budget](#budget) section.
+
+## Liquidity Rules
+
 At present, autoloop can be configured to either acquire incoming liquidity 
 using loop out, or acquire outgoing liquidity using loop in. It cannot support
 automated swaps in both directions. To set the type of swaps you would like 

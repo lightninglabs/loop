@@ -15,6 +15,9 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
+- Easy Autoloop: a new mode for autoloop which requires the user to only set a
+        single target balance. Autoloop will start dispatching loop outs 
+        whenever the total channel balance of the node exceeds that target.
 
 #### Breaking Changes
 
