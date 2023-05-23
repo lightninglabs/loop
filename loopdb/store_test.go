@@ -484,6 +484,7 @@ func TestLiquidityParams(t *testing.T) {
 	params, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
 	require.Empty(t, params, "expect empty bytes")
+	require.Nil(t, params)
 
 	params = []byte("test")
 
