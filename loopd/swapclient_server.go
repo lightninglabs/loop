@@ -68,6 +68,7 @@ type swapClientServer struct {
 	clientrpc.UnimplementedSwapClientServer
 	clientrpc.UnimplementedDebugServer
 
+	config           *Config
 	network          lndclient.Network
 	impl             *loop.Client
 	liquidityMgr     *liquidity.Manager
@@ -736,6 +737,77 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	}
 
 	return &clientrpc.TokensResponse{Tokens: rpcTokens}, nil
+}
+
+// GetInfo returns basic information about the loop daemon and details to swaps
+// from the swap store.
+func (s *swapClientServer) GetInfo(_ context.Context,
+	_ *clientrpc.GetInfoRequest) (*clientrpc.GetInfoResponse, error) {
+
+	// Fetch loop-outs from the loop db.
+	outSwaps, err := s.impl.Store.FetchLoopOutSwaps()
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect loop-out stats.
+	loopOutStats := &clientrpc.LoopStats{}
+	for _, out := range outSwaps {
+		switch out.State().State.Type() {
+		case loopdb.StateTypeSuccess:
+			loopOutStats.SuccessCount++
+			loopOutStats.SumSucceededAmt += int64(
+				out.Contract.AmountRequested,
+			)
+
+		case loopdb.StateTypePending:
+			loopOutStats.PendingCount++
+			loopOutStats.SumPendingAmt += int64(
+				out.Contract.AmountRequested,
+			)
+
+		case loopdb.StateTypeFail:
+			loopOutStats.FailCount++
+		}
+	}
+
+	// Fetch loop-ins from the loop db.
+	inSwaps, err := s.impl.Store.FetchLoopInSwaps()
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect loop-in stats.
+	loopInStats := &clientrpc.LoopStats{}
+	for _, in := range inSwaps {
+		switch in.State().State.Type() {
+		case loopdb.StateTypeSuccess:
+			loopInStats.SuccessCount++
+			loopInStats.SumSucceededAmt += int64(
+				in.Contract.AmountRequested,
+			)
+
+		case loopdb.StateTypePending:
+			loopInStats.PendingCount++
+			loopInStats.SumPendingAmt += int64(
+				in.Contract.AmountRequested,
+			)
+
+		case loopdb.StateTypeFail:
+			loopInStats.FailCount++
+		}
+	}
+
+	return &clientrpc.GetInfoResponse{
+		Version:      loop.Version(),
+		Network:      s.config.Network,
+		RpcListen:    s.config.RPCListen,
+		RestListen:   s.config.RESTListen,
+		MacaroonPath: s.config.MacaroonPath,
+		TlsCertPath:  s.config.TLSCertPath,
+		LoopOutStats: loopOutStats,
+		LoopInStats:  loopInStats,
+	}, nil
 }
 
 // GetLiquidityParams gets our current liquidity manager's parameters.
