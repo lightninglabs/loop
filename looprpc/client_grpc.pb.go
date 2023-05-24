@@ -60,6 +60,9 @@ type SwapClientClient interface {
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
+	// loop: `getinfo`
+	//GetInfo gets basic information about the loop daemon.
+	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
 	// loop: `getparams`
 	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	//is currently configured with. This may be nil if nothing is configured.
@@ -209,6 +212,15 @@ func (c *swapClientClient) GetLsatTokens(ctx context.Context, in *TokensRequest,
 	return out, nil
 }
 
+func (c *swapClientClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
+	out := new(GetInfoResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error) {
 	out := new(LiquidityParameters)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLiquidityParams", in, out, opts...)
@@ -282,6 +294,9 @@ type SwapClientServer interface {
 	// loop: `listauth`
 	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
+	// loop: `getinfo`
+	//GetInfo gets basic information about the loop daemon.
+	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
 	// loop: `getparams`
 	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	//is currently configured with. This may be nil if nothing is configured.
@@ -338,6 +353,9 @@ func (UnimplementedSwapClientServer) Probe(context.Context, *ProbeRequest) (*Pro
 }
 func (UnimplementedSwapClientServer) GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLsatTokens not implemented")
+}
+func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
 }
 func (UnimplementedSwapClientServer) GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLiquidityParams not implemented")
@@ -562,6 +580,24 @@ func _SwapClient_GetLsatTokens_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).GetInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/GetInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).GetInfo(ctx, req.(*GetInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_GetLiquidityParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetLiquidityParamsRequest)
 	if err := dec(in); err != nil {
@@ -662,6 +698,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetLsatTokens",
 			Handler:    _SwapClient_GetLsatTokens_Handler,
+		},
+		{
+			MethodName: "GetInfo",
+			Handler:    _SwapClient_GetInfo_Handler,
 		},
 		{
 			MethodName: "GetLiquidityParams",

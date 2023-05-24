@@ -75,6 +75,11 @@ service SwapClient {
     */
     rpc GetLsatTokens (TokensRequest) returns (TokensResponse);
 
+    /* loop: `getinfo`
+    GetInfo gets basic information about the loop daemon.
+    */
+    rpc GetInfo (GetInfoRequest) returns (GetInfoResponse);
+
     /* loop: `getparams`
     GetLiquidityParams gets the parameters that the daemon's liquidity manager
     is currently configured with. This may be nil if nothing is configured.
@@ -738,6 +743,78 @@ message LsatToken {
     file name of the token where it's stored on the file system.
     */
     string storage_name = 8;
+}
+
+message LoopStats {
+    /*
+    Number of currently pending swaps.
+     */
+    uint64 pending_count = 1;
+
+    /*
+    Number of succeeded swaps.
+     */
+    uint64 success_count = 2;
+
+    /*
+    Number failed swaps.
+     */
+    uint64 fail_count = 3;
+
+    /*
+    The sum of all pending swap amounts.
+     */
+    int64 sum_pending_amt = 4;
+
+    /*
+    The sum of all succeeded swap amounts.
+     */
+    int64 sum_succeeded_amt = 5;
+}
+
+message GetInfoRequest {
+}
+
+message GetInfoResponse {
+    /*
+    The current daemon version.
+     */
+    string version = 1;
+
+    /*
+    The network the daemon is running on.
+     */
+    string network = 2;
+
+    /*
+    Host and port of the loopd grpc server.
+     */
+    string rpc_listen = 3;
+
+    /*
+    Host and port of the loopd rest server.
+     */
+    string rest_listen = 4;
+
+    /*
+    Loop's macaroon path that clients use to talk to the daemon.
+     */
+    string macaroon_path = 5;
+
+    /*
+    Loop's tls cert path
+     */
+    string tls_cert_path = 6;
+
+    /*
+    Statistics about loop outs.
+     */
+    LoopStats loop_out_stats = 7;
+
+    /*
+    Statistics about loop ins.
+     */
+    LoopStats loop_in_stats = 8;
 }
 
 message GetLiquidityParamsRequest {

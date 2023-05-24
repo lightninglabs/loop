@@ -2074,6 +2074,252 @@ func (x *LsatToken) GetStorageName() string {
 	return ""
 }
 
+type LoopStats struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	//
+	//Number of currently pending swaps.
+	PendingCount uint64 `protobuf:"varint,1,opt,name=pending_count,json=pendingCount,proto3" json:"pending_count,omitempty"`
+	//
+	//Number of succeeded swaps.
+	SuccessCount uint64 `protobuf:"varint,2,opt,name=success_count,json=successCount,proto3" json:"success_count,omitempty"`
+	//
+	//Number failed swaps.
+	FailCount uint64 `protobuf:"varint,3,opt,name=fail_count,json=failCount,proto3" json:"fail_count,omitempty"`
+	//
+	//The sum of all pending swap amounts.
+	SumPendingAmt int64 `protobuf:"varint,4,opt,name=sum_pending_amt,json=sumPendingAmt,proto3" json:"sum_pending_amt,omitempty"`
+	//
+	//The sum of all succeeded swap amounts.
+	SumSucceededAmt int64 `protobuf:"varint,5,opt,name=sum_succeeded_amt,json=sumSucceededAmt,proto3" json:"sum_succeeded_amt,omitempty"`
+}
+
+func (x *LoopStats) Reset() {
+	*x = LoopStats{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_client_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *LoopStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoopStats) ProtoMessage() {}
+
+func (x *LoopStats) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoopStats.ProtoReflect.Descriptor instead.
+func (*LoopStats) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *LoopStats) GetPendingCount() uint64 {
+	if x != nil {
+		return x.PendingCount
+	}
+	return 0
+}
+
+func (x *LoopStats) GetSuccessCount() uint64 {
+	if x != nil {
+		return x.SuccessCount
+	}
+	return 0
+}
+
+func (x *LoopStats) GetFailCount() uint64 {
+	if x != nil {
+		return x.FailCount
+	}
+	return 0
+}
+
+func (x *LoopStats) GetSumPendingAmt() int64 {
+	if x != nil {
+		return x.SumPendingAmt
+	}
+	return 0
+}
+
+func (x *LoopStats) GetSumSucceededAmt() int64 {
+	if x != nil {
+		return x.SumSucceededAmt
+	}
+	return 0
+}
+
+type GetInfoRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetInfoRequest) Reset() {
+	*x = GetInfoRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_client_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInfoRequest) ProtoMessage() {}
+
+func (x *GetInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInfoRequest.ProtoReflect.Descriptor instead.
+func (*GetInfoRequest) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{20}
+}
+
+type GetInfoResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	//
+	//The current daemon version.
+	Version string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	//
+	//The network the daemon is running on.
+	Network string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
+	//
+	//Host and port of the loopd grpc server.
+	RpcListen string `protobuf:"bytes,3,opt,name=rpc_listen,json=rpcListen,proto3" json:"rpc_listen,omitempty"`
+	//
+	//Host and port of the loopd rest server.
+	RestListen string `protobuf:"bytes,4,opt,name=rest_listen,json=restListen,proto3" json:"rest_listen,omitempty"`
+	//
+	//Loop's macaroon path that clients use to talk to the daemon.
+	MacaroonPath string `protobuf:"bytes,5,opt,name=macaroon_path,json=macaroonPath,proto3" json:"macaroon_path,omitempty"`
+	//
+	//Loop's tls cert path
+	TlsCertPath string `protobuf:"bytes,6,opt,name=tls_cert_path,json=tlsCertPath,proto3" json:"tls_cert_path,omitempty"`
+	//
+	//Statistics about loop outs.
+	LoopOutStats *LoopStats `protobuf:"bytes,7,opt,name=loop_out_stats,json=loopOutStats,proto3" json:"loop_out_stats,omitempty"`
+	//
+	//Statistics about loop ins.
+	LoopInStats *LoopStats `protobuf:"bytes,8,opt,name=loop_in_stats,json=loopInStats,proto3" json:"loop_in_stats,omitempty"`
+}
+
+func (x *GetInfoResponse) Reset() {
+	*x = GetInfoResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_client_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInfoResponse) ProtoMessage() {}
+
+func (x *GetInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetInfoResponse) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetInfoResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetRpcListen() string {
+	if x != nil {
+		return x.RpcListen
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetRestListen() string {
+	if x != nil {
+		return x.RestListen
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetMacaroonPath() string {
+	if x != nil {
+		return x.MacaroonPath
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetTlsCertPath() string {
+	if x != nil {
+		return x.TlsCertPath
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetLoopOutStats() *LoopStats {
+	if x != nil {
+		return x.LoopOutStats
+	}
+	return nil
+}
+
+func (x *GetInfoResponse) GetLoopInStats() *LoopStats {
+	if x != nil {
+		return x.LoopInStats
+	}
+	return nil
+}
+
 type GetLiquidityParamsRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2083,7 +2329,7 @@ type GetLiquidityParamsRequest struct {
 func (x *GetLiquidityParamsRequest) Reset() {
 	*x = GetLiquidityParamsRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[19]
+		mi := &file_client_proto_msgTypes[22]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2096,7 +2342,7 @@ func (x *GetLiquidityParamsRequest) String() string {
 func (*GetLiquidityParamsRequest) ProtoMessage() {}
 
 func (x *GetLiquidityParamsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[19]
+	mi := &file_client_proto_msgTypes[22]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2109,7 +2355,7 @@ func (x *GetLiquidityParamsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLiquidityParamsRequest.ProtoReflect.Descriptor instead.
 func (*GetLiquidityParamsRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{19}
+	return file_client_proto_rawDescGZIP(), []int{22}
 }
 
 type LiquidityParameters struct {
@@ -2225,7 +2471,7 @@ type LiquidityParameters struct {
 func (x *LiquidityParameters) Reset() {
 	*x = LiquidityParameters{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[20]
+		mi := &file_client_proto_msgTypes[23]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2238,7 +2484,7 @@ func (x *LiquidityParameters) String() string {
 func (*LiquidityParameters) ProtoMessage() {}
 
 func (x *LiquidityParameters) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[20]
+	mi := &file_client_proto_msgTypes[23]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2251,7 +2497,7 @@ func (x *LiquidityParameters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiquidityParameters.ProtoReflect.Descriptor instead.
 func (*LiquidityParameters) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{20}
+	return file_client_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *LiquidityParameters) GetRules() []*LiquidityRule {
@@ -2443,7 +2689,7 @@ type LiquidityRule struct {
 func (x *LiquidityRule) Reset() {
 	*x = LiquidityRule{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[21]
+		mi := &file_client_proto_msgTypes[24]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2456,7 +2702,7 @@ func (x *LiquidityRule) String() string {
 func (*LiquidityRule) ProtoMessage() {}
 
 func (x *LiquidityRule) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[21]
+	mi := &file_client_proto_msgTypes[24]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2469,7 +2715,7 @@ func (x *LiquidityRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiquidityRule.ProtoReflect.Descriptor instead.
 func (*LiquidityRule) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{21}
+	return file_client_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *LiquidityRule) GetChannelId() uint64 {
@@ -2530,7 +2776,7 @@ type SetLiquidityParamsRequest struct {
 func (x *SetLiquidityParamsRequest) Reset() {
 	*x = SetLiquidityParamsRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[22]
+		mi := &file_client_proto_msgTypes[25]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2543,7 +2789,7 @@ func (x *SetLiquidityParamsRequest) String() string {
 func (*SetLiquidityParamsRequest) ProtoMessage() {}
 
 func (x *SetLiquidityParamsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[22]
+	mi := &file_client_proto_msgTypes[25]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2556,7 +2802,7 @@ func (x *SetLiquidityParamsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLiquidityParamsRequest.ProtoReflect.Descriptor instead.
 func (*SetLiquidityParamsRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{22}
+	return file_client_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SetLiquidityParamsRequest) GetParameters() *LiquidityParameters {
@@ -2575,7 +2821,7 @@ type SetLiquidityParamsResponse struct {
 func (x *SetLiquidityParamsResponse) Reset() {
 	*x = SetLiquidityParamsResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[23]
+		mi := &file_client_proto_msgTypes[26]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2588,7 +2834,7 @@ func (x *SetLiquidityParamsResponse) String() string {
 func (*SetLiquidityParamsResponse) ProtoMessage() {}
 
 func (x *SetLiquidityParamsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[23]
+	mi := &file_client_proto_msgTypes[26]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2601,7 +2847,7 @@ func (x *SetLiquidityParamsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLiquidityParamsResponse.ProtoReflect.Descriptor instead.
 func (*SetLiquidityParamsResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{23}
+	return file_client_proto_rawDescGZIP(), []int{26}
 }
 
 type SuggestSwapsRequest struct {
@@ -2613,7 +2859,7 @@ type SuggestSwapsRequest struct {
 func (x *SuggestSwapsRequest) Reset() {
 	*x = SuggestSwapsRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[24]
+		mi := &file_client_proto_msgTypes[27]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2626,7 +2872,7 @@ func (x *SuggestSwapsRequest) String() string {
 func (*SuggestSwapsRequest) ProtoMessage() {}
 
 func (x *SuggestSwapsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[24]
+	mi := &file_client_proto_msgTypes[27]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2639,7 +2885,7 @@ func (x *SuggestSwapsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSwapsRequest.ProtoReflect.Descriptor instead.
 func (*SuggestSwapsRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{24}
+	return file_client_proto_rawDescGZIP(), []int{27}
 }
 
 type Disqualified struct {
@@ -2661,7 +2907,7 @@ type Disqualified struct {
 func (x *Disqualified) Reset() {
 	*x = Disqualified{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[25]
+		mi := &file_client_proto_msgTypes[28]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2674,7 +2920,7 @@ func (x *Disqualified) String() string {
 func (*Disqualified) ProtoMessage() {}
 
 func (x *Disqualified) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[25]
+	mi := &file_client_proto_msgTypes[28]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2687,7 +2933,7 @@ func (x *Disqualified) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Disqualified.ProtoReflect.Descriptor instead.
 func (*Disqualified) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{25}
+	return file_client_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Disqualified) GetChannelId() uint64 {
@@ -2731,7 +2977,7 @@ type SuggestSwapsResponse struct {
 func (x *SuggestSwapsResponse) Reset() {
 	*x = SuggestSwapsResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[26]
+		mi := &file_client_proto_msgTypes[29]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2744,7 +2990,7 @@ func (x *SuggestSwapsResponse) String() string {
 func (*SuggestSwapsResponse) ProtoMessage() {}
 
 func (x *SuggestSwapsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[26]
+	mi := &file_client_proto_msgTypes[29]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2757,7 +3003,7 @@ func (x *SuggestSwapsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSwapsResponse.ProtoReflect.Descriptor instead.
 func (*SuggestSwapsResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{26}
+	return file_client_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SuggestSwapsResponse) GetLoopOut() []*LoopOutRequest {
@@ -3007,6 +3253,40 @@ var file_client_proto_rawDesc = []byte{
 	0x01, 0x28, 0x08, 0x52, 0x07, 0x65, 0x78, 0x70, 0x69, 0x72, 0x65, 0x64, 0x12, 0x21, 0x0a, 0x0c,
 	0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x08, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x0b, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x4e, 0x61, 0x6d, 0x65, 0x22,
+	0xc8, 0x01, 0x0a, 0x09, 0x4c, 0x6f, 0x6f, 0x70, 0x53, 0x74, 0x61, 0x74, 0x73, 0x12, 0x23, 0x0a,
+	0x0d, 0x70, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x70, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x43, 0x6f, 0x75,
+	0x6e, 0x74, 0x12, 0x23, 0x0a, 0x0d, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5f, 0x63, 0x6f,
+	0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x73, 0x75, 0x63, 0x63, 0x65,
+	0x73, 0x73, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x66, 0x61, 0x69, 0x6c, 0x5f,
+	0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x66, 0x61, 0x69,
+	0x6c, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x26, 0x0a, 0x0f, 0x73, 0x75, 0x6d, 0x5f, 0x70, 0x65,
+	0x6e, 0x64, 0x69, 0x6e, 0x67, 0x5f, 0x61, 0x6d, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x52,
+	0x0d, 0x73, 0x75, 0x6d, 0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x6d, 0x74, 0x12, 0x2a,
+	0x0a, 0x11, 0x73, 0x75, 0x6d, 0x5f, 0x73, 0x75, 0x63, 0x63, 0x65, 0x65, 0x64, 0x65, 0x64, 0x5f,
+	0x61, 0x6d, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0f, 0x73, 0x75, 0x6d, 0x53, 0x75,
+	0x63, 0x63, 0x65, 0x65, 0x64, 0x65, 0x64, 0x41, 0x6d, 0x74, 0x22, 0x10, 0x0a, 0x0e, 0x47, 0x65,
+	0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0xc0, 0x02, 0x0a,
+	0x0f, 0x47, 0x65, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x18, 0x0a, 0x07, 0x6e, 0x65,
+	0x74, 0x77, 0x6f, 0x72, 0x6b, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6e, 0x65, 0x74,
+	0x77, 0x6f, 0x72, 0x6b, 0x12, 0x1d, 0x0a, 0x0a, 0x72, 0x70, 0x63, 0x5f, 0x6c, 0x69, 0x73, 0x74,
+	0x65, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x72, 0x70, 0x63, 0x4c, 0x69, 0x73,
+	0x74, 0x65, 0x6e, 0x12, 0x1f, 0x0a, 0x0b, 0x72, 0x65, 0x73, 0x74, 0x5f, 0x6c, 0x69, 0x73, 0x74,
+	0x65, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x72, 0x65, 0x73, 0x74, 0x4c, 0x69,
+	0x73, 0x74, 0x65, 0x6e, 0x12, 0x23, 0x0a, 0x0d, 0x6d, 0x61, 0x63, 0x61, 0x72, 0x6f, 0x6f, 0x6e,
+	0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x6d, 0x61, 0x63,
+	0x61, 0x72, 0x6f, 0x6f, 0x6e, 0x50, 0x61, 0x74, 0x68, 0x12, 0x22, 0x0a, 0x0d, 0x74, 0x6c, 0x73,
+	0x5f, 0x63, 0x65, 0x72, 0x74, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x0b, 0x74, 0x6c, 0x73, 0x43, 0x65, 0x72, 0x74, 0x50, 0x61, 0x74, 0x68, 0x12, 0x38, 0x0a,
+	0x0e, 0x6c, 0x6f, 0x6f, 0x70, 0x5f, 0x6f, 0x75, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x73, 0x18,
+	0x07, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e,
+	0x4c, 0x6f, 0x6f, 0x70, 0x53, 0x74, 0x61, 0x74, 0x73, 0x52, 0x0c, 0x6c, 0x6f, 0x6f, 0x70, 0x4f,
+	0x75, 0x74, 0x53, 0x74, 0x61, 0x74, 0x73, 0x12, 0x36, 0x0a, 0x0d, 0x6c, 0x6f, 0x6f, 0x70, 0x5f,
+	0x69, 0x6e, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x73, 0x18, 0x08, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x12,
+	0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x6f, 0x6f, 0x70, 0x53, 0x74, 0x61,
+	0x74, 0x73, 0x52, 0x0b, 0x6c, 0x6f, 0x6f, 0x70, 0x49, 0x6e, 0x53, 0x74, 0x61, 0x74, 0x73, 0x22,
 	0x1b, 0x0a, 0x19, 0x47, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50,
 	0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0xb8, 0x08, 0x0a,
 	0x13, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65,
@@ -3175,7 +3455,7 @@ var file_client_proto_rawDesc = []byte{
 	0x5f, 0x49, 0x4e, 0x53, 0x55, 0x46, 0x46, 0x49, 0x43, 0x49, 0x45, 0x4e, 0x54, 0x10, 0x0c, 0x12,
 	0x20, 0x0a, 0x1c, 0x41, 0x55, 0x54, 0x4f, 0x5f, 0x52, 0x45, 0x41, 0x53, 0x4f, 0x4e, 0x5f, 0x46,
 	0x45, 0x45, 0x5f, 0x49, 0x4e, 0x53, 0x55, 0x46, 0x46, 0x49, 0x43, 0x49, 0x45, 0x4e, 0x54, 0x10,
-	0x0d, 0x32, 0xc2, 0x07, 0x0a, 0x0a, 0x53, 0x77, 0x61, 0x70, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74,
+	0x0d, 0x32, 0x80, 0x08, 0x0a, 0x0a, 0x53, 0x77, 0x61, 0x70, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74,
 	0x12, 0x39, 0x0a, 0x07, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75, 0x74, 0x12, 0x17, 0x2e, 0x6c, 0x6f,
 	0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x6f, 0x6f, 0x70, 0x4f, 0x75, 0x74, 0x52, 0x65, 0x71,
 	0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53,
@@ -3219,26 +3499,30 @@ var file_client_proto_rawDesc = []byte{
 	0x73, 0x12, 0x16, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x54, 0x6f, 0x6b, 0x65,
 	0x6e, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x6c, 0x6f, 0x6f, 0x70,
 	0x72, 0x70, 0x63, 0x2e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x12, 0x56, 0x0a, 0x12, 0x47, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69,
-	0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x22, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72,
-	0x70, 0x63, 0x2e, 0x47, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50,
-	0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x6c,
-	0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79,
-	0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x5d, 0x0a, 0x12, 0x53, 0x65,
-	0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73,
-	0x12, 0x22, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x74, 0x4c, 0x69,
-	0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53,
-	0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d,
-	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4b, 0x0a, 0x0c, 0x53, 0x75, 0x67,
-	0x67, 0x65, 0x73, 0x74, 0x53, 0x77, 0x61, 0x70, 0x73, 0x12, 0x1c, 0x2e, 0x6c, 0x6f, 0x6f, 0x70,
-	0x72, 0x70, 0x63, 0x2e, 0x53, 0x75, 0x67, 0x67, 0x65, 0x73, 0x74, 0x53, 0x77, 0x61, 0x70, 0x73,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70,
+	0x73, 0x65, 0x12, 0x3c, 0x0a, 0x07, 0x47, 0x65, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x17, 0x2e,
+	0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x47, 0x65, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63,
+	0x2e, 0x47, 0x65, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x12, 0x56, 0x0a, 0x12, 0x47, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79,
+	0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x22, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63,
+	0x2e, 0x47, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72,
+	0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x6c, 0x6f, 0x6f,
+	0x70, 0x72, 0x70, 0x63, 0x2e, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61,
+	0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x5d, 0x0a, 0x12, 0x53, 0x65, 0x74, 0x4c,
+	0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x22,
+	0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x74, 0x4c, 0x69, 0x71, 0x75,
+	0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x23, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x65, 0x74,
+	0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4b, 0x0a, 0x0c, 0x53, 0x75, 0x67, 0x67, 0x65,
+	0x73, 0x74, 0x53, 0x77, 0x61, 0x70, 0x73, 0x12, 0x1c, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70,
 	0x63, 0x2e, 0x53, 0x75, 0x67, 0x67, 0x65, 0x73, 0x74, 0x53, 0x77, 0x61, 0x70, 0x73, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x27, 0x5a, 0x25, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
-	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61,
-	0x62, 0x73, 0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x62,
-	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e,
+	0x53, 0x75, 0x67, 0x67, 0x65, 0x73, 0x74, 0x53, 0x77, 0x61, 0x70, 0x73, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x42, 0x27, 0x5a, 0x25, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73,
+	0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x2f, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3254,7 +3538,7 @@ func file_client_proto_rawDescGZIP() []byte {
 }
 
 var file_client_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_client_proto_goTypes = []interface{}{
 	(SwapType)(0),                      // 0: looprpc.SwapType
 	(SwapState)(0),                     // 1: looprpc.SwapState
@@ -3280,66 +3564,73 @@ var file_client_proto_goTypes = []interface{}{
 	(*TokensRequest)(nil),              // 21: looprpc.TokensRequest
 	(*TokensResponse)(nil),             // 22: looprpc.TokensResponse
 	(*LsatToken)(nil),                  // 23: looprpc.LsatToken
-	(*GetLiquidityParamsRequest)(nil),  // 24: looprpc.GetLiquidityParamsRequest
-	(*LiquidityParameters)(nil),        // 25: looprpc.LiquidityParameters
-	(*LiquidityRule)(nil),              // 26: looprpc.LiquidityRule
-	(*SetLiquidityParamsRequest)(nil),  // 27: looprpc.SetLiquidityParamsRequest
-	(*SetLiquidityParamsResponse)(nil), // 28: looprpc.SetLiquidityParamsResponse
-	(*SuggestSwapsRequest)(nil),        // 29: looprpc.SuggestSwapsRequest
-	(*Disqualified)(nil),               // 30: looprpc.Disqualified
-	(*SuggestSwapsResponse)(nil),       // 31: looprpc.SuggestSwapsResponse
-	(*swapserverrpc.RouteHint)(nil),    // 32: looprpc.RouteHint
+	(*LoopStats)(nil),                  // 24: looprpc.LoopStats
+	(*GetInfoRequest)(nil),             // 25: looprpc.GetInfoRequest
+	(*GetInfoResponse)(nil),            // 26: looprpc.GetInfoResponse
+	(*GetLiquidityParamsRequest)(nil),  // 27: looprpc.GetLiquidityParamsRequest
+	(*LiquidityParameters)(nil),        // 28: looprpc.LiquidityParameters
+	(*LiquidityRule)(nil),              // 29: looprpc.LiquidityRule
+	(*SetLiquidityParamsRequest)(nil),  // 30: looprpc.SetLiquidityParamsRequest
+	(*SetLiquidityParamsResponse)(nil), // 31: looprpc.SetLiquidityParamsResponse
+	(*SuggestSwapsRequest)(nil),        // 32: looprpc.SuggestSwapsRequest
+	(*Disqualified)(nil),               // 33: looprpc.Disqualified
+	(*SuggestSwapsResponse)(nil),       // 34: looprpc.SuggestSwapsResponse
+	(*swapserverrpc.RouteHint)(nil),    // 35: looprpc.RouteHint
 }
 var file_client_proto_depIdxs = []int32{
-	32, // 0: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	35, // 0: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
 	0,  // 1: looprpc.SwapStatus.type:type_name -> looprpc.SwapType
 	1,  // 2: looprpc.SwapStatus.state:type_name -> looprpc.SwapState
 	2,  // 3: looprpc.SwapStatus.failure_reason:type_name -> looprpc.FailureReason
 	9,  // 4: looprpc.ListSwapsResponse.swaps:type_name -> looprpc.SwapStatus
-	32, // 5: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
-	32, // 6: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
+	35, // 5: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
+	35, // 6: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
 	23, // 7: looprpc.TokensResponse.tokens:type_name -> looprpc.LsatToken
-	26, // 8: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
-	0,  // 9: looprpc.LiquidityRule.swap_type:type_name -> looprpc.SwapType
-	3,  // 10: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
-	25, // 11: looprpc.SetLiquidityParamsRequest.parameters:type_name -> looprpc.LiquidityParameters
-	4,  // 12: looprpc.Disqualified.reason:type_name -> looprpc.AutoReason
-	5,  // 13: looprpc.SuggestSwapsResponse.loop_out:type_name -> looprpc.LoopOutRequest
-	6,  // 14: looprpc.SuggestSwapsResponse.loop_in:type_name -> looprpc.LoopInRequest
-	30, // 15: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
-	5,  // 16: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
-	6,  // 17: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
-	8,  // 18: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
-	10, // 19: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
-	12, // 20: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
-	13, // 21: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
-	16, // 22: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
-	13, // 23: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
-	16, // 24: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
-	19, // 25: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	21, // 26: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
-	24, // 27: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
-	27, // 28: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
-	29, // 29: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
-	7,  // 30: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
-	7,  // 31: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
-	9,  // 32: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
-	11, // 33: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
-	9,  // 34: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
-	15, // 35: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
-	18, // 36: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
-	14, // 37: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
-	17, // 38: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
-	20, // 39: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	22, // 40: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
-	25, // 41: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
-	28, // 42: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
-	31, // 43: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
-	30, // [30:44] is the sub-list for method output_type
-	16, // [16:30] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	24, // 8: looprpc.GetInfoResponse.loop_out_stats:type_name -> looprpc.LoopStats
+	24, // 9: looprpc.GetInfoResponse.loop_in_stats:type_name -> looprpc.LoopStats
+	29, // 10: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
+	0,  // 11: looprpc.LiquidityRule.swap_type:type_name -> looprpc.SwapType
+	3,  // 12: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
+	28, // 13: looprpc.SetLiquidityParamsRequest.parameters:type_name -> looprpc.LiquidityParameters
+	4,  // 14: looprpc.Disqualified.reason:type_name -> looprpc.AutoReason
+	5,  // 15: looprpc.SuggestSwapsResponse.loop_out:type_name -> looprpc.LoopOutRequest
+	6,  // 16: looprpc.SuggestSwapsResponse.loop_in:type_name -> looprpc.LoopInRequest
+	33, // 17: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
+	5,  // 18: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
+	6,  // 19: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
+	8,  // 20: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
+	10, // 21: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
+	12, // 22: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
+	13, // 23: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
+	16, // 24: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
+	13, // 25: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
+	16, // 26: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
+	19, // 27: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
+	21, // 28: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	25, // 29: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
+	27, // 30: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
+	30, // 31: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
+	32, // 32: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
+	7,  // 33: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
+	7,  // 34: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
+	9,  // 35: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
+	11, // 36: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
+	9,  // 37: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
+	15, // 38: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
+	18, // 39: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
+	14, // 40: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
+	17, // 41: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
+	20, // 42: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
+	22, // 43: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	26, // 44: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
+	28, // 45: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
+	31, // 46: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
+	34, // 47: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
+	33, // [33:48] is the sub-list for method output_type
+	18, // [18:33] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
@@ -3577,7 +3868,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetLiquidityParamsRequest); i {
+			switch v := v.(*LoopStats); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3589,7 +3880,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*LiquidityParameters); i {
+			switch v := v.(*GetInfoRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3601,7 +3892,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*LiquidityRule); i {
+			switch v := v.(*GetInfoResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3613,7 +3904,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SetLiquidityParamsRequest); i {
+			switch v := v.(*GetLiquidityParamsRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3625,7 +3916,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SetLiquidityParamsResponse); i {
+			switch v := v.(*LiquidityParameters); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3637,7 +3928,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SuggestSwapsRequest); i {
+			switch v := v.(*LiquidityRule); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3649,7 +3940,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Disqualified); i {
+			switch v := v.(*SetLiquidityParamsRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3661,6 +3952,42 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SetLiquidityParamsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_client_proto_msgTypes[27].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SuggestSwapsRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_client_proto_msgTypes[28].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Disqualified); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_client_proto_msgTypes[29].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SuggestSwapsResponse); i {
 			case 0:
 				return &v.state
@@ -3679,7 +4006,7 @@ func file_client_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_client_proto_rawDesc,
 			NumEnums:      5,
-			NumMessages:   27,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
