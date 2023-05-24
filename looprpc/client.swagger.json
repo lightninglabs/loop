@@ -523,6 +523,43 @@
       "default": "FAILURE_REASON_NONE",
       "description": " - FAILURE_REASON_NONE: FAILURE_REASON_NONE is set when the swap did not fail, it is either in\nprogress or succeeded.\n - FAILURE_REASON_OFFCHAIN: FAILURE_REASON_OFFCHAIN indicates that a loop out failed because it wasn't\npossible to find a route for one or both off chain payments that met the fee\nand timelock limits required.\n - FAILURE_REASON_TIMEOUT: FAILURE_REASON_TIMEOUT indicates that the swap failed because on chain htlc\ndid not confirm before its expiry, or it confirmed too late for us to reveal\nour preimage and claim.\n - FAILURE_REASON_SWEEP_TIMEOUT: FAILURE_REASON_SWEEP_TIMEOUT indicates that a loop out permanently failed\nbecause the on chain htlc wasn't swept before the server revoked the\nhtlc.\n - FAILURE_REASON_INSUFFICIENT_VALUE: FAILURE_REASON_INSUFFICIENT_VALUE indicates that a loop out has failed\nbecause the on chain htlc had a lower value than requested.\n - FAILURE_REASON_TEMPORARY: FAILURE_REASON_TEMPORARY indicates that a swap cannot continue due to an\ninternal error. Manual intervention such as a restart is required.\n - FAILURE_REASON_INCORRECT_AMOUNT: FAILURE_REASON_INCORRECT_AMOUNT indicates that a loop in permanently failed\nbecause the amount extended by an external loop in htlc is insufficient."
     },
+    "looprpcGetInfoResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "The current daemon version."
+        },
+        "network": {
+          "type": "string",
+          "description": "The network the daemon is running on."
+        },
+        "rpc_listen": {
+          "type": "string",
+          "description": "Host and port of the loopd grpc server."
+        },
+        "rest_listen": {
+          "type": "string",
+          "description": "Host and port of the loopd rest server."
+        },
+        "macaroon_path": {
+          "type": "string",
+          "description": "Loop's macaroon path that clients use to talk to the daemon."
+        },
+        "tls_cert_path": {
+          "type": "string",
+          "title": "Loop's tls cert path"
+        },
+        "loop_out_stats": {
+          "$ref": "#/definitions/looprpcLoopStats",
+          "description": "Statistics about loop outs."
+        },
+        "loop_in_stats": {
+          "$ref": "#/definitions/looprpcLoopStats",
+          "description": "Statistics about loop ins."
+        }
+      }
+    },
     "looprpcHopHint": {
       "type": "object",
       "properties": {
@@ -884,6 +921,36 @@
         "initiator": {
           "type": "string",
           "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
+        }
+      }
+    },
+    "looprpcLoopStats": {
+      "type": "object",
+      "properties": {
+        "pending_count": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Number of currently pending swaps."
+        },
+        "success_count": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Number of succeeded swaps."
+        },
+        "fail_count": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Number failed swaps."
+        },
+        "sum_pending_amt": {
+          "type": "string",
+          "format": "int64",
+          "description": "The sum of all pending swap amounts."
+        },
+        "sum_succeeded_amt": {
+          "type": "string",
+          "format": "int64",
+          "description": "The sum of all succeeded swap amounts."
         }
       }
     },

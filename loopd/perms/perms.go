@@ -67,6 +67,10 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "suggestions",
 		Action: "read",
 	}},
+	"/looprpc.SwapClient/GetInfo": {{
+		Entity: "suggestions",
+		Action: "read",
+	}},
 	"/looprpc.SwapClient/GetLiquidityParams": {{
 		Entity: "suggestions",
 		Action: "read",

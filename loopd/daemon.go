@@ -438,6 +438,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
+		config:       d.cfg,
 		network:      lndclient.Network(d.cfg.Network),
 		impl:         swapclient,
 		liquidityMgr: getLiquidityManager(swapclient),
