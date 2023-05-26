@@ -261,6 +261,29 @@
         ]
       }
     },
+    "/v1/loop/info": {
+      "get": {
+        "summary": "loop: `getinfo`\nGetInfo gets basic information about the loop daemon.",
+        "operationId": "SwapClient_GetInfo",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcGetInfoResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/out": {
       "post": {
         "summary": "loop: `out`\nLoopOut initiates an loop out swap with the given parameters. The call\nreturns after the swap has been set up with the swap server. From that\npoint onwards, progress can be tracked via the SwapStatus stream that is\nreturned from Monitor().",

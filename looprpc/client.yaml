@@ -24,6 +24,8 @@ http:
       get: "/v1/loop/in/quote/{amt}"
     - selector: looprpc.SwapClient.Probe
       get: "/v1/loop/in/probe/{amt}"
+    - selector: looprpc.SwapClient.GetInfo
+      get: "/v1/loop/info"
     - selector: looprpc.SwapClient.GetLsatTokens
       get: "/v1/lsat/tokens"
     - selector: looprpc.SwapClient.GetLiquidityParams
