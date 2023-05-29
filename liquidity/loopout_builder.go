@@ -150,6 +150,10 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	if params.Autoloop {
 		request.Label = labels.AutoloopLabel(swap.TypeOut)
 
+		if params.EasyAutoloop {
+			request.Label = labels.EasyAutoloopLabel(swap.TypeOut)
+		}
+
 		addr, err := b.cfg.Lnd.WalletKit.NextAddr(
 			ctx, "", walletrpc.AddressType_WITNESS_PUBKEY_HASH,
 			false,

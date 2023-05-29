@@ -1052,7 +1052,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	var summary existingAutoLoopSummary
 
 	for _, out := range loopOuts {
-		if out.Contract.Label != labels.AutoloopLabel(swap.TypeOut) {
+		if !isAutoloopLabel(out.Contract.Label) {
 			continue
 		}
 
@@ -1082,7 +1082,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	}
 
 	for _, in := range loopIns {
-		if in.Contract.Label != labels.AutoloopLabel(swap.TypeIn) {
+		if !isAutoloopLabel(in.Contract.Label) {
 			continue
 		}
 
@@ -1464,6 +1464,26 @@ func (m *Manager) checkSummaryInflight(
 	}
 
 	return allowedSwaps, nil
+}
+
+// isAutoloopLabel is a helper function that returns a flag indicating whether
+// the provided label corresponds to an autoloop swap.
+func isAutoloopLabel(label string) bool {
+	switch label {
+	case labels.AutoloopLabel(swap.TypeOut):
+		return true
+
+	case labels.AutoloopLabel(swap.TypeIn):
+		return true
+
+	case labels.EasyAutoloopLabel(swap.TypeOut):
+		return true
+
+	case labels.EasyAutoloopLabel(swap.TypeIn):
+		return true
+	}
+
+	return false
 }
 
 // swapTraffic contains a summary of our current and previously failed swaps.
