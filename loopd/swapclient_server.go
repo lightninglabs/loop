@@ -844,7 +844,7 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	_ *clientrpc.SuggestSwapsRequest) (*clientrpc.SuggestSwapsResponse, error) {
 
-	suggestions, err := s.liquidityMgr.SuggestSwaps(ctx, false)
+	suggestions, err := s.liquidityMgr.SuggestSwaps(ctx)
 	switch err {
 	case liquidity.ErrNoRules:
 		return nil, status.Error(codes.FailedPrecondition, err.Error())

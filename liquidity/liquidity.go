@@ -417,7 +417,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	// swaps for autoloop.
 	m.refreshAutoloopBudget(ctx)
 
-	suggestion, err := m.SuggestSwaps(ctx, true)
+	suggestion, err := m.SuggestSwaps(ctx)
 	if err != nil {
 		return err
 	}
@@ -613,7 +613,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	}
 
 	suggestion, err := builder.buildSwap(
-		ctx, channel.PubKeyBytes, outgoing, swapAmt, true, easyParams,
+		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
 	)
 	if err != nil {
 		return err
@@ -697,7 +697,7 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 // suggestions are being used for our internal autolooper. This boolean is used
 // to determine the information we add to our swap suggestion and whether we
 // return any suggestions.
-func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
+func (m *Manager) SuggestSwaps(ctx context.Context) (
 	*Suggestions, error) {
 
 	m.paramsLock.Lock()
@@ -794,7 +794,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 		suggestion, err := m.suggestSwap(
 			ctx, traffic, balances, rule, outRestrictions,
-			inRestrictions, autoloop,
+			inRestrictions,
 		)
 		var reasonErr *reasonError
 		if errors.As(err, &reasonErr) {
@@ -820,7 +820,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 
 		suggestion, err := m.suggestSwap(
 			ctx, traffic, balance, rule, outRestrictions,
-			inRestrictions, autoloop,
+			inRestrictions,
 		)
 
 		var reasonErr *reasonError
@@ -922,7 +922,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context, autoloop bool) (
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	balance *balances, rule *SwapRule, outRestrictions *Restrictions,
-	inRestrictions *Restrictions, autoloop bool) (swapSuggestion, error) {
+	inRestrictions *Restrictions) (swapSuggestion, error) {
 
 	var (
 		builder      swapBuilder
@@ -967,8 +967,7 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	}
 
 	return builder.buildSwap(
-		ctx, balance.pubkey, balance.channels, amount, autoloop,
-		m.params,
+		ctx, balance.pubkey, balance.channels, amount, m.params,
 	)
 }
 

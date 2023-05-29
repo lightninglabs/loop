@@ -84,7 +84,7 @@ func (b *loopInBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 // For loop in, we do not add the autoloop label for dry runs.
 func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	_ []lnwire.ShortChannelID, amount btcutil.Amount,
-	autoloop bool, params Parameters) (swapSuggestion, error) {
+	params Parameters) (swapSuggestion, error) {
 
 	quote, err := b.cfg.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         amount,
@@ -116,7 +116,7 @@ func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		Initiator:      autoloopSwapInitiator,
 	}
 
-	if autoloop {
+	if params.Autoloop {
 		request.Label = labels.AutoloopLabel(swap.TypeIn)
 	}
 

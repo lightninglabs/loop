@@ -1846,7 +1846,7 @@ func testSuggestSwaps(t *testing.T, setup *testSuggestSwapsSetup,
 	err := manager.setParameters(context.Background(), setup.params)
 	require.NoError(t, err)
 
-	actual, err := manager.SuggestSwaps(context.Background(), false)
+	actual, err := manager.SuggestSwaps(context.Background())
 	require.Equal(t, expectedErr, err)
 	require.Equal(t, expected, actual)
 }

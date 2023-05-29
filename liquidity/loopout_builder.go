@@ -94,7 +94,7 @@ func (b *loopOutBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 // dry-run, and we do not add the autoloop label to the recommended swap.
 func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	channels []lnwire.ShortChannelID, amount btcutil.Amount,
-	autoloop bool, params Parameters) (swapSuggestion, error) {
+	params Parameters) (swapSuggestion, error) {
 
 	quote, err := b.cfg.LoopOutQuote(
 		ctx, &loop.LoopOutQuoteRequest{
@@ -147,7 +147,7 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		Initiator:           autoloopSwapInitiator,
 	}
 
-	if autoloop {
+	if params.Autoloop {
 		request.Label = labels.AutoloopLabel(swap.TypeOut)
 
 		addr, err := b.cfg.Lnd.WalletKit.NextAddr(
