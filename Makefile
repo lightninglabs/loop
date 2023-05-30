@@ -95,6 +95,10 @@ unit:
 	@$(call print, "Running unit tests.")
 	$(UNIT)
 
+unit-postgres:
+	@$(call print, "Running unit tests with postgres.")
+	$(UNIT) -tags=test_db_postgres
+
 # =========
 # UTILITIES
 # =========
