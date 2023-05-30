@@ -20,6 +20,10 @@ type SwapStore interface {
 	CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 		swap *LoopOutContract) error
 
+	// BatchCreateLoopOut creates a batch of loop out swaps to the store.
+	BatchCreateLoopOut(ctx context.Context,
+		swaps map[lntypes.Hash]*LoopOutContract) error
+
 	// UpdateLoopOut stores a new event for a target loop out swap. This
 	// appends to the event log for a particular swap as it goes through
 	// the various stages in its lifetime.
@@ -33,11 +37,19 @@ type SwapStore interface {
 	CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 		swap *LoopInContract) error
 
+	// BatchCreateLoopIn creates a batch of loop in swaps to the store.
+	BatchCreateLoopIn(ctx context.Context,
+		swaps map[lntypes.Hash]*LoopInContract) error
+
 	// UpdateLoopIn stores a new event for a target loop in swap. This
 	// appends to the event log for a particular swap as it goes through
 	// the various stages in its lifetime.
 	UpdateLoopIn(ctx context.Context, hash lntypes.Hash, time time.Time,
 		state SwapStateData) error
+
+	// BatchInsertUpdate inserts batch of swap updates to the store.
+	BatchInsertUpdate(ctx context.Context,
+		updateData map[lntypes.Hash][]BatchInsertUpdateData) error
 
 	// PutLiquidityParams writes the serialized `manager.Parameters` bytes
 	// into the bucket.
@@ -55,6 +67,13 @@ type SwapStore interface {
 
 	// Close closes the underlying database.
 	Close() error
+}
+
+// BatchInsertUpdateData is a struct that holds the data for the
+// BatchInsertUpdate function.
+type BatchInsertUpdateData struct {
+	Time  time.Time
+	State SwapStateData
 }
 
 // TODO(roasbeef): back up method in interface?

@@ -303,3 +303,20 @@ func (s *storeMock) assertStoreFinished(expectedResult loopdb.SwapState) {
 		s.t.Fatalf("expected swap to be finished")
 	}
 }
+func (b *storeMock) BatchCreateLoopOut(ctx context.Context,
+	swaps map[lntypes.Hash]*loopdb.LoopOutContract) error {
+
+	return errors.New("not implemented")
+}
+
+func (b *storeMock) BatchCreateLoopIn(ctx context.Context,
+	swaps map[lntypes.Hash]*loopdb.LoopInContract) error {
+
+	return errors.New("not implemented")
+}
+
+func (b *storeMock) BatchInsertUpdate(ctx context.Context,
+	updateData map[lntypes.Hash][]loopdb.BatchInsertUpdateData) error {
+
+	return errors.New("not implemented")
+}
