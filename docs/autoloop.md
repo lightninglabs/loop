@@ -187,16 +187,16 @@ Your autoloop budget is refreshed based on a configurable interval. You can
 specify how often the budget is going to refresh by using the `setparams` loop
 command:
 ```
-loop setparams --autobudgetrefreshperiod={duration in seconds}
+loop setparams --autobudgetrefreshperiod={duration}
 ```
 
 
 If your autolooper has used up its budget, and you would like to top it up, you 
 can do so by either increasing the overall budget amount, or by decreasing the 
 refresh interval. For example, if you want to set your autolooper to 
-have a budget of 100k sats per 7 days (or 604800 seconds), you could set the following:
+have a budget of 100k sats every 168 hours, you could set the following:
 ```
-loop setparams --autobudget=100000 --autobudgetrefreshperiod=604800
+loop setparams --autobudget=100000 --autobudgetrefreshperiod=168h
 ```
 
 ## Dispatch Control
