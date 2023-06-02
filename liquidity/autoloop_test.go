@@ -748,7 +748,7 @@ func TestAutoLoopInEnabled(t *testing.T) {
 
 		quote2Unaffordable = &loop.LoopInQuote{
 			SwapFee:  peer2MaxFee * 2,
-			MinerFee: peer2MaxFee * 2,
+			MinerFee: peer2MaxFee * 1000,
 		}
 
 		quoteRequest1 = &loop.LoopInQuoteRequest{
