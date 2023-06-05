@@ -23,6 +23,14 @@ const (
 	// autoIn is the label used for loop in swaps that are automatically
 	// dispatched.
 	autoIn = "autoloop-in"
+
+	// easyAutoOut is the label used for easy loop out swaps that are
+	// automatically dispatched.
+	easyAutoOut = "easy-autoloop-out"
+
+	// easyAutoIn is the label used for easy loop in swaps that are
+	// automatically dispatched.
+	easyAutoIn = "easy-autoloop-in"
 )
 
 var (
@@ -42,6 +50,16 @@ func AutoloopLabel(swapType swap.Type) string {
 	}
 
 	return fmt.Sprintf("%v: %v", Reserved, autoIn)
+}
+
+// EasyAutoloopLabel returns a label with the reserved prefix that identifies
+// automatically dispatched swaps depending on the type of swap being executed.
+func EasyAutoloopLabel(swapType swap.Type) string {
+	if swapType == swap.TypeOut {
+		return fmt.Sprintf("%v: %v", Reserved, easyAutoOut)
+	}
+
+	return fmt.Sprintf("%v: %v", Reserved, easyAutoIn)
 }
 
 // Validate checks that a label is of appropriate length and is not in our list

@@ -118,6 +118,10 @@ func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 
 	if params.Autoloop {
 		request.Label = labels.AutoloopLabel(swap.TypeIn)
+
+		if params.EasyAutoloop {
+			request.Label = labels.EasyAutoloopLabel(swap.TypeIn)
+		}
 	}
 
 	return &loopInSwapSuggestion{
