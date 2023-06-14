@@ -600,11 +600,21 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return err
 	}
 
-	// Override our current parameters in order to use the const percent
-	// limit of easy-autoloop.
+	// If no fee is set, override our current parameters in order to use the
+	// default percent limit of easy-autoloop.
 	easyParams := m.params
-	easyParams.FeeLimit = &FeePortion{
-		PartsPerMillion: defaultFeePPM,
+
+	switch feeLimit := easyParams.FeeLimit.(type) {
+	case *FeePortion:
+		if feeLimit.PartsPerMillion == 0 {
+			feeLimit = &FeePortion{
+				PartsPerMillion: defaultFeePPM,
+			}
+		}
+	default:
+		feeLimit = &FeePortion{
+			PartsPerMillion: defaultFeePPM,
+		}
 	}
 
 	// Set the swap outgoing channel to the chosen channel.
