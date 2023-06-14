@@ -25,6 +25,10 @@ channel balance of 1M sats. Keep in mind that on first time use this will use
 the default budget parameters. If you wish to configure a custom budget you can
 find more info in the [Budget](#budget) section.
 
+In addition, if you want to control the maximum amount of fees you're willing to
+spend per swap, as a percentage of the total swap amount, you can use the
+`feepercent` parameter as explained in the [Fees](#fees) section.
+
 ## Liquidity Rules
 
 At present, autoloop can be configured to either acquire incoming liquidity 
@@ -89,10 +93,11 @@ to a percentage of the swap amount using the fee percentage parameter:
 loop setparams --feepercent={percentage of swap amount}
 ```
 
-If you would like finer grained control over swap fees, there are multiple fee
-related settings which can be used to tune the autolooper to your preference.
-The sections that follow explain these settings in detail. Note that these fees 
-are expressed on a per-swap basis, rather than as an overall budget. 
+If you are not using easyautoloop and you would like finer grained control over
+swap fees, there are multiple fee related settings which can be used to tune the
+autolooper to your preference. The sections that follow explain these settings
+in detail. Note that these fees are expressed on a per-swap basis, rather than
+as an overall budget. 
 
 ### On-Chain Fees
 When performing a successful loop out swap, the loop client needs to sweep the 
