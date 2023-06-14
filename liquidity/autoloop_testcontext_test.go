@@ -344,6 +344,24 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 		return c.manager.numActiveStickyLoops() == 0
 	}, defaultEventuallyTimeout, defaultEventuallyInterval, "failed to"+
 		" wait for sticky loop counter")
+
+	// Since we're checking if any false-positive swaps were dispatched we
+	// need to give some time to autoloop to possibly dispatch them.
+	select {
+	case <-c.outRequest:
+		c.t.Fatal("expected no more loopout requests")
+
+	case <-c.inRequest:
+		c.t.Fatal("expected no more loopin requests")
+
+	case <-c.quoteRequestIn:
+		c.t.Fatal("expected no more loopout quote requests")
+
+	case <-c.quoteRequest:
+		c.t.Fatal("expected no more loopin quote requests")
+
+	case <-time.After(500 * time.Millisecond):
+	}
 }
 
 // easyautoloop walks our test context through the process of triggering our
@@ -382,6 +400,24 @@ func (c *autoloopTestCtx) easyautoloop(step *easyAutoloopStep, noop bool) {
 			c.t, expected.request.OutgoingChanSet,
 			actual.OutgoingChanSet,
 		)
+	}
+
+	// Since we're checking if any false-positive swaps were dispatched we
+	// need to give some time to autoloop to possibly dispatch them.
+	select {
+	case <-c.outRequest:
+		c.t.Fatal("expected no more loopout requests")
+
+	case <-c.inRequest:
+		c.t.Fatal("expected no more loopin requests")
+
+	case <-c.quoteRequestIn:
+		c.t.Fatal("expected no more loopout quote requests")
+
+	case <-c.quoteRequest:
+		c.t.Fatal("expected no more loopin quote requests")
+
+	case <-time.After(500 * time.Millisecond):
 	}
 }
 
