@@ -1419,6 +1419,33 @@ func TestEasyAutoloop(t *testing.T) {
 
 	c.easyautoloop(step, true)
 	c.stop()
+
+	// Restore the local balance to a higher value that will trigger a swap.
+	easyChannel2.LocalBalance = btcutil.Amount(95000)
+	channels = []lndclient.ChannelInfo{
+		easyChannel1, easyChannel2,
+	}
+
+	// Override the feeppm with a lower one.
+	params.FeeLimit = NewFeePortion(5)
+
+	c = newAutoloopTestCtx(t, params, channels, testRestrictions)
+	c.start()
+
+	// Even though there should be a swap dispatched in order to meet the
+	// local balance target, we expect no action as the user defined feeppm
+	// should not be sufficient for the swap to be dispatched.
+	step = &easyAutoloopStep{
+		minAmt: 1,
+		maxAmt: 50000,
+		// Since we have the exact same balance as the first step, we
+		// can reuse the quoteOut1 for the expected loop out quote.
+		quotesOut:   quotesOut1,
+		expectedOut: nil,
+	}
+
+	c.easyautoloop(step, false)
+	c.stop()
 }
 
 // existingSwapFromRequest is a helper function which returns the db
