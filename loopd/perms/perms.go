@@ -34,30 +34,18 @@ var RequiredPermissions = map[string][]bakery.Op{
 	"/looprpc.SwapClient/LoopOutTerms": {{
 		Entity: "terms",
 		Action: "read",
-	}, {
-		Entity: "loop",
-		Action: "out",
 	}},
 	"/looprpc.SwapClient/LoopOutQuote": {{
 		Entity: "swap",
 		Action: "read",
-	}, {
-		Entity: "loop",
-		Action: "out",
 	}},
 	"/looprpc.SwapClient/GetLoopInTerms": {{
 		Entity: "terms",
 		Action: "read",
-	}, {
-		Entity: "loop",
-		Action: "in",
 	}},
 	"/looprpc.SwapClient/GetLoopInQuote": {{
 		Entity: "swap",
 		Action: "read",
-	}, {
-		Entity: "loop",
-		Action: "in",
 	}},
 	"/looprpc.SwapClient/GetLsatTokens": {{
 		Entity: "auth",
