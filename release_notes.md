@@ -15,7 +15,7 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-
+* Deprecated boltdb, we now support both sqlite and postgres. On first startup, loop will automatically migrate your database to sqlite. If you want to use postgres, you can set the `--databasebackend` flag to `postgres` and set the `--postgres.host`, `--postgres.port`, `--postgres.user`, `--postgres.password` and `--postgres.dbname` flags to connect to your postgres instance. Your boltdb file will be saved as a backup in the loop directory. NOTE: we're currently only supporting migrating once from boltdb to a sql backend. A manual migration between postgres and sqlite will be supported in the future.
 #### Breaking Changes
 
 #### Bug Fixes
