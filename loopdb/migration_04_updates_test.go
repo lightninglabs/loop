@@ -1,6 +1,7 @@
 package loopdb
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -44,6 +45,8 @@ func TestMigrationUpdates(t *testing.T) {
 		},
 	}
 
+	ctxb := context.Background()
+
 	// Restore a legacy database.
 	tempDirName, err := ioutil.TempDir("", "clientstore")
 	require.NoError(t, err)
@@ -69,7 +72,7 @@ func TestMigrationUpdates(t *testing.T) {
 
 	// Fetch the legacy loop out swap and assert that the updates are still
 	// there.
-	outSwaps, err := store.FetchLoopOutSwaps()
+	outSwaps, err := store.FetchLoopOutSwaps(ctxb)
 	require.NoError(t, err)
 
 	outSwap := outSwaps[0]
@@ -78,7 +81,7 @@ func TestMigrationUpdates(t *testing.T) {
 
 	// Fetch the legacy loop in swap and assert that the updates are still
 	// there.
-	inSwaps, err := store.FetchLoopInSwaps()
+	inSwaps, err := store.FetchLoopInSwaps(ctxb)
 	require.NoError(t, err)
 
 	inSwap := inSwaps[0]

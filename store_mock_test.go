@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func newStoreMock(t *testing.T) *storeMock {
 // FetchLoopOutSwaps returns all swaps currently in the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
+func (s *storeMock) FetchLoopOutSwaps(ctx context.Context) ([]*loopdb.LoopOut, error) {
 	result := []*loopdb.LoopOut{}
 
 	for hash, contract := range s.loopOutSwaps {
@@ -73,7 +74,7 @@ func (s *storeMock) FetchLoopOutSwaps() ([]*loopdb.LoopOut, error) {
 // FetchLoopOutSwaps returns all swaps currently in the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) FetchLoopOutSwap(
+func (s *storeMock) FetchLoopOutSwap(ctx context.Context,
 	hash lntypes.Hash) (*loopdb.LoopOut, error) {
 
 	contract, ok := s.loopOutSwaps[hash]
@@ -103,7 +104,7 @@ func (s *storeMock) FetchLoopOutSwap(
 // CreateLoopOut adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) CreateLoopOut(hash lntypes.Hash,
+func (s *storeMock) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *loopdb.LoopOutContract) error {
 
 	_, ok := s.loopOutSwaps[hash]
@@ -119,7 +120,9 @@ func (s *storeMock) CreateLoopOut(hash lntypes.Hash,
 }
 
 // FetchLoopInSwaps returns all in swaps currently in the store.
-func (s *storeMock) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
+func (s *storeMock) FetchLoopInSwaps(ctx context.Context) ([]*loopdb.LoopIn,
+	error) {
+
 	result := []*loopdb.LoopIn{}
 
 	for hash, contract := range s.loopInSwaps {
@@ -147,7 +150,7 @@ func (s *storeMock) FetchLoopInSwaps() ([]*loopdb.LoopIn, error) {
 // CreateLoopIn adds an initiated loop in swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) CreateLoopIn(hash lntypes.Hash,
+func (s *storeMock) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *loopdb.LoopInContract) error {
 
 	_, ok := s.loopInSwaps[hash]
@@ -167,8 +170,8 @@ func (s *storeMock) CreateLoopIn(hash lntypes.Hash,
 // its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
-	state loopdb.SwapStateData) error {
+func (s *storeMock) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
+	time time.Time, state loopdb.SwapStateData) error {
 
 	updates, ok := s.loopOutUpdates[hash]
 	if !ok {
@@ -187,8 +190,8 @@ func (s *storeMock) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 // its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
-	state loopdb.SwapStateData) error {
+func (s *storeMock) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
+	time time.Time, state loopdb.SwapStateData) error {
 
 	updates, ok := s.loopInUpdates[hash]
 	if !ok {
@@ -206,7 +209,9 @@ func (s *storeMock) UpdateLoopIn(hash lntypes.Hash, time time.Time,
 // bucket.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) PutLiquidityParams(params []byte) error {
+func (s *storeMock) PutLiquidityParams(ctx context.Context,
+	params []byte) error {
+
 	return nil
 }
 
@@ -214,7 +219,7 @@ func (s *storeMock) PutLiquidityParams(params []byte) error {
 // the bucket.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *storeMock) FetchLiquidityParams() ([]byte, error) {
+func (s *storeMock) FetchLiquidityParams(ctx context.Context) ([]byte, error) {
 	return nil, nil
 }
 
@@ -297,4 +302,21 @@ func (s *storeMock) assertStoreFinished(expectedResult loopdb.SwapState) {
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap to be finished")
 	}
+}
+func (b *storeMock) BatchCreateLoopOut(ctx context.Context,
+	swaps map[lntypes.Hash]*loopdb.LoopOutContract) error {
+
+	return errors.New("not implemented")
+}
+
+func (b *storeMock) BatchCreateLoopIn(ctx context.Context,
+	swaps map[lntypes.Hash]*loopdb.LoopInContract) error {
+
+	return errors.New("not implemented")
+}
+
+func (b *storeMock) BatchInsertUpdate(ctx context.Context,
+	updateData map[lntypes.Hash][]loopdb.BatchInsertUpdateData) error {
+
+	return errors.New("not implemented")
 }

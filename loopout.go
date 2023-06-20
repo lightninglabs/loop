@@ -233,7 +233,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Persist the data before exiting this function, so that the caller
 	// can trust that this swap will be resumed on restart.
-	err = cfg.store.CreateLoopOut(swapHash, &swap.LoopOutContract)
+	err = cfg.store.CreateLoopOut(globalCtx, swapHash, &swap.LoopOutContract)
 	if err != nil {
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
@@ -578,7 +578,7 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 
 	// Update state in store.
 	err := s.store.UpdateLoopOut(
-		s.hash, updateTime,
+		ctx, s.hash, updateTime,
 		loopdb.SwapStateData{
 			State:      s.state,
 			Cost:       s.cost,

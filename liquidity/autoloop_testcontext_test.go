@@ -144,13 +144,15 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 			return <-testCtx.loopInRestrictions, nil
 		},
-		ListLoopOut: func() ([]*loopdb.LoopOut, error) {
+		ListLoopOut: func(context.Context) ([]*loopdb.LoopOut, error) {
 			return <-testCtx.loopOuts, nil
 		},
-		GetLoopOut: func(hash lntypes.Hash) (*loopdb.LoopOut, error) {
+		GetLoopOut: func(ctx context.Context,
+			hash lntypes.Hash) (*loopdb.LoopOut, error) {
+
 			return testCtx.loopOutSingle, nil
 		},
-		ListLoopIn: func() ([]*loopdb.LoopIn, error) {
+		ListLoopIn: func(context.Context) ([]*loopdb.LoopIn, error) {
 			return <-testCtx.loopIns, nil
 		},
 		LoopOutQuote: func(_ context.Context,
@@ -186,10 +188,10 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		MinimumConfirmations: loop.DefaultSweepConfTarget,
 		Lnd:                  &testCtx.lnd.LndServices,
 		Clock:                testCtx.testClock,
-		PutLiquidityParams: func(_ []byte) error {
+		PutLiquidityParams: func(_ context.Context, _ []byte) error {
 			return nil
 		},
-		FetchLiquidityParams: func() ([]byte, error) {
+		FetchLiquidityParams: func(context.Context) ([]byte, error) {
 			return nil, nil
 		},
 	}

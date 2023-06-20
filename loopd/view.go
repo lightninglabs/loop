@@ -1,6 +1,7 @@
 package loopd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -42,7 +43,7 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 }
 
 func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
-	swaps, err := swapClient.Store.FetchLoopOutSwaps()
+	swaps, err := swapClient.Store.FetchLoopOutSwaps(context.Background())
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 }
 
 func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
-	swaps, err := swapClient.Store.FetchLoopInSwaps()
+	swaps, err := swapClient.Store.FetchLoopInSwaps(context.Background())
 	if err != nil {
 		return err
 	}

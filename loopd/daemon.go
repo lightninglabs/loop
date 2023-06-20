@@ -370,7 +370,23 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	// Both the client RPC server and and the swap server client should
+	// stop on main context cancel. So we create it early and pass it down.
+	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
+
 	log.Infof("Swap server address: %v", d.cfg.Server.Host)
+
+	// Check if we need to migrate the database.
+	if needSqlMigration(d.cfg) {
+		log.Infof("Boltdb found, running migration")
+
+		err := migrateBoltdb(d.mainCtx, d.cfg)
+		if err != nil {
+			return fmt.Errorf("unable to migrate boltdb: %v", err)
+		}
+
+		log.Infof("Successfully migrated boltdb")
+	}
 
 	// Create an instance of the loop client library.
 	swapclient, clientCleanup, err := getClient(d.cfg, &d.lnd.LndServices)
@@ -378,10 +394,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 	d.clientCleanup = clientCleanup
-
-	// Both the client RPC server and and the swap server client should
-	// stop on main context cancel. So we create it early and pass it down.
-	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
 
 	// Add our debug permissions to our main set of required permissions
 	// if compiled in.
@@ -450,7 +462,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Retrieve all currently existing swaps from the database.
-	swapsList, err := d.impl.FetchSwaps()
+	swapsList, err := d.impl.FetchSwaps(d.mainCtx)
 	if err != nil {
 		if d.macaroonService == nil {
 			cleanupMacaroonStore()

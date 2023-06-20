@@ -298,7 +298,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Persist the data before exiting this function, so that the caller can
 	// trust that this swap will be resumed on restart.
-	err = cfg.store.CreateLoopIn(swapHash, &swap.LoopInContract)
+	err = cfg.store.CreateLoopIn(globalCtx, swapHash, &swap.LoopInContract)
 	if err != nil {
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
@@ -776,7 +776,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	s.cost.Onchain = fee
 
 	s.lastUpdateTime = time.Now()
-	if err := s.persistState(); err != nil {
+	if err := s.persistState(ctx); err != nil {
 		return false, fmt.Errorf("persist htlc tx: %v", err)
 	}
 
@@ -1068,7 +1068,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 // update notification.
 func (s *loopInSwap) persistAndAnnounceState(ctx context.Context) error {
 	// Update state in store.
-	if err := s.persistState(); err != nil {
+	if err := s.persistState(ctx); err != nil {
 		return err
 	}
 
@@ -1077,9 +1077,9 @@ func (s *loopInSwap) persistAndAnnounceState(ctx context.Context) error {
 }
 
 // persistState updates the swap state on disk.
-func (s *loopInSwap) persistState() error {
+func (s *loopInSwap) persistState(ctx context.Context) error {
 	return s.store.UpdateLoopIn(
-		s.hash, s.lastUpdateTime,
+		ctx, s.hash, s.lastUpdateTime,
 		loopdb.SwapStateData{
 			State:      s.state,
 			Cost:       s.cost,

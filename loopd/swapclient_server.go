@@ -741,11 +741,11 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 
 // GetInfo returns basic information about the loop daemon and details to swaps
 // from the swap store.
-func (s *swapClientServer) GetInfo(_ context.Context,
+func (s *swapClientServer) GetInfo(ctx context.Context,
 	_ *clientrpc.GetInfoRequest) (*clientrpc.GetInfoResponse, error) {
 
 	// Fetch loop-outs from the loop db.
-	outSwaps, err := s.impl.Store.FetchLoopOutSwaps()
+	outSwaps, err := s.impl.Store.FetchLoopOutSwaps(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +772,7 @@ func (s *swapClientServer) GetInfo(_ context.Context,
 	}
 
 	// Fetch loop-ins from the loop db.
-	inSwaps, err := s.impl.Store.FetchLoopInSwaps()
+	inSwaps, err := s.impl.Store.FetchLoopInSwaps(ctx)
 	if err != nil {
 		return nil, err
 	}

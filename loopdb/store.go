@@ -2,6 +2,7 @@ package loopdb
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -346,7 +347,9 @@ func unmarshalHtlcKeys(swapBucket *bbolt.Bucket, contract *SwapContract) error {
 // FetchLoopOutSwaps returns all loop out swaps currently in the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
+func (s *boltSwapStore) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
+	error) {
+
 	var swaps []*LoopOut
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -385,7 +388,9 @@ func (s *boltSwapStore) FetchLoopOutSwaps() ([]*LoopOut, error) {
 // FetchLoopOutSwap returns the loop out swap with the given hash.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchLoopOutSwap(hash lntypes.Hash) (*LoopOut, error) {
+func (s *boltSwapStore) FetchLoopOutSwap(ctx context.Context,
+	hash lntypes.Hash) (*LoopOut, error) {
+
 	var swap *LoopOut
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -414,7 +419,9 @@ func (s *boltSwapStore) FetchLoopOutSwap(hash lntypes.Hash) (*LoopOut, error) {
 // FetchLoopInSwaps returns all loop in swaps currently in the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) FetchLoopInSwaps() ([]*LoopIn, error) {
+func (s *boltSwapStore) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn,
+	error) {
+
 	var swaps []*LoopIn
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -475,7 +482,7 @@ func createLoopBucket(tx *bbolt.Tx, swapTypeKey []byte, hash lntypes.Hash) (
 // CreateLoopOut adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
+func (s *boltSwapStore) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *LoopOutContract) error {
 
 	// If the hash doesn't match the pre-image, then this is an invalid
@@ -561,7 +568,7 @@ func (s *boltSwapStore) CreateLoopOut(hash lntypes.Hash,
 // CreateLoopIn adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) CreateLoopIn(hash lntypes.Hash,
+func (s *boltSwapStore) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *LoopInContract) error {
 
 	// If the hash doesn't match the pre-image, then this is an invalid
@@ -678,8 +685,8 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 // a particular swap as it goes through the various stages in its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
-	state SwapStateData) error {
+func (s *boltSwapStore) UpdateLoopOut(ctx context.Context,
+	hash lntypes.Hash, time time.Time, state SwapStateData) error {
 
 	return s.updateLoop(loopOutBucketKey, hash, time, state)
 }
@@ -688,8 +695,8 @@ func (s *boltSwapStore) UpdateLoopOut(hash lntypes.Hash, time time.Time,
 // a particular swap as it goes through the various stages in its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) UpdateLoopIn(hash lntypes.Hash, time time.Time,
-	state SwapStateData) error {
+func (s *boltSwapStore) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
+	time time.Time, state SwapStateData) error {
 
 	return s.updateLoop(loopInBucketKey, hash, time, state)
 }
@@ -706,7 +713,9 @@ func (s *boltSwapStore) Close() error {
 //
 // NOTE: it's the caller's responsibility to encode the param. Atm, it's
 // encoding using the proto package's `Marshal` method.
-func (s *boltSwapStore) PutLiquidityParams(params []byte) error {
+func (s *boltSwapStore) PutLiquidityParams(ctx context.Context,
+	params []byte) error {
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// Read the root bucket.
 		rootBucket := tx.Bucket(liquidityBucket)
@@ -722,7 +731,9 @@ func (s *boltSwapStore) PutLiquidityParams(params []byte) error {
 //
 // NOTE: it's the caller's responsibility to decode the param. Atm, it's
 // decoding using the proto package's `Unmarshal` method.
-func (s *boltSwapStore) FetchLiquidityParams() ([]byte, error) {
+func (s *boltSwapStore) FetchLiquidityParams(ctx context.Context) ([]byte,
+	error) {
+
 	var params []byte
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -973,4 +984,25 @@ func (s *boltSwapStore) fetchLoopInSwap(rootBucket *bbolt.Bucket,
 	loop.Hash = hash
 
 	return &loop, nil
+}
+
+// BatchCreateLoopOut creates a batch of swaps to the store.
+func (b *boltSwapStore) BatchCreateLoopOut(ctx context.Context,
+	swaps map[lntypes.Hash]*LoopOutContract) error {
+
+	return errors.New("not implemented")
+}
+
+// BatchCreateLoopIn creates a batch of loop in swaps to the store.
+func (b *boltSwapStore) BatchCreateLoopIn(ctx context.Context,
+	swaps map[lntypes.Hash]*LoopInContract) error {
+
+	return errors.New("not implemented")
+}
+
+// BatchInsertUpdate inserts batch of swap updates to the store.
+func (b *boltSwapStore) BatchInsertUpdate(ctx context.Context,
+	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
+
+	return errors.New("not implemented")
 }

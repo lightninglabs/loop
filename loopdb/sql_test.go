@@ -3,56 +3,28 @@ package loopdb
 import (
 	"context"
 	"crypto/sha256"
-	"io/ioutil"
-	"os"
-	"path/filepath"
+	"errors"
+	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/coreos/bbolt"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/keychain"
-	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	senderKey = [33]byte{
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2,
-	}
-
-	receiverKey = [33]byte{
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
-	}
-
-	senderInternalKey = [33]byte{
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4,
-	}
-
-	receiverInternalKey = [33]byte{
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5,
-	}
-
-	testPreimage = lntypes.Preimage([32]byte{
-		1, 1, 1, 1, 2, 2, 2, 2,
-		3, 3, 3, 3, 4, 4, 4, 4,
-		1, 1, 1, 1, 2, 2, 2, 2,
-		3, 3, 3, 3, 4, 4, 4, 4,
-	})
-
-	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
+	testTime1 = time.Date(2018, time.January, 9, 14, 54, 32, 3, time.UTC)
+	testTime2 = time.Date(2018, time.January, 9, 15, 02, 03, 5, time.UTC)
 )
 
-// TestLoopOutStore tests all the basic functionality of the current bbolt
-// swap store.
-func TestLoopOutStore(t *testing.T) {
+// TestSqliteLoopOutStore tests all the basic functionality of the current
+// sqlite swap store.
+func TestSqliteLoopOutStore(t *testing.T) {
 	destAddr := test.GetDestAddr(t, 0)
 	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
 
@@ -78,9 +50,7 @@ func TestLoopOutStore(t *testing.T) {
 
 			InitiationHeight: 99,
 
-			// Convert to/from unix to remove timezone, so that it
-			// doesn't interfere with DeepEqual.
-			InitiationTime:  time.Unix(0, initiationTime.UnixNano()),
+			InitiationTime:  initiationTime,
 			ProtocolVersion: ProtocolVersionMuSig2,
 		},
 		MaxPrepayRoutingFee:     40,
@@ -90,37 +60,31 @@ func TestLoopOutStore(t *testing.T) {
 		MaxSwapRoutingFee:       30,
 		SweepConfTarget:         2,
 		HtlcConfirmations:       2,
-		SwapPublicationDeadline: time.Unix(0, initiationTime.UnixNano()),
+		SwapPublicationDeadline: initiationTime,
 	}
 
 	t.Run("no outgoing set", func(t *testing.T) {
-		testLoopOutStore(t, &unrestrictedSwap)
+		testSqliteLoopOutStore(t, &unrestrictedSwap)
 	})
 
 	restrictedSwap := unrestrictedSwap
 	restrictedSwap.OutgoingChanSet = ChannelSet{1, 2}
 
 	t.Run("two channel outgoing set", func(t *testing.T) {
-		testLoopOutStore(t, &restrictedSwap)
+		testSqliteLoopOutStore(t, &restrictedSwap)
 	})
 
 	labelledSwap := unrestrictedSwap
 	labelledSwap.Label = "test label"
 	t.Run("labelled swap", func(t *testing.T) {
-		testLoopOutStore(t, &labelledSwap)
+		testSqliteLoopOutStore(t, &labelledSwap)
 	})
 }
 
-// testLoopOutStore tests the basic functionality of the current bbolt
+// testSqliteLoopOutStore tests the basic functionality of the current sqlite
 // swap store for specific swap parameters.
-func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	require.NoError(t, err)
+func testSqliteLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
+	store := NewTestDB(t)
 
 	ctxb := context.Background()
 
@@ -197,18 +161,11 @@ func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 
 	err = store.Close()
 	require.NoError(t, err)
-
-	// If we re-open the same store, then the state of the current swap
-	// should be the same.
-	store, err = NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	require.NoError(t, err)
-
-	checkSwap(StateFailInsufficientValue)
 }
 
-// TestLoopInStore tests all the basic functionality of the current bbolt
-// swap store.
-func TestLoopInStore(t *testing.T) {
+// TestSQLliteLoopInStore tests all the basic functionality of the current
+// sqlite swap store.
+func TestSQLliteLoopInStore(t *testing.T) {
 	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	// Next, we'll make a new pending swap that we'll insert into the
@@ -236,7 +193,7 @@ func TestLoopInStore(t *testing.T) {
 
 			// Convert to/from unix to remove timezone, so that it
 			// doesn't interfere with DeepEqual.
-			InitiationTime:  time.Unix(0, initiationTime.UnixNano()),
+			InitiationTime:  initiationTime,
 			ProtocolVersion: ProtocolVersionMuSig2,
 		},
 		HtlcConfTarget: 2,
@@ -245,23 +202,18 @@ func TestLoopInStore(t *testing.T) {
 	}
 
 	t.Run("loop in", func(t *testing.T) {
-		testLoopInStore(t, pendingSwap)
+		testSqliteLoopInStore(t, pendingSwap)
 	})
 
 	labelledSwap := pendingSwap
 	labelledSwap.Label = "test label"
 	t.Run("loop in with label", func(t *testing.T) {
-		testLoopInStore(t, labelledSwap)
+		testSqliteLoopInStore(t, labelledSwap)
 	})
 }
 
-func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	require.NoError(t, err)
+func testSqliteLoopInStore(t *testing.T, pendingSwap LoopInContract) {
+	store := NewTestDB(t)
 
 	ctxb := context.Background()
 
@@ -326,165 +278,21 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 
 	err = store.Close()
 	require.NoError(t, err)
-
-	// If we re-open the same store, then the state of the current swap
-	// should be the same.
-	store, err = NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	require.NoError(t, err)
-
-	checkSwap(StateFailInsufficientValue)
-}
-
-// TestVersionNew tests that a new database is initialized with the current
-// version.
-func TestVersionNew(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ver, err := getDBVersion(store.db)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if ver != latestDBVersion {
-		t.Fatal("db not at latest version")
-	}
-}
-
-// TestVersionNew tests that an existing version zero database is migrated to
-// the latest version.
-func TestVersionMigrated(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	createVersionZeroDb(t, tempDirName)
-
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ver, err := getDBVersion(store.db)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if ver != latestDBVersion {
-		t.Fatal("db not at latest version")
-	}
-}
-
-// createVersionZeroDb creates a database with an empty meta bucket. In version
-// zero, there was no version key specified yet.
-func createVersionZeroDb(t *testing.T, dbPath string) {
-	path := filepath.Join(dbPath, dbFileName)
-	bdb, err := bbolt.Open(path, 0600, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer bdb.Close()
-
-	err = bdb.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucket(metaBucketKey)
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestLegacyOutgoingChannel asserts that a legacy channel restriction is
-// properly mapped onto the newer channel set.
-func TestLegacyOutgoingChannel(t *testing.T) {
-	var (
-		legacyDbVersion       = Hex("00000003")
-		legacyOutgoingChannel = Hex("0000000000000005")
-	)
-
-	ctxb := context.Background()
-
-	legacyDb := map[string]interface{}{
-		"loop-in": map[string]interface{}{},
-		"metadata": map[string]interface{}{
-			"dbp": legacyDbVersion,
-		},
-		"uncharge-swaps": map[string]interface{}{
-			Hex("2a595d79a55168970532805ae20c9b5fac98f04db79ba4c6ae9b9ac0f206359e"): map[string]interface{}{
-				"contract": Hex("1562d6fbec140000010101010202020203030303040404040101010102020202030303030404040400000000000000640d707265706179696e766f69636501010101010101010101010101010101010101010101010101010101010101010201010101010101010101010101010101010101010101010101010101010101010300000090000000000000000a0000000000000014000000000000002800000063223347454e556d6e4552745766516374344e65676f6d557171745a757a5947507742530b73776170696e766f69636500000002000000000000001e") + legacyOutgoingChannel + Hex("1562d6fbec140000"),
-				"updates": map[string]interface{}{
-					Hex("0000000000000001"): Hex("1508290a92d4c00001000000000000000000000000000000000000000000000000"),
-					Hex("0000000000000002"): Hex("1508290a92d4c00006000000000000000000000000000000000000000000000000"),
-				},
-			},
-		},
-	}
-
-	// Restore a legacy database.
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
-
-	tempPath := filepath.Join(tempDirName, dbFileName)
-	db, err := bbolt.Open(tempPath, 0600, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = db.Update(func(tx *bbolt.Tx) error {
-		return RestoreDB(tx, legacyDb)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	// Fetch the legacy swap.
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	swaps, err := store.FetchLoopOutSwaps(ctxb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Assert that the outgoing channel is read properly.
-	expectedChannelSet := ChannelSet{5}
-
-	require.Equal(t, expectedChannelSet, swaps[0].Contract.OutgoingChanSet)
 }
 
 // TestLiquidityParams checks that reading and writing to liquidty bucket are
 // as expected.
-func TestLiquidityParams(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err, "failed to db")
-	defer os.RemoveAll(tempDirName)
-
+func TestSqliteLiquidityParams(t *testing.T) {
 	ctxb := context.Background()
 
-	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
-	require.NoError(t, err, "failed to create store")
+	store := NewTestDB(t)
 
 	// Test when there's no params saved before, an empty bytes is
 	// returned.
 	params, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
 	require.Empty(t, params, "expect empty bytes")
-	require.Nil(t, params)
+	require.Nil(t, params, "expected nil byte array")
 
 	params = []byte("test")
 
@@ -496,4 +304,86 @@ func TestLiquidityParams(t *testing.T) {
 	paramsRead, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
 	require.Equal(t, params, paramsRead, "unexpected return value")
+}
+
+// TestSqliteTypeConversion is a small test that checks that we can safely
+// convert between the :one and :many types from sqlc.
+func TestSqliteTypeConversion(t *testing.T) {
+	loopOutSwapRow := sqlc.GetLoopOutSwapRow{}
+	randomStruct(&loopOutSwapRow)
+	require.NotNil(t, loopOutSwapRow.DestAddress)
+
+	loopOutSwapsRow := sqlc.GetLoopOutSwapsRow(loopOutSwapRow)
+	require.EqualValues(t, loopOutSwapRow, loopOutSwapsRow)
+
+}
+
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func randomString(length int) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+func randomBytes(length int) []byte {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = byte(rand.Intn(256))
+	}
+	return b
+}
+
+func randomStruct(v interface{}) error {
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+		return errors.New("Input should be a pointer to a struct type")
+	}
+
+	val = val.Elem()
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+
+		switch field.Kind() {
+		case reflect.Int64:
+			if field.CanSet() {
+				field.SetInt(rand.Int63())
+			}
+
+		case reflect.String:
+			if field.CanSet() {
+				field.SetString(randomString(10))
+			}
+
+		case reflect.Slice:
+			if field.Type().Elem().Kind() == reflect.Uint8 {
+				if field.CanSet() {
+					field.SetBytes(randomBytes(32))
+				}
+			}
+
+		case reflect.Struct:
+			if field.Type() == reflect.TypeOf(time.Time{}) {
+				if field.CanSet() {
+					field.Set(reflect.ValueOf(time.Now()))
+				}
+			}
+			if field.Type() == reflect.TypeOf(route.Vertex{}) {
+				if field.CanSet() {
+					vertex, err := route.NewVertexFromBytes(
+						randomBytes(route.VertexSize),
+					)
+					if err != nil {
+						return err
+					}
+
+					field.Set(reflect.ValueOf(vertex))
+				}
+			}
+		}
+	}
+
+	return nil
 }
