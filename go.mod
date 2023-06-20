@@ -33,8 +33,8 @@ require (
 	github.com/stretchr/testify v1.8.1
 	github.com/urfave/cli v1.22.9
 	golang.org/x/net v0.8.0
-	google.golang.org/grpc v1.45.0
-	google.golang.org/protobuf v1.27.1
+	google.golang.org/grpc v1.53.0
+	google.golang.org/protobuf v1.28.1
 	gopkg.in/macaroon-bakery.v2 v2.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 	modernc.org/sqlite v1.20.3
@@ -202,5 +202,7 @@ require (
 // formatted and sent to the client. This change was introduced in grpc v1.40.0
 // with https://github.com/grpc/grpc-go/pull/4474.
 replace google.golang.org/grpc => google.golang.org/grpc v1.39.0
+
+replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 go 1.18
