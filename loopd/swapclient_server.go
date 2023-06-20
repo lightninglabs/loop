@@ -38,6 +38,8 @@ const (
 	// to specify. This is driven by the minimum confirmation target allowed
 	// by the backing fee estimator.
 	minConfTarget = 2
+
+	defaultLoopdInitiator = "loopd"
 )
 
 var (
@@ -511,7 +513,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 
 	log.Infof("Loop out terms request received")
 
-	terms, err := s.impl.LoopOutTerms(ctx)
+	terms, err := s.impl.LoopOutTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
 		log.Errorf("Terms request: %v", err)
 		return nil, err
@@ -542,6 +544,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		SwapPublicationDeadline: time.Unix(
 			int64(req.SwapPublicationDeadline), 0,
 		),
+		Initiator: defaultLoopdInitiator,
 	})
 	if err != nil {
 		return nil, err
@@ -562,7 +565,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 
 	log.Infof("Loop in terms request received")
 
-	terms, err := s.impl.LoopInTerms(ctx)
+	terms, err := s.impl.LoopInTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
 		log.Errorf("Terms request: %v", err)
 		return nil, err
@@ -616,6 +619,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		LastHop:        lastHop,
 		RouteHints:     routeHints,
 		Private:        req.Private,
+		Initiator:      defaultLoopdInitiator,
 	})
 	if err != nil {
 		return nil, err

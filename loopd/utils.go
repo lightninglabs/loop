@@ -75,11 +75,11 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
 		LoopIn:         client.LoopIn,
-		Restrictions: func(ctx context.Context,
-			swapType swap.Type) (*liquidity.Restrictions, error) {
+		Restrictions: func(ctx context.Context, swapType swap.Type,
+			initiator string) (*liquidity.Restrictions, error) {
 
 			if swapType == swap.TypeOut {
-				outTerms, err := client.Server.GetLoopOutTerms(ctx)
+				outTerms, err := client.Server.GetLoopOutTerms(ctx, initiator)
 				if err != nil {
 					return nil, err
 				}
@@ -89,7 +89,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 				), nil
 			}
 
-			inTerms, err := client.Server.GetLoopInTerms(ctx)
+			inTerms, err := client.Server.GetLoopInTerms(ctx, initiator)
 			if err != nil {
 				return nil, err
 			}

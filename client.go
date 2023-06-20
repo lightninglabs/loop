@@ -397,7 +397,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	}
 
 	// Calculate htlc expiry height.
-	terms, err := s.Server.GetLoopOutTerms(globalCtx)
+	terms, err := s.Server.GetLoopOutTerms(globalCtx, request.Initiator)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ func (s *Client) getExpiry(height int32, terms *LoopOutTerms,
 func (s *Client) LoopOutQuote(ctx context.Context,
 	request *LoopOutQuoteRequest) (*LoopOutQuote, error) {
 
-	terms, err := s.Server.GetLoopOutTerms(ctx)
+	terms, err := s.Server.GetLoopOutTerms(ctx, request.Initiator)
 	if err != nil {
 		return nil, err
 	}
@@ -477,6 +477,7 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 
 	quote, err := s.Server.GetLoopOutQuote(
 		ctx, request.Amount, expiry, request.SwapPublicationDeadline,
+		request.Initiator,
 	)
 	if err != nil {
 		return nil, err
@@ -528,10 +529,10 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 }
 
 // LoopOutTerms returns the terms on which the server executes swaps.
-func (s *Client) LoopOutTerms(ctx context.Context) (
+func (s *Client) LoopOutTerms(ctx context.Context, initiator string) (
 	*LoopOutTerms, error) {
 
-	return s.Server.GetLoopOutTerms(ctx)
+	return s.Server.GetLoopOutTerms(ctx, initiator)
 }
 
 // waitForInitialized for swaps to be resumed and executor ready.
@@ -601,7 +602,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	request *LoopInQuoteRequest) (*LoopInQuote, error) {
 
 	// Retrieve current server terms to calculate swap fee.
-	terms, err := s.Server.GetLoopInTerms(ctx)
+	terms, err := s.Server.GetLoopInTerms(ctx, request.Initiator)
 	if err != nil {
 		return nil, err
 	}
@@ -641,7 +642,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	quote, err := s.Server.GetLoopInQuote(
 		ctx, request.Amount, s.lndServices.NodePubkey, request.LastHop,
-		request.RouteHints,
+		request.RouteHints, request.Initiator,
 	)
 	if err != nil {
 		return nil, err
@@ -721,10 +722,10 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 }
 
 // LoopInTerms returns the terms on which the server executes swaps.
-func (s *Client) LoopInTerms(ctx context.Context) (
+func (s *Client) LoopInTerms(ctx context.Context, initiator string) (
 	*LoopInTerms, error) {
 
-	return s.Server.GetLoopInTerms(ctx)
+	return s.Server.GetLoopInTerms(ctx, initiator)
 }
 
 // wrapGrpcError wraps the non-nil error provided with a message providing

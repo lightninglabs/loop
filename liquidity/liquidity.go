@@ -178,8 +178,8 @@ type Config struct {
 
 	// Restrictions returns the restrictions that the server applies to
 	// swaps.
-	Restrictions func(ctx context.Context, swapType swap.Type) (
-		*Restrictions, error)
+	Restrictions func(ctx context.Context, swapType swap.Type,
+		initiator string) (*Restrictions, error)
 
 	// Lnd provides us with access to lnd's rpc servers.
 	Lnd *lndclient.LndServices
@@ -212,10 +212,12 @@ type Config struct {
 		request *loop.LoopInRequest) (*loop.LoopInSwapInfo, error)
 
 	// LoopInTerms returns the terms for a loop in swap.
-	LoopInTerms func(ctx context.Context) (*loop.LoopInTerms, error)
+	LoopInTerms func(ctx context.Context,
+		initiator string) (*loop.LoopInTerms, error)
 
 	// LoopOutTerms returns the terms for a loop out swap.
-	LoopOutTerms func(ctx context.Context) (*loop.LoopOutTerms, error)
+	LoopOutTerms func(ctx context.Context,
+		initiator string) (*loop.LoopOutTerms, error)
 
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
@@ -355,7 +357,9 @@ func (m *Manager) SetParameters(ctx context.Context,
 func (m *Manager) setParameters(ctx context.Context,
 	params Parameters) error {
 
-	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
+	restrictions, err := m.cfg.Restrictions(
+		ctx, swap.TypeOut, getInitiator(m.params),
+	)
 	if err != nil {
 		return err
 	}
@@ -566,7 +570,9 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return nil
 	}
 
-	restrictions, err := m.cfg.Restrictions(ctx, swap.TypeOut)
+	restrictions, err := m.cfg.Restrictions(
+		ctx, swap.TypeOut, getInitiator(m.params),
+	)
 	if err != nil {
 		return err
 	}
@@ -999,7 +1005,9 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 func (m *Manager) getSwapRestrictions(ctx context.Context, swapType swap.Type) (
 	*Restrictions, error) {
 
-	restrictions, err := m.cfg.Restrictions(ctx, swapType)
+	restrictions, err := m.cfg.Restrictions(
+		ctx, swapType, getInitiator(m.params),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1485,6 +1493,14 @@ func (m *Manager) checkSummaryInflight(
 	}
 
 	return allowedSwaps, nil
+}
+
+func getInitiator(params Parameters) string {
+	if params.EasyAutoloop {
+		return "easy-autoloop"
+	}
+
+	return "autoloop"
 }
 
 // isAutoloopLabel is a helper function that returns a flag indicating whether
