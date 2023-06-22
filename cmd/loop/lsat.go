@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 	"gopkg.in/macaroon.v2"
@@ -55,13 +53,9 @@ func listAuth(ctx *cli.Context) error {
 			return fmt.Errorf("unable to unmarshal macaroon: %v",
 				err)
 		}
-		id, err := lsat.DecodeIdentifier(bytes.NewReader(mac.Id()))
-		if err != nil {
-			return fmt.Errorf("unable to decode macaroon ID: %v",
-				err)
-		}
+
 		tokens[i] = &printableToken{
-			ID:              hex.EncodeToString(id.TokenID[:]),
+			ID:              t.Id,
 			ValidUntil:      "",
 			BaseMacaroon:    hex.EncodeToString(t.BaseMacaroon),
 			PaymentHash:     hex.EncodeToString(t.PaymentHash),
