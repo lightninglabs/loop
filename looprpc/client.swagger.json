@@ -1017,6 +1017,10 @@
         "storage_name": {
           "type": "string",
           "description": "Identifying attribute of this token in the store. Currently represents the\nfile name of the token where it's stored on the file system."
+        },
+        "id": {
+          "type": "string",
+          "description": "The l402 Id of the token."
         }
       }
     },

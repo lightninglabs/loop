@@ -1,6 +1,7 @@
 package loopd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -723,6 +725,13 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+
+		id, err := lsat.DecodeIdentifier(
+			bytes.NewReader(token.BaseMacaroon().Id()),
+		)
+		if err != nil {
+			return nil, err
+		}
 		rpcTokens[idx] = &clientrpc.LsatToken{
 			BaseMacaroon:       macBytes,
 			PaymentHash:        token.PaymentHash[:],
@@ -732,6 +741,9 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 			TimeCreated:        token.TimeCreated.Unix(),
 			Expired:            !token.IsValid(),
 			StorageName:        key,
+			Id: hex.EncodeToString(
+				id.TokenID[:],
+			),
 		}
 		idx++
 	}
