@@ -227,8 +227,8 @@ var setParamsCommand = cli.Command{
 	Usage: "update the parameters set for the liquidity manager",
 	Description: "Updates the parameters set for the liquidity manager. " +
 		"Note the parameters are persisted in db to save the trouble " +
-		"of setting them again upon loopd restart. To get the " +
-		"default values, use `getparams` before any `setparams`.",
+		"of setting them again upon loopd restart. To get the default" +
+		"values, use `getparams` before any `setparams`.",
 	Flags: []cli.Flag{
 		cli.IntFlag{
 			Name: "sweeplimit",
@@ -248,13 +248,13 @@ var setParamsCommand = cli.Command{
 		cli.Float64Flag{
 			Name: "maxroutingfee",
 			Usage: "the maximum percentage of off-chain payment " +
-				"volume that are are willing to pay in " +
-				"routing fees.",
+				"volume that we are willing to pay in routing" +
+				"fees.",
 		},
 		cli.Float64Flag{
 			Name: "maxprepayfee",
 			Usage: "the maximum percentage of off-chain prepay " +
-				"volume that are are willing to pay in " +
+				"volume that we are willing to pay in " +
 				"routing fees.",
 		},
 		cli.Uint64Flag{
@@ -284,56 +284,56 @@ var setParamsCommand = cli.Command{
 			Name: "autoloop",
 			Usage: "set to true to enable automated dispatch " +
 				"of swaps, limited to the budget set by " +
-				"autobudget",
+				"autobudget.",
 		},
 		cli.StringFlag{
 			Name: "destaddr",
 			Usage: "custom address to be used as destination for " +
 				"autoloop loop out, set to \"default\" in " +
-				"order to revert to default behavior",
+				"order to revert to default behavior.",
 		},
 		cli.Uint64Flag{
 			Name: "autobudget",
 			Usage: "the maximum amount of fees in satoshis that " +
 				"automatically dispatched loop out swaps may " +
-				"spend",
+				"spend.",
 		},
 		cli.DurationFlag{
 			Name: "autobudgetrefreshperiod",
 			Usage: "the time period over which the automated " +
-				"loop budget is refreshed",
+				"loop budget is refreshed.",
 		},
 		cli.Uint64Flag{
 			Name: "autoinflight",
 			Usage: "the maximum number of automatically " +
 				"dispatched swaps that we allow to be in " +
-				"flight",
+				"flight.",
 		},
 		cli.Uint64Flag{
 			Name: "minamt",
 			Usage: "the minimum amount in satoshis that the " +
-				"autoloop client will dispatch per-swap",
+				"autoloop client will dispatch per-swap.",
 		},
 		cli.Uint64Flag{
 			Name: "maxamt",
 			Usage: "the maximum amount in satoshis that the " +
-				"autoloop client will dispatch per-swap",
+				"autoloop client will dispatch per-swap.",
 		},
 		cli.IntFlag{
 			Name: "htlc_conf",
 			Usage: "the confirmation target for loop in on-chain " +
-				"htlcs",
+				"htlcs.",
 		},
 		cli.BoolFlag{
 			Name: "easyautoloop",
 			Usage: "set to true to enable easy autoloop, which " +
 				"will automatically dispatch swaps in order " +
-				"to meet the target local balance",
+				"to meet the target local balance.",
 		},
 		cli.Uint64Flag{
 			Name: "localbalancesat",
 			Usage: "the target size of total local balance in " +
-				"satoshis, used by easy autoloop",
+				"satoshis, used by easy autoloop.",
 		},
 	},
 	Action: setParams,
