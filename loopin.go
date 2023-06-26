@@ -86,25 +86,26 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	var err error
 
-	// Private and routehints are mutually exclusive as setting private
-	// means we retrieve our own routehints from the connected node.
+	// Private and route hints are mutually exclusive as setting private
+	// means we retrieve our own route hints from the connected node.
 	if len(request.RouteHints) != 0 && request.Private {
 		return nil, fmt.Errorf("private and route_hints both set")
 	}
 
-	// If Private is set, we generate route hints
+	// If Private is set, we generate route hints.
 	if request.Private {
-		// If last_hop is set, we'll only add channels with peers
-		// set to the last_hop parameter
+		// If last_hop is set, we'll only add channels with peers set to
+		// the last_hop parameter.
 		includeNodes := make(map[route.Vertex]struct{})
 		if request.LastHop != nil {
 			includeNodes[*request.LastHop] = struct{}{}
 		}
 
-		// Because the Private flag is set, we'll generate our own
-		// set of hop hints
+		// Because the Private flag is set, we'll generate our own set
+		// of hop hints.
 		request.RouteHints, err = SelectHopHints(
-			globalCtx, cfg.lnd, request.Amount, DefaultMaxHopHints, includeNodes,
+			globalCtx, cfg.lnd, request.Amount, DefaultMaxHopHints,
+			includeNodes,
 		)
 		if err != nil {
 			return nil, err
@@ -115,9 +116,9 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// swap fee that we should subtract from the swap amount in the payment
 	// request that we send to the server. We pass nil as optional route
 	// hints as hop hint selection when generating invoices with private
-	// channels is an LND side black box feaure. Advanced users will quote
-	// directly anyway and there they have the option to add specific
-	// route hints.
+	// channels is an LND side black box feature. Advanced users will quote
+	// directly anyway and there they have the option to add specific route
+	// hints.
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
 		request.RouteHints,
@@ -194,8 +195,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// Default the HTLC internal key to our sender key.
 	senderInternalPubKey := senderKey
 
-	// If this is a MuSig2 swap then we'll generate a brand new key pair
-	// and will use that as the internal key for the HTLC.
+	// If this is a MuSig2 swap then we'll generate a brand new key pair and
+	// will use that as the internal key for the HTLC.
 	if loopdb.CurrentProtocolVersion() >= loopdb.ProtocolVersionMuSig2 {
 		secret, err := sharedSecretFromHash(
 			globalCtx, cfg.lnd.Signer, swapHash,
@@ -238,8 +239,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("probe error: %v", err)
 	}
 
-	// Validate the response parameters the prevent us continuing with a
-	// swap that is based on parameters outside our allowed range.
+	// Validate if the response parameters are outside our allowed range
+	// preventing us from continuing with a swap.
 	err = validateLoopInContract(currentHeight, swapResp)
 	if err != nil {
 		return nil, err
@@ -415,10 +416,9 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 	return swap, nil
 }
 
-// validateLoopInContract validates the contract parameters against our
-// request.
+// validateLoopInContract validates the contract parameters against our request.
 func validateLoopInContract(height int32, response *newLoopInResponse) error {
-	// Verify that we are not forced to publish an htlc that locks up our
+	// Verify that we are not forced to publish a htlc that locks up our
 	// funds for too long in case the server doesn't follow through.
 	if response.expiry-height > MaxLoopInAcceptDelta {
 		return ErrExpiryTooFar
@@ -427,8 +427,8 @@ func validateLoopInContract(height int32, response *newLoopInResponse) error {
 	return nil
 }
 
-// initHtlcs creates and updates the native and nested segwit htlcs
-// of the loopInSwap.
+// initHtlcs creates and updates the native and nested segwit htlcs of the
+// loopInSwap.
 func (s *loopInSwap) initHtlcs() error {
 	htlc, err := GetHtlc(
 		s.hash, &s.SwapContract, s.swapKit.lnd.ChainParams,
@@ -467,8 +467,8 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 
 	info.ExternalHtlc = s.ExternalHtlc
 
-	// In order to avoid potentially dangerous ownership sharing
-	// we copy the last hop vertex.
+	// In order to avoid potentially dangerous ownership sharing we copy the
+	// last hop vertex.
 	if s.LastHop != nil {
 		lastHop := &route.Vertex{}
 		copy(lastHop[:], s.LastHop[:])
@@ -524,15 +524,15 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 		err = fmt.Errorf("swap in non-final state %v", s.state)
 	}
 
-	// If an unexpected error happened, report a temporary failure
-	// but don't persist the error. Otherwise for example a
-	// connection error could lead to abandoning the swap
-	// permanently and losing funds.
+	// If an unexpected error happened, report a temporary failure but don't
+	// persist the error. Otherwise, for example a connection error could
+	// lead to abandoning the swap permanently and losing funds.
 	if err != nil {
 		s.log.Errorf("Swap error: %v", err)
 		s.setState(loopdb.StateFailTemporary)
 
-		// If we cannot send out this update, there is nothing we can do.
+		// If we cannot send out this update, there is nothing we can
+		// do.
 		_ = s.sendUpdate(mainCtx)
 
 		return err
@@ -554,7 +554,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	var err error
 
 	// For loop in, the client takes the first step by publishing the
-	// on-chain htlc. Only do this is we haven't already done so in a
+	// on-chain htlc. Only do this if we haven't already done so in a
 	// previous run.
 	if s.state == loopdb.StateInitiated {
 		if s.ExternalHtlc {
@@ -577,7 +577,7 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 		}
 	}
 
-	// Wait for the htlc to confirm. After a restart this will pick up a
+	// Wait for the htlc to confirm. After a restart, this will pick up a
 	// previously published tx.
 	conf, err := s.waitForHtlcConf(globalCtx)
 	if err != nil {
@@ -593,17 +593,17 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	}
 
 	// Verify that the confirmed (external) htlc value matches the swap
-	// amount. Otherwise fail the swap immediately.
+	// amount. Otherwise, fail the swap immediately.
 	if htlcValue != s.LoopInContract.AmountRequested {
 		s.setState(loopdb.StateFailIncorrectHtlcAmt)
 		return s.persistAndAnnounceState(globalCtx)
 	}
 
-	// The server is expected to see the htlc on-chain and knowing that it
-	// can sweep that htlc with the preimage, it should pay our swap
-	// invoice, receive the preimage and sweep the htlc. We are waiting for
-	// this to happen and simultaneously watch the htlc expiry height. When
-	// the htlc expires, we will publish a timeout tx to reclaim the funds.
+	// The server is expected to see the htlc on-chain and know that it can
+	// sweep that htlc with the preimage, it should pay our swap invoice,
+	// receive the preimage and sweep the htlc. We are waiting for this to
+	// happen and simultaneously watch the htlc expiry height. When the htlc
+	// expires, we will publish a timeout tx to reclaim the funds.
 	err = s.waitForSwapComplete(globalCtx, htlcOutpoint, htlcValue)
 	if err != nil {
 		return err
@@ -623,8 +623,8 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 
 	// Register for confirmation of the htlc. It is essential to specify not
 	// just the pk script, because an attacker may publish the same htlc
-	// with a lower value and we don't want to follow through with that tx.
-	// In the unlikely event that our call to SendOutputs crashes and we
+	// with a lower value, and we don't want to follow through with that tx.
+	// In the unlikely event that our call to SendOutputs crashes, and we
 	// restart, htlcTxHash will be nil at this point. Then only register
 	// with PkScript and accept the risk that the call triggers on a
 	// different htlc outpoint.
@@ -765,9 +765,6 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// Persist the htlc hash so that after a restart we are still waiting
 	// for our own htlc. We don't need to announce to clients, because the
 	// state remains unchanged.
-	//
-	// TODO(joostjager): Store tx hash before calling SendOutputs. This is
-	// not yet possible with the current lnd api.
 	s.htlcTxHash = &txHash
 
 	// We do not expect any on-chain fees to be recorded yet, and we only
@@ -940,9 +937,9 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 }
 
 // tryPushHtlcKey attempts to push the htlc key to the server. If the server
-// returns an error of any kind we'll log it as a warning but won't act as
-// the swap execution can just go on without the server gaining knowledge of
-// our internal key.
+// returns an error of any kind we'll log it as a warning but won't act as the
+// swap execution can just go on without the server gaining knowledge of our
+// internal key.
 func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
 	if s.ProtocolVersion < loopdb.ProtocolVersionMuSig2 {
 		return false
@@ -1022,7 +1019,7 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		}
 	}
 
-	// Calculate sweep tx fee
+	// Calculate sweep tx fee.
 	fee, err := s.sweeper.GetSweepFee(
 		ctx, s.htlc.AddTimeoutToEstimator, s.timeoutAddr,
 		TimeoutTxConfTarget,
