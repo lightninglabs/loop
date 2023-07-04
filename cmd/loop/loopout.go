@@ -39,6 +39,21 @@ var loopOutCommand = cli.Command{
 				"should be sent to, if let blank the funds " +
 				"will go to lnd's wallet",
 		},
+		cli.StringFlag{
+			Name: "account",
+			Usage: "the name of the account to generate a new " +
+				"address from. You can list the names of " +
+				"valid accounts in your backing lnd " +
+				"instance with \"lncli wallet accounts list\".",
+			Value: "",
+		},
+		cli.StringFlag{
+			Name: "account_addr_type",
+			Usage: "the address type of the extended public key " +
+				"specified in account. Currently only " +
+				"pay-to-taproot-pubkey(p2tr) is supported",
+			Value: "p2tr",
+		},
 		cli.Uint64Flag{
 			Name:  "amt",
 			Usage: "the amount in satoshis to loop out",
@@ -101,7 +116,7 @@ func loopOut(ctx *cli.Context) error {
 	}
 
 	// Parse outgoing channel set. Don't string split if the flag is empty.
-	// Otherwise strings.Split returns a slice of length one with an empty
+	// Otherwise, strings.Split returns a slice of length one with an empty
 	// element.
 	var outgoingChanSet []uint64
 	if ctx.IsSet("channel") {
@@ -122,12 +137,39 @@ func loopOut(ctx *cli.Context) error {
 		return err
 	}
 
+	if ctx.IsSet("addr") && ctx.IsSet("account") {
+		return fmt.Errorf("cannot set --addr and --account at the " +
+			"same time. Please specify only one source for a new " +
+			"address to sweep the loop amount to")
+	}
+
 	var destAddr string
+	var account string
 	switch {
 	case ctx.IsSet("addr"):
 		destAddr = ctx.String("addr")
+
+	case ctx.IsSet("account"):
+		account = ctx.String("account")
+
 	case args.Present():
 		destAddr = args.First()
+	}
+
+	if ctx.IsSet("account") != ctx.IsSet("account_addr_type") {
+		return fmt.Errorf("cannot set account without specifying " +
+			"account address type and vice versa")
+	}
+
+	var accountAddrType looprpc.AddressType
+	if ctx.IsSet("account_addr_type") {
+		switch ctx.String("account_addr_type") {
+		case "p2tr":
+			accountAddrType = looprpc.AddressType_TAPROOT_PUBKEY
+
+		default:
+			return fmt.Errorf("unknown account address type")
+		}
 	}
 
 	client, cleanup, err := getClient(ctx)
@@ -191,6 +233,8 @@ func loopOut(ctx *cli.Context) error {
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
+		Account:                 account,
+		AccountAddrType:         accountAddrType,
 		MaxMinerFee:             int64(limits.maxMinerFee),
 		MaxPrepayAmt:            int64(limits.maxPrepayAmt),
 		MaxSwapFee:              int64(limits.maxSwapFee),

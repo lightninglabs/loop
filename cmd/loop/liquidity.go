@@ -292,6 +292,21 @@ var setParamsCommand = cli.Command{
 				"autoloop loop out, set to \"default\" in " +
 				"order to revert to default behavior.",
 		},
+		cli.StringFlag{
+			Name: "account",
+			Usage: "the name of the account to generate a new " +
+				"address from. You can list the names of " +
+				"valid accounts in your backing lnd " +
+				"instance with \"lncli wallet accounts list\".",
+			Value: "",
+		},
+		cli.StringFlag{
+			Name: "account_addr_type",
+			Usage: "the address type of the extended public key " +
+				"specified in account. Currently only " +
+				"pay-to-taproot-pubkey(p2tr) is supported",
+			Value: "p2tr",
+		},
 		cli.Uint64Flag{
 			Name: "autobudget",
 			Usage: "the maximum amount of fees in satoshis that " +
@@ -445,9 +460,33 @@ func setParams(ctx *cli.Context) error {
 		flagSet = true
 	}
 
-	if ctx.IsSet("destaddr") {
+	switch {
+	case ctx.IsSet("destaddr") && ctx.IsSet("account"):
+		return fmt.Errorf("cannot set destaddr and account at the " +
+			"same time")
+
+	case ctx.IsSet("destaddr"):
 		params.AutoloopDestAddress = ctx.String("destaddr")
+		params.Account = ""
 		flagSet = true
+
+	case ctx.IsSet("account") != ctx.IsSet("account_addr_type"):
+		return liquidity.ErrAccountAndAddrType
+
+	case ctx.IsSet("account"):
+		params.Account = ctx.String("account")
+		params.AutoloopDestAddress = ""
+		flagSet = true
+	}
+
+	if ctx.IsSet("account_addr_type") {
+		switch ctx.String("account_addr_type") {
+		case "p2tr":
+			params.AccountAddrType = looprpc.AddressType_TAPROOT_PUBKEY
+
+		default:
+			return fmt.Errorf("unknown account address type")
+		}
 	}
 
 	if ctx.IsSet("autobudgetrefreshperiod") {
