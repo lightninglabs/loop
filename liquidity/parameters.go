@@ -3,6 +3,7 @@ package liquidity
 import (
 	"errors"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"strings"
 	"time"
 
@@ -42,9 +43,17 @@ type Parameters struct {
 	// Autoloop enables automatic dispatch of swaps.
 	Autoloop bool
 
-	// DestAddr is the address to be used for sweeping the on-chain HTLC that
-	// is related with a loop out.
+	// DestAddr is the address to be used for sweeping the on-chain HTLC
+	// that is related with a loop out.
 	DestAddr btcutil.Address
+
+	// An alternative destination address source for the swap. This field
+	// represents the name of the account in the backing lnd instance.
+	// Refer to lnd's wallet import functions for reference.
+	Account string
+
+	// The address type of the account specified in the account field.
+	AccountAddrType walletrpc.AddressType
 
 	// AutoFeeBudget is the total amount we allow to be spent on
 	// automatically dispatched swaps. Once this budget has been used, we
@@ -227,6 +236,21 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 		return ErrZeroInFlight
 	}
 
+	// Destination address and account cannot be set at the same time.
+	if p.DestAddr != nil && len(p.DestAddr.String()) > 0 &&
+		len(p.Account) > 0 {
+
+		return ErrAmbiguousDestAddr
+	}
+
+	// If an account is specified the respective address type must be
+	// specified as well, or both must be unset.
+	if len(p.Account) == 0 !=
+		(p.AccountAddrType == walletrpc.AddressType_UNKNOWN) {
+
+		return ErrAccountAndAddrType
+	}
+
 	err := validateRestrictions(server, &p.ClientRestrictions)
 	if err != nil {
 		return err
@@ -376,11 +400,18 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		if req.AutoloopDestAddress == "default" {
 			destaddr = nil
 		} else {
-			destaddr, err = btcutil.DecodeAddress(req.AutoloopDestAddress, nil)
+			destaddr, err = btcutil.DecodeAddress(
+				req.AutoloopDestAddress, nil,
+			)
 			if err != nil {
 				return nil, err
 			}
 		}
+	}
+
+	addrType := walletrpc.AddressType_UNKNOWN
+	if req.AccountAddrType == clientrpc.AddressType_TAPROOT_PUBKEY {
+		addrType = walletrpc.AddressType_TAPROOT_PUBKEY
 	}
 
 	params := &Parameters{
@@ -393,6 +424,8 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 			int64(req.AutoloopBudgetLastRefresh), 0,
 		),
 		DestAddr:        destaddr,
+		Account:         req.Account,
+		AccountAddrType: addrType,
 		AutoFeeBudget:   btcutil.Amount(req.AutoloopBudgetSat),
 		MaxAutoInFlight: int(req.AutoMaxInFlight),
 		ChannelRules: make(
@@ -487,6 +520,16 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		destaddr = cfg.DestAddr.String()
 	}
 
+	var addrType clientrpc.AddressType
+	switch cfg.AccountAddrType {
+	case walletrpc.AddressType_TAPROOT_PUBKEY:
+		addrType = clientrpc.AddressType_TAPROOT_PUBKEY
+
+	default:
+		addrType = clientrpc.AddressType_ADDRESS_TYPE_UNKNOWN
+
+	}
+
 	rpcCfg := &clientrpc.LiquidityParameters{
 		SweepConfTarget:   cfg.SweepConfTarget,
 		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
@@ -512,6 +555,8 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		HtlcConfTarget:             cfg.HtlcConfTarget,
 		EasyAutoloop:               cfg.EasyAutoloop,
 		EasyAutoloopLocalTargetSat: uint64(cfg.EasyAutoloopTarget),
+		Account:                    cfg.Account,
+		AccountAddrType:            addrType,
 	}
 
 	switch f := cfg.FeeLimit.(type) {

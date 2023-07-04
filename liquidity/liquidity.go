@@ -157,6 +157,15 @@ var (
 	// set together are specified.
 	ErrExclusiveRules = errors.New("channel and peer rules must be " +
 		"exclusive")
+
+	// ErrAmbiguousDestAddr is returned when a destination address and
+	// a extended public key account is set.
+	ErrAmbiguousDestAddr = errors.New("ambiguous destination address")
+
+	// ErrAccountAndAddrType indicates if an account is set but the
+	// account address type is not or vice versa.
+	ErrAccountAndAddrType = errors.New("account and address type have " +
+		"to be both either set or unset")
 )
 
 // Config contains the external functionality required to run the

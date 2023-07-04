@@ -154,9 +154,15 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 			request.Label = labels.EasyAutoloopLabel(swap.TypeOut)
 		}
 
+		account := ""
+		addrType := walletrpc.AddressType_WITNESS_PUBKEY_HASH
+		if len(params.Account) > 0 {
+			account = params.Account
+			addrType = params.AccountAddrType
+		}
+
 		addr, err := b.cfg.Lnd.WalletKit.NextAddr(
-			ctx, "", walletrpc.AddressType_WITNESS_PUBKEY_HASH,
-			false,
+			ctx, account, addrType, false,
 		)
 		if err != nil {
 			return nil, err
