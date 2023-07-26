@@ -1053,8 +1053,8 @@ func TestFeeBudget(t *testing.T) {
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
-					chanID1: ReasonBudgetElapsed,
-					chanID2: ReasonBudgetElapsed,
+					chanID1: ReasonBudgetInsufficient,
+					chanID2: ReasonBudgetInsufficient,
 				},
 				DisqualifiedPeers: noPeersDisqualified,
 			},
@@ -1725,7 +1725,7 @@ func TestBudgetWithLoopin(t *testing.T) {
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
-					chanID1: ReasonBudgetElapsed,
+					chanID1: ReasonBudgetInsufficient,
 				},
 				DisqualifiedPeers: noPeersDisqualified,
 			},
@@ -1739,7 +1739,7 @@ func TestBudgetWithLoopin(t *testing.T) {
 			},
 			suggestions: &Suggestions{
 				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{
-					chanID1: ReasonBudgetElapsed,
+					chanID1: ReasonBudgetInsufficient,
 				},
 				DisqualifiedPeers: noPeersDisqualified,
 			},
