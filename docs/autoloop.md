@@ -279,8 +279,6 @@ following reasons will be displayed:
 * Budget not started: if the start date for your budget is in the future,
   no swaps will be executed until the start date is reached. See [budget](#budget) to
   update.
-* Budget elapsed: if the autolooper has elapsed the budget assigned to it for 
-  fees, this reason will be returned. See [budget](#budget) to update.
 * Sweep fees: this reason will be displayed if the estimated chain fee rate for
   sweeping a loop out swap is higher than the current limit. See [sweep fees](#fee-market-awareness) 
   to update.
@@ -290,8 +288,7 @@ following reasons will be displayed:
   [in flight limit](#in-flight-limit) to update.
 * Budget insufficient: if there is not enough remaining budget for a swap, 
   including the amount currently reserved for in flight swaps, an insufficient
-  reason will be displayed. This differs from budget elapsed because there is
-  still budget remaining, just not enough to execute a specific swap.
+  reason will be displayed.
 * Swap fee: there is a limit placed on the fee that the client will pay to the
   server for automatically dispatched swaps. The swap fee reason will be shown 
   if the fees advertised by the server are too high. See [swap fee](#swap-fee)
