@@ -754,7 +754,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
-		return m.singleReasonSuggestion(ReasonBudgetElapsed), nil
+		return m.singleReasonSuggestion(ReasonBudgetInsufficient), nil
 	}
 
 	allowedSwaps, err := m.checkSummaryInflight(summary)
