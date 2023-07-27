@@ -83,10 +83,10 @@ type swapClientServer struct {
 	mainCtx          context.Context
 }
 
-// LoopOut initiates an loop out swap with the given parameters. The call
-// returns after the swap has been set up with the swap server. From that point
-// onwards, progress can be tracked via the LoopOutStatus stream that is
-// returned from Monitor().
+// LoopOut initiates a loop out swap with the given parameters. The call returns
+// after the swap has been set up with the swap server. From that point onwards,
+// progress can be tracked via the LoopOutStatus stream that is returned from
+// Monitor().
 func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *clientrpc.LoopOutRequest) (
 	*clientrpc.SwapResponse, error) {
@@ -94,23 +94,55 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	log.Infof("Loop out request received")
 
 	var sweepAddr btcutil.Address
-	if in.Dest == "" {
+	var err error
+	//nolint:lll
+	switch {
+	case in.Dest != "" && in.Account != "":
+		return nil, fmt.Errorf("destination address and external " +
+			"account address cannot be set at the same time")
+
+	case in.Dest != "":
+		// Decode the client provided destination address for the loop
+		// out sweep.
+		sweepAddr, err = btcutil.DecodeAddress(
+			in.Dest, s.lnd.ChainParams,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("decode address: %v", err)
+		}
+
+	case in.Account != "" && in.AccountAddrType == clientrpc.AddressType_ADDRESS_TYPE_UNKNOWN:
+		return nil, liquidity.ErrAccountAndAddrType
+
+	case in.Account != "":
+		// Derive a new receiving address from the stated account.
+		addrType, err := toWalletAddrType(in.AccountAddrType)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check if account with address type exists.
+		if !s.accountExists(ctx, in.Account, addrType) {
+			return nil, fmt.Errorf("the provided account does " +
+				"not exist")
+		}
+
+		sweepAddr, err = s.lnd.WalletKit.NextAddr(
+			ctx, in.Account, addrType, false,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("NextAddr from account error: "+
+				"%v", err)
+		}
+
+	default:
 		// Generate sweep address if none specified.
-		var err error
 		sweepAddr, err = s.lnd.WalletKit.NextAddr(
 			context.Background(), "",
 			walletrpc.AddressType_WITNESS_PUBKEY_HASH, false,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("NextAddr error: %v", err)
-		}
-	} else {
-		var err error
-		sweepAddr, err = btcutil.DecodeAddress(
-			in.Dest, s.lnd.ChainParams,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("decode address: %v", err)
 		}
 	}
 
@@ -172,6 +204,38 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// accountExists returns true if account under the address type exists in the
+// backing lnd instance and false otherwise.
+func (s *swapClientServer) accountExists(ctx context.Context, account string,
+	addrType walletrpc.AddressType) bool {
+
+	accounts, err := s.lnd.WalletKit.ListAccounts(ctx, account, addrType)
+	if err != nil {
+		return false
+	}
+
+	for _, a := range accounts {
+		if a.Name == account {
+			return true
+		}
+	}
+
+	return false
+}
+
+func toWalletAddrType(addrType clientrpc.AddressType) (walletrpc.AddressType,
+	error) {
+
+	switch addrType {
+	case clientrpc.AddressType_TAPROOT_PUBKEY:
+		return walletrpc.AddressType_TAPROOT_PUBKEY, nil
+
+	default:
+		return walletrpc.AddressType_UNKNOWN,
+			fmt.Errorf("unknown address type")
+	}
 }
 
 func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
@@ -1072,7 +1136,8 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	// Check that the provided destination address is a supported
 	// address format.
 	switch sweepAddr.(type) {
-	case *btcutil.AddressWitnessScriptHash,
+	case *btcutil.AddressTaproot,
+		*btcutil.AddressWitnessScriptHash,
 		*btcutil.AddressWitnessPubKeyHash,
 		*btcutil.AddressScriptHash,
 		*btcutil.AddressPubKeyHash:

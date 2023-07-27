@@ -492,6 +492,16 @@
     }
   },
   "definitions": {
+    "looprpcAddressType": {
+      "type": "string",
+      "enum": [
+        "ADDRESS_TYPE_UNKNOWN",
+        "TAPROOT_PUBKEY"
+      ],
+      "default": "ADDRESS_TYPE_UNKNOWN",
+      "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
+      "title": "`AddressType` has to be one of:"
+    },
     "looprpcAutoReason": {
       "type": "string",
       "enum": [
@@ -763,6 +773,14 @@
           "type": "string",
           "format": "uint64",
           "description": "The local balance target size, expressed in satoshis. This is used by easy\nautoloop to determine how much liquidity should be maintained in channels."
+        },
+        "account": {
+          "type": "string",
+          "description": "An alternative destination address source for the swap. This field\nrepresents the name of the account in the backing lnd instance.\nRefer to lnd's wallet import functions for reference."
+        },
+        "account_addr_type": {
+          "$ref": "#/definitions/looprpcAddressType",
+          "description": "The address type of the account specified in the account field."
         }
       }
     },
@@ -944,6 +962,14 @@
         "initiator": {
           "type": "string",
           "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
+        },
+        "account": {
+          "type": "string",
+          "description": "An alternative destination address source for the swap. This field\nrepresents the name of the account in the backing lnd instance.\nRefer to lnd's wallet import functions for reference."
+        },
+        "account_addr_type": {
+          "$ref": "#/definitions/looprpcAddressType",
+          "description": "The address type of the account specified in the account field."
         }
       }
     },
@@ -1020,7 +1046,7 @@
         },
         "id": {
           "type": "string",
-          "description": "The l402 Id of the token."
+          "description": "The l402 ID of the token."
         }
       }
     },
