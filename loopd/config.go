@@ -99,9 +99,8 @@ var (
 	)
 
 	// DefaultAutogenValidity is the default validity of a self-signed
-	// certificate. The value corresponds to 14 months
-	// (14 months * 30 days * 24 hours).
-	DefaultAutogenValidity = 14 * 30 * 24 * time.Hour
+	// certificate in number of days.
+	DefaultAutogenValidity = 365 * 24 * time.Hour
 )
 
 type lndConfig struct {
@@ -146,12 +145,13 @@ type Config struct {
 	Sqlite          *loopdb.SqliteConfig   `group:"sqlite" namespace:"sqlite"`
 	Postgres        *loopdb.PostgresConfig `group:"postgres" namespace:"postgres"`
 
-	TLSCertPath        string   `long:"tlscertpath" description:"Path to write the TLS certificate for loop's RPC and REST services."`
-	TLSKeyPath         string   `long:"tlskeypath" description:"Path to write the TLS private key for loop's RPC and REST services."`
-	TLSExtraIPs        []string `long:"tlsextraip" description:"Adds an extra IP to the generated certificate."`
-	TLSExtraDomains    []string `long:"tlsextradomain" description:"Adds an extra domain to the generated certificate."`
-	TLSAutoRefresh     bool     `long:"tlsautorefresh" description:"Re-generate TLS certificate and key if the IPs or domains are changed."`
-	TLSDisableAutofill bool     `long:"tlsdisableautofill" description:"Do not include the interface IPs or the system hostname in TLS certificate, use first --tlsextradomain as Common Name instead, if set."`
+	TLSCertPath        string        `long:"tlscertpath" description:"Path to write the TLS certificate for loop's RPC and REST services."`
+	TLSKeyPath         string        `long:"tlskeypath" description:"Path to write the TLS private key for loop's RPC and REST services."`
+	TLSExtraIPs        []string      `long:"tlsextraip" description:"Adds an extra IP to the generated certificate."`
+	TLSExtraDomains    []string      `long:"tlsextradomain" description:"Adds an extra domain to the generated certificate."`
+	TLSAutoRefresh     bool          `long:"tlsautorefresh" description:"Re-generate TLS certificate and key if the IPs or domains are changed."`
+	TLSDisableAutofill bool          `long:"tlsdisableautofill" description:"Do not include the interface IPs or the system hostname in TLS certificate, use first --tlsextradomain as Common Name instead, if set."`
+	TLSValidity        time.Duration `long:"tlsvalidity" description:"Loop's TLS certificate validity period in days. Defaults to 8760h (1 year)"`
 
 	MacaroonPath string `long:"macaroonpath" description:"Path to write the macaroon for loop's RPC and REST services if it doesn't exist."`
 
@@ -204,6 +204,7 @@ func DefaultConfig() Config {
 		DebugLevel:          defaultLogLevel,
 		TLSCertPath:         DefaultTLSCertPath,
 		TLSKeyPath:          DefaultTLSKeyPath,
+		TLSValidity:         DefaultAutogenValidity,
 		MacaroonPath:        DefaultMacaroonPath,
 		MaxLSATCost:         lsat.DefaultMaxCostSats,
 		MaxLSATFee:          lsat.DefaultMaxRoutingFeeSats,
@@ -348,7 +349,12 @@ func Validate(cfg *Config) error {
 
 	// At least one retry.
 	if cfg.MaxPaymentRetries < 1 {
-		return fmt.Errorf("max payment retries must be positive")
+		return fmt.Errorf("max payment retries must be at least 1")
+	}
+
+	// TLS Validity period to be at least 24 hours
+	if cfg.TLSValidity < time.Hour*24 {
+		return fmt.Errorf("TLS certificate minimum validity period is 24h")
 	}
 
 	return nil
@@ -415,7 +421,7 @@ func loadCertWithCreate(cfg *Config) (tls.Certificate, *x509.Certificate,
 		certBytes, keyBytes, err := cert.GenCertPair(
 			defaultSelfSignedOrganization, cfg.TLSExtraIPs,
 			cfg.TLSExtraDomains, cfg.TLSDisableAutofill,
-			DefaultAutogenValidity,
+			cfg.TLSValidity,
 		)
 		if err != nil {
 			return tls.Certificate{}, nil, err
