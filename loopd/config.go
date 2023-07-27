@@ -352,7 +352,7 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("max payment retries must be at least 1")
 	}
 
-	// TLS Valisity period to be at least 24 hours
+	// TLS Validity period to be at least 24 hours
 	if cfg.TLSValidity < time.Hour*24 {
 		return fmt.Errorf("TLS certificate minimum validity period is 24h")
 	}
