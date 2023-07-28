@@ -102,7 +102,7 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 	}, nil
 }
 
-func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
+func (s *serverMock) GetLoopOutTerms(ctx context.Context, initiator string) (
 	*LoopOutTerms, error) {
 
 	return &LoopOutTerms{
@@ -114,7 +114,7 @@ func (s *serverMock) GetLoopOutTerms(ctx context.Context) (
 }
 
 func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
-	expiry int32, _ time.Time) (*LoopOutQuote, error) {
+	expiry int32, _ time.Time, initiator string) (*LoopOutQuote, error) {
 
 	dest := [33]byte{1, 2, 3}
 
@@ -209,7 +209,7 @@ func (s *serverMock) assertSwapCanceled(t *testing.T, details *outCancelDetails)
 	require.Equal(t, details, <-s.cancelSwap)
 }
 
-func (s *serverMock) GetLoopInTerms(ctx context.Context) (
+func (s *serverMock) GetLoopInTerms(ctx context.Context, initiator string) (
 	*LoopInTerms, error) {
 
 	return &LoopInTerms{
@@ -219,7 +219,7 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context) (
 }
 
 func (s *serverMock) GetLoopInQuote(context.Context, btcutil.Amount,
-	route.Vertex, *route.Vertex, [][]zpay32.HopHint) (*LoopInQuote, error) {
+	route.Vertex, *route.Vertex, [][]zpay32.HopHint, string) (*LoopInQuote, error) {
 
 	return &LoopInQuote{
 		SwapFee:   testSwapFee,

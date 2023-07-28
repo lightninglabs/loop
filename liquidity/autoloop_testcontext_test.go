@@ -135,7 +135,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 	cfg := &Config{
 		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
-		Restrictions: func(_ context.Context, swapType swap.Type) (*Restrictions,
+		Restrictions: func(_ context.Context, swapType swap.Type, initiator string) (*Restrictions,
 			error) {
 
 			if swapType == swap.TypeOut {

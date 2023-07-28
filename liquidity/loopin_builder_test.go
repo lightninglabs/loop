@@ -113,6 +113,7 @@ func TestLoopinBuildSwap(t *testing.T) {
 			Amount:         swapAmt,
 			LastHop:        &peer1,
 			HtlcConfTarget: htlcConfTarget,
+			Initiator:      autoloopSwapInitiator,
 		}
 
 		errPrecondition = status.Error(codes.FailedPrecondition, "failed")
