@@ -129,6 +129,11 @@ type LoopOutQuoteRequest struct {
 	// available routes and off-chain fee estimates. To apply these maximum
 	// values properly, the server needs to be queried for its required
 	// final cltv delta values for the off-chain payments.
+
+	// Initiator is an optional string that identifies what software
+	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
+	// appended to the user agent string.
+	Initiator string
 }
 
 // LoopOutTerms are the server terms on which it executes swaps.
@@ -267,6 +272,11 @@ type LoopInQuoteRequest struct {
 	// private. In which case, loop will generate hophints to assist with
 	// probing and payment.
 	Private bool
+
+	// Initiator is an optional string that identifies what software
+	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
+	// appended to the user agent string.
+	Initiator string
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost

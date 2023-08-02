@@ -101,6 +101,7 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 			Amount:                  amount,
 			SweepConfTarget:         params.SweepConfTarget,
 			SwapPublicationDeadline: b.cfg.Clock.Now(),
+			Initiator:               getInitiator(params),
 		},
 	)
 	if err != nil {
@@ -144,7 +145,7 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		MaxSwapFee:          quote.SwapFee,
 		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     params.SweepConfTarget,
-		Initiator:           autoloopSwapInitiator,
+		Initiator:           getInitiator(params),
 	}
 
 	if params.Autoloop {

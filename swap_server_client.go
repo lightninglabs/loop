@@ -68,19 +68,20 @@ func (r RoutingPluginType) String() string {
 }
 
 type swapServerClient interface {
-	GetLoopOutTerms(ctx context.Context) (
+	GetLoopOutTerms(ctx context.Context, initiator string) (
 		*LoopOutTerms, error)
 
 	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount, expiry int32,
-		swapPublicationDeadline time.Time) (
+		swapPublicationDeadline time.Time, initiator string) (
 		*LoopOutQuote, error)
 
-	GetLoopInTerms(ctx context.Context) (
+	GetLoopInTerms(ctx context.Context, initiator string) (
 		*LoopInTerms, error)
 
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
 		pubKey route.Vertex, lastHop *route.Vertex,
-		routeHints [][]zpay32.HopHint) (*LoopInQuote, error)
+		routeHints [][]zpay32.HopHint,
+		initiator string) (*LoopInQuote, error)
 
 	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
 		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
@@ -180,14 +181,15 @@ func newSwapServerClient(cfg *ClientConfig, lsatStore lsat.Store) (
 	}, nil
 }
 
-func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
-	*LoopOutTerms, error) {
+func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context,
+	initiator string) (*LoopOutTerms, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopOutTerms(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{
 			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
+			UserAgent:       UserAgent(initiator),
 		},
 	)
 	if err != nil {
@@ -203,8 +205,8 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context) (
 }
 
 func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
-	amt btcutil.Amount, expiry int32, swapPublicationDeadline time.Time) (
-	*LoopOutQuote, error) {
+	amt btcutil.Amount, expiry int32, swapPublicationDeadline time.Time,
+	initiator string) (*LoopOutQuote, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
@@ -214,6 +216,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
 			ProtocolVersion:         loopdb.CurrentRPCProtocolVersion(),
 			Expiry:                  expiry,
+			UserAgent:               UserAgent(initiator),
 		},
 	)
 	if err != nil {
@@ -237,14 +240,15 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 	}, nil
 }
 
-func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
-	*LoopInTerms, error) {
+func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context,
+	initiator string) (*LoopInTerms, error) {
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
 	terms, err := s.server.LoopInTerms(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{
 			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
+			UserAgent:       UserAgent(initiator),
 		},
 	)
 	if err != nil {
@@ -259,7 +263,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context) (
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
-	routeHints [][]zpay32.HopHint) (*LoopInQuote, error) {
+	routeHints [][]zpay32.HopHint, initiator string) (*LoopInQuote, error) {
 
 	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
 	if err != nil && status.Code(err) != codes.Unavailable {
@@ -273,6 +277,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		Amt:             uint64(amt),
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 		Pubkey:          pubKey[:],
+		UserAgent:       UserAgent(initiator),
 	}
 
 	if lastHop != nil {

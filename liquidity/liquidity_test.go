@@ -147,7 +147,7 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 	)
 
 	return &Config{
-		Restrictions: func(_ context.Context, _ swap.Type) (*Restrictions,
+		Restrictions: func(_ context.Context, _ swap.Type, initiator string) (*Restrictions,
 			error) {
 
 			return testRestrictions, nil
@@ -1318,7 +1318,8 @@ type mockServer struct {
 }
 
 // Restrictions mocks a call to the server to get swap size restrictions.
-func (m *mockServer) Restrictions(ctx context.Context, swapType swap.Type) (
+func (m *mockServer) Restrictions(ctx context.Context, swapType swap.Type,
+	initiator string) (
 	*Restrictions, error) {
 
 	args := m.Called(ctx, swapType)

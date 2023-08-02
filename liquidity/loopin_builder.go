@@ -90,6 +90,7 @@ func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		Amount:         amount,
 		LastHop:        &pubkey,
 		HtlcConfTarget: params.HtlcConfTarget,
+		Initiator:      getInitiator(params),
 	})
 	if err != nil {
 		// If the server fails our quote, we're not reachable right
@@ -113,7 +114,7 @@ func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		MaxMinerFee:    quote.MinerFee,
 		HtlcConfTarget: params.HtlcConfTarget,
 		LastHop:        &pubkey,
-		Initiator:      autoloopSwapInitiator,
+		Initiator:      getInitiator(params),
 	}
 
 	if params.Autoloop {
