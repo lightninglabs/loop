@@ -1,6 +1,7 @@
 package loopdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -104,13 +105,25 @@ func NewPostgresStore(cfg *PostgresConfig,
 
 	queries := sqlc.New(rawDb)
 
+	baseDB := &BaseDB{
+		DB:      rawDb,
+		Queries: queries,
+		network: network,
+	}
+
+	// Fix faulty timestamps in the database.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	err = baseDB.FixFaultyTimestamps(ctx, parsePostgresTimeStamp)
+	if err != nil {
+		log.Errorf("Failed to fix faulty timestamps: %v", err)
+		return nil, err
+	}
+
 	return &PostgresStore{
-		cfg: cfg,
-		BaseDB: &BaseDB{
-			DB:      rawDb,
-			Queries: queries,
-			network: network,
-		},
+		cfg:    cfg,
+		BaseDB: baseDB,
 	}, nil
 }
 
