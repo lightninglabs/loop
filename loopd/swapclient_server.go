@@ -156,21 +156,22 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		return nil, err
 	}
 
+	// Infer if the publication deadline is set in milliseconds.
+	publicationDeadline := getPublicationDeadline(in.SwapPublicationDeadline)
+
 	req := &loop.OutRequest{
-		Amount:              btcutil.Amount(in.Amt),
-		DestAddr:            sweepAddr,
-		MaxMinerFee:         btcutil.Amount(in.MaxMinerFee),
-		MaxPrepayAmount:     btcutil.Amount(in.MaxPrepayAmt),
-		MaxPrepayRoutingFee: btcutil.Amount(in.MaxPrepayRoutingFee),
-		MaxSwapRoutingFee:   btcutil.Amount(in.MaxSwapRoutingFee),
-		MaxSwapFee:          btcutil.Amount(in.MaxSwapFee),
-		SweepConfTarget:     sweepConfTarget,
-		HtlcConfirmations:   in.HtlcConfirmations,
-		SwapPublicationDeadline: time.Unix(
-			int64(in.SwapPublicationDeadline), 0,
-		),
-		Label:     in.Label,
-		Initiator: in.Initiator,
+		Amount:                  btcutil.Amount(in.Amt),
+		DestAddr:                sweepAddr,
+		MaxMinerFee:             btcutil.Amount(in.MaxMinerFee),
+		MaxPrepayAmount:         btcutil.Amount(in.MaxPrepayAmt),
+		MaxPrepayRoutingFee:     btcutil.Amount(in.MaxPrepayRoutingFee),
+		MaxSwapRoutingFee:       btcutil.Amount(in.MaxSwapRoutingFee),
+		MaxSwapFee:              btcutil.Amount(in.MaxSwapFee),
+		SweepConfTarget:         sweepConfTarget,
+		HtlcConfirmations:       in.HtlcConfirmations,
+		SwapPublicationDeadline: publicationDeadline,
+		Label:                   in.Label,
+		Initiator:               in.Initiator,
 	}
 
 	switch {
@@ -538,13 +539,14 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	publicactionDeadline := getPublicationDeadline(req.SwapPublicationDeadline)
+
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
-		Amount:          btcutil.Amount(req.Amt),
-		SweepConfTarget: confTarget,
-		SwapPublicationDeadline: time.Unix(
-			int64(req.SwapPublicationDeadline), 0,
-		),
-		Initiator: defaultLoopdInitiator,
+		Amount:                  btcutil.Amount(req.Amt),
+		SweepConfTarget:         confTarget,
+		SwapPublicationDeadline: publicactionDeadline,
+		Initiator:               defaultLoopdInitiator,
 	})
 	if err != nil {
 		return nil, err
@@ -1248,4 +1250,20 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	}
 
 	return false, 0
+}
+
+// getPublicationDeadline returns the publication deadline for a swap given the
+// unix timestamp. If the timestamp is believed to be in milliseconds, then it
+// is converted to seconds.
+func getPublicationDeadline(unixTimestamp uint64) time.Time {
+	length := len(fmt.Sprintf("%d", unixTimestamp))
+	if length >= 13 {
+		// Likely a millisecond timestamp
+		secs := unixTimestamp / 1000
+		nsecs := (unixTimestamp % 1000) * 1e6
+		return time.Unix(int64(secs), int64(nsecs))
+	} else {
+		// Likely a second timestamp
+		return time.Unix(int64(unixTimestamp), 0)
+	}
 }

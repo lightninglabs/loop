@@ -316,6 +316,11 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 func parseSqliteTimeStamp(dateTimeStr string) (time.Time, error) {
 	// Split the date and time parts.
 	parts := strings.Fields(strings.TrimSpace(dateTimeStr))
+	if len(parts) <= 2 {
+		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
+			dateTimeStr)
+	}
+
 	datePart, timePart := parts[0], parts[1]
 
 	return parseTimeParts(datePart, timePart)
@@ -328,6 +333,11 @@ func parseSqliteTimeStamp(dateTimeStr string) (time.Time, error) {
 func parsePostgresTimeStamp(dateTimeStr string) (time.Time, error) {
 	// Split the date and time parts.
 	parts := strings.Split(dateTimeStr, "T")
+	if len(parts) != 2 {
+		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
+			dateTimeStr)
+	}
+
 	datePart, timePart := parts[0], strings.TrimSuffix(parts[1], "Z")
 
 	return parseTimeParts(datePart, timePart)
@@ -338,6 +348,10 @@ func parsePostgresTimeStamp(dateTimeStr string) (time.Time, error) {
 func parseTimeParts(datePart, timePart string) (time.Time, error) {
 	// Parse the date.
 	dateParts := strings.Split(datePart, "-")
+	if len(dateParts) != 3 {
+		return time.Time{}, fmt.Errorf("invalid date format: %v",
+			datePart)
+	}
 
 	year, err := strconv.Atoi(dateParts[0])
 	if err != nil {
@@ -356,6 +370,10 @@ func parseTimeParts(datePart, timePart string) (time.Time, error) {
 
 	// Parse the time.
 	timeParts := strings.Split(timePart, ":")
+	if len(timeParts) != 3 {
+		return time.Time{}, fmt.Errorf("invalid time format: %v",
+			timePart)
+	}
 
 	hour, err := strconv.Atoi(timeParts[0])
 	if err != nil {

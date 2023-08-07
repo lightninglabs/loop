@@ -346,13 +346,11 @@ func TestIssue615(t *testing.T) {
 					Index:  2,
 				},
 			},
-			MaxMinerFee: 10,
-			MaxSwapFee:  20,
-
+			MaxMinerFee:      10,
+			MaxSwapFee:       20,
 			InitiationHeight: 99,
-
-			InitiationTime:  time.Now(),
-			ProtocolVersion: ProtocolVersionMuSig2,
+			InitiationTime:   time.Now(),
+			ProtocolVersion:  ProtocolVersionMuSig2,
 		},
 		MaxPrepayRoutingFee:     40,
 		PrepayInvoice:           "prepayinvoice",
