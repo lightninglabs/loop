@@ -318,6 +318,76 @@ func TestSqliteTypeConversion(t *testing.T) {
 
 }
 
+// TestIssue615 tests that on faulty timestamps, the database will be fixed.
+// Reference: https://github.com/lightninglabs/lightning-terminal/issues/615
+func TestIssue615(t *testing.T) {
+	ctxb := context.Background()
+
+	// Create a new sqlite store for testing.
+	sqlDB := NewTestDB(t)
+
+	// Create a faulty loopout swap.
+	destAddr := test.GetDestAddr(t, 0)
+	faultyTime, err := parseSqliteTimeStamp("55563-06-27 02:09:24 +0000 UTC")
+	require.NoError(t, err)
+
+	unrestrictedSwap := LoopOutContract{
+		SwapContract: SwapContract{
+			AmountRequested: 100,
+			Preimage:        testPreimage,
+			CltvExpiry:      144,
+			HtlcKeys: HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderInternalKey,
+				ReceiverInternalPubKey: receiverInternalKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+			MaxMinerFee:      10,
+			MaxSwapFee:       20,
+			InitiationHeight: 99,
+			InitiationTime:   time.Now(),
+			ProtocolVersion:  ProtocolVersionMuSig2,
+		},
+		MaxPrepayRoutingFee:     40,
+		PrepayInvoice:           "prepayinvoice",
+		DestAddr:                destAddr,
+		SwapInvoice:             "swapinvoice",
+		MaxSwapRoutingFee:       30,
+		SweepConfTarget:         2,
+		HtlcConfirmations:       2,
+		SwapPublicationDeadline: faultyTime,
+	}
+
+	err = sqlDB.CreateLoopOut(ctxb, testPreimage.Hash(), &unrestrictedSwap)
+	require.NoError(t, err)
+
+	// This should fail because of the faulty timestamp.
+	_, err = sqlDB.GetLoopOutSwaps(ctxb)
+
+	// If we're using sqlite, we expect an error.
+	if testDBType == "sqlite" {
+		require.Error(t, err)
+	} else {
+		require.NoError(t, err)
+	}
+
+	parseFunc := parseSqliteTimeStamp
+	if testDBType == "postgres" {
+		parseFunc = parsePostgresTimeStamp
+	}
+
+	// Fix the faulty timestamp.
+	err = sqlDB.FixFaultyTimestamps(ctxb, parseFunc)
+	require.NoError(t, err)
+
+	_, err = sqlDB.GetLoopOutSwaps(ctxb)
+	require.NoError(t, err)
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func randomString(length int) string {

@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	sqlite_migrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -109,13 +112,25 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 
 	queries := sqlc.New(db)
 
+	baseDB := &BaseDB{
+		DB:      db,
+		Queries: queries,
+		network: network,
+	}
+
+	// Fix faulty timestamps in the database.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	err = baseDB.FixFaultyTimestamps(ctx, parseSqliteTimeStamp)
+	if err != nil {
+		log.Errorf("Failed to fix faulty timestamps: %v", err)
+		return nil, err
+	}
+
 	return &SqliteSwapStore{
-		cfg: cfg,
-		BaseDB: &BaseDB{
-			DB:      db,
-			Queries: queries,
-			network: network,
-		},
+		cfg:    cfg,
+		BaseDB: baseDB,
 	}, nil
 }
 
@@ -127,6 +142,7 @@ func NewTestSqliteDB(t *testing.T) *SqliteSwapStore {
 	t.Logf("Creating new SQLite DB for testing")
 
 	dbFileName := filepath.Join(t.TempDir(), "tmp.db")
+
 	sqlDB, err := NewSqliteStore(&SqliteConfig{
 		DatabaseFileName: dbFileName,
 		SkipMigrations:   false,
@@ -191,6 +207,79 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 	return nil
 }
 
+// FixFaultyTimestamps fixes faulty timestamps in the database, caused
+// by using milliseconds instead of seconds as the publication deadline.
+func (b *BaseDB) FixFaultyTimestamps(ctx context.Context,
+	parseTimeFunc func(string) (time.Time, error)) error {
+
+	// Manually fetch all the loop out swaps.
+	rows, err := b.DB.QueryContext(
+		ctx, "SELECT swap_hash, publication_deadline FROM loopout_swaps",
+	)
+	if err != nil {
+		return err
+	}
+
+	// Parse the rows into a struct. We need to do this manually because
+	// the sqlite driver will fail on faulty timestamps.
+	type LoopOutRow struct {
+		Hash                []byte `json:"swap_hash"`
+		PublicationDeadline string `json:"publication_deadline"`
+	}
+
+	var loopOutSwaps []LoopOutRow
+
+	for rows.Next() {
+		var swap LoopOutRow
+		err := rows.Scan(
+			&swap.Hash, &swap.PublicationDeadline,
+		)
+		if err != nil {
+			return err
+		}
+
+		loopOutSwaps = append(loopOutSwaps, swap)
+	}
+
+	tx, err := b.BeginTx(ctx, &SqliteTxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint: errcheck
+
+	for _, swap := range loopOutSwaps {
+		faultyTime, err := parseTimeFunc(swap.PublicationDeadline)
+		if err != nil {
+			return err
+		}
+
+		// Skip if the time is not faulty.
+		if !isMilisecondsTime(faultyTime.Unix()) {
+			continue
+		}
+
+		// Update the faulty time to a valid time.
+		secs := faultyTime.Unix() / 1000
+		correctTime := time.Unix(secs, 0)
+		_, err = tx.ExecContext(
+			ctx, `
+			UPDATE
+			  loopout_swaps
+			SET
+			  publication_deadline = $1
+			WHERE
+			  swap_hash = $2;
+			`,
+			correctTime, swap.Hash,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // TxOptions represents a set of options one can use to control what type of
 // database transaction is created. Transaction can wither be read or write.
 type TxOptions interface {
@@ -218,4 +307,104 @@ func NewSqlReadOpts() *SqliteTxOptions {
 // NOTE: This implements the TxOptions
 func (r *SqliteTxOptions) ReadOnly() bool {
 	return r.readOnly
+}
+
+// parseSqliteTimeStamp parses a timestamp string in the format of
+// "YYYY-MM-DD HH:MM:SS +0000 UTC" and returns a time.Time value.
+// NOTE: we can't use time.Parse() because it doesn't support having years
+// with more than 4 digits.
+func parseSqliteTimeStamp(dateTimeStr string) (time.Time, error) {
+	// Split the date and time parts.
+	parts := strings.Fields(strings.TrimSpace(dateTimeStr))
+	if len(parts) <= 2 {
+		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
+			dateTimeStr)
+	}
+
+	datePart, timePart := parts[0], parts[1]
+
+	return parseTimeParts(datePart, timePart)
+}
+
+// parseSqliteTimeStamp parses a timestamp string in the format of
+// "YYYY-MM-DDTHH:MM:SSZ" and returns a time.Time value.
+// NOTE: we can't use time.Parse() because it doesn't support having years
+// with more than 4 digits.
+func parsePostgresTimeStamp(dateTimeStr string) (time.Time, error) {
+	// Split the date and time parts.
+	parts := strings.Split(dateTimeStr, "T")
+	if len(parts) != 2 {
+		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
+			dateTimeStr)
+	}
+
+	datePart, timePart := parts[0], strings.TrimSuffix(parts[1], "Z")
+
+	return parseTimeParts(datePart, timePart)
+}
+
+// parseTimeParts takes a datePart string in the format of "YYYY-MM-DD" and
+// a timePart string in the format of "HH:MM:SS" and returns a time.Time value.
+func parseTimeParts(datePart, timePart string) (time.Time, error) {
+	// Parse the date.
+	dateParts := strings.Split(datePart, "-")
+	if len(dateParts) != 3 {
+		return time.Time{}, fmt.Errorf("invalid date format: %v",
+			datePart)
+	}
+
+	year, err := strconv.Atoi(dateParts[0])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	month, err := strconv.Atoi(dateParts[1])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	day, err := strconv.Atoi(dateParts[2])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Parse the time.
+	timeParts := strings.Split(timePart, ":")
+	if len(timeParts) != 3 {
+		return time.Time{}, fmt.Errorf("invalid time format: %v",
+			timePart)
+	}
+
+	hour, err := strconv.Atoi(timeParts[0])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	minute, err := strconv.Atoi(timeParts[1])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	second, err := strconv.Atoi(timeParts[2])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Construct a time.Time value.
+	return time.Date(
+		year, time.Month(month), day, hour, minute, second, 0, time.UTC,
+	), nil
+}
+
+// isMilisecondsTime returns true if the unix timestamp is likely in
+// milliseconds.
+func isMilisecondsTime(unixTimestamp int64) bool {
+	length := len(fmt.Sprintf("%d", unixTimestamp))
+	if length >= 13 {
+		// Likely a millisecond timestamp
+		return true
+	} else {
+		// Likely a second timestamp
+		return false
+	}
 }
