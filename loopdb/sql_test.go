@@ -375,17 +375,52 @@ func TestIssue615(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	parseFunc := parseSqliteTimeStamp
-	if testDBType == "postgres" {
-		parseFunc = parsePostgresTimeStamp
-	}
-
 	// Fix the faulty timestamp.
-	err = sqlDB.FixFaultyTimestamps(ctxb, parseFunc)
+	err = sqlDB.FixFaultyTimestamps(ctxb)
 	require.NoError(t, err)
 
 	_, err = sqlDB.GetLoopOutSwaps(ctxb)
 	require.NoError(t, err)
+}
+
+func TestTimeConversions(t *testing.T) {
+	tests := []struct {
+		timeString   string
+		expectedTime time.Time
+	}{
+		{
+			timeString:   "2018-11-01 00:00:00 +0000 UTC",
+			expectedTime: time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			timeString:   "2018-11-01 00:00:01.10000 +0000 UTC",
+			expectedTime: time.Date(2018, 11, 1, 0, 0, 1, 0, time.UTC),
+		},
+		{
+			timeString: "2053-12-29T02:40:44.269009408Z",
+			expectedTime: time.Date(
+				2053, 12, 29, 2, 40, 44, 0, time.UTC,
+			),
+		},
+		{
+			timeString: "55563-06-27 02:09:24 +0000 UTC",
+			expectedTime: time.Date(
+				55563, 6, 27, 2, 9, 24, 0, time.UTC,
+			),
+		},
+		{
+			timeString: "2172-03-11 10:01:11.849906176 +0000 UTC",
+			expectedTime: time.Date(
+				2172, 3, 11, 10, 1, 11, 0, time.UTC,
+			),
+		},
+	}
+
+	for _, test := range tests {
+		time, err := parseTimeStamp(test.timeString)
+		require.NoError(t, err)
+		require.Equal(t, test.expectedTime, time)
+	}
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"

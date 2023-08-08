@@ -122,7 +122,7 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	err = baseDB.FixFaultyTimestamps(ctx, parseSqliteTimeStamp)
+	err = baseDB.FixFaultyTimestamps(ctx)
 	if err != nil {
 		log.Errorf("Failed to fix faulty timestamps: %v", err)
 		return nil, err
@@ -209,8 +209,7 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 
 // FixFaultyTimestamps fixes faulty timestamps in the database, caused
 // by using milliseconds instead of seconds as the publication deadline.
-func (b *BaseDB) FixFaultyTimestamps(ctx context.Context,
-	parseTimeFunc func(string) (time.Time, error)) error {
+func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 
 	// Manually fetch all the loop out swaps.
 	rows, err := b.DB.QueryContext(
@@ -248,7 +247,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context,
 	defer tx.Rollback() //nolint: errcheck
 
 	for _, swap := range loopOutSwaps {
-		faultyTime, err := parseTimeFunc(swap.PublicationDeadline)
+		faultyTime, err := parseTimeStamp(swap.PublicationDeadline)
 		if err != nil {
 			return err
 		}
@@ -309,6 +308,21 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 	return r.readOnly
 }
 
+// parseTimeStamp tries to parse a timestamp string with both the
+// parseSqliteTimeStamp and parsePostgresTimeStamp functions.
+// If both fail, it returns an error.
+func parseTimeStamp(dateTimeStr string) (time.Time, error) {
+	t, err := parseSqliteTimeStamp(dateTimeStr)
+	if err != nil {
+		t, err = parsePostgresTimeStamp(dateTimeStr)
+		if err != nil {
+			return time.Time{}, err
+		}
+	}
+
+	return t, nil
+}
+
 // parseSqliteTimeStamp parses a timestamp string in the format of
 // "YYYY-MM-DD HH:MM:SS +0000 UTC" and returns a time.Time value.
 // NOTE: we can't use time.Parse() because it doesn't support having years
@@ -316,7 +330,7 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 func parseSqliteTimeStamp(dateTimeStr string) (time.Time, error) {
 	// Split the date and time parts.
 	parts := strings.Fields(strings.TrimSpace(dateTimeStr))
-	if len(parts) <= 2 {
+	if len(parts) < 2 {
 		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
 			dateTimeStr)
 	}
@@ -385,7 +399,10 @@ func parseTimeParts(datePart, timePart string) (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	second, err := strconv.Atoi(timeParts[2])
+	// Parse the seconds and ignore the fractional part.
+	secondParts := strings.Split(timeParts[2], ".")
+
+	second, err := strconv.Atoi(secondParts[0])
 	if err != nil {
 		return time.Time{}, err
 	}
