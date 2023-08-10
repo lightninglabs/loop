@@ -272,9 +272,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 // restored from persistent storage and resumed.  Subsequent updates will be
 // sent through the passed in statusChan. The function can be terminated by
 // cancelling the context.
-func (s *Client) Run(ctx context.Context,
-	statusChan chan<- SwapInfo) error {
-
+func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 	if !atomic.CompareAndSwapUint32(&s.started, 0, 1) {
 		return errors.New("swap client can only be started once")
 	}
@@ -284,7 +282,7 @@ func (s *Client) Run(ctx context.Context,
 		s.lndServices.NodeAlias, s.lndServices.NodePubkey,
 		lndclient.VersionString(s.lndServices.Version))
 
-	// Setup main context used for cancelation.
+	// Setup main context used for cancellation.
 	mainCtx, mainCancel := context.WithCancel(ctx)
 	defer mainCancel()
 
@@ -307,7 +305,7 @@ func (s *Client) Run(ctx context.Context,
 
 		s.resumeSwaps(mainCtx, pendingLoopOutSwaps, pendingLoopInSwaps)
 
-		// Signal that new requests can be accepted. Otherwise the new
+		// Signal that new requests can be accepted. Otherwise, the new
 		// swap could already have been added to the store and read in
 		// this goroutine as being a swap that needs to be resumed.
 		// Resulting in two goroutines executing the same swap.
