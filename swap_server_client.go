@@ -186,7 +186,7 @@ func (s *grpcSwapServerClient) GetLoopOutTerms(ctx context.Context,
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	terms, err := s.server.LoopOutTerms(rpcCtx,
+	terms, err := s.server.LoopOutTermsV2(rpcCtx,
 		&looprpc.ServerLoopOutTermsRequest{
 			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 			UserAgent:       UserAgent(initiator),
@@ -210,7 +210,7 @@ func (s *grpcSwapServerClient) GetLoopOutQuote(ctx context.Context,
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	quoteResp, err := s.server.LoopOutQuote(rpcCtx,
+	quoteResp, err := s.server.LoopOutQuoteV2(rpcCtx,
 		&looprpc.ServerLoopOutQuoteRequest{
 			Amt:                     uint64(amt),
 			SwapPublicationDeadline: swapPublicationDeadline.Unix(),
@@ -245,7 +245,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context,
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
 	defer rpcCancel()
-	terms, err := s.server.LoopInTerms(rpcCtx,
+	terms, err := s.server.LoopInTermsV2(rpcCtx,
 		&looprpc.ServerLoopInTermsRequest{
 			ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
 			UserAgent:       UserAgent(initiator),
@@ -292,7 +292,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		req.RouteHints = rh
 	}
 
-	quoteResp, err := s.server.LoopInQuote(rpcCtx, req)
+	quoteResp, err := s.server.LoopInQuoteV2(rpcCtx, req)
 	if err != nil {
 		return nil, err
 	}
