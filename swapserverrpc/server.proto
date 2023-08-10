@@ -13,6 +13,8 @@ option go_package = "github.com/lightninglabs/loop/swapserverrpc";
 service SwapServer {
     rpc LoopOutTerms (ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);
 
+    rpc LoopOutTermsV2 (ServerLoopOutTermsRequest) returns (ServerLoopOutTerms);
+
     rpc NewLoopOutSwap (ServerLoopOutRequest) returns (ServerLoopOutResponse);
 
     rpc LoopOutPushPreimage (ServerLoopOutPushPreimageRequest)
@@ -20,11 +22,18 @@ service SwapServer {
 
     rpc LoopOutQuote (ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
 
+    rpc LoopOutQuoteV2 (ServerLoopOutQuoteRequest) returns (ServerLoopOutQuote);
+
     rpc LoopInTerms (ServerLoopInTermsRequest) returns (ServerLoopInTerms);
+
+    rpc LoopInTermsV2 (ServerLoopInTermsRequest) returns (ServerLoopInTerms);
 
     rpc NewLoopInSwap (ServerLoopInRequest) returns (ServerLoopInResponse);
 
     rpc LoopInQuote (ServerLoopInQuoteRequest)
+        returns (ServerLoopInQuoteResponse);
+
+    rpc LoopInQuoteV2 (ServerLoopInQuoteRequest)
         returns (ServerLoopInQuoteResponse);
 
     rpc SubscribeLoopOutUpdates (SubscribeUpdatesRequest)

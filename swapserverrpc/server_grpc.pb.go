@@ -19,12 +19,16 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SwapServerClient interface {
 	LoopOutTerms(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error)
+	LoopOutTermsV2(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error)
 	NewLoopOutSwap(ctx context.Context, in *ServerLoopOutRequest, opts ...grpc.CallOption) (*ServerLoopOutResponse, error)
 	LoopOutPushPreimage(ctx context.Context, in *ServerLoopOutPushPreimageRequest, opts ...grpc.CallOption) (*ServerLoopOutPushPreimageResponse, error)
 	LoopOutQuote(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error)
+	LoopOutQuoteV2(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error)
 	LoopInTerms(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error)
+	LoopInTermsV2(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error)
 	NewLoopInSwap(ctx context.Context, in *ServerLoopInRequest, opts ...grpc.CallOption) (*ServerLoopInResponse, error)
 	LoopInQuote(ctx context.Context, in *ServerLoopInQuoteRequest, opts ...grpc.CallOption) (*ServerLoopInQuoteResponse, error)
+	LoopInQuoteV2(ctx context.Context, in *ServerLoopInQuoteRequest, opts ...grpc.CallOption) (*ServerLoopInQuoteResponse, error)
 	SubscribeLoopOutUpdates(ctx context.Context, in *SubscribeUpdatesRequest, opts ...grpc.CallOption) (SwapServer_SubscribeLoopOutUpdatesClient, error)
 	SubscribeLoopInUpdates(ctx context.Context, in *SubscribeUpdatesRequest, opts ...grpc.CallOption) (SwapServer_SubscribeLoopInUpdatesClient, error)
 	CancelLoopOutSwap(ctx context.Context, in *CancelLoopOutSwapRequest, opts ...grpc.CallOption) (*CancelLoopOutSwapResponse, error)
@@ -46,6 +50,15 @@ func NewSwapServerClient(cc grpc.ClientConnInterface) SwapServerClient {
 func (c *swapServerClient) LoopOutTerms(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error) {
 	out := new(ServerLoopOutTerms)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutTerms", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapServerClient) LoopOutTermsV2(ctx context.Context, in *ServerLoopOutTermsRequest, opts ...grpc.CallOption) (*ServerLoopOutTerms, error) {
+	out := new(ServerLoopOutTerms)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutTermsV2", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +92,27 @@ func (c *swapServerClient) LoopOutQuote(ctx context.Context, in *ServerLoopOutQu
 	return out, nil
 }
 
+func (c *swapServerClient) LoopOutQuoteV2(ctx context.Context, in *ServerLoopOutQuoteRequest, opts ...grpc.CallOption) (*ServerLoopOutQuote, error) {
+	out := new(ServerLoopOutQuote)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopOutQuoteV2", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapServerClient) LoopInTerms(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error) {
 	out := new(ServerLoopInTerms)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopInTerms", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapServerClient) LoopInTermsV2(ctx context.Context, in *ServerLoopInTermsRequest, opts ...grpc.CallOption) (*ServerLoopInTerms, error) {
+	out := new(ServerLoopInTerms)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopInTermsV2", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +131,15 @@ func (c *swapServerClient) NewLoopInSwap(ctx context.Context, in *ServerLoopInRe
 func (c *swapServerClient) LoopInQuote(ctx context.Context, in *ServerLoopInQuoteRequest, opts ...grpc.CallOption) (*ServerLoopInQuoteResponse, error) {
 	out := new(ServerLoopInQuoteResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopInQuote", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapServerClient) LoopInQuoteV2(ctx context.Context, in *ServerLoopInQuoteRequest, opts ...grpc.CallOption) (*ServerLoopInQuoteResponse, error) {
+	out := new(ServerLoopInQuoteResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/LoopInQuoteV2", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,12 +269,16 @@ func (c *swapServerClient) PushKey(ctx context.Context, in *ServerPushKeyReq, op
 // for forward compatibility
 type SwapServerServer interface {
 	LoopOutTerms(context.Context, *ServerLoopOutTermsRequest) (*ServerLoopOutTerms, error)
+	LoopOutTermsV2(context.Context, *ServerLoopOutTermsRequest) (*ServerLoopOutTerms, error)
 	NewLoopOutSwap(context.Context, *ServerLoopOutRequest) (*ServerLoopOutResponse, error)
 	LoopOutPushPreimage(context.Context, *ServerLoopOutPushPreimageRequest) (*ServerLoopOutPushPreimageResponse, error)
 	LoopOutQuote(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error)
+	LoopOutQuoteV2(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error)
 	LoopInTerms(context.Context, *ServerLoopInTermsRequest) (*ServerLoopInTerms, error)
+	LoopInTermsV2(context.Context, *ServerLoopInTermsRequest) (*ServerLoopInTerms, error)
 	NewLoopInSwap(context.Context, *ServerLoopInRequest) (*ServerLoopInResponse, error)
 	LoopInQuote(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error)
+	LoopInQuoteV2(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error)
 	SubscribeLoopOutUpdates(*SubscribeUpdatesRequest, SwapServer_SubscribeLoopOutUpdatesServer) error
 	SubscribeLoopInUpdates(*SubscribeUpdatesRequest, SwapServer_SubscribeLoopInUpdatesServer) error
 	CancelLoopOutSwap(context.Context, *CancelLoopOutSwapRequest) (*CancelLoopOutSwapResponse, error)
@@ -253,6 +297,9 @@ type UnimplementedSwapServerServer struct {
 func (UnimplementedSwapServerServer) LoopOutTerms(context.Context, *ServerLoopOutTermsRequest) (*ServerLoopOutTerms, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoopOutTerms not implemented")
 }
+func (UnimplementedSwapServerServer) LoopOutTermsV2(context.Context, *ServerLoopOutTermsRequest) (*ServerLoopOutTerms, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopOutTermsV2 not implemented")
+}
 func (UnimplementedSwapServerServer) NewLoopOutSwap(context.Context, *ServerLoopOutRequest) (*ServerLoopOutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewLoopOutSwap not implemented")
 }
@@ -262,14 +309,23 @@ func (UnimplementedSwapServerServer) LoopOutPushPreimage(context.Context, *Serve
 func (UnimplementedSwapServerServer) LoopOutQuote(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoopOutQuote not implemented")
 }
+func (UnimplementedSwapServerServer) LoopOutQuoteV2(context.Context, *ServerLoopOutQuoteRequest) (*ServerLoopOutQuote, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopOutQuoteV2 not implemented")
+}
 func (UnimplementedSwapServerServer) LoopInTerms(context.Context, *ServerLoopInTermsRequest) (*ServerLoopInTerms, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoopInTerms not implemented")
+}
+func (UnimplementedSwapServerServer) LoopInTermsV2(context.Context, *ServerLoopInTermsRequest) (*ServerLoopInTerms, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopInTermsV2 not implemented")
 }
 func (UnimplementedSwapServerServer) NewLoopInSwap(context.Context, *ServerLoopInRequest) (*ServerLoopInResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewLoopInSwap not implemented")
 }
 func (UnimplementedSwapServerServer) LoopInQuote(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoopInQuote not implemented")
+}
+func (UnimplementedSwapServerServer) LoopInQuoteV2(context.Context, *ServerLoopInQuoteRequest) (*ServerLoopInQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoopInQuoteV2 not implemented")
 }
 func (UnimplementedSwapServerServer) SubscribeLoopOutUpdates(*SubscribeUpdatesRequest, SwapServer_SubscribeLoopOutUpdatesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeLoopOutUpdates not implemented")
@@ -322,6 +378,24 @@ func _SwapServer_LoopOutTerms_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapServerServer).LoopOutTerms(ctx, req.(*ServerLoopOutTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapServer_LoopOutTermsV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopOutTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopOutTermsV2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopOutTermsV2",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopOutTermsV2(ctx, req.(*ServerLoopOutTermsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -380,6 +454,24 @@ func _SwapServer_LoopOutQuote_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_LoopOutQuoteV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopOutQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopOutQuoteV2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopOutQuoteV2",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopOutQuoteV2(ctx, req.(*ServerLoopOutQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapServer_LoopInTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ServerLoopInTermsRequest)
 	if err := dec(in); err != nil {
@@ -394,6 +486,24 @@ func _SwapServer_LoopInTerms_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapServerServer).LoopInTerms(ctx, req.(*ServerLoopInTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapServer_LoopInTermsV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopInTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopInTermsV2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopInTermsV2",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopInTermsV2(ctx, req.(*ServerLoopInTermsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -430,6 +540,24 @@ func _SwapServer_LoopInQuote_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapServerServer).LoopInQuote(ctx, req.(*ServerLoopInQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapServer_LoopInQuoteV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerLoopInQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).LoopInQuoteV2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/LoopInQuoteV2",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).LoopInQuoteV2(ctx, req.(*ServerLoopInQuoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -596,6 +724,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SwapServer_LoopOutTerms_Handler,
 		},
 		{
+			MethodName: "LoopOutTermsV2",
+			Handler:    _SwapServer_LoopOutTermsV2_Handler,
+		},
+		{
 			MethodName: "NewLoopOutSwap",
 			Handler:    _SwapServer_NewLoopOutSwap_Handler,
 		},
@@ -608,8 +740,16 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SwapServer_LoopOutQuote_Handler,
 		},
 		{
+			MethodName: "LoopOutQuoteV2",
+			Handler:    _SwapServer_LoopOutQuoteV2_Handler,
+		},
+		{
 			MethodName: "LoopInTerms",
 			Handler:    _SwapServer_LoopInTerms_Handler,
+		},
+		{
+			MethodName: "LoopInTermsV2",
+			Handler:    _SwapServer_LoopInTermsV2_Handler,
 		},
 		{
 			MethodName: "NewLoopInSwap",
@@ -618,6 +758,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LoopInQuote",
 			Handler:    _SwapServer_LoopInQuote_Handler,
+		},
+		{
+			MethodName: "LoopInQuoteV2",
+			Handler:    _SwapServer_LoopInQuoteV2_Handler,
 		},
 		{
 			MethodName: "CancelLoopOutSwap",
