@@ -71,34 +71,35 @@ func (s *executor) run(mainCtx context.Context,
 	for {
 		blockEpochChan, blockErrorChan, err =
 			s.lnd.ChainNotifier.RegisterBlockEpochNtfn(mainCtx)
-		if err != nil {
-			if strings.Contains(err.Error(),
-				"in the process of starting") {
 
-				log.Warnf("LND chain notifier server not " +
-					"ready yet, retrying with delay")
-
-				// Give chain notifier some time to start and
-				// try to re-attempt block epoch subscription.
-				select {
-				case <-time.After(500 * time.Millisecond):
-					continue
-
-				case <-mainCtx.Done():
-					return err
-				}
-			}
-
-			return err
+		if err == nil {
+			break
 		}
 
-		break
+		if strings.Contains(err.Error(),
+			"in the process of starting") {
+
+			log.Warnf("LND chain notifier server not ready yet, " +
+				"retrying with delay")
+
+			// Give chain notifier some time to start and try to
+			// re-attempt block epoch subscription.
+			select {
+			case <-time.After(500 * time.Millisecond):
+				continue
+
+			case <-mainCtx.Done():
+				return err
+			}
+		}
+
+		return err
 	}
 
-	// Before starting, make sure we have an up to date block height.
-	// Otherwise we might reveal a preimage for a swap that is already
+	// Before starting, make sure we have an up-to-date block height.
+	// Otherwise, we might reveal a preimage for a swap that is already
 	// expired.
-	log.Infof("Wait for first block ntfn")
+	log.Infof("Wait for first block notification")
 
 	var height int32
 	setHeight := func(h int32) {
@@ -118,7 +119,7 @@ func (s *executor) run(mainCtx context.Context,
 	// Start main event loop.
 	log.Infof("Starting event loop at height %v", height)
 
-	// Signal that executor being ready with an up to date block height.
+	// Signal that executor being ready with an up-to-date block height.
 	close(s.ready)
 
 	// Use a map to administer the individual notification queues for the

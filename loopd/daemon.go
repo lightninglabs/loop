@@ -95,7 +95,7 @@ func New(config *Config, lisCfg *ListenerCfg) *Daemon {
 		// We send exactly one error on this channel if something goes
 		// wrong at runtime. Or a nil value if the shutdown was
 		// successful. But in case nobody's listening, we don't want to
-		// block on it so we buffer it.
+		// block on it, so we buffer it.
 		ErrChan: make(chan error, 1),
 
 		quit:        make(chan struct{}),
@@ -135,9 +135,9 @@ func (d *Daemon) Start() error {
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started as a standalone Loop daemon, most
 		// likely LiT is already running and blocking the DB
-		return fmt.Errorf("%v: make sure no other loop daemon "+
-			"process (standalone or embedded in "+
-			"lightning-terminal) is running", err)
+		return fmt.Errorf("%v: make sure no other loop daemon process "+
+			"(standalone or embedded in lightning-terminal) is"+
+			"running", err)
 	}
 	if err != nil {
 		return err
@@ -166,9 +166,9 @@ func (d *Daemon) Start() error {
 func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	withMacaroonService bool) error {
 
-	// There should be no reason to start the daemon twice. Therefore return
-	// an error if that's tried. This is mostly to guard against Start and
-	// StartAsSubserver both being called.
+	// There should be no reason to start the daemon twice. Therefore,
+	// return an error if that's tried. This is mostly to guard against
+	// Start and StartAsSubserver both being called.
 	if atomic.AddInt32(&d.started, 1) != 1 {
 		return errOnlyStartOnce
 	}
@@ -179,8 +179,8 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 
 	// With lnd already pre-connected, initialize everything else, such as
 	// the swap server client, the RPC server instance and our main swap
-	// handlers. If this fails, then nothing has been started yet and we can
-	// just return the error.
+	// handlers. If this fails, then nothing has been started yet, and we
+	// can just return the error.
 	err := d.initialize(withMacaroonService)
 	if errors.Is(err, bbolt.ErrTimeout) {
 		// We're trying to be started inside LiT so there most likely is
@@ -370,8 +370,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
-	// Both the client RPC server and and the swap server client should
-	// stop on main context cancel. So we create it early and pass it down.
+	// Both the client RPC server and the swap server client should stop
+	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
 
 	log.Infof("Swap server address: %v", d.cfg.Server.Host)

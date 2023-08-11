@@ -561,7 +561,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	}, nil
 }
 
-// GetTerms returns the terms that the server enforces for swaps.
+// GetLoopInTerms returns the terms that the server enforces for swaps.
 func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 	req *clientrpc.TermsRequest) (*clientrpc.InTermsResponse, error) {
 
@@ -579,7 +579,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 	}, nil
 }
 
-// GetQuote returns a quote for a swap with the provided parameters.
+// GetLoopInQuote returns a quote for a swap with the provided parameters.
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	req *clientrpc.QuoteRequest) (*clientrpc.InQuoteResponse, error) {
 

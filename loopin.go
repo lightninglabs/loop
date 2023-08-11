@@ -817,8 +817,9 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		return fmt.Errorf("subscribe to swap invoice: %v", err)
 	}
 
-	// checkTimeout publishes the timeout tx if the contract has expired.
-	checkTimeout := func() (btcutil.Amount, error) {
+	// publishTxOnTimeout publishes the timeout tx if the contract has
+	// expired.
+	publishTxOnTimeout := func() (btcutil.Amount, error) {
 		if s.height >= s.LoopInContract.CltvExpiry {
 			return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
 		}
@@ -829,7 +830,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	// Check timeout at current height. After a restart we may want to
 	// publish the tx immediately.
 	var sweepFee btcutil.Amount
-	sweepFee, err = checkTimeout()
+	sweepFee, err = publishTxOnTimeout()
 	if err != nil {
 		return err
 	}
@@ -848,7 +849,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
 
-			sweepFee, err = checkTimeout()
+			sweepFee, err = publishTxOnTimeout()
 			if err != nil {
 				return err
 			}
@@ -971,7 +972,7 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 	sweepFee btcutil.Amount) error {
 
 	// Determine the htlc input of the spending tx and inspect the witness
-	// to findout whether a success or a timeout tx spend the htlc.
+	// to find out whether a success or a timeout tx spent the htlc.
 	htlcInput := spend.SpendingTx.TxIn[spend.SpenderInputIndex]
 
 	if s.htlc.IsSuccessWitness(htlcInput.Witness) {
