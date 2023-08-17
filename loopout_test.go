@@ -84,7 +84,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	swapCtx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		err := swap.execute(swapCtx, &executeConfig{
+		err := swap.execute(swapCtx, nil, &executeConfig{
 			statusChan:       statusChan,
 			sweeper:          sweeper,
 			blockEpochChan:   blockEpochChan,
@@ -194,7 +194,7 @@ func testLateHtlcPublish(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(context.Background(), nil, &executeConfig{
 			statusChan:       statusChan,
 			sweeper:          sweeper,
 			blockEpochChan:   blockEpochChan,
@@ -295,7 +295,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(context.Background(), nil, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
@@ -513,7 +513,7 @@ func testPreimagePush(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(context.Background(), nil, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
@@ -749,7 +749,9 @@ func testFailedOffChainCancelation(t *testing.T) {
 			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}
 
-		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
+		err := swap.execute(
+			context.Background(), nil, cfg, ctx.Lnd.Height,
+		)
 		errChan <- err
 	}()
 
@@ -903,7 +905,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	}
 
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(context.Background(), nil, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,

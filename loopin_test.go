@@ -65,7 +65,9 @@ func testLoopInSuccess(t *testing.T) {
 
 	errChan := make(chan error)
 	go func() {
-		err := inSwap.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(
+			context.Background(), ctx.wg, ctx.cfg, height,
+		)
 		if err != nil {
 			log.Error(err)
 		}
@@ -217,7 +219,9 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	errChan := make(chan error)
 	go func() {
-		err := inSwap.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(
+			context.Background(), ctx.wg, ctx.cfg, height,
+		)
 		if err != nil {
 			log.Error(err)
 		}
@@ -470,7 +474,9 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	errChan := make(chan error)
 	go func() {
-		err := inSwap.execute(context.Background(), ctx.cfg, height)
+		err := inSwap.execute(
+			context.Background(), ctx.wg, ctx.cfg, height,
+		)
 		if err != nil {
 			log.Error(err)
 		}

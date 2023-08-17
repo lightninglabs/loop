@@ -148,7 +148,7 @@ func (s *executor) run(mainCtx context.Context,
 			go func() {
 				defer s.wg.Done()
 
-				err := newSwap.execute(mainCtx, &executeConfig{
+				err := newSwap.execute(mainCtx, &s.wg, &executeConfig{
 					statusChan:         statusChan,
 					sweeper:            s.sweeper,
 					blockEpochChan:     queue.ChanOut(),

@@ -346,7 +346,7 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 
 // execute starts/resumes the swap. It is a thin wrapper around
 // executeAndFinalize to conveniently handle the error case.
-func (s *loopOutSwap) execute(mainCtx context.Context,
+func (s *loopOutSwap) execute(mainCtx context.Context, _ *sync.WaitGroup,
 	cfg *executeConfig, height int32) error {
 
 	defer s.wg.Wait()

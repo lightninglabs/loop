@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ type loopInTestContext struct {
 	cfg            *executeConfig
 	statusChan     chan SwapInfo
 	blockEpochChan chan interface{}
+	wg             *sync.WaitGroup
 
 	swapInvoiceSubscription *test.SingleInvoiceSubscription
 }
@@ -58,6 +60,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 		cfg:            &cfg,
 		statusChan:     statusChan,
 		blockEpochChan: blockEpochChan,
+		wg:             &sync.WaitGroup{},
 	}
 }
 

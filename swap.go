@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -121,7 +122,7 @@ func (s *swapKit) swapInfo() *SwapInfo {
 }
 
 type genericSwap interface {
-	execute(mainCtx context.Context, cfg *executeConfig,
+	execute(mainCtx context.Context, wg *sync.WaitGroup, cfg *executeConfig,
 		height int32) error
 }
 
