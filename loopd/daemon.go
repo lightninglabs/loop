@@ -546,7 +546,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-d.quit:
 		}
 
-		// We need to shutdown before sending the error on the channel,
+		// We need to shut down before sending the error on the channel,
 		// otherwise a caller might exit the process too early.
 		d.stop()
 		cleanupMacaroonStore()
