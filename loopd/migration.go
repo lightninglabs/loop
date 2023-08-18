@@ -82,6 +82,17 @@ func needSqlMigration(cfg *Config) bool {
 		return false
 	}
 
+	// Do not migrate if sqlite db already exists. This is to prevent the
+	// migration from running multiple times for systems that may restore
+	// any deleted files occasionally (reboot, etc).
+	sqliteDBPath := filepath.Join(cfg.DataDir, "loop_sqlite.db")
+	if lnrpc.FileExists(sqliteDBPath) {
+		log.Infof("Found sqlite db at %v, skipping migration",
+			sqliteDBPath)
+
+		return false
+	}
+
 	// Now we'll check if the bolt db exists.
 	if !lnrpc.FileExists(filepath.Join(cfg.DataDir, "loop.db")) {
 		return false
