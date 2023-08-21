@@ -44,7 +44,7 @@ var loopOutCommand = cli.Command{
 			Usage: "the name of the account to generate a new " +
 				"address from. You can list the names of " +
 				"valid accounts in your backing lnd " +
-				"instance with \"lncli wallet accounts list\".",
+				"instance with \"lncli wallet accounts list\"",
 			Value: "",
 		},
 		cli.StringFlag{
@@ -55,14 +55,16 @@ var loopOutCommand = cli.Command{
 			Value: "p2tr",
 		},
 		cli.Uint64Flag{
-			Name:  "amt",
-			Usage: "the amount in satoshis to loop out",
+			Name: "amt",
+			Usage: "the amount in satoshis to loop out. To check " +
+				"for the minimum and maximum amounts to loop " +
+				"out please consult \"loop terms\"",
 		},
 		cli.Uint64Flag{
 			Name: "htlc_confs",
 			Usage: "the number of confirmations (in blocks) " +
 				"that we require for the htlc extended by " +
-				"the server before we reveal the preimage.",
+				"the server before we reveal the preimage",
 			Value: uint64(loopdb.DefaultLoopOutHtlcConfirmations),
 		},
 		cli.Uint64Flag{
@@ -80,13 +82,13 @@ var loopOutCommand = cli.Command{
 		},
 		cli.BoolFlag{
 			Name: "fast",
-			Usage: "Indicate you want to swap immediately, " +
+			Usage: "indicate you want to swap immediately, " +
 				"paying potentially a higher fee. If not " +
 				"set the swap server might choose to wait up " +
 				"to 30 minutes before publishing the swap " +
 				"HTLC on-chain, to save on its chain fees. " +
 				"Not setting this flag therefore might " +
-				"result in a lower swap fee.",
+				"result in a lower swap fee",
 		},
 		forceFlag,
 		labelFlag,

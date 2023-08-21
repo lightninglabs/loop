@@ -19,9 +19,8 @@ var (
 
 	confTargetFlag = cli.Uint64Flag{
 		Name: "conf_target",
-		Usage: "the target number of blocks the on-chain " +
-			"htlc broadcast by the swap client should " +
-			"confirm within",
+		Usage: "the target number of blocks the on-chain htlc " +
+			"broadcast by the swap client should confirm within",
 	}
 
 	labelFlag = cli.StringFlag{
@@ -33,19 +32,20 @@ var (
 	}
 	routeHintsFlag = cli.StringSliceFlag{
 		Name: "route_hints",
-		Usage: "Route hints that can each be individually used " +
-			"to assist in reaching the invoice's destination.",
+		Usage: "route hints that can each be individually used " +
+			"to assist in reaching the invoice's destination",
 	}
 	privateFlag = cli.BoolFlag{
 		Name: "private",
-		Usage: "Generates and passes routehints. Should be used " +
-			"if the connected node is only reachable via private " +
+		Usage: "generates and passes routehints. Should be used if " +
+			"the connected node is only reachable via private " +
 			"channels",
 	}
 
 	forceFlag = cli.BoolFlag{
-		Name:  "force, f",
-		Usage: "Assumes yes during confirmation. Using this option will result in an immediate swap",
+		Name: "force, f",
+		Usage: "Assumes yes during confirmation. Using this option " +
+			"will result in an immediate swap",
 	}
 
 	loopInCommand = cli.Command{
@@ -66,8 +66,11 @@ var (
 		`,
 		Flags: []cli.Flag{
 			cli.Uint64Flag{
-				Name:  "amt",
-				Usage: "the amount in satoshis to loop in",
+				Name: "amt",
+				Usage: "the amount in satoshis to loop in. " +
+					"To check for the minimum and " +
+					"maximum amounts to loop " +
+					"in please consult \"loop terms\"",
 			},
 			cli.BoolFlag{
 				Name:  "external",
