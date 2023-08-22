@@ -3,6 +3,7 @@ package loopdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -311,117 +312,81 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 // parseTimeStamp tries to parse a timestamp string with both the
 // parseSqliteTimeStamp and parsePostgresTimeStamp functions.
 // If both fail, it returns an error.
-func parseTimeStamp(dateTimeStr string) (time.Time, error) {
-	t, err := parseSqliteTimeStamp(dateTimeStr)
+func fixTimeStamp(dateTimeStr string) (time.Time, error) {
+	year, err := getTimeStampYear(dateTimeStr)
 	if err != nil {
-		t, err = parsePostgresTimeStamp(dateTimeStr)
-		if err != nil {
-			return time.Time{}, err
+		return time.Time{}, err
+	}
+
+	// If the year is in the future. It was a faulty timestamp.
+	thisYear := time.Now().Year()
+	if year > thisYear {
+		dateTimeStr = strings.Replace(
+			dateTimeStr,
+			fmt.Sprintf("%d", year),
+			fmt.Sprintf("%d", thisYear),
+			1,
+		)
+	}
+
+	parsedTime, err := parseLayouts(defaultLayouts(), dateTimeStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("unable to parse timestamp %v: %v",
+			dateTimeStr, err)
+	}
+
+	return parsedTime.UTC(), nil
+}
+
+// parseLayouts parses time based on a list of provided layouts.
+// If layouts is empty list or nil, the error with unknown layout will be returned.
+func parseLayouts(layouts []string, dateTime string) (time.Time, error) {
+	for _, layout := range layouts {
+		parsedTime, err := time.Parse(layout, dateTime)
+		if err == nil {
+			return parsedTime, nil
 		}
 	}
 
-	return t, nil
+	return time.Time{}, errors.New("unknown layout")
 }
 
-// parseSqliteTimeStamp parses a timestamp string in the format of
-// "YYYY-MM-DD HH:MM:SS +0000 UTC" and returns a time.Time value.
-// NOTE: we can't use time.Parse() because it doesn't support having years
-// with more than 4 digits.
-func parseSqliteTimeStamp(dateTimeStr string) (time.Time, error) {
-	// Split the date and time parts.
-	parts := strings.Fields(strings.TrimSpace(dateTimeStr))
-	if len(parts) < 2 {
-		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
+// defaultLayouts returns a default list of ALL supported layouts.
+// This function returns new copy of a slice.
+func defaultLayouts() []string {
+	return []string{
+		"2006-01-02 15:04:05.99999 -0700 MST", // Custom sqlite layout.
+		time.RFC3339Nano,
+		time.RFC3339,
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC850,
+		time.RFC822Z,
+		time.RFC822,
+		time.Layout,
+		time.RubyDate,
+		time.UnixDate,
+		time.ANSIC,
+		time.StampNano,
+		time.StampMicro,
+		time.StampMilli,
+		time.Stamp,
+		time.Kitchen,
+	}
+}
+
+// getTimeStampYear returns the year of a timestamp string.
+func getTimeStampYear(dateTimeStr string) (int, error) {
+	parts := strings.Split(dateTimeStr, "-")
+	if len(parts) < 1 {
+		return 0, fmt.Errorf("invalid timestamp format: %v",
 			dateTimeStr)
 	}
 
-	datePart, timePart := parts[0], parts[1]
-
-	return parseTimeParts(datePart, timePart)
-}
-
-// parseSqliteTimeStamp parses a timestamp string in the format of
-// "YYYY-MM-DDTHH:MM:SSZ" and returns a time.Time value.
-// NOTE: we can't use time.Parse() because it doesn't support having years
-// with more than 4 digits.
-func parsePostgresTimeStamp(dateTimeStr string) (time.Time, error) {
-	// Split the date and time parts.
-	parts := strings.Split(dateTimeStr, "T")
-	if len(parts) != 2 {
-		return time.Time{}, fmt.Errorf("invalid timestamp format: %v",
-			dateTimeStr)
-	}
-
-	datePart, timePart := parts[0], strings.TrimSuffix(parts[1], "Z")
-
-	return parseTimeParts(datePart, timePart)
-}
-
-// parseTimeParts takes a datePart string in the format of "YYYY-MM-DD" and
-// a timePart string in the format of "HH:MM:SS" and returns a time.Time value.
-func parseTimeParts(datePart, timePart string) (time.Time, error) {
-	// Parse the date.
-	dateParts := strings.Split(datePart, "-")
-	if len(dateParts) != 3 {
-		return time.Time{}, fmt.Errorf("invalid date format: %v",
-			datePart)
-	}
-
-	year, err := strconv.Atoi(dateParts[0])
+	year, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return time.Time{}, err
+		return 0, fmt.Errorf("unable to parse year: %v", err)
 	}
 
-	month, err := strconv.Atoi(dateParts[1])
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	day, err := strconv.Atoi(dateParts[2])
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	// Parse the time.
-	timeParts := strings.Split(timePart, ":")
-	if len(timeParts) != 3 {
-		return time.Time{}, fmt.Errorf("invalid time format: %v",
-			timePart)
-	}
-
-	hour, err := strconv.Atoi(timeParts[0])
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	minute, err := strconv.Atoi(timeParts[1])
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	// Parse the seconds and ignore the fractional part.
-	secondParts := strings.Split(timeParts[2], ".")
-
-	second, err := strconv.Atoi(secondParts[0])
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	// Construct a time.Time value.
-	return time.Date(
-		year, time.Month(month), day, hour, minute, second, 0, time.UTC,
-	), nil
-}
-
-// isMilisecondsTime returns true if the unix timestamp is likely in
-// milliseconds.
-func isMilisecondsTime(unixTimestamp int64) bool {
-	length := len(fmt.Sprintf("%d", unixTimestamp))
-	if length >= 13 {
-		// Likely a millisecond timestamp
-		return true
-	} else {
-		// Likely a second timestamp
-		return false
-	}
+	return year, nil
 }

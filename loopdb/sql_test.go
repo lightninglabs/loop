@@ -394,24 +394,48 @@ func TestTimeConversions(t *testing.T) {
 		},
 		{
 			timeString:   "2018-11-01 00:00:01.10000 +0000 UTC",
-			expectedTime: time.Date(2018, 11, 1, 0, 0, 1, 0, time.UTC),
+			expectedTime: time.Date(2018, 11, 1, 0, 0, 1, 100000000, time.UTC),
 		},
 		{
 			timeString: "2053-12-29T02:40:44.269009408Z",
 			expectedTime: time.Date(
-				2053, 12, 29, 2, 40, 44, 0, time.UTC,
+				time.Now().Year(), 12, 29, 2, 40, 44, 269009408, time.UTC,
 			),
 		},
 		{
 			timeString: "55563-06-27 02:09:24 +0000 UTC",
 			expectedTime: time.Date(
-				55563, 6, 27, 2, 9, 24, 0, time.UTC,
+				time.Now().Year(), 6, 27, 2, 9, 24, 0, time.UTC,
 			),
 		},
 		{
 			timeString: "2172-03-11 10:01:11.849906176 +0000 UTC",
 			expectedTime: time.Date(
-				2172, 3, 11, 10, 1, 11, 0, time.UTC,
+				time.Now().Year(), 3, 11, 10, 1, 11, 849906176, time.UTC,
+			),
+		},
+		{
+			timeString: "2023-08-04 16:07:49 +0800 CST",
+			expectedTime: time.Date(
+				2023, 8, 4, 8, 7, 49, 0, time.UTC,
+			),
+		},
+		{
+			timeString: "2023-08-04 16:07:49 -0700 MST",
+			expectedTime: time.Date(
+				2023, 8, 4, 23, 7, 49, 0, time.UTC,
+			),
+		},
+		{
+			timeString: "2023-08-04T16:07:49+08:00",
+			expectedTime: time.Date(
+				2023, 8, 4, 8, 7, 49, 0, time.UTC,
+			),
+		},
+		{
+			timeString: "2023-08-04T16:07:49+08:00",
+			expectedTime: time.Date(
+				2023, 8, 4, 8, 7, 49, 0, time.UTC,
 			),
 		},
 	}
