@@ -248,19 +248,25 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	defer tx.Rollback() //nolint: errcheck
 
 	for _, swap := range loopOutSwaps {
-		faultyTime, err := parseTimeStamp(swap.PublicationDeadline)
+
+		// Get the year of the timestamp.
+		year, err := getTimeStampYear(swap.PublicationDeadline)
 		if err != nil {
 			return err
 		}
 
-		// Skip if the time is not faulty.
-		if !isMilisecondsTime(faultyTime.Unix()) {
+		// Skip if the year is not in the future.
+		thisYear := time.Now().Year()
+		if year <= thisYear {
 			continue
 		}
 
+		fixedTime, err := fixTimeStamp(swap.PublicationDeadline)
+		if err != nil {
+			return err
+		}
+
 		// Update the faulty time to a valid time.
-		secs := faultyTime.Unix() / 1000
-		correctTime := time.Unix(secs, 0)
 		_, err = tx.ExecContext(
 			ctx, `
 			UPDATE
@@ -270,7 +276,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 			WHERE
 			  swap_hash = $2;
 			`,
-			correctTime, swap.Hash,
+			fixedTime, swap.Hash,
 		)
 		if err != nil {
 			return err
@@ -309,7 +315,7 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 	return r.readOnly
 }
 
-// parseTimeStamp tries to parse a timestamp string with both the
+// fixTimeStamp tries to parse a timestamp string with both the
 // parseSqliteTimeStamp and parsePostgresTimeStamp functions.
 // If both fail, it returns an error.
 func fixTimeStamp(dateTimeStr string) (time.Time, error) {

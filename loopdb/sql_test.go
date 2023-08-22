@@ -328,8 +328,10 @@ func TestIssue615(t *testing.T) {
 
 	// Create a faulty loopout swap.
 	destAddr := test.GetDestAddr(t, 0)
-	faultyTime, err := parseSqliteTimeStamp("55563-06-27 02:09:24 +0000 UTC")
-	require.NoError(t, err)
+	// Corresponds to 55563-06-27 02:09:24 +0000 UTC.
+	faultyTime := time.Unix(1691247002964, 0)
+
+	t.Log(faultyTime.Unix())
 
 	unrestrictedSwap := LoopOutContract{
 		SwapContract: SwapContract{
@@ -362,7 +364,7 @@ func TestIssue615(t *testing.T) {
 		SwapPublicationDeadline: faultyTime,
 	}
 
-	err = sqlDB.CreateLoopOut(ctxb, testPreimage.Hash(), &unrestrictedSwap)
+	err := sqlDB.CreateLoopOut(ctxb, testPreimage.Hash(), &unrestrictedSwap)
 	require.NoError(t, err)
 
 	// This should fail because of the faulty timestamp.
@@ -441,7 +443,7 @@ func TestTimeConversions(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		time, err := parseTimeStamp(test.timeString)
+		time, err := fixTimeStamp(test.timeString)
 		require.NoError(t, err)
 		require.Equal(t, test.expectedTime, time)
 	}
