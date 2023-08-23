@@ -1202,17 +1202,23 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 			continue
 		}
 
-		pubkey := *in.Contract.LastHop
-
+		var (
+			pubkey = *in.Contract.LastHop
+			state  = in.State().State
+		)
 		switch {
-		// Include any pending swaps in our ongoing set of swaps.
-		case in.State().State.Type() == loopdb.StateTypePending:
+		// Include any pending swaps in our ongoing set of swaps. We do
+		// not consider InvoiceSettled a pending state in the context of
+		// loop-ins.
+		case state.Type() == loopdb.StateTypePending &&
+			state != loopdb.StateInvoiceSettled:
+
 			traffic.ongoingLoopIn[pubkey] = true
 
 		// If a swap failed with an on-chain timeout, the server could
 		// not route to us. We add it to our backoff list so that
 		// there's some time for routing conditions to improve.
-		case in.State().State == loopdb.StateFailTimeout:
+		case state == loopdb.StateFailTimeout:
 			failedAt := in.LastUpdate().Time
 
 			if failedAt.After(failureCutoff) {
