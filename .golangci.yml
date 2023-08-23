@@ -135,3 +135,8 @@ issues:
       - path: cmd/loop/*
         linters:
           - forbidigo
+
+      # Allow fmt.Printf() in stateparser
+      - path: fsm/stateparser/*
+        linters:
+          - forbidigo
