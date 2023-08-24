@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/instantout/reservation"
 )
 
 func main() {
@@ -37,6 +38,13 @@ func run() error {
 	case "example":
 		exampleFSM := &fsm.ExampleFSM{}
 		err = writeMermaidFile(fp, exampleFSM.GetStates())
+		if err != nil {
+			return err
+		}
+
+	case "reservation":
+		reservationFSM := &reservation.FSM{}
+		err = writeMermaidFile(fp, reservationFSM.GetReservationStates())
 		if err != nil {
 			return err
 		}
