@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,8 +25,8 @@ type Manager struct {
 	sync.Mutex
 }
 
-// NewReservationManager creates a new reservation manager.
-func NewReservationManager(cfg *Config) *Manager {
+// NewManager creates a new reservation manager.
+func NewManager(cfg *Config) *Manager {
 	return &Manager{
 		cfg:                cfg,
 		activeReservations: make(map[ID]*FSM),
@@ -71,7 +72,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 		case reservationRes := <-reservationResChan:
 			log.Debugf("Received reservation %x",
 				reservationRes.ReservationId)
-			err := m.newReservation(
+			_, err := m.newReservation(
 				runCtx, uint32(currentHeight), reservationRes,
 			)
 			if err != nil {
@@ -90,19 +91,19 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 
 // newReservation creates a new reservation from the reservation request.
 func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
-	req *reservationrpc.ServerReservationNotification) error {
+	req *reservationrpc.ServerReservationNotification) (*FSM, error) {
 
 	var reservationID ID
 	err := reservationID.FromByteSlice(
 		req.ReservationId,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	serverKey, err := btcec.ParsePubKey(req.ServerKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Create the reservation state machine. We need to pass in the runCtx
@@ -136,14 +137,19 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	// We'll now wait for the reservation to be in the state where it is
 	// waiting to be confirmed.
 	err = reservationFSM.DefaultObserver.WaitForState(
-		ctx, time.Minute, WaitForConfirmation,
+		ctx, 5*time.Second, WaitForConfirmation,
 		fsm.WithWaitForStateOption(time.Second),
 	)
 	if err != nil {
-		return err
+		if reservationFSM.LastActionError != nil {
+			return nil, fmt.Errorf("error waiting for "+
+				"state: %v, last action error: %v",
+				err, reservationFSM.LastActionError)
+		}
+		return nil, err
 	}
 
-	return nil
+	return reservationFSM, nil
 }
 
 // RegisterReservationNotifications registers a new reservation notification
