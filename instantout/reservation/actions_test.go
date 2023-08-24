@@ -129,6 +129,7 @@ func TestInitReservationAction(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		ctxb := context.Background()
 		mockLnd := test.NewMockLnd()
 		mockReservationClient := new(mockReservationClient)
@@ -223,6 +224,7 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			chainNotifier := new(MockChainNotifier)
 
@@ -304,14 +306,83 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 	}
 }
 
-// TestReservationConfirmedAction tests the ReservationConfirmedAction of the
+// AsyncWaitForExpiredOrSweptAction tests the AsyncWaitForExpiredOrSweptAction
+// of the reservation state machine.
+func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
+	tests := []struct {
+		name          string
+		blockErr      error
+		spendErr      error
+		expectedEvent fsm.EventType
+	}{
+		{
+			name:          "noop",
+			expectedEvent: fsm.NoOp,
+		},
+		{
+			name:          "block error",
+			blockErr:      errors.New("block error"),
+			expectedEvent: fsm.OnError,
+		},
+		{
+			name:          "spend error",
+			spendErr:      errors.New("spend error"),
+			expectedEvent: fsm.OnError,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) { // Create a mock ChainNotifier and Reservation
+			chainNotifier := new(MockChainNotifier)
+
+			// Define your FSM
+			r := NewFSMFromReservation(
+				context.Background(), &Config{
+					ChainNotifier: chainNotifier,
+				},
+				&Reservation{
+					ServerPubkey: defaultPubkey,
+					ClientPubkey: defaultPubkey,
+					Expiry:       defaultExpiry,
+				},
+			)
+
+			// Define the expected return values for your mocks
+			chainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
+				make(chan int32), make(chan error), tc.blockErr,
+			)
+
+			chainNotifier.On(
+				"RegisterSpendNtfn", mock.Anything,
+				mock.Anything, mock.Anything,
+			).Return(
+				make(chan *chainntnfs.SpendDetail),
+				make(chan error), tc.spendErr,
+			)
+
+			eventType := r.AsyncWaitForExpiredOrSweptAction(nil)
+			// Assert that the return value is as expected
+			require.Equal(t, tc.expectedEvent, eventType)
+		})
+	}
+}
+
+// TesthandleSubcriptions tests the handleSubcriptions function of the
 // reservation state machine.
-func TestReservationConfirmedAction(t *testing.T) {
+func TestHandleSubcriptions(t *testing.T) {
+	var (
+		blockErr = errors.New("block error")
+		spendErr = errors.New("spend error")
+	)
 	tests := []struct {
 		name          string
 		blockHeight   int32
 		blockErr      error
+		spendDetail   *chainntnfs.SpendDetail
+		spendErr      error
 		expectedEvent fsm.EventType
+		expectedErr   error
 	}{
 		{
 			name:          "expired",
@@ -320,13 +391,25 @@ func TestReservationConfirmedAction(t *testing.T) {
 		},
 		{
 			name:          "block error",
-			blockHeight:   0,
-			blockErr:      errors.New("block error"),
+			blockErr:      blockErr,
 			expectedEvent: fsm.OnError,
+			expectedErr:   blockErr,
+		},
+		{
+			name:          "spent",
+			spendDetail:   &chainntnfs.SpendDetail{},
+			expectedEvent: OnSpent,
+		},
+		{
+			name:          "spend error",
+			spendErr:      spendErr,
+			expectedEvent: fsm.OnError,
+			expectedErr:   spendErr,
 		},
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			chainNotifier := new(MockChainNotifier)
 
@@ -336,36 +419,41 @@ func TestReservationConfirmedAction(t *testing.T) {
 					ChainNotifier: chainNotifier,
 				},
 				&Reservation{
-					Expiry: defaultExpiry,
+					ServerPubkey: defaultPubkey,
+					ClientPubkey: defaultPubkey,
+					Expiry:       defaultExpiry,
 				},
 			)
 
 			blockChan := make(chan int32)
 			blockErrChan := make(chan error)
 
-			// Define our expected return values for the mocks.
-			chainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
-				blockChan, blockErrChan, nil,
-			)
+			spendChan := make(chan *chainntnfs.SpendDetail)
+			spendErrChan := make(chan error)
+
 			go func() {
-				// Send the block notification.
 				if tc.blockHeight != 0 {
 					blockChan <- tc.blockHeight
 				}
-			}()
 
-			go func() {
-				// Send the block notification error.
 				if tc.blockErr != nil {
 					blockErrChan <- tc.blockErr
 				}
+
+				if tc.spendDetail != nil {
+					spendChan <- tc.spendDetail
+				}
+				if tc.spendErr != nil {
+					spendErrChan <- tc.spendErr
+				}
 			}()
 
-			eventType := r.ReservationConfirmedAction(nil)
+			eventType, err := r.handleSubcriptions(
+				context.Background(), blockChan, spendChan,
+				blockErrChan, spendErrChan,
+			)
+			require.Equal(t, tc.expectedErr, err)
 			require.Equal(t, tc.expectedEvent, eventType)
-
-			// Assert that the expected functions were called on the mocks
-			chainNotifier.AssertExpectations(t)
 		})
 	}
 }

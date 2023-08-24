@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 )
 
 // InitReservationContext contains the request parameters for a reservation.
@@ -21,18 +22,18 @@ type InitReservationContext struct {
 // InitAction is the action that is executed when the reservation state machine
 // is initialized. It creates the reservation in the database and dispatches the
 // payment to the server.
-func (r *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
+func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 	// Check if the context is of the correct type.
 	reservationRequest, ok := eventCtx.(*InitReservationContext)
 	if !ok {
-		return r.HandleError(fsm.ErrInvalidContextType)
+		return f.HandleError(fsm.ErrInvalidContextType)
 	}
 
-	keyRes, err := r.cfg.Wallet.DeriveNextKey(
-		r.ctx, KeyFamily,
+	keyRes, err := f.cfg.Wallet.DeriveNextKey(
+		f.ctx, KeyFamily,
 	)
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
 	}
 
 	// Send the client reservation details to the server.
@@ -44,9 +45,9 @@ func (r *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 		ClientKey:     keyRes.PubKey.SerializeCompressed(),
 	}
 
-	_, err = r.cfg.ReservationClient.OpenReservation(r.ctx, request)
+	_, err = f.cfg.ReservationClient.OpenReservation(f.ctx, request)
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
 	}
 
 	reservation, err := NewReservation(
@@ -59,15 +60,15 @@ func (r *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 		keyRes.KeyLocator,
 	)
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
 	}
 
-	r.reservation = reservation
+	f.reservation = reservation
 
 	// Create the reservation in the database.
-	err = r.cfg.Store.CreateReservation(r.ctx, reservation)
+	err = f.cfg.Store.CreateReservation(f.ctx, reservation)
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
 	}
 
 	return OnBroadcast
@@ -76,101 +77,163 @@ func (r *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 // SubscribeToConfirmationAction is the action that is executed when the
 // reservation is waiting for confirmation. It subscribes to the confirmation
 // of the reservation transaction.
-func (r *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
-	pkscript, err := r.reservation.GetPkScript()
+func (f *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
+	pkscript, err := f.reservation.GetPkScript()
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
 	}
 
-	callCtx, cancel := context.WithCancel(r.ctx)
+	callCtx, cancel := context.WithCancel(f.ctx)
 	defer cancel()
 
 	// Subscribe to the confirmation of the reservation transaction.
 	log.Debugf("Subscribing to conf for reservation: %x pkscript: %x, "+
-		"initiation height: %v", r.reservation.ID, pkscript,
-		r.reservation.InitiationHeight)
+		"initiation height: %v", f.reservation.ID, pkscript,
+		f.reservation.InitiationHeight)
 
-	confChan, errConfChan, err := r.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+	confChan, errConfChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 		callCtx, nil, pkscript, DefaultConfTarget,
-		r.reservation.InitiationHeight,
+		f.reservation.InitiationHeight,
 	)
 	if err != nil {
-		r.Errorf("unable to subscribe to conf notification: %v", err)
-		return r.HandleError(err)
+		f.Errorf("unable to subscribe to conf notification: %v", err)
+		return f.HandleError(err)
 	}
 
-	blockChan, errBlockChan, err := r.cfg.ChainNotifier.RegisterBlockEpochNtfn(
+	blockChan, errBlockChan, err := f.cfg.ChainNotifier.RegisterBlockEpochNtfn(
 		callCtx,
 	)
 	if err != nil {
-		r.Errorf("unable to subscribe to block notifications: %v", err)
-		return r.HandleError(err)
+		f.Errorf("unable to subscribe to block notifications: %v", err)
+		return f.HandleError(err)
 	}
 
 	// We'll now wait for the confirmation of the reservation transaction.
 	for {
 		select {
 		case err := <-errConfChan:
-			r.Errorf("conf subscription error: %v", err)
-			return r.HandleError(err)
+			f.Errorf("conf subscription error: %v", err)
+			return f.HandleError(err)
 
 		case err := <-errBlockChan:
-			r.Errorf("block subscription error: %v", err)
-			return r.HandleError(err)
+			f.Errorf("block subscription error: %v", err)
+			return f.HandleError(err)
 
 		case confInfo := <-confChan:
-			r.Debugf("reservation confirmed: %v", confInfo)
-			outpoint, err := r.reservation.findReservationOutput(
+			f.Debugf("confirmed in block %v", confInfo.Block)
+			outpoint, err := f.reservation.findReservationOutput(
 				confInfo.Tx,
 			)
 			if err != nil {
-				return r.HandleError(err)
+				return f.HandleError(err)
 			}
 
-			r.reservation.ConfirmationHeight = confInfo.BlockHeight
-			r.reservation.Outpoint = outpoint
+			f.reservation.ConfirmationHeight = confInfo.BlockHeight
+			f.reservation.Outpoint = outpoint
 
 			return OnConfirmed
 
 		case block := <-blockChan:
-			r.Debugf("block received: %v expiry: %v", block,
-				r.reservation.Expiry)
+			f.Debugf("block received: %v expiry: %v", block,
+				f.reservation.Expiry)
 
-			if uint32(block) >= r.reservation.Expiry {
+			if uint32(block) >= f.reservation.Expiry {
 				return OnTimedOut
 			}
 
-		case <-r.ctx.Done():
+		case <-f.ctx.Done():
 			return fsm.NoOp
 		}
 	}
 }
 
-// ReservationConfirmedAction waits for the reservation to be either expired or
-// waits for other actions to happen.
-func (r *FSM) ReservationConfirmedAction(_ fsm.EventContext) fsm.EventType {
-	blockHeightChan, errEpochChan, err := r.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(r.ctx)
+// AsyncWaitForExpiredOrSweptAction waits for the reservation to be either
+// expired or swept. This is non-blocking and can be used to wait for the
+// reservation to expire while expecting other events.
+func (f *FSM) AsyncWaitForExpiredOrSweptAction(_ fsm.EventContext,
+) fsm.EventType {
+
+	notifCtx, cancel := context.WithCancel(f.ctx)
+
+	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
+		RegisterBlockEpochNtfn(notifCtx)
 	if err != nil {
-		return r.HandleError(err)
+		cancel()
+		return f.HandleError(err)
 	}
+
+	pkScript, err := f.reservation.GetPkScript()
+	if err != nil {
+		cancel()
+		return f.HandleError(err)
+	}
+
+	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
+		notifCtx, f.reservation.Outpoint, pkScript,
+		f.reservation.InitiationHeight,
+	)
+	if err != nil {
+		cancel()
+		return f.HandleError(err)
+	}
+
+	go func() {
+		defer cancel()
+		op, err := f.handleSubcriptions(
+			notifCtx, blockHeightChan, spendChan, errEpochChan,
+			errSpendChan,
+		)
+		if err != nil {
+			f.handleAsyncError(err)
+			return
+		}
+		if op == fsm.NoOp {
+			return
+		}
+		err = f.SendEvent(op, nil)
+		if err != nil {
+			f.Errorf("Error sending %s event: %v", op, err)
+		}
+	}()
+
+	return fsm.NoOp
+}
+
+func (f *FSM) handleSubcriptions(ctx context.Context,
+	blockHeightChan <-chan int32, spendChan <-chan *chainntnfs.SpendDetail,
+	errEpochChan <-chan error, errSpendChan <-chan error,
+) (fsm.EventType, error) {
 
 	for {
 		select {
 		case err := <-errEpochChan:
-			return r.HandleError(err)
+			return fsm.OnError, err
+
+		case err := <-errSpendChan:
+			return fsm.OnError, err
 
 		case blockHeight := <-blockHeightChan:
-			expired := blockHeight >= int32(r.reservation.Expiry)
-			if expired {
-				r.Debugf("Reservation %v expired",
-					r.reservation.ID)
+			expired := blockHeight >= int32(f.reservation.Expiry)
 
-				return OnTimedOut
+			if expired {
+				f.Debugf("Reservation expired")
+				return OnTimedOut, nil
 			}
 
-		case <-r.ctx.Done():
-			return fsm.NoOp
+		case <-spendChan:
+			return OnSpent, nil
+
+		case <-ctx.Done():
+			return fsm.NoOp, nil
 		}
+	}
+}
+
+func (f *FSM) handleAsyncError(err error) {
+	f.LastActionError = err
+	f.Errorf("Error on async action: %v", err)
+	err2 := f.SendEvent(fsm.OnError, err)
+	if err2 != nil {
+		f.Errorf("Error sending event: %v", err2)
 	}
 }

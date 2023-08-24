@@ -123,6 +123,18 @@ var (
 	// OnRecover is the event that is triggered when the reservation FSM
 	// recovers from a restart.
 	OnRecover = fsm.EventType("OnRecover")
+
+	// OnSpent is the event that is triggered when the reservation has been
+	// spent.
+	OnSpent = fsm.EventType("OnSpent")
+
+	// OnLocked is the event that is triggered when the reservation has
+	// been locked.
+	OnLocked = fsm.EventType("OnLocked")
+
+	// OnUnlocked is the event that is triggered when the reservation has
+	// been unlocked.
+	OnUnlocked = fsm.EventType("OnUnlocked")
 )
 
 // GetReservationStates returns the statemap that defines the reservation
@@ -153,14 +165,38 @@ func (f *FSM) GetReservationStates() fsm.States {
 		},
 		Confirmed: fsm.State{
 			Transitions: fsm.Transitions{
-				OnTimedOut: TimedOut,
-				OnRecover:  Confirmed,
+				OnSpent:     Spent,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Confirmed,
+				OnLocked:    Locked,
+				fsm.OnError: Confirmed,
 			},
-			Action: f.ReservationConfirmedAction,
+			Action: f.AsyncWaitForExpiredOrSweptAction,
+		},
+		Locked: fsm.State{
+			Transitions: fsm.Transitions{
+				OnUnlocked:  Confirmed,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Locked,
+				OnSpent:     Spent,
+				fsm.OnError: Locked,
+			},
+			Action: f.AsyncWaitForExpiredOrSweptAction,
 		},
 		TimedOut: fsm.State{
+			Transitions: fsm.Transitions{
+				OnTimedOut: TimedOut,
+			},
 			Action: fsm.NoOpAction,
 		},
+
+		Spent: fsm.State{
+			Transitions: fsm.Transitions{
+				OnSpent: Spent,
+			},
+			Action: fsm.NoOpAction,
+		},
+
 		Failed: fsm.State{
 			Action: fsm.NoOpAction,
 		},
