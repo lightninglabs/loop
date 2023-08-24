@@ -86,8 +86,8 @@ func (r *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 		r.reservation.InitiationHeight)
 
 	confChan, errConfChan, err := r.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		r.ctx, nil, pkscript, DefaultConfTarget,
-		r.reservation.InitiationHeight,
+		r.ctx, nil, pkscript, 1,
+		r.reservation.InitiationHeight-1,
 	)
 	if err != nil {
 		r.Errorf("unable to subscribe to conf notification: %v", err)
@@ -143,28 +143,47 @@ func (r *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 
 // ReservationConfirmedAction waits for the reservation to be either expired or
 // waits for other actions to happen.
-func (r *FSM) ReservationConfirmedAction(_ fsm.EventContext) fsm.EventType {
-	blockHeightChan, errEpochChan, err := r.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(r.ctx)
+func (f *FSM) ReservationConfirmedAction(_ fsm.EventContext) fsm.EventType {
+	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
+		RegisterBlockEpochNtfn(f.ctx)
 	if err != nil {
-		return r.HandleError(err)
+		return f.HandleError(err)
+	}
+
+	pkSCript, err := f.reservation.GetPkScript()
+	if err != nil {
+		return f.HandleError(err)
+	}
+
+	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
+		f.ctx, f.reservation.Outpoint, pkSCript,
+		f.reservation.InitiationHeight,
+	)
+	if err != nil {
+		return f.HandleError(err)
 	}
 
 	for {
 		select {
 		case err := <-errEpochChan:
-			return r.HandleError(err)
+			return f.HandleError(err)
+
+		case err := <-errSpendChan:
+			return f.HandleError(err)
 
 		case blockHeight := <-blockHeightChan:
-			expired := blockHeight >= int32(r.reservation.Expiry)
+			expired := blockHeight >= int32(f.reservation.Expiry)
 			if expired {
-				r.Debugf("Reservation %v expired",
-					r.reservation.ID)
+				f.Debugf("Reservation %v expired",
+					f.reservation.ID)
 
 				return OnTimedOut
 			}
 
-		case <-r.ctx.Done():
+		case <-spendChan:
+			return OnSpent
+
+		case <-f.ctx.Done():
 			return fsm.NoOp
 		}
 	}

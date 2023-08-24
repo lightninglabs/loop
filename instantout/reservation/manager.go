@@ -251,3 +251,22 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 func (m *Manager) GetReservations(ctx context.Context) ([]*Reservation, error) {
 	return m.cfg.Store.ListReservations(ctx)
 }
+
+// GetReservation returns the reservation for the given id.
+func (m *Manager) GetReservation(ctx context.Context, id ID) (*Reservation,
+	error) {
+
+	return m.cfg.Store.GetReservation(ctx, id)
+}
+
+// LockReservation locks the reservation for the given id.
+func (m *Manager) LockReservation(ctx context.Context, id ID) error {
+	// TODO(sputn1ck): implement
+	return nil
+}
+
+// UnlockReservation unlocks the reservation for the given id.
+func (m *Manager) UnlockReservation(ctx context.Context, id ID) error {
+	// TODO(sputn1ck): implement
+	return nil
+}

@@ -90,7 +90,11 @@ var (
 	// Failed is the state where the reservation has failed.
 	Failed = fsm.StateType("Failed")
 
-	// Swept is the state where the reservation has been swept by the server.
+	// Spent is the state where a spend tx has been confirmed.
+	Spent = fsm.StateType("Spent")
+
+	// Swept is the state where the reservation has been swept by the
+	// server.
 	Swept = fsm.StateType("Swept")
 )
 
@@ -119,6 +123,10 @@ var (
 	// OnRecover is the event that is triggered when the reservation FSM
 	// recovers from a restart.
 	OnRecover = fsm.EventType("OnRecover")
+
+	// OnSpent is the event that is triggered when the reservation has been
+	// spent.
+	OnSpent = fsm.EventType("OnSpent")
 )
 
 // GetReservationStates returns the statemap that defines the reservation
@@ -149,6 +157,7 @@ func (f *FSM) GetReservationStates() fsm.States {
 		},
 		Confirmed: fsm.State{
 			Transitions: fsm.Transitions{
+				OnSpent:    Spent,
 				OnTimedOut: TimedOut,
 				OnRecover:  Confirmed,
 			},
@@ -157,6 +166,11 @@ func (f *FSM) GetReservationStates() fsm.States {
 		TimedOut: fsm.State{
 			Action: fsm.NoOpAction,
 		},
+
+		Spent: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+
 		Failed: fsm.State{
 			Action: fsm.NoOpAction,
 		},
@@ -208,7 +222,7 @@ func (r *FSM) Errorf(format string, args ...interface{}) {
 // isFinalState returns true if the state is a final state.
 func isFinalState(state fsm.StateType) bool {
 	switch state {
-	case Failed, Swept, TimedOut:
+	case Failed, Swept, TimedOut, Spent:
 		return true
 	}
 	return false
