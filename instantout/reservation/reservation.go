@@ -2,14 +2,17 @@ package reservation
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	reservation_script "github.com/lightninglabs/loop/instantout/reservation/script"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -116,6 +119,16 @@ func (r *Reservation) GetPkScript() ([]byte, error) {
 	return pkScript, nil
 }
 
+// Output returns the reservation output.
+func (r *Reservation) Output() (*wire.TxOut, error) {
+	pkscript, err := r.GetPkScript()
+	if err != nil {
+		return nil, err
+	}
+
+	return wire.NewTxOut(int64(r.Value), pkscript), nil
+}
+
 func (r *Reservation) findReservationOutput(tx *wire.MsgTx) (*wire.OutPoint,
 	error) {
 
@@ -134,4 +147,34 @@ func (r *Reservation) findReservationOutput(tx *wire.MsgTx) (*wire.OutPoint,
 	}
 
 	return nil, errors.New("reservation output not found")
+}
+
+// Musig2CreateSession creates a musig2 session for the reservation.
+func (r *Reservation) Musig2CreateSession(ctx context.Context,
+	signer lndclient.SignerClient) (*input.MuSig2SessionInfo, error) {
+
+	signers := [][]byte{
+		r.ClientPubkey.SerializeCompressed(),
+		r.ServerPubkey.SerializeCompressed(),
+	}
+
+	expiryLeaf, err := reservation_script.TaprootExpiryScript(
+		r.Expiry, r.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	rootHash := expiryLeaf.TapHash()
+
+	musig2SessionInfo, err := signer.MuSig2CreateSession(
+		ctx, input.MuSig2Version100RC2,
+		&r.KeyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return musig2SessionInfo, nil
 }
