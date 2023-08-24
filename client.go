@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
 
@@ -148,6 +149,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		LndServices: cfg.Lnd,
 		Server:      swapServerClient,
 		Store:       loopDB,
+		Conn:        swapServerClient.conn,
 		LsatStore:   lsatStore,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
@@ -198,6 +200,11 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	}
 
 	return client, cleanup, nil
+}
+
+// GetConn returns the gRPC connection to the server.
+func (s *Client) GetConn() *grpc.ClientConn {
+	return s.clientConfig.Conn
 }
 
 // FetchSwaps returns all loop in and out swaps currently in the database.
