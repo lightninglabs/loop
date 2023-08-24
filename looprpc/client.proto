@@ -109,6 +109,12 @@ service SwapClient {
     [EXPERIMENTAL]: endpoint is subject to change.
     */
     rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
+
+    /* loop: `listreservations`
+    ListReservations returns a list of all reservations the server opened to us.
+    */
+    rpc ListReservations (ListReservationsRequest)
+        returns (ListReservationsResponse);
 }
 
 message LoopOutRequest {
@@ -1242,4 +1248,42 @@ message AbandonSwapRequest {
 }
 
 message AbandonSwapResponse {
+}
+
+message ListReservationsRequest {
+}
+
+message ListReservationsResponse {
+    /*
+    The list of all currently known reservations and their status.
+    */
+    repeated ClientReservation reservations = 1;
+}
+
+message ClientReservation {
+    /*
+    The reservation id that identifies this reservation.
+    */
+    bytes reservation_id = 1;
+
+    /*
+    The state the reservation is in.
+    */
+    string state = 2;
+    /*
+        The amount that the reservation is for.
+    */
+    uint64 amount = 3;
+    /*
+        The transaction id of the reservation.
+    */
+    bytes tx_id = 4;
+    /*
+        The vout of the reservation.
+    */
+    uint32 vout = 5;
+    /*
+        The expiry of the reservation.
+    */
+    uint32 expiry = 6;
 }
