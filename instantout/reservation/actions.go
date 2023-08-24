@@ -1,6 +1,8 @@
 package reservation
 
 import (
+	"context"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
@@ -86,8 +88,8 @@ func (r *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 		r.reservation.InitiationHeight)
 
 	confChan, errConfChan, err := r.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		r.ctx, nil, pkscript, DefaultConfTarget,
-		r.reservation.InitiationHeight,
+		r.ctx, nil, pkscript, 1,
+		r.reservation.InitiationHeight-1,
 	)
 	if err != nil {
 		r.Errorf("unable to subscribe to conf notification: %v", err)
@@ -141,31 +143,85 @@ func (r *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 	}
 }
 
-// ReservationConfirmedAction waits for the reservation to be either expired or
-// waits for other actions to happen.
-func (r *FSM) ReservationConfirmedAction(_ fsm.EventContext) fsm.EventType {
-	blockHeightChan, errEpochChan, err := r.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(r.ctx)
+// AsyncWaitForExpiredOrSweptAction waits for the reservation to be either
+// expired or swept. This is non-blocking and can be used to wait for the
+// reservation to expire while expecting other events.
+func (f *FSM) AsyncWaitForExpiredOrSweptAction(_ fsm.EventContext,
+) fsm.EventType {
+
+	notifCtx, cancel := context.WithCancel(f.ctx)
+
+	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
+		RegisterBlockEpochNtfn(notifCtx)
 	if err != nil {
-		return r.HandleError(err)
+		cancel()
+		return f.HandleError(err)
 	}
 
-	for {
-		select {
-		case err := <-errEpochChan:
-			return r.HandleError(err)
+	pkScript, err := f.reservation.GetPkScript()
+	if err != nil {
+		cancel()
+		return f.HandleError(err)
+	}
 
-		case blockHeight := <-blockHeightChan:
-			expired := blockHeight >= int32(r.reservation.Expiry)
-			if expired {
-				r.Debugf("Reservation %v expired",
-					r.reservation.ID)
+	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
+		notifCtx, f.reservation.Outpoint, pkScript,
+		f.reservation.InitiationHeight,
+	)
+	if err != nil {
+		cancel()
+		return f.HandleError(err)
+	}
 
-				return OnTimedOut
+	go func() {
+		defer cancel()
+		for {
+			select {
+			case err := <-errEpochChan:
+				f.handleAsyncError(err)
+				return
+
+			case err := <-errSpendChan:
+				f.handleAsyncError(err)
+				return
+
+			case blockHeight := <-blockHeightChan:
+				expired := blockHeight >= int32(
+					f.reservation.Expiry,
+				)
+
+				if expired {
+					f.Debugf("Reservation expired")
+					err := f.SendEvent(OnTimedOut, nil)
+					if err != nil {
+						f.Errorf("Error sending event:"+
+							" %v", err)
+					}
+					return
+				}
+
+			case <-spendChan:
+				f.Debugf("Reservation spent")
+				err := f.SendEvent(OnSpent, nil)
+				if err != nil {
+					f.Errorf("Error sending event: %v", err)
+				}
+				return
+
+			case <-f.ctx.Done():
+				return
 			}
-
-		case <-r.ctx.Done():
-			return fsm.NoOp
 		}
+	}()
+
+	return fsm.NoOp
+}
+
+func (f *FSM) handleAsyncError(err error) {
+	f.LastActionError = err
+	f.Errorf("Error on async action: %v", err)
+	err2 := f.SendEvent(fsm.OnError, err)
+	if err2 != nil {
+		f.Errorf("Error sending event: %v", err2)
 	}
 }

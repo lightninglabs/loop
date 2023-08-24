@@ -90,8 +90,16 @@ var (
 	// Failed is the state where the reservation has failed.
 	Failed = fsm.StateType("Failed")
 
-	// Swept is the state where the reservation has been swept by the server.
+	// Spent is the state where a spend tx has been confirmed.
+	Spent = fsm.StateType("Spent")
+
+	// Swept is the state where the reservation has been swept by the
+	// server.
 	Swept = fsm.StateType("Swept")
+
+	// Locked is the state where the reservation is locked and can't be
+	// used for instant out swaps.
+	Locked = fsm.StateType("Locked")
 )
 
 // Events.
@@ -119,6 +127,18 @@ var (
 	// OnRecover is the event that is triggered when the reservation FSM
 	// recovers from a restart.
 	OnRecover = fsm.EventType("OnRecover")
+
+	// OnSpent is the event that is triggered when the reservation has been
+	// spent.
+	OnSpent = fsm.EventType("OnSpent")
+
+	// OnLocked is the event that is triggered when the reservation has
+	// been locked.
+	OnLocked = fsm.EventType("OnLocked")
+
+	// OnUnlocked is the event that is triggered when the reservation has
+	// been unlocked.
+	OnUnlocked = fsm.EventType("OnUnlocked")
 )
 
 // GetReservationStates returns the statemap that defines the reservation
@@ -149,14 +169,32 @@ func (f *FSM) GetReservationStates() fsm.States {
 		},
 		Confirmed: fsm.State{
 			Transitions: fsm.Transitions{
-				OnTimedOut: TimedOut,
-				OnRecover:  Confirmed,
+				OnSpent:     Spent,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Confirmed,
+				OnLocked:    Locked,
+				fsm.OnError: Confirmed,
 			},
-			Action: f.ReservationConfirmedAction,
+			Action: f.AsyncWaitForExpiredOrSweptAction,
+		},
+		Locked: fsm.State{
+			Transitions: fsm.Transitions{
+				OnUnlocked:  Confirmed,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Locked,
+				OnSpent:     Spent,
+				fsm.OnError: Locked,
+			},
+			Action: f.AsyncWaitForExpiredOrSweptAction,
 		},
 		TimedOut: fsm.State{
 			Action: fsm.NoOpAction,
 		},
+
+		Spent: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+
 		Failed: fsm.State{
 			Action: fsm.NoOpAction,
 		},
@@ -218,7 +256,7 @@ func (r *FSM) Errorf(format string, args ...interface{}) {
 // isFinalState returns true if the state is a final state.
 func isFinalState(state fsm.StateType) bool {
 	switch state {
-	case Failed, Swept, TimedOut:
+	case Failed, Swept, TimedOut, Spent:
 		return true
 	}
 	return false

@@ -2,6 +2,8 @@ package reservation
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -262,4 +264,55 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 // GetReservations retrieves all reservations from the database.
 func (m *Manager) GetReservations(ctx context.Context) ([]*Reservation, error) {
 	return m.cfg.Store.ListReservations(ctx)
+}
+
+// GetReservation returns the reservation for the given id.
+func (m *Manager) GetReservation(ctx context.Context, id ID) (*Reservation,
+	error) {
+
+	return m.cfg.Store.GetReservation(ctx, id)
+}
+
+// LockReservation locks the reservation with the given ID.
+func (m *Manager) LockReservation(ctx context.Context, id ID) error {
+	// Try getting the reservation from the active reservations map.
+	m.Lock()
+	reservation, ok := m.activeReservations[id]
+	m.Unlock()
+
+	if !ok {
+		return fmt.Errorf("reservation not found")
+	}
+
+	// Try to send the lock event to the reservation.
+	err := reservation.SendEvent(OnLocked, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UnlockReservation unlocks the reservation with the given ID.
+func (m *Manager) UnlockReservation(ctx context.Context, id ID) error {
+	// Try getting the reservation from the active reservations map.
+	m.Lock()
+	reservation, ok := m.activeReservations[id]
+	m.Unlock()
+
+	if !ok {
+		return fmt.Errorf("reservation not found")
+	}
+
+	// Try to send the unlock event to the reservation.
+	err := reservation.SendEvent(OnUnlocked, nil)
+	if err != nil && strings.Contains(err.Error(), "config error") {
+		// If the error is a config error, we can ignore it, as the
+		// reservation is already unlocked.
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	return nil
 }

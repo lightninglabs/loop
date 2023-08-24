@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -304,25 +305,31 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 	}
 }
 
-// TestReservationConfirmedAction tests the ReservationConfirmedAction of the
-// reservation state machine.
-func TestReservationConfirmedAction(t *testing.T) {
+// AsyncWaitForExpiredOrSweptAction tests the AsyncWaitForExpiredOrSweptAction
+// of the reservation state machine.
+func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 	tests := []struct {
 		name          string
 		blockHeight   int32
 		blockErr      error
-		expectedEvent fsm.EventType
+		spendDetail   *chainntnfs.SpendDetail
+		expectedState fsm.StateType
 	}{
 		{
 			name:          "expired",
 			blockHeight:   100,
-			expectedEvent: OnTimedOut,
+			expectedState: TimedOut,
 		},
 		{
 			name:          "block error",
 			blockHeight:   0,
 			blockErr:      errors.New("block error"),
-			expectedEvent: fsm.OnError,
+			expectedState: Confirmed,
+		},
+		{
+			name:          "spent",
+			expectedState: Spent,
+			spendDetail:   &chainntnfs.SpendDetail{},
 		},
 	}
 
@@ -336,7 +343,9 @@ func TestReservationConfirmedAction(t *testing.T) {
 					ChainNotifier: chainNotifier,
 				},
 				&Reservation{
-					Expiry: defaultExpiry,
+					ServerPubkey: defaultPubkey,
+					ClientPubkey: defaultPubkey,
+					Expiry:       defaultExpiry,
 				},
 			)
 
@@ -361,9 +370,31 @@ func TestReservationConfirmedAction(t *testing.T) {
 				}
 			}()
 
-			eventType := r.ReservationConfirmedAction(nil)
+			spendChan := make(chan *chainntnfs.SpendDetail)
+			spendErrChan := make(chan error)
+
+			chainNotifier.On(
+				"RegisterSpendNtfn", mock.Anything,
+				mock.Anything, mock.Anything,
+			).Return(
+				spendChan, spendErrChan, nil,
+			)
+
+			go func() {
+				// Send the spend notification.
+				if tc.spendDetail != nil {
+					spendChan <- tc.spendDetail
+				}
+			}()
+
+			eventType := r.AsyncWaitForExpiredOrSweptAction(nil)
 			// Assert that the return value is as expected
-			require.Equal(t, tc.expectedEvent, eventType)
+			require.Equal(t, fsm.NoOp, eventType)
+
+			// Assert that the state is as expected
+			r.DefaultObserver.WaitForState(
+				r.ctx, time.Second*5, tc.expectedState,
+			)
 
 			// Assert that the expected functions were called on the mocks
 			chainNotifier.AssertExpectations(t)
