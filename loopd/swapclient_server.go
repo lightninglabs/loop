@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
@@ -72,17 +73,18 @@ type swapClientServer struct {
 	clientrpc.UnimplementedSwapClientServer
 	clientrpc.UnimplementedDebugServer
 
-	config           *Config
-	network          lndclient.Network
-	impl             *loop.Client
-	liquidityMgr     *liquidity.Manager
-	lnd              *lndclient.LndServices
-	swaps            map[lntypes.Hash]loop.SwapInfo
-	subscribers      map[int]chan<- interface{}
-	statusChan       chan loop.SwapInfo
-	nextSubscriberID int
-	swapsLock        sync.Mutex
-	mainCtx          context.Context
+	config             *Config
+	network            lndclient.Network
+	impl               *loop.Client
+	liquidityMgr       *liquidity.Manager
+	lnd                *lndclient.LndServices
+	reservationManager *reservation.Manager
+	swaps              map[lntypes.Hash]loop.SwapInfo
+	subscribers        map[int]chan<- interface{}
+	statusChan         chan loop.SwapInfo
+	nextSubscriberID   int
+	swapsLock          sync.Mutex
+	mainCtx            context.Context
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -1059,6 +1061,25 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 	return resp, nil
 }
 
+// ListReservations lists all existing reservations the client has ever made.
+func (s *swapClientServer) ListReservations(ctx context.Context,
+	_ *clientrpc.ListReservationsRequest) (
+	*clientrpc.ListReservationsResponse, error) {
+
+	reservations, err := s.reservationManager.GetReservations(
+		ctx,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.ListReservationsResponse{
+		Reservations: ToClientReservations(
+			reservations,
+		),
+	}, nil
+}
+
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
 	switch reason {
 	case liquidity.ReasonNone:
@@ -1316,5 +1337,42 @@ func getPublicationDeadline(unixTimestamp uint64) time.Time {
 	} else {
 		// Likely a second timestamp
 		return time.Unix(int64(unixTimestamp), 0)
+	}
+}
+
+// ToClientReservations converts a slice of server
+// reservations to a slice of client reservations.
+func ToClientReservations(
+	res []*reservation.Reservation) []*clientrpc.ClientReservation {
+
+	var result []*clientrpc.ClientReservation
+	for _, r := range res {
+		result = append(result, toClientReservation(r))
+	}
+
+	return result
+}
+
+// toClientReservation converts a server reservation to a
+// client reservation.
+func toClientReservation(
+	res *reservation.Reservation) *clientrpc.ClientReservation {
+
+	var (
+		txid []byte
+		vout uint32
+	)
+	if res.Outpoint != nil {
+		txid = res.Outpoint.Hash[:]
+		vout = res.Outpoint.Index
+	}
+
+	return &clientrpc.ClientReservation{
+		ReservationId: res.ID[:],
+		State:         string(res.State),
+		Amount:        uint64(res.Value),
+		TxId:          txid,
+		Vout:          vout,
+		Expiry:        res.Expiry,
 	}
 }
