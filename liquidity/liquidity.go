@@ -1205,8 +1205,14 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 		pubkey := *in.Contract.LastHop
 
 		switch {
-		// Include any pending swaps in our ongoing set of swaps.
-		case in.State().State.Type() == loopdb.StateTypePending:
+		// Include any pending swaps in our ongoing set of swaps. Swaps
+		// that reached InvoiceSettled are not considered ongoing since
+		// from the client's perspective the swap is complete. This
+		// consideration allows the client to dispatch the next autoloop
+		// in once an invoice for a previous swap is settled.
+		case in.State().State.Type() == loopdb.StateTypePending &&
+			in.State().State != loopdb.StateInvoiceSettled:
+
 			traffic.ongoingLoopIn[pubkey] = true
 
 		// If a swap failed with an on-chain timeout, the server could
