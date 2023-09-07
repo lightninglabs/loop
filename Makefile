@@ -134,4 +134,7 @@ sqlc-check: sqlc
 	@$(call print, "Verifying sql code generation.")
 	if test -n "$$(git status --porcelain '*.go')"; then echo "SQL models not properly generated!"; git status --porcelain '*.go'; exit 1; fi
 
-
+fsm:
+	@$(call print, "Generating state machine docs")
+	./scripts/fsm-generate.sh;
+.PHONY: fsm

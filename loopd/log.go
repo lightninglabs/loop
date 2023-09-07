@@ -5,6 +5,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd"
@@ -36,6 +37,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	lnd.AddSubLogger(
 		root, liquidity.Subsystem, intercept, liquidity.UseLogger,
 	)
+	lnd.AddSubLogger(root, fsm.Subsystem, intercept, fsm.UseLogger)
 }
 
 // genSubLogger creates a logger for a subsystem. We provide an instance of
