@@ -31,7 +31,7 @@ func NewExampleFSMContext(service ExampleService,
 		service: service,
 		store:   store,
 	}
-	exampleFSM.StateMachine = NewStateMachine(exampleFSM.GetStates())
+	exampleFSM.StateMachine = NewStateMachine(exampleFSM.GetStates(), 10)
 
 	return exampleFSM
 }
@@ -55,7 +55,7 @@ var (
 // GetStates returns the states for the example FSM.
 func (e *ExampleFSM) GetStates() States {
 	return States{
-		Default: State{
+		EmptyState: State{
 			Transitions: Transitions{
 				OnRequestStuff: InitFSM,
 			},

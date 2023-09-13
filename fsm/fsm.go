@@ -17,8 +17,8 @@ var (
 )
 
 const (
-	// Default represents the default state of the system.
-	Default StateType = ""
+	// EmptyState represents the default state of the system.
+	EmptyState StateType = ""
 
 	// NoOp represents a no-op event.
 	NoOp EventType = "NoOp"
@@ -88,18 +88,18 @@ type StateMachine struct {
 
 	// ActionEntryFunc is a function that is called before an action is
 	// executed.
-	ActionEntryFunc func()
+	ActionEntryFunc func(Notification)
 
 	// ActionExitFunc is a function that is called after an action is
-	// executed.
-	ActionExitFunc func()
-
-	// mutex ensures that only 1 event is processed by the state machine at
-	// any given time.
-	mutex sync.Mutex
+	// executed, it is called with the EventType returned by the action.
+	ActionExitFunc func(NextEvent EventType)
 
 	// LastActionError is an error set by the last action executed.
 	LastActionError error
+
+	// DefaultObserver is the default observer that is notified when the
+	// state machine transitions between states.
+	DefaultObserver *CachedObserver
 
 	// previous represents the previous state.
 	previous StateType
@@ -114,13 +114,35 @@ type StateMachine struct {
 	// observerMutex ensures that observers are only added or removed
 	// safely.
 	observerMutex sync.Mutex
+
+	// mutex ensures that only 1 event is processed by the state machine at
+	// any given time.
+	mutex sync.Mutex
 }
 
 // NewStateMachine creates a new state machine.
-func NewStateMachine(states States) *StateMachine {
+func NewStateMachine(states States, observerSize int) *StateMachine {
+	return NewStateMachineWithState(states, EmptyState, observerSize)
+}
+
+// NewStateMachineWithState creates a new state machine and sets the initial
+// state.
+func NewStateMachineWithState(states States, current StateType,
+	observerSize int) *StateMachine {
+
+	observers := []Observer{}
+	var defaultObserver *CachedObserver
+
+	if observerSize > 0 {
+		defaultObserver = NewCachedObserver(observerSize)
+		observers = append(observers, defaultObserver)
+	}
+
 	return &StateMachine{
-		States:    states,
-		observers: make([]Observer, 0),
+		States:          states,
+		current:         current,
+		DefaultObserver: defaultObserver,
+		observers:       observers,
 	}
 }
 
@@ -189,18 +211,20 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 
 		// Notify the state machine's observers.
 		s.observerMutex.Lock()
+		notification := Notification{
+			PreviousState: s.previous,
+			NextState:     s.current,
+			Event:         event,
+		}
+
 		for _, observer := range s.observers {
-			observer.Notify(Notification{
-				PreviousState: s.previous,
-				NextState:     s.current,
-				Event:         event,
-			})
+			observer.Notify(notification)
 		}
 		s.observerMutex.Unlock()
 
 		// Execute the state machines ActionEntryFunc.
 		if s.ActionEntryFunc != nil {
-			s.ActionEntryFunc()
+			s.ActionEntryFunc(notification)
 		}
 
 		// Execute the current state's entry function
@@ -219,7 +243,7 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 
 		// Execute the state machines ActionExitFunc.
 		if s.ActionExitFunc != nil {
-			s.ActionExitFunc()
+			s.ActionExitFunc(nextEvent)
 		}
 
 		// If the next event is a no-op, we're done.
