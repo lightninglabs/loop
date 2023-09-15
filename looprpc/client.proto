@@ -235,6 +235,13 @@ message LoopOutRequest {
     The address type of the account specified in the account field.
      */
     AddressType account_addr_type = 16;
+
+    /*
+    A flag indicating whether the defined destination address does not belong to
+    the wallet. This is used to flag whether this loop out swap could have its
+    associated sweep batched.
+    */
+    bool is_external_addr = 17;
 }
 
 /*
