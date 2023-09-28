@@ -17,9 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	testTime1 = time.Date(2018, time.January, 9, 14, 54, 32, 3, time.UTC)
-	testTime2 = time.Date(2018, time.January, 9, 15, 02, 03, 5, time.UTC)
+const (
+	testLabel = "test label"
 )
 
 // TestSqliteLoopOutStore tests all the basic functionality of the current
@@ -75,7 +74,7 @@ func TestSqliteLoopOutStore(t *testing.T) {
 	})
 
 	labelledSwap := unrestrictedSwap
-	labelledSwap.Label = "test label"
+	labelledSwap.Label = testLabel
 	t.Run("labelled swap", func(t *testing.T) {
 		testSqliteLoopOutStore(t, &labelledSwap)
 	})
@@ -206,7 +205,7 @@ func TestSQLliteLoopInStore(t *testing.T) {
 	})
 
 	labelledSwap := pendingSwap
-	labelledSwap.Label = "test label"
+	labelledSwap.Label = testLabel
 	t.Run("loop in with label", func(t *testing.T) {
 		testSqliteLoopInStore(t, labelledSwap)
 	})
@@ -310,12 +309,12 @@ func TestSqliteLiquidityParams(t *testing.T) {
 // convert between the :one and :many types from sqlc.
 func TestSqliteTypeConversion(t *testing.T) {
 	loopOutSwapRow := sqlc.GetLoopOutSwapRow{}
-	randomStruct(&loopOutSwapRow)
+	err := randomStruct(&loopOutSwapRow)
+	require.NoError(t, err)
 	require.NotNil(t, loopOutSwapRow.DestAddress)
 
 	loopOutSwapsRow := sqlc.GetLoopOutSwapsRow(loopOutSwapRow)
 	require.EqualValues(t, loopOutSwapRow, loopOutSwapsRow)
-
 }
 
 // TestIssue615 tests that on faulty timestamps, the database will be fixed.

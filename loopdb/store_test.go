@@ -105,7 +105,7 @@ func TestLoopOutStore(t *testing.T) {
 	})
 
 	labelledSwap := unrestrictedSwap
-	labelledSwap.Label = "test label"
+	labelledSwap.Label = testLabel
 	t.Run("labelled swap", func(t *testing.T) {
 		testLoopOutStore(t, &labelledSwap)
 	})
@@ -249,7 +249,7 @@ func TestLoopInStore(t *testing.T) {
 	})
 
 	labelledSwap := pendingSwap
-	labelledSwap.Label = "test label"
+	labelledSwap.Label = testLabel
 	t.Run("loop in with label", func(t *testing.T) {
 		testLoopInStore(t, labelledSwap)
 	})

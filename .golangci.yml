@@ -76,6 +76,9 @@ linters:
   - golint
   - maligned
   - scopelint
+  - varcheck
+  - structcheck
+  - deadcode
   
   # New linters that need a code adjustment first.
   - wrapcheck
@@ -107,6 +110,10 @@ linters:
   - stylecheck
   - thelper
   - revive
+  - tagalign
+  - depguard
+  - nosnakecase
+  - interfacebloat
   
   # Additions compared to LND
   - exhaustruct
@@ -122,6 +129,10 @@ issues:
         linters:
           - forbidigo
           - unparam
+          - gosec
+      - path: _mock\.go
+        linters:
+          - gosec
         
       # Allow fmt.Printf() in loopd
       - path: cmd/loopd/*

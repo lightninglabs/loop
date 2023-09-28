@@ -387,6 +387,8 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 	hopHintChans := make(map[wire.OutPoint]struct{})
 	hopHints := make([][]zpay32.HopHint, 0, numMaxHophints)
 	for _, channel := range openChannels {
+		channel := channel
+
 		enoughHopHints := sufficientHints(
 			len(hopHints), numMaxHophints, hopHintFactor, amtMSat,
 			totalHintBandwidth,

@@ -133,6 +133,8 @@ func (s *BaseDB) BatchCreateLoopOut(ctx context.Context,
 	writeOpts := &SqliteTxOptions{}
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
+			swap := swap
+
 			insertArgs := loopToInsertArgs(
 				swapHash, &swap.SwapContract,
 			)
@@ -250,13 +252,15 @@ func (s *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	})
 }
 
-// BatchCreateLoopOut adds multiple initiated swaps to the store.
+// BatchCreateLoopIn adds multiple initiated swaps to the store.
 func (s *BaseDB) BatchCreateLoopIn(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopInContract) error {
 
 	writeOpts := &SqliteTxOptions{}
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
+			swap := swap
+
 			insertArgs := loopToInsertArgs(
 				swapHash, &swap.SwapContract,
 			)
@@ -422,6 +426,7 @@ func loopToInsertArgs(hash lntypes.Hash,
 // needed to insert it into the database.
 func loopOutToInsertArgs(hash lntypes.Hash,
 	loopOut *LoopOutContract) sqlc.InsertLoopOutParams {
+
 	return sqlc.InsertLoopOutParams{
 		SwapHash:            hash[:],
 		DestAddress:         loopOut.DestAddr.String(),
@@ -458,6 +463,7 @@ func loopInToInsertArgs(hash lntypes.Hash,
 // and converts them to the arguments needed to insert them into the database.
 func swapToHtlcKeysInsertArgs(hash lntypes.Hash,
 	swap *SwapContract) sqlc.InsertHtlcKeysParams {
+
 	return sqlc.InsertHtlcKeysParams{
 		SwapHash:               hash[:],
 		SenderScriptPubkey:     swap.HtlcKeys.SenderScriptKey[:],

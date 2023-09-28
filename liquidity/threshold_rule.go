@@ -127,10 +127,10 @@ func (r *ThresholdRule) swapAmount(channel *balances,
 // This function can be used for loop out or loop in, but the concept is the
 // same - we want liquidity in one (target) direction, while preserving some
 // minimum in the other (reserve) direction.
-// * target: this is the side of the channel(s) where we want to acquire some
-//   liquidity. We aim for this liquidity to reach the threshold amount set.
-// * reserve: this is the side of the channel(s) that we will move liquidity
-//   away from. This may not drop below a certain reserve threshold.
+//   - target: this is the side of the channel(s) where we want to acquire some
+//     liquidity. We aim for this liquidity to reach the threshold amount set.
+//   - reserve: this is the side of the channel(s) that we will move liquidity
+//     away from. This may not drop below a certain reserve threshold.
 func calculateSwapAmount(targetAmount, reserveAmount,
 	capacity btcutil.Amount, targetThresholdPercentage,
 	reserveThresholdPercentage uint64) btcutil.Amount {

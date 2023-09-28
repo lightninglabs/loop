@@ -536,10 +536,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary, err := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
-	if err != nil {
-		return err
-	}
+	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
@@ -581,7 +578,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// allowed clamp it to max.
 	amount := localTotal - m.params.EasyAutoloopTarget
 	if amount > restrictions.Maximum {
-		amount = btcutil.Amount(restrictions.Maximum)
+		amount = restrictions.Maximum
 	}
 
 	// If the amount we want to loop out is less than the minimum we can't
@@ -601,7 +598,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	builder := newLoopOutBuilder(m.cfg)
 
 	channel := m.pickEasyAutoloopChannel(
-		channels, restrictions, loopOut, loopIn, amount,
+		channels, restrictions, loopOut, loopIn,
 	)
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
@@ -624,12 +621,12 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	switch feeLimit := easyParams.FeeLimit.(type) {
 	case *FeePortion:
 		if feeLimit.PartsPerMillion == 0 {
-			feeLimit = &FeePortion{
+			easyParams.FeeLimit = &FeePortion{
 				PartsPerMillion: defaultFeePPM,
 			}
 		}
 	default:
-		feeLimit = &FeePortion{
+		easyParams.FeeLimit = &FeePortion{
 			PartsPerMillion: defaultFeePPM,
 		}
 	}
@@ -646,16 +643,16 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return err
 	}
 
-	swap := loop.OutRequest{}
+	var swp loop.OutRequest
 	if t, ok := suggestion.(*loopOutSwapSuggestion); ok {
-		swap = t.OutRequest
+		swp = t.OutRequest
 	} else {
 		return fmt.Errorf("unexpected swap suggestion type: %T", t)
 	}
 
 	// Dispatch a sticky loop out.
 	go m.dispatchStickyLoopOut(
-		ctx, swap, defaultAmountBackoffRetry, defaultAmountBackoff,
+		ctx, swp, defaultAmountBackoffRetry, defaultAmountBackoff,
 	)
 
 	return nil
@@ -762,10 +759,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary, err := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
-	if err != nil {
-		return nil, err
-	}
+	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
@@ -1074,9 +1068,9 @@ func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
 // automatically dispatched swaps that have completed, and the worst-case fee
 // total for our set of ongoing, automatically dispatched swaps as well as a
 // current in-flight count.
-func (m *Manager) checkExistingAutoLoops(ctx context.Context,
-	loopOuts []*loopdb.LoopOut, loopIns []*loopdb.LoopIn) (
-	*existingAutoLoopSummary, error) {
+func (m *Manager) checkExistingAutoLoops(_ context.Context,
+	loopOuts []*loopdb.LoopOut,
+	loopIns []*loopdb.LoopIn) *existingAutoLoopSummary {
 
 	var summary existingAutoLoopSummary
 
@@ -1133,7 +1127,7 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 		}
 	}
 
-	return &summary, nil
+	return &summary
 }
 
 // currentSwapTraffic examines our existing swaps and returns a summary of the
@@ -1416,7 +1410,7 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 // swap conflicts.
 func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 	restrictions *Restrictions, loopOut []*loopdb.LoopOut,
-	loopIn []*loopdb.LoopIn, amount btcutil.Amount) *lndclient.ChannelInfo {
+	loopIn []*loopdb.LoopIn) *lndclient.ChannelInfo {
 
 	traffic := m.currentSwapTraffic(loopOut, loopIn)
 
@@ -1472,7 +1466,6 @@ func (m *Manager) numActiveStickyLoops() int {
 	defer m.activeStickyLock.Unlock()
 
 	return m.activeStickyLoops
-
 }
 
 func (m *Manager) checkSummaryBudget(summary *existingAutoLoopSummary) error {
@@ -1482,7 +1475,6 @@ func (m *Manager) checkSummaryBudget(summary *existingAutoLoopSummary) error {
 			"(upper limit)",
 			m.params.AutoFeeBudget, summary.spentFees,
 			summary.pendingFees)
-
 	}
 
 	return nil
@@ -1555,8 +1547,4 @@ func satPerKwToSatPerVByte(satPerKw chainfee.SatPerKWeight) int64 {
 // and returns the amount that the ppm represents.
 func ppmToSat(amount btcutil.Amount, ppm uint64) btcutil.Amount {
 	return btcutil.Amount(uint64(amount) * ppm / FeeBase)
-}
-
-func mSatToSatoshis(amount lnwire.MilliSatoshi) btcutil.Amount {
-	return btcutil.Amount(amount / 1000)
 }

@@ -211,7 +211,6 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 // FixFaultyTimestamps fixes faulty timestamps in the database, caused
 // by using milliseconds instead of seconds as the publication deadline.
 func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
-
 	// Manually fetch all the loop out swaps.
 	rows, err := b.DB.QueryContext(
 		ctx, "SELECT swap_hash, publication_deadline FROM loopout_swaps",
@@ -219,6 +218,9 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	// Parse the rows into a struct. We need to do this manually because
 	// the sqlite driver will fail on faulty timestamps.
@@ -241,14 +243,19 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 		loopOutSwaps = append(loopOutSwaps, swap)
 	}
 
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
 	tx, err := b.BeginTx(ctx, &SqliteTxOptions{})
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint: errcheck
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	for _, swap := range loopOutSwaps {
-
 		// Get the year of the timestamp.
 		year, err := getTimeStampYear(swap.PublicationDeadline)
 		if err != nil {
@@ -300,7 +307,7 @@ type SqliteTxOptions struct {
 	readOnly bool
 }
 
-// NewKeyStoreReadOpts returns a new KeyStoreTxOptions instance triggers a read
+// NewSqlReadOpts returns a new KeyStoreTxOptions instance triggers a read
 // transaction.
 func NewSqlReadOpts() *SqliteTxOptions {
 	return &SqliteTxOptions{
@@ -310,7 +317,7 @@ func NewSqlReadOpts() *SqliteTxOptions {
 
 // ReadOnly returns true if the transaction should be read only.
 //
-// NOTE: This implements the TxOptions
+// NOTE: This implements the TxOptions interface.
 func (r *SqliteTxOptions) ReadOnly() bool {
 	return r.readOnly
 }

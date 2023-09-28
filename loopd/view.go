@@ -49,6 +49,8 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	}
 
 	for _, s := range swaps {
+		s := s
+
 		htlc, err := loop.GetHtlc(
 			s.Hash, &s.Contract.SwapContract, chainParams,
 		)
@@ -98,6 +100,8 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	}
 
 	for _, s := range swaps {
+		s := s
+
 		htlc, err := loop.GetHtlc(
 			s.Hash, &s.Contract.SwapContract, chainParams,
 		)

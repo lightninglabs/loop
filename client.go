@@ -204,6 +204,8 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 	swaps := make([]*SwapInfo, 0, len(loopInSwaps)+len(loopOutSwaps))
 
 	for _, swp := range loopOutSwaps {
+		swp := swp
+
 		swapInfo := &SwapInfo{
 			SwapType:      swap.TypeOut,
 			SwapContract:  swp.Contract.SwapContract,
@@ -235,6 +237,8 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 	}
 
 	for _, swp := range loopInSwaps {
+		swp := swp
+
 		swapInfo := &SwapInfo{
 			SwapType:      swap.TypeIn,
 			SwapContract:  swp.Contract.SwapContract,

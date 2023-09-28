@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coreos/bbolt"
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -302,7 +303,10 @@ func (d *Daemon) startWebServers() error {
 	if d.restListener != nil {
 		log.Infof("Starting REST proxy listener")
 
-		d.restServer = &http.Server{Handler: restHandler}
+		d.restServer = &http.Server{
+			Handler:           restHandler,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
 
 		d.wg.Add(1)
 		go func() {

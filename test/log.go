@@ -18,7 +18,7 @@ var (
 // the write-end pipe of an initialized log rotator.
 type logWriter struct{}
 
-func (logWriter) Write(p []byte) (n int, err error) {
+func (logWriter) Write(p []byte) (int, error) {
 	os.Stdout.Write(p)
 	return len(p), nil
 }
