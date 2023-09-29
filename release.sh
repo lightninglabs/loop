@@ -73,7 +73,7 @@ cd $MAINDIR
 
 # If LOOPBUILDSYS is set the default list is ignored. Useful to release
 # for a subset of systems/architectures.
-SYS=${LOOPBUILDSYS:-"windows-amd64 linux-386 linux-amd64 linux-armv6 linux-armv7 linux-arm64 darwin-amd64 freebsd-amd64 freebsd-arm"}
+SYS=${LOOPBUILDSYS:-"windows-amd64 linux-386 linux-amd64 linux-armv6 linux-armv7 linux-arm64 darwin-arm64 darwin-amd64 freebsd-amd64 freebsd-arm"}
 
 # Use the first element of $GOPATH in the case where GOPATH is a list
 # (something that is totally allowed).
