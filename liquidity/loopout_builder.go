@@ -161,14 +161,17 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 			account = params.Account
 			addrType = params.AccountAddrType
 		}
-
-		addr, err := b.cfg.Lnd.WalletKit.NextAddr(
-			ctx, account, addrType, false,
-		)
-		if err != nil {
-			return nil, err
+		if params.DestAddr != nil {
+			request.DestAddr = params.DestAddr
+		} else {
+			addr, err := b.cfg.Lnd.WalletKit.NextAddr(
+				ctx, account, addrType, false,
+			)
+			if err != nil {
+				return nil, err
+			}
+			request.DestAddr = addr
 		}
-		request.DestAddr = addr
 	}
 
 	return &loopOutSwapSuggestion{

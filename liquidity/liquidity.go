@@ -450,12 +450,6 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		// Create a copy of our range var so that we can reference it.
 		swap := swap
 
-		// Check if the parameter for custom address is defined for loop
-		// outs.
-		if m.params.DestAddr != nil {
-			swap.DestAddr = m.params.DestAddr
-		}
-
 		go m.dispatchStickyLoopOut(
 			ctx, swap, defaultAmountBackoffRetry,
 			defaultAmountBackoff,

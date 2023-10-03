@@ -1256,6 +1256,14 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 func TestEasyAutoloop(t *testing.T) {
 	defer test.Guard(t)
 
+	// Decode a dummy p2wkh address to use as the destination address for
+	// the swaps.
+	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
+	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
 	// We need to change the default channels we use for tests so that they
 	// have different local balances in order to know which one is going to
 	// be selected by easy autoloop.
@@ -1284,6 +1292,7 @@ func TestEasyAutoloop(t *testing.T) {
 
 		params = Parameters{
 			Autoloop:                  true,
+			DestAddr:                  addr,
 			AutoFeeBudget:             36000,
 			AutoFeeRefreshPeriod:      time.Hour * 3,
 			AutoloopBudgetLastRefresh: testBudgetStart,
@@ -1305,6 +1314,7 @@ func TestEasyAutoloop(t *testing.T) {
 
 		chan1Swap = &loop.OutRequest{
 			Amount:          btcutil.Amount(maxAmt),
+			DestAddr:        addr,
 			OutgoingChanSet: loopdb.ChannelSet{easyChannel1.ChannelID},
 			Label:           labels.AutoloopLabel(swap.TypeOut),
 			Initiator:       autoloopSwapInitiator,
@@ -1351,6 +1361,9 @@ func TestEasyAutoloop(t *testing.T) {
 	channels = []lndclient.ChannelInfo{
 		easyChannel1, easyChannel2,
 	}
+
+	// Remove the custom dest address.
+	params.DestAddr = nil
 
 	c = newAutoloopTestCtx(t, params, channels, testRestrictions)
 	c.start()
