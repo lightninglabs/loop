@@ -88,8 +88,9 @@ func TestStateMachine_ActionError(t *testing.T) {
 
 	// Add a Transition to State2 if the Action on Stat2 fails.
 	// The new StateMap looks like this:
-	// State1 -> Event1 -> State2
-	// State2 -> OnError -> ErrorState
+	// 	State1 -> Event1 -> State2
+	//
+	// 	State2 -> OnError -> ErrorState
 	states["State2"] = State{
 		Action: ctx.errorAction,
 		Transitions: Transitions{

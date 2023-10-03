@@ -142,7 +142,7 @@ func (m *MigratorManager) migrateLoopIns(ctx context.Context) error {
 	swapMap := make(map[lntypes.Hash]*LoopInContract)
 	updateMap := make(map[lntypes.Hash][]BatchInsertUpdateData)
 
-	// For each loop in, create a new loop in in the toStore.
+	// For each loop in, create a new loop in the toStore.
 	for _, loopIn := range loopIns {
 		swapMap[loopIn.Hash] = loopIn.Contract
 
@@ -311,6 +311,7 @@ func (m *MigratorManager) checkLiquidityParams(ctx context.Context) error {
 func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 	if fromLoopOut.Contract.InitiationTime.Unix() !=
 		toLoopOut.Contract.InitiationTime.Unix() {
+
 		return fmt.Errorf("initiation time mismatch")
 	}
 
@@ -318,6 +319,7 @@ func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 
 	if fromLoopOut.Contract.SwapPublicationDeadline.Unix() !=
 		toLoopOut.Contract.SwapPublicationDeadline.Unix() {
+
 		return fmt.Errorf("swap publication deadline mismatch")
 	}
 
@@ -337,6 +339,7 @@ func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 func equalizeLoopIns(fromLoopIn, toLoopIn *LoopIn) error {
 	if fromLoopIn.Contract.InitiationTime.Unix() !=
 		toLoopIn.Contract.InitiationTime.Unix() {
+
 		return fmt.Errorf("initiation time mismatch")
 	}
 
@@ -391,17 +394,6 @@ func equalValues(src interface{}, dst interface{}) error {
 	mt := &mockTesting{}
 
 	require.EqualValues(mt, src, dst)
-	if mt.fail || mt.failNow {
-		return fmt.Errorf(mt.format, mt.args)
-	}
-
-	return nil
-}
-
-func elementsMatch(src interface{}, dst interface{}) error {
-	mt := &mockTesting{}
-
-	require.ElementsMatch(mt, src, dst)
 	if mt.fail || mt.failNow {
 		return fmt.Errorf(mt.format, mt.args)
 	}

@@ -108,7 +108,7 @@ func newReplacerFile(parent fs.File, replaces map[string]string) (*replacerFile,
 
 	contentStr := string(content)
 	for from, to := range replaces {
-		contentStr = strings.Replace(contentStr, from, to, -1)
+		contentStr = strings.ReplaceAll(contentStr, from, to)
 	}
 
 	var buf bytes.Buffer

@@ -61,7 +61,7 @@ func migrateBoltdb(ctx context.Context, cfg *Config) error {
 		return err
 	}
 
-	// If the migration was successfull we'll rename the bolt db to
+	// If the migration was successful we'll rename the bolt db to
 	// loop.db.bk.
 	err = os.Rename(
 		filepath.Join(cfg.DataDir, "loop.db"),

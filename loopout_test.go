@@ -682,7 +682,7 @@ func testPreimagePush(t *testing.T) {
 	sweepTx := ctx.ReceiveTx()
 
 	// Finally, we put this swap out of its misery and notify a successful
-	// spend our our sweepTx and assert that the swap succeeds.
+	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
@@ -1007,7 +1007,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	require.Len(t, sweepTx.TxIn[0].Witness, 1)
 
 	// Finally, we put this swap out of its misery and notify a successful
-	// spend our our sweepTx and assert that the swap succeeds.
+	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
 
 	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)

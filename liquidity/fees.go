@@ -349,7 +349,7 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 	// multiplier from the miner fees. We do this because we want to
 	// consider the average case for our budget calculations and not the
 	// severe edge-case miner fees.
-	miner = miner / maxMinerMultiplier
+	miner /= maxMinerMultiplier
 
 	// Calculate the worst case fees that we could pay for this swap,
 	// ensuring that we are within our fee limit even if the swap fails.

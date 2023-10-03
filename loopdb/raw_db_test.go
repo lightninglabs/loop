@@ -14,12 +14,12 @@ import (
 //
 // Example output:
 //
-// map[string]interface{}{
-//      Hex("1234"): map[string]interface{}{
-//              "human-readable": Hex("102030"),
-//              Hex("1111"): Hex("5783492373"),
-//      },
-// } .
+//	map[string]interface{}{
+//	     Hex("1234"): map[string]interface{}{
+//	             "human-readable": Hex("102030"),
+//	             Hex("1111"): Hex("5783492373"),
+//	     },
+//	} .
 func DumpDB(tx *bbolt.Tx) error { // nolint: unused
 	return tx.ForEach(func(k []byte, bucket *bbolt.Bucket) error {
 		key := toString(k)

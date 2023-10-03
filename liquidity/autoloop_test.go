@@ -984,7 +984,7 @@ func TestAutoloopBothTypes(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.SwapState(loopdb.StateSuccess),
+							State: loopdb.StateSuccess,
 						},
 					},
 				},
@@ -1168,7 +1168,7 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 				Events: []*loopdb.LoopEvent{
 					{
 						SwapStateData: loopdb.SwapStateData{
-							State: loopdb.SwapState(loopdb.StateSuccess),
+							State: loopdb.StateSuccess,
 						},
 					},
 				},

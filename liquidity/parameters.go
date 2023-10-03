@@ -3,13 +3,13 @@ package liquidity
 import (
 	"errors"
 	"fmt"
-	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -527,7 +527,6 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 
 	default:
 		addrType = clientrpc.AddressType_ADDRESS_TYPE_UNKNOWN
-
 	}
 
 	rpcCfg := &clientrpc.LiquidityParameters{

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -17,14 +18,13 @@ import (
 	"github.com/lightninglabs/loop/loopd"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
-	"github.com/lightninglabs/protobuf-hex-display/json"
-	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
-	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightningnetwork/lnd/lncfg"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/macaroon.v2"
 )
 
@@ -111,19 +111,13 @@ func printJSON(resp interface{}) {
 }
 
 func printRespJSON(resp proto.Message) {
-	jsonMarshaler := &jsonpb.Marshaler{
-		OrigName:     true,
-		EmitDefaults: true,
-		Indent:       "    ",
-	}
-
-	jsonStr, err := jsonMarshaler.MarshalToString(resp)
+	jsonBytes, err := lnrpc.ProtoJSONMarshalOpts.Marshal(resp)
 	if err != nil {
 		fmt.Println("unable to decode response: ", err)
 		return
 	}
 
-	fmt.Println(jsonStr)
+	fmt.Println(string(jsonBytes))
 }
 
 func fatal(err error) {
