@@ -402,6 +402,11 @@ func (c *autoloopTestCtx) easyautoloop(step *easyAutoloopStep, noop bool) {
 			c.t, expected.request.OutgoingChanSet,
 			actual.OutgoingChanSet,
 		)
+		if expected.request.DestAddr != nil {
+			require.Equal(
+				c.t, expected.request.DestAddr, actual.DestAddr,
+			)
+		}
 	}
 
 	// Since we're checking if any false-positive swaps were dispatched we
