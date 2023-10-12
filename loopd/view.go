@@ -20,16 +20,21 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 	}
 	defer lnd.Close()
 
-	swapClient, cleanup, err := getClient(config, &lnd.LndServices)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
 	chainParams, err := network.ChainParams()
 	if err != nil {
 		return err
 	}
+
+	swapDb, _, err := openDatabase(config, chainParams)
+	if err != nil {
+		return err
+	}
+
+	swapClient, cleanup, err := getClient(config, swapDb, &lnd.LndServices)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	if err := viewOut(swapClient, chainParams); err != nil {
 		return err
