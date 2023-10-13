@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
@@ -15,8 +16,8 @@ import (
 )
 
 // getClient returns an instance of the swap client.
-func getClient(cfg *Config, lnd *lndclient.LndServices) (*loop.Client,
-	func(), error) {
+func getClient(cfg *Config, swapDb loopdb.SwapStore,
+	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
 
 	clientConfig := &loop.ClientConfig{
 		ServerAddress:       cfg.Server.Host,
@@ -31,26 +32,40 @@ func getClient(cfg *Config, lnd *lndclient.LndServices) (*loop.Client,
 		MaxPaymentRetries:   cfg.MaxPaymentRetries,
 	}
 
-	// Now that we know where the database will live, we'll go ahead and
-	// open up the default implementation of it.
+	swapClient, cleanUp, err := loop.NewClient(
+		cfg.DataDir, swapDb, clientConfig,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return swapClient, cleanUp, nil
+}
+
+func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
+	*loopdb.BaseDB, error) { //nolint:unparam
+
 	var (
-		db  loopdb.SwapStore
-		err error
+		db     loopdb.SwapStore
+		err    error
+		baseDb loopdb.BaseDB
 	)
 	switch cfg.DatabaseBackend {
 	case DatabaseBackendSqlite:
 		log.Infof("Opening sqlite3 database at: %v",
 			cfg.Sqlite.DatabaseFileName)
 		db, err = loopdb.NewSqliteStore(
-			cfg.Sqlite, clientConfig.Lnd.ChainParams,
+			cfg.Sqlite, chainParams,
 		)
+		baseDb = *db.(*loopdb.SqliteSwapStore).BaseDB
 
 	case DatabaseBackendPostgres:
 		log.Infof("Opening postgres database at: %v",
 			cfg.Postgres.DSN(true))
 		db, err = loopdb.NewPostgresStore(
-			cfg.Postgres, clientConfig.Lnd.ChainParams,
+			cfg.Postgres, chainParams,
 		)
+		baseDb = *db.(*loopdb.PostgresStore).BaseDB
 
 	default:
 		return nil, nil, fmt.Errorf("unknown database backend: %s",
@@ -60,14 +75,7 @@ func getClient(cfg *Config, lnd *lndclient.LndServices) (*loop.Client,
 		return nil, nil, fmt.Errorf("unable to open database: %v", err)
 	}
 
-	swapClient, cleanUp, err := loop.NewClient(
-		cfg.DataDir, db, clientConfig,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return swapClient, cleanUp, nil
+	return db, &baseDb, nil
 }
 
 func getLiquidityManager(client *loop.Client) *liquidity.Manager {

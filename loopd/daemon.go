@@ -392,8 +392,22 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		log.Infof("Successfully migrated boltdb")
 	}
 
+	// Now that we know where the database will live, we'll go ahead and
+	// open up the default implementation of it.
+	chainParams, err := lndclient.Network(d.cfg.Network).ChainParams()
+	if err != nil {
+		return err
+	}
+
+	swapDb, _, err := openDatabase(d.cfg, chainParams)
+	if err != nil {
+		return err
+	}
+
 	// Create an instance of the loop client library.
-	swapclient, clientCleanup, err := getClient(d.cfg, &d.lnd.LndServices)
+	swapClient, clientCleanup, err := getClient(
+		d.cfg, swapDb, &d.lnd.LndServices,
+	)
 	if err != nil {
 		return err
 	}
@@ -456,8 +470,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	d.swapClientServer = swapClientServer{
 		config:       d.cfg,
 		network:      lndclient.Network(d.cfg.Network),
-		impl:         swapclient,
-		liquidityMgr: getLiquidityManager(swapclient),
+		impl:         swapClient,
+		liquidityMgr: getLiquidityManager(swapClient),
 		lnd:          &d.lnd.LndServices,
 		swaps:        make(map[lntypes.Hash]loop.SwapInfo),
 		subscribers:  make(map[int]chan<- interface{}),

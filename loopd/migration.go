@@ -2,7 +2,6 @@ package loopd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,34 +25,14 @@ func migrateBoltdb(ctx context.Context, cfg *Config) error {
 	}
 	defer boltdb.Close()
 
-	var db loopdb.SwapStore
-	switch cfg.DatabaseBackend {
-	case DatabaseBackendSqlite:
-		log.Infof("Opening sqlite3 database at: %v",
-			cfg.Sqlite.DatabaseFileName)
-		db, err = loopdb.NewSqliteStore(
-			cfg.Sqlite, chainParams,
-		)
-
-	case DatabaseBackendPostgres:
-		log.Infof("Opening postgres database at: %v",
-			cfg.Postgres.DSN(true))
-		db, err = loopdb.NewPostgresStore(
-			cfg.Postgres, chainParams,
-		)
-
-	default:
-		return fmt.Errorf("unknown database backend: %s",
-			cfg.DatabaseBackend)
-	}
+	swapDb, _, err := openDatabase(cfg, chainParams)
 	if err != nil {
-		return fmt.Errorf("unable to open database: %v", err)
+		return err
 	}
-
-	defer db.Close()
+	defer swapDb.Close()
 
 	// Create a new migrator manager.
-	migrator := loopdb.NewMigratorManager(boltdb, db)
+	migrator := loopdb.NewMigratorManager(boltdb, swapDb)
 
 	// Run the migration.
 	err = migrator.RunMigrations(ctx)
