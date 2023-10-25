@@ -23,6 +23,8 @@ type Manager struct {
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
 
+	runCtx context.Context
+
 	sync.Mutex
 }
 
@@ -41,6 +43,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	m.runCtx = runCtx
 	currentHeight := height
 
 	err := m.RecoverReservations(runCtx)
@@ -58,7 +61,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 		chan *reservationrpc.ServerReservationNotification,
 	)
 
-	err = m.RegisterReservationNotifications(runCtx, reservationResChan)
+	err = m.RegisterReservationNotifications(reservationResChan)
 	if err != nil {
 		return err
 	}
@@ -155,15 +158,16 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 // RegisterReservationNotifications registers a new reservation notification
 // stream.
 func (m *Manager) RegisterReservationNotifications(
-	ctx context.Context, reservationChan chan *reservationrpc.
-		ServerReservationNotification) error {
+	reservationChan chan *reservationrpc.ServerReservationNotification) error {
 
 	// In order to create a valid lsat we first are going to call
 	// the FetchL402 method.
-	err := m.cfg.FetchL402(ctx)
+	err := m.cfg.FetchL402(m.runCtx)
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := context.WithCancel(m.runCtx)
 
 	// We'll now subscribe to the reservation notifications.
 	reservationStream, err := m.cfg.ReservationClient.
@@ -171,8 +175,11 @@ func (m *Manager) RegisterReservationNotifications(
 			ctx, &reservationrpc.ReservationNotificationRequest{},
 		)
 	if err != nil {
+		cancel()
 		return err
 	}
+
+	log.Debugf("Successfully subscribed to reservation notifications")
 
 	// We'll now start a goroutine that will forward all the reservation
 	// notifications to the reservationChan.
@@ -188,36 +195,30 @@ func (m *Manager) RegisterReservationNotifications(
 			log.Errorf("Error receiving "+
 				"reservation: %v", err)
 
-			reconnectTimer := time.NewTimer(time.Second * 10)
+			cancel()
 
 			// If we encounter an error, we'll
 			// try to reconnect.
 			for {
 				select {
-				case <-ctx.Done():
+				case <-m.runCtx.Done():
 					return
-				case <-reconnectTimer.C:
-					err = m.RegisterReservationNotifications(
-						ctx, reservationChan,
-					)
-					if err == nil {
-						log.Debugf(
-							"Successfully " +
-								"reconnected",
-						)
-						reconnectTimer.Stop()
-						// If we were able to
-						// reconnect, we'll
-						// return.
-						return
-					}
-					log.Errorf("Error "+
-						"reconnecting: %v",
-						err)
 
-					reconnectTimer.Reset(
-						time.Second * 10,
+				case <-time.After(time.Second * 10):
+					log.Debugf("Reconnecting to " +
+						"reservation notifications")
+					err = m.RegisterReservationNotifications(
+						reservationChan,
 					)
+					if err != nil {
+						log.Errorf("Error "+
+							"reconnecting: %v", err)
+						continue
+					}
+
+					// If we were able to reconnect, we'll
+					// return.
+					return
 				}
 			}
 		}
