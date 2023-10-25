@@ -604,7 +604,6 @@
         },
         "tx_id": {
           "type": "string",
-          "format": "byte",
           "description": "The transaction id of the reservation."
         },
         "vout": {
@@ -757,6 +756,21 @@
           "type": "string",
           "format": "int64",
           "title": "Maximum swap amount (sat)"
+        }
+      }
+    },
+    "looprpcInstantOutResponse": {
+      "type": "object",
+      "properties": {
+        "instant_out_hash": {
+          "type": "string",
+          "format": "byte"
+        },
+        "sweep_tx_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
         }
       }
     },
@@ -1110,6 +1124,14 @@
         "account_addr_type": {
           "$ref": "#/definitions/looprpcAddressType",
           "description": "The address type of the account specified in the account field."
+        },
+        "reservation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The reservations to use for the swap. If this field is set, loop will try\nto use the instant out flow using the given reservations. If the\nreservations are not sufficient, the swap will fail. The swap amount must\nbe equal to the sum of the amounts of the reservations."
         }
       }
     },
