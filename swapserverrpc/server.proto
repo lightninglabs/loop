@@ -598,6 +598,23 @@ message MuSig2SignSweepReq {
 
     // The psbt of the sweep txn.
     bytes sweep_tx_psbt = 6;
+
+    // The prevout information of the sweep txn.
+    repeated PrevoutInfo prevout_info = 7;
+}
+
+message PrevoutInfo {
+    // The value of the txout.
+    uint64 value = 1;
+
+    // The pk_script of the txout.
+    bytes pk_script = 2;
+
+    // The txid of the txout.
+    bytes txid_bytes = 3;
+
+    // The index of the txout.
+    uint32 output_index = 4;
 }
 
 message MuSig2SignSweepRes {

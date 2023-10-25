@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service InstantSwapServer {
+    rpc RequestInstantLoopOut (InstantLoopOutRequest)
+        returns (InstantLoopOutResponse);
+    rpc PollPaymentAccepted (PollPaymentAcceptedRequest)
+        returns (PollPaymentAcceptedResponse);
+    rpc InitHtlcSig (InitHtlcSigRequest) returns (InitHtlcSigResponse);
+    rpc PushHtlcSig (PushHtlcSigRequest) returns (PushHtlcSigResponse);
+    rpc PushPreimage (PushPreimageRequest) returns (PushPreimageResponse);
+}
+
+message InstantLoopOutRequest {
+    uint64 amt = 1;
+
+    // Htlc related fields:
+    // The key for the htlc preimage spending path.
+    bytes receiver_key = 2;
+
+    // T hash of the preimage that will be used to settle the htlc.
+    bytes swap_hash = 3;
+    // The requested absolute block height of the on-chain htlc. This is
+    // subjected to min and max constraints as reported in the LoopOutTerms
+    // response.
+    int32 expiry = 4;
+
+    // The fee rate in sat/kw that should be used for the htlc.
+    uint64 htlc_fee_rate = 5;
+
+    // The reservations used as the inputs.
+    repeated bytes reservation_ids = 6;
+
+    InstantOutProtocolVersion protocol_version = 7;
+}
+
+message InstantLoopOutResponse {
+    string swap_invoice = 1;
+
+    // the key for the htlc expiry path.
+    bytes sender_key = 2;
+};
+
+message PollPaymentAcceptedRequest {
+    bytes swap_hash = 1;
+}
+
+message PollPaymentAcceptedResponse {
+    bool accepted = 1;
+}
+
+message InitHtlcSigRequest {
+    bytes swap_hash = 1;
+    repeated bytes htlc_client_nonces = 2;
+}
+
+message InitHtlcSigResponse {
+    repeated bytes htlc_server_nonces = 2;
+}
+
+message PushHtlcSigRequest {
+    bytes swap_hash = 1;
+    repeated bytes client_sigs = 2;
+}
+
+message PushHtlcSigResponse {
+    repeated bytes server_sigs = 1;
+}
+
+message PushPreimageRequest {
+    bytes preimage = 1;
+    repeated bytes client_nonces = 2;
+    string client_sweep_addr = 3;
+    uint64 musig_tx_fee_rate = 4;
+}
+
+message PushPreimageResponse {
+    repeated bytes musig2_sweep_sigs = 1;
+    repeated bytes server_nonces = 2;
+}
+
+enum InstantOutProtocolVersion {
+    INSTANTOUT_NONE = 0;
+    INSTANTOUT_FULL_RESERVATION = 1;
+};
