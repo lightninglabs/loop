@@ -57,6 +57,9 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 		db, err = loopdb.NewSqliteStore(
 			cfg.Sqlite, chainParams,
 		)
+		if err != nil {
+			return nil, nil, err
+		}
 		baseDb = *db.(*loopdb.SqliteSwapStore).BaseDB
 
 	case DatabaseBackendPostgres:
@@ -65,6 +68,9 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 		db, err = loopdb.NewPostgresStore(
 			cfg.Postgres, chainParams,
 		)
+		if err != nil {
+			return nil, nil, err
+		}
 		baseDb = *db.(*loopdb.PostgresStore).BaseDB
 
 	default:
