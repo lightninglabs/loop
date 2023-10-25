@@ -2,11 +2,11 @@
 stateDiagram-v2
 [*] --> InitFSM: OnRequestStuff
 InitFSM
-InitFSM --> StuffFailed: OnError
 InitFSM --> StuffSentOut: OnStuffSentOut
+InitFSM --> StuffFailed: OnError
 StuffFailed
 StuffSentOut
-StuffSentOut --> StuffFailed: OnError
 StuffSentOut --> StuffSuccess: OnStuffSuccess
+StuffSentOut --> StuffFailed: OnError
 StuffSuccess
 ```
