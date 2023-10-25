@@ -86,6 +86,9 @@ type SwapClientClient interface {
 	// loop: `listreservations`
 	//ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
+	// loop: `instantout`
+	//InstantOut initiates an instant out swap with the given parameters.
+	InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error)
 }
 
 type swapClientClient struct {
@@ -272,6 +275,15 @@ func (c *swapClientClient) ListReservations(ctx context.Context, in *ListReserva
 	return out, nil
 }
 
+func (c *swapClientClient) InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error) {
+	out := new(InstantOutResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/InstantOut", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -344,6 +356,9 @@ type SwapClientServer interface {
 	// loop: `listreservations`
 	//ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
+	// loop: `instantout`
+	//InstantOut initiates an instant out swap with the given parameters.
+	InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -401,6 +416,9 @@ func (UnimplementedSwapClientServer) SuggestSwaps(context.Context, *SuggestSwaps
 }
 func (UnimplementedSwapClientServer) ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReservations not implemented")
+}
+func (UnimplementedSwapClientServer) InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstantOut not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -724,6 +742,24 @@ func _SwapClient_ListReservations_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_InstantOut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstantOutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).InstantOut(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/InstantOut",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).InstantOut(ctx, req.(*InstantOutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -794,6 +830,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReservations",
 			Handler:    _SwapClient_ListReservations_Handler,
+		},
+		{
+			MethodName: "InstantOut",
+			Handler:    _SwapClient_InstantOut_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

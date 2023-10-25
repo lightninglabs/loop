@@ -604,7 +604,6 @@
         },
         "tx_id": {
           "type": "string",
-          "format": "byte",
           "description": "The transaction id of the reservation."
         },
         "vout": {
@@ -757,6 +756,24 @@
           "type": "string",
           "format": "int64",
           "title": "Maximum swap amount (sat)"
+        }
+      }
+    },
+    "looprpcInstantOutResponse": {
+      "type": "object",
+      "properties": {
+        "instant_out_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The hash of the swap preimage."
+        },
+        "sweep_tx_id": {
+          "type": "string",
+          "description": "The transaction id of the sweep transaction."
+        },
+        "state": {
+          "type": "string",
+          "description": "The state of the swap."
         }
       }
     },
@@ -1114,6 +1131,14 @@
         "is_external_addr": {
           "type": "boolean",
           "description": "A flag indicating whether the defined destination address does not belong to\nthe wallet. This is used to flag whether this loop out swap could have its\nassociated sweep batched."
+        },
+        "reservation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The reservations to use for the swap. If this field is set, loop will try\nto use the instant out flow using the given reservations. If the\nreservations are not sufficient, the swap will fail. The swap amount must\nbe equal to the sum of the amounts of the reservations."
         }
       }
     },

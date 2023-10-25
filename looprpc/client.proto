@@ -115,6 +115,11 @@ service SwapClient {
     */
     rpc ListReservations (ListReservationsRequest)
         returns (ListReservationsResponse);
+
+    /* loop: `instantout`
+    InstantOut initiates an instant out swap with the given parameters.
+    */
+    rpc InstantOut (InstantOutRequest) returns (InstantOutResponse);
 }
 
 message LoopOutRequest {
@@ -242,6 +247,14 @@ message LoopOutRequest {
     associated sweep batched.
     */
     bool is_external_addr = 17;
+
+    /*
+    The reservations to use for the swap. If this field is set, loop will try
+    to use the instant out flow using the given reservations. If the
+    reservations are not sufficient, the swap will fail. The swap amount must
+    be equal to the sum of the amounts of the reservations.
+    */
+    repeated bytes reservation_ids = 18;
 }
 
 /*
@@ -1284,7 +1297,7 @@ message ClientReservation {
     /*
         The transaction id of the reservation.
     */
-    bytes tx_id = 4;
+    string tx_id = 4;
     /*
         The vout of the reservation.
     */
@@ -1293,4 +1306,33 @@ message ClientReservation {
         The expiry of the reservation.
     */
     uint32 expiry = 6;
+}
+
+message InstantOutRequest {
+    /*
+    The reservations to use for the swap.
+    */
+    repeated bytes reservation_ids = 1;
+
+    /*
+    A restriction on the channel set that may be used to loop out. The actual
+    channel(s) that will be used are selected based on the lowest routing fee
+    for the swap payment to the server.
+    */
+    repeated uint64 outgoing_chan_set = 11;
+}
+
+message InstantOutResponse {
+    /*
+    The hash of the swap preimage.
+    */
+    bytes instant_out_hash = 1;
+    /*
+    The transaction id of the sweep transaction.
+    */
+    string sweep_tx_id = 2;
+    /*
+    The state of the swap.
+    */
+    string state = 3;
 }
