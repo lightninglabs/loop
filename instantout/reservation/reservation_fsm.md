@@ -7,9 +7,9 @@ Confirmed --> TimedOut: OnTimedOut
 Confirmed --> Confirmed: OnRecover
 Failed
 Init
-Init --> Failed: OnError
 Init --> WaitForConfirmation: OnBroadcast
 Init --> Failed: OnRecover
+Init --> Failed: OnError
 SpendBroadcasted
 SpendBroadcasted --> SpendConfirmed: OnSpendConfirmed
 SpendConfirmed
