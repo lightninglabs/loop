@@ -16,6 +16,7 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweepbatcher"
@@ -24,6 +25,7 @@ import (
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -66,10 +68,6 @@ type Daemon struct {
 	// registered to an existing grpc.Server to run as a subserver in the
 	// same process.
 	swapClientServer
-
-	// reservationManager is the manager that handles all reservation state
-	// machines.
-	reservationManager *reservation.Manager
 
 	// ErrChan is an error channel that users of the Daemon struct must use
 	// to detect runtime errors and also whether a shutdown is fully
@@ -429,6 +427,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient.Conn,
 	)
 
+	// Create an instantout server client.
+	instantOutClient := loop_swaprpc.NewInstantSwapServerClient(
+		swapClient.Conn,
+	)
+
 	// Both the client RPC server and the swap server client should stop
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
@@ -486,7 +489,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
-	// Create the reservation rpc server.
+	var (
+		reservationManager *reservation.Manager
+		instantOutManager  *instantout.Manager
+	)
+	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
 		reservationStore := reservation.NewSQLStore(baseDb)
 		reservationConfig := &reservation.Config{
@@ -497,8 +504,29 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			FetchL402:         swapClient.Server.FetchL402,
 		}
 
-		d.reservationManager = reservation.NewManager(
+		reservationManager = reservation.NewManager(
 			reservationConfig,
+		)
+
+		// Create the instantout services.
+		instantOutStore := instantout.NewSQLStore(
+			baseDb, clock.NewDefaultClock(), reservationStore,
+			d.lnd.ChainParams,
+		)
+		instantOutConfig := &instantout.Config{
+			Store:              instantOutStore,
+			LndClient:          d.lnd.Client,
+			RouterClient:       d.lnd.Router,
+			ChainNotifier:      d.lnd.ChainNotifier,
+			Signer:             d.lnd.Signer,
+			Wallet:             d.lnd.WalletKit,
+			ReservationManager: reservationManager,
+			InstantOutClient:   instantOutClient,
+			Network:            d.lnd.ChainParams,
+		}
+
+		instantOutManager = instantout.NewInstantOutManager(
+			instantOutConfig,
 		)
 	}
 
@@ -513,7 +541,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		subscribers:        make(map[int]chan<- interface{}),
 		statusChan:         make(chan loop.SwapInfo),
 		mainCtx:            d.mainCtx,
-		reservationManager: d.reservationManager,
+		reservationManager: reservationManager,
+		instantOutManager:  instantOutManager,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -604,6 +633,43 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				d.internalErrChan <- err
 			}
 		}()
+	}
+
+	// Start the instant out manager.
+	if d.instantOutManager != nil {
+		d.wg.Add(1)
+		initChan := make(chan struct{})
+		go func() {
+			defer d.wg.Done()
+
+			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting instantout manager")
+			defer log.Info("Instantout manager stopped")
+
+			err = d.instantOutManager.Run(
+				d.mainCtx, initChan, int32(getInfo.BlockHeight),
+			)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		}()
+
+		// Wait for the instantout server to be ready before starting the
+		// grpc server.
+		timeOutCtx, cancel := context.WithTimeout(d.mainCtx, 10*time.Second)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("reservation server not ready: %v",
+				timeOutCtx.Err())
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Last, start our internal error handler. This will return exactly one

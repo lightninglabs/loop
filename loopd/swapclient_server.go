@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
@@ -81,6 +82,7 @@ type swapClientServer struct {
 	liquidityMgr       *liquidity.Manager
 	lnd                *lndclient.LndServices
 	reservationManager *reservation.Manager
+	instantOutManager  *instantout.Manager
 	swaps              map[lntypes.Hash]loop.SwapInfo
 	subscribers        map[int]chan<- interface{}
 	statusChan         chan loop.SwapInfo
@@ -1169,6 +1171,44 @@ func (s *swapClientServer) ListReservations(ctx context.Context,
 	}, nil
 }
 
+// InstantOut initiates an instant out swap.
+func (s *swapClientServer) InstantOut(ctx context.Context,
+	req *clientrpc.InstantOutRequest) (*clientrpc.InstantOutResponse,
+	error) {
+
+	reservationIds := make([]reservation.ID, len(req.ReservationIds))
+	for i, id := range req.ReservationIds {
+		if len(id) != reservation.IdLength {
+			return nil, fmt.Errorf("invalid reservation id: "+
+				"expected %v bytes, got %d",
+				reservation.IdLength, len(id))
+		}
+
+		var resId reservation.ID
+		copy(resId[:], id)
+
+		reservationIds[i] = resId
+	}
+
+	instantOutFsm, err := s.instantOutManager.NewInstantOut(
+		ctx, reservationIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &clientrpc.InstantOutResponse{
+		InstantOutHash: instantOutFsm.InstantOut.SwapHash[:],
+		State:          string(instantOutFsm.InstantOut.State),
+	}
+
+	if instantOutFsm.InstantOut.SweepTxHash != nil {
+		res.SweepTxId = instantOutFsm.InstantOut.SweepTxHash.String()
+	}
+
+	return res, nil
+}
+
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
 	switch reason {
 	case liquidity.ReasonNone:
@@ -1448,11 +1488,11 @@ func toClientReservation(
 	res *reservation.Reservation) *clientrpc.ClientReservation {
 
 	var (
-		txid []byte
+		txid string
 		vout uint32
 	)
 	if res.Outpoint != nil {
-		txid = res.Outpoint.Hash[:]
+		txid = res.Outpoint.Hash.String()
 		vout = res.Outpoint.Index
 	}
 
