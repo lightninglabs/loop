@@ -26,10 +26,10 @@ func NewAddressServer(addressClient staticaddressrpc.StaticAddressServerClient,
 
 // NewAddress is the rpc endpoint for loop clients to request a new static
 // address.
-func (r *AddressServer) NewAddress(ctx context.Context,
+func (s *AddressServer) NewAddress(ctx context.Context,
 	_ *looprpc.NewAddressRequest) (*looprpc.NewAddressResponse, error) {
 
-	address, err := r.manager.NewAddress(ctx)
+	address, err := s.manager.NewAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,4 +39,32 @@ func (r *AddressServer) NewAddress(ctx context.Context,
 	return &looprpc.NewAddressResponse{
 		Address: address.String(),
 	}, nil
+}
+
+// ListUnspent returns a list of utxos behind the static address.
+func (s *AddressServer) ListUnspent(ctx context.Context,
+	req *looprpc.ListUnspentRequest) (*looprpc.ListUnspentResponse, error) {
+
+	// List all unspent utxos the wallet sees, regardless of the number of
+	// confirmations.
+	staticAddress, utxos, err := s.manager.ListUnspentRaw(
+		ctx, req.MinConfs, req.MaxConfs,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the list response.
+	var respUtxos []*looprpc.Utxo
+	for _, u := range utxos {
+		utxo := &looprpc.Utxo{
+			StaticAddress: staticAddress.String(),
+			AmountSat:     int64(u.Value),
+			Confirmations: u.Confirmations,
+			Outpoint:      u.OutPoint.String(),
+		}
+		respUtxos = append(respUtxos, utxo)
+	}
+
+	return &looprpc.ListUnspentResponse{Utxos: respUtxos}, nil
 }
