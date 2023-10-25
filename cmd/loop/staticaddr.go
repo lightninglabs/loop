@@ -15,6 +15,7 @@ var staticAddressCommands = cli.Command{
 	Category:  "StaticAddress",
 	Subcommands: []cli.Command{
 		newStaticAddressCommand,
+		listUnspentCommand,
 	},
 }
 
@@ -53,6 +54,53 @@ func newStaticAddress(ctx *cli.Context) error {
 
 	fmt.Printf("Received a new static loop-in address from the server: "+
 		"%s\n", resp.Address)
+
+	return nil
+}
+
+var listUnspentCommand = cli.Command{
+	Name:      "listunspent",
+	ShortName: "l",
+	Usage:     "List unspent static address outputs.",
+	Description: `
+	List all unspent static address outputs.
+	`,
+	Flags: []cli.Flag{
+		cli.IntFlag{
+			Name: "min_confs",
+			Usage: "The minimum amount of confirmations an " +
+				"output should have to be listed.",
+		},
+		cli.IntFlag{
+			Name: "max_confs",
+			Usage: "The maximum number of confirmations an " +
+				"output could have to be listed.",
+		},
+	},
+	Action: listUnspent,
+}
+
+func listUnspent(ctx *cli.Context) error {
+	ctxb := context.Background()
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "listunspent")
+	}
+
+	client, cleanup, err := getAddressClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.ListUnspent(ctxb, &looprpc.ListUnspentRequest{
+		MinConfs: int32(ctx.Int("min_confs")),
+		MaxConfs: int32(ctx.Int("max_confs")),
+	})
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
 
 	return nil
 }
