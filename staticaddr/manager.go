@@ -1,7 +1,9 @@
 package staticaddr
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -15,6 +17,7 @@ import (
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -159,6 +162,19 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return nil, err
 	}
 
+	// Import the static address tapscript into our lnd wallet, so we can
+	// track unspent outputs of it.
+	tapScript := input.TapscriptFullTree(
+		staticAddress.InternalPubKey, *staticAddress.TimeoutLeaf,
+	)
+	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Infof("imported static address taproot script to lnd wallet: %v",
+		addr)
+
 	return m.getTaprootAddress(
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
 	)
@@ -185,4 +201,51 @@ func (m *Manager) getTaprootAddress(clientPubkey,
 func (m *Manager) WaitInitComplete() {
 	defer log.Debugf("Address manager initiation complete.")
 	<-m.initChan
+}
+
+// ListUnspentRaw returns a list of utxos at the static address.
+func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
+	maxConfs int32) (*btcutil.AddressTaproot, []*lnwallet.Utxo, error) {
+
+	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	switch {
+	case err != nil:
+		return nil, nil, err
+
+	case len(addresses) == 0:
+		return nil, nil, fmt.Errorf("no address found")
+
+	case len(addresses) > 1:
+		return nil, nil, fmt.Errorf("more than one address found")
+	}
+
+	staticAddress := addresses[0]
+
+	// List all unspent utxos the wallet sees, regardless of the number of
+	// confirmations.
+	utxos, err := m.cfg.WalletKit.ListUnspent(
+		ctx, minConfs, maxConfs,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Filter the list of lnd's unspent utxos for the pkScript of our static
+	// address.
+	var filteredUtxos []*lnwallet.Utxo
+	for _, utxo := range utxos {
+		if bytes.Equal(utxo.PkScript, staticAddress.PkScript) {
+			filteredUtxos = append(filteredUtxos, utxo)
+		}
+	}
+
+	taprootAddress, err := m.getTaprootAddress(
+		staticAddress.ClientPubkey, staticAddress.ServerPubkey,
+		int64(staticAddress.Expiry),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return taprootAddress, filteredUtxos, nil
 }
