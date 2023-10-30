@@ -342,6 +342,26 @@ func fixTimeStamp(dateTimeStr string) (time.Time, error) {
 		)
 	}
 
+	// If the year is a leap year and the date is 29th of February, we
+	// need to change it to 28th of February. Otherwise, the time.Parse
+	// function will fail, as a non-leap year cannot have 29th of February.
+	day, month, err := extractDayAndMonth(dateTimeStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("unable to parse timestamp day "+
+			"and month %v: %v", dateTimeStr, err)
+	}
+
+	if !isLeapYear(thisYear) &&
+		month == 2 && day == 29 {
+
+		dateTimeStr = strings.Replace(
+			dateTimeStr,
+			fmt.Sprintf("%d-02-29", thisYear),
+			fmt.Sprintf("%d-02-28", thisYear),
+			1,
+		)
+	}
+
 	parsedTime, err := parseLayouts(defaultLayouts(), dateTimeStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("unable to parse timestamp %v: %v",
@@ -402,4 +422,39 @@ func getTimeStampYear(dateTimeStr string) (int, error) {
 	}
 
 	return year, nil
+}
+
+// extractDayAndMonth extracts the day and month from a date string.
+func extractDayAndMonth(dateStr string) (int, int, error) {
+	// Split the date string into parts using various delimiters.
+	parts := strings.FieldsFunc(dateStr, func(r rune) bool {
+		return r == '-' || r == ' ' || r == 'T' || r == ':' || r == '+' || r == 'Z'
+	})
+
+	if len(parts) < 3 {
+		return 0, 0, fmt.Errorf("Invalid date format: %s", dateStr)
+	}
+
+	// Extract year, month, and day from the parts.
+	_, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	month, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	day, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return day, month, nil
+}
+
+// isLeapYear returns true if the year is a leap year.
+func isLeapYear(year int) bool {
+	return (year%4 == 0 && year%100 != 0) || (year%400 == 0)
 }

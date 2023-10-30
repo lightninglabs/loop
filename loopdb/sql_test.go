@@ -439,6 +439,18 @@ func TestTimeConversions(t *testing.T) {
 				2023, 8, 4, 8, 7, 49, 0, time.UTC,
 			),
 		},
+		{
+			timeString: "2188-02-29 15:34:23.847906176 +0000 UTC",
+			expectedTime: time.Date(
+				2023, 2, 28, 15, 34, 23, 847906176, time.UTC,
+			),
+		},
+		{
+			timeString: "2188-02-29T16:07:49+08:00",
+			expectedTime: time.Date(
+				2023, 2, 28, 8, 7, 49, 0, time.UTC,
+			),
+		},
 	}
 
 	for _, test := range tests {
