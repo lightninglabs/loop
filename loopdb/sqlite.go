@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	sqlite_migrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightningnetwork/lnd/zpay32"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // Register relevant drivers.
@@ -213,7 +214,7 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// Manually fetch all the loop out swaps.
 	rows, err := b.DB.QueryContext(
-		ctx, "SELECT swap_hash, publication_deadline FROM loopout_swaps",
+		ctx, "SELECT swap_hash, swap_invoice, publication_deadline FROM loopout_swaps",
 	)
 	if err != nil {
 		return err
@@ -226,6 +227,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// the sqlite driver will fail on faulty timestamps.
 	type LoopOutRow struct {
 		Hash                []byte `json:"swap_hash"`
+		SwapInvoice         string `json:"swap_invoice"`
 		PublicationDeadline string `json:"publication_deadline"`
 	}
 
@@ -234,7 +236,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	for rows.Next() {
 		var swap LoopOutRow
 		err := rows.Scan(
-			&swap.Hash, &swap.PublicationDeadline,
+			&swap.Hash, &swap.SwapInvoice, &swap.PublicationDeadline,
 		)
 		if err != nil {
 			return err
@@ -264,14 +266,15 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 
 		// Skip if the year is not in the future.
 		thisYear := time.Now().Year()
-		if year <= thisYear {
+		if year > 2020 && year <= thisYear {
 			continue
 		}
 
-		fixedTime, err := fixTimeStamp(swap.PublicationDeadline)
+		payReq, err := zpay32.Decode(swap.SwapInvoice, b.network)
 		if err != nil {
 			return err
 		}
+		fixedTime := payReq.Timestamp.Add(time.Minute * 30)
 
 		// Update the faulty time to a valid time.
 		_, err = tx.ExecContext(
