@@ -258,15 +258,14 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	}()
 
 	for _, swap := range loopOutSwaps {
-		// Get the year of the timestamp.
-		year, err := getTimeStampYear(swap.PublicationDeadline)
+		parsedTime, err := parseLayouts(defaultLayouts(), swap.PublicationDeadline)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to parse timestamp %v: %v",
+				swap.PublicationDeadline, err)
 		}
 
-		// Skip if the year is not in the future.
-		thisYear := time.Now().Year()
-		if year > 2020 && year <= thisYear {
+		// Skip if hasnt nanoseconds.
+		if parsedTime.Nanosecond() == 0 {
 			continue
 		}
 
