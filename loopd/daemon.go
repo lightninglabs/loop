@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/staticaddr"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -67,6 +68,12 @@ type Daemon struct {
 	// registered to an existing grpc.Server to run as a subserver in the
 	// same process.
 	swapClientServer
+
+	// AddressServer is the embedded RPC server that satisfies the
+	// static address client RPC interface. We embed this struct so the
+	// Daemon itself can be registered to an existing grpc.Server to run as
+	// a subserver in the same process.
+	*staticaddr.AddressServer
 
 	// ErrChan is an error channel that users of the Daemon struct must use
 	// to detect runtime errors and also whether a shutdown is fully
@@ -233,6 +240,7 @@ func (d *Daemon) startWebServers() error {
 		grpc.StreamInterceptor(streamInterceptor),
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
+	loop_looprpc.RegisterStaticAddressClientServer(d.grpcServer, d)
 
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
@@ -586,6 +594,26 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager:  instantOutManager,
 	}
 
+	// Create a static address server client.
+	staticAddressClient := loop_swaprpc.NewStaticAddressServerClient(
+		swapClient.Conn,
+	)
+
+	store := staticaddr.NewSqlStore(baseDb)
+
+	cfg := &staticaddr.ManagerConfig{
+		AddressClient: staticAddressClient,
+		SwapClient:    swapClient,
+		Store:         store,
+		WalletKit:     d.lnd.WalletKit,
+		ChainParams:   d.lnd.ChainParams,
+	}
+	staticAddressManager := staticaddr.NewAddressManager(cfg)
+
+	d.AddressServer = staticaddr.NewAddressServer(
+		staticAddressClient, staticAddressManager,
+	)
+
 	// Retrieve all currently existing swaps from the database.
 	swapsList, err := d.impl.FetchSwaps(d.mainCtx)
 	if err != nil {
@@ -727,6 +755,22 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			cancel()
 		}
 	}
+
+	// Start the static address manager.
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+
+		log.Info("Starting static address manager...")
+		err = staticAddressManager.Run(d.mainCtx)
+		if err != nil && !errors.Is(context.Canceled, err) {
+			d.internalErrChan <- err
+		}
+
+		log.Info("Static address manager stopped")
+	}()
+
+	staticAddressManager.WaitInitComplete()
 
 	// Last, start our internal error handler. This will return exactly one
 	// error or nil on the main error channel to inform the caller that
