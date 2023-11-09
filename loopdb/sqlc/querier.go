@@ -9,8 +9,10 @@ import (
 )
 
 type Querier interface {
+	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	ConfirmBatch(ctx context.Context, id int32) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
+	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatchSweepsRow, error)
 	GetInstantOutSwap(ctx context.Context, swapHash []byte) (GetInstantOutSwapRow, error)
@@ -23,6 +25,7 @@ type Querier interface {
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)
 	GetReservations(ctx context.Context) ([]Reservation, error)
+	GetStaticAddress(ctx context.Context, pkscript []byte) (StaticAddress, error)
 	GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUpdate, error)
 	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
