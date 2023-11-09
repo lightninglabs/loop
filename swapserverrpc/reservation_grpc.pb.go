@@ -18,7 +18,6 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ReservationServiceClient interface {
-	// Deprecated: Do not use.
 	// ReservationNotificationStream is a server side stream that sends
 	// notifications if the server wants to open a reservation to the client.
 	ReservationNotificationStream(ctx context.Context, in *ReservationNotificationRequest, opts ...grpc.CallOption) (ReservationService_ReservationNotificationStreamClient, error)
@@ -34,7 +33,6 @@ func NewReservationServiceClient(cc grpc.ClientConnInterface) ReservationService
 	return &reservationServiceClient{cc}
 }
 
-// Deprecated: Do not use.
 func (c *reservationServiceClient) ReservationNotificationStream(ctx context.Context, in *ReservationNotificationRequest, opts ...grpc.CallOption) (ReservationService_ReservationNotificationStreamClient, error) {
 	stream, err := c.cc.NewStream(ctx, &ReservationService_ServiceDesc.Streams[0], "/looprpc.ReservationService/ReservationNotificationStream", opts...)
 	if err != nil {
@@ -80,7 +78,6 @@ func (c *reservationServiceClient) OpenReservation(ctx context.Context, in *Serv
 // All implementations must embed UnimplementedReservationServiceServer
 // for forward compatibility
 type ReservationServiceServer interface {
-	// Deprecated: Do not use.
 	// ReservationNotificationStream is a server side stream that sends
 	// notifications if the server wants to open a reservation to the client.
 	ReservationNotificationStream(*ReservationNotificationRequest, ReservationService_ReservationNotificationStreamServer) error
