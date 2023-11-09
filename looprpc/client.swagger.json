@@ -1126,6 +1126,18 @@
         }
       }
     },
+    "looprpcListUnspentResponse": {
+      "type": "object",
+      "properties": {
+        "utxos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcUtxo"
+          },
+          "description": "A list of utxos behind the static address."
+        }
+      }
+    },
     "looprpcLoopInRequest": {
       "type": "object",
       "properties": {
@@ -1310,6 +1322,11 @@
         "address": {
           "type": "string",
           "description": "The taproot static address."
+        },
+        "expiry": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The CSV expiry of the static address."
         }
       }
     },
@@ -1572,6 +1589,29 @@
             "$ref": "#/definitions/looprpcL402Token"
           },
           "description": "List of all tokens the daemon knows of, including old/expired tokens."
+        }
+      }
+    },
+    "looprpcUtxo": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address of the utxo."
+        },
+        "amount_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The value of the unspent coin in satoshis."
+        },
+        "outpoint": {
+          "type": "string",
+          "description": "The outpoint in the form txid:index."
+        },
+        "confirmations": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of confirmations for the Utxo."
         }
       }
     },

@@ -1445,6 +1445,11 @@ service StaticAddressClient {
     NewAddress requests a new static address for loop-ins from the server.
     */
     rpc NewAddress (NewAddressRequest) returns (NewAddressResponse);
+
+    /*
+    ListUnspent returns a list of utxos behind a static address.
+    */
+    rpc ListUnspent (ListUnspentRequest) returns (ListUnspentResponse);
 }
 
 message NewAddressRequest {
@@ -1459,4 +1464,51 @@ message NewAddressResponse {
     The taproot static address.
     */
     string address = 1;
+
+    /*
+    The CSV expiry of the static address.
+    */
+    uint32 expiry = 2;
+}
+
+message ListUnspentRequest {
+    /*
+    The number of minimum confirmations a utxo must have to be listed.
+     */
+    int32 min_confs = 1;
+
+    /*
+    The number of maximum confirmations a utxo may have to be listed. A zero
+    value indicates that there is no maximum.
+    */
+    int32 max_confs = 2;
+}
+
+message ListUnspentResponse {
+    /*
+    A list of utxos behind the static address.
+    */
+    repeated Utxo utxos = 1;
+}
+
+message Utxo {
+    /*
+    The static address of the utxo.
+    */
+    string static_address = 1;
+
+    /*
+    The value of the unspent coin in satoshis.
+    */
+    int64 amount_sat = 2;
+
+    /*
+    The outpoint in the form txid:index.
+    */
+    string outpoint = 3;
+
+    /*
+    The number of confirmations for the Utxo.
+    */
+    int64 confirmations = 4;
 }
