@@ -151,9 +151,9 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	config := &clientConfig{
 		LndServices: cfg.Lnd,
 		Server:      swapServerClient,
-		Store:       loopDB,
 		Conn:        swapServerClient.conn,
 		L402Store:   l402Store,
+		Store:       loopDB,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},
