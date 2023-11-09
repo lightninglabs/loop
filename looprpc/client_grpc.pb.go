@@ -980,6 +980,8 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 type StaticAddressClientClient interface {
 	// NewAddress requests a new static address for loop-ins from the server.
 	NewAddress(ctx context.Context, in *NewAddressRequest, opts ...grpc.CallOption) (*NewAddressResponse, error)
+	// ListUnspent returns a list of utxos behind a static address.
+	ListUnspent(ctx context.Context, in *ListUnspentRequest, opts ...grpc.CallOption) (*ListUnspentResponse, error)
 }
 
 type staticAddressClientClient struct {
@@ -999,12 +1001,23 @@ func (c *staticAddressClientClient) NewAddress(ctx context.Context, in *NewAddre
 	return out, nil
 }
 
+func (c *staticAddressClientClient) ListUnspent(ctx context.Context, in *ListUnspentRequest, opts ...grpc.CallOption) (*ListUnspentResponse, error) {
+	out := new(ListUnspentResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressClient/ListUnspent", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StaticAddressClientServer is the server API for StaticAddressClient service.
 // All implementations must embed UnimplementedStaticAddressClientServer
 // for forward compatibility
 type StaticAddressClientServer interface {
 	// NewAddress requests a new static address for loop-ins from the server.
 	NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error)
+	// ListUnspent returns a list of utxos behind a static address.
+	ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error)
 	mustEmbedUnimplementedStaticAddressClientServer()
 }
 
@@ -1014,6 +1027,9 @@ type UnimplementedStaticAddressClientServer struct {
 
 func (UnimplementedStaticAddressClientServer) NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewAddress not implemented")
+}
+func (UnimplementedStaticAddressClientServer) ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListUnspent not implemented")
 }
 func (UnimplementedStaticAddressClientServer) mustEmbedUnimplementedStaticAddressClientServer() {}
 
@@ -1046,6 +1062,24 @@ func _StaticAddressClient_NewAddress_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StaticAddressClient_ListUnspent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUnspentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressClientServer).ListUnspent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressClient/ListUnspent",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressClientServer).ListUnspent(ctx, req.(*ListUnspentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StaticAddressClient_ServiceDesc is the grpc.ServiceDesc for StaticAddressClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1056,6 +1090,10 @@ var StaticAddressClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NewAddress",
 			Handler:    _StaticAddressClient_NewAddress_Handler,
+		},
+		{
+			MethodName: "ListUnspent",
+			Handler:    _StaticAddressClient_ListUnspent_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
