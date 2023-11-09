@@ -7,6 +7,9 @@
   "tags": [
     {
       "name": "SwapClient"
+    },
+    {
+      "name": "StaticAddressClient"
     }
   ],
   "consumes": [
@@ -1275,6 +1278,15 @@
         "id": {
           "type": "string",
           "description": "The l402 ID of the token."
+        }
+      }
+    },
+    "looprpcNewAddressResponse": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The taproot static address."
         }
       }
     },
