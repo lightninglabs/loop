@@ -1303,20 +1303,24 @@ message ClientReservation {
     The state the reservation is in.
     */
     string state = 2;
+
     /*
-        The amount that the reservation is for.
+    The amount that the reservation is for.
     */
     uint64 amount = 3;
+
     /*
-        The transaction id of the reservation.
+    The transaction id of the reservation.
     */
     string tx_id = 4;
+
     /*
-        The vout of the reservation.
+    The vout of the reservation.
     */
     uint32 vout = 5;
+
     /*
-        The expiry of the reservation.
+    The expiry of the reservation.
     */
     uint32 expiry = 6;
 }
@@ -1346,10 +1350,12 @@ message InstantOutResponse {
     The hash of the swap preimage.
     */
     bytes instant_out_hash = 1;
+
     /*
     The transaction id of the sweep transaction.
     */
     string sweep_tx_id = 2;
+
     /*
     The state of the swap.
     */
@@ -1379,4 +1385,25 @@ message InstantOutQuoteResponse {
     Sweep.
     */
     int64 sweep_fee_sat = 2;
+}
+
+service StaticAddressClient {
+    /*
+    NewAddress requests a new static address for loop-ins from the server.
+    */
+    rpc NewAddress (NewAddressRequest) returns (NewAddressResponse);
+}
+
+message NewAddressRequest {
+    /*
+    The client's public key for the 2-of-2 MuSig2 taproot static address.
+    */
+    bytes client_key = 1;
+}
+
+message NewAddressResponse {
+    /*
+    The taproot static address.
+    */
+    string address = 1;
 }
