@@ -94,6 +94,17 @@ type ReservationUpdate struct {
 	UpdateTimestamp time.Time
 }
 
+type StaticAddress struct {
+	ID              int32
+	ClientPubkey    []byte
+	ServerPubkey    []byte
+	Expiry          int32
+	ClientKeyFamily int32
+	ClientKeyIndex  int32
+	Pkscript        []byte
+	ProtocolVersion int32
+}
+
 type Swap struct {
 	ID               int32
 	SwapHash         []byte
