@@ -149,6 +149,7 @@ func main() {
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,
 		instantOutCommand, listInstantOutsCommand,
+		staticAddressCommands,
 	}
 
 	err := app.Run(os.Args)
