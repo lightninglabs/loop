@@ -64,6 +64,10 @@ const (
 	// StateFailIncorrectHtlcAmt indicates that the amount of an externally
 	// published loop in htlc didn't match the swap amount.
 	StateFailIncorrectHtlcAmt SwapState = 10
+
+	// StateFailAbandoned indicates that a swap has been abandoned. Its
+	// execution has been canceled. It won't further be processed.
+	StateFailAbandoned SwapState = 11
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -96,6 +100,18 @@ func (s SwapState) Type() SwapStateType {
 	}
 
 	return StateTypeFail
+}
+
+// IsPending returns true if the swap is in a pending state.
+func (s SwapState) IsPending() bool {
+	return s == StateInitiated || s == StateHtlcPublished ||
+		s == StatePreimageRevealed || s == StateFailTemporary ||
+		s == StateInvoiceSettled
+}
+
+// IsFinal returns true if the swap is in a final state.
+func (s SwapState) IsFinal() bool {
+	return !s.IsPending()
 }
 
 // String returns a string representation of the swap's state.
@@ -133,6 +149,9 @@ func (s SwapState) String() string {
 
 	case StateFailIncorrectHtlcAmt:
 		return "IncorrectHtlcAmt"
+
+	case StateFailAbandoned:
+		return "FailAbandoned"
 
 	default:
 		return "Unknown"
