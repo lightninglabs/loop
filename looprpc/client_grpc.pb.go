@@ -40,6 +40,9 @@ type SwapClientClient interface {
 	// loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
+	// loop: `abandonswap`
+	//AbandonSwap allows the client to abandon a swap.
+	AbandonSwap(ctx context.Context, in *AbandonSwapRequest, opts ...grpc.CallOption) (*AbandonSwapResponse, error)
 	// loop: `terms`
 	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*OutTermsResponse, error)
@@ -152,6 +155,15 @@ func (c *swapClientClient) ListSwaps(ctx context.Context, in *ListSwapsRequest, 
 func (c *swapClientClient) SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error) {
 	out := new(SwapStatus)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/SwapInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) AbandonSwap(ctx context.Context, in *AbandonSwapRequest, opts ...grpc.CallOption) (*AbandonSwapResponse, error) {
+	out := new(AbandonSwapResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/AbandonSwap", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +286,9 @@ type SwapClientServer interface {
 	// loop: `swapinfo`
 	//SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
+	// loop: `abandonswap`
+	//AbandonSwap allows the client to abandon a swap.
+	AbandonSwap(context.Context, *AbandonSwapRequest) (*AbandonSwapResponse, error)
 	// loop: `terms`
 	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(context.Context, *TermsRequest) (*OutTermsResponse, error)
@@ -335,6 +350,9 @@ func (UnimplementedSwapClientServer) ListSwaps(context.Context, *ListSwapsReques
 }
 func (UnimplementedSwapClientServer) SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SwapInfo not implemented")
+}
+func (UnimplementedSwapClientServer) AbandonSwap(context.Context, *AbandonSwapRequest) (*AbandonSwapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AbandonSwap not implemented")
 }
 func (UnimplementedSwapClientServer) LoopOutTerms(context.Context, *TermsRequest) (*OutTermsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoopOutTerms not implemented")
@@ -468,6 +486,24 @@ func _SwapClient_SwapInfo_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapClientServer).SwapInfo(ctx, req.(*SwapInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_AbandonSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AbandonSwapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).AbandonSwap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/AbandonSwap",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).AbandonSwap(ctx, req.(*AbandonSwapRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -674,6 +710,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SwapInfo",
 			Handler:    _SwapClient_SwapInfo_Handler,
+		},
+		{
+			MethodName: "AbandonSwap",
+			Handler:    _SwapClient_AbandonSwap_Handler,
 		},
 		{
 			MethodName: "LoopOutTerms",
