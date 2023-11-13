@@ -394,3 +394,9 @@ type ProbeRequest struct {
 	// Optional hop hints.
 	RouteHints [][]zpay32.HopHint
 }
+
+// AbandonSwapRequest specifies the swap to abandon. It is identified by its
+// swap hash.
+type AbandonSwapRequest struct {
+	SwapHash lntypes.Hash
+}

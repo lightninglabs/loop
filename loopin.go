@@ -48,6 +48,10 @@ var (
 	// TimeoutTxConfTarget defines the confirmation target for the loop in
 	// timeout tx.
 	TimeoutTxConfTarget = int32(2)
+
+	// ErrSwapFinalized is returned when a to be executed swap is already in
+	// a final state.
+	ErrSwapFinalized = errors.New("swap is in a final state")
 )
 
 // loopInSwap contains all the in-memory state related to a pending loop in
@@ -69,6 +73,8 @@ type loopInSwap struct {
 	htlcTxHash *chainhash.Hash
 
 	timeoutAddr btcutil.Address
+
+	abandonChan chan struct{}
 
 	wg sync.WaitGroup
 }
@@ -308,6 +314,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		swap.log.Infof("Server message: %v", swapResp.serverMessage)
 	}
 
+	swap.abandonChan = make(chan struct{}, 1)
+
 	return &loopInInitResult{
 		swap:          swap,
 		serverMessage: swapResp.serverMessage,
@@ -518,6 +526,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	// error occurs.
 	err = s.executeSwap(mainCtx)
 
+	// Stop the execution if the swap has been abandoned.
+	if err != nil && s.state == loopdb.StateFailAbandoned {
+		return err
+	}
+
 	// Sanity check. If there is no error, the swap must be in a final
 	// state.
 	if err == nil && s.state.Type() == loopdb.StateTypePending {
@@ -552,6 +565,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 // executeSwap executes the swap.
 func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	var err error
+
+	// If the swap is already in a final state, we can return immediately.
+	if s.state.IsFinal() {
+		return ErrSwapFinalized
+	}
 
 	// For loop in, the client takes the first step by publishing the
 	// on-chain htlc. Only do this if we haven't already done so in a
@@ -687,6 +705,11 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 		// Keep up with block height.
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
+
+		// If the client requested the swap to be abandoned, we override
+		// the status in the database.
+		case <-s.abandonChan:
+			return nil, s.setStateAbandoned(ctx)
 
 		// Cancel.
 		case <-globalCtx.Done():
@@ -840,6 +863,11 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	htlcKeyRevealed := false
 	for !htlcSpend || !invoiceFinalized {
 		select {
+		// If the client requested the swap to be abandoned, we override
+		// the status in the database.
+		case <-s.abandonChan:
+			return s.setStateAbandoned(ctx)
+
 		// Spend notification error.
 		case err := <-spendErr:
 			return err
@@ -1060,6 +1088,31 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 	}
 
 	return fee, nil
+}
+
+// setStateAbandoned stores the abandoned state and announces it. It also
+// cancels the swap invoice so the server can't settle it.
+func (s *loopInSwap) setStateAbandoned(ctx context.Context) error {
+	s.log.Infof("Abandoning swap %v...", s.hash)
+
+	if !s.state.IsPending() {
+		return fmt.Errorf("cannot abandon swap in state %v", s.state)
+	}
+
+	s.setState(loopdb.StateFailAbandoned)
+
+	err := s.persistAndAnnounceState(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If the invoice is already settled or canceled, this is a nop.
+	_ = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+
+	return fmt.Errorf("swap hash "+
+		"abandoned by client, "+
+		"swap ID: %v, %v",
+		s.hash, err)
 }
 
 // persistAndAnnounceState updates the swap state on disk and sends out an
