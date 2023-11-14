@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/utils"
 )
 
 // view prints all swaps currently in the database.
@@ -56,7 +57,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	for _, s := range swaps {
 		s := s
 
-		htlc, err := loop.GetHtlc(
+		htlc, err := utils.GetHtlc(
 			s.Hash, &s.Contract.SwapContract, chainParams,
 		)
 		if err != nil {
@@ -107,7 +108,7 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 	for _, s := range swaps {
 		s := s
 
-		htlc, err := loop.GetHtlc(
+		htlc, err := utils.GetHtlc(
 			s.Hash, &s.Contract.SwapContract, chainParams,
 		)
 		if err != nil {

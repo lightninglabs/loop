@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
@@ -232,7 +233,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlc, err := GetHtlc(
+		htlc, err := utils.GetHtlc(
 			swp.Hash, &swp.Contract.SwapContract,
 			s.lndServices.ChainParams,
 		)
@@ -265,7 +266,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlc, err := GetHtlc(
+		htlc, err := utils.GetHtlc(
 			swp.Hash, &swp.Contract.SwapContract,
 			s.lndServices.ChainParams,
 		)
@@ -540,7 +541,7 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 		return 0, err
 	}
 
-	scriptVersion := GetHtlcScriptVersion(
+	scriptVersion := utils.GetHtlcScriptVersion(
 		loopdb.CurrentProtocolVersion(),
 	)
 
@@ -731,7 +732,7 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	// Generate a dummy address for fee estimation.
 	witnessProg := [32]byte{}
 
-	scriptVersion := GetHtlcScriptVersion(
+	scriptVersion := utils.GetHtlcScriptVersion(
 		loopdb.CurrentProtocolVersion(),
 	)
 

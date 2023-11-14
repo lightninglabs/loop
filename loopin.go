@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -442,7 +443,7 @@ func validateLoopInContract(height int32, response *newLoopInResponse) error {
 // initHtlcs creates and updates the native and nested segwit htlcs of the
 // loopInSwap.
 func (s *loopInSwap) initHtlcs() error {
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		s.hash, &s.SwapContract, s.swapKit.lnd.ChainParams,
 	)
 	if err != nil {

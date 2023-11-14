@@ -22,12 +22,12 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/zpay32"
 )
 
 const (
@@ -207,7 +207,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	swapKit.lastUpdateTime = initiationTime
 
 	// Create the htlc.
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
 	)
 	if err != nil {
@@ -220,7 +220,9 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := obtainSwapPaymentAddr(contract.SwapInvoice, cfg)
+	paymentAddr, err := utils.ObtainSwapPaymentAddr(
+		contract.SwapInvoice, cfg.lnd.ChainParams,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +265,7 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 	)
 
 	// Create the htlc.
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
 	)
 	if err != nil {
@@ -275,8 +277,8 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := obtainSwapPaymentAddr(
-		pend.Contract.SwapInvoice, cfg,
+	paymentAddr, err := utils.ObtainSwapPaymentAddr(
+		pend.Contract.SwapInvoice, cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		return nil, err
@@ -300,24 +302,6 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 	}
 
 	return swap, nil
-}
-
-// obtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
-func obtainSwapPaymentAddr(swapInvoice string, cfg *swapConfig) (
-	*[32]byte, error) {
-
-	swapPayReq, err := zpay32.Decode(
-		swapInvoice, cfg.lnd.ChainParams,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if swapPayReq.PaymentAddr == nil {
-		return nil, fmt.Errorf("expected payment address for invoice")
-	}
-
-	return swapPayReq.PaymentAddr, nil
 }
 
 // sendUpdate reports an update to the swap state.
