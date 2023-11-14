@@ -574,3 +574,205 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	cost.Server = btcutil.Amount(htlcTx.TxOut[0].Value) - amtPaid
 	require.Equal(t, cost, finalState.Cost)
 }
+
+// TestAbandonPublishedHtlcState advances a loop-in swap to StateHtlcPublished,
+// then abandons it and ensures that executing the same swap would not progress.
+func TestAbandonPublishedHtlcState(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctx := newLoopInTestContext(t)
+
+	height := int32(600)
+
+	cfg, err, inSwap := startNewLoopIn(t, ctx, height)
+	require.NoError(t, err)
+
+	advanceToPublishedHtlc(t, ctx)
+
+	// The client requests to abandon the published htlc state.
+	inSwap.abandonChan <- struct{}{}
+
+	// Ensure that the swap is now in the StateFailAbandoned state.
+	ctx.assertState(loopdb.StateFailAbandoned)
+
+	// Ensure that the swap is also in the StateFailAbandoned state in the
+	// database.
+	ctx.store.assertLoopInState(loopdb.StateFailAbandoned)
+
+	// Ensure that the swap was abandoned and the execution stopped.
+	err = <-ctx.errChan
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "swap hash abandoned by client")
+
+	// We re-instantiate the swap and ensure that it does not progress.
+	pendSwap := &loopdb.LoopIn{
+		Contract: &inSwap.LoopInContract,
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{
+				{
+					SwapStateData: loopdb.SwapStateData{
+						State: inSwap.state,
+					},
+				},
+			},
+			Hash: testPreimage.Hash(),
+		},
+	}
+	resumedSwap, err := resumeLoopInSwap(
+		context.Background(), cfg, pendSwap,
+	)
+	require.NoError(t, err)
+
+	// Execute the abandoned swap.
+	go func() {
+		err := resumedSwap.execute(
+			context.Background(), ctx.cfg, height,
+		)
+		if err != nil {
+			log.Error(err)
+		}
+		ctx.errChan <- err
+	}()
+
+	// Ensure that the swap is still in the StateFailAbandoned state.
+	swapInfo := <-ctx.statusChan
+	require.Equal(t, loopdb.StateFailAbandoned, swapInfo.State)
+
+	// Ensure that the execution flagged the abandoned swap as finalized.
+	err = <-ctx.errChan
+	require.Error(t, err)
+	require.Equal(t, ErrSwapFinalized, err)
+}
+
+// TestAbandonSettledInvoiceState advances a loop-in swap to
+// StateInvoiceSettled, then abandons it and ensures that executing the same
+// swap would not progress.
+func TestAbandonSettledInvoiceState(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctx := newLoopInTestContext(t)
+
+	height := int32(600)
+
+	cfg, err, inSwap := startNewLoopIn(t, ctx, height)
+	require.NoError(t, err)
+
+	advanceToPublishedHtlc(t, ctx)
+
+	// Client starts listening for swap invoice updates.
+	ctx.assertSubscribeInvoice(ctx.server.swapHash)
+
+	// Server has already paid invoice before spending the htlc. Signal
+	// settled.
+	ctx.updateInvoiceState(49000, invpkg.ContractSettled)
+
+	// Swap is expected to move to the state InvoiceSettled
+	ctx.assertState(loopdb.StateInvoiceSettled)
+	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+
+	// The client requests to abandon the published htlc state.
+	inSwap.abandonChan <- struct{}{}
+
+	// Ensure that the swap is now in the StateFailAbandoned state.
+	ctx.assertState(loopdb.StateFailAbandoned)
+
+	// Ensure that the swap is also in the StateFailAbandoned state in the
+	// database.
+	ctx.store.assertLoopInState(loopdb.StateFailAbandoned)
+
+	// Ensure that the swap was abandoned and the execution stopped.
+	err = <-ctx.errChan
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "swap hash abandoned by client")
+
+	// We re-instantiate the swap and ensure that it does not progress.
+	pendSwap := &loopdb.LoopIn{
+		Contract: &inSwap.LoopInContract,
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{
+				{
+					SwapStateData: loopdb.SwapStateData{
+						State: inSwap.state,
+					},
+				},
+			},
+			Hash: testPreimage.Hash(),
+		},
+	}
+	resumedSwap, err := resumeLoopInSwap(context.Background(), cfg, pendSwap)
+	require.NoError(t, err)
+
+	// Execute the abandoned swap.
+	go func() {
+		err := resumedSwap.execute(
+			context.Background(), ctx.cfg, height,
+		)
+		if err != nil {
+			log.Error(err)
+		}
+		ctx.errChan <- err
+	}()
+
+	// Ensure that the swap is still in the StateFailAbandoned state.
+	swapInfo := <-ctx.statusChan
+	require.Equal(t, loopdb.StateFailAbandoned, swapInfo.State)
+
+	// Ensure that the execution flagged the abandoned swap as finalized.
+	err = <-ctx.errChan
+	require.Error(t, err)
+	require.Equal(t, ErrSwapFinalized, err)
+}
+
+func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
+	swapInfo := <-ctx.statusChan
+	require.Equal(t, loopdb.StateInitiated, swapInfo.State)
+
+	ctx.assertState(loopdb.StateHtlcPublished)
+	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+
+	// Expect htlc to be published.
+	htlcTx := <-ctx.lnd.SendOutputsChannel
+
+	// Expect the same state to be written again with the htlc tx hash
+	// and on chain fee.
+	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+
+	// Expect register for htlc conf (only one, since the htlc is p2tr).
+	<-ctx.lnd.RegisterConfChannel
+
+	// Confirm htlc.
+	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		Tx: &htlcTx,
+	}
+
+	// Client starts listening for spend of htlc.
+	<-ctx.lnd.RegisterSpendChannel
+	return swapInfo
+}
+
+func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
+	*swapConfig, error, *loopInSwap) {
+
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
+
+	req := &testLoopInRequest
+
+	initResult, err := newLoopInSwap(
+		context.Background(), cfg,
+		height, req,
+	)
+	require.NoError(t, err)
+
+	inSwap := initResult.swap
+
+	ctx.store.assertLoopInStored()
+
+	go func() {
+		err := inSwap.execute(context.Background(), ctx.cfg, height)
+		if err != nil {
+			log.Error(err)
+		}
+		ctx.errChan <- err
+	}()
+	return cfg, err, inSwap
+}
