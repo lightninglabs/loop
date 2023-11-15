@@ -510,7 +510,7 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
-	req *clientrpc.TermsRequest) (*clientrpc.OutTermsResponse, error) {
+	_ *clientrpc.TermsRequest) (*clientrpc.OutTermsResponse, error) {
 
 	log.Infof("Loop out terms request received")
 
@@ -540,7 +540,9 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	publicactionDeadline := getPublicationDeadline(req.SwapPublicationDeadline)
+	publicactionDeadline := getPublicationDeadline(
+		req.SwapPublicationDeadline,
+	)
 
 	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
 		Amount:                  btcutil.Amount(req.Amt),
@@ -563,7 +565,7 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 
 // GetLoopInTerms returns the terms that the server enforces for swaps.
 func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
-	req *clientrpc.TermsRequest) (*clientrpc.InTermsResponse, error) {
+	_ *clientrpc.TermsRequest) (*clientrpc.InTermsResponse, error) {
 
 	log.Infof("Loop in terms request received")
 

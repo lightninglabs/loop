@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -159,7 +160,10 @@ func (s *executor) run(mainCtx context.Context,
 					cancelSwap:         s.executorConfig.cancelSwap,
 					verifySchnorrSig:   s.executorConfig.verifySchnorrSig,
 				}, height)
-				if err != nil && err != context.Canceled {
+				if err != nil && !errors.Is(
+					err, context.Canceled,
+				) {
+
 					log.Errorf("Execute error: %v", err)
 				}
 
