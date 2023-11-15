@@ -536,7 +536,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		log.Info("Starting liquidity manager")
 		err := d.liquidityMgr.Run(d.mainCtx)
-		if err != nil && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			d.internalErrChan <- err
 		}
 
