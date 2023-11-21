@@ -543,7 +543,7 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 	}
 
 	if row.OutgoingChanSet != "" {
-		chanSet, err := convertOutgoingChanSet(row.OutgoingChanSet)
+		chanSet, err := ConvertOutgoingChanSet(row.OutgoingChanSet)
 		if err != nil {
 			return nil, err
 		}
@@ -666,9 +666,9 @@ func getSwapEvents(updates []sqlc.SwapUpdate) ([]*LoopEvent, error) {
 	return events, nil
 }
 
-// convertOutgoingChanSet converts a comma separated string of channel IDs into
+// ConvertOutgoingChanSet converts a comma separated string of channel IDs into
 // a ChannelSet.
-func convertOutgoingChanSet(outgoingChanSet string) (ChannelSet, error) {
+func ConvertOutgoingChanSet(outgoingChanSet string) (ChannelSet, error) {
 	// Split the string into a slice of strings
 	chanStrings := strings.Split(outgoingChanSet, ",")
 	channels := make([]uint64, len(chanStrings))
