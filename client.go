@@ -381,6 +381,12 @@ func (s *Client) resumeSwaps(ctx context.Context,
 			continue
 		}
 
+		// Store the swap's abandon channel so that the client can
+		// abandon the swap by providing the swap hash.
+		s.executor.Lock()
+		s.abandonChans[swap.hash] = swap.abandonChan
+		s.executor.Unlock()
+
 		s.executor.initiateSwap(ctx, swap)
 	}
 }

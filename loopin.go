@@ -421,6 +421,10 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 		swap.cost = lastUpdate.Cost
 	}
 
+	// Upon restoring the swap we also need to assign a new abandon channel
+	// that the client can use to signal that the swap should be abandoned.
+	swap.abandonChan = make(chan struct{}, 1)
+
 	return swap, nil
 }
 
