@@ -11,6 +11,12 @@ const (
 	TypeOut
 )
 
+// IsOut returns true if the swap is a loop out swap, false if it is a loop in
+// swap.
+func (t Type) IsOut() bool {
+	return t == TypeOut
+}
+
 func (t Type) String() string {
 	switch t {
 	case TypeIn:

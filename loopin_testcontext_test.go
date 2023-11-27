@@ -22,6 +22,7 @@ type loopInTestContext struct {
 	sweeper        *sweep.Sweeper
 	cfg            *executeConfig
 	statusChan     chan SwapInfo
+	errChan        chan error
 	blockEpochChan chan interface{}
 
 	swapInvoiceSubscription *test.SingleInvoiceSubscription
@@ -35,6 +36,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 
 	blockEpochChan := make(chan interface{})
 	statusChan := make(chan SwapInfo)
+	errChan := make(chan error)
 
 	expiryChan := make(chan time.Time)
 	timerFactory := func(expiry time.Duration) <-chan time.Time {
@@ -57,6 +59,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 		sweeper:        &sweeper,
 		cfg:            &cfg,
 		statusChan:     statusChan,
+		errChan:        errChan,
 		blockEpochChan: blockEpochChan,
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc/status"
 )
@@ -67,6 +68,11 @@ var (
 type Client struct {
 	started uint32 // To be used atomically.
 	errChan chan error
+
+	// abandonChans allows for accessing a swap's abandon channel by
+	// providing its swap hash. This map is used to look up the abandon
+	// channel of a swap if the client requests to abandon it.
+	abandonChans map[lntypes.Hash]chan struct{}
 
 	lndServices *lndclient.LndServices
 	sweeper     *sweep.Sweeper
@@ -179,6 +185,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
+		abandonChans: make(map[lntypes.Hash]chan struct{}),
 	}
 
 	cleanup := func() {
@@ -317,10 +324,10 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 	}()
 
 	// Main event loop.
-	err = s.executor.run(mainCtx, statusChan)
+	err = s.executor.run(mainCtx, statusChan, s.abandonChans)
 
 	// Consider canceled as happy flow.
-	if err == context.Canceled {
+	if errors.Is(err, context.Canceled) {
 		err = nil
 	}
 
@@ -373,6 +380,12 @@ func (s *Client) resumeSwaps(ctx context.Context,
 			log.Errorf("resuming loop in swap: %v", err)
 			continue
 		}
+
+		// Store the swap's abandon channel so that the client can
+		// abandon the swap by providing the swap hash.
+		s.executor.Lock()
+		s.abandonChans[swap.hash] = swap.abandonChan
+		s.executor.Unlock()
 
 		s.executor.initiateSwap(ctx, swap)
 	}
@@ -578,6 +591,10 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	}
 	swap := initResult.swap
 
+	s.executor.Lock()
+	s.abandonChans[swap.hash] = swap.abandonChan
+	s.executor.Unlock()
+
 	// Post swap to the main loop.
 	s.executor.initiateSwap(globalCtx, swap)
 
@@ -752,4 +769,27 @@ func (s *Client) Probe(ctx context.Context, req *ProbeRequest) error {
 		ctx, req.Amount, s.lndServices.NodePubkey, req.LastHop,
 		req.RouteHints,
 	)
+}
+
+// AbandonSwap sends a signal on the abandon channel of the swap identified by
+// the passed swap hash. This will cause the swap to abandon itself.
+func (s *Client) AbandonSwap(ctx context.Context,
+	req *AbandonSwapRequest) error {
+
+	if req == nil {
+		return errors.New("no request provided")
+	}
+
+	s.executor.Lock()
+	defer s.executor.Unlock()
+
+	select {
+	case s.abandonChans[req.SwapHash] <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// This is to avoid writing to a full channel.
+	}
+
+	return nil
 }

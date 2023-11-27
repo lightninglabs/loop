@@ -288,6 +288,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	case loopdb.StateFailIncorrectHtlcAmt:
 		failureReason = clientrpc.FailureReason_FAILURE_REASON_INCORRECT_AMOUNT
 
+	case loopdb.StateFailAbandoned:
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_ABANDONED
+
 	default:
 		return nil, fmt.Errorf("unknown swap state: %v", loopSwap.State)
 	}
@@ -506,6 +509,49 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
 	}
 	return s.marshallSwap(&swp)
+}
+
+// AbandonSwap requests the server to abandon a swap with the given hash.
+func (s *swapClientServer) AbandonSwap(ctx context.Context,
+	req *clientrpc.AbandonSwapRequest) (*clientrpc.AbandonSwapResponse,
+	error) {
+
+	if !req.IKnowWhatIAmDoing {
+		return nil, fmt.Errorf("please read the AbandonSwap API " +
+			"documentation")
+	}
+
+	swapHash, err := lntypes.MakeHash(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing swap hash: %v", err)
+	}
+
+	s.swapsLock.Lock()
+	swap, ok := s.swaps[swapHash]
+	s.swapsLock.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
+	}
+
+	if swap.SwapType.IsOut() {
+		return nil, fmt.Errorf("abandoning loop out swaps is not " +
+			"supported yet")
+	}
+
+	// If the swap is in a final state, we cannot abandon it.
+	if swap.State.IsFinal() {
+		return nil, fmt.Errorf("cannot abandon swap in final state, "+
+			"state = %s, hash = %s", swap.State.String(), swapHash)
+	}
+
+	err = s.impl.AbandonSwap(ctx, &loop.AbandonSwapRequest{
+		SwapHash: swapHash,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error abandoning swap: %v", err)
+	}
+
+	return &clientrpc.AbandonSwapResponse{}, nil
 }
 
 // LoopOutTerms returns the terms that the server enforces for loop out swaps.

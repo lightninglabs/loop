@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 )
 
@@ -46,6 +47,8 @@ type executor struct {
 	currentHeight uint32
 	ready         chan struct{}
 
+	sync.Mutex
+
 	executorConfig
 }
 
@@ -61,7 +64,8 @@ func newExecutor(cfg *executorConfig) *executor {
 // run starts the executor event loop. It accepts and executes new swaps,
 // providing them with required config data.
 func (s *executor) run(mainCtx context.Context,
-	statusChan chan<- SwapInfo) error {
+	statusChan chan<- SwapInfo,
+	abandonChans map[lntypes.Hash]chan struct{}) error {
 
 	var (
 		err            error
@@ -165,6 +169,15 @@ func (s *executor) run(mainCtx context.Context,
 				) {
 
 					log.Errorf("Execute error: %v", err)
+				}
+
+				// If a loop-in ended we have to remove its
+				// abandon channel from our abandonChans map
+				// since the swap finalized.
+				if swap, ok := newSwap.(*loopInSwap); ok {
+					s.Lock()
+					delete(abandonChans, swap.hash)
+					s.Unlock()
 				}
 
 				select {
