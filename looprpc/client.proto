@@ -535,6 +535,12 @@ enum FailureReason {
     the client manually abandoned the swap.
     */
     FAILURE_REASON_ABANDONED = 7;
+
+    /*
+    FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE indicates that a swap
+    wasn't published due to insufficient confirmed balance.
+    */
+    FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE = 8;
 }
 
 message ListSwapsRequest {

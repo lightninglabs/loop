@@ -530,6 +530,13 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	// error occurs.
 	err = s.executeSwap(mainCtx)
 
+	// If there are insufficient confirmed funds to publish the swap, we
+	// finalize its state so a new swap will be published if funds become
+	// available.
+	if errors.Is(err, ErrInsufficientBalance) {
+		return err
+	}
+
 	// Stop the execution if the swap has been abandoned.
 	if err != nil && s.state == loopdb.StateFailAbandoned {
 		return err
@@ -781,7 +788,14 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 		}}, feeRate, labels.LoopInHtlcLabel(swap.ShortHash(&s.hash)),
 	)
 	if err != nil {
-		return false, fmt.Errorf("send outputs: %v", err)
+		s.log.Errorf("send outputs: %v", err)
+		s.setState(loopdb.StateFailInsufficientConfirmedBalance)
+
+		// If we cannot send out this update, there is nothing we can
+		// do.
+		_ = s.persistAndAnnounceState(ctx)
+
+		return false, ErrInsufficientBalance
 	}
 
 	txHash := tx.TxHash()

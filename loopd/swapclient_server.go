@@ -291,6 +291,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	case loopdb.StateFailAbandoned:
 		failureReason = clientrpc.FailureReason_FAILURE_REASON_ABANDONED
 
+	case loopdb.StateFailInsufficientConfirmedBalance:
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE
+
 	default:
 		return nil, fmt.Errorf("unknown swap state: %v", loopSwap.State)
 	}

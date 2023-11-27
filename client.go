@@ -43,6 +43,10 @@ var (
 	// is too soon for us.
 	ErrExpiryTooFar = errors.New("swap expiry too far")
 
+	// ErrInsufficientBalance indicates insufficient confirmed balance to
+	// publish a swap.
+	ErrInsufficientBalance = errors.New("insufficient confirmed balance")
+
 	// serverRPCTimeout is the maximum time a gRPC request to the server
 	// should be allowed to take.
 	serverRPCTimeout = 30 * time.Second

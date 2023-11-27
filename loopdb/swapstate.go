@@ -68,6 +68,10 @@ const (
 	// StateFailAbandoned indicates that a swap has been abandoned. Its
 	// execution has been canceled. It won't further be processed.
 	StateFailAbandoned SwapState = 11
+
+	// StateFailInsufficientConfirmedBalance indicates that the swap wasn't
+	// published due to insufficient confirmed balance.
+	StateFailInsufficientConfirmedBalance SwapState = 12
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -152,6 +156,9 @@ func (s SwapState) String() string {
 
 	case StateFailAbandoned:
 		return "FailAbandoned"
+
+	case StateFailInsufficientConfirmedBalance:
+		return "InsufficientConfirmedBalance"
 
 	default:
 		return "Unknown"
