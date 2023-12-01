@@ -46,9 +46,60 @@ func (c *CachedObserver) GetCachedNotifications() []Notification {
 	return c.cachedNotifications.Get()
 }
 
+// WaitForStateOption is an option that can be passed to the WaitForState
+// function.
+type WaitForStateOption interface {
+	apply(*fsmOptions)
+}
+
+// fsmOptions is a struct that holds all options that can be passed to the
+// WaitForState function.
+type fsmOptions struct {
+	initialWait time.Duration
+}
+
+// InitialWaitOption is an option that can be passed to the WaitForState
+// function to wait for a given duration before checking the state.
+type InitialWaitOption struct {
+	initialWait time.Duration
+}
+
+// WithWaitForStateOption creates a new InitialWaitOption.
+func WithWaitForStateOption(initialWait time.Duration) WaitForStateOption {
+	return &InitialWaitOption{
+		initialWait,
+	}
+}
+
+// apply implements the WaitForStateOption interface.
+func (w *InitialWaitOption) apply(o *fsmOptions) {
+	o.initialWait = w.initialWait
+}
+
 // WaitForState waits for the state machine to reach the given state.
+// If the optional initialWait parameter is set, the function will wait for
+// the given duration before checking the state. This is useful if the
+// function is called immediately after sending an event to the state machine
+// and the state machine needs some time to process the event.
 func (s *CachedObserver) WaitForState(ctx context.Context,
-	timeout time.Duration, state StateType) error {
+	timeout time.Duration, state StateType,
+	opts ...InitialWaitOption) error {
+
+	var options fsmOptions
+
+	for _, opt := range opts {
+		opt.apply(&options)
+	}
+
+	// Wait for the initial wait duration if set.
+	if options.initialWait > 0 {
+		select {
+		case <-time.After(options.initialWait):
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
