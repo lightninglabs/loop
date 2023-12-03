@@ -89,15 +89,15 @@ type loopOutSwap struct {
 
 // executeConfig contains extra configuration to execute the swap.
 type executeConfig struct {
-	sweeper            *sweep.Sweeper
-	statusChan         chan<- SwapInfo
-	blockEpochChan     <-chan interface{}
-	timerFactory       func(time.Duration) <-chan time.Time
-	loopOutMaxParts    uint32
-	totalPaymentTimout time.Duration
-	maxPaymentRetries  int
-	cancelSwap         func(context.Context, *outCancelDetails) error
-	verifySchnorrSig   func(pubKey *btcec.PublicKey, hash, sig []byte) error
+	sweeper             *sweep.Sweeper
+	statusChan          chan<- SwapInfo
+	blockEpochChan      <-chan interface{}
+	timerFactory        func(time.Duration) <-chan time.Time
+	loopOutMaxParts     uint32
+	totalPaymentTimeout time.Duration
+	maxPaymentRetries   int
+	cancelSwap          func(context.Context, *outCancelDetails) error
+	verifySchnorrSig    func(pubKey *btcec.PublicKey, hash, sig []byte) error
 }
 
 // loopOutInitResult contains information about a just-initiated loop out swap.
@@ -706,7 +706,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	}
 
 	maxRetries := 1
-	paymentTimeout := s.executeConfig.totalPaymentTimout
+	paymentTimeout := s.executeConfig.totalPaymentTimeout
 
 	// Attempt to acquire and initialize the routing plugin.
 	routingPlugin, err := AcquireRoutingPlugin(
@@ -1189,7 +1189,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 					// Attempt to script path sweep. If the
 					// sweep fails, we can't do any better
 					// than go on and try again later as
-					// the preimage is alredy revealed and
+					// the preimage is already revealed and
 					// the server settled the swap payment.
 					// From the server's point of view the
 					// swap is succeeded at this point so

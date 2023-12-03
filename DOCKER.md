@@ -53,7 +53,7 @@ docker exec -it loopd loop out --channel <channel-id-you-want-to-use> --amt <amo
 
 Things to note about this docker command:
 * `docker exec` runs a command on an already-running container. In this case `docker exec loopd` says effectively 'run the rest of this command-line as a command on the already-running container 'loopd'.
-* The `-it` flags tell docker to run the command interatively and act like it's using a terminal. This helps with commands that do more than just write to stdout.
+* The `-it` flags tell docker to run the command interactively and act like it's using a terminal. This helps with commands that do more than just write to stdout.
 * The remainder `loop out --channel <channel-id-you-want-to-use> --amt <amount-you-want-to-loop-out>` is the actual loop command you want to run. All the regular `loop` documentation applies to this bit.
 
 
