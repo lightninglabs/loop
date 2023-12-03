@@ -154,15 +154,15 @@ func (s *executor) run(mainCtx context.Context,
 				defer s.wg.Done()
 
 				err := newSwap.execute(mainCtx, &executeConfig{
-					statusChan:         statusChan,
-					sweeper:            s.sweeper,
-					blockEpochChan:     queue.ChanOut(),
-					timerFactory:       s.executorConfig.createExpiryTimer,
-					loopOutMaxParts:    s.executorConfig.loopOutMaxParts,
-					totalPaymentTimout: s.executorConfig.totalPaymentTimeout,
-					maxPaymentRetries:  s.executorConfig.maxPaymentRetries,
-					cancelSwap:         s.executorConfig.cancelSwap,
-					verifySchnorrSig:   s.executorConfig.verifySchnorrSig,
+					statusChan:          statusChan,
+					sweeper:             s.sweeper,
+					blockEpochChan:      queue.ChanOut(),
+					timerFactory:        s.executorConfig.createExpiryTimer,
+					loopOutMaxParts:     s.executorConfig.loopOutMaxParts,
+					totalPaymentTimeout: s.executorConfig.totalPaymentTimeout,
+					maxPaymentRetries:   s.executorConfig.maxPaymentRetries,
+					cancelSwap:          s.executorConfig.cancelSwap,
+					verifySchnorrSig:    s.executorConfig.verifySchnorrSig,
 				}, height)
 				if err != nil && !errors.Is(
 					err, context.Canceled,

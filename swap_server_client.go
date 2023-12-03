@@ -646,7 +646,7 @@ type routeCancelMetadata struct {
 	failureReason lnrpc.PaymentFailureReason
 }
 
-// outCancelDetails contains the informaton required to cancel a loop out swap.
+// outCancelDetails contains the information required to cancel a loop out swap.
 type outCancelDetails struct {
 	// Hash is the swap's hash.
 	hash lntypes.Hash

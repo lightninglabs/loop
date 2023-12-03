@@ -131,7 +131,7 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			},
 		},
 		{
-			name: "degenrate network 3",
+			name: "degenerate network 3",
 			//
 			//       _____Bob_____
 			//      /             \
