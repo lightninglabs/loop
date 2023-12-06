@@ -83,7 +83,7 @@ func (w *InitialWaitOption) apply(o *fsmOptions) {
 // and the state machine needs some time to process the event.
 func (s *CachedObserver) WaitForState(ctx context.Context,
 	timeout time.Duration, state StateType,
-	opts ...InitialWaitOption) error {
+	opts ...WaitForStateOption) error {
 
 	var options fsmOptions
 
