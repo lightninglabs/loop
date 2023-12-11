@@ -273,3 +273,7 @@ func (s *serverMock) PushKey(_ context.Context, _ loopdb.ProtocolVersion,
 
 	return nil
 }
+
+func (s *serverMock) FetchL402(_ context.Context) error {
+	return nil
+}

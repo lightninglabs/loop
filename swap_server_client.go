@@ -135,6 +135,10 @@ type swapServerClient interface {
 	PushKey(ctx context.Context,
 		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
 		clientInternalPrivateKey [32]byte) error
+
+	// FetchL402 is a helper function that tries to fetch an l402 token
+	// from the server.
+	FetchL402(ctx context.Context) error
 }
 
 type grpcSwapServerClient struct {
@@ -787,6 +791,18 @@ func (s *grpcSwapServerClient) PushKey(ctx context.Context,
 	defer rpcCancel()
 
 	_, err := s.server.PushKey(rpcCtx, req)
+	return err
+}
+
+// FetchL402 is a helper function that tries to fetch an l402 token from the
+// server.
+func (s *grpcSwapServerClient) FetchL402(ctx context.Context) error {
+	req := &looprpc.FetchL402Request{}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	_, err := s.server.FetchL402(rpcCtx, req)
 	return err
 }
 
