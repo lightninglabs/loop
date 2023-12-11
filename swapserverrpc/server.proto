@@ -47,6 +47,10 @@ service SwapServer {
     rpc MuSig2SignSweep (MuSig2SignSweepReq) returns (MuSig2SignSweepRes);
 
     rpc PushKey (ServerPushKeyReq) returns (ServerPushKeyRes);
+
+    // FetchL402 is a simple non-l402-allowlisted request that is required
+    // in order to force the creation of an l402.
+    rpc FetchL402 (FetchL402Request) returns (FetchL402Response);
 }
 
 /**
@@ -616,4 +620,14 @@ message ServerPushKeyReq {
 }
 
 message ServerPushKeyRes {
+}
+
+// FetchL402Request is an empty request sent from the client to the server to
+// fetch the lnd l402.
+message FetchL402Request {
+}
+
+// FetchL402Response is an empty response sent from the server to the client to
+// confirm the lnd l402.
+message FetchL402Response {
 }
