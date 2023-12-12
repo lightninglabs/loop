@@ -33,6 +33,9 @@ type SwapServerClient interface {
 	ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(ctx context.Context, in *MuSig2SignSweepReq, opts ...grpc.CallOption) (*MuSig2SignSweepRes, error)
 	PushKey(ctx context.Context, in *ServerPushKeyReq, opts ...grpc.CallOption) (*ServerPushKeyRes, error)
+	// FetchL402 is a simple non-l402-allowlisted request that is required
+	// in order to force the creation of an l402.
+	FetchL402(ctx context.Context, in *FetchL402Request, opts ...grpc.CallOption) (*FetchL402Response, error)
 }
 
 type swapServerClient struct {
@@ -224,6 +227,15 @@ func (c *swapServerClient) PushKey(ctx context.Context, in *ServerPushKeyReq, op
 	return out, nil
 }
 
+func (c *swapServerClient) FetchL402(ctx context.Context, in *FetchL402Request, opts ...grpc.CallOption) (*FetchL402Response, error) {
+	out := new(FetchL402Response)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapServer/FetchL402", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -243,6 +255,9 @@ type SwapServerServer interface {
 	ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error)
 	PushKey(context.Context, *ServerPushKeyReq) (*ServerPushKeyRes, error)
+	// FetchL402 is a simple non-l402-allowlisted request that is required
+	// in order to force the creation of an l402.
+	FetchL402(context.Context, *FetchL402Request) (*FetchL402Response, error)
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -294,6 +309,9 @@ func (UnimplementedSwapServerServer) MuSig2SignSweep(context.Context, *MuSig2Sig
 }
 func (UnimplementedSwapServerServer) PushKey(context.Context, *ServerPushKeyReq) (*ServerPushKeyRes, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PushKey not implemented")
+}
+func (UnimplementedSwapServerServer) FetchL402(context.Context, *FetchL402Request) (*FetchL402Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchL402 not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -584,6 +602,24 @@ func _SwapServer_PushKey_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_FetchL402_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchL402Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapServerServer).FetchL402(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapServer/FetchL402",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapServerServer).FetchL402(ctx, req.(*FetchL402Request))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -642,6 +678,10 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushKey",
 			Handler:    _SwapServer_PushKey_Handler,
+		},
+		{
+			MethodName: "FetchL402",
+			Handler:    _SwapServer_FetchL402_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
