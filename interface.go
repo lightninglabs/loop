@@ -20,6 +20,11 @@ type OutRequest struct {
 	// Destination address for the swap.
 	DestAddr btcutil.Address
 
+	// IsExternalAddr indicates whether the provided destination address
+	// does not belong to the underlying wallet. This helps indicate
+	// whether the sweep of this swap can be batched or not.
+	IsExternalAddr bool
+
 	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for payment to the server. This limit is applied during path
 	// finding. Typically this value is taken from the response of the

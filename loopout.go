@@ -172,6 +172,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	contract := loopdb.LoopOutContract{
 		SwapInvoice:             swapResp.swapInvoice,
 		DestAddr:                request.DestAddr,
+		IsExternalAddr:          request.IsExternalAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
 		HtlcConfirmations:       confs,
