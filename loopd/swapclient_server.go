@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -470,12 +472,11 @@ func (s *swapClientServer) Monitor(in *clientrpc.MonitorRequest,
 // ListSwaps returns a list of all currently known swaps and their current
 // status.
 func (s *swapClientServer) ListSwaps(_ context.Context,
-	_ *clientrpc.ListSwapsRequest) (*clientrpc.ListSwapsResponse, error) {
+	req *clientrpc.ListSwapsRequest) (*clientrpc.ListSwapsResponse, error) {
 
 	var (
-		rpcSwaps = make([]*clientrpc.SwapStatus, len(s.swaps))
+		rpcSwaps = []*clientrpc.SwapStatus{}
 		idx      = 0
-		err      error
 	)
 
 	s.swapsLock.Lock()
@@ -487,13 +488,91 @@ func (s *swapClientServer) ListSwaps(_ context.Context,
 	// additional index.
 	for _, swp := range s.swaps {
 		swp := swp
-		rpcSwaps[idx], err = s.marshallSwap(&swp)
+
+		// Filter the swap based on the provided filter.
+		if !filterSwap(&swp, req.ListSwapFilter) {
+			continue
+		}
+
+		rpcSwap, err := s.marshallSwap(&swp)
 		if err != nil {
 			return nil, err
 		}
+		rpcSwaps = append(rpcSwaps, rpcSwap)
 		idx++
 	}
 	return &clientrpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+}
+
+// filterSwap filters the given swap based on the provided filter.
+func filterSwap(swapInfo *loop.SwapInfo, filter *clientrpc.ListSwapsFilter) bool {
+	if filter == nil {
+		return true
+	}
+
+	// If the swap type filter is set, we only return swaps that match the
+	// filter.
+	if filter.SwapType != clientrpc.ListSwapsFilter_ANY {
+		switch filter.SwapType {
+		case clientrpc.ListSwapsFilter_LOOP_IN:
+			if swapInfo.SwapType != swap.TypeIn {
+				return false
+			}
+
+		case clientrpc.ListSwapsFilter_LOOP_OUT:
+			if swapInfo.SwapType != swap.TypeOut {
+				return false
+			}
+		}
+	}
+
+	// If the pending only filter is set, we only return pending swaps.
+	if filter.PendingOnly && !swapInfo.State.IsPending() {
+		return false
+	}
+
+	// If the swap is of type loop out and the outgoing channel filter is
+	// set, we only return swaps that match the filter.
+	if swapInfo.SwapType == swap.TypeOut && filter.OutgoingChanSet != nil {
+		// First we sort both channel sets to make sure we can compare
+		// them.
+		sort.Slice(swapInfo.OutgoingChanSet, func(i, j int) bool {
+			return swapInfo.OutgoingChanSet[i] <
+				swapInfo.OutgoingChanSet[j]
+		})
+		sort.Slice(filter.OutgoingChanSet, func(i, j int) bool {
+			return filter.OutgoingChanSet[i] <
+				filter.OutgoingChanSet[j]
+		})
+
+		// Compare the outgoing channel set by using reflect.DeepEqual
+		// which compares the underlying arrays.
+		if !reflect.DeepEqual(swapInfo.OutgoingChanSet,
+			filter.OutgoingChanSet) {
+
+			return false
+		}
+	}
+
+	// If the swap is of type loop in and the last hop filter is set, we
+	// only return swaps that match the filter.
+	if swapInfo.SwapType == swap.TypeIn && filter.LoopInLastHop != nil {
+		// Compare the last hop by using reflect.DeepEqual which
+		// compares the underlying arrays.
+		if !reflect.DeepEqual(swapInfo.LastHop, filter.LoopInLastHop) {
+			return false
+		}
+	}
+
+	// If a label filter is set, we only return swaps that softly match the
+	// filter.
+	if filter.Label != "" {
+		if !strings.Contains(swapInfo.Label, filter.Label) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // SwapInfo returns all known details about a single swap.
