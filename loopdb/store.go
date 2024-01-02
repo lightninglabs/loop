@@ -641,7 +641,7 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 		}
 		updatesBucket := swapBucket.Bucket(updatesBucketKey)
 		if updatesBucket == nil {
-			return errors.New("udpate bucket not found")
+			return errors.New("update bucket not found")
 		}
 
 		// Each update for this swap will get a new monotonically
