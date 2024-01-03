@@ -322,6 +322,15 @@ func TestSqliteTypeConversion(t *testing.T) {
 func TestIssue615(t *testing.T) {
 	ctxb := context.Background()
 
+	// Create an invoice to get the timestamp from.
+	invoice := "lnbc5u1pje2dyusp5qs356crpns9u3we8hw7w9gntfz89zkcaxu6w6h6a" +
+		"pw6jlgc0cynqpp5y2xdzu4eqasuttxp3nrk72vqdzce3wead7nmf693uqpgx" +
+		"2hd533qdpcyfnx2etyyp3ks6trddjkuueqw3hkketwwv7kgvrd0py95d6vvv" +
+		"65z0fzxqzfvcqpjrzjqd82srutzjx82prr234anxdlwvs6peklcc92lp9aqs" +
+		"q296xnwmqd2rrf9gqqtwqqqqqqqqqqqqqqqqqq9q9qxpqysgq768236z7cx6" +
+		"gyy766wajrmpnpt6wavkf5nypwyj6r3dcxm89aggq2jm2kznaxvr0lrsqgv7" +
+		"592upfh5ruyrwzy5tethpzere78xfgwqp64jrpa"
+
 	// Create a new sqlite store for testing.
 	sqlDB := NewTestDB(t)
 
@@ -356,7 +365,7 @@ func TestIssue615(t *testing.T) {
 		MaxPrepayRoutingFee:     40,
 		PrepayInvoice:           "prepayinvoice",
 		DestAddr:                destAddr,
-		SwapInvoice:             "swapinvoice",
+		SwapInvoice:             invoice,
 		MaxSwapRoutingFee:       30,
 		SweepConfTarget:         2,
 		HtlcConfirmations:       2,
