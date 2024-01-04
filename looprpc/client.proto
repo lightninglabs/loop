@@ -544,6 +544,34 @@ enum FailureReason {
 }
 
 message ListSwapsRequest {
+    // Optional filter to only return swaps that match the filter.
+    ListSwapsFilter list_swap_filter = 1;
+}
+
+message ListSwapsFilter {
+    enum SwapTypeFilter {
+        // ANY indicates that no filter is applied.
+        ANY = 0;
+        // LOOP_OUT indicates an loop out swap (off-chain to on-chain).
+        LOOP_OUT = 1;
+
+        // LOOP_IN indicates a loop in swap (on-chain to off-chain).
+        LOOP_IN = 2;
+    }
+    // The type of the swap.
+    SwapTypeFilter swap_type = 1;
+
+    // If set, only pending swaps are returned.
+    bool pending_only = 2;
+
+    // If specified on creation, the outgoing channel set of the swap.
+    repeated uint64 outgoing_chan_set = 3;
+
+    // Label of swap to filter for.
+    string label = 4;
+
+    // If specified on creation, the last hop of the swap.
+    bytes loop_in_last_hop = 5;
 }
 
 message ListSwapsResponse {

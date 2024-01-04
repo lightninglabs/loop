@@ -15,6 +15,13 @@ import (
 	"github.com/urfave/cli"
 )
 
+var (
+	channelFlag = cli.StringFlag{
+		Name: "channel",
+		Usage: "the comma-separated list of short " +
+			"channel IDs of the channels to loop out",
+	}
+)
 var loopOutCommand = cli.Command{
 	Name:      "out",
 	Usage:     "perform an off-chain to on-chain swap (looping out)",
@@ -28,11 +35,6 @@ var loopOutCommand = cli.Command{
 	Optionally a BASE58/bech32 encoded bitcoin destination address may be
 	specified. If not specified, a new wallet address will be generated.`,
 	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name: "channel",
-			Usage: "the comma-separated list of short " +
-				"channel IDs of the channels to loop out",
-		},
 		cli.StringFlag{
 			Name: "addr",
 			Usage: "the optional address that the looped out funds " +
@@ -93,6 +95,7 @@ var loopOutCommand = cli.Command{
 		forceFlag,
 		labelFlag,
 		verboseFlag,
+		channelFlag,
 	},
 	Action: loopOut,
 }

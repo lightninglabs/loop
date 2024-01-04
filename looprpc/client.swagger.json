@@ -462,6 +462,55 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "list_swap_filter.swap_type",
+            "description": "The type of the swap.\n\n - ANY: ANY indicates that no filter is applied.\n - LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "ANY",
+              "LOOP_OUT",
+              "LOOP_IN"
+            ],
+            "default": "ANY"
+          },
+          {
+            "name": "list_swap_filter.pending_only",
+            "description": "If set, only pending swaps are returned.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "list_swap_filter.outgoing_chan_set",
+            "description": "If specified on creation, the outgoing channel set of the swap.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uint64"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "list_swap_filter.label",
+            "description": "Label of swap to filter for.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "list_swap_filter.loop_in_last_hop",
+            "description": "If specified on creation, the last hop of the swap.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
         "tags": [
           "SwapClient"
         ]
@@ -492,6 +541,16 @@
     }
   },
   "definitions": {
+    "ListSwapsFilterSwapTypeFilter": {
+      "type": "string",
+      "enum": [
+        "ANY",
+        "LOOP_OUT",
+        "LOOP_IN"
+      ],
+      "default": "ANY",
+      "title": "- ANY: ANY indicates that no filter is applied.\n - LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)"
+    },
     "looprpcAbandonSwapResponse": {
       "type": "object"
     },
@@ -829,6 +888,36 @@
         "THRESHOLD"
       ],
       "default": "UNKNOWN"
+    },
+    "looprpcListSwapsFilter": {
+      "type": "object",
+      "properties": {
+        "swap_type": {
+          "$ref": "#/definitions/ListSwapsFilterSwapTypeFilter",
+          "description": "The type of the swap."
+        },
+        "pending_only": {
+          "type": "boolean",
+          "description": "If set, only pending swaps are returned."
+        },
+        "outgoing_chan_set": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "If specified on creation, the outgoing channel set of the swap."
+        },
+        "label": {
+          "type": "string",
+          "description": "Label of swap to filter for."
+        },
+        "loop_in_last_hop": {
+          "type": "string",
+          "format": "byte",
+          "description": "If specified on creation, the last hop of the swap."
+        }
+      }
     },
     "looprpcListSwapsResponse": {
       "type": "object",

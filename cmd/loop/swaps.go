@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
 
@@ -16,6 +19,23 @@ var listSwapsCommand = cli.Command{
 	Description: "Allows the user to get a list of all swaps that are " +
 		"currently stored in the database",
 	Action: listSwaps,
+	Flags: []cli.Flag{
+		cli.BoolFlag{
+			Name:  "loop_out_only",
+			Usage: "only list swaps that are loop out swaps",
+		},
+		cli.BoolFlag{
+			Name:  "loop_in_only",
+			Usage: "only list swaps that are loop in swaps",
+		},
+		cli.BoolFlag{
+			Name:  "pending_only",
+			Usage: "only list pending swaps",
+		},
+		labelFlag,
+		channelFlag,
+		lastHopFlag,
+	},
 }
 
 func listSwaps(ctx *cli.Context) error {
@@ -25,8 +45,64 @@ func listSwaps(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
+	if ctx.Bool("loop_out_only") && ctx.Bool("loop_in_only") {
+		return fmt.Errorf("only one of loop_out_only and loop_in_only " +
+			"can be set")
+	}
+
+	filter := &looprpc.ListSwapsFilter{}
+
+	// Set the swap type filter.
+	switch {
+	case ctx.Bool("loop_out_only"):
+		filter.SwapType = looprpc.ListSwapsFilter_LOOP_OUT
+	case ctx.Bool("loop_in_only"):
+		filter.SwapType = looprpc.ListSwapsFilter_LOOP_IN
+	}
+
+	// Set the pending only filter.
+	filter.PendingOnly = ctx.Bool("pending_only")
+
+	// Parse outgoing channel set. Don't string split if the flag is empty.
+	// Otherwise, strings.Split returns a slice of length one with an empty
+	// element.
+	var outgoingChanSet []uint64
+	if ctx.IsSet(channelFlag.Name) {
+		chanStrings := strings.Split(ctx.String(channelFlag.Name), ",")
+		for _, chanString := range chanStrings {
+			chanID, err := strconv.ParseUint(chanString, 10, 64)
+			if err != nil {
+				return fmt.Errorf("error parsing channel id "+
+					"\"%v\"", chanString)
+			}
+			outgoingChanSet = append(outgoingChanSet, chanID)
+		}
+		filter.OutgoingChanSet = outgoingChanSet
+	}
+
+	// Parse last hop.
+	var lastHop []byte
+	if ctx.IsSet(lastHopFlag.Name) {
+		lastHopVertex, err := route.NewVertexFromStr(
+			ctx.String(lastHopFlag.Name),
+		)
+		if err != nil {
+			return err
+		}
+
+		lastHop = lastHopVertex[:]
+		filter.LoopInLastHop = lastHop
+	}
+
+	// Parse label.
+	if ctx.IsSet(labelFlag.Name) {
+		filter.Label = ctx.String(labelFlag.Name)
+	}
+
 	resp, err := client.ListSwaps(
-		context.Background(), &looprpc.ListSwapsRequest{},
+		context.Background(), &looprpc.ListSwapsRequest{
+			ListSwapFilter: filter,
+		},
 	)
 	if err != nil {
 		return err
