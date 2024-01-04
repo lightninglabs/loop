@@ -3,7 +3,6 @@ package loopdb
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	sqlite_migrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightningnetwork/lnd/zpay32"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // Register relevant drivers.
@@ -213,7 +213,7 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// Manually fetch all the loop out swaps.
 	rows, err := b.DB.QueryContext(
-		ctx, "SELECT swap_hash, publication_deadline FROM loopout_swaps",
+		ctx, "SELECT swap_hash, swap_invoice, publication_deadline FROM loopout_swaps",
 	)
 	if err != nil {
 		return err
@@ -226,6 +226,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// the sqlite driver will fail on faulty timestamps.
 	type LoopOutRow struct {
 		Hash                []byte `json:"swap_hash"`
+		SwapInvoice         string `json:"swap_invoice"`
 		PublicationDeadline string `json:"publication_deadline"`
 	}
 
@@ -234,7 +235,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	for rows.Next() {
 		var swap LoopOutRow
 		err := rows.Scan(
-			&swap.Hash, &swap.PublicationDeadline,
+			&swap.Hash, &swap.SwapInvoice, &swap.PublicationDeadline,
 		)
 		if err != nil {
 			return err
@@ -264,14 +265,15 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 
 		// Skip if the year is not in the future.
 		thisYear := time.Now().Year()
-		if year <= thisYear {
+		if year > 2020 && year <= thisYear {
 			continue
 		}
 
-		fixedTime, err := fixTimeStamp(swap.PublicationDeadline)
+		payReq, err := zpay32.Decode(swap.SwapInvoice, b.network)
 		if err != nil {
 			return err
 		}
+		fixedTime := payReq.Timestamp.Add(time.Minute * 30)
 
 		// Update the faulty time to a valid time.
 		_, err = tx.ExecContext(
@@ -322,92 +324,6 @@ func (r *SqliteTxOptions) ReadOnly() bool {
 	return r.readOnly
 }
 
-// fixTimeStamp tries to parse a timestamp string with both the
-// parseSqliteTimeStamp and parsePostgresTimeStamp functions.
-// If both fail, it returns an error.
-func fixTimeStamp(dateTimeStr string) (time.Time, error) {
-	year, err := getTimeStampYear(dateTimeStr)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	// If the year is in the future. It was a faulty timestamp.
-	thisYear := time.Now().Year()
-	if year > thisYear {
-		dateTimeStr = strings.Replace(
-			dateTimeStr,
-			fmt.Sprintf("%d", year),
-			fmt.Sprintf("%d", thisYear),
-			1,
-		)
-	}
-
-	// If the year is a leap year and the date is 29th of February, we
-	// need to change it to 28th of February. Otherwise, the time.Parse
-	// function will fail, as a non-leap year cannot have 29th of February.
-	day, month, err := extractDayAndMonth(dateTimeStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("unable to parse timestamp day "+
-			"and month %v: %v", dateTimeStr, err)
-	}
-
-	if !isLeapYear(thisYear) &&
-		month == 2 && day == 29 {
-
-		dateTimeStr = strings.Replace(
-			dateTimeStr,
-			fmt.Sprintf("%d-02-29", thisYear),
-			fmt.Sprintf("%d-02-28", thisYear),
-			1,
-		)
-	}
-
-	parsedTime, err := parseLayouts(defaultLayouts(), dateTimeStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("unable to parse timestamp %v: %v",
-			dateTimeStr, err)
-	}
-
-	return parsedTime.UTC(), nil
-}
-
-// parseLayouts parses time based on a list of provided layouts.
-// If layouts is empty list or nil, the error with unknown layout will be returned.
-func parseLayouts(layouts []string, dateTime string) (time.Time, error) {
-	for _, layout := range layouts {
-		parsedTime, err := time.Parse(layout, dateTime)
-		if err == nil {
-			return parsedTime, nil
-		}
-	}
-
-	return time.Time{}, errors.New("unknown layout")
-}
-
-// defaultLayouts returns a default list of ALL supported layouts.
-// This function returns new copy of a slice.
-func defaultLayouts() []string {
-	return []string{
-		"2006-01-02 15:04:05.99999 -0700 MST", // Custom sqlite layout.
-		time.RFC3339Nano,
-		time.RFC3339,
-		time.RFC1123Z,
-		time.RFC1123,
-		time.RFC850,
-		time.RFC822Z,
-		time.RFC822,
-		time.Layout,
-		time.RubyDate,
-		time.UnixDate,
-		time.ANSIC,
-		time.StampNano,
-		time.StampMicro,
-		time.StampMilli,
-		time.Stamp,
-		time.Kitchen,
-	}
-}
-
 // getTimeStampYear returns the year of a timestamp string.
 func getTimeStampYear(dateTimeStr string) (int, error) {
 	parts := strings.Split(dateTimeStr, "-")
@@ -422,39 +338,4 @@ func getTimeStampYear(dateTimeStr string) (int, error) {
 	}
 
 	return year, nil
-}
-
-// extractDayAndMonth extracts the day and month from a date string.
-func extractDayAndMonth(dateStr string) (int, int, error) {
-	// Split the date string into parts using various delimiters.
-	parts := strings.FieldsFunc(dateStr, func(r rune) bool {
-		return r == '-' || r == ' ' || r == 'T' || r == ':' || r == '+' || r == 'Z'
-	})
-
-	if len(parts) < 3 {
-		return 0, 0, fmt.Errorf("Invalid date format: %s", dateStr)
-	}
-
-	// Extract year, month, and day from the parts.
-	_, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, err
-	}
-
-	month, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, err
-	}
-
-	day, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return day, month, nil
-}
-
-// isLeapYear returns true if the year is a leap year.
-func isLeapYear(year int) bool {
-	return (year%4 == 0 && year%100 != 0) || (year%400 == 0)
 }

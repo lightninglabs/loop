@@ -322,6 +322,15 @@ func TestSqliteTypeConversion(t *testing.T) {
 func TestIssue615(t *testing.T) {
 	ctxb := context.Background()
 
+	// Create an invoice to get the timestamp from.
+	invoice := "lnbc5u1pje2dyusp5qs356crpns9u3we8hw7w9gntfz89zkcaxu6w6h6a" +
+		"pw6jlgc0cynqpp5y2xdzu4eqasuttxp3nrk72vqdzce3wead7nmf693uqpgx" +
+		"2hd533qdpcyfnx2etyyp3ks6trddjkuueqw3hkketwwv7kgvrd0py95d6vvv" +
+		"65z0fzxqzfvcqpjrzjqd82srutzjx82prr234anxdlwvs6peklcc92lp9aqs" +
+		"q296xnwmqd2rrf9gqqtwqqqqqqqqqqqqqqqqqq9q9qxpqysgq768236z7cx6" +
+		"gyy766wajrmpnpt6wavkf5nypwyj6r3dcxm89aggq2jm2kznaxvr0lrsqgv7" +
+		"592upfh5ruyrwzy5tethpzere78xfgwqp64jrpa"
+
 	// Create a new sqlite store for testing.
 	sqlDB := NewTestDB(t)
 
@@ -356,7 +365,7 @@ func TestIssue615(t *testing.T) {
 		MaxPrepayRoutingFee:     40,
 		PrepayInvoice:           "prepayinvoice",
 		DestAddr:                destAddr,
-		SwapInvoice:             "swapinvoice",
+		SwapInvoice:             invoice,
 		MaxSwapRoutingFee:       30,
 		SweepConfTarget:         2,
 		HtlcConfirmations:       2,
@@ -382,82 +391,6 @@ func TestIssue615(t *testing.T) {
 
 	_, err = sqlDB.GetLoopOutSwaps(ctxb)
 	require.NoError(t, err)
-}
-
-func TestTimeConversions(t *testing.T) {
-	tests := []struct {
-		timeString   string
-		expectedTime time.Time
-	}{
-		{
-			timeString:   "2018-11-01 00:00:00 +0000 UTC",
-			expectedTime: time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			timeString:   "2018-11-01 00:00:01.10000 +0000 UTC",
-			expectedTime: time.Date(2018, 11, 1, 0, 0, 1, 100000000, time.UTC),
-		},
-		{
-			timeString: "2053-12-29T02:40:44.269009408Z",
-			expectedTime: time.Date(
-				time.Now().Year(), 12, 29, 2, 40, 44, 269009408, time.UTC,
-			),
-		},
-		{
-			timeString: "55563-06-27 02:09:24 +0000 UTC",
-			expectedTime: time.Date(
-				time.Now().Year(), 6, 27, 2, 9, 24, 0, time.UTC,
-			),
-		},
-		{
-			timeString: "2172-03-11 10:01:11.849906176 +0000 UTC",
-			expectedTime: time.Date(
-				time.Now().Year(), 3, 11, 10, 1, 11, 849906176, time.UTC,
-			),
-		},
-		{
-			timeString: "2023-08-04 16:07:49 +0800 CST",
-			expectedTime: time.Date(
-				2023, 8, 4, 8, 7, 49, 0, time.UTC,
-			),
-		},
-		{
-			timeString: "2023-08-04 16:07:49 -0700 MST",
-			expectedTime: time.Date(
-				2023, 8, 4, 23, 7, 49, 0, time.UTC,
-			),
-		},
-		{
-			timeString: "2023-08-04T16:07:49+08:00",
-			expectedTime: time.Date(
-				2023, 8, 4, 8, 7, 49, 0, time.UTC,
-			),
-		},
-		{
-			timeString: "2023-08-04T16:07:49+08:00",
-			expectedTime: time.Date(
-				2023, 8, 4, 8, 7, 49, 0, time.UTC,
-			),
-		},
-		{
-			timeString: "2188-02-29 15:34:23.847906176 +0000 UTC",
-			expectedTime: time.Date(
-				2023, 2, 28, 15, 34, 23, 847906176, time.UTC,
-			),
-		},
-		{
-			timeString: "2188-02-29T16:07:49+08:00",
-			expectedTime: time.Date(
-				2023, 2, 28, 8, 7, 49, 0, time.UTC,
-			),
-		},
-	}
-
-	for _, test := range tests {
-		time, err := fixTimeStamp(test.timeString)
-		require.NoError(t, err)
-		require.Equal(t, test.expectedTime, time)
-	}
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
