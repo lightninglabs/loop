@@ -63,6 +63,8 @@ services:
       - "--lnd.host=regtest_lndserver_1:10009"
       - "--lnd.macaroondir=/root/.lnd/data/chain/bitcoin/regtest"
       - "--lnd.tlspath=/root/.lnd/tls.cert"
+      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
+      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
 
   lndclient:
     image: lightninglabs/lnd:v0.17.0-beta
