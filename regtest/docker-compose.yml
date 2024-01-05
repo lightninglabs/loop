@@ -1,10 +1,13 @@
 version: '3'
 services:
   bitcoind:
-    image: lightninglabs/bitcoin-core
+    image: ruimarinho/bitcoin-core:23
+    container_name: bitcoind
     restart: unless-stopped
     networks:
-      - regtest
+      regtest:
+        aliases:
+          - bitcoind
     command:
       - "-txindex"
       - "-regtest"
@@ -16,43 +19,53 @@ services:
       - "-rpcbind=0.0.0.0"
       # This is just the hashed string "lightning" with a salt.
       - "-rpcauth=lightning:8492220e715bbfdf5f165102bfd7ed4$$88090545821ed5e9db614588c0afbad575ccc14681fb77f3cae6899bc419af67"
-      - "-rpcallowip=172.0.0.0/8"
-      - "-rpcallowip=127.0.0.1"
+      - "-rpcallowip=0.0.0.0/0"
       - "-fallbackfee=0.0002"
       - "-peerblockfilters=1"
       - "-blockfilterindex=1"
       - "-wallet=/home/bitcoin/.bitcoin/regtest/wallets/miner"
     environment:
       - HOME=/home/bitcoin
+    volumes:
+      - bitcoind:/home/bitcoin/.bitcoin
 
   lndserver:
     image: lightninglabs/lnd:v0.17.0-beta
+    container_name: lndserver 
     restart: unless-stopped
     networks:
-      - regtest
+      regtest:
+        aliases:
+          - lndserver
     volumes:
       - "lndserver:/root/.lnd"
     depends_on:
       - bitcoind
     command:
+      - "--logdir=/root/.lnd"
       - "--alias=lndserver"
       - "--rpclisten=0.0.0.0:10009"
       - "--noseedbackup"
       - "--bitcoin.active"
       - "--bitcoin.regtest"
       - "--bitcoin.node=bitcoind"
-      - "--bitcoind.rpchost=regtest_bitcoind_1"
+      - "--bitcoind.rpchost=bitcoind"
       - "--bitcoind.rpcuser=lightning"
       - "--bitcoind.rpcpass=lightning"
-      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
-      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
-      - "--tlsextradomain=regtest_lndserver_1"
+      - "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332"
+      - "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
+      - "--debuglevel=debug"
+      - "--externalip=lndserver"
+      - "--tlsextradomain=lndserver"
 
   loopserver:
     image: lightninglabs/loopserver
+    container_name: loopserver
     restart: unless-stopped
     networks:
-      - regtest
+      regtest:
+        aliases:
+          - loopserver
     volumes:
       - "lndserver:/root/.lnd"
     depends_on:
@@ -60,43 +73,55 @@ services:
     command:
       - "daemon"
       - "--maxamt=5000000"
-      - "--lnd.host=regtest_lndserver_1:10009"
-      - "--lnd.macaroondir=/root/.lnd/data/chain/bitcoin/regtest"
-      - "--lnd.tlspath=/root/.lnd/tls.cert"
-      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
-      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
+      - "--lnd.host=lndserver:10009"
+      - "--lnd.macaroondir=/home/loopserver/"
+      - "--lnd.tlspath=/home/loopserver/tls.cert"
+      - "--bitcoin.host=bitcoind:18443"
+      - "--bitcoin.user=lightning"
+      - "--bitcoin.password=lightning"
+      - "--bitcoin.zmqpubrawblock=tcp://bitcoind:28332"
+      - "--bitcoin.zmqpubrawtx=tcp://bitcoind:28333"
 
   lndclient:
     image: lightninglabs/lnd:v0.17.0-beta
+    container_name: lndclient 
     restart: unless-stopped
     networks:
-      - regtest
+      regtest:
+        aliases:
+          - lndclient
     volumes:
       - "lndclient:/root/.lnd"
     depends_on:
       - bitcoind
     command:
+      - "--logdir=/root/.lnd"
       - "--alias=lndclient"
       - "--rpclisten=0.0.0.0:10009"
       - "--noseedbackup"
       - "--bitcoin.active"
       - "--bitcoin.regtest"
       - "--bitcoin.node=bitcoind"
-      - "--bitcoind.rpchost=regtest_bitcoind_1"
+      - "--bitcoind.rpchost=bitcoind"
       - "--bitcoind.rpcuser=lightning"
       - "--bitcoind.rpcpass=lightning"
-      - "--bitcoind.zmqpubrawblock=tcp://regtest_bitcoind_1:28332"
-      - "--bitcoind.zmqpubrawtx=tcp://regtest_bitcoind_1:28333"
-      - "--tlsextradomain=regtest_lndclient_1"
+      - "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332"
+      - "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
+      - "--debuglevel=debug"
+      - "--externalip=lndclient"
+      - "--tlsextradomain=lndclient"
 
   loopclient:
     image: loopd
+    container_name: loopclient
     build:
       context: ../
       dockerfile: Dockerfile
     restart: unless-stopped
     networks:
-      - regtest
+      regtest:
+        aliases:
+          - loopclient
     volumes:
       - "lndclient:/root/.lnd"
     depends_on:
@@ -105,9 +130,9 @@ services:
       - "loopd"
       - "--network=regtest"
       - "--debuglevel=debug"
-      - "--server.host=regtest_loopserver_1:11009"
+      - "--server.host=loopclient:11009"
       - "--server.notls"
-      - "--lnd.host=regtest_lndclient_1:10009"
+      - "--lnd.host=lndclient:10009"
       - "--lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
       - "--lnd.tlspath=/root/.lnd/tls.cert"
 
@@ -115,5 +140,6 @@ networks:
   regtest:
 
 volumes:
+  bitcoind:
   lndserver:
   lndclient:
