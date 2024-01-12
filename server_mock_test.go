@@ -45,7 +45,7 @@ type serverMock struct {
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
 
-	// cancelSwap is a channel that swap cancelations are sent into.
+	// cancelSwap is a channel that swap cancellations are sent into.
 	cancelSwap chan *outCancelDetails
 
 	lnd *test.LndMockServices
