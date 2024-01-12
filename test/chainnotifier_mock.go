@@ -133,7 +133,7 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 				r := c.confRegistrations[i]
 
 				// Whichever conf notifier catches the confirmation
-				// will forward it to all matching subscibers.
+				// will forward it to all matching subscribers.
 				if bytes.Equal(m.Tx.TxOut[0].PkScript, r.PkScript) {
 					// Unregister the "notifier".
 					c.confRegistrations = append(
