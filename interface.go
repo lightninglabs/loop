@@ -304,7 +304,7 @@ type LoopInSwapInfo struct { // nolint
 	// where the loop-in funds may be paid.
 	HtlcAddressP2WSH btcutil.Address
 
-	// HtlcAddresP2TR contains the v3 (pay to taproot) htlc address.
+	// HtlcAddressP2TR contains the v3 (pay to taproot) htlc address.
 	HtlcAddressP2TR btcutil.Address
 
 	// ServerMessages is the human-readable message received from the loop
