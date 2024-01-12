@@ -326,7 +326,7 @@ type HtlcScriptV2 struct {
 	senderKey [33]byte
 }
 
-// newHTLCScriptV2 construct an HtlcScipt with the HTLC V2 witness script.
+// newHTLCScriptV2 construct an HtlcScript with the HTLC V2 witness script.
 //
 // <receiverHtlcKey> OP_CHECKSIG OP_NOTIF
 //
@@ -524,7 +524,7 @@ func parsePubKey(muSig2Version input.MuSig2Version, key [33]byte) (
 	}
 }
 
-// newHTLCScriptV3 constructs a HtlcScipt with the HTLC V3 taproot script.
+// newHTLCScriptV3 constructs a HtlcScript with the HTLC V3 taproot script.
 func newHTLCScriptV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 	senderInternalKey, receiverInternalKey, senderHtlcKey,
 	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV3, error) {
