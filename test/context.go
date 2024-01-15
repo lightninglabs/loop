@@ -259,3 +259,9 @@ func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
 func (ctx *Context) NotifyServerHeight(height int32) {
 	require.NoError(ctx.T, ctx.Lnd.NotifyHeight(height))
 }
+
+func (ctx *Context) AssertEpochListeners(numListeners int32) {
+	require.Eventually(ctx.T, func() bool {
+		return ctx.Lnd.EpochSubscribers() == numListeners
+	}, Timeout, time.Millisecond*250)
+}

@@ -73,31 +73,40 @@ func (c *mockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 	chan int32, chan error, error) {
 
 	blockErrorChan := make(chan error, 1)
-	blockEpochChan := make(chan int32)
+	blockEpochChan := make(chan int32, 1)
+
+	c.lnd.lock.Lock()
+	c.lnd.blockHeightListeners = append(
+		c.lnd.blockHeightListeners, blockEpochChan,
+	)
+	c.lnd.lock.Unlock()
 
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer func() {
+			c.lnd.lock.Lock()
+			defer c.lnd.lock.Unlock()
+			for i := 0; i < len(c.lnd.blockHeightListeners); i++ {
+				if c.lnd.blockHeightListeners[i] == blockEpochChan {
+					c.lnd.blockHeightListeners = append(
+						c.lnd.blockHeightListeners[:i],
+						c.lnd.blockHeightListeners[i+1:]...,
+					)
+					break
+				}
+			}
+		}()
 
 		// Send initial block height
+		c.lnd.lock.Lock()
 		select {
 		case blockEpochChan <- c.lnd.Height:
 		case <-ctx.Done():
-			return
 		}
+		c.lnd.lock.Unlock()
 
-		for {
-			select {
-			case m := <-c.lnd.epochChannel:
-				select {
-				case blockEpochChan <- m:
-				case <-ctx.Done():
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
+		<-ctx.Done()
 	}()
 
 	return blockEpochChan, blockErrorChan, nil
