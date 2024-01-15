@@ -1,0 +1,33 @@
+name: Syntax Review
+on: [push, pull_request]
+
+jobs:
+  gpt_review:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Syntax Review
+      uses: nodify-at/gpt-pull-bot@1.0.3
+      with:
+        api-key: ${{ secrets.GPT_API_KEY }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        model: gpt-3.5-turbo
+        review-focus: syntax
+
+    - name: Performance Review
+      uses: nodify-at/gpt-pull-bot@1.0.3
+      with:
+        api-key: ${{ secrets.GPT_API_KEY }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        model: gpt-3.5-turbo
+        review-focus: performance
+
+    - name: Security Review
+      uses: nodify-at/gpt-pull-bot@1.0.3
+      with:
+        api-key: ${{ secrets.GPT_API_KEY }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        model: gpt-3.5-turbo
+        review-focus: security
