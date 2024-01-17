@@ -206,6 +206,8 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 		// current state.
 		state, err := s.getNextState(event)
 		if err != nil {
+			log.Errorf("unable to get next state: %v from event: "+
+				"%v, current state: %v", err, event, s.current)
 			return ErrEventRejected
 		}
 

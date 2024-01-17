@@ -147,7 +147,7 @@ func main() {
 		monitorCommand, quoteCommand, listAuthCommand,
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
-		getInfoCommand, abandonSwapCommand,
+		getInfoCommand, abandonSwapCommand, reservationsCommands,
 	}
 
 	err := app.Run(os.Args)

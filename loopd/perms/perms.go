@@ -96,4 +96,8 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "loop",
 		Action: "in",
 	}},
+	"/looprpc.SwapClient/ListReservations": {{
+		Entity: "reservation",
+		Action: "read",
+	}},
 }

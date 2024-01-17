@@ -83,6 +83,9 @@ type SwapClientClient interface {
 	//Note that only loop out suggestions are currently supported.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(ctx context.Context, in *SuggestSwapsRequest, opts ...grpc.CallOption) (*SuggestSwapsResponse, error)
+	// loop: `listreservations`
+	//ListReservations returns a list of all reservations the server opened to us.
+	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
 }
 
 type swapClientClient struct {
@@ -260,6 +263,15 @@ func (c *swapClientClient) SuggestSwaps(ctx context.Context, in *SuggestSwapsReq
 	return out, nil
 }
 
+func (c *swapClientClient) ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error) {
+	out := new(ListReservationsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListReservations", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -329,6 +341,9 @@ type SwapClientServer interface {
 	//Note that only loop out suggestions are currently supported.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error)
+	// loop: `listreservations`
+	//ListReservations returns a list of all reservations the server opened to us.
+	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -383,6 +398,9 @@ func (UnimplementedSwapClientServer) SetLiquidityParams(context.Context, *SetLiq
 }
 func (UnimplementedSwapClientServer) SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SuggestSwaps not implemented")
+}
+func (UnimplementedSwapClientServer) ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReservations not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -688,6 +706,24 @@ func _SwapClient_SuggestSwaps_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_ListReservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReservationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListReservations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListReservations",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListReservations(ctx, req.(*ListReservationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -754,6 +790,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SuggestSwaps",
 			Handler:    _SwapClient_SuggestSwaps_Handler,
+		},
+		{
+			MethodName: "ListReservations",
+			Handler:    _SwapClient_ListReservations_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
