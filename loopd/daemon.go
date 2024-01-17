@@ -484,18 +484,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Create the reservation rpc server.
-	reservationStore := reservation.NewSQLStore(baseDb)
-	reservationConfig := &reservation.Config{
-		Store:             reservationStore,
-		Wallet:            d.lnd.WalletKit,
-		ChainNotifier:     d.lnd.ChainNotifier,
-		ReservationClient: reservationClient,
-		FetchL402:         swapClient.Server.FetchL402,
-	}
+	if d.cfg.EnableExperimental {
+		reservationStore := reservation.NewSQLStore(baseDb)
+		reservationConfig := &reservation.Config{
+			Store:             reservationStore,
+			Wallet:            d.lnd.WalletKit,
+			ChainNotifier:     d.lnd.ChainNotifier,
+			ReservationClient: reservationClient,
+			FetchL402:         swapClient.Server.FetchL402,
+		}
 
-	d.reservationManager = reservation.NewManager(
-		reservationConfig,
-	)
+		d.reservationManager = reservation.NewManager(
+			reservationConfig,
+		)
+	}
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
@@ -576,28 +578,30 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}()
 
 	// Start the reservation manager.
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
+	if d.reservationManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
 
-		// We need to know the current block height to properly
-		// initialize the reservation manager.
-		getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
-		if err != nil {
-			d.internalErrChan <- err
-			return
-		}
+			// We need to know the current block height to properly
+			// initialize the reservation manager.
+			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
 
-		log.Info("Starting reservation manager")
-		defer log.Info("Reservation manager stopped")
+			log.Info("Starting reservation manager")
+			defer log.Info("Reservation manager stopped")
 
-		err = d.reservationManager.Run(
-			d.mainCtx, int32(getInfo.BlockHeight),
-		)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			d.internalErrChan <- err
-		}
-	}()
+			err = d.reservationManager.Run(
+				d.mainCtx, int32(getInfo.BlockHeight),
+			)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		}()
+	}
 
 	// Last, start our internal error handler. This will return exactly one
 	// error or nil on the main error channel to inform the caller that

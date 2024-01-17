@@ -1145,6 +1145,10 @@ func (s *swapClientServer) ListReservations(ctx context.Context,
 	_ *clientrpc.ListReservationsRequest) (
 	*clientrpc.ListReservationsResponse, error) {
 
+	if s.reservationManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
 	reservations, err := s.reservationManager.GetReservations(
 		ctx,
 	)

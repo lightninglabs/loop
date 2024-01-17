@@ -168,7 +168,7 @@ type Config struct {
 	TotalPaymentTimeout time.Duration `long:"totalpaymenttimeout" description:"The timeout to use for off-chain payments."`
 	MaxPaymentRetries   int           `long:"maxpaymentretries" description:"The maximum number of times an off-chain payment may be retried."`
 
-	EnableExperimental bool `long:"experimental" description:"Enable experimental features: taproot HTLCs and MuSig2 loop out sweeps."`
+	EnableExperimental bool `long:"experimental" description:"Enable experimental features: reservations"`
 
 	Lnd *lndConfig `group:"lnd" namespace:"lnd"`
 
