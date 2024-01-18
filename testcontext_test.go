@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -51,6 +52,24 @@ func mockVerifySchnorrSigFail(pubKey *btcec.PublicKey, hash,
 	return fmt.Errorf("invalid sig")
 }
 
+// mockVerifySchnorrSigSuccess is used to simulate successful taproot keyspend
+// signature verification. If passed to the executeConfig we'll test an
+// uncooperative server and will fall back to scriptspend sweep.
+func mockVerifySchnorrSigSuccess(pubKey *btcec.PublicKey, hash,
+	sig []byte) error {
+
+	return fmt.Errorf("invalid sig")
+}
+
+func mockMuSig2SignSweep(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+	prevoutMap map[wire.OutPoint]*wire.TxOut) (
+	[]byte, []byte, error) {
+
+	return nil, nil, nil
+}
+
 func newSwapClient(config *clientConfig) *Client {
 	sweeper := &sweep.Sweeper{
 		Lnd: config.LndServices,
@@ -58,10 +77,20 @@ func newSwapClient(config *clientConfig) *Client {
 
 	lndServices := config.LndServices
 
+	batcherStore := sweepbatcher.NewStoreMock()
+
+	batcher := sweepbatcher.NewBatcher(
+		config.LndServices.WalletKit, config.LndServices.ChainNotifier,
+		config.LndServices.Signer, mockMuSig2SignSweep,
+		mockVerifySchnorrSigSuccess, config.LndServices.ChainParams,
+		batcherStore, config.Store,
+	)
+
 	executor := newExecutor(&executorConfig{
 		lnd:               lndServices,
 		store:             config.Store,
 		sweeper:           sweeper,
+		batcher:           batcher,
 		createExpiryTimer: config.CreateExpiryTimer,
 		cancelSwap:        config.Server.CancelLoopOutSwap,
 		verifySchnorrSig:  mockVerifySchnorrSigFail,

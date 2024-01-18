@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -293,13 +294,33 @@ func testCustomSweepConfTarget(t *testing.T) {
 		return expiryChan
 	}
 
-	errChan := make(chan error)
+	errChan := make(chan error, 2)
+
+	batcherStore := sweepbatcher.NewStoreMock()
+
+	batcher := sweepbatcher.NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
+		lnd.ChainParams, batcherStore, cfg.store,
+	)
+
+	tctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := batcher.Run(tctx)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+
+	go func() {
+		err := swap.execute(tctx, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
 			sweeper:          sweeper,
+			batcher:          batcher,
 			cancelSwap:       server.CancelLoopOutSwap,
 			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, ctx.Lnd.Height)
@@ -335,15 +356,20 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	ctx.NotifyConf(htlcTx)
 
-	// The client should then register for a spend of the HTLC and attempt
-	// to sweep it using the custom confirmation target.
-	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
-
 	// Assert that we made a query to track our payment, as required for
 	// preimage push tracking.
 	trackPayment := ctx.AssertTrackPayment()
 
 	expiryChan <- time.Now()
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	ctx.AssertEpochListeners(1)
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 1)
+	require.NoError(t, err)
 
 	// Expect a signing request for the HTLC success transaction.
 	if !IsTaprootSwap(&swap.SwapContract) {
@@ -409,7 +435,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	// The sweep should have a fee that corresponds to the custom
 	// confirmation target.
-	_ = assertSweepTx(testReq.SweepConfTarget)
+	sweepTx := assertSweepTx(testReq.SweepConfTarget)
 
 	// Once we have published an on chain sweep, we expect a preimage to
 	// have been pushed to our server.
@@ -426,22 +452,12 @@ func testCustomSweepConfTarget(t *testing.T) {
 		State: lnrpc.Payment_SUCCEEDED,
 	}
 
-	// We'll then notify the height at which we begin using the default
-	// confirmation target.
-	defaultConfTargetHeight := ctx.Lnd.Height +
-		testLoopOutMinOnChainCltvDelta - DefaultSweepConfTargetDelta
-	blockEpochChan <- defaultConfTargetHeight
-	expiryChan <- time.Now()
-
-	// Expect another signing request.
-	<-ctx.Lnd.SignOutputRawChannel
-
-	// We should expect to see another sweep using the higher fee since the
-	// spend hasn't been confirmed yet.
-	sweepTx := assertSweepTx(DefaultSweepConfTarget)
-
-	// Notify the spend so that the swap reaches its final state.
+	// Notify the batch for the spend.
 	ctx.NotifySpend(sweepTx, 0)
+
+	// After receiving the notification the batch will start monitoring the
+	// confirmations.
+	ctx.AssertRegisterConf(true, 3)
 
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
@@ -511,13 +527,33 @@ func testPreimagePush(t *testing.T) {
 		return expiryChan
 	}
 
-	errChan := make(chan error)
+	errChan := make(chan error, 2)
+
+	batcherStore := sweepbatcher.NewStoreMock()
+
+	batcher := sweepbatcher.NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
+		lnd.ChainParams, batcherStore, cfg.store,
+	)
+
+	tctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		err := batcher.Run(tctx)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
 			sweeper:          sweeper,
+			batcher:          batcher,
 			cancelSwap:       server.CancelLoopOutSwap,
 			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}, ctx.Lnd.Height)
@@ -553,10 +589,6 @@ func testPreimagePush(t *testing.T) {
 
 	ctx.NotifyConf(htlcTx)
 
-	// The client should then register for a spend of the HTLC and attempt
-	// to sweep it using the custom confirmation target.
-	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
-
 	// Assert that we made a query to track our payment, as required for
 	// preimage push tracking.
 	trackPayment := ctx.AssertTrackPayment()
@@ -566,6 +598,15 @@ func testPreimagePush(t *testing.T) {
 	// fee. We do not expect a sweep attempt at this point. Since our
 	// preimage is not revealed, we also do not expect a preimage push.
 	expiryChan <- testTime
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	ctx.AssertEpochListeners(1)
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 1)
+	require.NoError(t, err)
 
 	// When using taproot htlcs the flow is different as we do reveal the
 	// preimage before sweeping in order for the server to trust us with
@@ -581,15 +622,6 @@ func testPreimagePush(t *testing.T) {
 
 		preimage := <-server.preimagePush
 		require.Equal(t, swap.Preimage, preimage)
-
-		// Try MuSig2 signing first and fail it so that we go for a
-		// normal sweep.
-		for i := 0; i < maxMusigSweepRetries; i++ {
-			expiryChan <- time.Now()
-
-			preimage := <-server.preimagePush
-			require.Equal(t, swap.Preimage, preimage)
-		}
 
 		<-ctx.Lnd.SignOutputRawChannel
 
@@ -611,6 +643,10 @@ func testPreimagePush(t *testing.T) {
 	// Now when we report a new block and tick our expiry fee timer, and
 	// fees are acceptably low so we expect our sweep to be published.
 	blockEpochChan <- ctx.Lnd.Height + 2
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 2)
+	require.NoError(t, err)
+
 	expiryChan <- testTime
 
 	if IsTaprootSwap(&swap.SwapContract) {
@@ -648,6 +684,10 @@ func testPreimagePush(t *testing.T) {
 	// chain yet so we can test our preimage push retry logic. Instead, we
 	// tick the expiry chan again to prompt another sweep.
 	expiryChan <- testTime
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 2)
+	require.NoError(t, err)
+
 	if IsTaprootSwap(&swap.SwapContract) {
 		preimage := <-server.preimagePush
 		require.Equal(t, swap.Preimage, preimage)
@@ -678,12 +718,20 @@ func testPreimagePush(t *testing.T) {
 	// push. The test's mocked preimage channel is un-buffered, so our test
 	// would hang if we pushed the preimage here.
 	expiryChan <- testTime
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 2)
+	require.NoError(t, err)
+
 	<-ctx.Lnd.SignOutputRawChannel
 	sweepTx := ctx.ReceiveTx()
 
 	// Finally, we put this swap out of its misery and notify a successful
 	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
+
+	// After receiving the spend ntfn the batch will start monitoring for
+	// confs.
+	ctx.AssertRegisterConf(true, 3)
 
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status := <-statusChan
@@ -892,8 +940,6 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		return expiryChan
 	}
 
-	errChan := make(chan error)
-
 	// Mock a successful signature verify to make sure we don't fail
 	// creating the MuSig2 sweep.
 	mockVerifySchnorrSigSuccess := func(pubKey *btcec.PublicKey, hash,
@@ -902,12 +948,33 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		return nil
 	}
 
+	errChan := make(chan error, 2)
+
+	batcherStore := sweepbatcher.NewStoreMock()
+
+	batcher := sweepbatcher.NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
+		lnd.ChainParams, batcherStore, cfg.store,
+	)
+
+	tctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		err := batcher.Run(tctx)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+
 	go func() {
 		err := swap.execute(context.Background(), &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
 			sweeper:          sweeper,
+			batcher:          batcher,
 			cancelSwap:       server.CancelLoopOutSwap,
 			verifySchnorrSig: mockVerifySchnorrSigSuccess,
 		}, ctx.Lnd.Height)
@@ -943,10 +1010,6 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	ctx.NotifyConf(htlcTx)
 
-	// The client should then register for a spend of the HTLC and attempt
-	// to sweep it using the custom confirmation target.
-	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
-
 	// Assert that we made a query to track our payment, as required for
 	// preimage push tracking.
 	trackPayment := ctx.AssertTrackPayment()
@@ -956,6 +1019,15 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	// fee. We do not expect a sweep attempt at this point. Since our
 	// preimage is not revealed, we also do not expect a preimage push.
 	expiryChan <- testTime
+
+	// The client should then register for a spend of the HTLC and attempt
+	// to sweep it using the custom confirmation target.
+	ctx.AssertRegisterSpendNtfn(swap.htlc.PkScript)
+
+	ctx.AssertEpochListeners(1)
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 1)
+	require.NoError(t, err)
 
 	// When using taproot htlcs the flow is different as we do reveal the
 	// preimage before sweeping in order for the server to trust us with
@@ -988,6 +1060,10 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	// Now when we report a new block and tick our expiry fee timer, and
 	// fees are acceptably low so we expect our sweep to be published.
 	blockEpochChan <- ctx.Lnd.Height + 2
+
+	err = ctx.Lnd.NotifyHeight(ctx.Lnd.Height + 2)
+	require.NoError(t, err)
+
 	expiryChan <- testTime
 
 	preimage = <-server.preimagePush
@@ -1009,6 +1085,10 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	// Finally, we put this swap out of its misery and notify a successful
 	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
+
+	// After receiving the spend ntfn the batch will start monitoring for
+	// confs.
+	ctx.AssertRegisterConf(true, 3)
 
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan

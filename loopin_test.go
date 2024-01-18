@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -449,7 +450,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		pendSwap.Loop.Events[0].Cost = cost
 	}
 
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		testPreimage.Hash(), &contract.SwapContract,
 		cfg.lnd.ChainParams,
 	)
