@@ -45,7 +45,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
 	server := newServerMock(lnd)
-	store := newStoreMock(t)
+	store := loopdb.NewStoreMock(t)
 
 	expiryChan := make(chan time.Time)
 	timerFactory := func(_ time.Duration) <-chan time.Time {
@@ -99,7 +99,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 		errChan <- err
 	}()
 
-	store.assertLoopOutStored()
+	store.AssertLoopOutStored()
 
 	state := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, state.State)
@@ -168,7 +168,7 @@ func testLateHtlcPublish(t *testing.T) {
 
 	server := newServerMock(lnd)
 
-	store := newStoreMock(t)
+	store := loopdb.NewStoreMock(t)
 
 	expiryChan := make(chan time.Time)
 	timerFactory := func(expiry time.Duration) <-chan time.Time {
@@ -208,7 +208,7 @@ func testLateHtlcPublish(t *testing.T) {
 		errChan <- err
 	}()
 
-	store.assertLoopOutStored()
+	store.AssertLoopOutStored()
 	status := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, status.State)
 
@@ -228,7 +228,7 @@ func testLateHtlcPublish(t *testing.T) {
 		errors.New(lndclient.PaymentResultUnknownPaymentHash),
 	)
 
-	store.assertStoreFinished(loopdb.StateFailTimeout)
+	store.AssertStoreFinished(loopdb.StateFailTimeout)
 
 	status = <-statusChan
 	require.Equal(t, loopdb.StateFailTimeout, status.State)
@@ -273,7 +273,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -310,7 +310,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	}()
 
 	// The swap should be found in its initial state.
-	cfg.store.(*storeMock).assertLoopOutStored()
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutStored()
 	state := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, state.State)
 
@@ -350,7 +350,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 		<-ctx.Lnd.SignOutputRawChannel
 	}
 
-	cfg.store.(*storeMock).assertLoopOutState(loopdb.StatePreimageRevealed)
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StatePreimageRevealed)
 	status := <-statusChan
 	require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
@@ -443,7 +443,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	// Notify the spend so that the swap reaches its final state.
 	ctx.NotifySpend(sweepTx, 0)
 
-	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
 	require.Equal(t, loopdb.StateSuccess, status.State)
 	require.NoError(t, <-errChan)
@@ -493,7 +493,7 @@ func testPreimagePush(t *testing.T) {
 	)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -528,7 +528,7 @@ func testPreimagePush(t *testing.T) {
 	}()
 
 	// The swap should be found in its initial state.
-	cfg.store.(*storeMock).assertLoopOutStored()
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutStored()
 	state := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, state.State)
 
@@ -571,7 +571,7 @@ func testPreimagePush(t *testing.T) {
 	// preimage before sweeping in order for the server to trust us with
 	// our MuSig2 signing attempts.
 	if IsTaprootSwap(&swap.SwapContract) {
-		cfg.store.(*storeMock).assertLoopOutState(
+		cfg.store.(*loopdb.StoreMock).AssertLoopOutState(
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
@@ -624,7 +624,7 @@ func testPreimagePush(t *testing.T) {
 	if !IsTaprootSwap(&swap.SwapContract) {
 		// This is the first time we have swept, so we expect our
 		// preimage revealed state to be set.
-		cfg.store.(*storeMock).assertLoopOutState(
+		cfg.store.(*loopdb.StoreMock).AssertLoopOutState(
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
@@ -685,7 +685,7 @@ func testPreimagePush(t *testing.T) {
 	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
 
-	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status := <-statusChan
 	require.Equal(
 		t, status.State, loopdb.StateSuccess,
@@ -720,7 +720,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 	testReq.Expiry = lnd.Height + 20
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -754,7 +754,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 	}()
 
 	// The swap should be found in its initial state.
-	cfg.store.(*storeMock).assertLoopOutStored()
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutStored()
 	state := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, state.State)
 
@@ -837,7 +837,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 	server.assertSwapCanceled(t, swapCancelation)
 
 	// Finally, the swap should be recorded with failed off chain timeout.
-	cfg.store.(*storeMock).assertLoopOutState(
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(
 		loopdb.StateFailOffchainPayments,
 	)
 	state = <-statusChan
@@ -874,7 +874,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, newStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -918,7 +918,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	}()
 
 	// The swap should be found in its initial state.
-	cfg.store.(*storeMock).assertLoopOutStored()
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutStored()
 	state := <-statusChan
 	require.Equal(t, loopdb.StateInitiated, state.State)
 
@@ -960,7 +960,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	// When using taproot htlcs the flow is different as we do reveal the
 	// preimage before sweeping in order for the server to trust us with
 	// our MuSig2 signing attempts.
-	cfg.store.(*storeMock).assertLoopOutState(
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(
 		loopdb.StatePreimageRevealed,
 	)
 	status := <-statusChan
@@ -1010,7 +1010,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	// spend our sweepTx and assert that the swap succeeds.
 	ctx.NotifySpend(sweepTx, 0)
 
-	cfg.store.(*storeMock).assertLoopOutState(loopdb.StateSuccess)
+	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
 	require.Equal(t, status.State, loopdb.StateSuccess)
 	require.NoError(t, <-errChan)

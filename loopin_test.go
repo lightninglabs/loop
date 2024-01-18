@@ -61,7 +61,7 @@ func testLoopInSuccess(t *testing.T) {
 
 	inSwap := initResult.swap
 
-	ctx.store.assertLoopInStored()
+	ctx.store.AssertLoopInStored()
 
 	errChan := make(chan error)
 	go func() {
@@ -82,7 +82,7 @@ func testLoopInSuccess(t *testing.T) {
 	require.Nil(t, swapInfo.OutgoingChanSet)
 
 	ctx.assertState(loopdb.StateHtlcPublished)
-	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 
 	// Expect htlc to be published.
 	htlcTx := <-ctx.lnd.SendOutputsChannel
@@ -95,7 +95,7 @@ func testLoopInSuccess(t *testing.T) {
 
 	// Expect the same state to be written again with the htlc tx hash
 	// and on chain fee.
-	state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	state := ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 	require.NotNil(t, state.HtlcTxHash)
 	require.Equal(t, cost, state.Cost)
 
@@ -119,7 +119,7 @@ func testLoopInSuccess(t *testing.T) {
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
-	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+	ctx.store.AssertLoopInState(loopdb.StateInvoiceSettled)
 
 	// Server spends htlc.
 	successTx := wire.MsgTx{}
@@ -138,7 +138,7 @@ func testLoopInSuccess(t *testing.T) {
 	}
 
 	ctx.assertState(loopdb.StateSuccess)
-	ctx.store.assertLoopInState(loopdb.StateSuccess)
+	ctx.store.AssertLoopInState(loopdb.StateSuccess)
 
 	require.NoError(t, <-errChan)
 }
@@ -213,7 +213,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	require.NoError(t, err)
 	inSwap := initResult.swap
 
-	ctx.store.assertLoopInStored()
+	ctx.store.AssertLoopInStored()
 
 	errChan := make(chan error)
 	go func() {
@@ -227,7 +227,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	ctx.assertState(loopdb.StateInitiated)
 
 	ctx.assertState(loopdb.StateHtlcPublished)
-	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 
 	var (
 		htlcTx wire.MsgTx
@@ -246,7 +246,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 		// Expect the same state to be written again with the htlc tx
 		// hash and cost.
-		state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+		state := ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 		require.NotNil(t, state.HtlcTxHash)
 		require.Equal(t, cost, state.Cost)
 	} else {
@@ -280,7 +280,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	invalidAmt := externalValue != 0 && externalValue != int64(req.Amount)
 	if invalidAmt {
 		ctx.assertState(loopdb.StateFailIncorrectHtlcAmt)
-		ctx.store.assertLoopInState(loopdb.StateFailIncorrectHtlcAmt)
+		ctx.store.AssertLoopInState(loopdb.StateFailIncorrectHtlcAmt)
 
 		require.NoError(t, <-errChan)
 		return
@@ -329,7 +329,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	ctx.updateInvoiceState(0, invpkg.ContractCanceled)
 
 	ctx.assertState(loopdb.StateFailTimeout)
-	state := ctx.store.assertLoopInState(loopdb.StateFailTimeout)
+	state := ctx.store.AssertLoopInState(loopdb.StateFailTimeout)
 	require.Equal(t, cost, state.Cost)
 
 	require.NoError(t, <-errChan)
@@ -503,7 +503,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		}
 
 		ctx.assertState(loopdb.StateHtlcPublished)
-		ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+		ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 
 		// Expect htlc to be published.
 		htlcTx = <-ctx.lnd.SendOutputsChannel
@@ -515,7 +515,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 		// Expect the same state to be written again with the htlc tx
 		// hash.
-		state := ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+		state := ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 		require.NotNil(t, state.HtlcTxHash)
 	} else {
 		ctx.assertState(loopdb.StateHtlcPublished)
@@ -547,7 +547,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
-	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+	ctx.store.AssertLoopInState(loopdb.StateInvoiceSettled)
 
 	// Server spends htlc.
 	successTx := wire.MsgTx{}
@@ -566,7 +566,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	}
 
 	ctx.assertState(loopdb.StateSuccess)
-	finalState := ctx.store.assertLoopInState(loopdb.StateSuccess)
+	finalState := ctx.store.AssertLoopInState(loopdb.StateSuccess)
 
 	// We expect our server fee to reflect as the difference between htlc
 	// value and invoice amount paid. We use our original on-chain cost, set
@@ -597,7 +597,7 @@ func TestAbandonPublishedHtlcState(t *testing.T) {
 
 	// Ensure that the swap is also in the StateFailAbandoned state in the
 	// database.
-	ctx.store.assertLoopInState(loopdb.StateFailAbandoned)
+	ctx.store.AssertLoopInState(loopdb.StateFailAbandoned)
 
 	// Ensure that the swap was abandoned and the execution stopped.
 	err = <-ctx.errChan
@@ -668,7 +668,7 @@ func TestAbandonSettledInvoiceState(t *testing.T) {
 
 	// Swap is expected to move to the state InvoiceSettled
 	ctx.assertState(loopdb.StateInvoiceSettled)
-	ctx.store.assertLoopInState(loopdb.StateInvoiceSettled)
+	ctx.store.AssertLoopInState(loopdb.StateInvoiceSettled)
 
 	// The client requests to abandon the published htlc state.
 	inSwap.abandonChan <- struct{}{}
@@ -678,7 +678,7 @@ func TestAbandonSettledInvoiceState(t *testing.T) {
 
 	// Ensure that the swap is also in the StateFailAbandoned state in the
 	// database.
-	ctx.store.assertLoopInState(loopdb.StateFailAbandoned)
+	ctx.store.AssertLoopInState(loopdb.StateFailAbandoned)
 
 	// Ensure that the swap was abandoned and the execution stopped.
 	err = <-ctx.errChan
@@ -728,14 +728,14 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 	require.Equal(t, loopdb.StateInitiated, swapInfo.State)
 
 	ctx.assertState(loopdb.StateHtlcPublished)
-	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 
 	// Expect htlc to be published.
 	htlcTx := <-ctx.lnd.SendOutputsChannel
 
 	// Expect the same state to be written again with the htlc tx hash
 	// and on chain fee.
-	ctx.store.assertLoopInState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
 
 	// Expect register for htlc conf (only one, since the htlc is p2tr).
 	<-ctx.lnd.RegisterConfChannel
@@ -765,7 +765,7 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 
 	inSwap := initResult.swap
 
-	ctx.store.assertLoopInStored()
+	ctx.store.AssertLoopInStored()
 
 	go func() {
 		err := inSwap.execute(context.Background(), ctx.cfg, height)

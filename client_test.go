@@ -340,13 +340,13 @@ func testLoopOutSuccess(ctx *testContext, amt btcutil.Amount, hash lntypes.Hash,
 	// preimage before sweeping in order for the server to trust us with
 	// our MuSig2 signing attempts.
 	if scriptVersion == swap.HtlcV3 {
-		ctx.assertPreimagePush(ctx.store.loopOutSwaps[hash].Preimage)
+		ctx.assertPreimagePush(ctx.store.LoopOutSwaps[hash].Preimage)
 
 		// Try MuSig2 signing first and fail it so that we go for a
 		// normal sweep.
 		for i := 0; i < maxMusigSweepRetries; i++ {
 			ctx.expiryChan <- testTime
-			ctx.assertPreimagePush(ctx.store.loopOutSwaps[hash].Preimage)
+			ctx.assertPreimagePush(ctx.store.LoopOutSwaps[hash].Preimage)
 		}
 		<-ctx.Context.Lnd.SignOutputRawChannel
 	}

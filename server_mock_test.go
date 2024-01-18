@@ -8,6 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
@@ -264,6 +265,15 @@ func (s *serverMock) ReportRoutingResult(_ context.Context, _ lntypes.Hash,
 func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion,
 	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte,
 	[]byte, error) {
+
+	return nil, nil, nil
+}
+
+func (s *serverMock) MultiMuSig2SignSweep(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+	prevoutMap map[wire.OutPoint]*wire.TxOut) (
+	[]byte, []byte, error) {
 
 	return nil, nil, nil
 }
