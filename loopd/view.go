@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
 )
 
@@ -26,12 +27,16 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 		return err
 	}
 
-	swapDb, _, err := openDatabase(config, chainParams)
+	swapDb, baseDb, err := openDatabase(config, chainParams)
 	if err != nil {
 		return err
 	}
 
-	swapClient, cleanup, err := getClient(config, swapDb, &lnd.LndServices)
+	sweeperDb := sweepbatcher.NewSQLStore(baseDb, chainParams)
+
+	swapClient, cleanup, err := getClient(
+		config, swapDb, sweeperDb, &lnd.LndServices,
+	)
 	if err != nil {
 		return err
 	}

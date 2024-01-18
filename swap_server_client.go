@@ -14,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/loop/loopdb"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -762,6 +763,51 @@ func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 		PaymentAddress:  paymentAddr[:],
 		Nonce:           nonce,
 		SweepTxPsbt:     sweepTxPsbt,
+	}
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
+	defer rpcCancel()
+
+	res, err := s.server.MuSig2SignSweep(rpcCtx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return res.Nonce, res.PartialSignature, nil
+}
+
+// MultiMuSig2SignSweep calls the server to cooperatively sign an input in
+// a batch transaction that attempts to sweep multiple htlcs at once. This
+// method is called once per input signed. The prevoutMap is a map of all the
+// prevout information for each spend outpoint. Returns the server's nonce and
+// partial signature.
+func (s *grpcSwapServerClient) MultiMuSig2SignSweep(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+	prevoutMap map[wire.OutPoint]*wire.TxOut) (
+	[]byte, []byte, error) {
+
+	prevOutInfo := make([]*looprpc.PrevoutInfo, 0, len(prevoutMap))
+	for prevOut, txOut := range prevoutMap {
+		txOut := *txOut
+		prevOut := prevOut
+
+		prevOutInfo = append(prevOutInfo,
+			&looprpc.PrevoutInfo{
+				TxidBytes:   prevOut.Hash[:],
+				OutputIndex: prevOut.Index,
+				Value:       uint64(txOut.Value),
+				PkScript:    txOut.PkScript,
+			})
+	}
+
+	req := &looprpc.MuSig2SignSweepReq{
+		ProtocolVersion: looprpc.ProtocolVersion(protocolVersion),
+		SwapHash:        swapHash[:],
+		PaymentAddress:  paymentAddr[:],
+		Nonce:           nonce,
+		SweepTxPsbt:     sweepTxPsbt,
+		PrevoutInfo:     prevOutInfo,
 	}
 
 	rpcCtx, rpcCancel := context.WithTimeout(ctx, globalCallTimeout)
