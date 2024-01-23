@@ -17,6 +17,8 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
@@ -60,7 +62,7 @@ var (
 	// probeTimeout is the maximum time until a probe is allowed to take.
 	probeTimeout = 3 * time.Minute
 
-	republishDelay = 10 * time.Second
+	repushDelay = 1 * time.Second
 
 	// MinerFeeEstimationFailed is a magic number that is returned in a
 	// quote call as the miner fee if the fee estimation in lnd's wallet
@@ -133,7 +135,8 @@ type ClientConfig struct {
 
 // NewClient returns a new instance to initiate swaps with.
 func NewClient(dbDir string, loopDB loopdb.SwapStore,
-	cfg *ClientConfig) (*Client, func(), error) {
+	sweeperDb sweepbatcher.BatcherStore, cfg *ClientConfig) (
+	*Client, func(), error) {
 
 	lsatStore, err := lsat.NewFileStore(dbDir)
 	if err != nil {
@@ -161,27 +164,36 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		Lnd: cfg.Lnd,
 	}
 
+	verifySchnorrSig := func(pubKey *btcec.PublicKey, hash, sig []byte) error {
+		schnorrSig, err := schnorr.ParseSignature(sig)
+		if err != nil {
+			return err
+		}
+
+		if !schnorrSig.Verify(hash, pubKey) {
+			return fmt.Errorf("invalid signature")
+		}
+
+		return nil
+	}
+
+	batcher := sweepbatcher.NewBatcher(
+		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
+		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
+		cfg.Lnd.ChainParams, sweeperDb, loopDB,
+	)
+
 	executor := newExecutor(&executorConfig{
 		lnd:                 cfg.Lnd,
 		store:               loopDB,
 		sweeper:             sweeper,
+		batcher:             batcher,
 		createExpiryTimer:   config.CreateExpiryTimer,
 		loopOutMaxParts:     cfg.LoopOutMaxParts,
 		totalPaymentTimeout: cfg.TotalPaymentTimeout,
 		maxPaymentRetries:   cfg.MaxPaymentRetries,
 		cancelSwap:          swapServerClient.CancelLoopOutSwap,
-		verifySchnorrSig: func(pubKey *btcec.PublicKey, hash, sig []byte) error {
-			schnorrSig, err := schnorr.ParseSignature(sig)
-			if err != nil {
-				return err
-			}
-
-			if !schnorrSig.Verify(hash, pubKey) {
-				return fmt.Errorf("invalid signature")
-			}
-
-			return nil
-		},
+		verifySchnorrSig:    verifySchnorrSig,
 	})
 
 	client := &Client{
@@ -232,7 +244,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlc, err := GetHtlc(
+		htlc, err := utils.GetHtlc(
 			swp.Hash, &swp.Contract.SwapContract,
 			s.lndServices.ChainParams,
 		)
@@ -265,7 +277,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			LastUpdate:    swp.LastUpdateTime(),
 		}
 
-		htlc, err := GetHtlc(
+		htlc, err := utils.GetHtlc(
 			swp.Hash, &swp.Contract.SwapContract,
 			s.lndServices.ChainParams,
 		)
@@ -540,7 +552,7 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 		return 0, err
 	}
 
-	scriptVersion := GetHtlcScriptVersion(
+	scriptVersion := utils.GetHtlcScriptVersion(
 		loopdb.CurrentProtocolVersion(),
 	)
 
@@ -731,7 +743,7 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	// Generate a dummy address for fee estimation.
 	witnessProg := [32]byte{}
 
-	scriptVersion := GetHtlcScriptVersion(
+	scriptVersion := utils.GetHtlcScriptVersion(
 		loopdb.CurrentProtocolVersion(),
 	)
 

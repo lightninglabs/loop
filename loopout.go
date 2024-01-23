@@ -1,7 +1,6 @@
 package loop
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,22 +11,19 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/zpay32"
 )
 
 const (
@@ -90,6 +86,7 @@ type loopOutSwap struct {
 // executeConfig contains extra configuration to execute the swap.
 type executeConfig struct {
 	sweeper             *sweep.Sweeper
+	batcher             *sweepbatcher.Batcher
 	statusChan          chan<- SwapInfo
 	blockEpochChan      <-chan interface{}
 	timerFactory        func(time.Duration) <-chan time.Time
@@ -172,6 +169,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	contract := loopdb.LoopOutContract{
 		SwapInvoice:             swapResp.swapInvoice,
 		DestAddr:                request.DestAddr,
+		IsExternalAddr:          request.IsExternalAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
 		SweepConfTarget:         request.SweepConfTarget,
 		HtlcConfirmations:       confs,
@@ -206,7 +204,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	swapKit.lastUpdateTime = initiationTime
 
 	// Create the htlc.
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
 	)
 	if err != nil {
@@ -219,7 +217,9 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := obtainSwapPaymentAddr(contract.SwapInvoice, cfg)
+	paymentAddr, err := utils.ObtainSwapPaymentAddr(
+		contract.SwapInvoice, cfg.lnd.ChainParams,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 	)
 
 	// Create the htlc.
-	htlc, err := GetHtlc(
+	htlc, err := utils.GetHtlc(
 		swapKit.hash, swapKit.contract, swapKit.lnd.ChainParams,
 	)
 	if err != nil {
@@ -274,8 +274,8 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := obtainSwapPaymentAddr(
-		pend.Contract.SwapInvoice, cfg,
+	paymentAddr, err := utils.ObtainSwapPaymentAddr(
+		pend.Contract.SwapInvoice, cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		return nil, err
@@ -299,24 +299,6 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 	}
 
 	return swap, nil
-}
-
-// obtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
-func obtainSwapPaymentAddr(swapInvoice string, cfg *swapConfig) (
-	*[32]byte, error) {
-
-	swapPayReq, err := zpay32.Decode(
-		swapInvoice, cfg.lnd.ChainParams,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if swapPayReq.PaymentAddr == nil {
-		return nil, fmt.Errorf("expected payment address for invoice")
-	}
-
-	return swapPayReq.PaymentAddr, nil
 }
 
 // sendUpdate reports an update to the swap state.
@@ -532,7 +514,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	}
 
 	// Try to spend htlc and continue (rbf) until a spend has confirmed.
-	spendDetails, err := s.waitForHtlcSpendConfirmed(
+	spendTx, err := s.waitForHtlcSpendConfirmedV2(
 		globalCtx, *htlcOutpoint, htlcValue,
 	)
 	if err != nil {
@@ -541,7 +523,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	// If spend details are nil, we resolved the swap without waiting for
 	// its spend, so we can exit.
-	if spendDetails == nil {
+	if spendTx == nil {
 		return nil
 	}
 
@@ -549,7 +531,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	// don't just try to match with the hash of our sweep tx, because it
 	// may be swept by a different (fee) sweep tx from a previous run.
 	htlcInput, err := swap.GetTxInputByOutpoint(
-		spendDetails.SpendingTx, htlcOutpoint,
+		spendTx, htlcOutpoint,
 	)
 	if err != nil {
 		return err
@@ -560,7 +542,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 		s.cost.Server -= htlcValue
 
 		s.cost.Onchain = htlcValue -
-			btcutil.Amount(spendDetails.SpendingTx.TxOut[0].Value)
+			btcutil.Amount(spendTx.TxOut[0].Value)
 
 		s.state = loopdb.StateSuccess
 	} else {
@@ -1019,26 +1001,36 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	return txConf, nil
 }
 
-// waitForHtlcSpendConfirmed waits for the htlc to be spent either by our own
-// sweep or a server revocation tx. During this process, this function will try
-// to spend the htlc every block by calling spendFunc.
-//
-// TODO: Improve retry/fee increase mechanism. Once in the mempool, server can
-// sweep offchain. So we must make sure we sweep successfully before on-chain
-// timeout.
-func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
+// waitForHtlcSpendConfirmedV2 waits for the htlc to be spent either by our own
+// sweep or a server revocation tx.
+func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	htlcOutpoint wire.OutPoint, htlcValue btcutil.Amount) (
-	*chainntnfs.SpendDetail, error) {
+	*wire.MsgTx, error) {
+
+	spendChan := make(chan *wire.MsgTx)
+	spendErrChan := make(chan error, 1)
+	quitChan := make(chan bool, 1)
+
+	defer func() {
+		quitChan <- true
+	}()
+
+	notifier := sweepbatcher.SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: spendErrChan,
+		QuitChan:     quitChan,
+	}
+
+	sweepReq := sweepbatcher.SweepRequest{
+		SwapHash: s.hash,
+		Outpoint: htlcOutpoint,
+		Value:    htlcValue,
+		Notifier: &notifier,
+	}
 
 	// Register the htlc spend notification.
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
-	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		ctx, &htlcOutpoint, s.htlc.PkScript, s.InitiationHeight,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("register spend ntfn: %v", err)
-	}
 
 	// Track our payment status so that we can detect whether our off chain
 	// htlc is settled. We track this information to determine whether it is
@@ -1055,26 +1047,20 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 		// is used to decide whether we need to push our preimage to
 		// the server.
 		paymentComplete bool
-		// musigSweepTryCount tracts the number of cooperative, MuSig2
-		// sweep attempts.
-		musigSweepTryCount int
-		// musigSweepSuccess tracks whether at least one MuSig2 sweep
-		// txn was successfully published to the mempool.
-		musigSweepSuccess bool
 	)
 
-	timerChan := s.timerFactory(republishDelay)
+	timerChan := s.timerFactory(repushDelay)
+
 	for {
 		select {
 		// Htlc spend, break loop.
-		case spendDetails := <-spendChan:
-			s.log.Infof("Htlc spend by tx: %v",
-				spendDetails.SpenderTxHash)
+		case spendTx := <-spendChan:
+			s.log.Infof("Htlc spend by tx: %v", spendTx.TxHash())
 
-			return spendDetails, nil
+			return spendTx, nil
 
 		// Spend notification error.
-		case err := <-spendErr:
+		case err := <-spendErrChan:
 			return nil, err
 
 		// Receive status updates for our payment so that we can detect
@@ -1116,121 +1102,51 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmed(globalCtx context.Context,
 				return nil, err
 			}
 
-		// New block arrived, update height and restart the republish
-		// timer.
+		// New block arrived, update height and try pushing preimage.
 		case notification := <-s.blockEpochChan:
 			s.height = notification.(int32)
-			timerChan = s.timerFactory(republishDelay)
+			timerChan = s.timerFactory(repushDelay)
 
-		// Some time after start or after arrival of a new block, try
-		// to spend again.
 		case <-timerChan:
-			if IsTaprootSwap(&s.SwapContract) {
-				// sweepConfTarget will return false if the
-				// preimage is not revealed yet but the conf
-				// target is closer than 20 blocks. In this case
-				// to be sure we won't attempt to sweep at all
-				// and we won't reveal the preimage either.
-				_, canSweep := s.sweepConfTarget()
-				if !canSweep {
-					s.log.Infof("Aborting swap, timed " +
-						"out on-chain")
+			// sweepConfTarget will return false if the preimage is
+			// not revealed yet but the conf target is closer than
+			// 20 blocks. In this case to be sure we won't attempt
+			// to sweep at all and we won't reveal the preimage
+			// either.
+			_, canSweep := s.sweepConfTarget()
+			if !canSweep {
+				s.log.Infof("Aborting swap, timed " +
+					"out on-chain")
 
-					s.state = loopdb.StateFailTimeout
-					err := s.persistState(ctx)
-					if err != nil {
-						log.Warnf("unable to persist " +
-							"state")
-					}
-
-					return nil, nil
-				}
-
-				// When using taproot HTLCs we're pushing the
-				// preimage before attempting to sweep. This
-				// way the server will know that the swap will
-				// go through and we'll be able to MuSig2
-				// cosign our sweep transaction. In the worst
-				// case if the server is uncooperative for any
-				// reason we can still sweep using scriptpath
-				// spend.
-				err = s.setStatePreimageRevealed(ctx)
+				s.state = loopdb.StateFailTimeout
+				err := s.persistState(ctx)
 				if err != nil {
-					return nil, err
+					log.Warnf("unable to persist " +
+						"state")
 				}
 
-				if !paymentComplete {
-					// Push the preimage for as long as the
-					// server is able to settle the swap
-					// invoice. So that we can continue
-					// with the MuSig2 sweep afterwards.
-					s.pushPreimage(ctx)
-				}
+				return nil, nil
+			}
 
-				// Now attempt to publish a MuSig2 sweep txn.
-				// Only attempt at most maxMusigSweepRetires
-				// times to still leave time for an emergency
-				// script path sweep.
-				if musigSweepTryCount < maxMusigSweepRetries {
-					success := s.sweepMuSig2(
-						ctx, htlcOutpoint, htlcValue,
-					)
-					if !success {
-						musigSweepTryCount++
-					} else {
-						// Mark that we had a sweep
-						// that was successful. There's
-						// no need for the script spend
-						// now we can just keep pushing
-						// new sweeps to bump the fee.
-						musigSweepSuccess = true
-					}
-				} else if !musigSweepSuccess {
-					// Attempt to script path sweep. If the
-					// sweep fails, we can't do any better
-					// than go on and try again later as
-					// the preimage is already revealed and
-					// the server settled the swap payment.
-					// From the server's point of view the
-					// swap is succeeded at this point so
-					// we are free to retry as long as we
-					// want.
-					err := s.sweep(
-						ctx, htlcOutpoint, htlcValue,
-					)
-					if err != nil {
-						log.Warnf("Failed to publish "+
-							"non-cooperative "+
-							"sweep: %v", err)
-					}
-				}
+			// Send the sweep to the sweeper.
+			err := s.batcher.AddSweep(&sweepReq)
+			if err != nil {
+				return nil, err
+			}
 
-				// If the result of our spend func was that the
-				// swap has reached a final state, then we
-				// return nil spend details, because there is
-				// no further action required for this swap.
-				if s.state.Type() != loopdb.StateTypePending {
-					return nil, nil
-				}
-			} else {
-				err := s.sweep(ctx, htlcOutpoint, htlcValue)
-				if err != nil {
-					return nil, err
-				}
+			// Now that the sweep is taken care of, we can update
+			// our state.
+			err = s.setStatePreimageRevealed(ctx)
+			if err != nil {
+				return nil, err
+			}
 
-				// If the result of our spend func was that the
-				// swap has reached a final state, then we
-				// return nil spend details, because there is no
-				// further action required for this swap.
-				if s.state.Type() != loopdb.StateTypePending {
-					return nil, nil
-				}
-
-				// If our off chain payment is not yet complete,
-				// we try to push our preimage to the server.
-				if !paymentComplete {
-					s.pushPreimage(ctx)
-				}
+			if !paymentComplete {
+				// Push the preimage for as long as the
+				// server is able to settle the swap
+				// invoice. So that we can continue
+				// with the MuSig2 sweep afterwards.
+				s.pushPreimage(ctx)
 			}
 
 		// Context canceled.
@@ -1339,248 +1255,6 @@ func (s *loopOutSwap) failOffChain(ctx context.Context, paymentType paymentType,
 	}
 }
 
-// createMuSig2SweepTxn creates a taproot keyspend sweep transaction and
-// attempts to cooperate with the server to create a MuSig2 signature witness.
-func (s *loopOutSwap) createMuSig2SweepTxn(
-	ctx context.Context, htlcOutpoint wire.OutPoint,
-	htlcValue btcutil.Amount, fee btcutil.Amount) (*wire.MsgTx, error) {
-
-	// First assemble our taproot keyspend sweep transaction and get the
-	// sig hash.
-	sweepTx, sweepTxPsbt, sigHash, err := s.sweeper.CreateUnsignedTaprootKeySpendSweepTx(
-		ctx, uint32(s.height), s.htlc, htlcOutpoint, htlcValue, fee,
-		s.DestAddr,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		signers       [][]byte
-		muSig2Version input.MuSig2Version
-	)
-
-	// Depending on the MuSig2 version we either pass 32 byte Schnorr
-	// public keys or normal 33 byte public keys.
-	if s.ProtocolVersion >= loopdb.ProtocolVersionMuSig2 {
-		muSig2Version = input.MuSig2Version100RC2
-		signers = [][]byte{
-			s.HtlcKeys.SenderInternalPubKey[:],
-			s.HtlcKeys.ReceiverInternalPubKey[:],
-		}
-	} else {
-		muSig2Version = input.MuSig2Version040
-		signers = [][]byte{
-			s.HtlcKeys.SenderInternalPubKey[1:],
-			s.HtlcKeys.ReceiverInternalPubKey[1:],
-		}
-	}
-
-	htlcScript, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
-	if !ok {
-		return nil, fmt.Errorf("non taproot htlc")
-	}
-
-	// Now we're creating a local MuSig2 session using the receiver key's
-	// key locator and the htlc's root hash.
-	musig2SessionInfo, err := s.lnd.Signer.MuSig2CreateSession(
-		ctx, muSig2Version, &s.HtlcKeys.ClientScriptKeyLocator, signers,
-		lndclient.MuSig2TaprootTweakOpt(htlcScript.RootHash[:], false),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// With the session active, we can now send the server our public nonce
-	// and the sig hash, so that it can create it's own MuSig2 session and
-	// return the server side nonce and partial signature.
-	serverNonce, serverSig, err := s.swapKit.server.MuSig2SignSweep(
-		ctx, s.SwapContract.ProtocolVersion, s.hash,
-		s.swapInvoicePaymentAddr, musig2SessionInfo.PublicNonce[:],
-		sweepTxPsbt,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	var serverPublicNonce [musig2.PubNonceSize]byte
-	copy(serverPublicNonce[:], serverNonce)
-
-	// Register the server's nonce before attempting to create our partial
-	// signature.
-	haveAllNonces, err := s.lnd.Signer.MuSig2RegisterNonces(
-		ctx, musig2SessionInfo.SessionID,
-		[][musig2.PubNonceSize]byte{serverPublicNonce},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Sanity check that we have all the nonces.
-	if !haveAllNonces {
-		return nil, fmt.Errorf("invalid MuSig2 session: nonces missing")
-	}
-
-	var digest [32]byte
-	copy(digest[:], sigHash)
-
-	// Since our MuSig2 session has all nonces, we can now create the local
-	// partial signature by signing the sig hash.
-	_, err = s.lnd.Signer.MuSig2Sign(
-		ctx, musig2SessionInfo.SessionID, digest, false,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Now combine the partial signatures to use the final combined
-	// signature in the sweep transaction's witness.
-	haveAllSigs, finalSig, err := s.lnd.Signer.MuSig2CombineSig(
-		ctx, musig2SessionInfo.SessionID, [][]byte{serverSig},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if !haveAllSigs {
-		return nil, fmt.Errorf("failed to combine signatures")
-	}
-
-	// To be sure that we're good, parse and validate that the combined
-	// signature is indeed valid for the sig hash and the internal pubkey.
-	err = s.executeConfig.verifySchnorrSig(
-		htlcScript.TaprootKey, sigHash, finalSig,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Now that we know the signature is correct, we can fill it in to our
-	// witness.
-	sweepTx.TxIn[0].Witness = wire.TxWitness{
-		finalSig,
-	}
-
-	return sweepTx, nil
-}
-
-// sweepConfTarget returns the confirmation target for the htlc sweep or false
-// if we're too late.
-func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
-	remainingBlocks := s.CltvExpiry - s.height
-	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
-	preimageRevealed := s.state == loopdb.StatePreimageRevealed
-
-	// If we have not revealed our preimage, and we don't have time left
-	// to sweep the swap, we abandon the swap because we can no longer
-	// sweep the success path (without potentially having to compete with
-	// the server's timeout sweep), and we have not had any coins pulled
-	// off-chain.
-	if blocksToLastReveal <= 0 && !preimageRevealed {
-		s.log.Infof("Preimage can no longer be safely revealed: "+
-			"expires at: %v, current height: %v", s.CltvExpiry,
-			s.height)
-
-		s.state = loopdb.StateFailTimeout
-		return 0, false
-	}
-
-	// Calculate the transaction fee based on the confirmation target
-	// required to sweep the HTLC before the timeout. We'll use the
-	// confirmation target provided by the client unless we've come too
-	// close to the expiration height, in which case we'll use the default
-	// if it is better than what the client provided.
-	confTarget := s.SweepConfTarget
-	if remainingBlocks <= DefaultSweepConfTargetDelta &&
-		confTarget > DefaultSweepConfTarget {
-
-		confTarget = DefaultSweepConfTarget
-	}
-
-	return confTarget, true
-}
-
-// clampSweepFee will clamp the passed in sweep fee to the maximum configured
-// miner fee. Returns false if sweeping should not continue. Note that in the
-// MuSig2 case we always continue as the preimage is revealed to the server
-// before cooperatively signing the sweep transaction.
-func (s *loopOutSwap) clampSweepFee(fee btcutil.Amount) (btcutil.Amount, bool) {
-	// Ensure it doesn't exceed our maximum fee allowed.
-	if fee > s.MaxMinerFee {
-		s.log.Warnf("Required fee %v exceeds max miner fee of %v",
-			fee, s.MaxMinerFee)
-
-		if s.state == loopdb.StatePreimageRevealed {
-			// The currently required fee exceeds the max, but we
-			// already revealed the preimage. The best we can do now
-			// is to republish with the max fee.
-			fee = s.MaxMinerFee
-		} else {
-			s.log.Warnf("Not revealing preimage")
-			return 0, false
-		}
-	}
-
-	return fee, true
-}
-
-// sweepMuSig2 attempts to sweep the on-chain HTLC using MuSig2. If anything
-// fails, we'll log it but will simply return to allow further retries. Since
-// the preimage is revealed by the time we attempt to MuSig2 sweep, we'll need
-// to fall back to a script spend sweep if all MuSig2 sweep attempts fail (for
-// example the server could be down due to maintenance or any other issue
-// making the cooperative sweep fail).
-func (s *loopOutSwap) sweepMuSig2(ctx context.Context,
-	htlcOutpoint wire.OutPoint, htlcValue btcutil.Amount) bool {
-
-	addInputToEstimator := func(e *input.TxWeightEstimator) error {
-		e.AddTaprootKeySpendInput(txscript.SigHashDefault)
-		return nil
-	}
-
-	confTarget, _ := s.sweepConfTarget()
-	fee, err := s.sweeper.GetSweepFee(
-		ctx, addInputToEstimator, s.DestAddr, confTarget,
-	)
-	if err != nil {
-		s.log.Warnf("Failed to estimate fee MuSig2 sweep txn: %v", err)
-		return false
-	}
-
-	fee, _ = s.clampSweepFee(fee)
-
-	// Now attempt the co-signing of the txn.
-	sweepTx, err := s.createMuSig2SweepTxn(
-		ctx, htlcOutpoint, htlcValue, fee,
-	)
-	if err != nil {
-		s.log.Warnf("Failed to create MuSig2 sweep txn: %v", err)
-		return false
-	}
-
-	// Finally, try publish the txn.
-	s.log.Infof("Sweep on chain HTLC using MuSig2 to address %v "+
-		"fee %v (tx %v)", s.DestAddr, fee, sweepTx.TxHash())
-
-	err = s.lnd.WalletKit.PublishTransaction(
-		ctx, sweepTx,
-		labels.LoopOutSweepSuccess(swap.ShortHash(&s.hash)),
-	)
-	if err != nil {
-		var sweepTxBuf bytes.Buffer
-		if err := sweepTx.Serialize(&sweepTxBuf); err != nil {
-			s.log.Warnf("Unable to serialize sweep txn: %v", err)
-		}
-
-		s.log.Warnf("Publish of MuSig2 sweep failed: %v. Raw tx: %x",
-			err, sweepTxBuf.Bytes())
-
-		return false
-	}
-
-	return true
-}
-
 func (s *loopOutSwap) setStatePreimageRevealed(ctx context.Context) error {
 	if s.state != loopdb.StatePreimageRevealed {
 		s.state = loopdb.StatePreimageRevealed
@@ -1589,78 +1263,6 @@ func (s *loopOutSwap) setStatePreimageRevealed(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-// sweep tries to sweep the given htlc to a destination address. It takes into
-// account the max miner fee and unless the preimage is already revealed
-// (MuSig2 case), marks the preimage as revealed when it published the tx. If
-// the preimage has not yet been revealed, and the time during which we can
-// safely reveal it has passed, the swap will be marked as failed, and the
-// function will return.
-func (s *loopOutSwap) sweep(ctx context.Context, htlcOutpoint wire.OutPoint,
-	htlcValue btcutil.Amount) error {
-
-	confTarget, canSweep := s.sweepConfTarget()
-	if !canSweep {
-		return nil
-	}
-
-	fee, err := s.sweeper.GetSweepFee(
-		ctx, s.htlc.AddSuccessToEstimator, s.DestAddr, confTarget,
-	)
-	if err != nil {
-		return err
-	}
-
-	fee, canSweep = s.clampSweepFee(fee)
-	if !canSweep {
-		return nil
-	}
-
-	witnessFunc := func(sig []byte) (wire.TxWitness, error) {
-		return s.htlc.GenSuccessWitness(sig, s.Preimage)
-	}
-
-	// Retrieve the full script required to unlock the output.
-	redeemScript := s.htlc.SuccessScript()
-
-	// Create sweep tx.
-	sweepTx, err := s.sweeper.CreateSweepTx(
-		ctx, s.height, s.htlc.SuccessSequence(), s.htlc,
-		htlcOutpoint, s.contract.HtlcKeys.ReceiverScriptKey,
-		redeemScript, witnessFunc, htlcValue, fee, s.DestAddr,
-	)
-	if err != nil {
-		return err
-	}
-
-	// Before publishing the tx, already mark the preimage as revealed. This
-	// is a precaution in case the publish call never returns and would
-	// leave us thinking we didn't reveal yet.
-	err = s.setStatePreimageRevealed(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Publish tx.
-	s.log.Infof("Sweep on chain HTLC to address %v with fee %v (tx %v)",
-		s.DestAddr, fee, sweepTx.TxHash())
-
-	err = s.lnd.WalletKit.PublishTransaction(
-		ctx, sweepTx,
-		labels.LoopOutSweepSuccess(swap.ShortHash(&s.hash)),
-	)
-	if err != nil {
-		var sweepTxBuf bytes.Buffer
-		if err := sweepTx.Serialize(&sweepTxBuf); err != nil {
-			s.log.Warnf("Unable to serialize sweep txn: %v", err)
-		}
-
-		s.log.Warnf("Publish sweep failed: %v. Raw tx: %x",
-			err, sweepTxBuf.Bytes())
 	}
 
 	return nil
@@ -1710,4 +1312,40 @@ func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
 	}
 
 	return nil
+}
+
+// sweepConfTarget returns the confirmation target for the htlc sweep or false
+// if we're too late.
+func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
+	remainingBlocks := s.CltvExpiry - s.height
+	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
+	preimageRevealed := s.state == loopdb.StatePreimageRevealed
+
+	// If we have not revealed our preimage, and we don't have time left
+	// to sweep the swap, we abandon the swap because we can no longer
+	// sweep the success path (without potentially having to compete with
+	// the server's timeout sweep), and we have not had any coins pulled
+	// off-chain.
+	if blocksToLastReveal <= 0 && !preimageRevealed {
+		s.log.Infof("Preimage can no longer be safely revealed: "+
+			"expires at: %v, current height: %v", s.CltvExpiry,
+			s.height)
+
+		s.state = loopdb.StateFailTimeout
+		return 0, false
+	}
+
+	// Calculate the transaction fee based on the confirmation target
+	// required to sweep the HTLC before the timeout. We'll use the
+	// confirmation target provided by the client unless we've come too
+	// close to the expiration height, in which case we'll use the default
+	// if it is better than what the client provided.
+	confTarget := s.SweepConfTarget
+	if remainingBlocks <= DefaultSweepConfTargetDelta &&
+		confTarget > DefaultSweepConfTarget {
+
+		confTarget = DefaultSweepConfTarget
+	}
+
+	return confTarget, true
 }

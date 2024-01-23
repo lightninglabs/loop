@@ -104,9 +104,10 @@ INSERT INTO loopout_swaps (
     outgoing_chan_set,
     prepay_invoice,
     max_prepay_routing_fee,
-    publication_deadline
+    publication_deadline,
+    single_sweep
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 );
 
 -- name: InsertLoopIn :exec

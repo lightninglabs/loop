@@ -238,6 +238,7 @@ func loopOut(ctx *cli.Context) error {
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
+		IsExternalAddr:          destAddr != "",
 		Account:                 account,
 		AccountAddrType:         accountAddrType,
 		MaxMinerFee:             int64(limits.maxMinerFee),

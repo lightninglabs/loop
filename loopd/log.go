@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
@@ -32,6 +33,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 
 	lnd.SetSubLogger(root, Subsystem, log)
 	lnd.AddSubLogger(root, "LOOP", intercept, loop.UseLogger)
+	lnd.AddSubLogger(root, "SWEEP", intercept, sweepbatcher.UseLogger)
 	lnd.AddSubLogger(root, "LNDC", intercept, lndclient.UseLogger)
 	lnd.AddSubLogger(root, "STORE", intercept, loopdb.UseLogger)
 	lnd.AddSubLogger(root, lsat.Subsystem, intercept, lsat.UseLogger)

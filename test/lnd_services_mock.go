@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
@@ -63,13 +62,13 @@ func NewMockLnd() *LndMockServices {
 
 		SignOutputRawChannel: make(chan SignOutputRawRequest),
 
-		FailInvoiceChannel: make(chan lntypes.Hash, 2),
-		epochChannel:       make(chan int32),
-		Height:             testStartingHeight,
-		NodePubkey:         testNodePubkey,
-		Signature:          testSignature,
-		SignatureMsg:       testSignatureMsg,
-		Invoices:           make(map[lntypes.Hash]*lndclient.Invoice),
+		FailInvoiceChannel:   make(chan lntypes.Hash, 2),
+		blockHeightListeners: make([]chan int32, 0),
+		Height:               testStartingHeight,
+		NodePubkey:           testNodePubkey,
+		Signature:            testSignature,
+		SignatureMsg:         testSignatureMsg,
+		Invoices:             make(map[lntypes.Hash]*lndclient.Invoice),
 	}
 
 	lightningClient.lnd = &lnd
@@ -139,7 +138,7 @@ type LndMockServices struct {
 	SendOutputsChannel   chan wire.MsgTx
 	SettleInvoiceChannel chan lntypes.Preimage
 	FailInvoiceChannel   chan lntypes.Hash
-	epochChannel         chan int32
+	blockHeightListeners []chan int32
 
 	ConfChannel          chan *chainntnfs.TxConfirmation
 	RegisterConfChannel  chan *ConfRegistration
@@ -177,15 +176,28 @@ type LndMockServices struct {
 	lock sync.Mutex
 }
 
+// EpochSubscribers returns the number of subscribers to block epoch
+// notifications.
+func (s *LndMockServices) EpochSubscribers() int32 {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return int32(len(s.blockHeightListeners))
+}
+
 // NotifyHeight notifies a new block height.
 func (s *LndMockServices) NotifyHeight(height int32) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	s.Height = height
 
-	select {
-	case s.epochChannel <- height:
-	case <-time.After(Timeout):
-		return ErrTimeout
+	for _, listener := range s.blockHeightListeners {
+		lis := listener
+		go func() {
+			lis <- height
+		}()
 	}
+
 	return nil
 }
 

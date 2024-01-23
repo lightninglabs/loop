@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 )
@@ -22,6 +23,8 @@ type executorConfig struct {
 	lnd *lndclient.LndServices
 
 	sweeper *sweep.Sweeper
+
+	batcher *sweepbatcher.Batcher
 
 	store loopdb.SwapStore
 
@@ -71,6 +74,7 @@ func (s *executor) run(mainCtx context.Context,
 		err            error
 		blockEpochChan <-chan int32
 		blockErrorChan <-chan error
+		batcherErrChan chan error
 	)
 
 	for {
@@ -121,6 +125,21 @@ func (s *executor) run(mainCtx context.Context,
 		return mainCtx.Err()
 	}
 
+	batcherErrChan = make(chan error, 1)
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		err := s.batcher.Run(mainCtx)
+		if err != nil {
+			select {
+			case batcherErrChan <- err:
+			case <-mainCtx.Done():
+			}
+		}
+	}()
+
 	// Start main event loop.
 	log.Infof("Starting event loop at height %v", height)
 
@@ -156,6 +175,7 @@ func (s *executor) run(mainCtx context.Context,
 				err := newSwap.execute(mainCtx, &executeConfig{
 					statusChan:          statusChan,
 					sweeper:             s.sweeper,
+					batcher:             s.batcher,
 					blockEpochChan:      queue.ChanOut(),
 					timerFactory:        s.executorConfig.createExpiryTimer,
 					loopOutMaxParts:     s.executorConfig.loopOutMaxParts,
@@ -210,6 +230,9 @@ func (s *executor) run(mainCtx context.Context,
 
 		case err := <-blockErrorChan:
 			return fmt.Errorf("block error: %v", err)
+
+		case err := <-batcherErrChan:
+			return fmt.Errorf("batcher error: %v", err)
 
 		case <-mainCtx.Done():
 			return mainCtx.Err()

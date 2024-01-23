@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -31,13 +32,16 @@ func (s *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 		loopOuts = make([]*LoopOut, len(swaps))
 
 		for i, swap := range swaps {
-			updates, err := s.Queries.GetSwapUpdates(ctx, swap.SwapHash)
+			updates, err := s.Queries.GetSwapUpdates(
+				ctx, swap.SwapHash,
+			)
 			if err != nil {
 				return err
 			}
 
-			loopOut, err := s.convertLoopOutRow(
-				sqlc.GetLoopOutSwapRow(swap), updates,
+			loopOut, err := ConvertLoopOutRow(
+				s.network, sqlc.GetLoopOutSwapRow(swap),
+				updates,
 			)
 			if err != nil {
 				return err
@@ -72,8 +76,8 @@ func (s *BaseDB) FetchLoopOutSwap(ctx context.Context,
 			return err
 		}
 
-		loopOut, err = s.convertLoopOutRow(
-			swap, updates,
+		loopOut, err = ConvertLoopOutRow(
+			s.network, swap, updates,
 		)
 		if err != nil {
 			return err
@@ -430,6 +434,7 @@ func loopOutToInsertArgs(hash lntypes.Hash,
 	return sqlc.InsertLoopOutParams{
 		SwapHash:            hash[:],
 		DestAddress:         loopOut.DestAddr.String(),
+		SingleSweep:         loopOut.IsExternalAddr,
 		SwapInvoice:         loopOut.SwapInvoice,
 		MaxSwapRoutingFee:   int64(loopOut.MaxSwapRoutingFee),
 		SweepConfTarget:     loopOut.SweepConfTarget,
@@ -479,9 +484,9 @@ func swapToHtlcKeysInsertArgs(hash lntypes.Hash,
 	}
 }
 
-// convertLoopOutRow converts a database row containing a loop out swap to a
+// ConvertLoopOutRow converts a database row containing a loop out swap to a
 // LoopOut struct.
-func (s *BaseDB) convertLoopOutRow(row sqlc.GetLoopOutSwapRow,
+func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 	updates []sqlc.SwapUpdate) (*LoopOut, error) {
 
 	htlcKeys, err := fetchHtlcKeys(
@@ -498,7 +503,7 @@ func (s *BaseDB) convertLoopOutRow(row sqlc.GetLoopOutSwapRow,
 		return nil, err
 	}
 
-	destAddress, err := btcutil.DecodeAddress(row.DestAddress, s.network)
+	destAddress, err := btcutil.DecodeAddress(row.DestAddress, network)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +528,7 @@ func (s *BaseDB) convertLoopOutRow(row sqlc.GetLoopOutSwapRow,
 				ProtocolVersion:  ProtocolVersion(row.ProtocolVersion),
 			},
 			DestAddr:                destAddress,
+			IsExternalAddr:          row.SingleSweep,
 			SwapInvoice:             row.SwapInvoice,
 			MaxSwapRoutingFee:       btcutil.Amount(row.MaxSwapRoutingFee),
 			SweepConfTarget:         row.SweepConfTarget,

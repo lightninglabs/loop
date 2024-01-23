@@ -422,6 +422,7 @@ func TestAutoloopAddress(t *testing.T) {
 			Amount: amt,
 			// Define the expected destination address.
 			DestAddr:          addr,
+			IsExternalAddr:    true,
 			MaxSwapRoutingFee: maxRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
 				quote1.PrepayAmount, prepayFeePPM,
@@ -439,6 +440,7 @@ func TestAutoloopAddress(t *testing.T) {
 			Amount: amt,
 			// Define the expected destination address.
 			DestAddr:          addr,
+			IsExternalAddr:    true,
 			MaxSwapRoutingFee: maxRouteFee,
 			MaxPrepayRoutingFee: ppmToSat(
 				quote2.PrepayAmount, routeFeePPM,

@@ -1,0 +1,125 @@
+package sweepbatcher
+
+import (
+	"context"
+	"errors"
+	"sort"
+
+	"github.com/lightningnetwork/lnd/lntypes"
+)
+
+// StoreMock implements a mock client swap store.
+type StoreMock struct {
+	batches map[int32]dbBatch
+	sweeps  map[lntypes.Hash]dbSweep
+}
+
+// NewStoreMock instantiates a new mock store.
+func NewStoreMock() *StoreMock {
+	return &StoreMock{
+		batches: make(map[int32]dbBatch),
+		sweeps:  make(map[lntypes.Hash]dbSweep),
+	}
+}
+
+// FetchUnconfirmedBatches fetches all the loop out sweep batches from the
+// database that are not in a confirmed state.
+func (s *StoreMock) FetchUnconfirmedSweepBatches(ctx context.Context) (
+	[]*dbBatch, error) {
+
+	result := []*dbBatch{}
+	for _, batch := range s.batches {
+		batch := batch
+		if batch.State != "confirmed" {
+			result = append(result, &batch)
+		}
+	}
+
+	return result, nil
+}
+
+// InsertSweepBatch inserts a batch into the database, returning the id of the
+// inserted batch.
+func (s *StoreMock) InsertSweepBatch(ctx context.Context,
+	batch *dbBatch) (int32, error) {
+
+	var id int32
+
+	if len(s.batches) == 0 {
+		id = 0
+	} else {
+		id = int32(len(s.batches))
+	}
+
+	s.batches[id] = *batch
+	return id, nil
+}
+
+// UpdateSweepBatch updates a batch in the database.
+func (s *StoreMock) UpdateSweepBatch(ctx context.Context,
+	batch *dbBatch) error {
+
+	s.batches[batch.ID] = *batch
+	return nil
+}
+
+// ConfirmBatch confirms a batch.
+func (s *StoreMock) ConfirmBatch(ctx context.Context, id int32) error {
+	batch, ok := s.batches[id]
+	if !ok {
+		return errors.New("batch not found")
+	}
+
+	batch.State = "confirmed"
+	s.batches[batch.ID] = batch
+
+	return nil
+}
+
+// FetchBatchSweeps fetches all the sweeps that belong to a batch.
+func (s *StoreMock) FetchBatchSweeps(ctx context.Context,
+	id int32) ([]*dbSweep, error) {
+
+	result := []*dbSweep{}
+	for _, sweep := range s.sweeps {
+		sweep := sweep
+		if sweep.BatchID == id {
+			result = append(result, &sweep)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+
+	return result, nil
+}
+
+// UpsertSweep inserts a sweep into the database, or updates an existing sweep.
+func (s *StoreMock) UpsertSweep(ctx context.Context, sweep *dbSweep) error {
+	s.sweeps[sweep.SwapHash] = *sweep
+	return nil
+}
+
+// GetSweepStatus returns the status of a sweep.
+func (s *StoreMock) GetSweepStatus(ctx context.Context,
+	swapHash lntypes.Hash) (bool, error) {
+
+	sweep, ok := s.sweeps[swapHash]
+	if !ok {
+		return false, nil
+	}
+
+	return sweep.Completed, nil
+}
+
+// Close closes the store.
+func (s *StoreMock) Close() error {
+	return nil
+}
+
+// AssertSweepStored asserts that a sweep is stored.
+func (s *StoreMock) AssertSweepStored(id lntypes.Hash) bool {
+	_, ok := s.sweeps[id]
+	return ok
+}

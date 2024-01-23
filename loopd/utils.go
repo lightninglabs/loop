@@ -11,13 +11,15 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
 // getClient returns an instance of the swap client.
 func getClient(cfg *Config, swapDb loopdb.SwapStore,
-	lnd *lndclient.LndServices) (*loop.Client, func(), error) {
+	sweeperDb sweepbatcher.BatcherStore, lnd *lndclient.LndServices) (
+	*loop.Client, func(), error) {
 
 	clientConfig := &loop.ClientConfig{
 		ServerAddress:       cfg.Server.Host,
@@ -33,7 +35,7 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(
-		cfg.DataDir, swapDb, clientConfig,
+		cfg.DataDir, swapDb, sweeperDb, clientConfig,
 	)
 	if err != nil {
 		return nil, nil, err

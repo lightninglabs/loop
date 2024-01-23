@@ -18,7 +18,7 @@ type loopInTestContext struct {
 	t              *testing.T
 	lnd            *test.LndMockServices
 	server         *serverMock
-	store          *storeMock
+	store          *loopdb.StoreMock
 	sweeper        *sweep.Sweeper
 	cfg            *executeConfig
 	statusChan     chan SwapInfo
@@ -31,7 +31,7 @@ type loopInTestContext struct {
 func newLoopInTestContext(t *testing.T) *loopInTestContext {
 	lnd := test.NewMockLnd()
 	server := newServerMock(lnd)
-	store := newStoreMock(t)
+	store := loopdb.NewStoreMock(t)
 	sweeper := sweep.Sweeper{Lnd: &lnd.LndServices}
 
 	blockEpochChan := make(chan interface{})

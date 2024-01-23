@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/sweepbatcher"
 
 	"github.com/lightninglabs/loop/instantout/reservation"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
@@ -412,9 +413,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	sweeperDb := sweepbatcher.NewSQLStore(baseDb, chainParams)
+
 	// Create an instance of the loop client library.
 	swapClient, clientCleanup, err := getClient(
-		d.cfg, swapDb, &d.lnd.LndServices,
+		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices,
 	)
 	if err != nil {
 		return err

@@ -137,6 +137,9 @@ var (
 	// errInvalidKey is returned when a serialized key is not the expected
 	// length.
 	errInvalidKey = fmt.Errorf("invalid serialized key")
+
+	// errUnimplemented is returned when a method is not implemented.
+	errUnimplemented = fmt.Errorf("unimplemented method")
 )
 
 const (
@@ -990,19 +993,19 @@ func (s *boltSwapStore) fetchLoopInSwap(rootBucket *bbolt.Bucket,
 func (b *boltSwapStore) BatchCreateLoopOut(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopOutContract) error {
 
-	return errors.New("not implemented")
+	return errUnimplemented
 }
 
 // BatchCreateLoopIn creates a batch of loop in swaps to the store.
 func (b *boltSwapStore) BatchCreateLoopIn(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopInContract) error {
 
-	return errors.New("not implemented")
+	return errUnimplemented
 }
 
 // BatchInsertUpdate inserts batch of swap updates to the store.
 func (b *boltSwapStore) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
-	return errors.New("not implemented")
+	return errUnimplemented
 }
