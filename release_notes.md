@@ -16,15 +16,6 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
-* Sweep Batcher: A new sub-system was added that handles all the loopout
-sweeps. Successful loopout HTLCs will no longer be swept back to the wallet via
-individual transactions but will instead form a single transaction that holds
-multiple inputs and pays to a single output. This will significantly reduce
-chain fee costs as it's using less block space by directly consolidating all the
-htlcs to a single address. Loopouts that pay to non-wallet addresses will still
-use individual transactions as their output cannot be mutated.
-
-
 #### Breaking Changes
 
 #### Bug Fixes
