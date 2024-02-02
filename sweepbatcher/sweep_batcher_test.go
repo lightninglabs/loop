@@ -38,7 +38,7 @@ func testMuSig2SignSweep(ctx context.Context,
 }
 
 var dummyNotifier = SpendNotifier{
-	SpendChan:    make(chan *wire.MsgTx, ntfnBufferSize),
+	SpendChan:    make(chan *SpendDetail, ntfnBufferSize),
 	SpendErrChan: make(chan error, ntfnBufferSize),
 	QuitChan:     make(chan bool, ntfnBufferSize),
 }

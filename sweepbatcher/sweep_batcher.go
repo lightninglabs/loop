@@ -110,11 +110,22 @@ type SweepRequest struct {
 	Notifier *SpendNotifier
 }
 
+type SpendDetail struct {
+	// Tx is the transaction that spent the outpoint.
+	Tx *wire.MsgTx
+
+	// OnChainFeePortion is the fee portion that was paid to get this sweep
+	// confirmed on chain. This is the difference between the value of the
+	// outpoint and the value of all sweeps that were included in the batch
+	// divided by the number of sweeps.
+	OnChainFeePortion btcutil.Amount
+}
+
 // SpendNotifier is a notifier that is used to notify the requester of a sweep
 // that the sweep was successful.
 type SpendNotifier struct {
 	// SpendChan is a channel where the spend details are received.
-	SpendChan chan *wire.MsgTx
+	SpendChan chan *SpendDetail
 
 	// SpendErrChan is a channel where spend errors are received.
 	SpendErrChan chan error
@@ -521,6 +532,18 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	spendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// First get the batch that completed the sweep.
+	parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
+	if err != nil {
+		return err
+	}
+
+	// Then we get the total amount that was swept by the batch.
+	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatch.ID)
+	if err != nil {
+		return err
+	}
+
 	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
 		spendCtx, &sweep.outpoint, sweep.htlc.PkScript,
 		sweep.initiationHeight,
@@ -538,8 +561,28 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		for {
 			select {
 			case spend := <-spendChan:
+				spendTx := spend.SpendingTx
+				// Calculate the fee portion that each sweep
+				// should pay for the batch.
+				feePortionPerSweep, roundingDifference :=
+					getFeePortionForSweep(
+						spendTx, len(spendTx.TxIn),
+						totalSwept,
+					)
+
+				// Notify the requester of the spend
+				// with the spend details, including the fee
+				// portion for this particular sweep.
+				spendDetail := &SpendDetail{
+					Tx: spendTx,
+					OnChainFeePortion: getFeePortionPaidBySweep( // nolint:lll
+						spendTx, feePortionPerSweep,
+						roundingDifference, sweep,
+					),
+				}
+
 				select {
-				case notifier.SpendChan <- spend.SpendingTx:
+				case notifier.SpendChan <- spendDetail:
 				case <-ctx.Done():
 				}
 
