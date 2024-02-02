@@ -270,8 +270,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
 	if completed && *notifier != (SpendNotifier{}) {
-		go b.monitorSpendAndNotify(ctx, sweep, notifier)
-		return nil
+		return b.monitorSpendAndNotify(ctx, sweep, notifier)
 	}
 
 	sweep.notifier = notifier
@@ -509,10 +508,7 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // monitorSpendAndNotify monitors the spend of a specific outpoint and writes
 // the response back to the response channel.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
-	notifier *SpendNotifier) {
-
-	b.wg.Add(1)
-	defer b.wg.Done()
+	notifier *SpendNotifier) error {
 
 	spendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -522,44 +518,44 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		sweep.initiationHeight,
 	)
 	if err != nil {
-		select {
-		case notifier.SpendErrChan <- err:
-		case <-ctx.Done():
-		}
-
-		_ = b.writeToErrChan(ctx, err)
-
-		return
+		return err
 	}
 
-	log.Infof("Batcher monitoring spend for swap %x", sweep.swapHash[:6])
+	b.wg.Add(1)
+	go func() {
+		defer b.wg.Done()
+		log.Infof("Batcher monitoring spend for swap %x",
+			sweep.swapHash[:6])
 
-	for {
-		select {
-		case spend := <-spendChan:
+		for {
 			select {
-			case notifier.SpendChan <- spend.SpendingTx:
+			case spend := <-spendChan:
+				select {
+				case notifier.SpendChan <- spend.SpendingTx:
+				case <-ctx.Done():
+				}
+
+				return
+
+			case err := <-spendErr:
+				select {
+				case notifier.SpendErrChan <- err:
+				case <-ctx.Done():
+				}
+
+				_ = b.writeToErrChan(ctx, err)
+				return
+
+			case <-notifier.QuitChan:
+				return
+
 			case <-ctx.Done():
+				return
 			}
-
-			return
-
-		case err := <-spendErr:
-			select {
-			case notifier.SpendErrChan <- err:
-			case <-ctx.Done():
-			}
-
-			_ = b.writeToErrChan(ctx, err)
-			return
-
-		case <-notifier.QuitChan:
-			return
-
-		case <-ctx.Done():
-			return
 		}
-	}
+	}()
+
+	return nil
 }
 
 func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
