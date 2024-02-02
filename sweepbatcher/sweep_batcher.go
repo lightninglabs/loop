@@ -72,6 +72,14 @@ type BatcherStore interface {
 	// GetSweepStatus returns the completed status of the sweep.
 	GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (
 		bool, error)
+
+	// GetParentBatch returns the parent batch of a (completed) sweep.
+	GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
+		*dbBatch, error)
+
+	// TotalSweptAmount returns the total amount swept by a (confirmed)
+	// batch.
+	TotalSweptAmount(ctx context.Context, id int32) (btcutil.Amount, error)
 }
 
 // MuSig2SignSweep is a function that can be used to sign a sweep transaction

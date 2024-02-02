@@ -13,6 +13,7 @@ type Querier interface {
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatchSweepsRow, error)
+	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetInstantOutSwap(ctx context.Context, swapHash []byte) (GetInstantOutSwapRow, error)
 	GetInstantOutSwapUpdates(ctx context.Context, swapHash []byte) ([]InstantoutUpdate, error)
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
@@ -20,6 +21,7 @@ type Querier interface {
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
+	GetParentBatch(ctx context.Context, swapHash []byte) (SweepBatch, error)
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)
 	GetReservations(ctx context.Context) ([]Reservation, error)

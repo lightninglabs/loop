@@ -22,8 +22,16 @@ type BaseDB interface {
 	GetBatchSweeps(ctx context.Context, batchID int32) (
 		[]sqlc.GetBatchSweepsRow, error)
 
+	// GetBatchSweptAmount returns the total amount of sats swept by a
+	// (confirmed) batch.
+	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
+
 	// GetSweepStatus returns true if the sweep has been completed.
 	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
+
+	// GetParentBatch fetches the parent batch of a completed sweep.
+	GetParentBatch(ctx context.Context, swapHash []byte) (sqlc.SweepBatch,
+		error)
 
 	// GetSwapUpdates fetches all the updates for a swap.
 	GetSwapUpdates(ctx context.Context, swapHash []byte) (
@@ -146,6 +154,34 @@ func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) (
 	}
 
 	return sweeps, nil
+}
+
+// TotalSweptAmount returns the total amount swept by a (confirmed) batch.
+func (s *SQLStore) TotalSweptAmount(ctx context.Context, id int32) (
+	btcutil.Amount, error) {
+
+	amt, err := s.baseDb.GetBatchSweptAmount(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+
+	return btcutil.Amount(amt), nil
+}
+
+// GetParentBatch fetches the parent batch of a completed sweep.
+func (s *SQLStore) GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
+	*dbBatch, error) {
+
+	batch, err := s.baseDb.GetParentBatch(ctx, swapHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return convertBatchRow(batch), nil
 }
 
 // UpsertSweep inserts a sweep into the database, or updates an existing sweep
