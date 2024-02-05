@@ -120,7 +120,7 @@ func (f *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 			return f.HandleError(err)
 
 		case confInfo := <-confChan:
-			f.Debugf("confirmed in block %v", confInfo.Block)
+			f.Debugf("confirmed in tx: %v", confInfo.Tx)
 			outpoint, err := f.reservation.findReservationOutput(
 				confInfo.Tx,
 			)
