@@ -33,6 +33,11 @@ service InstantSwapServer {
     // called if the swap has not been accepted yet.
     rpc CancelInstantSwap (CancelInstantSwapRequest)
         returns (CancelInstantSwapResponse);
+
+    // GetInstantOutQuote returns the absolute fee in satoshis for the swap and
+    // the pubkey to query the route to estimate offchain payment fees.
+    rpc GetInstantOutQuote (GetInstantOutQuoteRequest)
+        returns (GetInstantOutQuoteResponse);
 }
 
 message InstantLoopOutRequest {
@@ -128,6 +133,16 @@ message CancelInstantSwapRequest {
 }
 
 message CancelInstantSwapResponse {
+}
+
+message GetInstantOutQuoteRequest {
+    // The amount to swap in satoshis.
+    uint64 amount = 1;
+}
+
+message GetInstantOutQuoteResponse {
+    // The swap fee in satoshis.
+    uint64 swap_fee = 1;
 }
 
 enum InstantOutProtocolVersion {

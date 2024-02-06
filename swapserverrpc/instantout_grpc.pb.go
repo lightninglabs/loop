@@ -34,6 +34,9 @@ type InstantSwapServerClient interface {
 	// CancelInstantSwap tries to cancel the instant swap. This can only be
 	// called if the swap has not been accepted yet.
 	CancelInstantSwap(ctx context.Context, in *CancelInstantSwapRequest, opts ...grpc.CallOption) (*CancelInstantSwapResponse, error)
+	// GetInstantOutQuote returns the absolute fee in satoshis for the swap and
+	// the pubkey to query the route to estimate offchain payment fees.
+	GetInstantOutQuote(ctx context.Context, in *GetInstantOutQuoteRequest, opts ...grpc.CallOption) (*GetInstantOutQuoteResponse, error)
 }
 
 type instantSwapServerClient struct {
@@ -98,6 +101,15 @@ func (c *instantSwapServerClient) CancelInstantSwap(ctx context.Context, in *Can
 	return out, nil
 }
 
+func (c *instantSwapServerClient) GetInstantOutQuote(ctx context.Context, in *GetInstantOutQuoteRequest, opts ...grpc.CallOption) (*GetInstantOutQuoteResponse, error) {
+	out := new(GetInstantOutQuoteResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.InstantSwapServer/GetInstantOutQuote", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InstantSwapServerServer is the server API for InstantSwapServer service.
 // All implementations must embed UnimplementedInstantSwapServerServer
 // for forward compatibility
@@ -118,6 +130,9 @@ type InstantSwapServerServer interface {
 	// CancelInstantSwap tries to cancel the instant swap. This can only be
 	// called if the swap has not been accepted yet.
 	CancelInstantSwap(context.Context, *CancelInstantSwapRequest) (*CancelInstantSwapResponse, error)
+	// GetInstantOutQuote returns the absolute fee in satoshis for the swap and
+	// the pubkey to query the route to estimate offchain payment fees.
+	GetInstantOutQuote(context.Context, *GetInstantOutQuoteRequest) (*GetInstantOutQuoteResponse, error)
 	mustEmbedUnimplementedInstantSwapServerServer()
 }
 
@@ -142,6 +157,9 @@ func (UnimplementedInstantSwapServerServer) PushPreimage(context.Context, *PushP
 }
 func (UnimplementedInstantSwapServerServer) CancelInstantSwap(context.Context, *CancelInstantSwapRequest) (*CancelInstantSwapResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelInstantSwap not implemented")
+}
+func (UnimplementedInstantSwapServerServer) GetInstantOutQuote(context.Context, *GetInstantOutQuoteRequest) (*GetInstantOutQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInstantOutQuote not implemented")
 }
 func (UnimplementedInstantSwapServerServer) mustEmbedUnimplementedInstantSwapServerServer() {}
 
@@ -264,6 +282,24 @@ func _InstantSwapServer_CancelInstantSwap_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InstantSwapServer_GetInstantOutQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInstantOutQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstantSwapServerServer).GetInstantOutQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.InstantSwapServer/GetInstantOutQuote",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstantSwapServerServer).GetInstantOutQuote(ctx, req.(*GetInstantOutQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InstantSwapServer_ServiceDesc is the grpc.ServiceDesc for InstantSwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -294,6 +330,10 @@ var InstantSwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelInstantSwap",
 			Handler:    _InstantSwapServer_CancelInstantSwap_Handler,
+		},
+		{
+			MethodName: "GetInstantOutQuote",
+			Handler:    _InstantSwapServer_GetInstantOutQuote_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
