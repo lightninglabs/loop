@@ -759,6 +759,21 @@
         }
       }
     },
+    "looprpcInstantOutQuoteResponse": {
+      "type": "object",
+      "properties": {
+        "service_fee_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The fee that the swap service is charging for the swap."
+        },
+        "sweep_fee_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The estimated on-chain fee that needs to be paid to publish the Sweepless\nSweep."
+        }
+      }
+    },
     "looprpcInstantOutResponse": {
       "type": "object",
       "properties": {
