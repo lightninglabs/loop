@@ -919,9 +919,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 			s.log.Infof("Htlc spend by tx: %v",
 				spendDetails.SpenderTxHash)
 
-			err := s.processHtlcSpend(
-				ctx, spendDetails, htlcValue, sweepFee,
-			)
+			err := s.processHtlcSpend(ctx, spendDetails, sweepFee)
 			if err != nil {
 				return err
 			}
@@ -959,8 +957,6 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 			switch update.State {
 			// Swap invoice was paid, so update server cost balance.
 			case invpkg.ContractSettled:
-				s.cost.Server -= update.AmtPaid
-
 				// If invoice settlement and htlc spend happen
 				// in the expected order, move the swap to an
 				// intermediate state that indicates that the
@@ -977,6 +973,8 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 
 				invoiceFinalized = true
 				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
+				s.cost.Server = s.AmountRequested -
+					update.AmtPaid
 
 			// Canceled invoice has no effect on server cost
 			// balance.
@@ -1023,8 +1021,7 @@ func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
 }
 
 func (s *loopInSwap) processHtlcSpend(ctx context.Context,
-	spend *chainntnfs.SpendDetail, htlcValue,
-	sweepFee btcutil.Amount) error {
+	spend *chainntnfs.SpendDetail, sweepFee btcutil.Amount) error {
 
 	// Determine the htlc input of the spending tx and inspect the witness
 	// to find out whether a success or a timeout tx spent the htlc.
@@ -1032,10 +1029,6 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 
 	if s.htlc.IsSuccessWitness(htlcInput.Witness) {
 		s.setState(loopdb.StateSuccess)
-
-		// Server swept the htlc. The htlc value can be added to the
-		// server cost balance.
-		s.cost.Server += htlcValue
 	} else {
 		// We needed another on chain tx to sweep the timeout clause,
 		// which we now include in our costs.

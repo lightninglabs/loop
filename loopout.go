@@ -452,7 +452,8 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
 		return nil
 
 	case result.status.State == lnrpc.Payment_SUCCEEDED:
-		s.cost.Server += result.status.Value.ToSatoshis()
+		s.cost.Server += result.status.Value.ToSatoshis() -
+			s.AmountRequested
 		s.cost.Offchain += result.status.Fee.ToSatoshis()
 
 		return nil
@@ -539,9 +540,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	sweepSuccessful := s.htlc.IsSuccessWitness(htlcInput.Witness)
 	if sweepSuccessful {
-		s.cost.Server -= htlcValue
 		s.cost.Onchain = spend.OnChainFeePortion
-
 		s.state = loopdb.StateSuccess
 	} else {
 		s.state = loopdb.StateFailSweepTimeout
