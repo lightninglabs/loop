@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ type Manager struct {
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
 
+	runCtx context.Context
+
 	sync.Mutex
 }
 
@@ -35,12 +38,12 @@ func NewManager(cfg *Config) *Manager {
 
 // Run runs the reservation manager.
 func (m *Manager) Run(ctx context.Context, height int32) error {
-	// todo(sputn1ck): recover swaps on startup
 	log.Debugf("Starting reservation manager")
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	m.runCtx = runCtx
 	currentHeight := height
 
 	err := m.RecoverReservations(runCtx)
@@ -58,7 +61,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 		chan *reservationrpc.ServerReservationNotification,
 	)
 
-	err = m.RegisterReservationNotifications(runCtx, reservationResChan)
+	err = m.RegisterReservationNotifications(reservationResChan)
 	if err != nil {
 		return err
 	}
@@ -155,15 +158,16 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 // RegisterReservationNotifications registers a new reservation notification
 // stream.
 func (m *Manager) RegisterReservationNotifications(
-	ctx context.Context, reservationChan chan *reservationrpc.
-		ServerReservationNotification) error {
+	reservationChan chan *reservationrpc.ServerReservationNotification) error {
 
 	// In order to create a valid lsat we first are going to call
 	// the FetchL402 method.
-	err := m.cfg.FetchL402(ctx)
+	err := m.cfg.FetchL402(m.runCtx)
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := context.WithCancel(m.runCtx)
 
 	// We'll now subscribe to the reservation notifications.
 	reservationStream, err := m.cfg.ReservationClient.
@@ -171,8 +175,11 @@ func (m *Manager) RegisterReservationNotifications(
 			ctx, &reservationrpc.ReservationNotificationRequest{},
 		)
 	if err != nil {
+		cancel()
 		return err
 	}
+
+	log.Debugf("Successfully subscribed to reservation notifications")
 
 	// We'll now start a goroutine that will forward all the reservation
 	// notifications to the reservationChan.
@@ -188,36 +195,30 @@ func (m *Manager) RegisterReservationNotifications(
 			log.Errorf("Error receiving "+
 				"reservation: %v", err)
 
-			reconnectTimer := time.NewTimer(time.Second * 10)
+			cancel()
 
 			// If we encounter an error, we'll
 			// try to reconnect.
 			for {
 				select {
-				case <-ctx.Done():
+				case <-m.runCtx.Done():
 					return
-				case <-reconnectTimer.C:
-					err = m.RegisterReservationNotifications(
-						ctx, reservationChan,
-					)
-					if err == nil {
-						log.Debugf(
-							"Successfully " +
-								"reconnected",
-						)
-						reconnectTimer.Stop()
-						// If we were able to
-						// reconnect, we'll
-						// return.
-						return
-					}
-					log.Errorf("Error "+
-						"reconnecting: %v",
-						err)
 
-					reconnectTimer.Reset(
-						time.Second * 10,
+				case <-time.After(time.Second * 10):
+					log.Debugf("Reconnecting to " +
+						"reservation notifications")
+					err = m.RegisterReservationNotifications(
+						reservationChan,
 					)
+					if err != nil {
+						log.Errorf("Error "+
+							"reconnecting: %v", err)
+						continue
+					}
+
+					// If we were able to reconnect, we'll
+					// return.
+					return
 				}
 			}
 		}
@@ -268,4 +269,55 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 // GetReservations retrieves all reservations from the database.
 func (m *Manager) GetReservations(ctx context.Context) ([]*Reservation, error) {
 	return m.cfg.Store.ListReservations(ctx)
+}
+
+// GetReservation returns the reservation for the given id.
+func (m *Manager) GetReservation(ctx context.Context, id ID) (*Reservation,
+	error) {
+
+	return m.cfg.Store.GetReservation(ctx, id)
+}
+
+// LockReservation locks the reservation with the given ID.
+func (m *Manager) LockReservation(ctx context.Context, id ID) error {
+	// Try getting the reservation from the active reservations map.
+	m.Lock()
+	reservation, ok := m.activeReservations[id]
+	m.Unlock()
+
+	if !ok {
+		return fmt.Errorf("reservation not found")
+	}
+
+	// Try to send the lock event to the reservation.
+	err := reservation.SendEvent(OnLocked, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UnlockReservation unlocks the reservation with the given ID.
+func (m *Manager) UnlockReservation(ctx context.Context, id ID) error {
+	// Try getting the reservation from the active reservations map.
+	m.Lock()
+	reservation, ok := m.activeReservations[id]
+	m.Unlock()
+
+	if !ok {
+		return fmt.Errorf("reservation not found")
+	}
+
+	// Try to send the unlock event to the reservation.
+	err := reservation.SendEvent(OnUnlocked, nil)
+	if err != nil && strings.Contains(err.Error(), "config error") {
+		// If the error is a config error, we can ignore it, as the
+		// reservation is already unlocked.
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	return nil
 }

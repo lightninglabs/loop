@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service InstantSwapServer {
+    // RequestInstantLoopOut initiates an instant loop out swap.
+    rpc RequestInstantLoopOut (InstantLoopOutRequest)
+        returns (InstantLoopOutResponse);
+
+    // PollPaymentAccepted polls the server to see if the payment has been
+    // accepted.
+    rpc PollPaymentAccepted (PollPaymentAcceptedRequest)
+        returns (PollPaymentAcceptedResponse);
+
+    // InitHtlcSig is called by the client to initiate the htlc sig exchange.
+    rpc InitHtlcSig (InitHtlcSigRequest) returns (InitHtlcSigResponse);
+
+    // PushHtlcSig is called by the client to push the htlc sigs to the server.
+    rpc PushHtlcSig (PushHtlcSigRequest) returns (PushHtlcSigResponse);
+
+    // PushPreimage is called by the client to push the preimage to the server.
+    // This returns the musig2 signatures that the client needs to sweep the
+    // htlc.
+    rpc PushPreimage (PushPreimageRequest) returns (PushPreimageResponse);
+
+    // CancelInstantSwap tries to cancel the instant swap. This can only be
+    // called if the swap has not been accepted yet.
+    rpc CancelInstantSwap (CancelInstantSwapRequest)
+        returns (CancelInstantSwapResponse);
+}
+
+message InstantLoopOutRequest {
+    // Htlc related fields:
+    // The key for the htlc preimage spending path.
+    bytes receiver_key = 1;
+
+    // The hash of the preimage that will be used to settle the htlc.
+    bytes swap_hash = 2;
+
+    // The requested absolute block height of the on-chain htlc.
+    int32 expiry = 3;
+
+    // The fee rate in sat/kw that should be used for the htlc.
+    uint64 htlc_fee_rate = 4;
+
+    // The reservations used as the inputs.
+    repeated bytes reservation_ids = 5;
+
+    // The protocol version to use for the swap.
+    InstantOutProtocolVersion protocol_version = 6;
+}
+
+message InstantLoopOutResponse {
+    // The swap invoice that the client should pay.
+    string swap_invoice = 1;
+
+    // the key for the htlc expiry path.
+    bytes sender_key = 2;
+};
+
+message PollPaymentAcceptedRequest {
+    // The hash of the swap invoice.
+    bytes swap_hash = 1;
+}
+
+message PollPaymentAcceptedResponse {
+    // Whether the payment has been accepted.
+    bool accepted = 1;
+}
+
+message InitHtlcSigRequest {
+    // The hash of the swap invoice.
+    bytes swap_hash = 1;
+
+    // The nonces that the client will use to generate the htlc sigs.
+    repeated bytes htlc_client_nonces = 2;
+}
+
+message InitHtlcSigResponse {
+    // The nonces that the server will use to generate the htlc sigs.
+    repeated bytes htlc_server_nonces = 2;
+}
+
+message PushHtlcSigRequest {
+    // The hash of the swap invoice.
+    bytes swap_hash = 1;
+
+    // The sigs that the client generated for the reservation inputs.
+    repeated bytes client_sigs = 2;
+}
+
+message PushHtlcSigResponse {
+    // The sigs that the server generated for the reservation inputs.
+    repeated bytes server_sigs = 1;
+}
+
+message PushPreimageRequest {
+    // The preimage that the client generated for the swap.
+    bytes preimage = 1;
+
+    // The nonces that the client used to generate the sweepless sweep sigs.
+    repeated bytes client_nonces = 2;
+
+    // The address that the client wants to sweep the htlc to.
+    string client_sweep_addr = 3;
+
+    // The fee rate in sat/kw that the client wants to use for the sweep.
+    uint64 musig_tx_fee_rate = 4;
+}
+
+message PushPreimageResponse {
+    // The sweep sigs that the server generated for the htlc.
+    repeated bytes musig2_sweep_sigs = 1;
+
+    // The nonces that the server used to generate the sweepless sweep sigs.
+    repeated bytes server_nonces = 2;
+}
+
+message CancelInstantSwapRequest {
+    // The hash of the swap invoice.
+    bytes swap_hash = 1;
+}
+
+message CancelInstantSwapResponse {
+}
+
+enum InstantOutProtocolVersion {
+    INSTANTOUT_NONE = 0;
+    INSTANTOUT_FULL_RESERVATION = 1;
+};

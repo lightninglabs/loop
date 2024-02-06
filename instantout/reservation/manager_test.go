@@ -33,7 +33,7 @@ func TestManager(t *testing.T) {
 	}()
 
 	// Create a new reservation.
-	fsm, err := testContext.manager.newReservation(
+	reservationFSM, err := testContext.manager.newReservation(
 		ctxb, uint32(testContext.mockLnd.Height),
 		&swapserverrpc.ServerReservationNotification{
 			ReservationId: defaultReservationId[:],
@@ -45,11 +45,11 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// We'll expect the spendConfirmation to be sent to the server.
-	pkScript, err := fsm.reservation.GetPkScript()
+	pkScript, err := reservationFSM.reservation.GetPkScript()
 	require.NoError(t, err)
 
-	conf := <-testContext.mockLnd.RegisterConfChannel
-	require.Equal(t, conf.PkScript, pkScript)
+	confReg := <-testContext.mockLnd.RegisterConfChannel
+	require.Equal(t, confReg.PkScript, pkScript)
 
 	confTx := &wire.MsgTx{
 		TxOut: []*wire.TxOut{
@@ -59,23 +59,39 @@ func TestManager(t *testing.T) {
 		},
 	}
 	// We'll now confirm the spend.
-	conf.ConfChan <- &chainntnfs.TxConfirmation{
+	confReg.ConfChan <- &chainntnfs.TxConfirmation{
 		BlockHeight: uint32(testContext.mockLnd.Height),
 		Tx:          confTx,
 	}
 
 	// We'll now expect the reservation to be confirmed.
-	err = fsm.DefaultObserver.WaitForState(ctxb, 5*time.Second, Confirmed)
+	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Confirmed)
 	require.NoError(t, err)
 
-	// We'll now expire the reservation.
-	err = testContext.mockLnd.NotifyHeight(
-		testContext.mockLnd.Height + int32(defaultExpiry),
-	)
+	// We'll now expect a spend registration.
+	spendReg := <-testContext.mockLnd.RegisterSpendChannel
+	require.Equal(t, spendReg.PkScript, pkScript)
+
+	go func() {
+		// We'll expect a second spend registration.
+		spendReg = <-testContext.mockLnd.RegisterSpendChannel
+		require.Equal(t, spendReg.PkScript, pkScript)
+	}()
+
+	// We'll now try to lock the reservation.
+	err = testContext.manager.LockReservation(ctxb, defaultReservationId)
 	require.NoError(t, err)
+
+	// We'll try to lock the reservation again, which should fail.
+	err = testContext.manager.LockReservation(ctxb, defaultReservationId)
+	require.Error(t, err)
+
+	testContext.mockLnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpentOutPoint: spendReg.Outpoint,
+	}
 
 	// We'll now expect the reservation to be expired.
-	err = fsm.DefaultObserver.WaitForState(ctxb, 5*time.Second, TimedOut)
+	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Spent)
 	require.NoError(t, err)
 }
 
