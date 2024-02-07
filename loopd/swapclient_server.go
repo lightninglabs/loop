@@ -1209,6 +1209,25 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 	return res, nil
 }
 
+// InstantOutQuote returns a quote for an instant out swap with the provided
+// parameters.
+func (s *swapClientServer) InstantOutQuote(ctx context.Context,
+	req *clientrpc.InstantOutQuoteRequest) (
+	*clientrpc.InstantOutQuoteResponse, error) {
+
+	quote, err := s.instantOutManager.GetInstantOutQuote(
+		ctx, btcutil.Amount(req.Amt), int(req.NumReservations),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.InstantOutQuoteResponse{
+		ServiceFeeSat: int64(quote.ServiceFee),
+		SweepFeeSat:   int64(quote.OnChainFee),
+	}, nil
+}
+
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
 	switch reason {
 	case liquidity.ReasonNone:
