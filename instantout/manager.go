@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -169,15 +170,10 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 	// waiting for sweepless sweep to be confirmed.
 	err = instantOut.DefaultObserver.WaitForState(
 		ctx, defaultStateWaitTime, WaitForSweeplessSweepConfirmed,
+		fsm.WithAbortEarlyOnErrorOption(),
 	)
 	if err != nil {
-		if instantOut.LastActionError != nil {
-			return instantOut, fmt.Errorf(
-				"error waiting for sweepless sweep "+
-					"confirmed: %w", instantOut.LastActionError,
-			)
-		}
-		return instantOut, nil
+		return nil, err
 	}
 
 	return instantOut, nil
