@@ -13,7 +13,10 @@ var (
 	ErrWaitForStateTimedOut = errors.New(
 		"timed out while waiting for event",
 	)
-	ErrInvalidContextType = errors.New("invalid context")
+	ErrInvalidContextType             = errors.New("invalid context")
+	ErrWaitingForStateEarlyAbortError = errors.New(
+		"waiting for state early abort",
+	)
 )
 
 const (
@@ -73,6 +76,8 @@ type Notification struct {
 	NextState StateType
 	// Event is the event that was processed.
 	Event EventType
+	// LastActionError is the error returned by the last action executed.
+	LastActionError error
 }
 
 // Observer is an interface that can be implemented by types that want to
@@ -214,9 +219,10 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 		// Notify the state machine's observers.
 		s.observerMutex.Lock()
 		notification := Notification{
-			PreviousState: s.previous,
-			NextState:     s.current,
-			Event:         event,
+			PreviousState:   s.previous,
+			NextState:       s.current,
+			Event:           event,
+			LastActionError: s.LastActionError,
 		}
 
 		for _, observer := range s.observers {

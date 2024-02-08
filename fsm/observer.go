@@ -55,7 +55,8 @@ type WaitForStateOption interface {
 // fsmOptions is a struct that holds all options that can be passed to the
 // WaitForState function.
 type fsmOptions struct {
-	initialWait time.Duration
+	initialWait       time.Duration
+	abortEarlyOnError bool
 }
 
 // InitialWaitOption is an option that can be passed to the WaitForState
@@ -74,6 +75,24 @@ func WithWaitForStateOption(initialWait time.Duration) WaitForStateOption {
 // apply implements the WaitForStateOption interface.
 func (w *InitialWaitOption) apply(o *fsmOptions) {
 	o.initialWait = w.initialWait
+}
+
+// AbortEarlyOnErrorOption is an option that can be passed to the WaitForState
+// function to abort early if an error occurs.
+type AbortEarlyOnErrorOption struct {
+	abortEarlyOnError bool
+}
+
+// apply implements the WaitForStateOption interface.
+func (a *AbortEarlyOnErrorOption) apply(o *fsmOptions) {
+	o.abortEarlyOnError = a.abortEarlyOnError
+}
+
+// WithAbortEarlyOnErrorOption creates a new AbortEarlyOnErrorOption.
+func WithAbortEarlyOnErrorOption() WaitForStateOption {
+	return &AbortEarlyOnErrorOption{
+		abortEarlyOnError: true,
+	}
 }
 
 // WaitForState waits for the state machine to reach the given state.
@@ -105,7 +124,8 @@ func (s *CachedObserver) WaitForState(ctx context.Context,
 	defer cancel()
 
 	// Channel to notify when the desired state is reached
-	ch := make(chan struct{})
+	// or an error occurred.
+	ch := make(chan error)
 
 	// Goroutine to wait on condition variable
 	go func() {
@@ -115,8 +135,26 @@ func (s *CachedObserver) WaitForState(ctx context.Context,
 		for {
 			// Check if the last state is the desired state
 			if s.lastNotification.NextState == state {
-				ch <- struct{}{}
-				return
+				select {
+				case <-timeoutCtx.Done():
+					return
+
+				case ch <- nil:
+					return
+				}
+			}
+
+			// Check if an error occurred
+			if s.lastNotification.Event == OnError {
+				if options.abortEarlyOnError {
+					select {
+					case <-timeoutCtx.Done():
+						return
+
+					case ch <- s.lastNotification.LastActionError:
+						return
+					}
+				}
 			}
 
 			// Otherwise, wait for the next notification
@@ -130,7 +168,11 @@ func (s *CachedObserver) WaitForState(ctx context.Context,
 		return NewErrWaitingForStateTimeout(
 			state, s.lastNotification.NextState,
 		)
-	case <-ch:
+
+	case lastActionErr := <-ch:
+		if lastActionErr != nil {
+			return lastActionErr
+		}
 		return nil
 	}
 }
