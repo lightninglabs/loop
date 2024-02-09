@@ -9,7 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/instantout/reservation"
-	"github.com/lightninglabs/loop/swapserverrpc"
+	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -224,7 +224,7 @@ func (m *Manager) GetInstantOutQuote(ctx context.Context,
 
 	// Get the service fee.
 	quoteRes, err := m.cfg.InstantOutClient.GetInstantOutQuote(
-		ctx, &swapserverrpc.GetInstantOutQuoteRequest{
+		ctx, &looprpc.GetInstantOutQuoteRequest{
 			Amount: uint64(amt),
 		},
 	)
