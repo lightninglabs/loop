@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/instantout/reservation"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -198,4 +200,51 @@ func (m *Manager) GetActiveInstantOut(swapHash lntypes.Hash) (*FSM, error) {
 	}
 
 	return fsm, nil
+}
+
+type Quote struct {
+	// ServiceFee is the fee in sat that is paid to the loop service.
+	ServiceFee btcutil.Amount
+
+	// OnChainFee is the estimated on chain fee in sat.
+	OnChainFee btcutil.Amount
+}
+
+// GetInstantOutQuote returns a quote for an instant out.
+func (m *Manager) GetInstantOutQuote(ctx context.Context,
+	amt btcutil.Amount, numReservations int) (Quote, error) {
+
+	if numReservations <= 0 {
+		return Quote{}, fmt.Errorf("no reservations selected")
+	}
+
+	if amt <= 0 {
+		return Quote{}, fmt.Errorf("no amount selected")
+	}
+
+	// Get the service fee.
+	quoteRes, err := m.cfg.InstantOutClient.GetInstantOutQuote(
+		ctx, &swapserverrpc.GetInstantOutQuoteRequest{
+			Amount: uint64(amt),
+		},
+	)
+	if err != nil {
+		return Quote{}, err
+	}
+
+	// Get the offchain fee by getting the fee estimate from the lnd client
+	// and multiplying it by the estimated sweepless sweep transaction.
+	feeRate, err := m.cfg.Wallet.EstimateFeeRate(ctx, normalConfTarget)
+	if err != nil {
+		return Quote{}, err
+	}
+
+	// The on chain chainFee is the chainFee rate times the estimated
+	// sweepless sweep transaction size.
+	chainFee := feeRate.FeeForWeight(sweeplessSweepWeight(numReservations))
+
+	return Quote{
+		ServiceFee: btcutil.Amount(quoteRes.SwapFee),
+		OnChainFee: chainFee,
+	}, nil
 }

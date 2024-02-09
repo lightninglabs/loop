@@ -120,6 +120,13 @@ service SwapClient {
     InstantOut initiates an instant out swap with the given parameters.
     */
     rpc InstantOut (InstantOutRequest) returns (InstantOutResponse);
+
+    /* loop: `instantoutquote`
+    InstantOutQuote returns a quote for an instant out swap with the provided
+    parameters.
+    */
+    rpc InstantOutQuote (InstantOutQuoteRequest)
+        returns (InstantOutQuoteResponse);
 }
 
 message LoopOutRequest {
@@ -1335,4 +1342,29 @@ message InstantOutResponse {
     The state of the swap.
     */
     string state = 3;
+}
+
+message InstantOutQuoteRequest {
+    /*
+    The amount to swap in satoshis.
+    */
+    uint64 amt = 1;
+
+    /*
+    The amount of reservations to use for the swap.
+    */
+    int32 num_reservations = 2;
+}
+
+message InstantOutQuoteResponse {
+    /*
+    The fee that the swap service is charging for the swap.
+    */
+    int64 service_fee_sat = 1;
+
+    /*
+    The estimated on-chain fee that needs to be paid to publish the Sweepless
+    Sweep.
+    */
+    int64 sweep_fee_sat = 2;
 }

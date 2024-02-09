@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -97,7 +98,10 @@ func instantOut(ctx *cli.Context) error {
 	fmt.Scanln(&answer)
 
 	// Parse
-	var selectedReservations [][]byte
+	var (
+		selectedReservations [][]byte
+		selectedAmt          uint64
+	)
 	switch answer {
 	case "ALL":
 		for _, res := range confirmedReservations {
@@ -105,6 +109,7 @@ func instantOut(ctx *cli.Context) error {
 				selectedReservations,
 				res.ReservationId,
 			)
+			selectedAmt += res.Amount
 		}
 
 	case "":
@@ -135,7 +140,31 @@ func instantOut(ctx *cli.Context) error {
 			)
 
 			selectedIndexMap[idx] = struct{}{}
+			selectedAmt += confirmedReservations[idx-1].Amount
 		}
+	}
+
+	// Now that we have the selected reservations we can estimate the
+	// fee-rates.
+	quote, err := client.InstantOutQuote(
+		context.Background(), &looprpc.InstantOutQuoteRequest{
+			Amt:             selectedAmt,
+			NumReservations: int32(len(selectedReservations)),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+	fmt.Printf(satAmtFmt, "Estimated on-chain fee:", quote.SweepFeeSat)
+	fmt.Printf(satAmtFmt, "Service fee:", quote.ServiceFeeSat)
+	fmt.Println()
+
+	fmt.Printf("CONTINUE SWAP? (y/n): ")
+
+	fmt.Scanln(&answer)
+	if answer != "y" {
+		return errors.New("swap canceled")
 	}
 
 	fmt.Println("Starting instant swap out")
