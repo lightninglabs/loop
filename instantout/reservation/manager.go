@@ -23,6 +23,9 @@ type Manager struct {
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
 
+	// hasL402 is true if the client has a valid L402.
+	hasL402 bool
+
 	runCtx context.Context
 
 	sync.Mutex
@@ -155,16 +158,39 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	return reservationFSM, nil
 }
 
+// fetchL402 fetches the L402 from the server. This method will keep on
+// retrying until it gets a valid response.
+func (m *Manager) fetchL402(ctx context.Context) {
+	// Add a 0 timer so that we initially fetch the L402 immediately.
+	timer := time.NewTimer(0)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-timer.C:
+			err := m.cfg.FetchL402(ctx)
+			if err != nil {
+				log.Warnf("Error fetching L402: %v", err)
+				timer.Reset(time.Second * 10)
+				continue
+			}
+			m.hasL402 = true
+			return
+		}
+	}
+}
+
 // RegisterReservationNotifications registers a new reservation notification
 // stream.
 func (m *Manager) RegisterReservationNotifications(
 	reservationChan chan *reservationrpc.ServerReservationNotification) error {
 
 	// In order to create a valid lsat we first are going to call
-	// the FetchL402 method.
-	err := m.cfg.FetchL402(m.runCtx)
-	if err != nil {
-		return err
+	// the FetchL402 method. As a client might not have outbound capacity
+	// yet, we'll retry until we get a valid response.
+	if !m.hasL402 {
+		m.fetchL402(m.runCtx)
 	}
 
 	ctx, cancel := context.WithCancel(m.runCtx)
