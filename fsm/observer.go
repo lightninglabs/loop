@@ -110,7 +110,7 @@ func (s *CachedObserver) WaitForState(ctx context.Context,
 		opt.apply(&options)
 	}
 
-	// Wait for the initial wait duration if set.
+	// Wait for the initial wait duration if set
 	if options.initialWait > 0 {
 		select {
 		case <-time.After(options.initialWait):
