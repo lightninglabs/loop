@@ -21,7 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-var (
+const (
 	// Define route independent max routing fees. We have currently no way
 	// to get a reliable estimate of the routing fees. Best we can do is
 	// the minimum routing fees, which is not very indicative.
@@ -46,6 +46,10 @@ var (
 	// defaultPollPaymentTime is the default time to poll the server for the
 	// payment status.
 	defaultPollPaymentTime = time.Second * 15
+
+	// htlcExpiryDelta is the delta in blocks we require between the htlc
+	// expiry and reservation expiry.
+	htlcExpiryDelta = int32(40)
 )
 
 // InitInstantOutCtx contains the context for the InitInstantOutAction.
@@ -96,6 +100,15 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 		reservationAmt += uint64(res.Value)
 		reservationIds = append(reservationIds, resId[:])
 		reservations = append(reservations, res)
+
+		// Check that the reservation expiry is larger than the cltv
+		// expiry of the swap, with an additional delta to allow for
+		// preimage reveal.
+		if int32(res.Expiry) < initCtx.cltvExpiry+htlcExpiryDelta {
+			return f.HandleError(fmt.Errorf("reservation %x has "+
+				"expiry %v which is less than the swap expiry %v",
+				resId, res.Expiry, initCtx.cltvExpiry))
+		}
 	}
 
 	// Create the preimage for the swap.
