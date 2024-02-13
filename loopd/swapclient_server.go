@@ -306,6 +306,9 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	case loopdb.StateFailInsufficientConfirmedBalance:
 		failureReason = clientrpc.FailureReason_FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE
 
+	case loopdb.StateFailIncorrectHtlcAmtSwept:
+		failureReason = clientrpc.FailureReason_FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT
+
 	default:
 		return nil, fmt.Errorf("unknown swap state: %v", loopSwap.State)
 	}

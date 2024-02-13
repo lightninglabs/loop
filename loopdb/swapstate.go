@@ -72,6 +72,11 @@ const (
 	// StateFailInsufficientConfirmedBalance indicates that the swap wasn't
 	// published due to insufficient confirmed balance.
 	StateFailInsufficientConfirmedBalance SwapState = 12
+
+	// StateFailIncorrectHtlcAmtSwept indicates that the amount of an
+	// externally published loop in htlc that didn't match the swap amount
+	// has been swept back to the user after the htlc timeout period.
+	StateFailIncorrectHtlcAmtSwept SwapState = 13
 )
 
 // SwapStateType defines the types of swap states that exist. Every swap state
@@ -92,10 +97,7 @@ const (
 
 // Type returns the type of the SwapState it is called on.
 func (s SwapState) Type() SwapStateType {
-	if s == StateInitiated || s == StateHtlcPublished ||
-		s == StatePreimageRevealed || s == StateFailTemporary ||
-		s == StateInvoiceSettled {
-
+	if s.IsPending() {
 		return StateTypePending
 	}
 
@@ -110,7 +112,7 @@ func (s SwapState) Type() SwapStateType {
 func (s SwapState) IsPending() bool {
 	return s == StateInitiated || s == StateHtlcPublished ||
 		s == StatePreimageRevealed || s == StateFailTemporary ||
-		s == StateInvoiceSettled
+		s == StateInvoiceSettled || s == StateFailIncorrectHtlcAmt
 }
 
 // IsFinal returns true if the swap is in a final state.
@@ -159,6 +161,9 @@ func (s SwapState) String() string {
 
 	case StateFailInsufficientConfirmedBalance:
 		return "InsufficientConfirmedBalance"
+
+	case StateFailIncorrectHtlcAmtSwept:
+		return "StateFailIncorrectHtlcAmtSwept"
 
 	default:
 		return "Unknown"
