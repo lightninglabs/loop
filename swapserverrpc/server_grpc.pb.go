@@ -33,7 +33,7 @@ type SwapServerClient interface {
 	ReportRoutingResult(ctx context.Context, in *ReportRoutingResultReq, opts ...grpc.CallOption) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(ctx context.Context, in *MuSig2SignSweepReq, opts ...grpc.CallOption) (*MuSig2SignSweepRes, error)
 	PushKey(ctx context.Context, in *ServerPushKeyReq, opts ...grpc.CallOption) (*ServerPushKeyRes, error)
-	// FetchL402 is a simple non-l402-allowlisted request that is required
+	// FetchL402 is a simple non-l402-allow-listed request that is required
 	// in order to force the creation of an l402.
 	FetchL402(ctx context.Context, in *FetchL402Request, opts ...grpc.CallOption) (*FetchL402Response, error)
 	SubscribeNotifications(ctx context.Context, in *SubscribeNotificationsRequest, opts ...grpc.CallOption) (SwapServer_SubscribeNotificationsClient, error)
@@ -288,7 +288,7 @@ type SwapServerServer interface {
 	ReportRoutingResult(context.Context, *ReportRoutingResultReq) (*ReportRoutingResultRes, error)
 	MuSig2SignSweep(context.Context, *MuSig2SignSweepReq) (*MuSig2SignSweepRes, error)
 	PushKey(context.Context, *ServerPushKeyReq) (*ServerPushKeyRes, error)
-	// FetchL402 is a simple non-l402-allowlisted request that is required
+	// FetchL402 is a simple non-l402-allow-listed request that is required
 	// in order to force the creation of an l402.
 	FetchL402(context.Context, *FetchL402Request) (*FetchL402Response, error)
 	SubscribeNotifications(*SubscribeNotificationsRequest, SwapServer_SubscribeNotificationsServer) error
