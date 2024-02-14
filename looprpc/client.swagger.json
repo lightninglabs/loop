@@ -7,6 +7,9 @@
   "tags": [
     {
       "name": "SwapClient"
+    },
+    {
+      "name": "StaticAddressClient"
     }
   ],
   "consumes": [
@@ -1303,6 +1306,15 @@
           "type": "string",
           "format": "int64",
           "description": "The sum of all succeeded swap amounts."
+        }
+      }
+    },
+    "looprpcNewAddressResponse": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The taproot static address."
         }
       }
     },
