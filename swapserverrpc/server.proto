@@ -47,7 +47,7 @@ service SwapServer {
 
     rpc PushKey (ServerPushKeyReq) returns (ServerPushKeyRes);
 
-    // FetchL402 is a simple non-l402-allowlisted request that is required
+    // FetchL402 is a simple non-l402-allow-listed request that is required
     // in order to force the creation of an l402.
     rpc FetchL402 (FetchL402Request) returns (FetchL402Response);
 }
@@ -652,4 +652,29 @@ message FetchL402Response {
 enum StaticAddressProtocolVersion {
     // V0 is the initially released static address protocol version.
     V0 = 0;
+}
+
+service StaticAddressServer {
+    rpc ServerNewAddress (ServerNewAddressRequest)
+        returns (ServerNewAddressResponse);
+}
+
+message ServerNewAddressRequest {
+    // The protocol version that the client adheres to.
+    StaticAddressProtocolVersion protocol_version = 1;
+
+    // The client key for the MuSig2 static address output.
+    bytes client_key = 2;
+}
+
+message ServerNewAddressResponse {
+    ServerAddressParameters params = 1;
+}
+
+message ServerAddressParameters {
+    // The server key for the MuSig2 static address output.
+    bytes server_key = 1;
+
+    // The CSV expiry for the MuSig2 static address output.
+    uint32 expiry = 2;
 }
