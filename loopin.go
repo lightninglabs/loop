@@ -623,10 +623,18 @@ func (s *loopInSwap) executeSwap(globalCtx context.Context) error {
 	}
 
 	// Verify that the confirmed (external) htlc value matches the swap
-	// amount. Otherwise, fail the swap immediately.
-	if htlcValue != s.LoopInContract.AmountRequested {
+	// amount. If the amounts mismatch we update the swap state to indicate
+	// this, but end processing the swap. Instead, we continue to wait for
+	// the htlc to expire and publish a timeout tx to reclaim the funds. We
+	// skip this part if the swap was recovered from this state.
+	if s.state != loopdb.StateFailIncorrectHtlcAmt &&
+		htlcValue != s.LoopInContract.AmountRequested {
+
 		s.setState(loopdb.StateFailIncorrectHtlcAmt)
-		return s.persistAndAnnounceState(globalCtx)
+		err = s.persistAndAnnounceState(globalCtx)
+		if err != nil {
+			log.Errorf("Error persisting state: %v", err)
+		}
 	}
 
 	// The server is expected to see the htlc on-chain and know that it can
@@ -1032,7 +1040,16 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		// We needed another on chain tx to sweep the timeout clause,
 		// which we now include in our costs.
 		s.cost.Onchain += sweepFee
-		s.setState(loopdb.StateFailTimeout)
+
+		// If the swap is in state StateFailIncorrectHtlcAmt we know
+		// that the deposited htlc amount wasn't equal to the contract
+		// amount. We can finalize the swap by setting an appropriate
+		// state.
+		if s.state == loopdb.StateFailIncorrectHtlcAmt {
+			s.setState(loopdb.StateFailIncorrectHtlcAmtSwept)
+		} else {
+			s.setState(loopdb.StateFailTimeout)
+		}
 
 		// Now that the timeout tx confirmed, we can safely cancel the
 		// swap invoice. We still need to query the final invoice state.
