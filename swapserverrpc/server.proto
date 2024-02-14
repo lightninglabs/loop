@@ -48,7 +48,7 @@ service SwapServer {
 
     rpc PushKey (ServerPushKeyReq) returns (ServerPushKeyRes);
 
-    // FetchL402 is a simple non-l402-allowlisted request that is required
+    // FetchL402 is a simple non-l402-allow-listed request that is required
     // in order to force the creation of an l402.
     rpc FetchL402 (FetchL402Request) returns (FetchL402Response);
 
