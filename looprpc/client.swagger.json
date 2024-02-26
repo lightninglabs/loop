@@ -7,9 +7,6 @@
   "tags": [
     {
       "name": "SwapClient"
-    },
-    {
-      "name": "StaticAddressClient"
     }
   ],
   "consumes": [
