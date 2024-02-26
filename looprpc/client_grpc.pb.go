@@ -102,6 +102,12 @@ type SwapClientClient interface {
 	// ListInstantOuts returns a list of all currently known instant out swaps and
 	// their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
+	// loop: `static newstaticaddress`
+	// NewStaticAddress requests a new static address for loop-ins from the server.
+	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
+	// loop: `static listunspentdeposits`
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
+	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
 }
 
 type swapClientClient struct {
@@ -324,6 +330,24 @@ func (c *swapClientClient) ListInstantOuts(ctx context.Context, in *ListInstantO
 	return out, nil
 }
 
+func (c *swapClientClient) NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error) {
+	out := new(NewStaticAddressResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/NewStaticAddress", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error) {
+	out := new(ListUnspentDepositsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListUnspentDeposits", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -412,6 +436,12 @@ type SwapClientServer interface {
 	// ListInstantOuts returns a list of all currently known instant out swaps and
 	// their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
+	// loop: `static newstaticaddress`
+	// NewStaticAddress requests a new static address for loop-ins from the server.
+	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
+	// loop: `static listunspentdeposits`
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
+	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -481,6 +511,12 @@ func (UnimplementedSwapClientServer) InstantOutQuote(context.Context, *InstantOu
 }
 func (UnimplementedSwapClientServer) ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListInstantOuts not implemented")
+}
+func (UnimplementedSwapClientServer) NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NewStaticAddress not implemented")
+}
+func (UnimplementedSwapClientServer) ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListUnspentDeposits not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -876,6 +912,42 @@ func _SwapClient_ListInstantOuts_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_NewStaticAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NewStaticAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).NewStaticAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/NewStaticAddress",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).NewStaticAddress(ctx, req.(*NewStaticAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_ListUnspentDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUnspentDepositsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListUnspentDeposits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListUnspentDeposits",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListUnspentDeposits(ctx, req.(*ListUnspentDepositsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -963,6 +1035,14 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ListInstantOuts",
 			Handler:    _SwapClient_ListInstantOuts_Handler,
 		},
+		{
+			MethodName: "NewStaticAddress",
+			Handler:    _SwapClient_NewStaticAddress_Handler,
+		},
+		{
+			MethodName: "ListUnspentDeposits",
+			Handler:    _SwapClient_ListUnspentDeposits_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -971,131 +1051,5 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "client.proto",
-}
-
-// StaticAddressClientClient is the client API for StaticAddressClient service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type StaticAddressClientClient interface {
-	// NewAddress requests a new static address for loop-ins from the server.
-	NewAddress(ctx context.Context, in *NewAddressRequest, opts ...grpc.CallOption) (*NewAddressResponse, error)
-	// ListUnspent returns a list of utxos behind a static address.
-	ListUnspent(ctx context.Context, in *ListUnspentRequest, opts ...grpc.CallOption) (*ListUnspentResponse, error)
-}
-
-type staticAddressClientClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewStaticAddressClientClient(cc grpc.ClientConnInterface) StaticAddressClientClient {
-	return &staticAddressClientClient{cc}
-}
-
-func (c *staticAddressClientClient) NewAddress(ctx context.Context, in *NewAddressRequest, opts ...grpc.CallOption) (*NewAddressResponse, error) {
-	out := new(NewAddressResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressClient/NewAddress", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *staticAddressClientClient) ListUnspent(ctx context.Context, in *ListUnspentRequest, opts ...grpc.CallOption) (*ListUnspentResponse, error) {
-	out := new(ListUnspentResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressClient/ListUnspent", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// StaticAddressClientServer is the server API for StaticAddressClient service.
-// All implementations must embed UnimplementedStaticAddressClientServer
-// for forward compatibility
-type StaticAddressClientServer interface {
-	// NewAddress requests a new static address for loop-ins from the server.
-	NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error)
-	// ListUnspent returns a list of utxos behind a static address.
-	ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error)
-	mustEmbedUnimplementedStaticAddressClientServer()
-}
-
-// UnimplementedStaticAddressClientServer must be embedded to have forward compatible implementations.
-type UnimplementedStaticAddressClientServer struct {
-}
-
-func (UnimplementedStaticAddressClientServer) NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NewAddress not implemented")
-}
-func (UnimplementedStaticAddressClientServer) ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListUnspent not implemented")
-}
-func (UnimplementedStaticAddressClientServer) mustEmbedUnimplementedStaticAddressClientServer() {}
-
-// UnsafeStaticAddressClientServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to StaticAddressClientServer will
-// result in compilation errors.
-type UnsafeStaticAddressClientServer interface {
-	mustEmbedUnimplementedStaticAddressClientServer()
-}
-
-func RegisterStaticAddressClientServer(s grpc.ServiceRegistrar, srv StaticAddressClientServer) {
-	s.RegisterService(&StaticAddressClient_ServiceDesc, srv)
-}
-
-func _StaticAddressClient_NewAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(NewAddressRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StaticAddressClientServer).NewAddress(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.StaticAddressClient/NewAddress",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StaticAddressClientServer).NewAddress(ctx, req.(*NewAddressRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _StaticAddressClient_ListUnspent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListUnspentRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StaticAddressClientServer).ListUnspent(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.StaticAddressClient/ListUnspent",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StaticAddressClientServer).ListUnspent(ctx, req.(*ListUnspentRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// StaticAddressClient_ServiceDesc is the grpc.ServiceDesc for StaticAddressClient service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var StaticAddressClient_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "looprpc.StaticAddressClient",
-	HandlerType: (*StaticAddressClientServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "NewAddress",
-			Handler:    _StaticAddressClient_NewAddress_Handler,
-		},
-		{
-			MethodName: "ListUnspent",
-			Handler:    _StaticAddressClient_ListUnspent_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "client.proto",
 }
