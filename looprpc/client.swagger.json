@@ -7,9 +7,6 @@
   "tags": [
     {
       "name": "SwapClient"
-    },
-    {
-      "name": "StaticAddressClient"
     }
   ],
   "consumes": [
@@ -1056,7 +1053,7 @@
         }
       }
     },
-    "looprpcListUnspentResponse": {
+    "looprpcListUnspentDepositsResponse": {
       "type": "object",
       "properties": {
         "utxos": {
@@ -1293,7 +1290,7 @@
         }
       }
     },
-    "looprpcNewAddressResponse": {
+    "looprpcNewStaticAddressResponse": {
       "type": "object",
       "properties": {
         "address": {
