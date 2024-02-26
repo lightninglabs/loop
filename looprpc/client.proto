@@ -143,6 +143,18 @@ service SwapClient {
     */
     rpc ListInstantOuts (ListInstantOutsRequest)
         returns (ListInstantOutsResponse);
+
+    /* loop: `static newstaticaddress`
+    NewStaticAddress requests a new static address for loop-ins from the server.
+    */
+    rpc NewStaticAddress (NewStaticAddressRequest)
+        returns (NewStaticAddressResponse);
+
+    /* loop: `static listunspentdeposits`
+    ListUnspentDeposits returns a list of utxos deposited at a static address.
+    */
+    rpc ListUnspentDeposits (ListUnspentDepositsRequest)
+        returns (ListUnspentDepositsResponse);
 }
 
 message LoopOutRequest {
@@ -1440,26 +1452,14 @@ message InstantOut {
     string sweep_tx_id = 5;
 }
 
-service StaticAddressClient {
-    /*
-    NewAddress requests a new static address for loop-ins from the server.
-    */
-    rpc NewAddress (NewAddressRequest) returns (NewAddressResponse);
-
-    /*
-    ListUnspent returns a list of utxos behind a static address.
-    */
-    rpc ListUnspent (ListUnspentRequest) returns (ListUnspentResponse);
-}
-
-message NewAddressRequest {
+message NewStaticAddressRequest {
     /*
     The client's public key for the 2-of-2 MuSig2 taproot static address.
     */
     bytes client_key = 1;
 }
 
-message NewAddressResponse {
+message NewStaticAddressResponse {
     /*
     The taproot static address.
     */
@@ -1471,7 +1471,7 @@ message NewAddressResponse {
     uint32 expiry = 2;
 }
 
-message ListUnspentRequest {
+message ListUnspentDepositsRequest {
     /*
     The number of minimum confirmations a utxo must have to be listed.
      */
@@ -1484,7 +1484,7 @@ message ListUnspentRequest {
     int32 max_confs = 2;
 }
 
-message ListUnspentResponse {
+message ListUnspentDepositsResponse {
     /*
     A list of utxos behind the static address.
     */
