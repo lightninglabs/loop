@@ -35,16 +35,16 @@ type InstantOut struct {
 	// State is the current state of the swap.
 	State fsm.StateType
 
-	// cltvExpiry is the expiry of the swap.
-	cltvExpiry int32
+	// CltvExpiry is the expiry of the swap.
+	CltvExpiry int32
 
 	// outgoingChanSet optionally specifies the short channel ids of the
 	// channels that may be used to loop out.
 	outgoingChanSet loopdb.ChannelSet
 
-	// reservations are the reservations that are used in as inputs for the
+	// Reservations are the Reservations that are used in as inputs for the
 	// instant out swap.
-	reservations []*reservation.Reservation
+	Reservations []*reservation.Reservation
 
 	// protocolVersion is the version of the protocol that is used for the
 	// swap.
@@ -53,8 +53,8 @@ type InstantOut struct {
 	// initiationHeight is the height at which the swap was initiated.
 	initiationHeight int32
 
-	// value is the amount that is swapped.
-	value btcutil.Amount
+	// Value is the amount that is swapped.
+	Value btcutil.Amount
 
 	// keyLocator is the key locator that is used for the swap.
 	keyLocator keychain.KeyLocator
@@ -81,9 +81,9 @@ type InstantOut struct {
 	// SweepTxHash is the hash of the sweep transaction.
 	SweepTxHash *chainhash.Hash
 
-	// finalizedSweeplessSweepTx is the transaction that is used to sweep
+	// FinalizedSweeplessSweepTx is the transaction that is used to sweep
 	// the funds in the cooperative path.
-	finalizedSweeplessSweepTx *wire.MsgTx
+	FinalizedSweeplessSweepTx *wire.MsgTx
 
 	// sweepConfirmationHeight is the height at which the sweep
 	// transaction was confirmed.
@@ -93,7 +93,7 @@ type InstantOut struct {
 // getHtlc returns the swap.htlc for the instant out.
 func (i *InstantOut) getHtlc(chainParams *chaincfg.Params) (*swap.Htlc, error) {
 	return swap.NewHtlcV2(
-		i.cltvExpiry, pubkeyTo33ByteSlice(i.serverPubkey),
+		i.CltvExpiry, pubkeyTo33ByteSlice(i.serverPubkey),
 		pubkeyTo33ByteSlice(i.clientPubkey), i.SwapHash, chainParams,
 	)
 }
@@ -104,11 +104,11 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	[][]byte, error) {
 
 	// Create the htlc musig2 context.
-	musig2Sessions := make([]*input.MuSig2SessionInfo, len(i.reservations))
-	clientNonces := make([][]byte, len(i.reservations))
+	musig2Sessions := make([]*input.MuSig2SessionInfo, len(i.Reservations))
+	clientNonces := make([][]byte, len(i.Reservations))
 
 	// Create the sessions and nonces from the reservations.
-	for idx, reservation := range i.reservations {
+	for idx, reservation := range i.Reservations {
 		session, err := reservation.Musig2CreateSession(ctx, signer)
 		if err != nil {
 			return nil, nil, err
@@ -123,12 +123,12 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 
 // getInputReservation returns the input reservation for the instant out.
 func (i *InstantOut) getInputReservations() (InputReservations, error) {
-	if len(i.reservations) == 0 {
+	if len(i.Reservations) == 0 {
 		return nil, errors.New("no reservations")
 	}
 
-	inputs := make(InputReservations, len(i.reservations))
-	for idx, reservation := range i.reservations {
+	inputs := make(InputReservations, len(i.Reservations))
+	for idx, reservation := range i.Reservations {
 		pkScript, err := reservation.GetPkScript()
 		if err != nil {
 			return nil, err
@@ -170,7 +170,7 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params) (
 	// Estimate the fee
 	weight := htlcWeight(len(inputReservations))
 	fee := i.htlcFeeRate.FeeForWeight(weight)
-	if fee > i.value/5 {
+	if fee > i.Value/5 {
 		return nil, errors.New("fee is higher than 20% of " +
 			"sweep value")
 	}
@@ -182,7 +182,7 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params) (
 
 	// Create the sweep output
 	sweepOutput := &wire.TxOut{
-		Value:    int64(i.value) - int64(fee),
+		Value:    int64(i.Value) - int64(fee),
 		PkScript: htlc.PkScript,
 	}
 
@@ -214,7 +214,7 @@ func (i *InstantOut) createSweeplessSweepTx(feerate chainfee.SatPerKWeight) (
 	// Estimate the fee
 	weight := sweeplessSweepWeight(len(inputReservations))
 	fee := feerate.FeeForWeight(weight)
-	if fee > i.value/5 {
+	if fee > i.Value/5 {
 		return nil, errors.New("fee is higher than 20% of " +
 			"sweep value")
 	}
@@ -226,7 +226,7 @@ func (i *InstantOut) createSweeplessSweepTx(feerate chainfee.SatPerKWeight) (
 
 	// Create the sweep output
 	sweepOutput := &wire.TxOut{
-		Value:    int64(i.value) - int64(fee),
+		Value:    int64(i.Value) - int64(fee),
 		PkScript: pkscript,
 	}
 

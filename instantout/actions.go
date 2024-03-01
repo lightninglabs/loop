@@ -185,13 +185,13 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 		protocolVersion:  ProtocolVersionFullReservation,
 		initiationHeight: initCtx.initationHeight,
 		outgoingChanSet:  initCtx.outgoingChanSet,
-		cltvExpiry:       initCtx.cltvExpiry,
+		CltvExpiry:       initCtx.cltvExpiry,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
-		value:            btcutil.Amount(reservationAmt),
+		Value:            btcutil.Amount(reservationAmt),
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
-		reservations:     reservations,
+		Reservations:     reservations,
 		keyLocator:       keyRes.KeyLocator,
 		sweepAddress:     sweepAddress,
 	}
@@ -211,7 +211,7 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 func (f *FSM) PollPaymentAcceptedAction(_ fsm.EventContext) fsm.EventType {
 	// Now that we're doing the swap, we first lock the reservations
 	// so that they can't be used for other swaps.
-	for _, reservation := range f.InstantOut.reservations {
+	for _, reservation := range f.InstantOut.Reservations {
 		err := f.cfg.ReservationManager.LockReservation(
 			f.ctx, reservation.ID,
 		)
@@ -227,7 +227,7 @@ func (f *FSM) PollPaymentAcceptedAction(_ fsm.EventContext) fsm.EventType {
 			Invoice:  f.InstantOut.swapInvoice,
 			Timeout:  defaultSendpaymentTimeout,
 			MaxParts: defaultMaxParts,
-			MaxFee:   getMaxRoutingFee(f.InstantOut.value),
+			MaxFee:   getMaxRoutingFee(f.InstantOut.Value),
 		},
 	)
 	if err != nil {
@@ -301,7 +301,7 @@ func (f *FSM) BuildHTLCAction(eventCtx fsm.EventContext) fsm.EventType {
 		return f.handleErrorAndUnlockReservations(err)
 	}
 
-	if len(htlcInitRes.HtlcServerNonces) != len(f.InstantOut.reservations) {
+	if len(htlcInitRes.HtlcServerNonces) != len(f.InstantOut.Reservations) {
 		return f.handleErrorAndUnlockReservations(
 			errors.New("invalid number of server nonces"),
 		)
@@ -435,8 +435,8 @@ func (f *FSM) PushPreimageAction(eventCtx fsm.EventContext) fsm.EventType {
 		return OnErrorPublishHtlc
 	}
 
-	f.InstantOut.finalizedSweeplessSweepTx = sweepTx
-	txHash := f.InstantOut.finalizedSweeplessSweepTx.TxHash()
+	f.InstantOut.FinalizedSweeplessSweepTx = sweepTx
+	txHash := f.InstantOut.FinalizedSweeplessSweepTx.TxHash()
 
 	f.InstantOut.SweepTxHash = &txHash
 
@@ -598,7 +598,7 @@ func (f *FSM) handleErrorAndUnlockReservations(err error) fsm.EventType {
 	defer cancel()
 
 	// Unlock the reservations.
-	for _, reservation := range f.InstantOut.reservations {
+	for _, reservation := range f.InstantOut.Reservations {
 		err := f.cfg.ReservationManager.UnlockReservation(
 			ctx, reservation.ID,
 		)
