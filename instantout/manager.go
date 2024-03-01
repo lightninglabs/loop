@@ -137,7 +137,20 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 
 // NewInstantOut creates a new instantout.
 func (m *Manager) NewInstantOut(ctx context.Context,
-	reservations []reservation.ID) (*FSM, error) {
+	reservations []reservation.ID, sweepAddress string) (*FSM, error) {
+
+	var (
+		sweepAddr btcutil.Address
+		err       error
+	)
+	if sweepAddress != "" {
+		sweepAddr, err = btcutil.DecodeAddress(
+			sweepAddress, m.cfg.Network,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	m.Lock()
 	// Create the instantout request.
@@ -146,6 +159,7 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		reservations:    reservations,
 		initationHeight: m.currentHeight,
 		protocolVersion: CurrentProtocolVersion(),
+		sweepAddress:    sweepAddr,
 	}
 
 	instantOut, err := NewFSM(
