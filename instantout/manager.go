@@ -258,3 +258,8 @@ func (m *Manager) GetInstantOutQuote(ctx context.Context,
 		OnChainFee: chainFee,
 	}, nil
 }
+
+// ListInstantOuts returns all instant outs from the database.
+func (m *Manager) ListInstantOuts(ctx context.Context) ([]*InstantOut, error) {
+	return m.cfg.Store.ListInstantLoopOuts(ctx)
+}
