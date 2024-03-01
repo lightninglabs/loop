@@ -93,6 +93,10 @@ type SwapClientClient interface {
 	//InstantOutQuote returns a quote for an instant out swap with the provided
 	//parameters.
 	InstantOutQuote(ctx context.Context, in *InstantOutQuoteRequest, opts ...grpc.CallOption) (*InstantOutQuoteResponse, error)
+	// loop: `listinstantouts`
+	//ListInstantOuts returns a list of all currently known instant out swaps and
+	//their current status.
+	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
 }
 
 type swapClientClient struct {
@@ -297,6 +301,15 @@ func (c *swapClientClient) InstantOutQuote(ctx context.Context, in *InstantOutQu
 	return out, nil
 }
 
+func (c *swapClientClient) ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error) {
+	out := new(ListInstantOutsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListInstantOuts", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -376,6 +389,10 @@ type SwapClientServer interface {
 	//InstantOutQuote returns a quote for an instant out swap with the provided
 	//parameters.
 	InstantOutQuote(context.Context, *InstantOutQuoteRequest) (*InstantOutQuoteResponse, error)
+	// loop: `listinstantouts`
+	//ListInstantOuts returns a list of all currently known instant out swaps and
+	//their current status.
+	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -439,6 +456,9 @@ func (UnimplementedSwapClientServer) InstantOut(context.Context, *InstantOutRequ
 }
 func (UnimplementedSwapClientServer) InstantOutQuote(context.Context, *InstantOutQuoteRequest) (*InstantOutQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstantOutQuote not implemented")
+}
+func (UnimplementedSwapClientServer) ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListInstantOuts not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -798,6 +818,24 @@ func _SwapClient_InstantOutQuote_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_ListInstantOuts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInstantOutsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListInstantOuts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListInstantOuts",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListInstantOuts(ctx, req.(*ListInstantOutsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -876,6 +914,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InstantOutQuote",
 			Handler:    _SwapClient_InstantOutQuote_Handler,
+		},
+		{
+			MethodName: "ListInstantOuts",
+			Handler:    _SwapClient_ListInstantOuts_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
