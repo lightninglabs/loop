@@ -56,9 +56,8 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	case DatabaseBackendSqlite:
 		log.Infof("Opening sqlite3 database at: %v",
 			cfg.Sqlite.DatabaseFileName)
-		db, err = loopdb.NewSqliteStore(
-			cfg.Sqlite, chainParams,
-		)
+
+		db, err = loopdb.NewSqliteStore(cfg.Sqlite, chainParams)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -67,9 +66,8 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	case DatabaseBackendPostgres:
 		log.Infof("Opening postgres database at: %v",
 			cfg.Postgres.DSN(true))
-		db, err = loopdb.NewPostgresStore(
-			cfg.Postgres, chainParams,
-		)
+
+		db, err = loopdb.NewPostgresStore(cfg.Postgres, chainParams)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -78,9 +76,6 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	default:
 		return nil, nil, fmt.Errorf("unknown database backend: %s",
 			cfg.DatabaseBackend)
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to open database: %v", err)
 	}
 
 	return db, &baseDb, nil
