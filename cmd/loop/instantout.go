@@ -83,7 +83,10 @@ func instantOut(ctx *cli.Context) error {
 	fmt.Printf("Available reservations: \n\n")
 	for _, res := range confirmedReservations {
 		idx++
-		fmt.Printf("Reservation %v: %v \n", idx, res.Amount)
+		fmt.Printf("Reservation %v: shortid %x, amt %v, expiry "+
+			"height %v \n", idx, res.ReservationId[:3], res.Amount,
+			res.Expiry)
+
 		totalAmt += int64(res.Amount)
 	}
 

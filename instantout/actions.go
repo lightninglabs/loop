@@ -107,7 +107,7 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 		if int32(res.Expiry) < initCtx.cltvExpiry+htlcExpiryDelta {
 			return f.HandleError(fmt.Errorf("reservation %x has "+
 				"expiry %v which is less than the swap expiry %v",
-				resId, res.Expiry, initCtx.cltvExpiry))
+				resId, res.Expiry, initCtx.cltvExpiry+htlcExpiryDelta))
 		}
 	}
 
