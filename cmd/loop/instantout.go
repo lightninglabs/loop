@@ -25,6 +25,12 @@ var instantOutCommand = cli.Command{
 			Usage: "the comma-separated list of short " +
 				"channel IDs of the channels to loop out",
 		},
+		cli.StringFlag{
+			Name: "addr",
+			Usage: "the optional address that the looped out funds " +
+				"should be sent to, if let blank the funds " +
+				"will go to lnd's wallet",
+		},
 	},
 	Action: instantOut,
 }
@@ -178,6 +184,7 @@ func instantOut(ctx *cli.Context) error {
 		&looprpc.InstantOutRequest{
 			ReservationIds:  selectedReservations,
 			OutgoingChanSet: outgoingChanSet,
+			DestAddr:        ctx.String("addr"),
 		},
 	)
 
