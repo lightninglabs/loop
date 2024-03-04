@@ -1194,7 +1194,7 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 	}
 
 	instantOutFsm, err := s.instantOutManager.NewInstantOut(
-		ctx, reservationIds,
+		ctx, reservationIds, req.DestAddr,
 	)
 	if err != nil {
 		return nil, err

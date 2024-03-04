@@ -1332,7 +1332,13 @@ message InstantOutRequest {
     channel(s) that will be used are selected based on the lowest routing fee
     for the swap payment to the server.
     */
-    repeated uint64 outgoing_chan_set = 11;
+    repeated uint64 outgoing_chan_set = 2;
+
+    /*
+    An optional address to sweep the onchain funds to. If not set, the funds
+    will be swept to the wallet's internal address.
+    */
+    string dest_addr = 3;
 }
 
 message InstantOutResponse {

@@ -19,6 +19,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 const (
@@ -59,6 +60,7 @@ type InitInstantOutCtx struct {
 	initationHeight int32
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
+	sweepAddress    btcutil.Address
 }
 
 // InitInstantOutAction is the first action that is executed when the instant
@@ -107,7 +109,7 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 		if int32(res.Expiry) < initCtx.cltvExpiry+htlcExpiryDelta {
 			return f.HandleError(fmt.Errorf("reservation %x has "+
 				"expiry %v which is less than the swap expiry %v",
-				resId, res.Expiry, initCtx.cltvExpiry))
+				resId, res.Expiry, initCtx.cltvExpiry+htlcExpiryDelta))
 		}
 	}
 
@@ -165,11 +167,15 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 	}
 
 	// Create the address that we'll send the funds to.
-	sweepAddress, err := f.cfg.Wallet.NextAddr(
-		f.ctx, "", walletrpc.AddressType_TAPROOT_PUBKEY, false,
-	)
-	if err != nil {
-		return f.HandleError(err)
+	sweepAddress := initCtx.sweepAddress
+	if sweepAddress == nil {
+		sweepAddress, err = f.cfg.Wallet.NextAddr(
+			f.ctx, lnwallet.DefaultAccountName,
+			walletrpc.AddressType_TAPROOT_PUBKEY, false,
+		)
+		if err != nil {
+			return f.HandleError(err)
+		}
 	}
 
 	// Now we can create the instant out.
