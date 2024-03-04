@@ -887,3 +887,93 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "client.proto",
 }
+
+// StaticAddressClientClient is the client API for StaticAddressClient service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type StaticAddressClientClient interface {
+	//
+	//NewAddress requests a new static address for loop-ins from the server.
+	NewAddress(ctx context.Context, in *NewAddressRequest, opts ...grpc.CallOption) (*NewAddressResponse, error)
+}
+
+type staticAddressClientClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewStaticAddressClientClient(cc grpc.ClientConnInterface) StaticAddressClientClient {
+	return &staticAddressClientClient{cc}
+}
+
+func (c *staticAddressClientClient) NewAddress(ctx context.Context, in *NewAddressRequest, opts ...grpc.CallOption) (*NewAddressResponse, error) {
+	out := new(NewAddressResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressClient/NewAddress", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// StaticAddressClientServer is the server API for StaticAddressClient service.
+// All implementations must embed UnimplementedStaticAddressClientServer
+// for forward compatibility
+type StaticAddressClientServer interface {
+	//
+	//NewAddress requests a new static address for loop-ins from the server.
+	NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error)
+	mustEmbedUnimplementedStaticAddressClientServer()
+}
+
+// UnimplementedStaticAddressClientServer must be embedded to have forward compatible implementations.
+type UnimplementedStaticAddressClientServer struct {
+}
+
+func (UnimplementedStaticAddressClientServer) NewAddress(context.Context, *NewAddressRequest) (*NewAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NewAddress not implemented")
+}
+func (UnimplementedStaticAddressClientServer) mustEmbedUnimplementedStaticAddressClientServer() {}
+
+// UnsafeStaticAddressClientServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to StaticAddressClientServer will
+// result in compilation errors.
+type UnsafeStaticAddressClientServer interface {
+	mustEmbedUnimplementedStaticAddressClientServer()
+}
+
+func RegisterStaticAddressClientServer(s grpc.ServiceRegistrar, srv StaticAddressClientServer) {
+	s.RegisterService(&StaticAddressClient_ServiceDesc, srv)
+}
+
+func _StaticAddressClient_NewAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NewAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressClientServer).NewAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressClient/NewAddress",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressClientServer).NewAddress(ctx, req.(*NewAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// StaticAddressClient_ServiceDesc is the grpc.ServiceDesc for StaticAddressClient service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var StaticAddressClient_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "looprpc.StaticAddressClient",
+	HandlerType: (*StaticAddressClientServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "NewAddress",
+			Handler:    _StaticAddressClient_NewAddress_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "client.proto",
+}

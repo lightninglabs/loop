@@ -295,6 +295,12 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// GetNetwork returns the network(mainnet, testnet...) that the database is
+// running on.
+func (db *BaseDB) GetNetwork() *chaincfg.Params {
+	return db.network
+}
+
 // TxOptions represents a set of options one can use to control what type of
 // database transaction is created. Transaction can whether be read or write.
 type TxOptions interface {
