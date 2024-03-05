@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -122,4 +123,45 @@ func (s *StoreMock) Close() error {
 func (s *StoreMock) AssertSweepStored(id lntypes.Hash) bool {
 	_, ok := s.sweeps[id]
 	return ok
+}
+
+// GetParentBatch returns the parent batch of a swap.
+func (s *StoreMock) GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
+	*dbBatch, error) {
+
+	for _, sweep := range s.sweeps {
+		if sweep.SwapHash == swapHash {
+			batch, ok := s.batches[sweep.BatchID]
+			if !ok {
+				return nil, errors.New("batch not found")
+			}
+			return &batch, nil
+		}
+	}
+
+	return nil, errors.New("batch not found")
+}
+
+// TotalSweptAmount returns the total amount of BTC that has been swept from a
+// batch.
+func (s *StoreMock) TotalSweptAmount(ctx context.Context, batchID int32) (
+	btcutil.Amount, error) {
+
+	batch, ok := s.batches[batchID]
+	if !ok {
+		return 0, errors.New("batch not found")
+	}
+
+	if batch.State != batchConfirmed && batch.State != batchClosed {
+		return 0, nil
+	}
+
+	var total btcutil.Amount
+	for _, sweep := range s.sweeps {
+		if sweep.BatchID == batchID {
+			total += sweep.Amount
+		}
+	}
+
+	return 0, nil
 }

@@ -144,6 +144,54 @@ func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatch
 	return items, nil
 }
 
+const getBatchSweptAmount = `-- name: GetBatchSweptAmount :one
+SELECT
+        SUM(amt) AS total
+FROM
+        sweeps
+WHERE
+        batch_id = $1
+AND
+        completed = TRUE
+`
+
+func (q *Queries) GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getBatchSweptAmount, batchID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const getParentBatch = `-- name: GetParentBatch :one
+SELECT
+        sweep_batches.id, sweep_batches.confirmed, sweep_batches.batch_tx_id, sweep_batches.batch_pk_script, sweep_batches.last_rbf_height, sweep_batches.last_rbf_sat_per_kw, sweep_batches.max_timeout_distance
+FROM
+        sweep_batches
+JOIN
+        sweeps ON sweep_batches.id = sweeps.batch_id
+WHERE
+        sweeps.swap_hash = $1
+AND
+        sweeps.completed = TRUE
+AND   
+        sweep_batches.confirmed = TRUE
+`
+
+func (q *Queries) GetParentBatch(ctx context.Context, swapHash []byte) (SweepBatch, error) {
+	row := q.db.QueryRowContext(ctx, getParentBatch, swapHash)
+	var i SweepBatch
+	err := row.Scan(
+		&i.ID,
+		&i.Confirmed,
+		&i.BatchTxID,
+		&i.BatchPkScript,
+		&i.LastRbfHeight,
+		&i.LastRbfSatPerKw,
+		&i.MaxTimeoutDistance,
+	)
+	return i, err
+}
+
 const getSweepStatus = `-- name: GetSweepStatus :one
 SELECT
     COALESCE(s.completed, f.false_value) AS completed

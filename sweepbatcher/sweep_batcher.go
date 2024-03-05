@@ -72,6 +72,14 @@ type BatcherStore interface {
 	// GetSweepStatus returns the completed status of the sweep.
 	GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (
 		bool, error)
+
+	// GetParentBatch returns the parent batch of a (completed) sweep.
+	GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
+		*dbBatch, error)
+
+	// TotalSweptAmount returns the total amount swept by a (confirmed)
+	// batch.
+	TotalSweptAmount(ctx context.Context, id int32) (btcutil.Amount, error)
 }
 
 // MuSig2SignSweep is a function that can be used to sign a sweep transaction
@@ -102,11 +110,22 @@ type SweepRequest struct {
 	Notifier *SpendNotifier
 }
 
+type SpendDetail struct {
+	// Tx is the transaction that spent the outpoint.
+	Tx *wire.MsgTx
+
+	// OnChainFeePortion is the fee portion that was paid to get this sweep
+	// confirmed on chain. This is the difference between the value of the
+	// outpoint and the value of all sweeps that were included in the batch
+	// divided by the number of sweeps.
+	OnChainFeePortion btcutil.Amount
+}
+
 // SpendNotifier is a notifier that is used to notify the requester of a sweep
 // that the sweep was successful.
 type SpendNotifier struct {
 	// SpendChan is a channel where the spend details are received.
-	SpendChan chan *wire.MsgTx
+	SpendChan chan *SpendDetail
 
 	// SpendErrChan is a channel where spend errors are received.
 	SpendErrChan chan error
@@ -270,8 +289,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
 	if completed && *notifier != (SpendNotifier{}) {
-		go b.monitorSpendAndNotify(ctx, sweep, notifier)
-		return nil
+		return b.monitorSpendAndNotify(ctx, sweep, notifier)
 	}
 
 	sweep.notifier = notifier
@@ -509,57 +527,86 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // monitorSpendAndNotify monitors the spend of a specific outpoint and writes
 // the response back to the response channel.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
-	notifier *SpendNotifier) {
-
-	b.wg.Add(1)
-	defer b.wg.Done()
+	notifier *SpendNotifier) error {
 
 	spendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// First get the batch that completed the sweep.
+	parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
+	if err != nil {
+		return err
+	}
+
+	// Then we get the total amount that was swept by the batch.
+	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatch.ID)
+	if err != nil {
+		return err
+	}
 
 	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
 		spendCtx, &sweep.outpoint, sweep.htlc.PkScript,
 		sweep.initiationHeight,
 	)
 	if err != nil {
-		select {
-		case notifier.SpendErrChan <- err:
-		case <-ctx.Done():
-		}
-
-		_ = b.writeToErrChan(ctx, err)
-
-		return
+		return err
 	}
 
-	log.Infof("Batcher monitoring spend for swap %x", sweep.swapHash[:6])
+	b.wg.Add(1)
+	go func() {
+		defer b.wg.Done()
+		log.Infof("Batcher monitoring spend for swap %x",
+			sweep.swapHash[:6])
 
-	for {
-		select {
-		case spend := <-spendChan:
+		for {
 			select {
-			case notifier.SpendChan <- spend.SpendingTx:
+			case spend := <-spendChan:
+				spendTx := spend.SpendingTx
+				// Calculate the fee portion that each sweep
+				// should pay for the batch.
+				feePortionPerSweep, roundingDifference :=
+					getFeePortionForSweep(
+						spendTx, len(spendTx.TxIn),
+						totalSwept,
+					)
+
+				// Notify the requester of the spend
+				// with the spend details, including the fee
+				// portion for this particular sweep.
+				spendDetail := &SpendDetail{
+					Tx: spendTx,
+					OnChainFeePortion: getFeePortionPaidBySweep( // nolint:lll
+						spendTx, feePortionPerSweep,
+						roundingDifference, sweep,
+					),
+				}
+
+				select {
+				case notifier.SpendChan <- spendDetail:
+				case <-ctx.Done():
+				}
+
+				return
+
+			case err := <-spendErr:
+				select {
+				case notifier.SpendErrChan <- err:
+				case <-ctx.Done():
+				}
+
+				_ = b.writeToErrChan(ctx, err)
+				return
+
+			case <-notifier.QuitChan:
+				return
+
 			case <-ctx.Done():
+				return
 			}
-
-			return
-
-		case err := <-spendErr:
-			select {
-			case notifier.SpendErrChan <- err:
-			case <-ctx.Done():
-			}
-
-			_ = b.writeToErrChan(ctx, err)
-			return
-
-		case <-notifier.QuitChan:
-			return
-
-		case <-ctx.Done():
-			return
 		}
-	}
+	}()
+
+	return nil
 }
 
 func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
