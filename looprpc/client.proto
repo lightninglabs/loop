@@ -127,6 +127,13 @@ service SwapClient {
     */
     rpc InstantOutQuote (InstantOutQuoteRequest)
         returns (InstantOutQuoteResponse);
+
+    /* loop: `listinstantouts`
+    ListInstantOuts returns a list of all currently known instant out swaps and
+    their current status.
+    */
+    rpc ListInstantOuts (ListInstantOutsRequest)
+        returns (ListInstantOutsResponse);
 }
 
 message LoopOutRequest {
@@ -1379,4 +1386,41 @@ message InstantOutQuoteResponse {
     Sweep.
     */
     int64 sweep_fee_sat = 2;
+}
+
+message ListInstantOutsRequest {
+}
+
+message ListInstantOutsResponse {
+    /*
+    The list of all currently known instant out swaps and their status.
+    */
+    repeated InstantOut swaps = 1;
+}
+
+message InstantOut {
+    /*
+    The swap hash that identifies this swap.
+    */
+    bytes swap_hash = 1;
+
+    /*
+    The state the swap is in.
+    */
+    string state = 2;
+
+    /*
+    The amount of the swap.
+    */
+    uint64 amount = 3;
+
+    /*
+    The used reservations for the swap.
+    */
+    repeated bytes reservation_ids = 4;
+
+    /*
+    The sweep transaction id of the swap.
+    */
+    string sweep_tx_id = 5;
 }

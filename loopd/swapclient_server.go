@@ -1231,6 +1231,47 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 	}, nil
 }
 
+// ListInstantOuts returns a list of all currently known instant out swaps and
+// their current status.
+func (s *swapClientServer) ListInstantOuts(ctx context.Context,
+	_ *clientrpc.ListInstantOutsRequest) (
+	*clientrpc.ListInstantOutsResponse, error) {
+
+	instantOuts, err := s.instantOutManager.ListInstantOuts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rpcSwaps := make([]*clientrpc.InstantOut, 0, len(instantOuts))
+	for _, instantOut := range instantOuts {
+		rpcSwaps = append(rpcSwaps, rpcInstantOut(instantOut))
+	}
+
+	return &clientrpc.ListInstantOutsResponse{
+		Swaps: rpcSwaps,
+	}, nil
+}
+
+func rpcInstantOut(instantOut *instantout.InstantOut) *clientrpc.InstantOut {
+	var sweepTxId string
+	if instantOut.SweepTxHash != nil {
+		sweepTxId = instantOut.SweepTxHash.String()
+	}
+
+	reservations := make([][]byte, len(instantOut.Reservations))
+	for i, res := range instantOut.Reservations {
+		reservations[i] = res.ID[:]
+	}
+
+	return &clientrpc.InstantOut{
+		SwapHash:       instantOut.SwapHash[:],
+		State:          string(instantOut.State),
+		Amount:         uint64(instantOut.Value),
+		SweepTxId:      sweepTxId,
+		ReservationIds: reservations,
+	}
+}
+
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
 	switch reason {
 	case liquidity.ReasonNone:
