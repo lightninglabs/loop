@@ -21,7 +21,8 @@ import (
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -67,12 +68,6 @@ type Daemon struct {
 	// registered to an existing grpc.Server to run as a subserver in the
 	// same process.
 	swapClientServer
-
-	// AddressServer is the embedded RPC server that satisfies the
-	// static address client RPC interface. We embed this struct so the
-	// Daemon itself can be registered to an existing grpc.Server to run as
-	// a subserver in the same process.
-	*staticaddr.AddressServer
 
 	// ErrChan is an error channel that users of the Daemon struct must use
 	// to detect runtime errors and also whether a shutdown is fully
@@ -239,7 +234,6 @@ func (d *Daemon) startWebServers() error {
 		grpc.StreamInterceptor(streamInterceptor),
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
-	loop_looprpc.RegisterStaticAddressClientServer(d.grpcServer, d)
 
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
@@ -446,6 +440,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient.Conn,
 	)
 
+	// Create a static address server client.
+	staticAddressClient := loop_swaprpc.NewStaticAddressServerClient(
+		swapClient.Conn,
+	)
+
 	// Both the client RPC server and the swap server client should stop
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
@@ -506,6 +505,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
+
+		staticAddressManager *address.Manager
+		depositManager       *deposit.Manager
 	)
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
@@ -542,42 +544,49 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig,
 		)
+
+		// Static address manager setup.
+		staticAddressStore := address.NewSqlStore(baseDb)
+		addrCfg := &address.ManagerConfig{
+			AddressClient: staticAddressClient,
+			FetchL402:     swapClient.Server.FetchL402,
+			Store:         staticAddressStore,
+			WalletKit:     d.lnd.WalletKit,
+			ChainParams:   d.lnd.ChainParams,
+		}
+		staticAddressManager = address.NewManager(addrCfg)
+
+		// Static address deposit manager setup.
+		depositStore := deposit.NewSqlStore(baseDb)
+		depoCfg := &deposit.ManagerConfig{
+			AddressClient:  staticAddressClient,
+			AddressManager: staticAddressManager,
+			SwapClient:     swapClient,
+			Store:          depositStore,
+			WalletKit:      d.lnd.WalletKit,
+			ChainParams:    d.lnd.ChainParams,
+			ChainNotifier:  d.lnd.ChainNotifier,
+			Signer:         d.lnd.Signer,
+		}
+		depositManager = deposit.NewManager(depoCfg)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
-		config:             d.cfg,
-		network:            lndclient.Network(d.cfg.Network),
-		impl:               swapClient,
-		liquidityMgr:       getLiquidityManager(swapClient),
-		lnd:                &d.lnd.LndServices,
-		swaps:              make(map[lntypes.Hash]loop.SwapInfo),
-		subscribers:        make(map[int]chan<- interface{}),
-		statusChan:         make(chan loop.SwapInfo),
-		mainCtx:            d.mainCtx,
-		reservationManager: reservationManager,
-		instantOutManager:  instantOutManager,
+		config:               d.cfg,
+		network:              lndclient.Network(d.cfg.Network),
+		impl:                 swapClient,
+		liquidityMgr:         getLiquidityManager(swapClient),
+		lnd:                  &d.lnd.LndServices,
+		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
+		subscribers:          make(map[int]chan<- interface{}),
+		statusChan:           make(chan loop.SwapInfo),
+		mainCtx:              d.mainCtx,
+		reservationManager:   reservationManager,
+		instantOutManager:    instantOutManager,
+		staticAddressManager: staticAddressManager,
+		depositManager:       depositManager,
 	}
-
-	// Create a static address server client.
-	staticAddressClient := loop_swaprpc.NewStaticAddressServerClient(
-		swapClient.Conn,
-	)
-
-	store := staticaddr.NewSqlStore(baseDb)
-
-	cfg := &staticaddr.ManagerConfig{
-		AddressClient: staticAddressClient,
-		SwapClient:    swapClient,
-		Store:         store,
-		WalletKit:     d.lnd.WalletKit,
-		ChainParams:   d.lnd.ChainParams,
-	}
-	staticAddressManager := staticaddr.NewAddressManager(cfg)
-
-	d.AddressServer = staticaddr.NewAddressServer(
-		staticAddressClient, staticAddressManager,
-	)
 
 	// Retrieve all currently existing swaps from the database.
 	swapsList, err := d.impl.FetchSwaps(d.mainCtx)
@@ -670,20 +679,43 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Start the static address manager.
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
+	if staticAddressManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
 
-		log.Info("Starting static address manager...")
-		err = staticAddressManager.Run(d.mainCtx)
-		if err != nil && !errors.Is(context.Canceled, err) {
-			d.internalErrChan <- err
-		}
+			log.Info("Starting static address manager...")
+			err = staticAddressManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address manager stopped")
+		}()
+	}
 
-		log.Info("Static address manager stopped")
-	}()
+	// Start the static address deposit manager.
+	if depositManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
 
-	staticAddressManager.WaitInitComplete()
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit manager...")
+			err = depositManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit manager stopped")
+		}()
+		depositManager.WaitInitComplete()
+	}
 
 	// Last, start our internal error handler. This will return exactly one
 	// error or nil on the main error channel to inform the caller that
