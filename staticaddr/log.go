@@ -22,3 +22,8 @@ func init() {
 func UseLogger(logger btclog.Logger) {
 	log = logger
 }
+
+// GetLogger returns the logger for this package.
+func GetLogger() btclog.Logger {
+	return log
+}
