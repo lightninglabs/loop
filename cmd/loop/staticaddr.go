@@ -39,7 +39,7 @@ func newStaticAddress(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "new")
 	}
 
-	client, cleanup, err := getAddressClient(ctx)
+	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func listUnspent(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "listunspent")
 	}
 
-	client, cleanup, err := getAddressClient(ctx)
+	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -103,22 +103,4 @@ func listUnspent(ctx *cli.Context) error {
 	printRespJSON(resp)
 
 	return nil
-}
-
-func getAddressClient(ctx *cli.Context) (looprpc.StaticAddressClientClient,
-	func(), error) {
-
-	rpcServer := ctx.GlobalString("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	cleanup := func() { conn.Close() }
-
-	addressClient := looprpc.NewStaticAddressClientClient(conn)
-	return addressClient, cleanup, nil
 }
