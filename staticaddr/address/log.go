@@ -1,4 +1,4 @@
-package staticaddr
+package address
 
 import (
 	"github.com/btcsuite/btclog"
@@ -21,4 +21,9 @@ func init() {
 // be used in preference to SetLogWriter if the caller is also using btclog.
 func UseLogger(logger btclog.Logger) {
 	log = logger
+}
+
+// GetLogger returns the logger for this package.
+func GetLogger() btclog.Logger {
+	return log
 }
