@@ -24,6 +24,8 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -76,19 +78,21 @@ type swapClientServer struct {
 	looprpc.UnimplementedSwapClientServer
 	looprpc.UnimplementedDebugServer
 
-	config             *Config
-	network            lndclient.Network
-	impl               *loop.Client
-	liquidityMgr       *liquidity.Manager
-	lnd                *lndclient.LndServices
-	reservationManager *reservation.Manager
-	instantOutManager  *instantout.Manager
-	swaps              map[lntypes.Hash]loop.SwapInfo
-	subscribers        map[int]chan<- interface{}
-	statusChan         chan loop.SwapInfo
-	nextSubscriberID   int
-	swapsLock          sync.Mutex
-	mainCtx            context.Context
+	config               *Config
+	network              lndclient.Network
+	impl                 *loop.Client
+	liquidityMgr         *liquidity.Manager
+	lnd                  *lndclient.LndServices
+	reservationManager   *reservation.Manager
+	instantOutManager    *instantout.Manager
+	staticAddressManager *address.Manager
+	depositManager       *deposit.Manager
+	swaps                map[lntypes.Hash]loop.SwapInfo
+	subscribers          map[int]chan<- interface{}
+	statusChan           chan loop.SwapInfo
+	nextSubscriberID     int
+	swapsLock            sync.Mutex
+	mainCtx              context.Context
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -1312,6 +1316,51 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 		SweepTxId:      sweepTxId,
 		ReservationIds: reservations,
 	}
+}
+
+// NewStaticAddress is the rpc endpoint for loop clients to request a new static
+// address.
+func (s *swapClientServer) NewStaticAddress(ctx context.Context,
+	_ *looprpc.NewStaticAddressRequest) (
+	*looprpc.NewStaticAddressResponse, error) {
+
+	staticAddress, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.NewStaticAddressResponse{
+		Address: staticAddress.String(),
+	}, nil
+}
+
+// ListUnspentDeposits returns a list of utxos behind the static address.
+func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
+	req *looprpc.ListUnspentDepositsRequest) (
+	*looprpc.ListUnspentDepositsResponse, error) {
+
+	// List all unspent utxos the wallet sees, regardless of the number of
+	// confirmations.
+	staticAddress, utxos, err := s.staticAddressManager.ListUnspentRaw(
+		ctx, req.MinConfs, req.MaxConfs,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the list response.
+	var respUtxos []*looprpc.Utxo
+	for _, u := range utxos {
+		utxo := &looprpc.Utxo{
+			StaticAddress: staticAddress.String(),
+			AmountSat:     int64(u.Value),
+			Confirmations: u.Confirmations,
+			Outpoint:      u.OutPoint.String(),
+		}
+		respUtxos = append(respUtxos, utxo)
+	}
+
+	return &looprpc.ListUnspentDepositsResponse{Utxos: respUtxos}, nil
 }
 
 func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
