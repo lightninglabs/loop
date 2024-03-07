@@ -9,16 +9,20 @@ import (
 )
 
 type Querier interface {
+	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	ConfirmBatch(ctx context.Context, id int32) error
+	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatchSweepsRow, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
+	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
 	GetInstantOutSwap(ctx context.Context, swapHash []byte) (GetInstantOutSwapRow, error)
 	GetInstantOutSwapUpdates(ctx context.Context, swapHash []byte) ([]InstantoutUpdate, error)
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
+	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
@@ -32,6 +36,7 @@ type Querier interface {
 	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
+	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
 	InsertInstantOut(ctx context.Context, arg InsertInstantOutParams) error
 	InsertInstantOutUpdate(ctx context.Context, arg InsertInstantOutUpdateParams) error
@@ -41,6 +46,7 @@ type Querier interface {
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
+	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
