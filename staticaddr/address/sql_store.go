@@ -1,13 +1,12 @@
-package staticaddr
+package address
 
 import (
 	"context"
-	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/jackc/pgx/v4"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -24,46 +23,9 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 	}
 }
 
-// ExecTx is a wrapper for txBody to abstract the creation and commit of a db
-// transaction. The db transaction is embedded in a `*sqlc.Queries` that txBody
-// needs to use when executing each one of the queries that need to be applied
-// atomically.
-func (s *SqlStore) ExecTx(ctx context.Context, txOptions loopdb.TxOptions,
-	txBody func(queries *sqlc.Queries) error) error {
-
-	// Create the db transaction.
-	tx, err := s.baseDB.BeginTx(ctx, txOptions)
-	if err != nil {
-		return err
-	}
-
-	// Rollback is safe to call even if the tx is already closed, so if the
-	// tx commits successfully, this is a no-op.
-	defer func() {
-		err := tx.Rollback()
-		switch {
-		// If the tx was already closed (it was successfully executed)
-		// we do not need to log that error.
-		case errors.Is(err, pgx.ErrTxClosed):
-			return
-
-		// If this is an unexpected error, log it.
-		case err != nil:
-			log.Errorf("unable to rollback db tx: %v", err)
-		}
-	}()
-
-	if err := txBody(s.baseDB.Queries.WithTx(tx)); err != nil {
-		return err
-	}
-
-	// Commit transaction.
-	return tx.Commit()
-}
-
 // CreateStaticAddress creates a static address record in the database.
 func (s *SqlStore) CreateStaticAddress(ctx context.Context,
-	addrParams *AddressParameters) error {
+	addrParams *Parameters) error {
 
 	createArgs := sqlc.CreateStaticAddressParams{
 		ClientPubkey:    addrParams.ClientPubkey.SerializeCompressed(),
@@ -80,7 +42,7 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 
 // GetStaticAddress retrieves static address parameters for a given pkScript.
 func (s *SqlStore) GetStaticAddress(ctx context.Context,
-	pkScript []byte) (*AddressParameters, error) {
+	pkScript []byte) (*Parameters, error) {
 
 	staticAddress, err := s.baseDB.Queries.GetStaticAddress(ctx, pkScript)
 	if err != nil {
@@ -91,15 +53,15 @@ func (s *SqlStore) GetStaticAddress(ctx context.Context,
 }
 
 // GetAllStaticAddresses returns all address known to the server.
-func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) (
-	[]*AddressParameters, error) {
+func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
+	error) {
 
 	staticAddresses, err := s.baseDB.Queries.AllStaticAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*AddressParameters
+	var result []*Parameters
 	for _, address := range staticAddresses {
 		res, err := s.toAddressParameters(address)
 		if err != nil {
@@ -120,7 +82,7 @@ func (s *SqlStore) Close() {
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
 func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
-	*AddressParameters, error) {
+	*Parameters, error) {
 
 	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
 	if err != nil {
@@ -132,7 +94,7 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 		return nil, err
 	}
 
-	return &AddressParameters{
+	return &Parameters{
 		ClientPubkey: clientPubkey,
 		ServerPubkey: serverPubkey,
 		PkScript:     row.Pkscript,
@@ -141,6 +103,6 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 			Family: keychain.KeyFamily(row.ClientKeyFamily),
 			Index:  uint32(row.ClientKeyIndex),
 		},
-		ProtocolVersion: AddressProtocolVersion(row.ProtocolVersion),
+		ProtocolVersion: staticaddr.AddressProtocolVersion(row.ProtocolVersion),
 	}, nil
 }
