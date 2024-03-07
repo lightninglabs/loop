@@ -190,6 +190,8 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnRecover:   Deposited,
 				OnExpiry:    PublishExpiredDeposit,
 				fsm.OnError: Deposited,
+				OnExpiry:    PublishExpiredDeposit,
+				OnRecover:   Deposited,
 			},
 			Action: fsm.NoOpAction,
 		},

@@ -139,7 +139,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	}
 
 	err := m.cfg.DepositManager.TransitionDeposits(
-		outpoints, deposit.OnWithdraw, deposit.Withdrawal,
+		outpoints, deposit.OnWithdraw, deposit.Withdrawing,
 	)
 	if err != nil {
 		return err
