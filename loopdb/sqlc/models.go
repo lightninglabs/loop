@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+type Deposit struct {
+	ID                   int32
+	DepositID            []byte
+	TxHash               []byte
+	OutIndex             int32
+	Amount               int64
+	ConfirmationHeight   int64
+	TimeoutSweepPkScript []byte
+	ExpirySweepTxid      []byte
+}
+
+type DepositUpdate struct {
+	ID              int32
+	DepositID       []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type HtlcKey struct {
 	SwapHash               []byte
 	SenderScriptPubkey     []byte
