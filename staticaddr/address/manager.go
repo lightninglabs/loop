@@ -1,4 +1,4 @@
-package staticaddr
+package address
 
 import (
 	"bytes"
@@ -10,8 +10,9 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -20,18 +21,26 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
+var (
+	log btclog.Logger
+)
+
+func init() {
+	log = staticaddr.GetLogger()
+}
+
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
 	// AddressClient is the client that communicates with the loop server
 	// to manage static addresses.
 	AddressClient staticaddressrpc.StaticAddressServerClient
 
-	// SwapClient provides loop rpc functionality.
-	SwapClient *loop.Client
+	// FetchL402 is the function used to fetch the l402 token.
+	FetchL402 func(context.Context) error
 
 	// Store is the database store that is used to store static address
 	// related records.
-	Store AddressStore
+	Store Store
 
 	// WalletKit is the wallet client that is used to derive new keys from
 	// lnd's wallet.
@@ -46,30 +55,19 @@ type ManagerConfig struct {
 type Manager struct {
 	cfg *ManagerConfig
 
-	initChan chan struct{}
-
 	sync.Mutex
 }
 
-// NewAddressManager creates a new address manager.
-func NewAddressManager(cfg *ManagerConfig) *Manager {
+// NewManager creates a new address manager.
+func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
-		cfg:      cfg,
-		initChan: make(chan struct{}),
+		cfg: cfg,
 	}
 }
 
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context) error {
-	log.Debugf("Starting address manager.")
-	defer log.Debugf("Address manager stopped.")
-
-	// Communicate to the caller that the address manager has completed its
-	// initialization.
-	close(m.initChan)
-
 	<-ctx.Done()
-
 	return nil
 }
 
@@ -99,7 +97,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	// We are fetching a new L402 token from the server. There is one static
 	// address per L402 token allowed.
-	err = m.cfg.SwapClient.Server.FetchL402(ctx)
+	err = m.cfg.FetchL402(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +111,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	// Send our clientPubKey to the server and wait for the server to
 	// respond with he serverPubKey and the static address CSV expiry.
-	protocolVersion := CurrentRPCProtocolVersion()
+	protocolVersion := staticaddr.CurrentRPCProtocolVersion()
 	resp, err := m.cfg.AddressClient.ServerNewAddress(
 		ctx, &staticaddressrpc.ServerNewAddressRequest{
 			ProtocolVersion: protocolVersion,
@@ -146,7 +144,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	// Create the static address from the parameters the server provided and
 	// store all parameters in the database.
-	addrParams := &AddressParameters{
+	addrParams := &Parameters{
 		ClientPubkey: clientPubKey.PubKey,
 		ServerPubkey: serverPubKey,
 		PkScript:     pkScript,
@@ -155,7 +153,9 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 			Family: clientPubKey.Family,
 			Index:  clientPubKey.Index,
 		},
-		ProtocolVersion: AddressProtocolVersion(protocolVersion),
+		ProtocolVersion: staticaddr.AddressProtocolVersion(
+			protocolVersion,
+		),
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
@@ -172,7 +172,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return nil, err
 	}
 
-	log.Infof("imported static address taproot script to lnd wallet: %v",
+	log.Infof("Imported static address taproot script to lnd wallet: %v",
 		addr)
 
 	return m.getTaprootAddress(
@@ -197,12 +197,6 @@ func (m *Manager) getTaprootAddress(clientPubkey,
 	)
 }
 
-// WaitInitComplete waits until the address manager has completed its setup.
-func (m *Manager) WaitInitComplete() {
-	defer log.Debugf("Address manager initiation complete.")
-	<-m.initChan
-}
-
 // ListUnspentRaw returns a list of utxos at the static address.
 func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 	maxConfs int32) (*btcutil.AddressTaproot, []*lnwallet.Utxo, error) {
@@ -213,7 +207,7 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 		return nil, nil, err
 
 	case len(addresses) == 0:
-		return nil, nil, fmt.Errorf("no address found")
+		return nil, nil, nil
 
 	case len(addresses) > 1:
 		return nil, nil, fmt.Errorf("more than one address found")
@@ -248,4 +242,53 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 	}
 
 	return taprootAddress, filteredUtxos, nil
+}
+
+// GetStaticAddressParameters returns the parameters of the static address.
+func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(params) == 0 {
+		return nil, fmt.Errorf("no static address parameters found")
+	}
+
+	return params[0], nil
+}
+
+// GetStaticAddress returns a taproot address for the given client and server
+// public keys and expiry.
+func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
+	error) {
+
+	params, err := m.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return address, nil
+}
+
+// ListUnspent returns a list of utxos at the static address.
+func (m *Manager) ListUnspent(ctx context.Context, minConfs,
+	maxConfs int32) ([]*lnwallet.Utxo, error) {
+
+	_, utxos, err := m.ListUnspentRaw(ctx, minConfs, maxConfs)
+	if err != nil {
+		return nil, err
+	}
+
+	return utxos, nil
 }
