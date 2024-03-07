@@ -44,7 +44,7 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 	updateArgs := sqlc.InsertDepositUpdateParams{
 		DepositID:       deposit.ID[:],
 		UpdateTimestamp: s.clock.Now().UTC(),
-		UpdateState:     string(deposit.State),
+		UpdateState:     string(deposit.getState()),
 	}
 
 	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
@@ -63,7 +63,7 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 	insertUpdateArgs := sqlc.InsertDepositUpdateParams{
 		DepositID:       deposit.ID[:],
 		UpdateTimestamp: s.clock.Now().UTC(),
-		UpdateState:     string(deposit.State),
+		UpdateState:     string(deposit.getState()),
 	}
 
 	var (
