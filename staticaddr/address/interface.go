@@ -1,39 +1,38 @@
-package staticaddr
+package address
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
 	ErrAddressAlreadyExists = fmt.Errorf("address already exists")
-	ErrAddressNotFound      = fmt.Errorf("address not found")
 )
 
-// AddressStore is the database interface that is used to store and retrieve
+// Store is the database interface that is used to store and retrieve
 // static addresses.
-type AddressStore interface {
+type Store interface {
 	// CreateStaticAddress inserts a new static address with its parameters
 	// into the store.
-	CreateStaticAddress(ctx context.Context,
-		addrParams *AddressParameters) error
+	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
 	// GetStaticAddress fetches static address parameters for a given
 	// address ID.
-	GetStaticAddress(ctx context.Context,
-		pkScript []byte) (*AddressParameters, error)
+	GetStaticAddress(ctx context.Context, pkScript []byte) (*Parameters,
+		error)
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) (
-		[]*AddressParameters, error)
+	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
+		error)
 }
 
-// AddressParameters holds all the necessary information for the 2-of-2 multisig
+// Parameters holds all the necessary information for the 2-of-2 multisig
 // address.
-type AddressParameters struct {
+type Parameters struct {
 	// ClientPubkey is the client's pubkey for the static address. It is
 	// used for the 2-of-2 funding output as well as for the client's
 	// timeout path.
@@ -54,5 +53,5 @@ type AddressParameters struct {
 	KeyLocator keychain.KeyLocator
 
 	// ProtocolVersion is the protocol version of the static address.
-	ProtocolVersion AddressProtocolVersion
+	ProtocolVersion version.AddressProtocolVersion
 }
