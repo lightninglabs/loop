@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service WithdrawalServer {
+    // WithdrawDeposits allows to cooperatively sweep deposits that haven't
+    // timed out yet to the client's wallet. The server will generate the
+    // partial sigs for the client's selected deposits.
+    rpc WithdrawDeposits (ServerWithdrawRequest)
+        returns (ServerWithdrawResponse);
+}
+
+message ServerWithdrawRequest {
+    // The deposit outpoints the client whishes to close.
+    repeated ServerOutPoint outpoints = 1;
+
+    // The nonces that the client used to generate the coop close tx sigs.
+    repeated bytes client_nonces = 2;
+
+    // The address that the client wants to sweep the static address deposits
+    // to.
+    string client_sweep_addr = 3;
+
+    // The fee rate in sat/kw that the client wants to use for the sweep.
+    uint64 musig_tx_fee_rate = 4;
+}
+
+message ServerWithdrawResponse {
+    // The sweep sigs that the server generated for the htlc.
+    repeated bytes musig2_sweep_sigs = 1;
+
+    // The nonces that the server used to generate the sweepless sweep sigs.
+    repeated bytes server_nonces = 2;
+}
+
+message ServerOutPoint {
+    /*
+    Raw bytes representing the transaction id.
+    */
+    bytes txid_bytes = 1;
+
+    /*
+    Reversed, hex-encoded string representing the transaction id.
+    */
+    string txid_str = 2;
+
+    /*
+    The index of the output on the transaction.
+    */
+    uint32 output_index = 3;
+}

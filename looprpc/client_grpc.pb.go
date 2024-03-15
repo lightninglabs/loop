@@ -99,6 +99,9 @@ type SwapClientClient interface {
 	// loop: `static listunspent`
 	//ListUnspent returns a list of utxos behind a static address.
 	ListUnspent(ctx context.Context, in *ListUnspentRequest, opts ...grpc.CallOption) (*ListUnspentResponse, error)
+	// loop:`static withdraw`
+	//WithdrawDeposits withdraws a selection or all deposits of a static address.
+	WithdrawDeposits(ctx context.Context, in *WithdrawDepositsRequest, opts ...grpc.CallOption) (*WithdrawDepositsResponse, error)
 }
 
 type swapClientClient struct {
@@ -321,6 +324,15 @@ func (c *swapClientClient) ListUnspent(ctx context.Context, in *ListUnspentReque
 	return out, nil
 }
 
+func (c *swapClientClient) WithdrawDeposits(ctx context.Context, in *WithdrawDepositsRequest, opts ...grpc.CallOption) (*WithdrawDepositsResponse, error) {
+	out := new(WithdrawDepositsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/WithdrawDeposits", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -406,6 +418,9 @@ type SwapClientServer interface {
 	// loop: `static listunspent`
 	//ListUnspent returns a list of utxos behind a static address.
 	ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error)
+	// loop:`static withdraw`
+	//WithdrawDeposits withdraws a selection or all deposits of a static address.
+	WithdrawDeposits(context.Context, *WithdrawDepositsRequest) (*WithdrawDepositsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -475,6 +490,9 @@ func (UnimplementedSwapClientServer) NewAddress(context.Context, *NewAddressRequ
 }
 func (UnimplementedSwapClientServer) ListUnspent(context.Context, *ListUnspentRequest) (*ListUnspentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListUnspent not implemented")
+}
+func (UnimplementedSwapClientServer) WithdrawDeposits(context.Context, *WithdrawDepositsRequest) (*WithdrawDepositsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawDeposits not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -870,6 +888,24 @@ func _SwapClient_ListUnspent_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_WithdrawDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawDepositsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).WithdrawDeposits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/WithdrawDeposits",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).WithdrawDeposits(ctx, req.(*WithdrawDepositsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -956,6 +992,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListUnspent",
 			Handler:    _SwapClient_ListUnspent_Handler,
+		},
+		{
+			MethodName: "WithdrawDeposits",
+			Handler:    _SwapClient_WithdrawDeposits_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
