@@ -29,6 +29,10 @@ var (
 var (
 	Deposited = fsm.StateType("Deposited")
 
+	Withdrawing = fsm.StateType("Withdrawing")
+
+	Withdrawn = fsm.StateType("Withdrawn")
+
 	PublishExpiredDeposit = fsm.StateType("PublishExpiredDeposit")
 
 	WaitForExpirySweep = fsm.StateType("WaitForExpirySweep")
@@ -41,6 +45,8 @@ var (
 // Events.
 var (
 	OnStart           = fsm.EventType("OnStart")
+	OnWithdraw        = fsm.EventType("OnWithdraw")
+	OnWithdrawn       = fsm.EventType("OnWithdrawn")
 	OnExpiry          = fsm.EventType("OnExpiry")
 	OnExpiryPublished = fsm.EventType("OnExpiryPublished")
 	OnExpirySwept     = fsm.EventType("OnExpirySwept")
@@ -172,8 +178,18 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		Deposited: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry:  PublishExpiredDeposit,
-				OnRecover: Deposited,
+				OnWithdraw: Withdrawing,
+				OnExpiry:   PublishExpiredDeposit,
+				OnRecover:  Deposited,
+			},
+			Action: fsm.NoOpAction,
+		},
+		Withdrawing: fsm.State{
+			Transitions: fsm.Transitions{
+				OnWithdrawn: Withdrawn,
+				OnRecover:   Deposited,
+				OnExpiry:    PublishExpiredDeposit,
+				fsm.OnError: Deposited,
 			},
 			Action: fsm.NoOpAction,
 		},
@@ -206,6 +222,9 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnExpiry: Expired,
 			},
 			Action: f.SweptExpiredDepositAction,
+		},
+		Withdrawn: fsm.State{
+			Action: f.WithdrawnDepositAction,
 		},
 		Failed: fsm.State{
 			Action: fsm.NoOpAction,

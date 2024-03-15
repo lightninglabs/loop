@@ -138,3 +138,19 @@ func (f *FSM) SweptExpiredDepositAction(_ fsm.EventContext) fsm.EventType {
 
 	return fsm.NoOp
 }
+
+// WithdrawnDepositAction is the final action after a withdrawal. It signals to
+// the manager that the deposit has been swept and the FSM can be removed. It
+// also ends the state machine main loop by cancelling its context.
+func (f *FSM) WithdrawnDepositAction(_ fsm.EventContext) fsm.EventType {
+	select {
+	case <-f.ctx.Done():
+		return fsm.OnError
+
+	default:
+		f.finalizedDepositChan <- f.deposit.OutPoint
+		f.ctx.Done()
+	}
+
+	return fsm.NoOp
+}

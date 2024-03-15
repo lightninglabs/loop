@@ -55,7 +55,8 @@ func (d *Deposit) IsPending() bool {
 
 // IsFinal returns true if the deposit is final.
 func (d *Deposit) IsFinal() bool {
-	return d.State == Expired || d.State == Failed
+	return d.State == Withdrawn || d.State == Expired ||
+		d.State == Failed
 }
 
 // GetRandomDepositID generates a random deposit ID.

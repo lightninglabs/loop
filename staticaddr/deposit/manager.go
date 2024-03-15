@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -418,4 +419,70 @@ func (m *Manager) finalizeDeposit(outpoint wire.OutPoint) {
 	delete(m.activeDeposits, outpoint)
 	delete(m.deposits, outpoint)
 	m.Unlock()
+}
+
+// GetActiveOutpoints returns all active outpoints.
+func (m *Manager) GetActiveOutpoints() ([]wire.OutPoint, error) {
+	m.Lock()
+	defer m.Unlock()
+
+	var outpoints []wire.OutPoint
+	for o, _ := range m.activeDeposits {
+		outpoints = append(outpoints, o)
+	}
+
+	return outpoints, nil
+}
+
+// AllDepositsActive checks if all deposits referenced by the outpoints are
+// deposited and active and returns them if so.
+func (m *Manager) AllDepositsActive(outpoints []wire.OutPoint) ([]*Deposit,
+	bool) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	var deposits []*Deposit
+	for _, o := range outpoints {
+		if _, ok := m.activeDeposits[o]; !ok {
+			return nil, false
+		}
+
+		deposit := m.deposits[o]
+		if deposit.State != Deposited {
+			return nil, false
+		}
+
+		deposits = append(deposits, m.deposits[o])
+	}
+
+	return deposits, true
+}
+
+// TransitionDeposits allows a caller to transition a set of deposits to a new
+// state.
+func (m *Manager) TransitionDeposits(outpoints []wire.OutPoint,
+	event fsm.EventType, expectedFinalState fsm.StateType) error {
+
+	for _, o := range outpoints {
+		m.Lock()
+		sm, ok := m.activeDeposits[o]
+		m.Unlock()
+		if !ok {
+			return fmt.Errorf("deposit not found")
+		}
+
+		err := sm.SendEvent(event, nil)
+		if err != nil {
+			return err
+		}
+		err = sm.DefaultObserver.WaitForState(
+			m.runCtx, time.Minute, expectedFinalState,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
