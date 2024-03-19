@@ -143,6 +143,9 @@ service SwapClient {
      */
     rpc WithdrawDeposits (WithdrawDepositsRequest)
         returns (WithdrawDepositsResponse);
+
+    rpc GetStaticAddressSummary (StaticAddressSummaryRequest)
+        returns (StaticAddressSummaryResponse);
 }
 
 message LoopOutRequest {
@@ -1494,4 +1497,41 @@ message OutPoint {
     The index of the output on the transaction.
     */
     uint32 output_index = 3;
+}
+
+message StaticAddressSummaryRequest {
+    DepositState state_filter = 1;
+}
+
+message StaticAddressSummaryResponse {
+    string static_address = 1;
+    uint32 total_num_swaps = 2;
+    int64 value_unconfirmed = 3;
+    int64 value_deposited = 4;
+    int64 value_expired = 5;
+    int64 value_withdrawn = 6;
+    repeated Deposit filtered_deposits = 7;
+}
+
+enum DepositState {
+    UNKNOWN_STATE = 0;
+    DEPOSITED = 1;
+    WITHDRAWING = 2;
+    WITHDRAWN = 3;
+    PUBLISH_EXPIRED = 4;
+    WAIT_FOR_EXPIRY_SWEEP = 5;
+    EXPIRED = 6;
+    FAILED_STATE = 7;
+}
+
+message Deposit {
+    bytes id = 1;
+
+    DepositState state = 2;
+
+    string outpoint = 3;
+
+    int64 value = 4;
+
+    int64 confirmation_height = 5;
 }

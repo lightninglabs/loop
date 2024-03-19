@@ -83,7 +83,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 		m.Unlock()
 
-		return m.getTaprootAddress(clientPubKey, serverPubKey, expiry)
+		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
 	}
 	m.Unlock()
 
@@ -167,12 +167,12 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	log.Infof("imported static address taproot script to lnd wallet: %v",
 		addr)
 
-	return m.getTaprootAddress(
+	return m.GetTaprootAddress(
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
 	)
 }
 
-func (m *Manager) getTaprootAddress(clientPubkey,
+func (m *Manager) GetTaprootAddress(clientPubkey,
 	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
 	error) {
 
@@ -225,7 +225,7 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 		}
 	}
 
-	taprootAddress, err := m.getTaprootAddress(
+	taprootAddress, err := m.GetTaprootAddress(
 		staticAddress.ClientPubkey, staticAddress.ServerPubkey,
 		int64(staticAddress.Expiry),
 	)

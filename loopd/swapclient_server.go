@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
@@ -1317,6 +1318,163 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 	}
 
 	return &clientrpc.WithdrawDepositsResponse{}, err
+}
+
+func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
+	req *clientrpc.StaticAddressSummaryRequest) (*clientrpc.StaticAddressSummaryResponse,
+	error) {
+
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.depositSummary(ctx, allDeposits, req.StateFilter)
+}
+
+func (s *swapClientServer) depositSummary(ctx context.Context,
+	deposits []*deposit.Deposit,
+	filter clientrpc.DepositState) (*clientrpc.StaticAddressSummaryResponse,
+	error) {
+
+	var (
+		totalNumSwaps    = len(deposits)
+		valueUnconfirmed int64
+		valueDeposited   int64
+		valueExpired     int64
+		valueWithdrawn   int64
+		valueLoopedIn    int64
+	)
+
+	// Value unconfirmed.
+	utxos, err := s.staticAddressManager.ListUnspent(
+		ctx, 0, deposit.MinConfs-1,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range utxos {
+		valueUnconfirmed += int64(u.Value)
+	}
+
+	for _, d := range deposits {
+		value := int64(d.Value)
+		switch d.State {
+		case deposit.Deposited:
+			valueDeposited += value
+
+		case deposit.Expired:
+			valueExpired += value
+
+		case deposit.Withdrawn:
+			valueWithdrawn += value
+		}
+	}
+
+	clientDeposits, err := s.filterClientDeposits(deposits, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := s.staticAddressManager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
+
+	return &clientrpc.StaticAddressSummaryResponse{
+		StaticAddress:    address.String(),
+		TotalNumSwaps:    uint32(totalNumSwaps),
+		ValueUnconfirmed: valueUnconfirmed,
+		ValueDeposited:   valueDeposited,
+		ValueExpired:     valueExpired,
+		ValueWithdrawn:   valueWithdrawn,
+		ValueLoopedIn:    valueLoopedIn,
+		FilteredDeposits: clientDeposits,
+	}, nil
+}
+
+func (s *swapClientServer) filterClientDeposits(deposits []*deposit.Deposit,
+	filterState clientrpc.DepositState) ([]*clientrpc.Deposit, error) {
+
+	var clientDeposits []*clientrpc.Deposit
+	for _, d := range deposits {
+		if filterState != clientrpc.DepositState_UNKNOWN_STATE &&
+			d.State != toServerState(filterState) {
+
+			continue
+		}
+
+		outpoint := wire.NewOutPoint(&d.Hash, d.Index).String()
+		clientDeposits = append(clientDeposits, &clientrpc.Deposit{
+			Id:                 d.ID[:],
+			State:              toClientState(d.State),
+			Outpoint:           outpoint,
+			Value:              int64(d.Value),
+			ConfirmationHeight: d.ConfirmationHeight,
+		})
+	}
+
+	return clientDeposits, nil
+}
+
+func toClientState(state fsm.StateType) clientrpc.DepositState {
+	switch state {
+	case deposit.Deposited:
+		return clientrpc.DepositState_DEPOSITED
+
+	case deposit.Withdrawing:
+		return clientrpc.DepositState_WITHDRAWING
+
+	case deposit.Withdrawn:
+		return clientrpc.DepositState_WITHDRAWN
+
+	case deposit.PublishExpiredDeposit:
+		return clientrpc.DepositState_PUBLISH_EXPIRED
+
+	case deposit.WaitForExpirySweep:
+		return clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
+
+	case deposit.Expired:
+		return clientrpc.DepositState_EXPIRED
+
+	case deposit.Failed:
+		return clientrpc.DepositState_FAILED_STATE
+
+	default:
+		return clientrpc.DepositState_UNKNOWN_STATE
+	}
+}
+
+func toServerState(state clientrpc.DepositState) fsm.StateType {
+	switch state {
+	case clientrpc.DepositState_DEPOSITED:
+		return deposit.Deposited
+
+	case clientrpc.DepositState_WITHDRAWING:
+		return deposit.Withdrawing
+
+	case clientrpc.DepositState_WITHDRAWN:
+		return deposit.Withdrawn
+
+	case clientrpc.DepositState_PUBLISH_EXPIRED:
+		return deposit.PublishExpiredDeposit
+
+	case clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP:
+		return deposit.WaitForExpirySweep
+
+	case clientrpc.DepositState_EXPIRED:
+		return deposit.Expired
+
+	case clientrpc.DepositState_FAILED_STATE:
+		return deposit.Failed
+
+	default:
+		return fsm.EmptyState
+	}
 }
 
 func toServerOutpoints(outpoints []*clientrpc.OutPoint) ([]wire.OutPoint,

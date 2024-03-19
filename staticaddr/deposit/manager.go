@@ -486,3 +486,7 @@ func (m *Manager) TransitionDeposits(outpoints []wire.OutPoint,
 
 	return nil
 }
+
+func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
+	return m.cfg.Store.AllDeposits(ctx)
+}

@@ -618,6 +618,43 @@
         }
       }
     },
+    "looprpcDeposit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "state": {
+          "$ref": "#/definitions/looprpcDepositState"
+        },
+        "outpoint": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "format": "int64"
+        },
+        "confirmation_height": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "looprpcDepositState": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN_STATE",
+        "DEPOSITED",
+        "WITHDRAWING",
+        "WITHDRAWN",
+        "PUBLISH_EXPIRED",
+        "WAIT_FOR_EXPIRY_SWEEP",
+        "EXPIRED",
+        "FAILED_STATE"
+      ],
+      "default": "UNKNOWN_STATE"
+    },
     "looprpcDisqualified": {
       "type": "object",
       "properties": {
@@ -1366,6 +1403,44 @@
     },
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
+    },
+    "looprpcStaticAddressSummaryResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string"
+        },
+        "total_num_swaps": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "value_unconfirmed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "value_deposited": {
+          "type": "string",
+          "format": "int64"
+        },
+        "value_expired": {
+          "type": "string",
+          "format": "int64"
+        },
+        "value_withdrawn": {
+          "type": "string",
+          "format": "int64"
+        },
+        "value_looped_in": {
+          "type": "string",
+          "format": "int64"
+        },
+        "filtered_deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          }
+        }
+      }
     },
     "looprpcSuggestSwapsResponse": {
       "type": "object",
