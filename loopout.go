@@ -306,7 +306,11 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 	info := s.swapInfo()
 	s.log.Infof("Loop out swap state: %v", info.State)
 
-	info.HtlcAddressP2WSH = s.htlc.Address
+	if s.htlc.OutputType == swap.HtlcP2WSH {
+		info.HtlcAddressP2WSH = s.htlc.Address
+	} else {
+		info.HtlcAddressP2TR = s.htlc.Address
+	}
 
 	// In order to avoid potentially dangerous ownership sharing
 	// we copy the outgoing channel set.
