@@ -1,0 +1,40 @@
+package withdraw
+
+import (
+	"context"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/lnwallet"
+)
+
+const (
+	IdLength = 32
+)
+
+// AddressManager handles fetching of address parameters.
+type AddressManager interface {
+	// GetStaticAddressParameters returns the static address parameters.
+	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
+		error)
+
+	// GetStaticAddress returns the deposit address for the given
+	// client and server public keys.
+	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+
+	// ListUnspent returns a list of utxos at the static address.
+	ListUnspent(ctx context.Context, minConfs,
+		maxConfs int32) ([]*lnwallet.Utxo, error)
+}
+
+type DepositManager interface {
+	GetActiveOutpoints() ([]wire.OutPoint, error)
+
+	AllDepositsActive(outpoints []wire.OutPoint) ([]*deposit.Deposit, bool)
+
+	TransitionDeposits(outpoints []wire.OutPoint, event fsm.EventType,
+		expectedFinalState fsm.StateType) error
+}

@@ -15,15 +15,20 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -76,19 +81,22 @@ type swapClientServer struct {
 	clientrpc.UnimplementedSwapClientServer
 	clientrpc.UnimplementedDebugServer
 
-	config             *Config
-	network            lndclient.Network
-	impl               *loop.Client
-	liquidityMgr       *liquidity.Manager
-	lnd                *lndclient.LndServices
-	reservationManager *reservation.Manager
-	instantOutManager  *instantout.Manager
-	swaps              map[lntypes.Hash]loop.SwapInfo
-	subscribers        map[int]chan<- interface{}
-	statusChan         chan loop.SwapInfo
-	nextSubscriberID   int
-	swapsLock          sync.Mutex
-	mainCtx            context.Context
+	config               *Config
+	network              lndclient.Network
+	impl                 *loop.Client
+	liquidityMgr         *liquidity.Manager
+	lnd                  *lndclient.LndServices
+	reservationManager   *reservation.Manager
+	instantOutManager    *instantout.Manager
+	staticAddressManager *address.Manager
+	depositManager       *deposit.Manager
+	withdrawalManager    *withdraw.Manager
+	swaps                map[lntypes.Hash]loop.SwapInfo
+	subscribers          map[int]chan<- interface{}
+	statusChan           chan loop.SwapInfo
+	nextSubscriberID     int
+	swapsLock            sync.Mutex
+	mainCtx              context.Context
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -1229,6 +1237,261 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 		ServiceFeeSat: int64(quote.ServiceFee),
 		SweepFeeSat:   int64(quote.OnChainFee),
 	}, nil
+}
+
+// NewAddress is the rpc endpoint for loop clients to request a new static
+// address.
+func (s *swapClientServer) NewAddress(ctx context.Context,
+	_ *clientrpc.NewAddressRequest) (*clientrpc.NewAddressResponse, error) {
+
+	staticAddress, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.NewAddressResponse{
+		Address: staticAddress.String(),
+	}, nil
+}
+
+// ListUnspent returns a list of utxos behind the static address.
+func (s *swapClientServer) ListUnspent(ctx context.Context,
+	req *clientrpc.ListUnspentRequest) (*clientrpc.ListUnspentResponse, error) {
+
+	// List all unspent utxos the wallet sees, regardless of the number of
+	// confirmations.
+	staticAddress, utxos, err := s.staticAddressManager.ListUnspentRaw(
+		ctx, req.MinConfs, req.MaxConfs,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the list response.
+	var respUtxos []*clientrpc.Utxo
+	for _, u := range utxos {
+		utxo := &clientrpc.Utxo{
+			StaticAddress: staticAddress.String(),
+			AmountSat:     int64(u.Value),
+			Confirmations: u.Confirmations,
+			Outpoint:      u.OutPoint.String(),
+		}
+		respUtxos = append(respUtxos, utxo)
+	}
+
+	return &clientrpc.ListUnspentResponse{Utxos: respUtxos}, nil
+}
+
+// WithdrawDeposits tries to obtain a partial signature from the server to spend
+// the selected deposits to the client's wallet.
+func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
+	req *clientrpc.WithdrawDepositsRequest) (
+	*clientrpc.WithdrawDepositsResponse, error) {
+
+	var (
+		isAllSelected  = req.All
+		isUtxoSelected = req.Outpoints != nil
+		outpoints      []wire.OutPoint
+		err            error
+	)
+
+	switch {
+	case isAllSelected == isUtxoSelected:
+		return nil, fmt.Errorf("must select either all or some utxos")
+
+	case isAllSelected:
+		outpoints, err = s.depositManager.GetActiveOutpoints()
+		if err != nil {
+			return nil, err
+		}
+
+	case isUtxoSelected:
+		outpoints, err = toServerOutpoints(req.Outpoints)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.withdrawalManager.WithdrawDeposits(ctx, outpoints)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.WithdrawDepositsResponse{}, err
+}
+
+func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
+	req *clientrpc.StaticAddressSummaryRequest) (*clientrpc.StaticAddressSummaryResponse,
+	error) {
+
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.depositSummary(ctx, allDeposits, req.StateFilter)
+}
+
+func (s *swapClientServer) depositSummary(ctx context.Context,
+	deposits []*deposit.Deposit,
+	filter clientrpc.DepositState) (*clientrpc.StaticAddressSummaryResponse,
+	error) {
+
+	var (
+		totalNumSwaps    = len(deposits)
+		valueUnconfirmed int64
+		valueDeposited   int64
+		valueExpired     int64
+		valueWithdrawn   int64
+		valueLoopedIn    int64
+	)
+
+	// Value unconfirmed.
+	utxos, err := s.staticAddressManager.ListUnspent(
+		ctx, 0, deposit.MinConfs-1,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range utxos {
+		valueUnconfirmed += int64(u.Value)
+	}
+
+	for _, d := range deposits {
+		value := int64(d.Value)
+		switch d.State {
+		case deposit.Deposited:
+			valueDeposited += value
+
+		case deposit.Expired:
+			valueExpired += value
+
+		case deposit.Withdrawn:
+			valueWithdrawn += value
+		}
+	}
+
+	clientDeposits, err := s.filterClientDeposits(deposits, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := s.staticAddressManager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
+
+	return &clientrpc.StaticAddressSummaryResponse{
+		StaticAddress:    address.String(),
+		TotalNumSwaps:    uint32(totalNumSwaps),
+		ValueUnconfirmed: valueUnconfirmed,
+		ValueDeposited:   valueDeposited,
+		ValueExpired:     valueExpired,
+		ValueWithdrawn:   valueWithdrawn,
+		ValueLoopedIn:    valueLoopedIn,
+		FilteredDeposits: clientDeposits,
+	}, nil
+}
+
+func (s *swapClientServer) filterClientDeposits(deposits []*deposit.Deposit,
+	filterState clientrpc.DepositState) ([]*clientrpc.Deposit, error) {
+
+	var clientDeposits []*clientrpc.Deposit
+	for _, d := range deposits {
+		if filterState != clientrpc.DepositState_UNKNOWN_STATE &&
+			d.State != toServerState(filterState) {
+
+			continue
+		}
+
+		outpoint := wire.NewOutPoint(&d.Hash, d.Index).String()
+		clientDeposits = append(clientDeposits, &clientrpc.Deposit{
+			Id:                 d.ID[:],
+			State:              toClientState(d.State),
+			Outpoint:           outpoint,
+			Value:              int64(d.Value),
+			ConfirmationHeight: d.ConfirmationHeight,
+		})
+	}
+
+	return clientDeposits, nil
+}
+
+func toClientState(state fsm.StateType) clientrpc.DepositState {
+	switch state {
+	case deposit.Deposited:
+		return clientrpc.DepositState_DEPOSITED
+
+	case deposit.Withdrawing:
+		return clientrpc.DepositState_WITHDRAWING
+
+	case deposit.Withdrawn:
+		return clientrpc.DepositState_WITHDRAWN
+
+	case deposit.PublishExpiredDeposit:
+		return clientrpc.DepositState_PUBLISH_EXPIRED
+
+	case deposit.WaitForExpirySweep:
+		return clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
+
+	case deposit.Expired:
+		return clientrpc.DepositState_EXPIRED
+
+	case deposit.Failed:
+		return clientrpc.DepositState_FAILED_STATE
+
+	default:
+		return clientrpc.DepositState_UNKNOWN_STATE
+	}
+}
+
+func toServerState(state clientrpc.DepositState) fsm.StateType {
+	switch state {
+	case clientrpc.DepositState_DEPOSITED:
+		return deposit.Deposited
+
+	case clientrpc.DepositState_WITHDRAWING:
+		return deposit.Withdrawing
+
+	case clientrpc.DepositState_WITHDRAWN:
+		return deposit.Withdrawn
+
+	case clientrpc.DepositState_PUBLISH_EXPIRED:
+		return deposit.PublishExpiredDeposit
+
+	case clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP:
+		return deposit.WaitForExpirySweep
+
+	case clientrpc.DepositState_EXPIRED:
+		return deposit.Expired
+
+	case clientrpc.DepositState_FAILED_STATE:
+		return deposit.Failed
+
+	default:
+		return fsm.EmptyState
+	}
+}
+
+func toServerOutpoints(outpoints []*clientrpc.OutPoint) ([]wire.OutPoint,
+	error) {
+
+	var serverOutpoints []wire.OutPoint
+	for _, o := range outpoints {
+		outpointStr := fmt.Sprintf("%s:%d", o.TxidStr, o.OutputIndex)
+		newOutpoint, err := wire.NewOutPointFromString(outpointStr)
+		if err != nil {
+			return nil, err
+		}
+
+		serverOutpoints = append(serverOutpoints, *newOutpoint)
+	}
+
+	return serverOutpoints, nil
 }
 
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
