@@ -127,6 +127,16 @@ service SwapClient {
     */
     rpc InstantOutQuote (InstantOutQuoteRequest)
         returns (InstantOutQuoteResponse);
+
+    /* loop: `static newaddress`
+    NewAddress requests a new static address for loop-ins from the server.
+    */
+    rpc NewAddress (NewAddressRequest) returns (NewAddressResponse);
+
+    /* loop: `static listunspent`
+    ListUnspent returns a list of utxos behind a static address.
+    */
+    rpc ListUnspent (ListUnspentRequest) returns (ListUnspentResponse);
 }
 
 message LoopOutRequest {
@@ -1385,17 +1395,6 @@ message InstantOutQuoteResponse {
     Sweep.
     */
     int64 sweep_fee_sat = 2;
-}
-
-service StaticAddressClient {
-    /*
-    NewAddress requests a new static address for loop-ins from the server.
-    */
-    rpc NewAddress (NewAddressRequest) returns (NewAddressResponse);
-    /*
-    ListUnspent returns a list of utxos behind a static address.
-    */
-    rpc ListUnspent (ListUnspentRequest) returns (ListUnspentResponse);
 }
 
 message NewAddressRequest {
