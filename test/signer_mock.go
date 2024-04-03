@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -16,6 +18,15 @@ import (
 
 type mockSigner struct {
 	lnd *LndMockServices
+}
+
+var _ lndclient.SignerClient = (*mockSigner)(nil)
+
+func (s *mockSigner) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	signrpc.SignerClient) {
+
+	return ctx, 0, nil
 }
 
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,

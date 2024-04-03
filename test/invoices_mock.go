@@ -19,6 +19,15 @@ type mockInvoices struct {
 	wg  sync.WaitGroup
 }
 
+var _ lndclient.InvoicesClient = (*mockInvoices)(nil)
+
+func (s *mockInvoices) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	invoicesrpc.InvoicesClient) {
+
+	return ctx, 0, nil
+}
+
 func (s *mockInvoices) SettleInvoice(ctx context.Context,
 	preimage lntypes.Preimage) error {
 
@@ -110,4 +119,10 @@ func (s *mockInvoices) AddHoldInvoice(ctx context.Context,
 	}
 
 	return payReqString, nil
+}
+
+func (s *mockInvoices) HtlcModifier(context.Context,
+	lndclient.InvoiceHtlcModifyHandler) error {
+
+	return nil
 }

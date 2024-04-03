@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"sync"
 	"time"
 
@@ -17,6 +18,15 @@ type mockChainNotifier struct {
 	lnd               *LndMockServices
 	confRegistrations []*ConfRegistration
 	wg                sync.WaitGroup
+}
+
+var _ lndclient.ChainNotifierClient = (*mockChainNotifier)(nil)
+
+func (c *mockChainNotifier) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	chainrpc.ChainNotifierClient) {
+
+	return ctx, 0, nil
 }
 
 // SpendRegistration contains registration details.
