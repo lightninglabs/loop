@@ -111,3 +111,9 @@ func (s *mockInvoices) AddHoldInvoice(ctx context.Context,
 
 	return payReqString, nil
 }
+
+func (s *mockInvoices) HtlcModifier(context.Context,
+	lndclient.InvoiceHtlcModifyHandler) error {
+
+	return nil
+}

@@ -7,7 +7,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.8
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
-	github.com/btcsuite/btcwallet v0.16.10-0.20240404104514-b2f31f9045fb
+	github.com/btcsuite/btcwallet v0.16.10-0.20240410030101-6fe19a472a62
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.3
 	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
@@ -20,9 +20,9 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.2-beta
-	github.com/lightninglabs/lndclient v0.18.0-1
+	github.com/lightninglabs/lndclient v1.0.1-0.20240607082608-4ce52a1a3f27
 	github.com/lightninglabs/loop/swapserverrpc v1.0.5
-	github.com/lightningnetwork/lnd v0.18.0-beta.1
+	github.com/lightningnetwork/lnd v0.18.0-beta.rc3.0.20240604145823-53dbd1ee66d0
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
@@ -107,11 +107,11 @@ require (
 	github.com/lightninglabs/neutrino v0.16.1-0.20240425105051-602843d34ffd // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f // indirect
-	github.com/lightningnetwork/lnd/fn v1.0.5 // indirect
+	github.com/lightningnetwork/lnd/fn v1.0.8 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.4 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.8 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.2 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.2.3 // indirect
+	github.com/lightningnetwork/lnd/tlv v1.2.6 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
