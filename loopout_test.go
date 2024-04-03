@@ -886,11 +886,11 @@ func testFailedOffChainCancelation(t *testing.T) {
 		swap.LoopOutContract.SwapInvoice, lnd.ChainParams,
 	)
 	require.NoError(t, err)
-	require.NotNil(t, invoice.PaymentAddr)
 
+	payAddr := invoice.PaymentAddr.UnwrapOrFail(t)
 	swapCancelation := &outCancelDetails{
 		hash:        swap.hash,
-		paymentAddr: *invoice.PaymentAddr,
+		paymentAddr: payAddr,
 		metadata: routeCancelMetadata{
 			paymentType:   paymentTypeInvoice,
 			failureReason: failUpdate.FailureReason,
