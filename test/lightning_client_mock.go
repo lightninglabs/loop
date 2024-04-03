@@ -125,13 +125,7 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 			SignCompact: func(hash []byte) ([]byte, error) {
 				// ecdsa.SignCompact returns a
 				// pubkey-recoverable signature.
-				sig, err := ecdsa.SignCompact(
-					privKey, hash, true,
-				)
-				if err != nil {
-					return nil, fmt.Errorf("can't sign "+
-						"the hash: %v", err)
-				}
+				sig := ecdsa.SignCompact(privKey, hash, true)
 
 				return sig, nil
 			},

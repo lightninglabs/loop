@@ -69,9 +69,12 @@ func ObtainSwapPaymentAddr(swapInvoice string, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 
-	if swapPayReq.PaymentAddr == nil {
-		return nil, fmt.Errorf("expected payment address for invoice")
+	payAddr, err := swapPayReq.PaymentAddr.UnwrapOrErr(
+		fmt.Errorf("expected payment address for invoice"),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	return swapPayReq.PaymentAddr, nil
+	return &payAddr, nil
 }
