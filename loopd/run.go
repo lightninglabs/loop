@@ -206,7 +206,7 @@ func Run(rpcCfg RPCConfig) error {
 	SetupLoggers(logWriter, shutdownInterceptor)
 
 	err = logWriter.InitLogRotator(
-		filepath.Join(config.LogDir, defaultLogFilename),
+		filepath.Join(config.LogDir, defaultLogFilename), build.Gzip,
 		config.MaxLogFileSize, config.MaxLogFiles,
 	)
 	if err != nil {
