@@ -599,11 +599,12 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	)
 
 	// Pay the prepay invoice. Won't use the routing plugin here as the
-	// prepay is trivially small and shouldn't normally need any help.
+	// prepay is trivially small and shouldn't normally need any help. We
+	// are sending it over the same channel as the loop out payment.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
-		nil, RoutingPluginNone, false,
+		s.LoopOutContract.OutgoingChanSet, RoutingPluginNone, false,
 	)
 }
 
