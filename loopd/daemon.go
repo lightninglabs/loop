@@ -17,14 +17,12 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/instantout"
+	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/sweepbatcher"
-
-	"github.com/lightninglabs/loop/instantout/reservation"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
-
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
