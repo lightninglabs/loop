@@ -15,7 +15,6 @@ import (
 	sqlite_migrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/zpay32"
-
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // Register relevant drivers.
 )
