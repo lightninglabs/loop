@@ -185,7 +185,7 @@ func (m *Manager) fetchL402(ctx context.Context) {
 func (m *Manager) RegisterReservationNotifications(
 	reservationChan chan *reservationrpc.ServerReservationNotification) error {
 
-	// In order to create a valid lsat we first are going to call
+	// In order to create a valid l402 we first are going to call
 	// the FetchL402 method. As a client might not have outbound capacity
 	// yet, we'll retry until we get a valid response.
 	if !m.hasL402 {

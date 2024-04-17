@@ -15,7 +15,7 @@ type clientConfig struct {
 	Server            swapServerClient
 	Conn              *grpc.ClientConn
 	Store             loopdb.SwapStore
-	LsatStore         l402.Store
+	L402Store         l402.Store
 	CreateExpiryTimer func(expiry time.Duration) <-chan time.Time
 	LoopOutMaxParts   uint32
 }

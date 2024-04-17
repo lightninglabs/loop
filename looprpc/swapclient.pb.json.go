@@ -313,7 +313,7 @@ func RegisterSwapClientJSONCallbacks(registry map[string]func(ctx context.Contex
 		callback(string(respBytes), nil)
 	}
 
-	registry["looprpc.SwapClient.GetLsatTokens"] = func(ctx context.Context,
+	registry["looprpc.SwapClient.GetL402Tokens"] = func(ctx context.Context,
 		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
 
 		req := &TokensRequest{}
@@ -324,7 +324,7 @@ func RegisterSwapClientJSONCallbacks(registry map[string]func(ctx context.Contex
 		}
 
 		client := NewSwapClientClient(conn)
-		resp, err := client.GetLsatTokens(ctx, req)
+		resp, err := client.GetL402Tokens(ctx, req)
 		if err != nil {
 			callback("", err)
 			return

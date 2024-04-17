@@ -2074,7 +2074,7 @@ type TokensResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	// List of all tokens the daemon knows of, including old/expired tokens.
-	Tokens []*LsatToken `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
+	Tokens []*L402Token `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
 }
 
 func (x *TokensResponse) Reset() {
@@ -2109,14 +2109,14 @@ func (*TokensResponse) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *TokensResponse) GetTokens() []*LsatToken {
+func (x *TokensResponse) GetTokens() []*L402Token {
 	if x != nil {
 		return x.Tokens
 	}
 	return nil
 }
 
-type LsatToken struct {
+type L402Token struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -2144,8 +2144,8 @@ type LsatToken struct {
 	Id string `protobuf:"bytes,9,opt,name=id,proto3" json:"id,omitempty"`
 }
 
-func (x *LsatToken) Reset() {
-	*x = LsatToken{}
+func (x *L402Token) Reset() {
+	*x = L402Token{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_client_proto_msgTypes[19]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2153,13 +2153,13 @@ func (x *LsatToken) Reset() {
 	}
 }
 
-func (x *LsatToken) String() string {
+func (x *L402Token) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LsatToken) ProtoMessage() {}
+func (*L402Token) ProtoMessage() {}
 
-func (x *LsatToken) ProtoReflect() protoreflect.Message {
+func (x *L402Token) ProtoReflect() protoreflect.Message {
 	mi := &file_client_proto_msgTypes[19]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2171,68 +2171,68 @@ func (x *LsatToken) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LsatToken.ProtoReflect.Descriptor instead.
-func (*LsatToken) Descriptor() ([]byte, []int) {
+// Deprecated: Use L402Token.ProtoReflect.Descriptor instead.
+func (*L402Token) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *LsatToken) GetBaseMacaroon() []byte {
+func (x *L402Token) GetBaseMacaroon() []byte {
 	if x != nil {
 		return x.BaseMacaroon
 	}
 	return nil
 }
 
-func (x *LsatToken) GetPaymentHash() []byte {
+func (x *L402Token) GetPaymentHash() []byte {
 	if x != nil {
 		return x.PaymentHash
 	}
 	return nil
 }
 
-func (x *LsatToken) GetPaymentPreimage() []byte {
+func (x *L402Token) GetPaymentPreimage() []byte {
 	if x != nil {
 		return x.PaymentPreimage
 	}
 	return nil
 }
 
-func (x *LsatToken) GetAmountPaidMsat() int64 {
+func (x *L402Token) GetAmountPaidMsat() int64 {
 	if x != nil {
 		return x.AmountPaidMsat
 	}
 	return 0
 }
 
-func (x *LsatToken) GetRoutingFeePaidMsat() int64 {
+func (x *L402Token) GetRoutingFeePaidMsat() int64 {
 	if x != nil {
 		return x.RoutingFeePaidMsat
 	}
 	return 0
 }
 
-func (x *LsatToken) GetTimeCreated() int64 {
+func (x *L402Token) GetTimeCreated() int64 {
 	if x != nil {
 		return x.TimeCreated
 	}
 	return 0
 }
 
-func (x *LsatToken) GetExpired() bool {
+func (x *L402Token) GetExpired() bool {
 	if x != nil {
 		return x.Expired
 	}
 	return false
 }
 
-func (x *LsatToken) GetStorageName() string {
+func (x *L402Token) GetStorageName() string {
 	if x != nil {
 		return x.StorageName
 	}
 	return ""
 }
 
-func (x *LsatToken) GetId() string {
+func (x *L402Token) GetId() string {
 	if x != nil {
 		return x.Id
 	}
@@ -3867,8 +3867,7 @@ type NewStaticAddressRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	//
-	//The client's public key for the 2-of-2 MuSig2 taproot static address.
+	// The client's public key for the 2-of-2 MuSig2 taproot static address.
 	ClientKey []byte `protobuf:"bytes,1,opt,name=client_key,json=clientKey,proto3" json:"client_key,omitempty"`
 }
 
@@ -3916,11 +3915,9 @@ type NewStaticAddressResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	//
-	//The taproot static address.
+	// The taproot static address.
 	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	//
-	//The CSV expiry of the static address.
+	// The CSV expiry of the static address.
 	Expiry uint32 `protobuf:"varint,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
 }
 
@@ -3975,12 +3972,10 @@ type ListUnspentDepositsRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	//
-	//The number of minimum confirmations a utxo must have to be listed.
+	// The number of minimum confirmations a utxo must have to be listed.
 	MinConfs int32 `protobuf:"varint,1,opt,name=min_confs,json=minConfs,proto3" json:"min_confs,omitempty"`
-	//
-	//The number of maximum confirmations a utxo may have to be listed. A zero
-	//value indicates that there is no maximum.
+	// The number of maximum confirmations a utxo may have to be listed. A zero
+	// value indicates that there is no maximum.
 	MaxConfs int32 `protobuf:"varint,2,opt,name=max_confs,json=maxConfs,proto3" json:"max_confs,omitempty"`
 }
 
@@ -4035,8 +4030,7 @@ type ListUnspentDepositsResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	//
-	//A list of utxos behind the static address.
+	// A list of utxos behind the static address.
 	Utxos []*Utxo `protobuf:"bytes,1,rep,name=utxos,proto3" json:"utxos,omitempty"`
 }
 
@@ -4084,17 +4078,13 @@ type Utxo struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	//
-	//The static address of the utxo.
+	// The static address of the utxo.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
-	//
-	//The value of the unspent coin in satoshis.
+	// The value of the unspent coin in satoshis.
 	AmountSat int64 `protobuf:"varint,2,opt,name=amount_sat,json=amountSat,proto3" json:"amount_sat,omitempty"`
-	//
-	//The outpoint in the form txid:index.
+	// The outpoint in the form txid:index.
 	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	//
-	//The number of confirmations for the Utxo.
+	// The number of confirmations for the Utxo.
 	Confirmations int64 `protobuf:"varint,4,opt,name=confirmations,proto3" json:"confirmations,omitempty"`
 }
 
@@ -4396,8 +4386,8 @@ var file_client_proto_rawDesc = []byte{
 	0x75, 0x65, 0x73, 0x74, 0x22, 0x3c, 0x0a, 0x0e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65,
 	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2a, 0x0a, 0x06, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73,
 	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63,
-	0x2e, 0x4c, 0x73, 0x61, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x06, 0x74, 0x6f, 0x6b, 0x65,
-	0x6e, 0x73, 0x22, 0xcb, 0x02, 0x0a, 0x09, 0x4c, 0x73, 0x61, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
+	0x2e, 0x4c, 0x34, 0x30, 0x32, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x06, 0x74, 0x6f, 0x6b, 0x65,
+	0x6e, 0x73, 0x22, 0xcb, 0x02, 0x0a, 0x09, 0x4c, 0x34, 0x30, 0x32, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
 	0x12, 0x23, 0x0a, 0x0d, 0x62, 0x61, 0x73, 0x65, 0x5f, 0x6d, 0x61, 0x63, 0x61, 0x72, 0x6f, 0x6f,
 	0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0c, 0x62, 0x61, 0x73, 0x65, 0x4d, 0x61, 0x63,
 	0x61, 0x72, 0x6f, 0x6f, 0x6e, 0x12, 0x21, 0x0a, 0x0c, 0x70, 0x61, 0x79, 0x6d, 0x65, 0x6e, 0x74,
@@ -4779,7 +4769,7 @@ var file_client_proto_rawDesc = []byte{
 	0x70, 0x72, 0x70, 0x63, 0x2e, 0x50, 0x72, 0x6f, 0x62, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
 	0x74, 0x1a, 0x16, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x50, 0x72, 0x6f, 0x62,
 	0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x40, 0x0a, 0x0d, 0x47, 0x65, 0x74,
-	0x4c, 0x73, 0x61, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x16, 0x2e, 0x6c, 0x6f, 0x6f,
+	0x4c, 0x34, 0x30, 0x32, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x16, 0x2e, 0x6c, 0x6f, 0x6f,
 	0x70, 0x72, 0x70, 0x63, 0x2e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
 	0x73, 0x74, 0x1a, 0x17, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x2e, 0x54, 0x6f, 0x6b,
 	0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3c, 0x0a, 0x07, 0x47,
@@ -4882,7 +4872,7 @@ var file_client_proto_goTypes = []interface{}{
 	(*ProbeResponse)(nil),               // 23: looprpc.ProbeResponse
 	(*TokensRequest)(nil),               // 24: looprpc.TokensRequest
 	(*TokensResponse)(nil),              // 25: looprpc.TokensResponse
-	(*LsatToken)(nil),                   // 26: looprpc.LsatToken
+	(*L402Token)(nil),                   // 26: looprpc.L402Token
 	(*LoopStats)(nil),                   // 27: looprpc.LoopStats
 	(*GetInfoRequest)(nil),              // 28: looprpc.GetInfoRequest
 	(*GetInfoResponse)(nil),             // 29: looprpc.GetInfoResponse
@@ -4924,7 +4914,7 @@ var file_client_proto_depIdxs = []int32{
 	11, // 7: looprpc.ListSwapsResponse.swaps:type_name -> looprpc.SwapStatus
 	55, // 8: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
 	55, // 9: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
-	26, // 10: looprpc.TokensResponse.tokens:type_name -> looprpc.LsatToken
+	26, // 10: looprpc.TokensResponse.tokens:type_name -> looprpc.L402Token
 	27, // 11: looprpc.GetInfoResponse.loop_out_stats:type_name -> looprpc.LoopStats
 	27, // 12: looprpc.GetInfoResponse.loop_in_stats:type_name -> looprpc.LoopStats
 	32, // 13: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
@@ -4950,7 +4940,7 @@ var file_client_proto_depIdxs = []int32{
 	16, // 33: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
 	19, // 34: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
 	22, // 35: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	24, // 36: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	24, // 36: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
 	28, // 37: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
 	30, // 38: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
 	33, // 39: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
@@ -4972,7 +4962,7 @@ var file_client_proto_depIdxs = []int32{
 	17, // 55: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
 	20, // 56: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
 	23, // 57: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	25, // 58: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	25, // 58: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
 	29, // 59: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
 	31, // 60: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
 	34, // 61: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
@@ -5225,7 +5215,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*LsatToken); i {
+			switch v := v.(*L402Token); i {
 			case 0:
 				return &v.state
 			case 1:

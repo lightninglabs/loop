@@ -26,8 +26,8 @@ type printableToken struct {
 
 var listAuthCommand = cli.Command{
 	Name:        "listauth",
-	Usage:       "list all LSAT tokens",
-	Description: "Shows a list of all LSAT tokens that loopd has paid for",
+	Usage:       "list all L402 tokens",
+	Description: "Shows a list of all L402 tokens that loopd has paid for",
 	Action:      listAuth,
 }
 
@@ -38,7 +38,7 @@ func listAuth(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	resp, err := client.GetLsatTokens(
+	resp, err := client.GetL402Tokens(
 		context.Background(), &looprpc.TokensRequest{},
 	)
 	if err != nil {

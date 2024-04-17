@@ -160,8 +160,8 @@ type Config struct {
 	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
 
 	DebugLevel  string `long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
-	MaxLSATCost uint32 `long:"maxlsatcost" description:"Maximum cost in satoshis that loopd is going to pay for an LSAT token automatically. Does not include routing fees."`
-	MaxLSATFee  uint32 `long:"maxlsatfee" description:"Maximum routing fee in satoshis that we are willing to pay while paying for an LSAT token."`
+	MaxL402Cost uint32 `long:"maxl402cost" description:"Maximum cost in satoshis that loopd is going to pay for an L402 token automatically. Does not include routing fees."`
+	MaxL402Fee  uint32 `long:"maxl402fee" description:"Maximum routing fee in satoshis that we are willing to pay while paying for an L402 token."`
 
 	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
 
@@ -206,8 +206,8 @@ func DefaultConfig() Config {
 		TLSKeyPath:          DefaultTLSKeyPath,
 		TLSValidity:         DefaultAutogenValidity,
 		MacaroonPath:        DefaultMacaroonPath,
-		MaxLSATCost:         l402.DefaultMaxCostSats,
-		MaxLSATFee:          l402.DefaultMaxRoutingFeeSats,
+		MaxL402Cost:         l402.DefaultMaxCostSats,
+		MaxL402Fee:          l402.DefaultMaxRoutingFeeSats,
 		LoopOutMaxParts:     defaultLoopOutMaxParts,
 		TotalPaymentTimeout: defaultTotalPaymentTimeout,
 		MaxPaymentRetries:   defaultMaxPaymentRetries,

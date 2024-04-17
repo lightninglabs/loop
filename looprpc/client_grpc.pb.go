@@ -60,8 +60,8 @@ type SwapClientClient interface {
 	// estimate about routing fees when loopin-in.
 	Probe(ctx context.Context, in *ProbeRequest, opts ...grpc.CallOption) (*ProbeResponse, error)
 	// loop: `listauth`
-	// GetLsatTokens returns all LSAT tokens the daemon ever paid for.
-	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
+	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
@@ -97,10 +97,10 @@ type SwapClientClient interface {
 	// their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	//ListUnspentDeposits returns a list of utxos deposited at a static address.
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
 }
 
@@ -234,9 +234,9 @@ func (c *swapClientClient) Probe(ctx context.Context, in *ProbeRequest, opts ...
 	return out, nil
 }
 
-func (c *swapClientClient) GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
+func (c *swapClientClient) GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
 	out := new(TokensResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLsatTokens", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetL402Tokens", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -379,8 +379,8 @@ type SwapClientServer interface {
 	// estimate about routing fees when loopin-in.
 	Probe(context.Context, *ProbeRequest) (*ProbeResponse, error)
 	// loop: `listauth`
-	// GetLsatTokens returns all LSAT tokens the daemon ever paid for.
-	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
+	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
@@ -416,10 +416,10 @@ type SwapClientServer interface {
 	// their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	//ListUnspentDeposits returns a list of utxos deposited at a static address.
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
@@ -461,8 +461,8 @@ func (UnimplementedSwapClientServer) GetLoopInQuote(context.Context, *QuoteReque
 func (UnimplementedSwapClientServer) Probe(context.Context, *ProbeRequest) (*ProbeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
 }
-func (UnimplementedSwapClientServer) GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetLsatTokens not implemented")
+func (UnimplementedSwapClientServer) GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetL402Tokens not implemented")
 }
 func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
@@ -708,20 +708,20 @@ func _SwapClient_Probe_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SwapClient_GetLsatTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SwapClient_GetL402Tokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TokensRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SwapClientServer).GetLsatTokens(ctx, in)
+		return srv.(SwapClientServer).GetL402Tokens(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/looprpc.SwapClient/GetLsatTokens",
+		FullMethod: "/looprpc.SwapClient/GetL402Tokens",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapClientServer).GetLsatTokens(ctx, req.(*TokensRequest))
+		return srv.(SwapClientServer).GetL402Tokens(ctx, req.(*TokensRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -954,8 +954,8 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SwapClient_Probe_Handler,
 		},
 		{
-			MethodName: "GetLsatTokens",
-			Handler:    _SwapClient_GetLsatTokens_Handler,
+			MethodName: "GetL402Tokens",
+			Handler:    _SwapClient_GetL402Tokens_Handler,
 		},
 		{
 			MethodName: "GetInfo",
