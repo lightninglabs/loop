@@ -76,9 +76,9 @@ service SwapClient {
     rpc Probe (ProbeRequest) returns (ProbeResponse);
 
     /* loop: `listauth`
-    GetLsatTokens returns all LSAT tokens the daemon ever paid for.
+    GetL402Tokens returns all L402 tokens the daemon ever paid for.
     */
-    rpc GetLsatTokens (TokensRequest) returns (TokensResponse);
+    rpc GetL402Tokens (TokensRequest) returns (TokensResponse);
 
     /* loop: `getinfo`
     GetInfo gets basic information about the loop daemon.
@@ -811,10 +811,10 @@ message TokensResponse {
     /*
     List of all tokens the daemon knows of, including old/expired tokens.
     */
-    repeated LsatToken tokens = 1;
+    repeated L402Token tokens = 1;
 }
 
-message LsatToken {
+message L402Token {
     /*
     The base macaroon that was baked by the auth server.
     */

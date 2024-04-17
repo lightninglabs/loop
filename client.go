@@ -56,7 +56,7 @@ var (
 
 	// globalCallTimeout is the maximum time any call of the client to the
 	// server is allowed to take, including the time it may take to get
-	// and pay for an LSAT token.
+	// and pay for an L402 token.
 	globalCallTimeout = serverRPCTimeout + l402.PaymentTimeout
 
 	// probeTimeout is the maximum time until a probe is allowed to take.
@@ -111,13 +111,13 @@ type ClientConfig struct {
 	// Lnd is an instance of the lnd proxy.
 	Lnd *lndclient.LndServices
 
-	// MaxLsatCost is the maximum price we are willing to pay to the server
+	// MaxL402Cost is the maximum price we are willing to pay to the server
 	// for the token.
-	MaxLsatCost btcutil.Amount
+	MaxL402Cost btcutil.Amount
 
-	// MaxLsatFee is the maximum that we are willing to pay in routing fees
+	// MaxL402Fee is the maximum that we are willing to pay in routing fees
 	// to obtain the token.
-	MaxLsatFee btcutil.Amount
+	MaxL402Fee btcutil.Amount
 
 	// LoopOutMaxParts defines the maximum number of parts that may be used
 	// for a loop out swap. When greater than one, a multi-part payment may
@@ -138,12 +138,12 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	sweeperDb sweepbatcher.BatcherStore, cfg *ClientConfig) (
 	*Client, func(), error) {
 
-	lsatStore, err := l402.NewFileStore(dbDir)
+	l402Store, err := l402.NewFileStore(dbDir)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	swapServerClient, err := newSwapServerClient(cfg, lsatStore)
+	swapServerClient, err := newSwapServerClient(cfg, l402Store)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,7 +153,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		Server:      swapServerClient,
 		Store:       loopDB,
 		Conn:        swapServerClient.conn,
-		LsatStore:   lsatStore,
+		L402Store:   l402Store,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},

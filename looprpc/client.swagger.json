@@ -39,6 +39,29 @@
         ]
       }
     },
+    "/v1/l402/tokens": {
+      "get": {
+        "summary": "loop: `listauth`\nGetL402Tokens returns all L402 tokens the daemon ever paid for.",
+        "operationId": "SwapClient_GetL402Tokens",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcTokensResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/liquidity/params": {
       "get": {
         "summary": "loop: `getparams`\nGetLiquidityParams gets the parameters that the daemon's liquidity manager\nis currently configured with. This may be nil if nothing is configured.\n[EXPERIMENTAL]: endpoint is subject to change.",
@@ -515,29 +538,6 @@
           "SwapClient"
         ]
       }
-    },
-    "/v1/lsat/tokens": {
-      "get": {
-        "summary": "loop: `listauth`\nGetLsatTokens returns all LSAT tokens the daemon ever paid for.",
-        "operationId": "SwapClient_GetLsatTokens",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/looprpcTokensResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "SwapClient"
-        ]
-      }
     }
   },
   "definitions": {
@@ -821,6 +821,53 @@
         "state": {
           "type": "string",
           "description": "The state of the swap."
+        }
+      }
+    },
+    "looprpcL402Token": {
+      "type": "object",
+      "properties": {
+        "base_macaroon": {
+          "type": "string",
+          "format": "byte",
+          "description": "The base macaroon that was baked by the auth server."
+        },
+        "payment_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The payment hash of the payment that was paid to obtain the token."
+        },
+        "payment_preimage": {
+          "type": "string",
+          "format": "byte",
+          "description": "The preimage of the payment hash, knowledge of this is proof that the\npayment has been paid. If the preimage is set to all zeros, this means the\npayment is still pending and the token is not yet fully valid."
+        },
+        "amount_paid_msat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The amount of millisatoshis that was paid to get the token."
+        },
+        "routing_fee_paid_msat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The amount of millisatoshis paid in routing fee to pay for the token."
+        },
+        "time_created": {
+          "type": "string",
+          "format": "int64",
+          "description": "The creation time of the token as UNIX timestamp in seconds."
+        },
+        "expired": {
+          "type": "boolean",
+          "description": "Indicates whether the token is expired or still valid."
+        },
+        "storage_name": {
+          "type": "string",
+          "description": "Identifying attribute of this token in the store. Currently represents the\nfile name of the token where it's stored on the file system."
+        },
+        "id": {
+          "type": "string",
+          "description": "The l402 ID of the token."
         }
       }
     },
@@ -1231,53 +1278,6 @@
         }
       }
     },
-    "looprpcLsatToken": {
-      "type": "object",
-      "properties": {
-        "base_macaroon": {
-          "type": "string",
-          "format": "byte",
-          "description": "The base macaroon that was baked by the auth server."
-        },
-        "payment_hash": {
-          "type": "string",
-          "format": "byte",
-          "description": "The payment hash of the payment that was paid to obtain the token."
-        },
-        "payment_preimage": {
-          "type": "string",
-          "format": "byte",
-          "description": "The preimage of the payment hash, knowledge of this is proof that the\npayment has been paid. If the preimage is set to all zeros, this means the\npayment is still pending and the token is not yet fully valid."
-        },
-        "amount_paid_msat": {
-          "type": "string",
-          "format": "int64",
-          "description": "The amount of millisatoshis that was paid to get the token."
-        },
-        "routing_fee_paid_msat": {
-          "type": "string",
-          "format": "int64",
-          "description": "The amount of millisatoshis paid in routing fee to pay for the token."
-        },
-        "time_created": {
-          "type": "string",
-          "format": "int64",
-          "description": "The creation time of the token as UNIX timestamp in seconds."
-        },
-        "expired": {
-          "type": "boolean",
-          "description": "Indicates whether the token is expired or still valid."
-        },
-        "storage_name": {
-          "type": "string",
-          "description": "Identifying attribute of this token in the store. Currently represents the\nfile name of the token where it's stored on the file system."
-        },
-        "id": {
-          "type": "string",
-          "description": "The l402 ID of the token."
-        }
-      }
-    },
     "looprpcOutQuoteResponse": {
       "type": "object",
       "properties": {
@@ -1534,7 +1534,7 @@
         "tokens": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/looprpcLsatToken"
+            "$ref": "#/definitions/looprpcL402Token"
           },
           "description": "List of all tokens the daemon knows of, including old/expired tokens."
         }

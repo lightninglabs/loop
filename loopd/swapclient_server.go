@@ -920,18 +920,18 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	return response, nil
 }
 
-// GetLsatTokens returns all tokens that are contained in the LSAT token store.
-func (s *swapClientServer) GetLsatTokens(ctx context.Context,
+// GetL402Tokens returns all tokens that are contained in the L402 token store.
+func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 	_ *clientrpc.TokensRequest) (*clientrpc.TokensResponse, error) {
 
-	log.Infof("Get LSAT tokens request received")
+	log.Infof("Get L402 tokens request received")
 
-	tokens, err := s.impl.LsatStore.AllTokens()
+	tokens, err := s.impl.L402Store.AllTokens()
 	if err != nil {
 		return nil, err
 	}
 
-	rpcTokens := make([]*clientrpc.LsatToken, len(tokens))
+	rpcTokens := make([]*clientrpc.L402Token, len(tokens))
 	idx := 0
 	for key, token := range tokens {
 		macBytes, err := token.BaseMacaroon().MarshalBinary()
@@ -945,7 +945,7 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		rpcTokens[idx] = &clientrpc.LsatToken{
+		rpcTokens[idx] = &clientrpc.L402Token{
 			BaseMacaroon:       macBytes,
 			PaymentHash:        token.PaymentHash[:],
 			PaymentPreimage:    token.Preimage[:],

@@ -161,14 +161,14 @@ func (s *grpcSwapServerClient) stop() {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(cfg *ClientConfig, lsatStore l402.Store) (
+func newSwapServerClient(cfg *ClientConfig, l402Store l402.Store) (
 	*grpcSwapServerClient, error) {
 
 	// Create the server connection with the interceptor that will handle
-	// the LSAT protocol for us.
+	// the L402 protocol for us.
 	clientInterceptor := l402.NewInterceptor(
-		cfg.Lnd, lsatStore, serverRPCTimeout, cfg.MaxLsatCost,
-		cfg.MaxLsatFee, false,
+		cfg.Lnd, l402Store, serverRPCTimeout, cfg.MaxL402Cost,
+		cfg.MaxL402Fee, false,
 	)
 	serverConn, err := getSwapServerConn(
 		cfg.ServerAddress, cfg.ProxyAddress, cfg.SwapServerNoTLS,
