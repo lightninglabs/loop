@@ -15,7 +15,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/instantout"
@@ -939,7 +939,7 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 			return nil, err
 		}
 
-		id, err := lsat.DecodeIdentifier(
+		id, err := l402.DecodeIdentifier(
 			bytes.NewReader(token.BaseMacaroon().Id()),
 		)
 		if err != nil {

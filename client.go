@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -57,7 +57,7 @@ var (
 	// globalCallTimeout is the maximum time any call of the client to the
 	// server is allowed to take, including the time it may take to get
 	// and pay for an LSAT token.
-	globalCallTimeout = serverRPCTimeout + lsat.PaymentTimeout
+	globalCallTimeout = serverRPCTimeout + l402.PaymentTimeout
 
 	// probeTimeout is the maximum time until a probe is allowed to take.
 	probeTimeout = 3 * time.Minute
@@ -138,7 +138,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	sweeperDb sweepbatcher.BatcherStore, cfg *ClientConfig) (
 	*Client, func(), error) {
 
-	lsatStore, err := lsat.NewFileStore(dbDir)
+	lsatStore, err := l402.NewFileStore(dbDir)
 	if err != nil {
 		return nil, nil, err
 	}

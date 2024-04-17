@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lncfg"
@@ -206,8 +206,8 @@ func DefaultConfig() Config {
 		TLSKeyPath:          DefaultTLSKeyPath,
 		TLSValidity:         DefaultAutogenValidity,
 		MacaroonPath:        DefaultMacaroonPath,
-		MaxLSATCost:         lsat.DefaultMaxCostSats,
-		MaxLSATFee:          lsat.DefaultMaxRoutingFeeSats,
+		MaxLSATCost:         l402.DefaultMaxCostSats,
+		MaxLSATFee:          l402.DefaultMaxRoutingFeeSats,
 		LoopOutMaxParts:     defaultLoopOutMaxParts,
 		TotalPaymentTimeout: defaultTotalPaymentTimeout,
 		MaxPaymentRetries:   defaultMaxPaymentRetries,
