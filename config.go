@@ -3,7 +3,7 @@ package loop
 import (
 	"time"
 
-	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"google.golang.org/grpc"
@@ -15,7 +15,7 @@ type clientConfig struct {
 	Server            swapServerClient
 	Conn              *grpc.ClientConn
 	Store             loopdb.SwapStore
-	LsatStore         lsat.Store
+	LsatStore         l402.Store
 	CreateExpiryTimer func(expiry time.Duration) <-chan time.Time
 	LoopOutMaxParts   uint32
 }
