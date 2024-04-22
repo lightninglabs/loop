@@ -202,3 +202,31 @@ func instantOut(ctx *cli.Context) error {
 
 	return nil
 }
+
+var listInstantOutsCommand = cli.Command{
+	Name:  "listinstantouts",
+	Usage: "list all instant out swaps",
+	Description: `
+	List all instant out swaps.
+	`,
+	Action: listInstantOuts,
+}
+
+func listInstantOuts(ctx *cli.Context) error {
+	// First set up the swap client itself.
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.ListInstantOuts(
+		context.Background(), &looprpc.ListInstantOutsRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+	return nil
+}

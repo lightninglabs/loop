@@ -62,6 +62,29 @@ INSERT INTO sweeps (
         amt = $5,
         completed = $6;
 
+-- name: GetParentBatch :one
+SELECT
+        sweep_batches.*
+FROM
+        sweep_batches
+JOIN
+        sweeps ON sweep_batches.id = sweeps.batch_id
+WHERE
+        sweeps.swap_hash = $1
+AND
+        sweeps.completed = TRUE
+AND   
+        sweep_batches.confirmed = TRUE;
+
+-- name: GetBatchSweptAmount :one
+SELECT
+        SUM(amt) AS total
+FROM
+        sweeps
+WHERE
+        batch_id = $1
+AND
+        completed = TRUE;
 
 -- name: GetBatchSweeps :many
 SELECT

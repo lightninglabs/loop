@@ -1136,6 +1136,33 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 	return nil
 }
 
+// getFeePortionForSweep calculates the fee portion that each sweep should pay
+// for the batch transaction. The fee is split evenly among the sweeps, If the
+// fee cannot be split evenly, the remainder is paid by the first sweep.
+func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
+	totalSweptAmt btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
+
+	totalFee := spendTx.TxOut[0].Value - int64(totalSweptAmt)
+	feePortionPerSweep := (int64(totalSweptAmt) -
+		spendTx.TxOut[0].Value) / int64(numSweeps)
+	roundingDiff := totalFee - (int64(numSweeps) * feePortionPerSweep)
+
+	return btcutil.Amount(feePortionPerSweep), btcutil.Amount(roundingDiff)
+}
+
+// getFeePortionPaidBySweep returns the fee portion that the sweep should pay
+// for the batch transaction. If the sweep is the first sweep in the batch, it
+// pays the rounding difference.
+func getFeePortionPaidBySweep(spendTx *wire.MsgTx, feePortionPerSweep,
+	roundingDiff btcutil.Amount, sweep *sweep) btcutil.Amount {
+
+	if bytes.Equal(spendTx.TxIn[0].SignatureScript, sweep.htlc.SigScript) {
+		return feePortionPerSweep + roundingDiff
+	}
+
+	return feePortionPerSweep
+}
+
 // handleSpend handles a spend notification.
 func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	var (
@@ -1151,12 +1178,14 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	// sweeps that did not make it to the confirmed transaction and feed
 	// them back to the batcher. This will ensure that the sweeps will enter
 	// a new batch instead of remaining dangling.
+	var totalSweptAmt btcutil.Amount
 	for _, sweep := range b.sweeps {
 		found := false
 
 		for _, txIn := range spendTx.TxIn {
 			if txIn.PreviousOutPoint == sweep.outpoint {
 				found = true
+				totalSweptAmt += sweep.value
 				notifyList = append(notifyList, sweep)
 			}
 		}
@@ -1176,7 +1205,13 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		}
 	}
 
+	// Calculate the fee portion that each sweep should pay for the batch.
+	feePortionPaidPerSweep, roundingDifference := getFeePortionForSweep(
+		spendTx, len(notifyList), totalSweptAmt,
+	)
+
 	for _, sweep := range notifyList {
+		sweep := sweep
 		// Save the sweep as completed.
 		err := b.persistSweep(ctx, sweep, true)
 		if err != nil {
@@ -1192,9 +1227,17 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 			continue
 		}
 
+		spendDetail := SpendDetail{
+			Tx: spendTx,
+			OnChainFeePortion: getFeePortionPaidBySweep(
+				spendTx, feePortionPaidPerSweep,
+				roundingDifference, &sweep,
+			),
+		}
+
 		// Dispatch the sweep notifier, we don't care about the outcome
 		// of this action so we don't wait for it.
-		go notifySweepSpend(ctx, sweep, spendTx)
+		go sweep.notifySweepSpend(ctx, &spendDetail)
 	}
 
 	// Proceed with purging the sweeps. This will feed the sweeps that
@@ -1318,10 +1361,12 @@ func (b *batch) insertAndAcquireID(ctx context.Context) (int32, error) {
 }
 
 // notifySweepSpend writes the spendTx to the sweep's notifier channel.
-func notifySweepSpend(ctx context.Context, s sweep, spendTx *wire.MsgTx) {
+func (s *sweep) notifySweepSpend(ctx context.Context,
+	spendDetail *SpendDetail) {
+
 	select {
 	// Try to write the update to the notification channel.
-	case s.notifier.SpendChan <- spendTx:
+	case s.notifier.SpendChan <- spendDetail:
 
 	// If a quit signal was provided by the swap, continue.
 	case <-s.notifier.QuitChan:

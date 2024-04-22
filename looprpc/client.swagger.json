@@ -763,6 +763,37 @@
         }
       }
     },
+    "looprpcInstantOut": {
+      "type": "object",
+      "properties": {
+        "swap_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The swap hash that identifies this swap."
+        },
+        "state": {
+          "type": "string",
+          "description": "The state the swap is in."
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount of the swap."
+        },
+        "reservation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The used reservations for the swap."
+        },
+        "sweep_tx_id": {
+          "type": "string",
+          "description": "The sweep transaction id of the swap."
+        }
+      }
+    },
     "looprpcInstantOutQuoteResponse": {
       "type": "object",
       "properties": {
@@ -958,6 +989,18 @@
         "THRESHOLD"
       ],
       "default": "UNKNOWN"
+    },
+    "looprpcListInstantOutsResponse": {
+      "type": "object",
+      "properties": {
+        "swaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcInstantOut"
+          },
+          "description": "The list of all currently known instant out swaps and their status."
+        }
+      }
     },
     "looprpcListReservationsResponse": {
       "type": "object",

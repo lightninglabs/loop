@@ -306,7 +306,11 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 	info := s.swapInfo()
 	s.log.Infof("Loop out swap state: %v", info.State)
 
-	info.HtlcAddressP2WSH = s.htlc.Address
+	if s.htlc.OutputType == swap.HtlcP2WSH {
+		info.HtlcAddressP2WSH = s.htlc.Address
+	} else {
+		info.HtlcAddressP2TR = s.htlc.Address
+	}
 
 	// In order to avoid potentially dangerous ownership sharing
 	// we copy the outgoing channel set.
@@ -452,7 +456,8 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
 		return nil
 
 	case result.status.State == lnrpc.Payment_SUCCEEDED:
-		s.cost.Server += result.status.Value.ToSatoshis()
+		s.cost.Server += result.status.Value.ToSatoshis() -
+			s.AmountRequested
 		s.cost.Offchain += result.status.Fee.ToSatoshis()
 
 		return nil
@@ -514,7 +519,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	}
 
 	// Try to spend htlc and continue (rbf) until a spend has confirmed.
-	spendTx, err := s.waitForHtlcSpendConfirmedV2(
+	spend, err := s.waitForHtlcSpendConfirmedV2(
 		globalCtx, *htlcOutpoint, htlcValue,
 	)
 	if err != nil {
@@ -523,7 +528,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	// If spend details are nil, we resolved the swap without waiting for
 	// its spend, so we can exit.
-	if spendTx == nil {
+	if spend == nil {
 		return nil
 	}
 
@@ -531,7 +536,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	// don't just try to match with the hash of our sweep tx, because it
 	// may be swept by a different (fee) sweep tx from a previous run.
 	htlcInput, err := swap.GetTxInputByOutpoint(
-		spendTx, htlcOutpoint,
+		spend.Tx, htlcOutpoint,
 	)
 	if err != nil {
 		return err
@@ -539,11 +544,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 	sweepSuccessful := s.htlc.IsSuccessWitness(htlcInput.Witness)
 	if sweepSuccessful {
-		s.cost.Server -= htlcValue
-
-		s.cost.Onchain = htlcValue -
-			btcutil.Amount(spendTx.TxOut[0].Value)
-
+		s.cost.Onchain = spend.OnChainFeePortion
 		s.state = loopdb.StateSuccess
 	} else {
 		s.state = loopdb.StateFailSweepTimeout
@@ -598,11 +599,12 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	)
 
 	// Pay the prepay invoice. Won't use the routing plugin here as the
-	// prepay is trivially small and shouldn't normally need any help.
+	// prepay is trivially small and shouldn't normally need any help. We
+	// are sending it over the same channel as the loop out payment.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
-		nil, RoutingPluginNone, false,
+		s.LoopOutContract.OutgoingChanSet, RoutingPluginNone, false,
 	)
 }
 
@@ -1005,9 +1007,9 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 // sweep or a server revocation tx.
 func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	htlcOutpoint wire.OutPoint, htlcValue btcutil.Amount) (
-	*wire.MsgTx, error) {
+	*sweepbatcher.SpendDetail, error) {
 
-	spendChan := make(chan *wire.MsgTx)
+	spendChan := make(chan *sweepbatcher.SpendDetail)
 	spendErrChan := make(chan error, 1)
 	quitChan := make(chan bool, 1)
 
@@ -1054,10 +1056,10 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	for {
 		select {
 		// Htlc spend, break loop.
-		case spendTx := <-spendChan:
-			s.log.Infof("Htlc spend by tx: %v", spendTx.TxHash())
+		case spend := <-spendChan:
+			s.log.Infof("Htlc spend by tx: %v", spend.Tx.TxHash())
 
-			return spendTx, nil
+			return spend, nil
 
 		// Spend notification error.
 		case err := <-spendErrChan:

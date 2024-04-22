@@ -94,8 +94,8 @@ func (s *SQLStore) CreateInstantLoopOut(ctx context.Context,
 		SwapHash:         instantOut.SwapHash[:],
 		Preimage:         instantOut.swapPreimage[:],
 		InitiationTime:   s.clock.Now(),
-		AmountRequested:  int64(instantOut.value),
-		CltvExpiry:       instantOut.cltvExpiry,
+		AmountRequested:  int64(instantOut.Value),
+		CltvExpiry:       instantOut.CltvExpiry,
 		MaxMinerFee:      0,
 		MaxSwapFee:       0,
 		InitiationHeight: instantOut.initiationHeight,
@@ -114,7 +114,7 @@ func (s *SQLStore) CreateInstantLoopOut(ctx context.Context,
 	}
 
 	reservationIdByteSlice := reservationIdsToByteSlice(
-		instantOut.reservations,
+		instantOut.Reservations,
 	)
 	instantOutArgs := sqlc.InsertInstantOutParams{
 		SwapHash:        instantOut.SwapHash[:],
@@ -172,9 +172,9 @@ func (s *SQLStore) UpdateInstantLoopOut(ctx context.Context,
 	}
 
 	var finalSweeplessSweepTx []byte
-	if instantOut.finalizedSweeplessSweepTx != nil {
+	if instantOut.FinalizedSweeplessSweepTx != nil {
 		var buffer bytes.Buffer
-		err := instantOut.finalizedSweeplessSweepTx.Serialize(
+		err := instantOut.FinalizedSweeplessSweepTx.Serialize(
 			&buffer,
 		)
 		if err != nil {
@@ -355,12 +355,12 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 	instantOut := &InstantOut{
 		SwapHash:         swapHash,
 		swapPreimage:     swapPreImage,
-		cltvExpiry:       row.CltvExpiry,
+		CltvExpiry:       row.CltvExpiry,
 		outgoingChanSet:  outgoingChanSet,
-		reservations:     reservations,
+		Reservations:     reservations,
 		protocolVersion:  ProtocolVersion(row.ProtocolVersion),
 		initiationHeight: row.InitiationHeight,
-		value:            btcutil.Amount(row.AmountRequested),
+		Value:            btcutil.Amount(row.AmountRequested),
 		keyLocator: keychain.KeyLocator{
 			Family: keychain.KeyFamily(row.ClientKeyFamily),
 			Index:  uint32(row.ClientKeyIndex),
@@ -372,7 +372,7 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 		sweepAddress:              sweepAddress,
 		finalizedHtlcTx:           finalizedHtlcTx,
 		SweepTxHash:               sweepTxHash,
-		finalizedSweeplessSweepTx: finalizedSweepLessSweepTx,
+		FinalizedSweeplessSweepTx: finalizedSweepLessSweepTx,
 		sweepConfirmationHeight: uint32(deserializeNullInt32(
 			row.SweepConfirmationHeight,
 		)),

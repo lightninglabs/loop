@@ -68,6 +68,21 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 			name:  "busy_timeout",
 			value: "5000",
 		},
+		{
+			// With the WAL mode, this ensures that we also do an
+			// extra WAL sync after each transaction. The normal
+			// sync mode skips this and gives better performance,
+			// but risks durability.
+			name:  "synchronous",
+			value: "full",
+		},
+		{
+			// This is used to ensure proper durability for users
+			// running on Mac OS. It uses the correct fsync system
+			// call to ensure items are fully flushed to disk.
+			name:  "fullfsync",
+			value: "true",
+		},
 	}
 	sqliteOptions := make(url.Values)
 	for _, option := range pragmaOptions {
