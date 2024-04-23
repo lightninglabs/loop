@@ -275,5 +275,5 @@ func (m *mockWalletKit) ImportPublicKey(ctx context.Context,
 func (m *mockWalletKit) ImportTaprootScript(ctx context.Context,
 	tapscript *waddrmgr.Tapscript) (btcutil.Address, error) {
 
-	return nil, fmt.Errorf("unimplemented")
+	return nil, nil
 }
