@@ -451,6 +451,24 @@ func local_request_SwapClient_GetL402Tokens_0(ctx context.Context, marshaler run
 
 }
 
+func request_SwapClient_GetL402Tokens_1(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq TokensRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.GetL402Tokens(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_SwapClient_GetL402Tokens_1(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq TokensRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.GetL402Tokens(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
 func request_SwapClient_GetInfo_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var protoReq GetInfoRequest
 	var metadata runtime.ServerMetadata
@@ -792,6 +810,31 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 		}
 
 		forward_SwapClient_GetL402Tokens_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_SwapClient_GetL402Tokens_1(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_SwapClient_GetL402Tokens_1(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 
 	})
 
@@ -1156,6 +1199,28 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 
 	})
 
+	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_SwapClient_GetL402Tokens_1(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_SwapClient_GetL402Tokens_1(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
 	mux.Handle("GET", pattern_SwapClient_GetInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -1268,6 +1333,8 @@ var (
 
 	pattern_SwapClient_GetL402Tokens_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "l402", "tokens"}, ""))
 
+	pattern_SwapClient_GetL402Tokens_1 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lsat", "tokens"}, ""))
+
 	pattern_SwapClient_GetInfo_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "info"}, ""))
 
 	pattern_SwapClient_GetLiquidityParams_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "liquidity", "params"}, ""))
@@ -1297,6 +1364,8 @@ var (
 	forward_SwapClient_Probe_0 = runtime.ForwardResponseMessage
 
 	forward_SwapClient_GetL402Tokens_0 = runtime.ForwardResponseMessage
+
+	forward_SwapClient_GetL402Tokens_1 = runtime.ForwardResponseMessage
 
 	forward_SwapClient_GetInfo_0 = runtime.ForwardResponseMessage
 

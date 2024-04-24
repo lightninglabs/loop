@@ -28,6 +28,8 @@ http:
       get: "/v1/loop/info"
     - selector: looprpc.SwapClient.GetL402Tokens
       get: "/v1/l402/tokens"
+      additional_bindings:
+        - get: "/v1/lsat/tokens"
     - selector: looprpc.SwapClient.GetLiquidityParams
       get: "/v1/liquidity/params"
     - selector: looprpc.SwapClient.SetLiquidityParams
