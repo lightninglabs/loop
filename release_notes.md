@@ -26,6 +26,8 @@ encouraged to change the options to new names if they have been changed locally.
 The path in looprpc "/v1/lsat/tokens" was renamed to "/v1/l402/tokens" and
 the corresponding method was renamed from `GetLsatTokens` to `GetL402Tokens`.
 Update `loop` and `loopd` simultaneously otherwise this RPC won't work.
+HTTP endpoint "/v1/l402/tokens" is now an additional binding for API
+"/v1/lsat/tokens", so it still works.
 
 #### Bug Fixes
 

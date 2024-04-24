@@ -538,6 +538,29 @@
           "SwapClient"
         ]
       }
+    },
+    "/v1/lsat/tokens": {
+      "get": {
+        "summary": "loop: `listauth`\nGetL402Tokens returns all L402 tokens the daemon ever paid for.",
+        "operationId": "SwapClient_GetL402Tokens2",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcTokensResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
     }
   },
   "definitions": {
