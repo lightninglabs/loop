@@ -19,8 +19,9 @@ This file tracks release notes for the loop client.
 #### Breaking Changes
 
 In loopd.conf file `maxlsatcost` and `maxlsatfee` were renamed to `maxl402cost`
-and `maxl402fee` accordingly. If they have been changed locally, the file has
-to be updated for loopd to recognize the options.
+and `maxl402fee` accordingly. Old versions of the options are still recognized
+for backward compatibility, but a deprecation warning is printed. Users are
+encouraged to change the options to new names if they have been changed locally.
 
 The path in looprpc "/v1/lsat/tokens" was renamed to "/v1/l402/tokens" and
 the corresponding method was renamed from `GetLsatTokens` to `GetL402Tokens`.

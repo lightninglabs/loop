@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/liquidity"
@@ -21,6 +22,23 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 	sweeperDb sweepbatcher.BatcherStore, lnd *lndclient.LndServices) (
 	*loop.Client, func(), error) {
 
+	// Default is not set for MaxLSATCost and MaxLSATFee to distinguish
+	// it from user explicitly setting the option to default value.
+	// So if MaxL402Cost and MaxLSATFee are not set in the config file
+	// and command line, they are set to 0.
+	const (
+		defaultCost = l402.DefaultMaxCostSats
+		defaultFee  = l402.DefaultMaxRoutingFeeSats
+	)
+	if cfg.MaxL402Cost != defaultCost && cfg.MaxLSATCost != 0 {
+		return nil, nil, fmt.Errorf("both maxl402cost and maxlsatcost" +
+			" were specified; they are not allowed together")
+	}
+	if cfg.MaxL402Fee != defaultFee && cfg.MaxLSATFee != 0 {
+		return nil, nil, fmt.Errorf("both maxl402fee and maxlsatfee" +
+			" were specified; they are not allowed together")
+	}
+
 	clientConfig := &loop.ClientConfig{
 		ServerAddress:       cfg.Server.Host,
 		ProxyAddress:        cfg.Server.Proxy,
@@ -32,6 +50,17 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 		LoopOutMaxParts:     cfg.LoopOutMaxParts,
 		TotalPaymentTimeout: cfg.TotalPaymentTimeout,
 		MaxPaymentRetries:   cfg.MaxPaymentRetries,
+	}
+
+	if cfg.MaxL402Cost == defaultCost && cfg.MaxLSATCost != 0 {
+		log.Warnf("Option maxlsatcost is deprecated and will be " +
+			"removed. Switch to maxl402cost.")
+		clientConfig.MaxL402Cost = btcutil.Amount(cfg.MaxLSATCost)
+	}
+	if cfg.MaxL402Fee == defaultFee && cfg.MaxLSATFee != 0 {
+		log.Warnf("Option maxlsatfee is deprecated and will be " +
+			"removed. Switch to maxl402fee.")
+		clientConfig.MaxL402Fee = btcutil.Amount(cfg.MaxLSATFee)
 	}
 
 	swapClient, cleanUp, err := loop.NewClient(

@@ -160,6 +160,8 @@ type Config struct {
 	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
 
 	DebugLevel  string `long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
+	MaxLSATCost uint32 `long:"maxlsatcost" hidden:"true"`
+	MaxLSATFee  uint32 `long:"maxlsatfee" hidden:"true"`
 	MaxL402Cost uint32 `long:"maxl402cost" description:"Maximum cost in satoshis that loopd is going to pay for an L402 token automatically. Does not include routing fees."`
 	MaxL402Fee  uint32 `long:"maxl402fee" description:"Maximum routing fee in satoshis that we are willing to pay while paying for an L402 token."`
 
