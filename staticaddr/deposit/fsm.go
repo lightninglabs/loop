@@ -100,7 +100,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 
 	if recoverStateMachine {
 		depoFsm.StateMachine = fsm.NewStateMachineWithState(
-			depositStates, deposit.getState(),
+			depositStates, deposit.GetState(),
 			DefaultObserverSize,
 		)
 	} else {
@@ -145,8 +145,8 @@ func (f *FSM) handleBlockNotification(ctx context.Context,
 
 	// If the deposit is expired but not yet sufficiently confirmed, we
 	// republish the expiry sweep transaction.
-	if f.deposit.isExpired(currentHeight, params.Expiry) {
-		if f.deposit.isInState(WaitForExpirySweep) {
+	if f.deposit.IsExpired(currentHeight, params.Expiry) {
+		if f.deposit.IsInState(WaitForExpirySweep) {
 			f.PublishDepositExpirySweepAction(ctx, nil)
 		} else {
 			go func() {
@@ -232,13 +232,13 @@ func (f *FSM) updateDeposit(ctx context.Context,
 		notification.Event,
 	)
 
-	f.deposit.setState(notification.NextState)
+	f.deposit.SetState(notification.NextState)
 
 	// Don't update the deposit if we are in an initial state or if we
 	// are transitioning from an initial state to a failed state.
 	d := f.deposit
-	if d.isInState(fsm.EmptyState) || d.isInState(Deposited) ||
-		(notification.PreviousState == Deposited && d.isInState(
+	if d.IsInState(fsm.EmptyState) || d.IsInState(Deposited) ||
+		(notification.PreviousState == Deposited && d.IsInState(
 			Failed,
 		)) {
 
