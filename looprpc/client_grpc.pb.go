@@ -62,6 +62,12 @@ type SwapClientClient interface {
 	// loop: `listauth`
 	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
 	GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
+	// Deprecated: use GetL402Tokens.
+	// This API is provided to maintain backward compatibility with gRPC clients
+	// (e.g. `loop listauth`, Terminal Web, RTL).
+	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	// but this does not affect binary encoding, so we can use type L402Token here.
+	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
@@ -237,6 +243,15 @@ func (c *swapClientClient) GetL402Tokens(ctx context.Context, in *TokensRequest,
 	return out, nil
 }
 
+func (c *swapClientClient) GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
+	out := new(TokensResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLsatTokens", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
 	out := new(GetInfoResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetInfo", in, out, opts...)
@@ -357,6 +372,12 @@ type SwapClientServer interface {
 	// loop: `listauth`
 	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
 	GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error)
+	// Deprecated: use GetL402Tokens.
+	// This API is provided to maintain backward compatibility with gRPC clients
+	// (e.g. `loop listauth`, Terminal Web, RTL).
+	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	// but this does not affect binary encoding, so we can use type L402Token here.
+	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
@@ -433,6 +454,9 @@ func (UnimplementedSwapClientServer) Probe(context.Context, *ProbeRequest) (*Pro
 }
 func (UnimplementedSwapClientServer) GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetL402Tokens not implemented")
+}
+func (UnimplementedSwapClientServer) GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLsatTokens not implemented")
 }
 func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
@@ -690,6 +714,24 @@ func _SwapClient_GetL402Tokens_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_GetLsatTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).GetLsatTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/GetLsatTokens",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).GetLsatTokens(ctx, req.(*TokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetInfoRequest)
 	if err := dec(in); err != nil {
@@ -884,6 +926,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetL402Tokens",
 			Handler:    _SwapClient_GetL402Tokens_Handler,
+		},
+		{
+			MethodName: "GetLsatTokens",
+			Handler:    _SwapClient_GetLsatTokens_Handler,
 		},
 		{
 			MethodName: "GetInfo",

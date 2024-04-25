@@ -964,6 +964,21 @@ func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 	return &clientrpc.TokensResponse{Tokens: rpcTokens}, nil
 }
 
+// GetLsatTokens returns all tokens that are contained in the L402 token store.
+// Deprecated: use GetL402Tokens.
+// This API is provided to maintain backward compatibility with gRPC clients
+// (e.g. `loop listauth`, Terminal Web, RTL).
+// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+// but this does not affect binary encoding, so we can use type L402Token here.
+func (s *swapClientServer) GetLsatTokens(ctx context.Context,
+	req *clientrpc.TokensRequest) (*clientrpc.TokensResponse, error) {
+
+	log.Warnf("Received deprecated call GetLsatTokens. Please update the " +
+		"client software. Calling GetL402Tokens now.")
+
+	return s.GetL402Tokens(ctx, req)
+}
+
 // GetInfo returns basic information about the loop daemon and details to swaps
 // from the swap store.
 func (s *swapClientServer) GetInfo(ctx context.Context,
