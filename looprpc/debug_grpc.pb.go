@@ -18,10 +18,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DebugClient interface {
-	//
-	//ForceAutoLoop is intended for *testing purposes only* and will not work on
-	//mainnet. This endpoint ticks our autoloop timer, triggering automated
-	//dispatch of a swap if one is suggested.
+	// ForceAutoLoop is intended for *testing purposes only* and will not work on
+	// mainnet. This endpoint ticks our autoloop timer, triggering automated
+	// dispatch of a swap if one is suggested.
 	ForceAutoLoop(ctx context.Context, in *ForceAutoLoopRequest, opts ...grpc.CallOption) (*ForceAutoLoopResponse, error)
 }
 
@@ -46,10 +45,9 @@ func (c *debugClient) ForceAutoLoop(ctx context.Context, in *ForceAutoLoopReques
 // All implementations must embed UnimplementedDebugServer
 // for forward compatibility
 type DebugServer interface {
-	//
-	//ForceAutoLoop is intended for *testing purposes only* and will not work on
-	//mainnet. This endpoint ticks our autoloop timer, triggering automated
-	//dispatch of a swap if one is suggested.
+	// ForceAutoLoop is intended for *testing purposes only* and will not work on
+	// mainnet. This endpoint ticks our autoloop timer, triggering automated
+	// dispatch of a swap if one is suggested.
 	ForceAutoLoop(context.Context, *ForceAutoLoopRequest) (*ForceAutoLoopResponse, error)
 	mustEmbedUnimplementedDebugServer()
 }
