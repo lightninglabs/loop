@@ -19,89 +19,94 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SwapClientClient interface {
 	// loop: `out`
-	//LoopOut initiates an loop out swap with the given parameters. The call
-	//returns after the swap has been set up with the swap server. From that
-	//point onwards, progress can be tracked via the SwapStatus stream that is
-	//returned from Monitor().
+	// LoopOut initiates an loop out swap with the given parameters. The call
+	// returns after the swap has been set up with the swap server. From that
+	// point onwards, progress can be tracked via the SwapStatus stream that is
+	// returned from Monitor().
 	LoopOut(ctx context.Context, in *LoopOutRequest, opts ...grpc.CallOption) (*SwapResponse, error)
 	// loop: `in`
-	//LoopIn initiates a loop in swap with the given parameters. The call
-	//returns after the swap has been set up with the swap server. From that
-	//point onwards, progress can be tracked via the SwapStatus stream
-	//that is returned from Monitor().
+	// LoopIn initiates a loop in swap with the given parameters. The call
+	// returns after the swap has been set up with the swap server. From that
+	// point onwards, progress can be tracked via the SwapStatus stream
+	// that is returned from Monitor().
 	LoopIn(ctx context.Context, in *LoopInRequest, opts ...grpc.CallOption) (*SwapResponse, error)
 	// loop: `monitor`
-	//Monitor will return a stream of swap updates for currently active swaps.
+	// Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (SwapClient_MonitorClient, error)
 	// loop: `listswaps`
-	//ListSwaps returns a list of all currently known swaps and their current
-	//status.
+	// ListSwaps returns a list of all currently known swaps and their current
+	// status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
 	// loop: `swapinfo`
-	//SwapInfo returns all known details about a single swap.
+	// SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
 	// loop: `abandonswap`
-	//AbandonSwap allows the client to abandon a swap.
+	// AbandonSwap allows the client to abandon a swap.
 	AbandonSwap(ctx context.Context, in *AbandonSwapRequest, opts ...grpc.CallOption) (*AbandonSwapResponse, error)
 	// loop: `terms`
-	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*OutTermsResponse, error)
 	// loop: `quote`
-	//LoopOutQuote returns a quote for a loop out swap with the provided
-	//parameters.
+	// LoopOutQuote returns a quote for a loop out swap with the provided
+	// parameters.
 	LoopOutQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*OutQuoteResponse, error)
 	// loop: `terms`
-	//GetTerms returns the terms that the server enforces for swaps.
+	// GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*InTermsResponse, error)
 	// loop: `quote`
-	//GetQuote returns a quote for a swap with the provided parameters.
+	// GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*InQuoteResponse, error)
-	//
-	//Probe asks he sever to probe the route to us to have a better upfront
-	//estimate about routing fees when loopin-in.
+	// Probe asks he sever to probe the route to us to have a better upfront
+	// estimate about routing fees when loopin-in.
 	Probe(ctx context.Context, in *ProbeRequest, opts ...grpc.CallOption) (*ProbeResponse, error)
 	// loop: `listauth`
-	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
+	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
+	// Deprecated: use GetL402Tokens.
+	// This API is provided to maintain backward compatibility with gRPC clients
+	// (e.g. `loop listauth`, Terminal Web, RTL).
+	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	// but this does not affect binary encoding, so we can use type L402Token here.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 	// loop: `getinfo`
-	//GetInfo gets basic information about the loop daemon.
+	// GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
 	// loop: `getparams`
-	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
-	//is currently configured with. This may be nil if nothing is configured.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
+	// is currently configured with. This may be nil if nothing is configured.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error)
 	// loop: `setparams`
-	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
-	//manager. Note that the full set of parameters must be provided, because
-	//this call fully overwrites our existing parameters.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
+	// manager. Note that the full set of parameters must be provided, because
+	// this call fully overwrites our existing parameters.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(ctx context.Context, in *SetLiquidityParamsRequest, opts ...grpc.CallOption) (*SetLiquidityParamsResponse, error)
 	// loop: `suggestswaps`
-	//SuggestSwaps returns a list of recommended swaps based on the current
-	//state of your node's channels and it's liquidity manager parameters.
-	//Note that only loop out suggestions are currently supported.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// SuggestSwaps returns a list of recommended swaps based on the current
+	// state of your node's channels and it's liquidity manager parameters.
+	// Note that only loop out suggestions are currently supported.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(ctx context.Context, in *SuggestSwapsRequest, opts ...grpc.CallOption) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`
-	//ListReservations returns a list of all reservations the server opened to us.
+	// ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
 	// loop: `instantout`
-	//InstantOut initiates an instant out swap with the given parameters.
+	// InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error)
 	// loop: `instantoutquote`
-	//InstantOutQuote returns a quote for an instant out swap with the provided
-	//parameters.
+	// InstantOutQuote returns a quote for an instant out swap with the provided
+	// parameters.
 	InstantOutQuote(ctx context.Context, in *InstantOutQuoteRequest, opts ...grpc.CallOption) (*InstantOutQuoteResponse, error)
 	// loop: `listinstantouts`
-	//ListInstantOuts returns a list of all currently known instant out swaps and
-	//their current status.
+	// ListInstantOuts returns a list of all currently known instant out swaps and
+	// their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	//ListUnspentDeposits returns a list of utxos deposited at a static address.
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
 }
 
@@ -235,6 +240,15 @@ func (c *swapClientClient) Probe(ctx context.Context, in *ProbeRequest, opts ...
 	return out, nil
 }
 
+func (c *swapClientClient) GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
+	out := new(TokensResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetL402Tokens", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error) {
 	out := new(TokensResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLsatTokens", in, out, opts...)
@@ -339,89 +353,94 @@ func (c *swapClientClient) ListUnspentDeposits(ctx context.Context, in *ListUnsp
 // for forward compatibility
 type SwapClientServer interface {
 	// loop: `out`
-	//LoopOut initiates an loop out swap with the given parameters. The call
-	//returns after the swap has been set up with the swap server. From that
-	//point onwards, progress can be tracked via the SwapStatus stream that is
-	//returned from Monitor().
+	// LoopOut initiates an loop out swap with the given parameters. The call
+	// returns after the swap has been set up with the swap server. From that
+	// point onwards, progress can be tracked via the SwapStatus stream that is
+	// returned from Monitor().
 	LoopOut(context.Context, *LoopOutRequest) (*SwapResponse, error)
 	// loop: `in`
-	//LoopIn initiates a loop in swap with the given parameters. The call
-	//returns after the swap has been set up with the swap server. From that
-	//point onwards, progress can be tracked via the SwapStatus stream
-	//that is returned from Monitor().
+	// LoopIn initiates a loop in swap with the given parameters. The call
+	// returns after the swap has been set up with the swap server. From that
+	// point onwards, progress can be tracked via the SwapStatus stream
+	// that is returned from Monitor().
 	LoopIn(context.Context, *LoopInRequest) (*SwapResponse, error)
 	// loop: `monitor`
-	//Monitor will return a stream of swap updates for currently active swaps.
+	// Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(*MonitorRequest, SwapClient_MonitorServer) error
 	// loop: `listswaps`
-	//ListSwaps returns a list of all currently known swaps and their current
-	//status.
+	// ListSwaps returns a list of all currently known swaps and their current
+	// status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
 	// loop: `swapinfo`
-	//SwapInfo returns all known details about a single swap.
+	// SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
 	// loop: `abandonswap`
-	//AbandonSwap allows the client to abandon a swap.
+	// AbandonSwap allows the client to abandon a swap.
 	AbandonSwap(context.Context, *AbandonSwapRequest) (*AbandonSwapResponse, error)
 	// loop: `terms`
-	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(context.Context, *TermsRequest) (*OutTermsResponse, error)
 	// loop: `quote`
-	//LoopOutQuote returns a quote for a loop out swap with the provided
-	//parameters.
+	// LoopOutQuote returns a quote for a loop out swap with the provided
+	// parameters.
 	LoopOutQuote(context.Context, *QuoteRequest) (*OutQuoteResponse, error)
 	// loop: `terms`
-	//GetTerms returns the terms that the server enforces for swaps.
+	// GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(context.Context, *TermsRequest) (*InTermsResponse, error)
 	// loop: `quote`
-	//GetQuote returns a quote for a swap with the provided parameters.
+	// GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*InQuoteResponse, error)
-	//
-	//Probe asks he sever to probe the route to us to have a better upfront
-	//estimate about routing fees when loopin-in.
+	// Probe asks he sever to probe the route to us to have a better upfront
+	// estimate about routing fees when loopin-in.
 	Probe(context.Context, *ProbeRequest) (*ProbeResponse, error)
 	// loop: `listauth`
-	//GetLsatTokens returns all LSAT tokens the daemon ever paid for.
+	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error)
+	// Deprecated: use GetL402Tokens.
+	// This API is provided to maintain backward compatibility with gRPC clients
+	// (e.g. `loop listauth`, Terminal Web, RTL).
+	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	// but this does not affect binary encoding, so we can use type L402Token here.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
 	// loop: `getinfo`
-	//GetInfo gets basic information about the loop daemon.
+	// GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
 	// loop: `getparams`
-	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
-	//is currently configured with. This may be nil if nothing is configured.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
+	// is currently configured with. This may be nil if nothing is configured.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error)
 	// loop: `setparams`
-	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
-	//manager. Note that the full set of parameters must be provided, because
-	//this call fully overwrites our existing parameters.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
+	// manager. Note that the full set of parameters must be provided, because
+	// this call fully overwrites our existing parameters.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(context.Context, *SetLiquidityParamsRequest) (*SetLiquidityParamsResponse, error)
 	// loop: `suggestswaps`
-	//SuggestSwaps returns a list of recommended swaps based on the current
-	//state of your node's channels and it's liquidity manager parameters.
-	//Note that only loop out suggestions are currently supported.
-	//[EXPERIMENTAL]: endpoint is subject to change.
+	// SuggestSwaps returns a list of recommended swaps based on the current
+	// state of your node's channels and it's liquidity manager parameters.
+	// Note that only loop out suggestions are currently supported.
+	// [EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`
-	//ListReservations returns a list of all reservations the server opened to us.
+	// ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
 	// loop: `instantout`
-	//InstantOut initiates an instant out swap with the given parameters.
+	// InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error)
 	// loop: `instantoutquote`
-	//InstantOutQuote returns a quote for an instant out swap with the provided
-	//parameters.
+	// InstantOutQuote returns a quote for an instant out swap with the provided
+	// parameters.
 	InstantOutQuote(context.Context, *InstantOutQuoteRequest) (*InstantOutQuoteResponse, error)
 	// loop: `listinstantouts`
-	//ListInstantOuts returns a list of all currently known instant out swaps and
-	//their current status.
+	// ListInstantOuts returns a list of all currently known instant out swaps and
+	// their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	//ListUnspentDeposits returns a list of utxos deposited at a static address.
+	// ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
@@ -462,6 +481,9 @@ func (UnimplementedSwapClientServer) GetLoopInQuote(context.Context, *QuoteReque
 }
 func (UnimplementedSwapClientServer) Probe(context.Context, *ProbeRequest) (*ProbeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
+}
+func (UnimplementedSwapClientServer) GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetL402Tokens not implemented")
 }
 func (UnimplementedSwapClientServer) GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLsatTokens not implemented")
@@ -710,6 +732,24 @@ func _SwapClient_Probe_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_GetL402Tokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).GetL402Tokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/GetL402Tokens",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).GetL402Tokens(ctx, req.(*TokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_GetLsatTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TokensRequest)
 	if err := dec(in); err != nil {
@@ -954,6 +994,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Probe",
 			Handler:    _SwapClient_Probe_Handler,
+		},
+		{
+			MethodName: "GetL402Tokens",
+			Handler:    _SwapClient_GetL402Tokens_Handler,
 		},
 		{
 			MethodName: "GetLsatTokens",

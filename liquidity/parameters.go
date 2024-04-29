@@ -8,13 +8,12 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
-
-	clientrpc "github.com/lightninglabs/loop/looprpc"
 )
 
 var (

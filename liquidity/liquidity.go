@@ -46,6 +46,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
@@ -55,8 +56,6 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/ticker"
 	"google.golang.org/protobuf/proto"
-
-	clientrpc "github.com/lightninglabs/loop/looprpc"
 )
 
 const (

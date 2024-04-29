@@ -2,7 +2,7 @@ package loopd
 
 import (
 	"github.com/btcsuite/btclog"
-	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
@@ -39,7 +39,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	lnd.AddSubLogger(root, "LNDC", intercept, lndclient.UseLogger)
 	lnd.AddSubLogger(root, "STORE", intercept, loopdb.UseLogger)
 	lnd.AddSubLogger(root, "SADDR", intercept, staticaddr.UseLogger)
-	lnd.AddSubLogger(root, lsat.Subsystem, intercept, lsat.UseLogger)
+	lnd.AddSubLogger(root, l402.Subsystem, intercept, l402.UseLogger)
 	lnd.AddSubLogger(
 		root, liquidity.Subsystem, intercept, liquidity.UseLogger,
 	)
