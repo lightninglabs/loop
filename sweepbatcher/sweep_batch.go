@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sync"
@@ -700,9 +701,11 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 		batchTx.TxIn[i].Witness = witness
 	}
 
-	b.log.Debugf("attempting to publish non-coop tx with feerate=%v, "+
-		"totalfee=%v, sweeps=%v, destAddr=%s", b.rbfCache.FeeRate, fee,
-		len(batchTx.TxIn), address.String())
+	b.log.Infof("attempting to publish non-coop tx=%v with feerate=%v, "+
+		"totalfee=%v, sweeps=%d, destAddr=%s", batchTx.TxHash(),
+		b.rbfCache.FeeRate, fee, len(batchTx.TxIn), address)
+
+	b.debugLogTx("serialized non-coop sweep", batchTx)
 
 	err = b.wallet.PublishTransaction(
 		ctx, batchTx, labels.LoopOutBatchSweepSuccess(b.id),
@@ -846,9 +849,11 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		return fee, err, false
 	}
 
-	b.log.Debugf("attempting to publish coop tx with feerate=%v, "+
-		"totalfee=%v, sweeps=%v, destAddr=%s", b.rbfCache.FeeRate, fee,
-		len(batchTx.TxIn), address.String())
+	b.log.Infof("attempting to publish coop tx=%v with feerate=%v, "+
+		"totalfee=%v, sweeps=%d, destAddr=%s", batchTx.TxHash(),
+		b.rbfCache.FeeRate, fee, len(batchTx.TxIn), address)
+
+	b.debugLogTx("serialized coop sweep", batchTx)
 
 	err = b.wallet.PublishTransaction(
 		ctx, batchTx, labels.LoopOutBatchSweepSuccess(b.id),
@@ -864,6 +869,17 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 	b.batchPkScript = batchPkScript
 
 	return fee, nil, true
+}
+
+func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
+	// Serialize the transaction and convert to hex string.
+	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
+	if err := tx.Serialize(buf); err != nil {
+		b.log.Errorf("failed to serialize tx for debug log: %v", err)
+		return
+	}
+
+	b.log.Debugf("%s: %s", msg, hex.EncodeToString(buf.Bytes()))
 }
 
 // coopSignBatchTx collects the necessary signatures from the server in order
