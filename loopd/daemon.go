@@ -51,7 +51,7 @@ type ListenerCfg struct {
 	// on the passed TLS configuration.
 	restListener func(*tls.Config) (net.Listener, error)
 
-	// getLnd returns a grpc connection to an lnd instance.
+	// getLnd returns a grpc connection to a lnd instance.
 	getLnd func(lndclient.Network, *lndConfig) (*lndclient.GrpcLndServices,
 		error)
 }
@@ -118,9 +118,9 @@ func New(config *Config, lisCfg *ListenerCfg) *Daemon {
 // Start starts loopd in daemon mode. It will listen for grpc connections,
 // execute commands and pass back swap status information.
 func (d *Daemon) Start() error {
-	// There should be no reason to start the daemon twice. Therefore return
-	// an error if that's tried. This is mostly to guard against Start and
-	// StartAsSubserver both being called.
+	// There should be no reason to start the daemon twice. Therefore,
+	// return an error if that's tried. This is mostly to guard against
+	// Start and StartAsSubserver both being called.
 	if atomic.AddInt32(&d.started, 1) != 1 {
 		return errOnlyStartOnce
 	}
@@ -135,7 +135,7 @@ func (d *Daemon) Start() error {
 
 	// With lnd connected, initialize everything else, such as the swap
 	// server client, the swap client RPC server instance and our main swap
-	// and error handlers. If this fails, then nothing has been started yet
+	// and error handlers. If this fails, then nothing has been started yet,
 	// and we can just return the error.
 	err = d.initialize(true)
 	if errors.Is(err, bbolt.ErrTimeout) {
@@ -322,7 +322,7 @@ func (d *Daemon) startWebServers() error {
 			err := d.restServer.Serve(d.restListener)
 			// ErrServerClosed is always returned when the proxy is
 			// shut down, so don't log it.
-			if err != nil && err != http.ErrServerClosed {
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				// Notify the main error handler goroutine that
 				// we exited unexpectedly here. We don't have to
 				// worry about blocking as the internal error
@@ -341,7 +341,7 @@ func (d *Daemon) startWebServers() error {
 
 		log.Infof("RPC server listening on %s", d.grpcListener.Addr())
 		err = d.grpcServer.Serve(d.grpcListener)
-		if err != nil && err != grpc.ErrServerStopped {
+		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			// Notify the main error handler goroutine that
 			// we exited unexpectedly here. We don't have to
 			// worry about blocking as the internal error
@@ -680,9 +680,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		var runtimeErr error
 
 		// There are only two ways this goroutine can exit. Either there
-		// is an internal error or the caller requests shutdown. In both
-		// cases we wait for the stop to complete before we signal the
-		// caller that we're done.
+		// is an internal error or the caller requests a shutdown.
+		// In both cases we wait for the stop to complete before we
+		// signal the caller that we're done.
 		select {
 		case runtimeErr = <-d.internalErrChan:
 			log.Errorf("Runtime error in daemon, shutting down: "+
@@ -691,7 +691,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-d.quit:
 		}
 
-		// We need to shutdown before sending the error on the channel,
+		// We need to shut down before sending the error on the channel,
 		// otherwise a caller might exit the process too early.
 		d.stop()
 		cleanupMacaroonStore()
@@ -722,7 +722,7 @@ func (d *Daemon) stop() {
 		d.mainCtxCancel()
 	}
 
-	// As there is no swap activity anymore, we can forcefully shutdown the
+	// As there is no swap activity anymore, we can forcefully shut down the
 	// gRPC and HTTP servers now.
 	log.Infof("Stopping gRPC server")
 	if d.grpcServer != nil {
