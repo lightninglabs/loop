@@ -713,10 +713,10 @@ message ServerAddressParameters {
 }
 
 message ServerWithdrawRequest {
-    // The deposit outpoints the client wishes to close.
+    // The deposit outpoints the client wishes to withdraw.
     repeated PrevoutInfo outpoints = 1;
 
-    // The nonces that the client used to generate the coop close tx sigs.
+    // The nonces that the client used to generate the withdrawal tx sigs.
     repeated bytes client_nonces = 2;
 
     // The address that the client wants to sweep the static address deposits
