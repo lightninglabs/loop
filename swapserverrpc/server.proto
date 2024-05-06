@@ -655,8 +655,17 @@ enum StaticAddressProtocolVersion {
 }
 
 service StaticAddressServer {
+    // ServerNewAddress generates a new static address for the client to use.
+    // The server will generate the address and return the server key and the
+    // address's CSV expiry.
     rpc ServerNewAddress (ServerNewAddressRequest)
         returns (ServerNewAddressResponse);
+
+    // ServerWithdrawDeposits allows to cooperatively sweep deposits that
+    // haven't timed out yet to the client's wallet. The server will generate
+    // the partial sigs for the client's selected deposits.
+    rpc ServerWithdrawDeposits (ServerWithdrawRequest)
+        returns (ServerWithdrawResponse);
 }
 
 message ServerNewAddressRequest {
@@ -677,4 +686,27 @@ message ServerAddressParameters {
 
     // The CSV expiry for the MuSig2 static address output.
     uint32 expiry = 2;
+}
+
+message ServerWithdrawRequest {
+    // The deposit outpoints the client wishes to withdraw.
+    repeated PrevoutInfo outpoints = 1;
+
+    // The nonces that the client used to generate the withdrawal tx sigs.
+    repeated bytes client_nonces = 2;
+
+    // The address that the client wants to sweep the static address deposits
+    // to.
+    string client_sweep_addr = 3;
+
+    // The fee rate in sat/kw that the client wants to use for the sweep.
+    uint64 tx_fee_rate = 4;
+}
+
+message ServerWithdrawResponse {
+    // The sweep sigs that the server generated for the htlc.
+    repeated bytes musig2_sweep_sigs = 1;
+
+    // The nonces that the server used to generate the sweepless sweep sigs.
+    repeated bytes server_nonces = 2;
 }
