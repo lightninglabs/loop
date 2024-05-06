@@ -35,7 +35,7 @@ type Deposit struct {
 	// state is the current state of the deposit.
 	state fsm.StateType
 
-	// The outpoint of the deposit.
+	// Outpoint of the deposit.
 	wire.OutPoint
 
 	// Value is the amount of the deposit.
@@ -51,6 +51,10 @@ type Deposit struct {
 
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
+
+	// WithdrawalSweepAddress is the address that is used to
+	// cooperatively sweep the deposit to before it is expired.
+	WithdrawalSweepAddress string
 
 	sync.Mutex
 }
@@ -68,7 +72,7 @@ func (d *Deposit) IsInFinalState() bool {
 	d.Lock()
 	defer d.Unlock()
 
-	return d.state == Expired || d.state == Failed
+	return d.state == Expired || d.state == Withdrawn || d.state == Failed
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
