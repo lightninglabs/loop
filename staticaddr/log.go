@@ -4,6 +4,7 @@ import (
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightningnetwork/lnd/build"
 )
 
@@ -25,4 +26,5 @@ func UseLogger(logger btclog.Logger) {
 	log = logger
 	address.UseLogger(log)
 	deposit.UseLogger(log)
+	withdraw.UseLogger(log)
 }
