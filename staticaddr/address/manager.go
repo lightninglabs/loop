@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"

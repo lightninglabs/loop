@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -29,6 +31,10 @@ const (
 	// MaxConfs is unset since we don't require a max number of
 	// confirmations for deposits.
 	MaxConfs = 0
+
+	// DefaultTransitionTimeout is the default timeout for transitions in
+	// the deposit state machine.
+	DefaultTransitionTimeout = 1 * time.Minute
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -128,7 +134,7 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 	}
 
 	// Start the deposit notifier.
-	m.pollDeposits(ctx)
+	m.pollDeposits(m.runCtx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -419,4 +425,90 @@ func (m *Manager) finalizeDeposit(outpoint wire.OutPoint) {
 	delete(m.activeDeposits, outpoint)
 	delete(m.deposits, outpoint)
 	m.Unlock()
+}
+
+// GetActiveDepositsInState returns all active deposits.
+func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
+	[]*Deposit, error) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	var deposits []*Deposit
+	for _, fsm := range m.activeDeposits {
+		if fsm.deposit.GetState() != stateFilter {
+			continue
+		}
+		deposits = append(deposits, fsm.deposit)
+	}
+
+	sort.Slice(deposits, func(i, j int) bool {
+		return deposits[i].ConfirmationHeight <
+			deposits[j].ConfirmationHeight
+	})
+
+	return deposits, nil
+}
+
+// GetAllDeposits returns all active deposits.
+func (m *Manager) GetAllDeposits() ([]*Deposit, error) {
+	return m.cfg.Store.AllDeposits(m.runCtx)
+}
+
+// AllOutpointsActiveDeposits checks if all deposits referenced by the outpoints
+// are active and in the specified state.
+func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
+	stateFilter fsm.StateType) ([]*Deposit, bool) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	deposits := make([]*Deposit, 0, len(outpoints))
+	for _, o := range outpoints {
+		if _, ok := m.activeDeposits[o]; !ok {
+			return nil, false
+		}
+
+		deposit := m.deposits[o]
+		if deposit.GetState() != stateFilter {
+			return nil, false
+		}
+
+		deposits = append(deposits, m.deposits[o])
+	}
+
+	return deposits, true
+}
+
+// TransitionDeposits allows a caller to transition a set of deposits to a new
+// state.
+func (m *Manager) TransitionDeposits(deposits []*Deposit, event fsm.EventType,
+	expectedFinalState fsm.StateType) error {
+
+	for _, d := range deposits {
+		m.Lock()
+		sm, ok := m.activeDeposits[d.OutPoint]
+		m.Unlock()
+		if !ok {
+			return fmt.Errorf("deposit not found")
+		}
+
+		err := sm.SendEvent(m.runCtx, event, nil)
+		if err != nil {
+			return err
+		}
+		err = sm.DefaultObserver.WaitForState(
+			m.runCtx, DefaultTransitionTimeout, expectedFinalState,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// UpdateDeposit overrides all fields of the deposit with given ID in the store.
+func (m *Manager) UpdateDeposit(d *Deposit) error {
+	return m.cfg.Store.UpdateDeposit(m.runCtx, d)
 }

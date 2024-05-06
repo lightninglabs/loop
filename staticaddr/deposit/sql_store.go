@@ -1,8 +1,10 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -74,16 +76,35 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 		}
 		confirmationHeight = sql.NullInt64{
 			Int64: deposit.ConfirmationHeight,
-			Valid: deposit.ConfirmationHeight != 0,
 		}
 	)
+
+	var finalizedWithdrawalTx string
+	if deposit.FinalizedWithdrawalTx != nil {
+		var buffer bytes.Buffer
+		err := deposit.FinalizedWithdrawalTx.Serialize(
+			&buffer,
+		)
+		if err != nil {
+			return err
+		}
+
+		finalizedWithdrawalTx = hex.EncodeToString(buffer.Bytes())
+	}
 
 	updateArgs := sqlc.UpdateDepositParams{
 		DepositID:          deposit.ID[:],
 		TxHash:             txHash,
 		OutIndex:           outIndex.Int32,
 		ConfirmationHeight: confirmationHeight.Int64,
-		ExpirySweepTxid:    deposit.ExpirySweepTxid[:],
+		FinalizedWithdrawalTx: sql.NullString{
+			String: finalizedWithdrawalTx,
+			Valid:  finalizedWithdrawalTx != "",
+		},
+	}
+
+	if deposit.ExpirySweepTxid != (chainhash.Hash{}) {
+		updateArgs.ExpirySweepTxid = deposit.ExpirySweepTxid[:]
 	}
 
 	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
@@ -193,6 +214,20 @@ func (s *SqlStore) toDeposit(row sqlc.Deposit,
 		expirySweepTxid = *hash
 	}
 
+	var finalizedWithdrawalTx *wire.MsgTx
+	if row.FinalizedWithdrawalTx.Valid {
+		finalizedWithdrawalTx = &wire.MsgTx{}
+		tx, err := hex.DecodeString(row.FinalizedWithdrawalTx.String)
+		if err != nil {
+			return nil, err
+		}
+
+		err = finalizedWithdrawalTx.Deserialize(bytes.NewReader(tx))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Deposit{
 		ID:    id,
 		state: fsm.StateType(lastUpdate.UpdateState),
@@ -200,10 +235,11 @@ func (s *SqlStore) toDeposit(row sqlc.Deposit,
 			Hash:  *txHash,
 			Index: uint32(row.OutIndex),
 		},
-		Value:                btcutil.Amount(row.Amount),
-		ConfirmationHeight:   row.ConfirmationHeight,
-		TimeOutSweepPkScript: row.TimeoutSweepPkScript,
-		ExpirySweepTxid:      expirySweepTxid,
+		Value:                 btcutil.Amount(row.Amount),
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeOutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       expirySweepTxid,
+		FinalizedWithdrawalTx: finalizedWithdrawalTx,
 	}, nil
 }
 
