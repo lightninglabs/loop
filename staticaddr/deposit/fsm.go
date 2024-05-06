@@ -29,6 +29,10 @@ var (
 var (
 	Deposited = fsm.StateType("Deposited")
 
+	Withdrawing = fsm.StateType("Withdrawing")
+
+	Withdrawn = fsm.StateType("Withdrawn")
+
 	PublishExpiredDeposit = fsm.StateType("PublishExpiredDeposit")
 
 	WaitForExpirySweep = fsm.StateType("WaitForExpirySweep")
@@ -40,11 +44,13 @@ var (
 
 // Events.
 var (
-	OnStart           = fsm.EventType("OnStart")
-	OnExpiry          = fsm.EventType("OnExpiry")
-	OnExpiryPublished = fsm.EventType("OnExpiryPublished")
-	OnExpirySwept     = fsm.EventType("OnExpirySwept")
-	OnRecover         = fsm.EventType("OnRecover")
+	OnStart             = fsm.EventType("OnStart")
+	OnWithdrawInitiated = fsm.EventType("OnWithdrawInitiated")
+	OnWithdrawn         = fsm.EventType("OnWithdrawn")
+	OnExpiry            = fsm.EventType("OnExpiry")
+	OnExpiryPublished   = fsm.EventType("OnExpiryPublished")
+	OnExpirySwept       = fsm.EventType("OnExpirySwept")
+	OnRecover           = fsm.EventType("OnRecover")
 )
 
 // FSM is the state machine that handles the instant out.
@@ -118,13 +124,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		for {
 			select {
 			case currentHeight := <-depoFsm.blockNtfnChan:
-				err := depoFsm.handleBlockNotification(
-					currentHeight,
-				)
-				if err != nil {
-					log.Errorf("error handling block "+
-						"notification: %v", err)
-				}
+				depoFsm.handleBlockNotification(currentHeight)
 
 			case <-ctx.Done():
 				return
@@ -138,15 +138,10 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 // handleBlockNotification inspects the current block height and sends the
 // OnExpiry event to publish the expiry sweep transaction if the deposit timed
 // out, or it republishes the expiry sweep transaction if it was not yet swept.
-func (f *FSM) handleBlockNotification(currentHeight uint32) error {
-	params, err := f.cfg.AddressManager.GetStaticAddressParameters(f.ctx)
-	if err != nil {
-		return err
-	}
-
+func (f *FSM) handleBlockNotification(currentHeight uint32) {
 	// If the deposit is expired but not yet sufficiently confirmed, we
 	// republish the expiry sweep transaction.
-	if f.deposit.IsExpired(currentHeight, params.Expiry) {
+	if f.deposit.IsExpired(currentHeight, f.params.Expiry) {
 		if f.deposit.IsInState(WaitForExpirySweep) {
 			f.PublishDepositExpirySweepAction(nil)
 		} else {
@@ -159,8 +154,6 @@ func (f *FSM) handleBlockNotification(currentHeight uint32) error {
 			}()
 		}
 	}
-
-	return nil
 }
 
 // DepositStatesV0 returns the states a deposit can be in.
@@ -174,8 +167,9 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		Deposited: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry:  PublishExpiredDeposit,
-				OnRecover: Deposited,
+				OnExpiry:            PublishExpiredDeposit,
+				OnWithdrawInitiated: Withdrawing,
+				OnRecover:           Deposited,
 			},
 			Action: fsm.NoOpAction,
 		},
@@ -209,6 +203,36 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnExpiry: Expired,
 			},
 			Action: f.SweptExpiredDepositAction,
+		},
+		Withdrawing: fsm.State{
+			Transitions: fsm.Transitions{
+				OnWithdrawn: Withdrawn,
+				// Upon recovery, we go back to the Deposited
+				// state. The deposit by then has a withdrawal
+				// address stamped to it which will cause it to
+				// transition into the Withdrawing state again.
+				OnRecover: Deposited,
+
+				// A precondition for the Withdrawing state is
+				// that the withdrawal transaction has been
+				// broadcast. If the deposit expires while the
+				// withdrawal isn't confirmed, we can ignore the
+				// expiry.
+				OnExpiry: Withdrawing,
+
+				// If the withdrawal failed we go back to
+				// Deposited, hoping that another withdrawal
+				// attempt will be successful. Alternatively,
+				// the client can wait for the timeout sweep.
+				fsm.OnError: Deposited,
+			},
+			Action: fsm.NoOpAction,
+		},
+		Withdrawn: fsm.State{
+			Transitions: fsm.Transitions{
+				OnExpiry: Expired,
+			},
+			Action: f.WithdrawnDepositAction,
 		},
 		Failed: fsm.State{
 			Transitions: fsm.Transitions{
