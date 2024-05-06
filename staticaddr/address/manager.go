@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightninglabs/loop/staticaddr/script"
@@ -21,14 +20,6 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
-
-var (
-	log btclog.Logger
-)
-
-func init() {
-	log = staticaddr.GetLogger()
-}
 
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
