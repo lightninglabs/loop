@@ -24,7 +24,11 @@ CREATE TABLE IF NOT EXISTS deposits (
     timeout_sweep_pk_script BYTEA NOT NULL,
 
     -- expiry_sweep_txid is the transaction id of the expiry sweep.
-    expiry_sweep_txid BLOB
+    expiry_sweep_txid BLOB,
+
+    -- withdrawal_sweep_address is the address that will be used to sweep the
+    -- deposit cooperatively with the server before it has expired.
+    withdrawal_sweep_address TEXT
 );
 
 -- deposit_updates contains all the updates to a deposit.
