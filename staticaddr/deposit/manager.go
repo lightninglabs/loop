@@ -9,10 +9,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/staticaddr"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -32,14 +30,6 @@ const (
 	// confirmations for deposits.
 	MaxConfs = 0
 )
-
-var (
-	log btclog.Logger
-)
-
-func init() {
-	log = staticaddr.GetLogger()
-}
 
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
