@@ -3091,9 +3091,9 @@ type ServerWithdrawRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// The deposit outpoints the client wishes to close.
+	// The deposit outpoints the client wishes to withdraw.
 	Outpoints []*PrevoutInfo `protobuf:"bytes,1,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
-	// The nonces that the client used to generate the coop close tx sigs.
+	// The nonces that the client used to generate the withdrawal tx sigs.
 	ClientNonces [][]byte `protobuf:"bytes,2,rep,name=client_nonces,json=clientNonces,proto3" json:"client_nonces,omitempty"`
 	// The address that the client wants to sweep the static address deposits
 	// to.
