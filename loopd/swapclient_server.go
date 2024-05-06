@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -26,6 +27,7 @@ import (
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -87,6 +89,7 @@ type swapClientServer struct {
 	instantOutManager    *instantout.Manager
 	staticAddressManager *address.Manager
 	depositManager       *deposit.Manager
+	withdrawalManager    *withdraw.Manager
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo
@@ -1346,6 +1349,67 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	return &clientrpc.ListUnspentDepositsResponse{Utxos: respUtxos}, nil
+}
+
+// WithdrawDeposits tries to obtain a partial signature from the server to spend
+// the selected deposits to the client's wallet.
+func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
+	req *clientrpc.WithdrawDepositsRequest) (
+	*clientrpc.WithdrawDepositsResponse, error) {
+
+	var (
+		isAllSelected  = req.All
+		isUtxoSelected = len(req.Outpoints) > 0
+		outpoints      []wire.OutPoint
+		err            error
+	)
+
+	switch {
+	case isAllSelected == isUtxoSelected:
+		return nil, fmt.Errorf("must select either all or some utxos")
+
+	case isAllSelected:
+		deposits, err := s.depositManager.GetActiveDepositsInState(
+			deposit.Deposited,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, d := range deposits {
+			outpoints = append(outpoints, d.OutPoint)
+		}
+
+	case isUtxoSelected:
+		outpoints, err = toServerOutpoints(req.Outpoints)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.withdrawalManager.WithdrawDeposits(ctx, outpoints)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.WithdrawDepositsResponse{}, err
+}
+
+func toServerOutpoints(outpoints []*clientrpc.OutPoint) ([]wire.OutPoint,
+	error) {
+
+	var serverOutpoints []wire.OutPoint
+	for _, o := range outpoints {
+		outpointStr := fmt.Sprintf("%s:%d", o.TxidStr, o.OutputIndex)
+		newOutpoint, err := wire.NewOutPointFromString(outpointStr)
+		if err != nil {
+			return nil, err
+		}
+
+		serverOutpoints = append(serverOutpoints, *newOutpoint)
+	}
+
+	return serverOutpoints, nil
 }
 
 func rpcAutoloopReason(reason liquidity.Reason) (clientrpc.AutoReason, error) {
