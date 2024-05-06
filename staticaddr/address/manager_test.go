@@ -32,6 +32,17 @@ type mockStaticAddressClient struct {
 	mock.Mock
 }
 
+func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
+	in *swapserverrpc.ServerWithdrawRequest,
+	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,
+	error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.ServerWithdrawResponse),
+		args.Error(1)
+}
+
 func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 	in *swapserverrpc.ServerNewAddressRequest, opts ...grpc.CallOption) (
 	*swapserverrpc.ServerNewAddressResponse, error) {
