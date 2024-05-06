@@ -24,7 +24,12 @@ CREATE TABLE IF NOT EXISTS deposits (
     timeout_sweep_pk_script BYTEA NOT NULL,
 
     -- expiry_sweep_txid is the transaction id of the expiry sweep.
-    expiry_sweep_txid BLOB
+    expiry_sweep_txid BLOB,
+
+    -- finalized_withdrawal_tx is the coop signed tx that will be used to sweep
+    -- the deposit back to the clients wallet. It will be republished on block
+    -- arrival and after daemon restarts.
+    finalized_withdrawal_tx TEXT
 );
 
 -- deposit_updates contains all the updates to a deposit.
