@@ -7,12 +7,13 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
 const allDeposits = `-- name: AllDeposits :many
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
 FROM
     deposits
 ORDER BY
@@ -37,6 +38,7 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
 			&i.ConfirmationHeight,
 			&i.TimeoutSweepPkScript,
 			&i.ExpirySweepTxid,
+			&i.FinalizedWithdrawalTx,
 		); err != nil {
 			return nil, err
 		}
@@ -59,7 +61,8 @@ INSERT INTO deposits (
     amount,
     confirmation_height,
     timeout_sweep_pk_script,
-    expiry_sweep_txid
+    expiry_sweep_txid,
+    finalized_withdrawal_tx
 ) VALUES (
              $1,
              $2,
@@ -67,18 +70,20 @@ INSERT INTO deposits (
              $4,
              $5,
              $6,
-             $7
+             $7,
+             $8
          )
 `
 
 type CreateDepositParams struct {
-	DepositID            []byte
-	TxHash               []byte
-	OutIndex             int32
-	Amount               int64
-	ConfirmationHeight   int64
-	TimeoutSweepPkScript []byte
-	ExpirySweepTxid      []byte
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
 }
 
 func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) error {
@@ -90,13 +95,14 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 		arg.ConfirmationHeight,
 		arg.TimeoutSweepPkScript,
 		arg.ExpirySweepTxid,
+		arg.FinalizedWithdrawalTx,
 	)
 	return err
 }
 
 const getDeposit = `-- name: GetDeposit :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
 FROM
     deposits
 WHERE
@@ -115,6 +121,7 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, er
 		&i.ConfirmationHeight,
 		&i.TimeoutSweepPkScript,
 		&i.ExpirySweepTxid,
+		&i.FinalizedWithdrawalTx,
 	)
 	return i, err
 }
@@ -172,17 +179,19 @@ SET
     tx_hash = $2,
     out_index = $3,
     confirmation_height = $4,
-    expiry_sweep_txid = $5
+    expiry_sweep_txid = $5,
+    finalized_withdrawal_tx = $6
 WHERE
     deposits.deposit_id = $1
 `
 
 type UpdateDepositParams struct {
-	DepositID          []byte
-	TxHash             []byte
-	OutIndex           int32
-	ConfirmationHeight int64
-	ExpirySweepTxid    []byte
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	ConfirmationHeight    int64
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
 }
 
 func (q *Queries) UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error {
@@ -192,6 +201,7 @@ func (q *Queries) UpdateDeposit(ctx context.Context, arg UpdateDepositParams) er
 		arg.OutIndex,
 		arg.ConfirmationHeight,
 		arg.ExpirySweepTxid,
+		arg.FinalizedWithdrawalTx,
 	)
 	return err
 }
