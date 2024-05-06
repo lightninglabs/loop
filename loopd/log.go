@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd"
@@ -41,6 +42,9 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	lnd.AddSubLogger(root, "STORE", intercept, loopdb.UseLogger)
 	lnd.AddSubLogger(root, l402.Subsystem, intercept, l402.UseLogger)
 	lnd.AddSubLogger(
+		root, staticaddr.Subsystem, intercept, staticaddr.UseLogger,
+	)
+	lnd.AddSubLogger(
 		root, liquidity.Subsystem, intercept, liquidity.UseLogger,
 	)
 	lnd.AddSubLogger(root, fsm.Subsystem, intercept, fsm.UseLogger)
@@ -61,7 +65,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 // genSubLogger creates a logger for a subsystem. We provide an instance of
 // a signal.Interceptor to be able to shutdown in the case of a critical error.
 func genSubLogger(root *build.RotatingLogWriter,
-	interceptor signal.Interceptor) func(string) btclog.Logger {
+    interceptor signal.Interceptor) func(string) btclog.Logger {
 
 	// Create a shutdown function which will request shutdown from our
 	// interceptor if it is listening.
