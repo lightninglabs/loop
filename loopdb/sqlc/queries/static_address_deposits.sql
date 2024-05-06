@@ -6,7 +6,8 @@ INSERT INTO deposits (
     amount,
     confirmation_height,
     timeout_sweep_pk_script,
-    expiry_sweep_txid
+    expiry_sweep_txid,
+    finalized_withdrawal_tx
 ) VALUES (
              $1,
              $2,
@@ -14,7 +15,8 @@ INSERT INTO deposits (
              $4,
              $5,
              $6,
-             $7
+             $7,
+             $8
          );
 
 -- name: UpdateDeposit :exec
@@ -23,7 +25,8 @@ SET
     tx_hash = $2,
     out_index = $3,
     confirmation_height = $4,
-    expiry_sweep_txid = $5
+    expiry_sweep_txid = $5,
+    finalized_withdrawal_tx = $6
 WHERE
     deposits.deposit_id = $1;
 
