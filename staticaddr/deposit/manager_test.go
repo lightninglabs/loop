@@ -51,6 +51,17 @@ type mockStaticAddressClient struct {
 	mock.Mock
 }
 
+func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
+	in *swapserverrpc.ServerWithdrawRequest,
+	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,
+	error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.ServerWithdrawResponse),
+		args.Error(1)
+}
+
 func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 	in *swapserverrpc.ServerNewAddressRequest, opts ...grpc.CallOption) (
 	*swapserverrpc.ServerNewAddressResponse, error) {
@@ -158,8 +169,7 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 // TestManager checks that the manager processes the right channel notifications
 // while a deposit is expiring.
 func TestManager(t *testing.T) {
-	ctxb, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
 	// Create the test context with required mocks.
 	testContext := newManagerTestContext(t)
@@ -167,7 +177,7 @@ func TestManager(t *testing.T) {
 	// Start the deposit manager.
 	go func() {
 		err := testContext.manager.Run(
-			ctxb, uint32(testContext.mockLnd.Height),
+			ctx, uint32(testContext.mockLnd.Height),
 		)
 		require.NoError(t, err)
 	}()
@@ -200,6 +210,9 @@ func TestManager(t *testing.T) {
 		BlockHeight: defaultDepositConfirmations + defaultExpiry + 3,
 		Tx:          expiryTx,
 	}
+
+	// Ensure that the deposit is finalized.
+	<-finalizedDepositChan
 }
 
 // ManagerTestContext is a helper struct that contains all the necessary
