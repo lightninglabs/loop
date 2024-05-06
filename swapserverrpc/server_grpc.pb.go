@@ -703,7 +703,14 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StaticAddressServerClient interface {
+	// ServerNewAddress generates a new static address for the client to use.
+	// The server will generate the address and return the server key and the
+	// address's CSV expiry.
 	ServerNewAddress(ctx context.Context, in *ServerNewAddressRequest, opts ...grpc.CallOption) (*ServerNewAddressResponse, error)
+	// ServerWithdrawDeposits allows to cooperatively sweep deposits that
+	// haven't timed out yet to the client's wallet. The server will generate
+	// the partial sigs for the client's selected deposits.
+	ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error)
 }
 
 type staticAddressServerClient struct {
@@ -723,11 +730,27 @@ func (c *staticAddressServerClient) ServerNewAddress(ctx context.Context, in *Se
 	return out, nil
 }
 
+func (c *staticAddressServerClient) ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error) {
+	out := new(ServerWithdrawResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/ServerWithdrawDeposits", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StaticAddressServerServer is the server API for StaticAddressServer service.
 // All implementations must embed UnimplementedStaticAddressServerServer
 // for forward compatibility
 type StaticAddressServerServer interface {
+	// ServerNewAddress generates a new static address for the client to use.
+	// The server will generate the address and return the server key and the
+	// address's CSV expiry.
 	ServerNewAddress(context.Context, *ServerNewAddressRequest) (*ServerNewAddressResponse, error)
+	// ServerWithdrawDeposits allows to cooperatively sweep deposits that
+	// haven't timed out yet to the client's wallet. The server will generate
+	// the partial sigs for the client's selected deposits.
+	ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error)
 	mustEmbedUnimplementedStaticAddressServerServer()
 }
 
@@ -737,6 +760,9 @@ type UnimplementedStaticAddressServerServer struct {
 
 func (UnimplementedStaticAddressServerServer) ServerNewAddress(context.Context, *ServerNewAddressRequest) (*ServerNewAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ServerNewAddress not implemented")
+}
+func (UnimplementedStaticAddressServerServer) ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ServerWithdrawDeposits not implemented")
 }
 func (UnimplementedStaticAddressServerServer) mustEmbedUnimplementedStaticAddressServerServer() {}
 
@@ -769,6 +795,24 @@ func _StaticAddressServer_ServerNewAddress_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StaticAddressServer_ServerWithdrawDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerWithdrawRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).ServerWithdrawDeposits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/ServerWithdrawDeposits",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).ServerWithdrawDeposits(ctx, req.(*ServerWithdrawRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StaticAddressServer_ServiceDesc is the grpc.ServiceDesc for StaticAddressServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -779,6 +823,10 @@ var StaticAddressServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ServerNewAddress",
 			Handler:    _StaticAddressServer_ServerNewAddress_Handler,
+		},
+		{
+			MethodName: "ServerWithdrawDeposits",
+			Handler:    _StaticAddressServer_ServerWithdrawDeposits_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
