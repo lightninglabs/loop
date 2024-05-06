@@ -39,6 +39,10 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.ConfirmationHeight,
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+		WithdrawalSweepAddress: sql.NullString{
+			String: deposit.WithdrawalSweepAddress,
+			Valid:  deposit.WithdrawalSweepAddress != "",
+		},
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -74,7 +78,6 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 		}
 		confirmationHeight = sql.NullInt64{
 			Int64: deposit.ConfirmationHeight,
-			Valid: deposit.ConfirmationHeight != 0,
 		}
 	)
 
@@ -84,6 +87,10 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 		OutIndex:           outIndex.Int32,
 		ConfirmationHeight: confirmationHeight.Int64,
 		ExpirySweepTxid:    deposit.ExpirySweepTxid[:],
+		WithdrawalSweepAddress: sql.NullString{
+			String: deposit.WithdrawalSweepAddress,
+			Valid:  deposit.WithdrawalSweepAddress != "",
+		},
 	}
 
 	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
@@ -200,10 +207,11 @@ func (s *SqlStore) toDeposit(row sqlc.Deposit,
 			Hash:  *txHash,
 			Index: uint32(row.OutIndex),
 		},
-		Value:                btcutil.Amount(row.Amount),
-		ConfirmationHeight:   row.ConfirmationHeight,
-		TimeOutSweepPkScript: row.TimeoutSweepPkScript,
-		ExpirySweepTxid:      expirySweepTxid,
+		Value:                  btcutil.Amount(row.Amount),
+		ConfirmationHeight:     row.ConfirmationHeight,
+		TimeOutSweepPkScript:   row.TimeoutSweepPkScript,
+		ExpirySweepTxid:        expirySweepTxid,
+		WithdrawalSweepAddress: row.WithdrawalSweepAddress.String,
 	}, nil
 }
 
