@@ -23,6 +23,7 @@ import (
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -508,6 +509,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		staticAddressManager *address.Manager
 		depositManager       *deposit.Manager
+		withdrawalManager    *withdraw.Manager
 	)
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
@@ -569,6 +571,18 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			Signer:         d.lnd.Signer,
 		}
 		depositManager = deposit.NewManager(depoCfg)
+
+		// Static address deposit withdrawal manager setup.
+		withdrawalCfg := &withdraw.ManagerConfig{
+			StaticAddressServerClient: staticAddressClient,
+			AddressManager:            staticAddressManager,
+			DepositManager:            depositManager,
+			WalletKit:                 d.lnd.WalletKit,
+			ChainParams:               d.lnd.ChainParams,
+			ChainNotifier:             d.lnd.ChainNotifier,
+			Signer:                    d.lnd.Signer,
+		}
+		withdrawalManager = withdraw.NewManager(withdrawalCfg)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -586,6 +600,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager:    instantOutManager,
 		staticAddressManager: staticAddressManager,
 		depositManager:       depositManager,
+		withdrawalManager:    withdrawalManager,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -715,6 +730,32 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			log.Info("Static address deposit manager stopped")
 		}()
 		depositManager.WaitInitComplete()
+	}
+
+	// Start the static address deposit withdrawal manager.
+	if withdrawalManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit withdrawal " +
+				"manager...")
+			err = withdrawalManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit withdrawal manager " +
+				"stopped")
+		}()
+		withdrawalManager.WaitInitComplete()
 	}
 
 	// Last, start our internal error handler. This will return exactly one
