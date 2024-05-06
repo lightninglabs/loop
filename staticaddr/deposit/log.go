@@ -1,9 +1,7 @@
-package staticaddr
+package deposit
 
 import (
 	"github.com/btcsuite/btclog"
-	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightningnetwork/lnd/build"
 )
 
@@ -23,6 +21,4 @@ func init() {
 // be used in preference to SetLogWriter if the caller is also using btclog.
 func UseLogger(logger btclog.Logger) {
 	log = logger
-	address.UseLogger(log)
-	deposit.UseLogger(log)
 }
