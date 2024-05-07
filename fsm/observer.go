@@ -100,12 +100,11 @@ func WithAbortEarlyOnErrorOption() WaitForStateOption {
 // the given duration before checking the state. This is useful if the
 // function is called immediately after sending an event to the state machine
 // and the state machine needs some time to process the event.
-func (s *CachedObserver) WaitForState(ctx context.Context,
+func (c *CachedObserver) WaitForState(ctx context.Context,
 	timeout time.Duration, state StateType,
 	opts ...WaitForStateOption) error {
 
 	var options fsmOptions
-
 	for _, opt := range opts {
 		opt.apply(&options)
 	}
@@ -120,61 +119,77 @@ func (s *CachedObserver) WaitForState(ctx context.Context,
 		}
 	}
 
+	// Create a new context with a timeout.
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Channel to notify when the desired state is reached
-	// or an error occurred.
-	ch := make(chan error)
+	ch := c.WaitForStateAsync(timeoutCtx, state, options.abortEarlyOnError)
 
-	// Goroutine to wait on condition variable
+	// Wait for either the condition to be met or for a timeout.
+	select {
+	case <-timeoutCtx.Done():
+		return NewErrWaitingForStateTimeout(state)
+
+	case err := <-ch:
+		return err
+	}
+}
+
+// WaitForStateAsync waits asynchronously until the passed context is canceled
+// or the expected state is reached. The function returns a channel that will
+// receive an error if the expected state is reached or an error occurred. If
+// the context is canceled before the expected state is reached, the channel
+// will receive an ErrWaitingForStateTimeout error.
+func (c *CachedObserver) WaitForStateAsync(ctx context.Context, state StateType,
+	abortOnEarlyError bool) chan error {
+
+	// Channel to notify when the desired state is reached or an error
+	// occurred.
+	ch := make(chan error, 1)
+
+	// Wait on the notification condition variable asynchronously to avoid
+	// blocking the caller.
 	go func() {
-		s.notificationMx.Lock()
-		defer s.notificationMx.Unlock()
+		c.notificationMx.Lock()
+		defer c.notificationMx.Unlock()
+
+		// writeResult writes the result to the channel. If the context
+		// is canceled, an ErrWaitingForStateTimeout error is written
+		// to the channel.
+		writeResult := func(err error) {
+			select {
+			case <-ctx.Done():
+				ch <- NewErrWaitingForStateTimeout(
+					state,
+				)
+
+			case ch <- err:
+			}
+		}
 
 		for {
-			// Check if the last state is the desired state
-			if s.lastNotification.NextState == state {
-				select {
-				case <-timeoutCtx.Done():
-					return
+			// Check if the last state is the desired state.
+			if c.lastNotification.NextState == state {
+				writeResult(nil)
+				return
+			}
 
-				case ch <- nil:
+			// Check if an error has occurred.
+			if c.lastNotification.Event == OnError {
+				lastErr := c.lastNotification.LastActionError
+				if abortOnEarlyError {
+					writeResult(lastErr)
 					return
 				}
 			}
 
-			// Check if an error occurred
-			if s.lastNotification.Event == OnError {
-				if options.abortEarlyOnError {
-					select {
-					case <-timeoutCtx.Done():
-						return
-
-					case ch <- s.lastNotification.LastActionError:
-						return
-					}
-				}
-			}
-
-			// Otherwise, wait for the next notification
-			s.notificationCond.Wait()
+			// Otherwise use the conditional variable to wait for
+			// the next notification.
+			c.notificationCond.Wait()
 		}
 	}()
 
-	// Wait for either the condition to be met or for a timeout
-	select {
-	case <-timeoutCtx.Done():
-		return NewErrWaitingForStateTimeout(
-			state, s.lastNotification.NextState,
-		)
-
-	case lastActionErr := <-ch:
-		if lastActionErr != nil {
-			return lastActionErr
-		}
-		return nil
-	}
+	return ch
 }
 
 // FixedSizeSlice is a slice with a fixed size.
