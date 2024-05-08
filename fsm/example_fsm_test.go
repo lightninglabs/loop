@@ -243,3 +243,82 @@ func TestExampleFSMFlow(t *testing.T) {
 		})
 	}
 }
+
+// TestObserverAsyncWait tests the observer's WaitForStateAsync function.
+func TestObserverAsyncWait(t *testing.T) {
+	testCases := []struct {
+		name          string
+		waitTime      time.Duration
+		blockTime     time.Duration
+		expectTimeout bool
+	}{
+		{
+			name:          "success",
+			waitTime:      time.Second,
+			blockTime:     time.Millisecond,
+			expectTimeout: false,
+		},
+		{
+			name:          "timeout",
+			waitTime:      time.Millisecond,
+			blockTime:     time.Second,
+			expectTimeout: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			service := &mockService{
+				respondChan: make(chan bool),
+			}
+
+			store := &mockStore{}
+
+			exampleContext := NewExampleFSMContext(service, store)
+			cachedObserver := NewCachedObserver(100)
+			exampleContext.RegisterObserver(cachedObserver)
+
+			t0 := time.Now()
+			timeoutCtx, cancel := context.WithTimeout(
+				context.Background(), tc.waitTime,
+			)
+			defer cancel()
+
+			// Wait for the final state.
+			errChan := cachedObserver.WaitForStateAsync(
+				timeoutCtx, StuffSuccess, true,
+			)
+
+			go func() {
+				err := exampleContext.SendEvent(
+					OnRequestStuff,
+					newInitStuffRequest(),
+				)
+
+				require.NoError(t, err)
+
+				time.Sleep(tc.blockTime)
+				service.respondChan <- true
+			}()
+
+			timeout := false
+			select {
+			case <-timeoutCtx.Done():
+				timeout = true
+
+			case <-errChan:
+			}
+			require.Equal(t, tc.expectTimeout, timeout)
+
+			t1 := time.Now()
+			diff := t1.Sub(t0)
+			if tc.expectTimeout {
+				require.Less(t, diff, tc.blockTime)
+			} else {
+				require.Less(t, diff, tc.waitTime)
+			}
+		})
+	}
+}
