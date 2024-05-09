@@ -169,7 +169,7 @@ func (q *Queries) GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, erro
 const getLoopOutSwap = `-- name: GetLoopOutSwap :one
 SELECT 
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep,
+    loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -204,6 +204,7 @@ type GetLoopOutSwapRow struct {
 	MaxPrepayRoutingFee    int64
 	PublicationDeadline    time.Time
 	SingleSweep            bool
+	PaymentTimeout         int32
 	SwapHash_3             []byte
 	SenderScriptPubkey     []byte
 	ReceiverScriptPubkey   []byte
@@ -239,6 +240,7 @@ func (q *Queries) GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopO
 		&i.MaxPrepayRoutingFee,
 		&i.PublicationDeadline,
 		&i.SingleSweep,
+		&i.PaymentTimeout,
 		&i.SwapHash_3,
 		&i.SenderScriptPubkey,
 		&i.ReceiverScriptPubkey,
@@ -253,7 +255,7 @@ func (q *Queries) GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopO
 const getLoopOutSwaps = `-- name: GetLoopOutSwaps :many
 SELECT 
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep,
+    loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM 
     swaps
@@ -288,6 +290,7 @@ type GetLoopOutSwapsRow struct {
 	MaxPrepayRoutingFee    int64
 	PublicationDeadline    time.Time
 	SingleSweep            bool
+	PaymentTimeout         int32
 	SwapHash_3             []byte
 	SenderScriptPubkey     []byte
 	ReceiverScriptPubkey   []byte
@@ -329,6 +332,7 @@ func (q *Queries) GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, er
 			&i.MaxPrepayRoutingFee,
 			&i.PublicationDeadline,
 			&i.SingleSweep,
+			&i.PaymentTimeout,
 			&i.SwapHash_3,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,
@@ -470,9 +474,10 @@ INSERT INTO loopout_swaps (
     prepay_invoice,
     max_prepay_routing_fee,
     publication_deadline,
-    single_sweep
+    single_sweep,
+    payment_timeout
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
 `
 
@@ -488,6 +493,7 @@ type InsertLoopOutParams struct {
 	MaxPrepayRoutingFee int64
 	PublicationDeadline time.Time
 	SingleSweep         bool
+	PaymentTimeout      int32
 }
 
 func (q *Queries) InsertLoopOut(ctx context.Context, arg InsertLoopOutParams) error {
@@ -503,6 +509,7 @@ func (q *Queries) InsertLoopOut(ctx context.Context, arg InsertLoopOutParams) er
 		arg.MaxPrepayRoutingFee,
 		arg.PublicationDeadline,
 		arg.SingleSweep,
+		arg.PaymentTimeout,
 	)
 	return err
 }
