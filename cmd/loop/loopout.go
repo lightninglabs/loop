@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +92,14 @@ var loopOutCommand = cli.Command{
 				"HTLC on-chain, to save on its chain fees. " +
 				"Not setting this flag therefore might " +
 				"result in a lower swap fee",
+		},
+		cli.DurationFlag{
+			Name: "payment_timeout",
+			Usage: "the timeout for each individual off-chain " +
+				"payment attempt. If not set, the default " +
+				"timeout of 1 hour will be used. As the " +
+				"payment might be retried, the actual total " +
+				"time may be longer",
 		},
 		forceFlag,
 		labelFlag,
@@ -235,6 +244,25 @@ func loopOut(ctx *cli.Context) error {
 		}
 	}
 
+	var paymentTimeout int64
+	if ctx.IsSet("payment_timeout") {
+		parsedTimeout := ctx.Duration("payment_timeout")
+		if parsedTimeout.Truncate(time.Second) != parsedTimeout {
+			return fmt.Errorf("payment timeout must be a " +
+				"whole number of seconds")
+		}
+
+		paymentTimeout = int64(parsedTimeout.Seconds())
+		if paymentTimeout <= 0 {
+			return fmt.Errorf("payment timeout must be a " +
+				"positive value")
+		}
+
+		if paymentTimeout > math.MaxUint32 {
+			return fmt.Errorf("payment timeout is too large")
+		}
+	}
+
 	resp, err := client.LoopOut(context.Background(), &looprpc.LoopOutRequest{
 		Amt:                     int64(amt),
 		Dest:                    destAddr,
@@ -252,6 +280,7 @@ func loopOut(ctx *cli.Context) error {
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 		Label:                   label,
 		Initiator:               defaultInitiator,
+		PaymentTimeout:          uint32(paymentTimeout),
 	})
 	if err != nil {
 		return err
