@@ -92,6 +92,12 @@ type OutRequest struct {
 	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
 	// appended to the user agent string.
 	Initiator string
+
+	// PaymentTimeout specifies the payment timeout for the individual
+	// off-chain payments. As the swap payment may be retried (depending on
+	// the configured maximum payment timeout) the total time spent may be
+	// a multiple of this value.
+	PaymentTimeout time.Duration
 }
 
 // Out contains the full details of a loop out request. This includes things
