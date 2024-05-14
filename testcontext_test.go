@@ -70,7 +70,7 @@ func mockMuSig2SignSweep(ctx context.Context,
 	return nil, nil, nil
 }
 
-func newSwapClient(config *clientConfig) *Client {
+func newSwapClient(t *testing.T, config *clientConfig) *Client {
 	sweeper := &sweep.Sweeper{
 		Lnd: config.LndServices,
 	}
@@ -79,11 +79,16 @@ func newSwapClient(config *clientConfig) *Client {
 
 	batcherStore := sweepbatcher.NewStoreMock()
 
+	sweepStore, err := sweepbatcher.NewSweepFetcherFromSwapStore(
+		config.Store, config.LndServices.ChainParams,
+	)
+	require.NoError(t, err)
+
 	batcher := sweepbatcher.NewBatcher(
 		config.LndServices.WalletKit, config.LndServices.ChainNotifier,
 		config.LndServices.Signer, mockMuSig2SignSweep,
 		mockVerifySchnorrSigSuccess, config.LndServices.ChainParams,
-		batcherStore, config.Store,
+		batcherStore, sweepStore,
 	)
 
 	executor := newExecutor(&executorConfig{
@@ -128,7 +133,7 @@ func createClientTestContext(t *testing.T,
 		return expiryChan
 	}
 
-	swapClient := newSwapClient(&clientConfig{
+	swapClient := newSwapClient(t, &clientConfig{
 		LndServices:       &clientLnd.LndServices,
 		Server:            serverMock,
 		Store:             store,
