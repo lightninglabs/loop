@@ -82,6 +82,14 @@ type BatcherStore interface {
 	TotalSweptAmount(ctx context.Context, id int32) (btcutil.Amount, error)
 }
 
+// LoopOutFetcher is used to load LoopOut swaps from the database.
+// It is implemented by loopdb.SwapStore.
+type LoopOutFetcher interface {
+	// FetchLoopOutSwap returns the loop out swap with the given hash.
+	FetchLoopOutSwap(ctx context.Context,
+		hash lntypes.Hash) (*loopdb.LoopOut, error)
+}
+
 // MuSig2SignSweep is a function that can be used to sign a sweep transaction
 // cooperatively with the swap server.
 type MuSig2SignSweep func(ctx context.Context,
@@ -183,9 +191,8 @@ type Batcher struct {
 	// batcher and the batches.
 	store BatcherStore
 
-	// swapStore includes all the database interactions that are needed for
-	// interacting with swaps.
-	swapStore loopdb.SwapStore
+	// swapStore is used to load LoopOut swaps from the database.
+	swapStore LoopOutFetcher
 
 	// wg is a waitgroup that is used to wait for all the goroutines to
 	// exit.
@@ -197,7 +204,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
 	signerClient lndclient.SignerClient, musig2ServerSigner MuSig2SignSweep,
 	verifySchnorrSig VerifySchnorrSig, chainparams *chaincfg.Params,
-	store BatcherStore, swapStore loopdb.SwapStore) *Batcher {
+	store BatcherStore, swapStore LoopOutFetcher) *Batcher {
 
 	return &Batcher{
 		batches:          make(map[int32]*batch),
