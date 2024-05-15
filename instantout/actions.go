@@ -425,20 +425,30 @@ func (f *FSM) PushPreimageAction(eventCtx fsm.EventContext) fsm.EventType {
 		return OnErrorPublishHtlc
 	}
 
-	txLabel := fmt.Sprintf("sweepless-sweep-%v",
-		f.InstantOut.swapPreimage.Hash())
-
-	// Publish the sweepless sweep transaction.
-	err = f.cfg.Wallet.PublishTransaction(f.ctx, sweepTx, txLabel)
-	if err != nil {
-		f.LastActionError = err
-		return OnErrorPublishHtlc
-	}
-
 	f.InstantOut.FinalizedSweeplessSweepTx = sweepTx
 	txHash := f.InstantOut.FinalizedSweeplessSweepTx.TxHash()
 
 	f.InstantOut.SweepTxHash = &txHash
+
+	return OnSweeplessSweepBuilt
+}
+
+// PublishSweeplessSweepAction publishes the sweepless sweep transaction.
+func (f *FSM) PublishSweeplessSweepAction(eventCtx fsm.EventContext) fsm.EventType {
+	if f.InstantOut.FinalizedSweeplessSweepTx == nil {
+		return f.HandleError(errors.New("sweep tx not finalized"))
+	}
+
+	txLabel := fmt.Sprintf("sweepless-sweep-%v",
+		f.InstantOut.swapPreimage.Hash())
+
+	sweepTx := f.InstantOut.FinalizedSweeplessSweepTx
+
+	// Publish the sweepless sweep transaction.
+	err := f.cfg.Wallet.PublishTransaction(f.ctx, sweepTx, txLabel)
+	if err != nil {
+		return f.HandleError(err)
+	}
 
 	return OnSweeplessSweepPublished
 }
