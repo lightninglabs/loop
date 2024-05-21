@@ -331,6 +331,9 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 					"accepted by batch %d", sweep.swapHash[:6],
 					batch.id)
 			}
+
+			// The sweep was updated in the batch, our job is done.
+			return nil
 		}
 	}
 
