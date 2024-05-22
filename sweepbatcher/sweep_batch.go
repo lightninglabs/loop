@@ -1158,9 +1158,8 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
 	totalSweptAmt btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
 
-	totalFee := spendTx.TxOut[0].Value - int64(totalSweptAmt)
-	feePortionPerSweep := (int64(totalSweptAmt) -
-		spendTx.TxOut[0].Value) / int64(numSweeps)
+	totalFee := int64(totalSweptAmt) - spendTx.TxOut[0].Value
+	feePortionPerSweep := totalFee / int64(numSweeps)
 	roundingDiff := totalFee - (int64(numSweeps) * feePortionPerSweep)
 
 	return btcutil.Amount(feePortionPerSweep), btcutil.Amount(roundingDiff)

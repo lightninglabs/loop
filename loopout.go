@@ -402,7 +402,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.swapPaymentChan:
 			s.swapPaymentChan = nil
 
-			err := s.handlePaymentResult(result)
+			err := s.handlePaymentResult(result, true)
 			if err != nil {
 				return err
 			}
@@ -418,7 +418,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.prePaymentChan:
 			s.prePaymentChan = nil
 
-			err := s.handlePaymentResult(result)
+			err := s.handlePaymentResult(result, false)
 			if err != nil {
 				return err
 			}
@@ -448,7 +448,12 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 	return s.persistState(globalCtx)
 }
 
-func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
+// handlePaymentResult processes the result of a payment attempt. If the
+// payment was successful and this is the main swap payment, the cost of the
+// swap is updated.
+func (s *loopOutSwap) handlePaymentResult(result paymentResult,
+	swapPayment bool) error {
+
 	switch {
 	// If our result has a non-nil error, our status will be nil. In this
 	// case the payment failed so we do not need to take any action.
@@ -456,9 +461,19 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
 		return nil
 
 	case result.status.State == lnrpc.Payment_SUCCEEDED:
-		s.cost.Server += result.status.Value.ToSatoshis() -
-			s.AmountRequested
-		s.cost.Offchain += result.status.Fee.ToSatoshis()
+		// Update the cost of the swap if this is the main swap payment.
+		if swapPayment {
+			// The client pays for the swap with the swap invoice,
+			// so we can calculate the total cost of the swap by
+			// subtracting the amount requested from the amount we
+			// actually paid.
+			s.cost.Server += result.status.Value.ToSatoshis() -
+				s.AmountRequested
+
+			// On top of the swap cost we also pay for routing which
+			// is reflected in the fee.
+			s.cost.Offchain += result.status.Fee.ToSatoshis()
+		}
 
 		return nil
 
@@ -917,7 +932,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.swapPaymentChan:
 				s.swapPaymentChan = nil
 
-				err := s.handlePaymentResult(result)
+				err := s.handlePaymentResult(result, true)
 				if err != nil {
 					return nil, err
 				}
@@ -939,7 +954,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.prePaymentChan:
 				s.prePaymentChan = nil
 
-				err := s.handlePaymentResult(result)
+				err := s.handlePaymentResult(result, false)
 				if err != nil {
 					return nil, err
 				}

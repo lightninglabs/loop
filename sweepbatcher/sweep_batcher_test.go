@@ -984,3 +984,48 @@ func TestSweepBatcherComposite(t *testing.T) {
 	require.True(t, batcherStore.AssertSweepStored(sweepReq5.SwapHash))
 	require.True(t, batcherStore.AssertSweepStored(sweepReq6.SwapHash))
 }
+
+// makeTestTx creates a test transaction with a single output of the given
+// value.
+func makeTestTx(value int64) *wire.MsgTx {
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxOut(wire.NewTxOut(value, nil))
+	return tx
+}
+
+// TestGetFeePortionForSweep tests that the fee portion for a sweep is correctly
+// calculated.
+func TestGetFeePortionForSweep(t *testing.T) {
+	tests := []struct {
+		name                 string
+		spendTxValue         int64
+		numSweeps            int
+		totalSweptAmt        btcutil.Amount
+		expectedFeePortion   btcutil.Amount
+		expectedRoundingDiff btcutil.Amount
+	}{
+		{
+			"Even Split",
+			100, 5, 200, 20, 0,
+		},
+		{
+			"Single Sweep",
+			100, 1, 200, 100, 0,
+		},
+		{
+			"With Rounding Diff",
+			200, 4, 350, 37, 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spendTx := makeTestTx(tt.spendTxValue)
+			feePortion, roundingDiff := getFeePortionForSweep(
+				spendTx, tt.numSweeps, tt.totalSweptAmt,
+			)
+			require.Equal(t, tt.expectedFeePortion, feePortion)
+			require.Equal(t, tt.expectedRoundingDiff, roundingDiff)
+		})
+	}
+}
