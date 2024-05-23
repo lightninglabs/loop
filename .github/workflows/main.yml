@@ -20,7 +20,7 @@ env:
 
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
-  GO_VERSION: 1.20.4
+  GO_VERSION: 1.21.10
 
 jobs:
   ########################
