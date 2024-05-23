@@ -1,4 +1,4 @@
-package staticaddr
+package version
 
 import (
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
