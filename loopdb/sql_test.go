@@ -60,6 +60,7 @@ func TestSqliteLoopOutStore(t *testing.T) {
 		SweepConfTarget:         2,
 		HtlcConfirmations:       2,
 		SwapPublicationDeadline: initiationTime,
+		PaymentTimeout:          time.Second * 11,
 	}
 
 	t.Run("no outgoing set", func(t *testing.T) {
@@ -120,6 +121,8 @@ func testSqliteLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
 		if expectedState == StatePreimageRevealed {
 			require.NotNil(t, swap.State().HtlcTxHash)
 		}
+
+		require.Equal(t, time.Second*11, swap.Contract.PaymentTimeout)
 	}
 
 	// If we create a new swap, then it should show up as being initialized

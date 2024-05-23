@@ -61,6 +61,10 @@ type LoopOutContract struct {
 	// allow the server to delay the publication in exchange for possibly
 	// lower fees.
 	SwapPublicationDeadline time.Time
+
+	// PaymentTimeout is the timeout for any individual off-chain payment
+	// attempt.
+	PaymentTimeout time.Duration
 }
 
 // ChannelSet stores a set of channels.

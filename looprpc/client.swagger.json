@@ -1268,6 +1268,11 @@
             "format": "byte"
           },
           "description": "The reservations to use for the swap. If this field is set, loop will try\nto use the instant out flow using the given reservations. If the\nreservations are not sufficient, the swap will fail. The swap amount must\nbe equal to the sum of the amounts of the reservations."
+        },
+        "payment_timeout": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The timeout in seconds to use for off-chain payments. Note that the swap\npayment is attempted multiple times where each attempt will set this value\nas the timeout for the payment."
         }
       }
     },

@@ -443,6 +443,7 @@ func loopOutToInsertArgs(hash lntypes.Hash,
 		PrepayInvoice:       loopOut.PrepayInvoice,
 		MaxPrepayRoutingFee: int64(loopOut.MaxPrepayRoutingFee),
 		PublicationDeadline: loopOut.SwapPublicationDeadline.UTC(),
+		PaymentTimeout:      int32(loopOut.PaymentTimeout.Seconds()),
 	}
 }
 
@@ -536,6 +537,9 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 			PrepayInvoice:           row.PrepayInvoice,
 			MaxPrepayRoutingFee:     btcutil.Amount(row.MaxPrepayRoutingFee),
 			SwapPublicationDeadline: row.PublicationDeadline,
+			PaymentTimeout: time.Duration(
+				row.PaymentTimeout,
+			) * time.Second,
 		},
 		Loop: Loop{
 			Hash: swapHash,

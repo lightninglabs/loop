@@ -64,6 +64,7 @@ type LoopoutSwap struct {
 	MaxPrepayRoutingFee int64
 	PublicationDeadline time.Time
 	SingleSweep         bool
+	PaymentTimeout      int32
 }
 
 type Reservation struct {
