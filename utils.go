@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/channeldb/models"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -50,21 +50,21 @@ func isPublicNode(ctx context.Context, lnd *lndclient.LndServices,
 // returns the channeldb structs filled with the data that is needed for
 // LND's SelectHopHints implementation.
 func fetchChannelEdgesByID(ctx context.Context, lnd *lndclient.LndServices,
-	chanID uint64) (*channeldb.ChannelEdgeInfo, *channeldb.ChannelEdgePolicy,
-	*channeldb.ChannelEdgePolicy, error) {
+	chanID uint64) (*models.ChannelEdgeInfo, *models.ChannelEdgePolicy,
+	*models.ChannelEdgePolicy, error) {
 
 	chanInfo, err := lnd.Client.GetChanInfo(ctx, chanID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	edgeInfo := &channeldb.ChannelEdgeInfo{
+	edgeInfo := &models.ChannelEdgeInfo{
 		ChannelID:     chanID,
 		NodeKey1Bytes: chanInfo.Node1,
 		NodeKey2Bytes: chanInfo.Node2,
 	}
 
-	policy1 := &channeldb.ChannelEdgePolicy{
+	policy1 := &models.ChannelEdgePolicy{
 		FeeBaseMSat: lnwire.MilliSatoshi(
 			chanInfo.Node1Policy.FeeBaseMsat,
 		),
@@ -74,7 +74,7 @@ func fetchChannelEdgesByID(ctx context.Context, lnd *lndclient.LndServices,
 		TimeLockDelta: uint16(chanInfo.Node1Policy.TimeLockDelta),
 	}
 
-	policy2 := &channeldb.ChannelEdgePolicy{
+	policy2 := &models.ChannelEdgePolicy{
 		FeeBaseMSat: lnwire.MilliSatoshi(
 			chanInfo.Node2Policy.FeeBaseMsat,
 		),
@@ -168,7 +168,7 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 			},
 		)
 
-		channelID := lnwire.NewChanIDFromOutPoint(outPoint)
+		channelID := lnwire.NewChanIDFromOutPoint(*outPoint)
 		scID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 		aliasCache[channelID] = scID
 	}
@@ -178,8 +178,8 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 			return isPublicNode(ctx, lnd, pubKey)
 		},
 		FetchChannelEdgesByID: func(chanID uint64) (
-			*channeldb.ChannelEdgeInfo, *channeldb.ChannelEdgePolicy,
-			*channeldb.ChannelEdgePolicy, error) {
+			*models.ChannelEdgeInfo, *models.ChannelEdgePolicy,
+			*models.ChannelEdgePolicy, error) {
 
 			return fetchChannelEdgesByID(ctx, lnd, chanID)
 		},
@@ -200,7 +200,7 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 // chanCanBeHopHint returns true if the target channel is eligible to be a hop
 // hint.
 func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
-	*channeldb.ChannelEdgePolicy, bool) {
+	*models.ChannelEdgePolicy, bool) {
 
 	// Since we're only interested in our private channels, we'll skip
 	// public ones.
@@ -255,7 +255,7 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 
 	// Now, we'll need to determine which is the correct policy for HTLCs
 	// being sent from the remote node.
-	var remotePolicy *channeldb.ChannelEdgePolicy
+	var remotePolicy *models.ChannelEdgePolicy
 	if bytes.Equal(remotePub[:], info.NodeKey1Bytes[:]) {
 		remotePolicy = p1
 	} else {
@@ -268,7 +268,7 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 // addHopHint creates a hop hint out of the passed channel and channel policy.
 // The new hop hint is appended to the passed slice.
 func addHopHint(hopHints *[][]zpay32.HopHint,
-	channel *HopHintInfo, chanPolicy *channeldb.ChannelEdgePolicy,
+	channel *HopHintInfo, chanPolicy *models.ChannelEdgePolicy,
 	aliasScid lnwire.ShortChannelID) {
 
 	hopHint := zpay32.HopHint{
@@ -331,8 +331,8 @@ type SelectHopHintsCfg struct {
 
 	// FetchChannelEdgesByID attempts to lookup the two directed edges for
 	// the channel identified by the channel ID.
-	FetchChannelEdgesByID func(chanID uint64) (*channeldb.ChannelEdgeInfo,
-		*channeldb.ChannelEdgePolicy, *channeldb.ChannelEdgePolicy,
+	FetchChannelEdgesByID func(chanID uint64) (*models.ChannelEdgeInfo,
+		*models.ChannelEdgePolicy, *models.ChannelEdgePolicy,
 		error)
 
 	// GetAlias allows the peer's alias SCID to be retrieved for private
@@ -414,7 +414,7 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 
 		// Lookup and see if there is an alias SCID that exists.
 		chanID := lnwire.NewChanIDFromOutPoint(
-			&channel.FundingOutpoint,
+			channel.FundingOutpoint,
 		)
 		alias, _ := cfg.GetAlias(chanID)
 
@@ -471,7 +471,7 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 
 		// Lookup and see if there's an alias SCID that exists.
 		chanID := lnwire.NewChanIDFromOutPoint(
-			&channel.FundingOutpoint,
+			channel.FundingOutpoint,
 		)
 		alias, _ := cfg.GetAlias(chanID)
 
