@@ -56,6 +56,12 @@ func (s *StoreMock) InsertSweepBatch(ctx context.Context,
 	return id, nil
 }
 
+// DropBatch drops a batch from the database.
+func (s *StoreMock) DropBatch(ctx context.Context, id int32) error {
+	delete(s.batches, id)
+	return nil
+}
+
 // UpdateSweepBatch updates a batch in the database.
 func (s *StoreMock) UpdateSweepBatch(ctx context.Context,
 	batch *dbBatch) error {
