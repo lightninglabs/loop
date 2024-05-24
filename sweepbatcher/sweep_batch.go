@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -48,7 +49,7 @@ const (
 )
 
 var (
-	ErrBatchShuttingDown = fmt.Errorf("batch shutting down")
+	ErrBatchShuttingDown = errors.New("batch shutting down")
 )
 
 // sweep stores any data related to sweeping a specific outpoint.
@@ -538,6 +539,12 @@ func (b *batch) publish(ctx context.Context) error {
 		fee         btcutil.Amount
 		coopSuccess bool
 	)
+
+	if len(b.sweeps) == 0 {
+		b.log.Debugf("skipping publish: no sweeps in the batch")
+
+		return nil
+	}
 
 	// Run the RBF rate update.
 	err = b.updateRbfRate(ctx)

@@ -2,6 +2,7 @@ package sweepbatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -46,36 +47,35 @@ const (
 type BatcherStore interface {
 	// FetchUnconfirmedSweepBatches fetches all the batches from the
 	// database that are not in a confirmed state.
-	FetchUnconfirmedSweepBatches(ctx context.Context) ([]*dbBatch,
-		error)
+	FetchUnconfirmedSweepBatches(ctx context.Context) ([]*dbBatch, error)
 
 	// InsertSweepBatch inserts a batch into the database, returning the id
 	// of the inserted batch.
-	InsertSweepBatch(ctx context.Context,
-		batch *dbBatch) (int32, error)
+	InsertSweepBatch(ctx context.Context, batch *dbBatch) (int32, error)
+
+	// DropBatch drops a batch from the database. This should only be used
+	// when a batch is empty.
+	DropBatch(ctx context.Context, id int32) error
 
 	// UpdateSweepBatch updates a batch in the database.
-	UpdateSweepBatch(ctx context.Context,
-		batch *dbBatch) error
+	UpdateSweepBatch(ctx context.Context, batch *dbBatch) error
 
 	// ConfirmBatch confirms a batch by setting its state to confirmed.
 	ConfirmBatch(ctx context.Context, id int32) error
 
 	// FetchBatchSweeps fetches all the sweeps that belong to a batch.
-	FetchBatchSweeps(ctx context.Context,
-		id int32) ([]*dbSweep, error)
+	FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep, error)
 
 	// UpsertSweep inserts a sweep into the database, or updates an existing
 	// sweep if it already exists.
 	UpsertSweep(ctx context.Context, sweep *dbSweep) error
 
 	// GetSweepStatus returns the completed status of the sweep.
-	GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (
-		bool, error)
+	GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (bool, error)
 
 	// GetParentBatch returns the parent batch of a (completed) sweep.
-	GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
-		*dbBatch, error)
+	GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (*dbBatch,
+		error)
 
 	// TotalSweptAmount returns the total amount swept by a (confirmed)
 	// batch.
@@ -135,7 +135,7 @@ type SpendNotifier struct {
 }
 
 var (
-	ErrBatcherShuttingDown = fmt.Errorf("batcher shutting down")
+	ErrBatcherShuttingDown = errors.New("batcher shutting down")
 )
 
 // Batcher is a system that is responsible for accepting sweep requests and
@@ -306,7 +306,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 		if batch.sweepExists(sweep.swapHash) {
 			accepted, err := batch.addSweep(ctx, sweep)
-			if err != nil {
+			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 				return err
 			}
 
@@ -321,7 +321,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
 		accepted, err := batch.addSweep(ctx, sweep)
-		if err != nil && err != ErrBatchShuttingDown {
+		if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 			return err
 		}
 
@@ -407,23 +407,23 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 // spinUpBatchDB spins up a batch that already existed in storage, then
 // returns it.
 func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
-	cfg := batchConfig{
-		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
-		batchConfTarget:    defaultBatchConfTarget,
-	}
-
-	rbfCache := rbfCache{
-		LastHeight: batch.rbfCache.LastHeight,
-		FeeRate:    batch.rbfCache.FeeRate,
-	}
-
 	dbSweeps, err := b.store.FetchBatchSweeps(ctx, batch.id)
 	if err != nil {
 		return err
 	}
 
 	if len(dbSweeps) == 0 {
-		return fmt.Errorf("batch %d has no sweeps", batch.id)
+		log.Infof("skipping restored batch %d as it has no sweeps",
+			batch.id)
+
+		// It is safe to drop this empty batch as it has no sweeps.
+		err := b.store.DropBatch(ctx, batch.id)
+		if err != nil {
+			log.Warnf("unable to drop empty batch %d: %v",
+				batch.id, err)
+		}
+
+		return nil
 	}
 
 	primarySweep := dbSweeps[0]
@@ -437,6 +437,11 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		}
 
 		sweeps[sweep.swapHash] = *sweep
+	}
+
+	rbfCache := rbfCache{
+		LastHeight: batch.rbfCache.LastHeight,
+		FeeRate:    batch.rbfCache.FeeRate,
 	}
 
 	batchKit := batchKit{
@@ -456,6 +461,11 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		purger:           b.AddSweep,
 		store:            b.store,
 		log:              batchPrefixLogger(fmt.Sprintf("%d", batch.id)),
+	}
+
+	cfg := batchConfig{
+		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
+		batchConfTarget:    defaultBatchConfTarget,
 	}
 
 	newBatch := NewBatchFromDB(cfg, batchKit)
