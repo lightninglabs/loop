@@ -216,6 +216,7 @@ func (b *Batcher) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer func() {
 		cancel()
+		close(b.quit)
 
 		for _, batch := range b.batches {
 			batch.Wait()
@@ -379,6 +380,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		verifySchnorrSig: b.VerifySchnorrSig,
 		purger:           b.AddSweep,
 		store:            b.store,
+		quit:             b.quit,
 	}
 
 	batch := NewBatch(cfg, batchKit)
@@ -461,6 +463,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		purger:           b.AddSweep,
 		store:            b.store,
 		log:              batchPrefixLogger(fmt.Sprintf("%d", batch.id)),
+		quit:             b.quit,
 	}
 
 	cfg := batchConfig{

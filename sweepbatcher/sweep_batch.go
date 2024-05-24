@@ -197,7 +197,11 @@ type batch struct {
 	// main event loop.
 	callLeave chan struct{}
 
-	// quit signals that the batch must stop.
+	// stopped signals that the batch has stopped.
+	stopped chan struct{}
+
+	// quit is owned by the parent batcher and signals that the batch must
+	// stop.
 	quit chan struct{}
 
 	// wallet is the wallet client used to create and publish the batch
@@ -261,6 +265,7 @@ type batchKit struct {
 	purger           Purger
 	store            BatcherStore
 	log              btclog.Logger
+	quit             chan struct{}
 }
 
 // scheduleNextCall schedules the next call to the batch handler's main event
@@ -270,6 +275,9 @@ func (b *batch) scheduleNextCall() (func(), error) {
 	case b.callEnter <- struct{}{}:
 
 	case <-b.quit:
+		return func() {}, ErrBatcherShuttingDown
+
+	case <-b.stopped:
 		return func() {}, ErrBatchShuttingDown
 	}
 
@@ -293,7 +301,8 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		errChan:          make(chan error, 1),
 		callEnter:        make(chan struct{}),
 		callLeave:        make(chan struct{}),
-		quit:             make(chan struct{}),
+		stopped:          make(chan struct{}),
+		quit:             bk.quit,
 		batchTxid:        bk.batchTxid,
 		wallet:           bk.wallet,
 		chainNotifier:    bk.chainNotifier,
@@ -320,7 +329,8 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) *batch {
 		errChan:          make(chan error, 1),
 		callEnter:        make(chan struct{}),
 		callLeave:        make(chan struct{}),
-		quit:             make(chan struct{}),
+		stopped:          make(chan struct{}),
+		quit:             bk.quit,
 		batchTxid:        bk.batchTxid,
 		batchPkScript:    bk.batchPkScript,
 		rbfCache:         bk.rbfCache,
@@ -447,7 +457,7 @@ func (b *batch) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer func() {
 		cancel()
-		close(b.quit)
+		close(b.stopped)
 		b.wg.Wait()
 	}()
 

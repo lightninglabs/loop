@@ -2,7 +2,7 @@ package sweepbatcher
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 	"time"
 
@@ -43,6 +43,15 @@ var dummyNotifier = SpendNotifier{
 	QuitChan:     make(chan bool, ntfnBufferSize),
 }
 
+func checkBatcherError(t *testing.T, err error) {
+	if !errors.Is(err, context.Canceled) &&
+		!errors.Is(err, ErrBatcherShuttingDown) &&
+		!errors.Is(err, ErrBatchShuttingDown) {
+
+		require.NoError(t, err)
+	}
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -60,9 +69,7 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -215,9 +222,7 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -354,9 +359,7 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create some sweep requests with timeouts not too far away, in order
@@ -561,9 +564,7 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -727,9 +728,7 @@ func TestSweepBatcherComposite(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
