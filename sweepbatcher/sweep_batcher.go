@@ -153,6 +153,10 @@ type Batcher struct {
 	// quit signals that the batch must stop.
 	quit chan struct{}
 
+	// initDone is a channel that is closed when the batcher has been
+	// initialized.
+	initDone chan struct{}
+
 	// wallet is the wallet kit client that is used by batches.
 	wallet lndclient.WalletKitClient
 
@@ -200,6 +204,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		sweepReqs:        make(chan SweepRequest),
 		errChan:          make(chan error, 1),
 		quit:             make(chan struct{}),
+		initDone:         make(chan struct{}),
 		wallet:           wallet,
 		chainNotifier:    chainNotifier,
 		signerClient:     signerClient,
@@ -238,6 +243,9 @@ func (b *Batcher) Run(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// Signal that the batcher has been initialized.
+	close(b.initDone)
 
 	for {
 		select {
