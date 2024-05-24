@@ -2,7 +2,8 @@ package sweepbatcher
 
 import (
 	"context"
-	"strings"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +44,15 @@ var dummyNotifier = SpendNotifier{
 	QuitChan:     make(chan bool, ntfnBufferSize),
 }
 
+func checkBatcherError(t *testing.T, err error) {
+	if !errors.Is(err, context.Canceled) &&
+		!errors.Is(err, ErrBatcherShuttingDown) &&
+		!errors.Is(err, ErrBatchShuttingDown) {
+
+		require.NoError(t, err)
+	}
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -60,9 +70,7 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -215,9 +223,7 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -354,9 +360,7 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create some sweep requests with timeouts not too far away, in order
@@ -561,9 +565,7 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -727,9 +729,7 @@ func TestSweepBatcherComposite(t *testing.T) {
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
 	go func() {
 		err := batcher.Run(ctx)
-		if !strings.Contains(err.Error(), "context canceled") {
-			require.NoError(t, err)
-		}
+		checkBatcherError(t, err)
 	}()
 
 	// Create a sweep request.
@@ -1028,4 +1028,86 @@ func TestGetFeePortionForSweep(t *testing.T) {
 			require.Equal(t, tt.expectedRoundingDiff, roundingDiff)
 		})
 	}
+}
+
+// TestRestoringEmptyBatch tests that the batcher can be restored with an empty
+// batch.
+func TestRestoringEmptyBatch(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	store := loopdb.NewStoreMock(t)
+
+	batcherStore := NewStoreMock()
+	_, err := batcherStore.InsertSweepBatch(ctx, &dbBatch{})
+	require.NoError(t, err)
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+		},
+
+		SwapInvoice: swapInvoice,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	batcher.sweepReqs <- sweepReq
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Once batcher receives sweep request it will eventually spin up a
+	// batch.
+	require.Eventually(t, func() bool {
+		// Make sure that the sweep was stored and we have exactly one
+		// active batch.
+		return batcherStore.AssertSweepStored(sweepReq.SwapHash) &&
+			len(batcher.batches) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure we have only one batch stored (as we dropped the dormant
+	// one).
+	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	// Now make it quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	checkBatcherError(t, runErr)
 }

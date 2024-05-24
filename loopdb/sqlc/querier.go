@@ -11,6 +11,7 @@ import (
 type Querier interface {
 	ConfirmBatch(ctx context.Context, id int32) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
+	DropBatch(ctx context.Context, id int32) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatchSweepsRow, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)

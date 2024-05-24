@@ -23,6 +23,9 @@ INSERT INTO sweep_batches (
         $6
 ) RETURNING id;
 
+-- name: DropBatch :exec
+DELETE FROM sweep_batches WHERE id = $1;
+
 -- name: UpdateBatch :exec
 UPDATE sweep_batches SET
         confirmed = $2,

@@ -25,6 +25,15 @@ func (q *Queries) ConfirmBatch(ctx context.Context, id int32) error {
 	return err
 }
 
+const dropBatch = `-- name: DropBatch :exec
+DELETE FROM sweep_batches WHERE id = $1
+`
+
+func (q *Queries) DropBatch(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, dropBatch, id)
+	return err
+}
+
 const getBatchSweeps = `-- name: GetBatchSweeps :many
 SELECT
         sweeps.id, sweeps.swap_hash, sweeps.batch_id, sweeps.outpoint_txid, sweeps.outpoint_index, sweeps.amt, sweeps.completed,
