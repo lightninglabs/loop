@@ -38,7 +38,7 @@ type BaseDB interface {
 	GetSwapUpdates(ctx context.Context, swapHash []byte) (
 		[]sqlc.SwapUpdate, error)
 
-	// FetchUnconfirmedSweepBatches fetches all the batches from the
+	// GetUnconfirmedBatches fetches all the batches from the
 	// database that are not in a confirmed state.
 	GetUnconfirmedBatches(ctx context.Context) ([]sqlc.SweepBatch, error)
 

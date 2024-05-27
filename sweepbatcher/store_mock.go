@@ -23,7 +23,7 @@ func NewStoreMock() *StoreMock {
 	}
 }
 
-// FetchUnconfirmedBatches fetches all the loop out sweep batches from the
+// FetchUnconfirmedSweepBatches fetches all the loop out sweep batches from the
 // database that are not in a confirmed state.
 func (s *StoreMock) FetchUnconfirmedSweepBatches(ctx context.Context) (
 	[]*dbBatch, error) {
