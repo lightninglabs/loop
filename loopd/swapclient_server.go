@@ -105,6 +105,17 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	log.Infof("Loop out request received")
 
+	// Note that LoopOutRequest.PaymentTimeout is unsigned and therefore
+	// cannot be negative.
+	paymentTimeout := time.Duration(in.PaymentTimeout) * time.Second
+
+	// Make sure we don't exceed the total allowed payment timeout.
+	if paymentTimeout > s.config.TotalPaymentTimeout {
+		return nil, fmt.Errorf("payment timeout %v exceeds maximum "+
+			"allowed timeout of %v", paymentTimeout,
+			s.config.TotalPaymentTimeout)
+	}
+
 	var sweepAddr btcutil.Address
 	var isExternalAddr bool
 	var err error
@@ -188,6 +199,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		SwapPublicationDeadline: publicationDeadline,
 		Label:                   in.Label,
 		Initiator:               in.Initiator,
+		PaymentTimeout:          paymentTimeout,
 	}
 
 	switch {

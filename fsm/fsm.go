@@ -306,23 +306,36 @@ func NoOpAction(_ EventContext) EventType {
 }
 
 // ErrConfigError is an error returned when the state machine is misconfigured.
-type ErrConfigError error
+type ErrConfigError struct {
+	msg string
+}
+
+// Error returns the error message.
+func (e ErrConfigError) Error() string {
+	return fmt.Sprintf("config error: %s", e.msg)
+}
 
 // NewErrConfigError creates a new ErrConfigError.
 func NewErrConfigError(msg string) ErrConfigError {
-	return (ErrConfigError)(fmt.Errorf("config error: %s", msg))
+	return ErrConfigError{
+		msg: msg,
+	}
 }
 
 // ErrWaitingForStateTimeout is an error returned when the state machine times
 // out while waiting for a state.
-type ErrWaitingForStateTimeout error
+type ErrWaitingForStateTimeout struct {
+	expected StateType
+}
+
+// Error returns the error message.
+func (e ErrWaitingForStateTimeout) Error() string {
+	return fmt.Sprintf("waiting for state timed out: %s", e.expected)
+}
 
 // NewErrWaitingForStateTimeout creates a new ErrWaitingForStateTimeout.
-func NewErrWaitingForStateTimeout(expected,
-	actual StateType) ErrWaitingForStateTimeout {
-
-	return (ErrWaitingForStateTimeout)(fmt.Errorf(
-		"waiting for state timeout: expected %s, actual: %s",
-		expected, actual,
-	))
+func NewErrWaitingForStateTimeout(expected StateType) ErrWaitingForStateTimeout {
+	return ErrWaitingForStateTimeout{
+		expected: expected,
+	}
 }

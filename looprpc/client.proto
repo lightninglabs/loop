@@ -290,6 +290,13 @@ message LoopOutRequest {
     be equal to the sum of the amounts of the reservations.
     */
     repeated bytes reservation_ids = 18;
+
+    /*
+    The timeout in seconds to use for off-chain payments. Note that the swap
+    payment is attempted multiple times where each attempt will set this value
+    as the timeout for the payment.
+    */
+    uint32 payment_timeout = 19;
 }
 
 /*

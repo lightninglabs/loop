@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -45,6 +46,9 @@ type BaseDB interface {
 	// the inserted batch.
 	InsertBatch(ctx context.Context, arg sqlc.InsertBatchParams) (
 		int32, error)
+
+	// DropBatch drops a batch from the database.
+	DropBatch(ctx context.Context, id int32) error
 
 	// UpdateBatch updates a batch in the database.
 	UpdateBatch(ctx context.Context, arg sqlc.UpdateBatchParams) error
@@ -106,6 +110,24 @@ func (s *SQLStore) InsertSweepBatch(ctx context.Context, batch *dbBatch) (int32,
 	error) {
 
 	return s.baseDb.InsertBatch(ctx, batchToInsertArgs(*batch))
+}
+
+// DropBatch drops a batch from the database. Note that we only use this call
+// for batches that have no sweeps and so we'd not be able to resume.
+func (s *SQLStore) DropBatch(ctx context.Context, id int32) error {
+	readOpts := loopdb.NewSqlReadOpts()
+	return s.baseDb.ExecTx(ctx, readOpts, func(tx *sqlc.Queries) error {
+		dbSweeps, err := tx.GetBatchSweeps(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		if len(dbSweeps) != 0 {
+			return fmt.Errorf("cannot drop a non-empty batch")
+		}
+
+		return tx.DropBatch(ctx, id)
+	})
 }
 
 // UpdateSweepBatch updates a batch in the database.

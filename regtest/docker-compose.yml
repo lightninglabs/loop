@@ -130,7 +130,7 @@ services:
       - "loopd"
       - "--network=regtest"
       - "--debuglevel=debug"
-      - "--server.host=loopclient:11009"
+      - "--server.host=loopserver:11009"
       - "--server.notls"
       - "--lnd.host=lndclient:10009"
       - "--lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon"

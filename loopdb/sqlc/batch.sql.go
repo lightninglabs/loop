@@ -25,11 +25,20 @@ func (q *Queries) ConfirmBatch(ctx context.Context, id int32) error {
 	return err
 }
 
+const dropBatch = `-- name: DropBatch :exec
+DELETE FROM sweep_batches WHERE id = $1
+`
+
+func (q *Queries) DropBatch(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, dropBatch, id)
+	return err
+}
+
 const getBatchSweeps = `-- name: GetBatchSweeps :many
 SELECT
         sweeps.id, sweeps.swap_hash, sweeps.batch_id, sweeps.outpoint_txid, sweeps.outpoint_index, sweeps.amt, sweeps.completed,
         swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-        loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep,
+        loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
         htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
         sweeps
@@ -75,6 +84,7 @@ type GetBatchSweepsRow struct {
 	MaxPrepayRoutingFee    int64
 	PublicationDeadline    time.Time
 	SingleSweep            bool
+	PaymentTimeout         int32
 	SwapHash_4             []byte
 	SenderScriptPubkey     []byte
 	ReceiverScriptPubkey   []byte
@@ -123,6 +133,7 @@ func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatch
 			&i.MaxPrepayRoutingFee,
 			&i.PublicationDeadline,
 			&i.SingleSweep,
+			&i.PaymentTimeout,
 			&i.SwapHash_4,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,

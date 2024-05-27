@@ -195,6 +195,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 			ProtocolVersion: loopdb.CurrentProtocolVersion(),
 		},
 		OutgoingChanSet: chanSet,
+		PaymentTimeout:  request.PaymentTimeout,
 	}
 
 	swapKit := newSwapKit(
@@ -402,7 +403,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.swapPaymentChan:
 			s.swapPaymentChan = nil
 
-			err := s.handlePaymentResult(result)
+			err := s.handlePaymentResult(result, true)
 			if err != nil {
 				return err
 			}
@@ -418,7 +419,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.prePaymentChan:
 			s.prePaymentChan = nil
 
-			err := s.handlePaymentResult(result)
+			err := s.handlePaymentResult(result, false)
 			if err != nil {
 				return err
 			}
@@ -448,7 +449,12 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 	return s.persistState(globalCtx)
 }
 
-func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
+// handlePaymentResult processes the result of a payment attempt. If the
+// payment was successful and this is the main swap payment, the cost of the
+// swap is updated.
+func (s *loopOutSwap) handlePaymentResult(result paymentResult,
+	swapPayment bool) error {
+
 	switch {
 	// If our result has a non-nil error, our status will be nil. In this
 	// case the payment failed so we do not need to take any action.
@@ -456,9 +462,19 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult) error {
 		return nil
 
 	case result.status.State == lnrpc.Payment_SUCCEEDED:
-		s.cost.Server += result.status.Value.ToSatoshis() -
-			s.AmountRequested
-		s.cost.Offchain += result.status.Fee.ToSatoshis()
+		// Update the cost of the swap if this is the main swap payment.
+		if swapPayment {
+			// The client pays for the swap with the swap invoice,
+			// so we can calculate the total cost of the swap by
+			// subtracting the amount requested from the amount we
+			// actually paid.
+			s.cost.Server += result.status.Value.ToSatoshis() -
+				s.AmountRequested
+
+			// On top of the swap cost we also pay for routing which
+			// is reflected in the fee.
+			s.cost.Offchain += result.status.Fee.ToSatoshis()
+		}
 
 		return nil
 
@@ -595,7 +611,8 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	// Use the recommended routing plugin.
 	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
-		s.LoopOutContract.OutgoingChanSet, pluginType, true,
+		s.LoopOutContract.OutgoingChanSet,
+		s.LoopOutContract.PaymentTimeout, pluginType, true,
 	)
 
 	// Pay the prepay invoice. Won't use the routing plugin here as the
@@ -604,7 +621,8 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
-		s.LoopOutContract.OutgoingChanSet, RoutingPluginNone, false,
+		s.LoopOutContract.OutgoingChanSet,
+		s.LoopOutContract.PaymentTimeout, RoutingPluginNone, false,
 	)
 }
 
@@ -632,7 +650,7 @@ func (p paymentResult) failure() error {
 // payInvoice pays a single invoice.
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount, outgoingChanIds loopdb.ChannelSet,
-	pluginType RoutingPluginType,
+	paymentTimeout time.Duration, pluginType RoutingPluginType,
 	reportPluginResult bool) chan paymentResult {
 
 	resultChan := make(chan paymentResult)
@@ -647,8 +665,8 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 		var result paymentResult
 
 		status, err := s.payInvoiceAsync(
-			ctx, invoice, maxFee, outgoingChanIds, pluginType,
-			reportPluginResult,
+			ctx, invoice, maxFee, outgoingChanIds, paymentTimeout,
+			pluginType, reportPluginResult,
 		)
 		if err != nil {
 			result.err = err
@@ -676,8 +694,9 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	invoice string, maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet, pluginType RoutingPluginType,
-	reportPluginResult bool) (*lndclient.PaymentStatus, error) {
+	outgoingChanIds loopdb.ChannelSet, paymentTimeout time.Duration,
+	pluginType RoutingPluginType, reportPluginResult bool) (
+	*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
@@ -690,7 +709,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	}
 
 	maxRetries := 1
-	paymentTimeout := s.executeConfig.totalPaymentTimeout
+	totalPaymentTimeout := s.executeConfig.totalPaymentTimeout
 
 	// Attempt to acquire and initialize the routing plugin.
 	routingPlugin, err := AcquireRoutingPlugin(
@@ -705,8 +724,30 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 			pluginType, hash.String())
 
 		maxRetries = s.executeConfig.maxPaymentRetries
-		paymentTimeout /= time.Duration(maxRetries)
+
+		// If not set, default to the per payment timeout to the total
+		// payment timeout divied by the configured maximum retries.
+		if paymentTimeout == 0 {
+			paymentTimeout = totalPaymentTimeout /
+				time.Duration(maxRetries)
+		}
+
+		// If the payment timeout is too long, we need to adjust the
+		// number of retries to ensure we don't exceed the total
+		// payment timeout.
+		if paymentTimeout*time.Duration(maxRetries) >
+			totalPaymentTimeout {
+
+			maxRetries = int(totalPaymentTimeout / paymentTimeout)
+			s.log.Infof("Adjusted max routing plugin retries to "+
+				"%v to stay within total payment timeout",
+				maxRetries)
+		}
 		defer ReleaseRoutingPlugin(ctx)
+	} else if paymentTimeout == 0 {
+		// If not set, default the payment timeout to the total payment
+		// timeout.
+		paymentTimeout = totalPaymentTimeout
 	}
 
 	req := lndclient.SendPaymentRequest{
@@ -917,7 +958,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.swapPaymentChan:
 				s.swapPaymentChan = nil
 
-				err := s.handlePaymentResult(result)
+				err := s.handlePaymentResult(result, true)
 				if err != nil {
 					return nil, err
 				}
@@ -939,7 +980,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.prePaymentChan:
 				s.prePaymentChan = nil
 
-				err := s.handlePaymentResult(result)
+				err := s.handlePaymentResult(result, false)
 				if err != nil {
 					return nil, err
 				}
