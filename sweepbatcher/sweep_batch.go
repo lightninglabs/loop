@@ -35,10 +35,6 @@ const (
 	// fee rate is increased when an rbf is attempted.
 	defaultFeeRateStep = chainfee.SatPerKWeight(100)
 
-	// defaultBatchConfTarget is the default confirmation target of the
-	// batch transaction.
-	defaultBatchConfTarget = 12
-
 	// batchConfHeight is the default confirmation height of the batch
 	// transaction.
 	batchConfHeight = 3
@@ -1059,6 +1055,10 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 	// If the feeRate is unset then we never published before, so we
 	// retrieve the fee estimate from our wallet.
 	if b.rbfCache.FeeRate == 0 {
+		if b.cfg.batchConfTarget == 0 {
+			b.log.Warnf("updateRbfRate called with zero " +
+				"batchConfTarget")
+		}
 		b.log.Infof("initializing rbf fee rate for conf target=%v",
 			b.cfg.batchConfTarget)
 		rate, err := b.wallet.EstimateFeeRate(

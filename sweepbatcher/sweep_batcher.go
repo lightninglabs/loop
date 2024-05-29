@@ -378,7 +378,6 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	cfg := batchConfig{
 		maxTimeoutDistance: defaultMaxTimeoutDistance,
-		batchConfTarget:    defaultBatchConfTarget,
 	}
 
 	switch b.chainParams {
@@ -488,7 +487,6 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	cfg := batchConfig{
 		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
-		batchConfTarget:    defaultBatchConfTarget,
 	}
 
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
