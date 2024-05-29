@@ -592,9 +592,11 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 	batchTx.LockTime = uint32(b.currentHeight)
 
 	var (
-		batchAmt     btcutil.Amount
-		prevOuts     = make([]*wire.TxOut, 0, len(b.sweeps))
-		signDescs    = make([]*lndclient.SignDescriptor, 0, len(b.sweeps))
+		batchAmt  btcutil.Amount
+		prevOuts  = make([]*wire.TxOut, 0, len(b.sweeps))
+		signDescs = make(
+			[]*lndclient.SignDescriptor, 0, len(b.sweeps),
+		)
 		sweeps       = make([]sweep, 0, len(b.sweeps))
 		fee          btcutil.Amount
 		inputCounter int

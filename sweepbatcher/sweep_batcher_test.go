@@ -182,7 +182,8 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 	<-lnd.RegisterSpendChannel
 
 	require.Eventually(t, func() bool {
-		// Verify that each batch has the correct number of sweeps in it.
+		// Verify that each batch has the correct number of sweeps
+		// in it.
 		for _, batch := range batcher.batches {
 			switch batch.primarySweepID {
 			case sweepReq1.SwapHash:
@@ -481,7 +482,9 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 		},
 		TxOut: []*wire.TxOut{
 			{
-				Value:    int64(sweepReq1.Value.ToUnit(btcutil.AmountSatoshi)),
+				Value: int64(sweepReq1.Value.ToUnit(
+					btcutil.AmountSatoshi,
+				)),
 				PkScript: []byte{3, 2, 1},
 			},
 		},
@@ -683,7 +686,8 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 	<-lnd.RegisterSpendChannel
 
 	require.Eventually(t, func() bool {
-		// Verify that each batch has the correct number of sweeps in it.
+		// Verify that each batch has the correct number of sweeps
+		// in it.
 		for _, batch := range batcher.batches {
 			switch batch.primarySweepID {
 			case sweepReq1.SwapHash:
