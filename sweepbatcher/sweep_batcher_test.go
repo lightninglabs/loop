@@ -64,7 +64,7 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -218,7 +218,7 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -355,7 +355,7 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -562,7 +562,7 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -727,7 +727,7 @@ func TestSweepBatcherComposite(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -1044,7 +1044,7 @@ func TestRestoringEmptyBatch(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 	_, err := batcherStore.InsertSweepBatch(ctx, &dbBatch{})
 	require.NoError(t, err)
 
@@ -1158,7 +1158,7 @@ func TestHandleSweepTwice(t *testing.T) {
 
 	store := newLoopStoreMock()
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
