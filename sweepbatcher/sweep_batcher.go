@@ -491,7 +491,10 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		batchConfTarget:    defaultBatchConfTarget,
 	}
 
-	newBatch := NewBatchFromDB(cfg, batchKit)
+	newBatch, err := NewBatchFromDB(cfg, batchKit)
+	if err != nil {
+		return fmt.Errorf("failed in NewBatchFromDB: %w", err)
+	}
 
 	// We add the batch to our map of batches and start it.
 	b.batches[batch.id] = newBatch

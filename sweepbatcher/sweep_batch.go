@@ -316,7 +316,22 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 }
 
 // NewBatchFromDB creates a new batch that already existed in storage.
-func NewBatchFromDB(cfg batchConfig, bk batchKit) *batch {
+func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
+	// Make sure the batch is not empty.
+	if len(bk.sweeps) == 0 {
+		// This should never happen, as this precondition is already
+		// ensured in spinUpBatchFromDB.
+		return nil, fmt.Errorf("empty batch is not allowed")
+	}
+
+	// Assign batchConfTarget to primary sweep's confTarget.
+	for _, sweep := range bk.sweeps {
+		if sweep.swapHash == bk.primaryID {
+			cfg.batchConfTarget = sweep.confTarget
+			break
+		}
+	}
+
 	return &batch{
 		id:               bk.id,
 		state:            bk.state,
@@ -343,7 +358,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) *batch {
 		store:            bk.store,
 		log:              bk.log,
 		cfg:              &cfg,
-	}
+	}, nil
 }
 
 // addSweep tries to add a sweep to the batch. If this is the first sweep being
