@@ -24,6 +24,8 @@ type StoreMock struct {
 	loopInStoreChan  chan LoopInContract
 	loopInUpdateChan chan SwapStateData
 
+	migrations map[string]struct{}
+
 	t *testing.T
 }
 
@@ -39,6 +41,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		loopInUpdateChan: make(chan SwapStateData, 1),
 		LoopInSwaps:      make(map[lntypes.Hash]*LoopInContract),
 		LoopInUpdates:    make(map[lntypes.Hash][]SwapStateData),
+		migrations:       make(map[string]struct{}),
 		t:                t,
 	}
 }
@@ -364,12 +367,20 @@ func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
 	bool, error) {
 
-	return false, errUnimplemented
+	_, ok := s.migrations[migrationID]
+
+	return ok, nil
 }
 
 // SetMigration marks the migration with the given ID as done.
 func (s *StoreMock) SetMigration(ctx context.Context,
 	migrationID string) error {
 
-	return errUnimplemented
+	if _, ok := s.migrations[migrationID]; ok {
+		return errors.New("migration already done")
+	}
+
+	s.migrations[migrationID] = struct{}{}
+
+	return nil
 }
