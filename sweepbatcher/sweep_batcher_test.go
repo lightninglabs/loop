@@ -182,7 +182,8 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 	<-lnd.RegisterSpendChannel
 
 	require.Eventually(t, func() bool {
-		// Verify that each batch has the correct number of sweeps in it.
+		// Verify that each batch has the correct number of sweeps
+		// in it.
 		for _, batch := range batcher.batches {
 			switch batch.primarySweepID {
 			case sweepReq1.SwapHash:
@@ -481,7 +482,9 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 		},
 		TxOut: []*wire.TxOut{
 			{
-				Value:    int64(sweepReq1.Value.ToUnit(btcutil.AmountSatoshi)),
+				Value: int64(sweepReq1.Value.ToUnit(
+					btcutil.AmountSatoshi,
+				)),
 				PkScript: []byte{3, 2, 1},
 			},
 		},
@@ -683,7 +686,8 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 	<-lnd.RegisterSpendChannel
 
 	require.Eventually(t, func() bool {
-		// Verify that each batch has the correct number of sweeps in it.
+		// Verify that each batch has the correct number of sweeps
+		// in it.
 		for _, batch := range batcher.batches {
 			switch batch.primarySweepID {
 			case sweepReq1.SwapHash:
@@ -1104,6 +1108,194 @@ func TestRestoringEmptyBatch(t *testing.T) {
 	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
+
+	// Now make it quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	checkBatcherError(t, runErr)
+}
+
+type loopStoreMock struct {
+	loops map[lntypes.Hash]*loopdb.LoopOut
+	mu    sync.Mutex
+}
+
+func newLoopStoreMock() *loopStoreMock {
+	return &loopStoreMock{
+		loops: make(map[lntypes.Hash]*loopdb.LoopOut),
+	}
+}
+
+func (s *loopStoreMock) FetchLoopOutSwap(ctx context.Context,
+	hash lntypes.Hash) (*loopdb.LoopOut, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out, has := s.loops[hash]
+	if !has {
+		return nil, errors.New("loop not found")
+	}
+
+	return out, nil
+}
+
+func (s *loopStoreMock) putLoopOutSwap(hash lntypes.Hash, out *loopdb.LoopOut) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.loops[hash] = out
+}
+
+// TestHandleSweepTwice tests that handing the same sweep twice must not
+// add it to different batches.
+func TestHandleSweepTwice(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	store := newLoopStoreMock()
+
+	batcherStore := NewStoreMock()
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	const shortCltv = 111
+	const longCltv = 111 + defaultMaxTimeoutDistance + 6
+
+	// Create two sweep requests with CltvExpiry distant from each other
+	// to go assigned to separate batches.
+	sweepReq1 := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	loopOut1 := &loopdb.LoopOut{
+		Loop: loopdb.Loop{
+			Hash: lntypes.Hash{1, 1, 1},
+		},
+		Contract: &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      shortCltv,
+				AmountRequested: 111,
+			},
+			SwapInvoice: swapInvoice,
+		},
+	}
+
+	sweepReq2 := SweepRequest{
+		SwapHash: lntypes.Hash{2, 2, 2},
+		Value:    222,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2, 2},
+			Index: 2,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	loopOut2 := &loopdb.LoopOut{
+		Loop: loopdb.Loop{
+			Hash: lntypes.Hash{2, 2, 2},
+		},
+		Contract: &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      longCltv,
+				AmountRequested: 222,
+			},
+			SwapInvoice: swapInvoice,
+		},
+	}
+
+	store.putLoopOutSwap(sweepReq1.SwapHash, loopOut1)
+	store.putLoopOutSwap(sweepReq2.SwapHash, loopOut2)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since two batches were created we check that it registered for its
+	// primary sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Deliver the second sweep. It will go to a separate batch,
+	// since CltvExpiry values are distant enough.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	<-lnd.RegisterSpendChannel
+
+	// Once batcher receives sweep request it will eventually spin up
+	// batches.
+	require.Eventually(t, func() bool {
+		// Make sure that the sweep was stored and we have exactly one
+		// active batch.
+		return batcherStore.AssertSweepStored(sweepReq1.SwapHash) &&
+			batcherStore.AssertSweepStored(sweepReq2.SwapHash) &&
+			len(batcher.batches) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Change the second sweep so that it can be added to the first batch.
+	// Change CltvExpiry.
+	loopOut2 = &loopdb.LoopOut{
+		Loop: loopdb.Loop{
+			Hash: lntypes.Hash{2, 2, 2},
+		},
+		Contract: &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      shortCltv,
+				AmountRequested: 222,
+			},
+			SwapInvoice: swapInvoice,
+		},
+	}
+	store.putLoopOutSwap(sweepReq2.SwapHash, loopOut2)
+
+	// Re-add the second sweep. It is expected to stay in second batch,
+	// not added to both batches.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	require.Eventually(t, func() bool {
+		// Make sure there are two batches.
+		batches := batcher.batches
+		if len(batches) != 2 {
+			return false
+		}
+
+		// Make sure the second batch has the second sweep.
+		sweep2, has := batches[1].sweeps[sweepReq2.SwapHash]
+		if !has {
+			return false
+		}
+
+		// Make sure the second sweep's timeout has been updated.
+		if sweep2.timeout != shortCltv {
+			return false
+		}
+
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure each batch has one sweep. If the second sweep was added to
+	// both batches, the following check won't pass.
+	require.Equal(t, 1, len(batcher.batches[0].sweeps))
+	require.Equal(t, 1, len(batcher.batches[1].sweeps))
 
 	// Now make it quit by canceling the context.
 	cancel()

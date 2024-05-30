@@ -17,7 +17,8 @@ func init() {
 	UseLogger(build.NewSubLogger("SWEEP", nil))
 }
 
-// batchPrefixLogger returns a logger that prefixes all log messages with the ID.
+// batchPrefixLogger returns a logger that prefixes all log messages with
+// the ID.
 func batchPrefixLogger(batchID string) btclog.Logger {
 	return build.NewPrefixLog(fmt.Sprintf("[Batch %s]", batchID), log)
 }

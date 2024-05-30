@@ -328,9 +328,12 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 			if !accepted {
 				return fmt.Errorf("existing sweep %x was not "+
-					"accepted by batch %d", sweep.swapHash[:6],
-					batch.id)
+					"accepted by batch %d",
+					sweep.swapHash[:6], batch.id)
 			}
+
+			// The sweep was updated in the batch, our job is done.
+			return nil
 		}
 	}
 
@@ -461,6 +464,8 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		FeeRate:    batch.rbfCache.FeeRate,
 	}
 
+	logger := batchPrefixLogger(fmt.Sprintf("%d", batch.id))
+
 	batchKit := batchKit{
 		id:               batch.id,
 		batchTxid:        batch.batchTxid,
@@ -477,7 +482,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		verifySchnorrSig: b.VerifySchnorrSig,
 		purger:           b.AddSweep,
 		store:            b.store,
-		log:              batchPrefixLogger(fmt.Sprintf("%d", batch.id)),
+		log:              logger,
 		quit:             b.quit,
 	}
 
@@ -598,15 +603,17 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 						totalSwept,
 					)
 
+				onChainFeePortion := getFeePortionPaidBySweep(
+					spendTx, feePortionPerSweep,
+					roundingDifference, sweep,
+				)
+
 				// Notify the requester of the spend
 				// with the spend details, including the fee
 				// portion for this particular sweep.
 				spendDetail := &SpendDetail{
-					Tx: spendTx,
-					OnChainFeePortion: getFeePortionPaidBySweep( // nolint:lll
-						spendTx, feePortionPerSweep,
-						roundingDifference, sweep,
-					),
+					Tx:                spendTx,
+					OnChainFeePortion: onChainFeePortion,
 				}
 
 				select {

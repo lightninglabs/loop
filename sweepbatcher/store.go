@@ -82,8 +82,8 @@ func NewSQLStore(db BaseDB, network *chaincfg.Params) *SQLStore {
 
 // FetchUnconfirmedSweepBatches fetches all the batches from the database that
 // are not in a confirmed state.
-func (s *SQLStore) FetchUnconfirmedSweepBatches(ctx context.Context) ([]*dbBatch,
-	error) {
+func (s *SQLStore) FetchUnconfirmedSweepBatches(ctx context.Context) (
+	[]*dbBatch, error) {
 
 	var batches []*dbBatch
 
