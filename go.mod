@@ -20,9 +20,9 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.2-beta
-	github.com/lightninglabs/lndclient v0.18.0-0
+	github.com/lightninglabs/lndclient v0.18.0-1
 	github.com/lightninglabs/loop/swapserverrpc v1.0.5
-	github.com/lightningnetwork/lnd v0.18.0-beta.rc3
+	github.com/lightningnetwork/lnd v0.18.0-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
@@ -198,4 +198,4 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
-go 1.21.4
+go 1.22.3

@@ -63,11 +63,11 @@ type HtlcScript interface {
 
 	// MaxSuccessWitnessSize returns the maximum witness size for the
 	// success case witness.
-	MaxSuccessWitnessSize() int
+	MaxSuccessWitnessSize() lntypes.WeightUnit
 
 	// MaxTimeoutWitnessSize returns the maximum witness size for the
 	// timeout case witness.
-	MaxTimeoutWitnessSize() int
+	MaxTimeoutWitnessSize() lntypes.WeightUnit
 
 	// TimeoutScript returns the redeem script required to unlock the htlc
 	// after timeout.
@@ -436,7 +436,7 @@ func (h *HtlcScriptV2) SuccessScript() []byte {
 }
 
 // MaxSuccessWitnessSize returns maximum success witness size.
-func (h *HtlcScriptV2) MaxSuccessWitnessSize() int {
+func (h *HtlcScriptV2) MaxSuccessWitnessSize() lntypes.WeightUnit {
 	// Calculate maximum success witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -446,11 +446,11 @@ func (h *HtlcScriptV2) MaxSuccessWitnessSize() int {
 	// - preimage: 32 bytes
 	// - witness_script_length: 1 byte
 	// - witness_script: len(script) bytes
-	return 1 + 1 + 73 + 1 + 32 + 1 + len(h.script)
+	return lntypes.WeightUnit(1 + 1 + 73 + 1 + 32 + 1 + len(h.script))
 }
 
 // MaxTimeoutWitnessSize returns maximum timeout witness size.
-func (h *HtlcScriptV2) MaxTimeoutWitnessSize() int {
+func (h *HtlcScriptV2) MaxTimeoutWitnessSize() lntypes.WeightUnit {
 	// Calculate maximum timeout witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -461,7 +461,7 @@ func (h *HtlcScriptV2) MaxTimeoutWitnessSize() int {
 	// - zero: 1 byte
 	// - witness_script_length: 1 byte
 	// - witness_script: len(script) bytes
-	return 1 + 1 + 73 + 1 + 33 + 1 + 1 + len(h.script)
+	return lntypes.WeightUnit(1 + 1 + 73 + 1 + 33 + 1 + 1 + len(h.script))
 }
 
 // SuccessSequence returns the sequence to spend this htlc in the success case.
@@ -735,7 +735,7 @@ func (h *HtlcScriptV3) SuccessScript() []byte {
 
 // MaxSuccessWitnessSize returns the maximum witness size for the
 // success case witness.
-func (h *HtlcScriptV3) MaxSuccessWitnessSize() int {
+func (h *HtlcScriptV3) MaxSuccessWitnessSize() lntypes.WeightUnit {
 	// Calculate maximum success witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -755,7 +755,7 @@ func (h *HtlcScriptV3) MaxSuccessWitnessSize() int {
 
 // MaxTimeoutWitnessSize returns the maximum witness size for the
 // timeout case witness.
-func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
+func (h *HtlcScriptV3) MaxTimeoutWitnessSize() lntypes.WeightUnit {
 	// Calculate maximum timeout witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -768,7 +768,7 @@ func (h *HtlcScriptV3) MaxTimeoutWitnessSize() int {
 	//	- leafVersionAndParity: 1
 	//	- internalPubkey: 32
 	//	- proof: 32
-	return 1 + 1 + 64 + 1 + 36 + 1 + 65
+	return lntypes.WeightUnit(1 + 1 + 64 + 1 + 36 + 1 + 65)
 }
 
 // SuccessSequence returns the sequence to spend this htlc in the

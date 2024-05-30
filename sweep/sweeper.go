@@ -217,5 +217,5 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 
 	weight := weightEstimate.Weight()
 
-	return feeRate.FeeForWeight(int64(weight)), nil
+	return feeRate.FeeForWeight(weight), nil
 }

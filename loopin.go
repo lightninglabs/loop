@@ -837,7 +837,7 @@ func getTxFee(tx *wire.MsgTx, fee chainfee.SatPerKVByte) btcutil.Amount {
 	btcTx := btcutil.NewTx(tx)
 	vsize := mempool.GetTxVirtualSize(btcTx)
 
-	return fee.FeeForVSize(vsize)
+	return fee.FeeForVSize(lntypes.VByte(vsize))
 }
 
 // waitForSwapComplete waits until a spending tx of the htlc gets confirmed and

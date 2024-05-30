@@ -77,7 +77,6 @@ func loopInSweepFee(fee chainfee.SatPerKWeight) btcutil.Amount {
 	maxSize := htlc.MaxTimeoutWitnessSize()
 
 	estimator.AddWitnessInput(maxSize)
-	weight := int64(estimator.Weight())
 
-	return fee.FeeForWeight(weight)
+	return fee.FeeForWeight(estimator.Weight())
 }
