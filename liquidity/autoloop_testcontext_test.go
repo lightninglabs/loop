@@ -312,9 +312,26 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 	// Assert that we query the server for a quote for each of our
 	// recommended swaps. Note that this differs from our set of expected
 	// swaps because we may get quotes for suggested swaps but then just
-	// log them.
+	// log them. The order in c.quoteRequestIn is not deterministic,
+	// it depends on the order of map traversal (map peerChannels in
+	// method Manager.SuggestSwaps). So receive from the channel an item
+	// and then find a corresponding expected item, using amount as a key.
+	amt2expected := make(map[btcutil.Amount]quoteInRequestResp)
 	for _, expected := range step.quotesIn {
+		// Make sure all amounts are unique.
+		require.NotContains(c.t, amt2expected, expected.request.Amount)
+
+		amt2expected[expected.request.Amount] = expected
+	}
+
+	for i := 0; i < len(step.quotesIn); i++ {
 		request := <-c.quoteRequestIn
+
+		// Get the expected item, using amount as a key.
+		expected, has := amt2expected[request.Amount]
+		require.True(c.t, has)
+		delete(amt2expected, request.Amount)
+
 		assert.Equal(
 			c.t, expected.request.Amount, request.Amount,
 		)
