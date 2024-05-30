@@ -35,10 +35,6 @@ const (
 	// fee rate is increased when an rbf is attempted.
 	defaultFeeRateStep = chainfee.SatPerKWeight(100)
 
-	// defaultBatchConfTarget is the default confirmation target of the
-	// batch transaction.
-	defaultBatchConfTarget = 12
-
 	// batchConfHeight is the default confirmation height of the batch
 	// transaction.
 	batchConfHeight = 3
@@ -316,7 +312,22 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 }
 
 // NewBatchFromDB creates a new batch that already existed in storage.
-func NewBatchFromDB(cfg batchConfig, bk batchKit) *batch {
+func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
+	// Make sure the batch is not empty.
+	if len(bk.sweeps) == 0 {
+		// This should never happen, as this precondition is already
+		// ensured in spinUpBatchFromDB.
+		return nil, fmt.Errorf("empty batch is not allowed")
+	}
+
+	// Assign batchConfTarget to primary sweep's confTarget.
+	for _, sweep := range bk.sweeps {
+		if sweep.swapHash == bk.primaryID {
+			cfg.batchConfTarget = sweep.confTarget
+			break
+		}
+	}
+
 	return &batch{
 		id:               bk.id,
 		state:            bk.state,
@@ -343,7 +354,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) *batch {
 		store:            bk.store,
 		log:              bk.log,
 		cfg:              &cfg,
-	}
+	}, nil
 }
 
 // addSweep tries to add a sweep to the batch. If this is the first sweep being
@@ -1044,6 +1055,10 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 	// If the feeRate is unset then we never published before, so we
 	// retrieve the fee estimate from our wallet.
 	if b.rbfCache.FeeRate == 0 {
+		if b.cfg.batchConfTarget == 0 {
+			b.log.Warnf("updateRbfRate called with zero " +
+				"batchConfTarget")
+		}
 		b.log.Infof("initializing rbf fee rate for conf target=%v",
 			b.cfg.batchConfTarget)
 		rate, err := b.wallet.EstimateFeeRate(

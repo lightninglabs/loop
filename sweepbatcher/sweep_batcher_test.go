@@ -64,7 +64,7 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -218,7 +218,7 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -355,7 +355,7 @@ func TestSweepBatcherSweepReentry(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -562,7 +562,7 @@ func TestSweepBatcherNonWalletAddr(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -727,7 +727,7 @@ func TestSweepBatcherComposite(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -1044,7 +1044,7 @@ func TestRestoringEmptyBatch(t *testing.T) {
 
 	store := loopdb.NewStoreMock(t)
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 	_, err := batcherStore.InsertSweepBatch(ctx, &dbBatch{})
 	require.NoError(t, err)
 
@@ -1109,7 +1109,7 @@ func TestRestoringEmptyBatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 
-	// Now make it quit by canceling the context.
+	// Now make the batcher quit by canceling the context.
 	cancel()
 	wg.Wait()
 
@@ -1158,7 +1158,7 @@ func TestHandleSweepTwice(t *testing.T) {
 
 	store := newLoopStoreMock()
 
-	batcherStore := NewStoreMock()
+	batcherStore := NewStoreMock(store)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
@@ -1297,9 +1297,125 @@ func TestHandleSweepTwice(t *testing.T) {
 	require.Equal(t, 1, len(batcher.batches[0].sweeps))
 	require.Equal(t, 1, len(batcher.batches[1].sweeps))
 
-	// Now make it quit by canceling the context.
+	// Now make the batcher quit by canceling the context.
 	cancel()
 	wg.Wait()
 
+	checkBatcherError(t, runErr)
+}
+
+// TestRestoringPreservesConfTarget tests that after the batch is written to DB
+// and loaded back, its batchConfTarget value is preserved.
+func TestRestoringPreservesConfTarget(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	store := loopdb.NewStoreMock(t)
+
+	batcherStore := NewStoreMock(store)
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+		},
+
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 123,
+	}
+
+	err := store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Once batcher receives sweep request it will eventually spin up a
+	// batch.
+	require.Eventually(t, func() bool {
+		// Make sure that the sweep was stored and we have exactly one
+		// active batch, with one sweep and proper batchConfTarget.
+		return batcherStore.AssertSweepStored(sweepReq.SwapHash) &&
+			len(batcher.batches) == 1 &&
+			len(batcher.batches[0].sweeps) == 1 &&
+			batcher.batches[0].cfg.batchConfTarget == 123
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure we have stored the batch.
+	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+
+	// Now launch it again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore, store)
+	ctx, cancel = context.WithCancel(context.Background())
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Wait for batch to load.
+	require.Eventually(t, func() bool {
+		return batcherStore.AssertSweepStored(sweepReq.SwapHash) &&
+			len(batcher.batches) == 1 &&
+			len(batcher.batches[0].sweeps) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure batchConfTarget was preserved.
+	require.Equal(t, 123, int(batcher.batches[0].cfg.batchConfTarget))
+
+	// Expect registration for spend notification.
+	<-lnd.RegisterSpendChannel
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
 	checkBatcherError(t, runErr)
 }
