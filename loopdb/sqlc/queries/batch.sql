@@ -76,7 +76,7 @@ WHERE
         sweeps.swap_hash = $1
 AND
         sweeps.completed = TRUE
-AND   
+AND
         sweep_batches.confirmed = TRUE;
 
 -- name: GetBatchSweptAmount :one

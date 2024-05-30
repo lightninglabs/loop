@@ -11,7 +11,7 @@ import (
 )
 
 const getLoopInSwap = `-- name: GetLoopInSwap :one
-SELECT 
+SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
     loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
@@ -81,7 +81,7 @@ func (q *Queries) GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopIn
 }
 
 const getLoopInSwaps = `-- name: GetLoopInSwaps :many
-SELECT 
+SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
     loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
@@ -167,7 +167,7 @@ func (q *Queries) GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, erro
 }
 
 const getLoopOutSwap = `-- name: GetLoopOutSwap :one
-SELECT 
+SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
     loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
@@ -253,11 +253,11 @@ func (q *Queries) GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopO
 }
 
 const getLoopOutSwaps = `-- name: GetLoopOutSwaps :many
-SELECT 
+SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
     loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
-FROM 
+FROM
     swaps
 JOIN
     loopout_swaps ON swaps.swap_hash = loopout_swaps.swap_hash
@@ -355,7 +355,7 @@ func (q *Queries) GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, er
 }
 
 const getSwapUpdates = `-- name: GetSwapUpdates :many
-SELECT 
+SELECT
     id, swap_hash, update_timestamp, update_state, htlc_txhash, server_cost, onchain_cost, offchain_cost
 FROM
     swap_updates
