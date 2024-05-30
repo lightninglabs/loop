@@ -91,22 +91,13 @@ AND
 
 -- name: GetBatchSweeps :many
 SELECT
-        sweeps.*,
-        swaps.*,
-        loopout_swaps.*,
-        htlc_keys.*
+        *
 FROM
         sweeps
-JOIN
-        swaps ON sweeps.swap_hash = swaps.swap_hash
-JOIN
-        loopout_swaps ON sweeps.swap_hash = loopout_swaps.swap_hash
-JOIN
-        htlc_keys ON sweeps.swap_hash = htlc_keys.swap_hash
 WHERE
-        sweeps.batch_id = $1
+        batch_id = $1
 ORDER BY
-        sweeps.id ASC;
+        id ASC;
 
 -- name: GetSweepStatus :one
 SELECT
