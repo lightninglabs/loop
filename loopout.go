@@ -77,6 +77,10 @@ type loopOutSwap struct {
 
 	swapInvoicePaymentAddr [32]byte
 
+	// prepayAmount holds the amount of the prepay invoice. We use this
+	// to calculate the total cost of the swap.
+	prepayAmount btcutil.Amount
+
 	swapPaymentChan chan paymentResult
 	prePaymentChan  chan paymentResult
 
@@ -466,15 +470,19 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult,
 		if swapPayment {
 			// The client pays for the swap with the swap invoice,
 			// so we can calculate the total cost of the swap by
-			// subtracting the amount requested from the amount we
-			// actually paid.
-			s.cost.Server += result.status.Value.ToSatoshis() -
+			// subtracting the amount requested from the total
+			// amount that we actually paid (which is the sum of
+			// the swap invoice amount and the prepay invoice
+			// amount).
+			s.cost.Server += s.prepayAmount +
+				result.status.Value.ToSatoshis() -
 				s.AmountRequested
-
-			// On top of the swap cost we also pay for routing which
-			// is reflected in the fee.
-			s.cost.Offchain += result.status.Fee.ToSatoshis()
 		}
+
+		// On top of the swap cost we also pay for routing which
+		// is reflected in the fee. We add the off-chain fee for both
+		// the swap payment and the prepay.
+		s.cost.Offchain += result.status.Fee.ToSatoshis()
 
 		return nil
 
@@ -489,6 +497,16 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult,
 // executeSwap executes the swap, but returns as soon as the swap outcome is
 // final. At that point, there may still be pending off-chain payment(s).
 func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
+	// Decode the prepay invoice so we can ensure that we account for the
+	// prepay amount when calculating the final costs of the swap.
+	_, _, _, amt, err := swap.DecodeInvoice(
+		s.lnd.ChainParams, s.PrepayInvoice,
+	)
+	if err != nil {
+		return err
+	}
+	s.prepayAmount = amt
+
 	// We always pay both invoices (again). This is currently the only way
 	// to sort of resume payments.
 	//
