@@ -3,6 +3,7 @@ package loopdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -336,4 +337,25 @@ func (b *StoreMock) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
 	return errors.New("not implemented")
+}
+
+// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
+// swaps.
+func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+	costs map[lntypes.Hash]SwapCost) error {
+
+	for hash, cost := range costs {
+		if _, ok := s.LoopOutUpdates[hash]; !ok {
+			return fmt.Errorf("swap has no updates: %v", hash)
+		}
+
+		updates, ok := s.LoopOutUpdates[hash]
+		if !ok {
+			return fmt.Errorf("swap has no updates: %v", hash)
+		}
+
+		updates[len(updates)-1].Cost = cost
+	}
+
+	return nil
 }

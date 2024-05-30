@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
@@ -394,6 +395,124 @@ func TestIssue615(t *testing.T) {
 
 	_, err = sqlDB.GetLoopOutSwaps(ctxb)
 	require.NoError(t, err)
+}
+
+// TestBatchUpdateCost tests that we can batch update the cost of multiple swaps
+// at once.
+func TestBatchUpdateCost(t *testing.T) {
+	// Create a new sqlite store for testing.
+	store := NewTestDB(t)
+
+	destAddr := test.GetDestAddr(t, 0)
+	initiationTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
+
+	testContract := LoopOutContract{
+		SwapContract: SwapContract{
+			AmountRequested: 100,
+			CltvExpiry:      144,
+			HtlcKeys: HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderInternalKey,
+				ReceiverInternalPubKey: receiverInternalKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+			MaxMinerFee: 10,
+			MaxSwapFee:  20,
+
+			InitiationHeight: 99,
+
+			InitiationTime:  initiationTime,
+			ProtocolVersion: ProtocolVersionMuSig2,
+		},
+		MaxPrepayRoutingFee:     40,
+		PrepayInvoice:           "prepayinvoice",
+		DestAddr:                destAddr,
+		SwapInvoice:             "swapinvoice",
+		MaxSwapRoutingFee:       30,
+		SweepConfTarget:         2,
+		HtlcConfirmations:       2,
+		SwapPublicationDeadline: initiationTime,
+		PaymentTimeout:          time.Second * 11,
+	}
+
+	makeSwap := func(preimage lntypes.Preimage) *LoopOutContract {
+		contract := testContract
+		contract.Preimage = preimage
+
+		return &contract
+	}
+
+	// Next, we'll add two swaps to the database.
+	preimage1 := testPreimage
+	preimage2 := lntypes.Preimage{4, 4, 4}
+
+	ctxb := context.Background()
+	swap1 := makeSwap(preimage1)
+	swap2 := makeSwap(preimage2)
+
+	hash1 := swap1.Preimage.Hash()
+	err := store.CreateLoopOut(ctxb, hash1, swap1)
+	require.NoError(t, err)
+
+	hash2 := swap2.Preimage.Hash()
+	err = store.CreateLoopOut(ctxb, hash2, swap2)
+	require.NoError(t, err)
+
+	// Add an update to both swaps containing the cost.
+	err = store.UpdateLoopOut(
+		ctxb, hash1, testTime,
+		SwapStateData{
+			State: StateSuccess,
+			Cost: SwapCost{
+				Server:   1,
+				Onchain:  2,
+				Offchain: 3,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	err = store.UpdateLoopOut(
+		ctxb, hash2, testTime,
+		SwapStateData{
+			State: StateSuccess,
+			Cost: SwapCost{
+				Server:   4,
+				Onchain:  5,
+				Offchain: 6,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	updateMap := map[lntypes.Hash]SwapCost{
+		hash1: {
+			Server:   2,
+			Onchain:  3,
+			Offchain: 4,
+		},
+		hash2: {
+			Server:   6,
+			Onchain:  7,
+			Offchain: 8,
+		},
+	}
+	require.NoError(t, store.BatchUpdateLoopOutSwapCosts(ctxb, updateMap))
+
+	swaps, err := store.FetchLoopOutSwaps(ctxb)
+	require.NoError(t, err)
+	require.Len(t, swaps, 2)
+
+	swapsMap := make(map[lntypes.Hash]*LoopOut)
+	swapsMap[swaps[0].Hash] = swaps[0]
+	swapsMap[swaps[1].Hash] = swaps[1]
+
+	require.Equal(t, updateMap[hash1], swapsMap[hash1].State().Cost)
+	require.Equal(t, updateMap[hash2], swapsMap[hash2].State().Cost)
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"

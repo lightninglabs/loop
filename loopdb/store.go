@@ -1009,3 +1009,11 @@ func (b *boltSwapStore) BatchInsertUpdate(ctx context.Context,
 
 	return errUnimplemented
 }
+
+// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
+// swaps.
+func (b *boltSwapStore) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+	costs map[lntypes.Hash]SwapCost) error {
+
+	return errUnimplemented
+}

@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+const getLastUpdateID = `-- name: GetLastUpdateID :one
+SELECT id
+FROM swap_updates
+WHERE swap_hash = $1
+ORDER BY update_timestamp DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getLastUpdateID, swapHash)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getLoopInSwap = `-- name: GetLoopInSwap :one
 SELECT 
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
@@ -590,6 +605,32 @@ func (q *Queries) InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdatePara
 		arg.UpdateTimestamp,
 		arg.UpdateState,
 		arg.HtlcTxhash,
+		arg.ServerCost,
+		arg.OnchainCost,
+		arg.OffchainCost,
+	)
+	return err
+}
+
+const overrideSwapCosts = `-- name: OverrideSwapCosts :exec
+UPDATE swap_updates
+SET 
+    server_cost = $2,
+    onchain_cost = $3,
+    offchain_cost = $4
+WHERE id = $1
+`
+
+type OverrideSwapCostsParams struct {
+	ID           int32
+	ServerCost   int64
+	OnchainCost  int64
+	OffchainCost int64
+}
+
+func (q *Queries) OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error {
+	_, err := q.db.ExecContext(ctx, overrideSwapCosts,
+		arg.ID,
 		arg.ServerCost,
 		arg.OnchainCost,
 		arg.OffchainCost,

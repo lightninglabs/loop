@@ -407,6 +407,38 @@ func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
 	})
 }
 
+// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
+// swaps.
+func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+	costs map[lntypes.Hash]SwapCost) error {
+
+	writeOpts := &SqliteTxOptions{}
+	return b.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+		for swapHash, cost := range costs {
+			lastUpdateID, err := tx.GetLastUpdateID(
+				ctx, swapHash[:],
+			)
+			if err != nil {
+				return err
+			}
+
+			err = tx.OverrideSwapCosts(
+				ctx, sqlc.OverrideSwapCostsParams{
+					ID:           lastUpdateID,
+					ServerCost:   int64(cost.Server),
+					OnchainCost:  int64(cost.Onchain),
+					OffchainCost: int64(cost.Offchain),
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // loopToInsertArgs converts a SwapContract struct to the arguments needed to
 // insert it into the database.
 func loopToInsertArgs(hash lntypes.Hash,
