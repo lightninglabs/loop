@@ -77,7 +77,7 @@ func newSwapClient(config *clientConfig) *Client {
 
 	lndServices := config.LndServices
 
-	batcherStore := sweepbatcher.NewStoreMock(config.Store)
+	batcherStore := sweepbatcher.NewStoreMock()
 
 	batcher := sweepbatcher.NewBatcher(
 		config.LndServices.WalletKit, config.LndServices.ChainNotifier,

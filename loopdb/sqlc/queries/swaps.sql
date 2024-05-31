@@ -1,9 +1,9 @@
 -- name: GetLoopOutSwaps :many
-SELECT 
+SELECT
     swaps.*,
     loopout_swaps.*,
     htlc_keys.*
-FROM 
+FROM
     swaps
 JOIN
     loopout_swaps ON swaps.swap_hash = loopout_swaps.swap_hash
@@ -13,7 +13,7 @@ ORDER BY
     swaps.id;
 
 -- name: GetLoopOutSwap :one
-SELECT 
+SELECT
     swaps.*,
     loopout_swaps.*,
     htlc_keys.*
@@ -27,7 +27,7 @@ WHERE
     swaps.swap_hash = $1;
 
 -- name: GetLoopInSwaps :many
-SELECT 
+SELECT
     swaps.*,
     loopin_swaps.*,
     htlc_keys.*
@@ -41,7 +41,7 @@ ORDER BY
     swaps.id;
 
 -- name: GetLoopInSwap :one
-SELECT 
+SELECT
     swaps.*,
     loopin_swaps.*,
     htlc_keys.*
@@ -55,7 +55,7 @@ WHERE
     swaps.swap_hash = $1;
 
 -- name: GetSwapUpdates :many
-SELECT 
+SELECT
     *
 FROM
     swap_updates

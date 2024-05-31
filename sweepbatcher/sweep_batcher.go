@@ -450,7 +450,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	sweeps := make(map[lntypes.Hash]sweep)
 
 	for _, dbSweep := range dbSweeps {
-		sweep, err := b.convertSweep(dbSweep)
+		sweep, err := b.convertSweep(ctx, dbSweep)
 		if err != nil {
 			return err
 		}
@@ -656,9 +656,16 @@ func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
 }
 
 // convertSweep converts a fetched sweep from the database to a sweep that is
-// ready to be processed by the batcher.
-func (b *Batcher) convertSweep(dbSweep *dbSweep) (*sweep, error) {
-	swap := dbSweep.LoopOut
+// ready to be processed by the batcher. It loads swap from loopdb by calling
+// method FetchLoopOutSwap.
+func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
+	*sweep, error) {
+
+	swap, err := b.swapStore.FetchLoopOutSwap(ctx, dbSweep.SwapHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch loop out for %x: %w",
+			dbSweep.SwapHash[:6], err)
+	}
 
 	htlc, err := utils.GetHtlc(
 		dbSweep.SwapHash, &swap.Contract.SwapContract, b.chainParams,

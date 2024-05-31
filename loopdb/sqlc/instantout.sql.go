@@ -133,7 +133,7 @@ func (q *Queries) GetInstantOutSwapUpdates(ctx context.Context, swapHash []byte)
 }
 
 const getInstantOutSwaps = `-- name: GetInstantOutSwaps :many
-SELECT 
+SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
     instantout_swaps.swap_hash, instantout_swaps.preimage, instantout_swaps.sweep_address, instantout_swaps.outgoing_chan_set, instantout_swaps.htlc_fee_rate, instantout_swaps.reservation_ids, instantout_swaps.swap_invoice, instantout_swaps.finalized_htlc_tx, instantout_swaps.sweep_tx_hash, instantout_swaps.finalized_sweepless_sweep_tx, instantout_swaps.sweep_confirmation_height,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
@@ -235,7 +235,7 @@ func (q *Queries) GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsR
 const insertInstantOut = `-- name: InsertInstantOut :exec
 INSERT INTO instantout_swaps (
         swap_hash,
-        preimage, 
+        preimage,
         sweep_address,
         outgoing_chan_set,
         htlc_fee_rate,

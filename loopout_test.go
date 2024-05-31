@@ -297,7 +297,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	errChan := make(chan error, 2)
 
-	batcherStore := sweepbatcher.NewStoreMock(cfg.store)
+	batcherStore := sweepbatcher.NewStoreMock()
 
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
@@ -530,7 +530,7 @@ func testPreimagePush(t *testing.T) {
 
 	errChan := make(chan error, 2)
 
-	batcherStore := sweepbatcher.NewStoreMock(cfg.store)
+	batcherStore := sweepbatcher.NewStoreMock()
 
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
@@ -951,7 +951,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	errChan := make(chan error, 2)
 
-	batcherStore := sweepbatcher.NewStoreMock(cfg.store)
+	batcherStore := sweepbatcher.NewStoreMock()
 
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,

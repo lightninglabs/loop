@@ -3,7 +3,6 @@ package sweepbatcher
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -12,17 +11,15 @@ import (
 
 // StoreMock implements a mock client swap store.
 type StoreMock struct {
-	batches   map[int32]dbBatch
-	sweeps    map[lntypes.Hash]dbSweep
-	swapStore LoopOutFetcher
+	batches map[int32]dbBatch
+	sweeps  map[lntypes.Hash]dbSweep
 }
 
 // NewStoreMock instantiates a new mock store.
-func NewStoreMock(swapStore LoopOutFetcher) *StoreMock {
+func NewStoreMock() *StoreMock {
 	return &StoreMock{
-		batches:   make(map[int32]dbBatch),
-		sweeps:    make(map[lntypes.Hash]dbSweep),
-		swapStore: swapStore,
+		batches: make(map[int32]dbBatch),
+		sweeps:  make(map[lntypes.Hash]dbSweep),
 	}
 }
 
@@ -93,21 +90,9 @@ func (s *StoreMock) FetchBatchSweeps(ctx context.Context,
 	result := []*dbSweep{}
 	for _, sweep := range s.sweeps {
 		sweep := sweep
-		if sweep.BatchID != id {
-			continue
+		if sweep.BatchID == id {
+			result = append(result, &sweep)
 		}
-
-		// Load swap from loopdb.
-		swap, err := s.swapStore.FetchLoopOutSwap(
-			ctx, sweep.SwapHash,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch swap "+
-				"for SwapHash=%v", sweep.SwapHash)
-		}
-		sweep.LoopOut = swap
-
-		result = append(result, &sweep)
 	}
 
 	sort.Slice(result, func(i, j int) bool {

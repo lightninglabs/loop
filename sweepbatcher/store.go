@@ -21,7 +21,7 @@ type BaseDB interface {
 
 	// GetBatchSweeps fetches all the sweeps that are part a batch.
 	GetBatchSweeps(ctx context.Context, batchID int32) (
-		[]sqlc.GetBatchSweepsRow, error)
+		[]sqlc.Sweep, error)
 
 	// GetBatchSweptAmount returns the total amount of sats swept by a
 	// (confirmed) batch.
@@ -33,10 +33,6 @@ type BaseDB interface {
 	// GetParentBatch fetches the parent batch of a completed sweep.
 	GetParentBatch(ctx context.Context, swapHash []byte) (sqlc.SweepBatch,
 		error)
-
-	// GetSwapUpdates fetches all the updates for a swap.
-	GetSwapUpdates(ctx context.Context, swapHash []byte) (
-		[]sqlc.SwapUpdate, error)
 
 	// GetUnconfirmedBatches fetches all the batches from the
 	// database that are not in a confirmed state.
@@ -154,14 +150,7 @@ func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) (
 		}
 
 		for _, dbSweep := range dbSweeps {
-			updates, err := s.baseDb.GetSwapUpdates(
-				ctx, dbSweep.SwapHash,
-			)
-			if err != nil {
-				return err
-			}
-
-			sweep, err := s.convertSweepRow(dbSweep, updates)
+			sweep, err := s.convertSweepRow(dbSweep)
 			if err != nil {
 				return err
 			}
@@ -260,9 +249,6 @@ type dbSweep struct {
 
 	// Completed indicates whether this sweep is completed.
 	Completed bool
-
-	// LoopOut is the loop out that the sweep belongs to.
-	LoopOut *loopdb.LoopOut
 }
 
 // convertBatchRow converts a batch row from db to a sweepbatcher.Batch struct.
@@ -354,9 +340,7 @@ func batchToUpdateArgs(batch dbBatch) sqlc.UpdateBatchParams {
 }
 
 // convertSweepRow converts a sweep row from db to a sweep struct.
-func (s *SQLStore) convertSweepRow(row sqlc.GetBatchSweepsRow,
-	updates []sqlc.SwapUpdate) (dbSweep, error) {
-
+func (s *SQLStore) convertSweepRow(row sqlc.Sweep) (dbSweep, error) {
 	sweep := dbSweep{
 		ID:      row.ID,
 		BatchID: row.BatchID,
@@ -380,40 +364,7 @@ func (s *SQLStore) convertSweepRow(row sqlc.GetBatchSweepsRow,
 		Index: uint32(row.OutpointIndex),
 	}
 
-	sweep.LoopOut, err = loopdb.ConvertLoopOutRow(
-		s.network,
-		sqlc.GetLoopOutSwapRow{
-			ID:                     row.ID,
-			SwapHash:               row.SwapHash,
-			Preimage:               row.Preimage,
-			InitiationTime:         row.InitiationTime,
-			AmountRequested:        row.AmountRequested,
-			CltvExpiry:             row.CltvExpiry,
-			MaxMinerFee:            row.MaxMinerFee,
-			MaxSwapFee:             row.MaxSwapFee,
-			InitiationHeight:       row.InitiationHeight,
-			ProtocolVersion:        row.ProtocolVersion,
-			Label:                  row.Label,
-			DestAddress:            row.DestAddress,
-			SwapInvoice:            row.SwapInvoice,
-			MaxSwapRoutingFee:      row.MaxSwapRoutingFee,
-			SweepConfTarget:        row.SweepConfTarget,
-			HtlcConfirmations:      row.HtlcConfirmations,
-			OutgoingChanSet:        row.OutgoingChanSet,
-			PrepayInvoice:          row.PrepayInvoice,
-			MaxPrepayRoutingFee:    row.MaxPrepayRoutingFee,
-			PublicationDeadline:    row.PublicationDeadline,
-			SingleSweep:            row.SingleSweep,
-			SenderScriptPubkey:     row.SenderScriptPubkey,
-			ReceiverScriptPubkey:   row.ReceiverScriptPubkey,
-			SenderInternalPubkey:   row.SenderInternalPubkey,
-			ReceiverInternalPubkey: row.ReceiverInternalPubkey,
-			ClientKeyFamily:        row.ClientKeyFamily,
-			ClientKeyIndex:         row.ClientKeyIndex,
-		}, updates,
-	)
-
-	return sweep, err
+	return sweep, nil
 }
 
 // sweepToUpsertArgs converts a Sweep struct to the arguments needed to insert.

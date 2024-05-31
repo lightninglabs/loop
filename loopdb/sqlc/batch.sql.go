@@ -8,7 +8,6 @@ package sqlc
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const confirmBatch = `-- name: ConfirmBatch :exec
@@ -36,73 +35,24 @@ func (q *Queries) DropBatch(ctx context.Context, id int32) error {
 
 const getBatchSweeps = `-- name: GetBatchSweeps :many
 SELECT
-        sweeps.id, sweeps.swap_hash, sweeps.batch_id, sweeps.outpoint_txid, sweeps.outpoint_index, sweeps.amt, sweeps.completed,
-        swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-        loopout_swaps.swap_hash, loopout_swaps.dest_address, loopout_swaps.swap_invoice, loopout_swaps.max_swap_routing_fee, loopout_swaps.sweep_conf_target, loopout_swaps.htlc_confirmations, loopout_swaps.outgoing_chan_set, loopout_swaps.prepay_invoice, loopout_swaps.max_prepay_routing_fee, loopout_swaps.publication_deadline, loopout_swaps.single_sweep, loopout_swaps.payment_timeout,
-        htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
+        id, swap_hash, batch_id, outpoint_txid, outpoint_index, amt, completed
 FROM
         sweeps
-JOIN
-        swaps ON sweeps.swap_hash = swaps.swap_hash
-JOIN
-        loopout_swaps ON sweeps.swap_hash = loopout_swaps.swap_hash
-JOIN
-        htlc_keys ON sweeps.swap_hash = htlc_keys.swap_hash
 WHERE
-        sweeps.batch_id = $1
+        batch_id = $1
 ORDER BY
-        sweeps.id ASC
+        id ASC
 `
 
-type GetBatchSweepsRow struct {
-	ID                     int32
-	SwapHash               []byte
-	BatchID                int32
-	OutpointTxid           []byte
-	OutpointIndex          int32
-	Amt                    int64
-	Completed              bool
-	ID_2                   int32
-	SwapHash_2             []byte
-	Preimage               []byte
-	InitiationTime         time.Time
-	AmountRequested        int64
-	CltvExpiry             int32
-	MaxMinerFee            int64
-	MaxSwapFee             int64
-	InitiationHeight       int32
-	ProtocolVersion        int32
-	Label                  string
-	SwapHash_3             []byte
-	DestAddress            string
-	SwapInvoice            string
-	MaxSwapRoutingFee      int64
-	SweepConfTarget        int32
-	HtlcConfirmations      int32
-	OutgoingChanSet        string
-	PrepayInvoice          string
-	MaxPrepayRoutingFee    int64
-	PublicationDeadline    time.Time
-	SingleSweep            bool
-	PaymentTimeout         int32
-	SwapHash_4             []byte
-	SenderScriptPubkey     []byte
-	ReceiverScriptPubkey   []byte
-	SenderInternalPubkey   []byte
-	ReceiverInternalPubkey []byte
-	ClientKeyFamily        int32
-	ClientKeyIndex         int32
-}
-
-func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatchSweepsRow, error) {
+func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error) {
 	rows, err := q.db.QueryContext(ctx, getBatchSweeps, batchID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetBatchSweepsRow
+	var items []Sweep
 	for rows.Next() {
-		var i GetBatchSweepsRow
+		var i Sweep
 		if err := rows.Scan(
 			&i.ID,
 			&i.SwapHash,
@@ -111,36 +61,6 @@ func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]GetBatch
 			&i.OutpointIndex,
 			&i.Amt,
 			&i.Completed,
-			&i.ID_2,
-			&i.SwapHash_2,
-			&i.Preimage,
-			&i.InitiationTime,
-			&i.AmountRequested,
-			&i.CltvExpiry,
-			&i.MaxMinerFee,
-			&i.MaxSwapFee,
-			&i.InitiationHeight,
-			&i.ProtocolVersion,
-			&i.Label,
-			&i.SwapHash_3,
-			&i.DestAddress,
-			&i.SwapInvoice,
-			&i.MaxSwapRoutingFee,
-			&i.SweepConfTarget,
-			&i.HtlcConfirmations,
-			&i.OutgoingChanSet,
-			&i.PrepayInvoice,
-			&i.MaxPrepayRoutingFee,
-			&i.PublicationDeadline,
-			&i.SingleSweep,
-			&i.PaymentTimeout,
-			&i.SwapHash_4,
-			&i.SenderScriptPubkey,
-			&i.ReceiverScriptPubkey,
-			&i.SenderInternalPubkey,
-			&i.ReceiverInternalPubkey,
-			&i.ClientKeyFamily,
-			&i.ClientKeyIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -184,7 +104,7 @@ WHERE
         sweeps.swap_hash = $1
 AND
         sweeps.completed = TRUE
-AND   
+AND
         sweep_batches.confirmed = TRUE
 `
 

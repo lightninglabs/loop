@@ -1,7 +1,7 @@
 -- name: InsertInstantOut :exec
 INSERT INTO instantout_swaps (
         swap_hash,
-        preimage, 
+        preimage,
         sweep_address,
         outgoing_chan_set,
         htlc_fee_rate,
@@ -53,7 +53,7 @@ WHERE
     swaps.swap_hash = $1;
 
 -- name: GetInstantOutSwaps :many
-SELECT 
+SELECT
     swaps.*,
     instantout_swaps.*,
     htlc_keys.*
