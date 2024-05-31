@@ -409,6 +409,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	// Run the costs migration.
+	err = loop.MigrateLoopOutCosts(d.mainCtx, d.lnd.LndServices, swapDb)
+	if err != nil {
+		return err
+	}
+
 	sweeperDb := sweepbatcher.NewSQLStore(baseDb, chainParams)
 
 	// Create an instance of the loop client library.
