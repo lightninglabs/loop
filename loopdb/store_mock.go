@@ -359,3 +359,17 @@ func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 
 	return nil
 }
+
+// HasMigration returns true if the migration with the given ID has been done.
+func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
+	bool, error) {
+
+	return false, errUnimplemented
+}
+
+// SetMigration marks the migration with the given ID as done.
+func (s *StoreMock) SetMigration(ctx context.Context,
+	migrationID string) error {
+
+	return errUnimplemented
+}

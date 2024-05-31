@@ -439,6 +439,29 @@ func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 	})
 }
 
+// HasMigration returns true if the migration with the given ID has been done.
+func (b *BaseDB) HasMigration(ctx context.Context, migrationID string) (
+	bool, error) {
+
+	migration, err := b.GetMigration(ctx, migrationID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+
+	return migration.MigrationTs.Valid, nil
+}
+
+// SetMigration marks the migration with the given ID as done.
+func (b *BaseDB) SetMigration(ctx context.Context, migrationID string) error {
+	return b.InsertMigration(ctx, sqlc.InsertMigrationParams{
+		MigrationID: migrationID,
+		MigrationTs: sql.NullTime{
+			Time:  time.Now().UTC(),
+			Valid: true,
+		},
+	})
+}
+
 // loopToInsertArgs converts a SwapContract struct to the arguments needed to
 // insert it into the database.
 func loopToInsertArgs(hash lntypes.Hash,

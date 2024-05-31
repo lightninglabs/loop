@@ -515,6 +515,22 @@ func TestBatchUpdateCost(t *testing.T) {
 	require.Equal(t, updateMap[hash2], swapsMap[hash2].State().Cost)
 }
 
+// TestMigrationTracker tests the migration tracker functionality.
+func TestMigrationTracker(t *testing.T) {
+	ctxb := context.Background()
+
+	// Create a new sqlite store for testing.
+	sqlDB := NewTestDB(t)
+	hasMigration, err := sqlDB.HasMigration(ctxb, "test")
+	require.NoError(t, err)
+	require.False(t, hasMigration)
+
+	require.NoError(t, sqlDB.SetMigration(ctxb, "test"))
+	hasMigration, err = sqlDB.HasMigration(ctxb, "test")
+	require.NoError(t, err)
+	require.True(t, hasMigration)
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func randomString(length int) string {

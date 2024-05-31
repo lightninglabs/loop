@@ -70,6 +70,13 @@ type SwapStore interface {
 	BatchUpdateLoopOutSwapCosts(ctx context.Context,
 		swaps map[lntypes.Hash]SwapCost) error
 
+	// HasMigration returns true if the migration with the given ID has
+	// been done.
+	HasMigration(ctx context.Context, migrationID string) (bool, error)
+
+	// SetMigration marks the migration with the given ID as done.
+	SetMigration(ctx context.Context, migrationID string) error
+
 	// Close closes the underlying database.
 	Close() error
 }

@@ -1017,3 +1017,17 @@ func (b *boltSwapStore) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 
 	return errUnimplemented
 }
+
+// HasMigration returns true if the migration with the given ID has been done.
+func (b *boltSwapStore) HasMigration(ctx context.Context, migrationID string) (
+	bool, error) {
+
+	return false, errUnimplemented
+}
+
+// SetMigration marks the migration with the given ID as done.
+func (b *boltSwapStore) SetMigration(ctx context.Context,
+	migrationID string) error {
+
+	return errUnimplemented
+}
