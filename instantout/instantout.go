@@ -381,7 +381,7 @@ func (i *InstantOut) generateHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
-	fee := feeRate.FeeForWeight(int64(weightEstimator.Weight()))
+	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
 	htlcOutValue := i.finalizedHtlcTx.TxOut[0].Value
 	output := &wire.TxOut{
@@ -424,7 +424,7 @@ func (i *InstantOut) generateHtlcSweepTx(ctx context.Context,
 }
 
 // htlcWeight returns the weight for the htlc transaction.
-func htlcWeight(numInputs int) int64 {
+func htlcWeight(numInputs int) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
 	for i := 0; i < numInputs; i++ {
 		weightEstimator.AddTaprootKeySpendInput(
@@ -434,11 +434,11 @@ func htlcWeight(numInputs int) int64 {
 
 	weightEstimator.AddP2WSHOutput()
 
-	return int64(weightEstimator.Weight())
+	return weightEstimator.Weight()
 }
 
 // sweeplessSweepWeight returns the weight for the sweepless sweep transaction.
-func sweeplessSweepWeight(numInputs int) int64 {
+func sweeplessSweepWeight(numInputs int) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
 	for i := 0; i < numInputs; i++ {
 		weightEstimator.AddTaprootKeySpendInput(
@@ -448,7 +448,7 @@ func sweeplessSweepWeight(numInputs int) int64 {
 
 	weightEstimator.AddP2TROutput()
 
-	return int64(weightEstimator.Weight())
+	return weightEstimator.Weight()
 }
 
 // pubkeyTo33ByteSlice converts a pubkey to a 33 byte slice.

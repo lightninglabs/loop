@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
@@ -423,7 +424,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 		)
 		require.NoError(t, err, "unable to retrieve fee estimate")
 
-		minFee := feeRate.FeeForWeight(weight)
+		minFee := feeRate.FeeForWeight(lntypes.WeightUnit(weight))
 		// Just an estimate that works to sanity check fee upper bound.
 		maxFee := btcutil.Amount(float64(minFee) * 1.5)
 

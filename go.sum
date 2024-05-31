@@ -1110,8 +1110,8 @@ github.com/lightninglabs/aperture v0.3.2-beta h1:J2GQwBmSHxpr5VOatXbgrTogF/qN2l6
 github.com/lightninglabs/aperture v0.3.2-beta/go.mod h1:M/5dPzHjHvuYXQuxzicqaGiCclHUvKW6N0ay1t/HGiM=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI/f/O0Avg7t8sqkPo78HFzjmeYFl6DPnc=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
-github.com/lightninglabs/lndclient v0.18.0-0 h1:dx7rms+8IZMzN/bcjfvBO8of9JAJzoAsOyw9jeDN43w=
-github.com/lightninglabs/lndclient v0.18.0-0/go.mod h1:XMt97uW9EJ8JqL8Acnh6mDc+1A6/FkIvcA06+M1tUt0=
+github.com/lightninglabs/lndclient v0.18.0-1 h1:b9ur24NTbNRUOfotkhio6SAlkvXADLz9k7QLIlLYpSk=
+github.com/lightninglabs/lndclient v0.18.0-1/go.mod h1:GBIttLpj+W82XrZrFvQ1gpQH074aTcwisP/zvdGbqE4=
 github.com/lightninglabs/neutrino v0.16.1-0.20240425105051-602843d34ffd h1:D8aRocHpoCv43hL8egXEMYyPmyOiefFHZ66338KQB2s=
 github.com/lightninglabs/neutrino v0.16.1-0.20240425105051-602843d34ffd/go.mod h1:x3OmY2wsA18+Kc3TSV2QpSUewOCiscw2mKpXgZv2kZk=
 github.com/lightninglabs/neutrino/cache v1.1.2 h1:C9DY/DAPaPxbFC+xNNEI/z1SJY9GS3shmlu5hIQ798g=
@@ -1120,8 +1120,8 @@ github.com/lightninglabs/protobuf-go-hex-display v1.33.0-hex-display h1:Y2WiPkBS
 github.com/lightninglabs/protobuf-go-hex-display v1.33.0-hex-display/go.mod h1:c6P6GXX6sHbq/GpV6MGZEdwhWPcYBgnhAHhKbcUYpos=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f h1:Pua7+5TcFEJXIIZ1I2YAUapmbcttmLj4TTi786bIi3s=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f/go.mod h1:c0kvRShutpj3l6B9WtTsNTBUtjSmjZXbJd9ZBRQOSKI=
-github.com/lightningnetwork/lnd v0.18.0-beta.rc3 h1:tO/yJA9SnrWKK+/m+Vi+A0/i0eUHYXLQu0F/8TGtxww=
-github.com/lightningnetwork/lnd v0.18.0-beta.rc3/go.mod h1:1SA9iv9rZddNAcfP38SN9lNSVT1zf5aqmukLUoomjDU=
+github.com/lightningnetwork/lnd v0.18.0-beta h1:3cH7npkUh156FI5kb6bZbiO+Fl3YD+Bu2UbFKoLZ4lo=
+github.com/lightningnetwork/lnd v0.18.0-beta/go.mod h1:1SA9iv9rZddNAcfP38SN9lNSVT1zf5aqmukLUoomjDU=
 github.com/lightningnetwork/lnd/cert v1.2.2 h1:71YK6hogeJtxSxw2teq3eGeuy4rHGKcFf0d0Uy4qBjI=
 github.com/lightningnetwork/lnd/cert v1.2.2/go.mod h1:jQmFn/Ez4zhDgq2hnYSw8r35bqGVxViXhX6Cd7HXM6U=
 github.com/lightningnetwork/lnd/clock v1.1.1 h1:OfR3/zcJd2RhH0RU+zX/77c0ZiOnIMsDIBjgjWdZgA0=

@@ -696,9 +696,7 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 
 	weightEstimate.AddP2TROutput()
 
-	totalWeight := int64(weightEstimate.Weight())
-
-	fee = b.rbfCache.FeeRate.FeeForWeight(totalWeight)
+	fee = b.rbfCache.FeeRate.FeeForWeight(weightEstimate.Weight())
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee = clampBatchFee(fee, batchAmt)
@@ -828,9 +826,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 
 	weightEstimate.AddP2TROutput()
 
-	totalWeight := int64(weightEstimate.Weight())
-
-	fee = b.rbfCache.FeeRate.FeeForWeight(totalWeight)
+	fee = b.rbfCache.FeeRate.FeeForWeight(weightEstimate.Weight())
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee = clampBatchFee(fee, batchAmt)
