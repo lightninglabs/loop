@@ -67,6 +67,11 @@ type LoopoutSwap struct {
 	PaymentTimeout      int32
 }
 
+type MigrationTracker struct {
+	MigrationID string
+	MigrationTs sql.NullTime
+}
+
 type Reservation struct {
 	ID                 int32
 	ReservationID      []byte

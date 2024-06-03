@@ -407,6 +407,61 @@ func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
 	})
 }
 
+// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
+// swaps.
+func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+	costs map[lntypes.Hash]SwapCost) error {
+
+	writeOpts := &SqliteTxOptions{}
+	return b.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+		for swapHash, cost := range costs {
+			lastUpdateID, err := tx.GetLastUpdateID(
+				ctx, swapHash[:],
+			)
+			if err != nil {
+				return err
+			}
+
+			err = tx.OverrideSwapCosts(
+				ctx, sqlc.OverrideSwapCostsParams{
+					ID:           lastUpdateID,
+					ServerCost:   int64(cost.Server),
+					OnchainCost:  int64(cost.Onchain),
+					OffchainCost: int64(cost.Offchain),
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// HasMigration returns true if the migration with the given ID has been done.
+func (b *BaseDB) HasMigration(ctx context.Context, migrationID string) (
+	bool, error) {
+
+	migration, err := b.GetMigration(ctx, migrationID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+
+	return migration.MigrationTs.Valid, nil
+}
+
+// SetMigration marks the migration with the given ID as done.
+func (b *BaseDB) SetMigration(ctx context.Context, migrationID string) error {
+	return b.InsertMigration(ctx, sqlc.InsertMigrationParams{
+		MigrationID: migrationID,
+		MigrationTs: sql.NullTime{
+			Time:  time.Now().UTC(),
+			Valid: true,
+		},
+	})
+}
+
 // loopToInsertArgs converts a SwapContract struct to the arguments needed to
 // insert it into the database.
 func loopToInsertArgs(hash lntypes.Hash,

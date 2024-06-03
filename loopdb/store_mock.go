@@ -3,6 +3,7 @@ package loopdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,8 @@ type StoreMock struct {
 	loopInStoreChan  chan LoopInContract
 	loopInUpdateChan chan SwapStateData
 
+	migrations map[string]struct{}
+
 	t *testing.T
 }
 
@@ -38,6 +41,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		loopInUpdateChan: make(chan SwapStateData, 1),
 		LoopInSwaps:      make(map[lntypes.Hash]*LoopInContract),
 		LoopInUpdates:    make(map[lntypes.Hash][]SwapStateData),
+		migrations:       make(map[string]struct{}),
 		t:                t,
 	}
 }
@@ -336,4 +340,47 @@ func (b *StoreMock) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
 	return errors.New("not implemented")
+}
+
+// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
+// swaps.
+func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+	costs map[lntypes.Hash]SwapCost) error {
+
+	for hash, cost := range costs {
+		if _, ok := s.LoopOutUpdates[hash]; !ok {
+			return fmt.Errorf("swap has no updates: %v", hash)
+		}
+
+		updates, ok := s.LoopOutUpdates[hash]
+		if !ok {
+			return fmt.Errorf("swap has no updates: %v", hash)
+		}
+
+		updates[len(updates)-1].Cost = cost
+	}
+
+	return nil
+}
+
+// HasMigration returns true if the migration with the given ID has been done.
+func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
+	bool, error) {
+
+	_, ok := s.migrations[migrationID]
+
+	return ok, nil
+}
+
+// SetMigration marks the migration with the given ID as done.
+func (s *StoreMock) SetMigration(ctx context.Context,
+	migrationID string) error {
+
+	if _, ok := s.migrations[migrationID]; ok {
+		return errors.New("migration already done")
+	}
+
+	s.migrations[migrationID] = struct{}{}
+
+	return nil
 }

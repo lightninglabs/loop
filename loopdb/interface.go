@@ -65,6 +65,18 @@ type SwapStore interface {
 	// it's decoding using the proto package's `Unmarshal` method.
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 
+	// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of
+	// loop out swaps.
+	BatchUpdateLoopOutSwapCosts(ctx context.Context,
+		swaps map[lntypes.Hash]SwapCost) error
+
+	// HasMigration returns true if the migration with the given ID has
+	// been done.
+	HasMigration(ctx context.Context, migrationID string) (bool, error)
+
+	// SetMigration marks the migration with the given ID as done.
+	SetMigration(ctx context.Context, migrationID string) error
+
 	// Close closes the underlying database.
 	Close() error
 }

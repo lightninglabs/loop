@@ -42,6 +42,7 @@ type serverMock struct {
 
 	swapInvoice string
 	swapHash    lntypes.Hash
+	prepayHash  lntypes.Hash
 
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
@@ -81,13 +82,17 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 		return nil, errors.New("unexpected test swap amount")
 	}
 
+	s.swapHash = swapHash
 	swapPayReqString, err := getInvoice(swapHash, s.swapInvoiceAmt,
 		swapInvoiceDesc)
 	if err != nil {
 		return nil, err
 	}
 
-	prePayReqString, err := getInvoice(swapHash, s.prepayInvoiceAmt,
+	// Set the prepay hash to be different from the swap hash.
+	s.prepayHash = swapHash
+	s.prepayHash[0] ^= 1
+	prePayReqString, err := getInvoice(s.prepayHash, s.prepayInvoiceAmt,
 		prepayInvoiceDesc)
 	if err != nil {
 		return nil, err

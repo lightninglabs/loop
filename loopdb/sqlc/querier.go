@@ -18,10 +18,12 @@ type Querier interface {
 	GetInstantOutSwap(ctx context.Context, swapHash []byte) (GetInstantOutSwapRow, error)
 	GetInstantOutSwapUpdates(ctx context.Context, swapHash []byte) ([]InstantoutUpdate, error)
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
+	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
+	GetMigration(ctx context.Context, migrationID string) (MigrationTracker, error)
 	GetParentBatch(ctx context.Context, swapHash []byte) (SweepBatch, error)
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)
@@ -35,9 +37,11 @@ type Querier interface {
 	InsertInstantOutUpdate(ctx context.Context, arg InsertInstantOutUpdateParams) error
 	InsertLoopIn(ctx context.Context, arg InsertLoopInParams) error
 	InsertLoopOut(ctx context.Context, arg InsertLoopOutParams) error
+	InsertMigration(ctx context.Context, arg InsertMigrationParams) error
 	InsertReservationUpdate(ctx context.Context, arg InsertReservationUpdateParams) error
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
+	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error

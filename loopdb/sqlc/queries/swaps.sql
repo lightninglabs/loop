@@ -133,3 +133,19 @@ INSERT INTO htlc_keys(
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7
 );
+
+-- name: GetLastUpdateID :one
+SELECT id
+FROM swap_updates
+WHERE swap_hash = $1
+ORDER BY update_timestamp DESC
+LIMIT 1;
+
+-- name: OverrideSwapCosts :exec
+UPDATE swap_updates
+SET 
+    server_cost = $2,
+    onchain_cost = $3,
+    offchain_cost = $4
+WHERE id = $1;
+
