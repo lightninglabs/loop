@@ -299,10 +299,15 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	batcherStore := sweepbatcher.NewStoreMock()
 
+	sweepStore, err := sweepbatcher.NewSweepFetcherFromSwapStore(
+		cfg.store, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
-		lnd.ChainParams, batcherStore, cfg.store,
+		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
 	tctx, cancel := context.WithCancel(context.Background())
@@ -532,10 +537,15 @@ func testPreimagePush(t *testing.T) {
 
 	batcherStore := sweepbatcher.NewStoreMock()
 
+	sweepStore, err := sweepbatcher.NewSweepFetcherFromSwapStore(
+		cfg.store, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
-		lnd.ChainParams, batcherStore, cfg.store,
+		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
 	tctx, cancel := context.WithCancel(context.Background())
@@ -953,10 +963,15 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	batcherStore := sweepbatcher.NewStoreMock()
 
+	sweepStore, err := sweepbatcher.NewSweepFetcherFromSwapStore(
+		cfg.store, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
-		lnd.ChainParams, batcherStore, cfg.store,
+		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
 	tctx, cancel := context.WithCancel(context.Background())

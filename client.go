@@ -177,10 +177,18 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		return nil
 	}
 
+	sweepStore, err := sweepbatcher.NewSweepFetcherFromSwapStore(
+		loopDB, cfg.Lnd.ChainParams,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("sweepbatcher."+
+			"NewSweepFetcherFromSwapStore failed: %w", err)
+	}
+
 	batcher := sweepbatcher.NewBatcher(
 		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
 		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
-		cfg.Lnd.ChainParams, sweeperDb, loopDB,
+		cfg.Lnd.ChainParams, sweeperDb, sweepStore,
 	)
 
 	executor := newExecutor(&executorConfig{
