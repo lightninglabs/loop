@@ -150,11 +150,21 @@ func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
 	// costs in the database.
 	updatedCosts := make(map[lntypes.Hash]loopdb.SwapCost)
 	for _, loopOutSwap := range loopOutSwaps {
+		if loopOutSwap.State().State.IsPending() {
+			continue
+		}
+
 		cost, err := CalculateLoopOutCost(
 			lnd.ChainParams, loopOutSwap, paymentFees,
 		)
 		if err != nil {
-			return err
+			// We don't want to fail loopd because of any old swap
+			// that we're unable to calculate the cost for. We'll
+			// warn though so that we can investigate further.
+			log.Warnf("Unable to calculate cost for swap %v: %v",
+				loopOutSwap.Hash, err)
+
+			continue
 		}
 
 		_, ok := updatedCosts[loopOutSwap.Hash]
