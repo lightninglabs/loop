@@ -14,7 +14,12 @@ import (
 )
 
 const (
+	// costMigrationID is the identifier for the cost migration.
 	costMigrationID = "cost_migration"
+
+	// paymentBatchSize is the maximum number of payments we'll fetch in
+	// one go.
+	paymentBatchSize = 1000
 )
 
 // CalculateLoopOutCost calculates the total cost of a loop out swap. It will
@@ -132,18 +137,30 @@ func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
 		return err
 	}
 
-	// Next we fetch all payments from LND.
-	payments, err := lnd.Client.ListPayments(
-		ctx, lndclient.ListPaymentsRequest{},
-	)
-	if err != nil {
-		return err
-	}
-
 	// Gather payment fees to a map for easier lookup.
 	paymentFees := make(map[lntypes.Hash]lnwire.MilliSatoshi)
-	for _, payment := range payments.Payments {
-		paymentFees[payment.Hash] = payment.Fee
+	offset := uint64(0)
+
+	for {
+		payments, err := lnd.Client.ListPayments(
+			ctx, lndclient.ListPaymentsRequest{
+				Offset:      offset,
+				MaxPayments: paymentBatchSize,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		if len(payments.Payments) == 0 {
+			break
+		}
+
+		for _, payment := range payments.Payments {
+			paymentFees[payment.Hash] = payment.Fee
+		}
+
+		offset = payments.LastIndexOffset + 1
 	}
 
 	// Now we'll calculate the cost for each swap and finally update the

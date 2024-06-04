@@ -278,11 +278,24 @@ func (h *mockLightningClient) ListInvoices(_ context.Context,
 
 // ListPayments makes a paginated call to our list payments endpoint.
 func (h *mockLightningClient) ListPayments(_ context.Context,
-	_ lndclient.ListPaymentsRequest) (*lndclient.ListPaymentsResponse,
+	req lndclient.ListPaymentsRequest) (*lndclient.ListPaymentsResponse,
 	error) {
 
+	if req.Offset >= uint64(len(h.lnd.Payments)) {
+		return &lndclient.ListPaymentsResponse{}, nil
+	}
+
+	lastIndexOffset := req.Offset + req.MaxPayments
+	if lastIndexOffset > uint64(len(h.lnd.Payments)) {
+		lastIndexOffset = uint64(len(h.lnd.Payments))
+	}
+
+	result := h.lnd.Payments[req.Offset:lastIndexOffset]
+
 	return &lndclient.ListPaymentsResponse{
-		Payments: h.lnd.Payments,
+		Payments:         result,
+		FirstIndexOffset: req.Offset,
+		LastIndexOffset:  lastIndexOffset - 1,
 	}, nil
 }
 
