@@ -96,6 +96,7 @@ func NewListenerConfig(config *Config, rpcCfg RPCConfig) *ListenerCfg {
 				BlockUntilChainSynced: true,
 				CallerCtx:             callerCtx,
 				BlockUntilUnlocked:    true,
+				RPCTimeout:            cfg.RPCTimeout,
 			}
 
 			// If a custom lnd connection is specified we use that
