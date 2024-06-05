@@ -641,6 +641,49 @@
         }
       }
     },
+    "looprpcDeposit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The identifier of the deposit."
+        },
+        "state": {
+          "$ref": "#/definitions/looprpcDepositState",
+          "description": "The state of the deposit."
+        },
+        "outpoint": {
+          "type": "string",
+          "description": "The outpoint of the deposit in format txid:index."
+        },
+        "value": {
+          "type": "string",
+          "format": "int64",
+          "description": "The value of the deposit in satoshis."
+        },
+        "confirmation_height": {
+          "type": "string",
+          "format": "int64",
+          "description": "The block height at which the deposit was confirmed."
+        }
+      }
+    },
+    "looprpcDepositState": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN_STATE",
+        "DEPOSITED",
+        "WITHDRAWING",
+        "WITHDRAWN",
+        "PUBLISH_EXPIRED",
+        "WAIT_FOR_EXPIRY_SWEEP",
+        "EXPIRED",
+        "FAILED_STATE"
+      ],
+      "default": "UNKNOWN_STATE",
+      "description": " - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed.\n - FAILED_STATE: FAILED_STATE indicates that the deposit has failed."
+    },
     "looprpcDisqualified": {
       "type": "object",
       "properties": {
@@ -1440,6 +1483,47 @@
     },
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
+    },
+    "looprpcStaticAddressSummaryResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address of the client."
+        },
+        "total_num_deposits": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total number of deposits."
+        },
+        "value_unconfirmed": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of unconfirmed deposits."
+        },
+        "value_deposited": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of confirmed deposits."
+        },
+        "value_expired": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all expired deposits."
+        },
+        "value_withdrawn": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been withdrawn."
+        },
+        "filtered_deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "A list of all deposits that match the filtered state."
+        }
+      }
     },
     "looprpcSuggestSwapsResponse": {
       "type": "object",
