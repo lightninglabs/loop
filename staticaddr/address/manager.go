@@ -82,7 +82,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 		m.Unlock()
 
-		return m.getTaprootAddress(clientPubKey, serverPubKey, expiry)
+		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
 	}
 	m.Unlock()
 
@@ -166,14 +166,15 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	log.Infof("Imported static address taproot script to lnd wallet: %v",
 		addr)
 
-	return m.getTaprootAddress(
+	return m.GetTaprootAddress(
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
 	)
 }
 
-func (m *Manager) getTaprootAddress(clientPubkey,
-	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
-	error) {
+// GetTaprootAddress returns a taproot address for the given client and server
+// public keys and expiry.
+func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
+	expiry int64) (*btcutil.AddressTaproot, error) {
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, expiry, clientPubkey, serverPubkey,
@@ -224,7 +225,7 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 		}
 	}
 
-	taprootAddress, err := m.getTaprootAddress(
+	taprootAddress, err := m.GetTaprootAddress(
 		staticAddress.ClientPubkey, staticAddress.ServerPubkey,
 		int64(staticAddress.Expiry),
 	)
