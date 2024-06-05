@@ -167,6 +167,13 @@ service SwapClient {
      */
     rpc WithdrawDeposits (WithdrawDepositsRequest)
         returns (WithdrawDepositsResponse);
+
+    /* loop:`static summary`
+    GetStaticAddressSummary returns a summary of static address related
+    statistics.
+    */
+    rpc GetStaticAddressSummary (StaticAddressSummaryRequest)
+        returns (StaticAddressSummaryResponse);
 }
 
 message LoopOutRequest {
@@ -1568,4 +1575,128 @@ message OutPoint {
     The index of the output on the transaction.
     */
     uint32 output_index = 3;
+}
+
+message StaticAddressSummaryRequest {
+    /*
+    Filters the list of all stored deposits by deposit state.
+    */
+    DepositState state_filter = 1;
+
+    /*
+    Filters the list of all stored deposits by the outpoint.
+    */
+    repeated string outpoints = 2;
+}
+
+message StaticAddressSummaryResponse {
+    /*
+    The static address of the client.
+    */
+    string static_address = 1;
+
+    /*
+    The total number of deposits.
+    */
+    uint32 total_num_deposits = 2;
+
+    /*
+    The total value of unconfirmed deposits.
+    */
+    int64 value_unconfirmed = 3;
+
+    /*
+    The total value of confirmed deposits.
+    */
+    int64 value_deposited = 4;
+
+    /*
+    The total value of all expired deposits.
+    */
+    int64 value_expired = 5;
+
+    /*
+    The total value of all deposits that have been withdrawn.
+    */
+    int64 value_withdrawn = 6;
+
+    /*
+    A list of all deposits that match the filtered state.
+    */
+    repeated Deposit filtered_deposits = 7;
+}
+
+enum DepositState {
+    /*
+    UNKNOWN_STATE is the default state of a deposit.
+    */
+    UNKNOWN_STATE = 0;
+
+    /*
+    DEPOSITED indicates that the deposit has been sufficiently confirmed on
+    chain.
+    */
+    DEPOSITED = 1;
+
+    /*
+    WITHDRAWING indicates that the deposit is currently being withdrawn. It
+    flips to WITHDRAWN once the withdrawal transaction has been sufficiently
+    confirmed.
+    */
+    WITHDRAWING = 2;
+
+    /*
+    WITHDRAWN indicates that the deposit has been withdrawn.
+    */
+    WITHDRAWN = 3;
+
+    /*
+    PUBLISH_EXPIRED indicates that the deposit has expired and the sweep
+    transaction has been published.
+    */
+    PUBLISH_EXPIRED = 4;
+
+    /*
+    WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep
+    transaction has not yet been sufficiently confirmed.
+    */
+    WAIT_FOR_EXPIRY_SWEEP = 5;
+
+    /*
+    EXPIRED indicates that the deposit has expired and the sweep transaction
+    has been sufficiently confirmed.
+    */
+    EXPIRED = 6;
+
+    /*
+    FAILED_STATE indicates that the deposit has failed.
+    */
+    FAILED_STATE = 7;
+}
+
+message Deposit {
+    /*
+    The identifier of the deposit.
+    */
+    bytes id = 1;
+
+    /*
+    The state of the deposit.
+    */
+    DepositState state = 2;
+
+    /*
+    The outpoint of the deposit in format txid:index.
+    */
+    string outpoint = 3;
+
+    /*
+    The value of the deposit in satoshis.
+    */
+    int64 value = 4;
+
+    /*
+    The block height at which the deposit was confirmed.
+    */
+    int64 confirmation_height = 5;
 }
