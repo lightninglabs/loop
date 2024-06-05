@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
@@ -1408,6 +1409,203 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 	}
 
 	return &looprpc.WithdrawDepositsResponse{}, err
+}
+
+// GetStaticAddressSummary returns a summary static address related information.
+// Amongst deposits and withdrawals and their total values it also includes a
+// list of detailed deposit information filtered by their state.
+func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
+	req *looprpc.StaticAddressSummaryRequest) (
+	*looprpc.StaticAddressSummaryResponse, error) {
+
+	if req.StateFilter != looprpc.DepositState_UNKNOWN_STATE &&
+		len(req.Outpoints) > 0 {
+
+		return nil, fmt.Errorf("can either filter by state or " +
+			"outpoints")
+	}
+
+	allDeposits, err := s.depositManager.GetAllDeposits()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.depositSummary(
+		ctx, allDeposits, req.StateFilter, req.Outpoints,
+	)
+}
+
+func (s *swapClientServer) depositSummary(ctx context.Context,
+	deposits []*deposit.Deposit, stateFilter looprpc.DepositState,
+	outpointsFilter []string) (*looprpc.StaticAddressSummaryResponse,
+	error) {
+
+	var (
+		totalNumDeposits = len(deposits)
+		valueUnconfirmed int64
+		valueDeposited   int64
+		valueExpired     int64
+		valueWithdrawn   int64
+	)
+
+	// Value unconfirmed.
+	utxos, err := s.staticAddressManager.ListUnspent(
+		ctx, 0, deposit.MinConfs-1,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range utxos {
+		valueUnconfirmed += int64(u.Value)
+	}
+
+	// Confirmed total values by category.
+	for _, d := range deposits {
+		value := int64(d.Value)
+		switch d.GetState() {
+		case deposit.Deposited:
+			valueDeposited += value
+
+		case deposit.Expired:
+			valueExpired += value
+
+		case deposit.Withdrawn:
+			valueWithdrawn += value
+		}
+	}
+
+	// Deposits filtered by state or outpoints.
+	var clientDeposits []*looprpc.Deposit
+	if len(outpointsFilter) > 0 {
+		f := func(d *deposit.Deposit) bool {
+			for _, outpoint := range outpointsFilter {
+				if outpoint == d.OutPoint.String() {
+					return true
+				}
+			}
+			return false
+		}
+		clientDeposits = filter(deposits, f)
+
+		if len(outpointsFilter) != len(clientDeposits) {
+			return nil, fmt.Errorf("not all outpoints found in " +
+				"deposits")
+		}
+	} else {
+		f := func(d *deposit.Deposit) bool {
+			if stateFilter == looprpc.DepositState_UNKNOWN_STATE {
+				// Per default, we return deposits in all
+				// states.
+				return true
+			}
+
+			return d.GetState() == toServerState(stateFilter)
+		}
+		clientDeposits = filter(deposits, f)
+	}
+
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := s.staticAddressManager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.StaticAddressSummaryResponse{
+		StaticAddress:    address.String(),
+		TotalNumDeposits: uint32(totalNumDeposits),
+		ValueUnconfirmed: valueUnconfirmed,
+		ValueDeposited:   valueDeposited,
+		ValueExpired:     valueExpired,
+		ValueWithdrawn:   valueWithdrawn,
+		FilteredDeposits: clientDeposits,
+	}, nil
+}
+
+type filterFunc func(deposits *deposit.Deposit) bool
+
+func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
+	var clientDeposits []*looprpc.Deposit
+	for _, d := range deposits {
+		if !f(d) {
+			continue
+		}
+
+		hash := d.Hash
+		outpoint := wire.NewOutPoint(&hash, d.Index).String()
+		deposit := &looprpc.Deposit{
+			Id:                 d.ID[:],
+			State:              toClientState(d.GetState()),
+			Outpoint:           outpoint,
+			Value:              int64(d.Value),
+			ConfirmationHeight: d.ConfirmationHeight,
+		}
+
+		clientDeposits = append(clientDeposits, deposit)
+	}
+
+	return clientDeposits
+}
+
+func toClientState(state fsm.StateType) looprpc.DepositState {
+	switch state {
+	case deposit.Deposited:
+		return looprpc.DepositState_DEPOSITED
+
+	case deposit.Withdrawing:
+		return looprpc.DepositState_WITHDRAWING
+
+	case deposit.Withdrawn:
+		return looprpc.DepositState_WITHDRAWN
+
+	case deposit.PublishExpiredDeposit:
+		return looprpc.DepositState_PUBLISH_EXPIRED
+
+	case deposit.WaitForExpirySweep:
+		return looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
+
+	case deposit.Expired:
+		return looprpc.DepositState_EXPIRED
+
+	case deposit.Failed:
+		return looprpc.DepositState_FAILED_STATE
+
+	default:
+		return looprpc.DepositState_UNKNOWN_STATE
+	}
+}
+
+func toServerState(state looprpc.DepositState) fsm.StateType {
+	switch state {
+	case looprpc.DepositState_DEPOSITED:
+		return deposit.Deposited
+
+	case looprpc.DepositState_WITHDRAWING:
+		return deposit.Withdrawing
+
+	case looprpc.DepositState_WITHDRAWN:
+		return deposit.Withdrawn
+
+	case looprpc.DepositState_PUBLISH_EXPIRED:
+		return deposit.PublishExpiredDeposit
+
+	case looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP:
+		return deposit.WaitForExpirySweep
+
+	case looprpc.DepositState_EXPIRED:
+		return deposit.Expired
+
+	case looprpc.DepositState_FAILED_STATE:
+		return deposit.Failed
+
+	default:
+		return fsm.EmptyState
+	}
 }
 
 func toServerOutpoints(outpoints []*looprpc.OutPoint) ([]wire.OutPoint,
