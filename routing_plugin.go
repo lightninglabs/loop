@@ -513,7 +513,7 @@ func (r *lowToHighRoutingPlugin) BeforePayment(ctx context.Context,
 	// Calculate the limit until we'll disable edges. The way we calculate
 	// this limit is that we take the minimum and maximum fee peers which
 	// define our fee range. Within this fee range we'll scale linearly
-	// where each step euqals to the range divided by maxAttempts.
+	// where each step equals to the range divided by maxAttempts.
 	minFee := r.nodesByMaxFee[0].fee
 	maxFee := r.nodesByMaxFee[len(r.nodesByMaxFee)-1].fee
 	limit := minFee +

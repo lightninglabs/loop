@@ -41,7 +41,7 @@ const (
 	HtlcV3
 )
 
-// htlcScript defines an interface for the different HTLC implementations.
+// HtlcScript defines an interface for the different HTLC implementations.
 type HtlcScript interface {
 	// genSuccessWitness returns the success script to spend this htlc with
 	// the preimage.

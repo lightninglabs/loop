@@ -32,7 +32,7 @@ const (
 	ProtocolVersionUserExpiryLoopOut ProtocolVersion = 4
 
 	// ProtocolVersionHtlcV2 indicates that the client will use the new
-	// HTLC v2 scrips for swaps.
+	// HTLC v2 scripts for swaps.
 	ProtocolVersionHtlcV2 ProtocolVersion = 5
 
 	// ProtocolVersionMultiLoopIn indicates that the client creates a probe

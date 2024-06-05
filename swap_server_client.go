@@ -636,7 +636,7 @@ const (
 	paymentTypeInvoice
 )
 
-// routeCancelMetadata contains cancelation information for swaps that are
+// routeCancelMetadata contains cancellation information for swaps that are
 // canceled because the client could not route off-chain to the server.
 type routeCancelMetadata struct {
 	// paymentType is the type of payment that failed.
