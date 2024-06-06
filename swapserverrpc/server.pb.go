@@ -1216,11 +1216,10 @@ type ServerLoopInQuoteRequest struct {
 	//	loopd/v0.10.0-beta/commit=3b635821
 	//	litd/v0.2.0-alpha/commit=326d754
 	UserAgent string `protobuf:"bytes,6,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
-	// If this is a quote request for a static address loop in, this value
-	// defines the number of static address deposits that the client wants to
-	// quote for. The amount of the quote reflects the sum of all deposits. The
-	// number of deposits here is taken into consideration for the total swap
-	// fee.
+	// The number of static address deposits the client wants to quote for.
+	// If the number of deposits exceeds one the server will apply a per-input
+	// service fee. This is to cover for the increased on-chain fee the server
+	// has to pay when the sweeping transaction is broadcast.
 	NumStaticAddressDeposits uint32 `protobuf:"varint,7,opt,name=num_static_address_deposits,json=numStaticAddressDeposits,proto3" json:"num_static_address_deposits,omitempty"`
 }
 
