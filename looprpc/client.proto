@@ -766,6 +766,13 @@ message QuoteRequest {
     probing and payment.
     */
     bool private = 7;
+
+    /*
+    Static address deposit outpoints that will be quoted for. This option only
+    pertains to loop in swaps. Either this or the amt parameter can be set at
+    the same time.
+    */
+    repeated string deposit_outpoints = 8;
 }
 
 message InQuoteResponse {
