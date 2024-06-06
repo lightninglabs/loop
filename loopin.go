@@ -128,7 +128,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// hints.
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
-		request.RouteHints, request.Initiator,
+		request.RouteHints, request.Initiator, 0,
 	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)
