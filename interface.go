@@ -288,6 +288,12 @@ type LoopInQuoteRequest struct {
 	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
 	// appended to the user agent string.
 	Initiator string
+
+	// The number of static address deposits the client wants to quote for.
+	// If the number of deposits exceeds one the server will apply a
+	// per-input service fee. This is to cover for the increased on-chain
+	// fee the server has to pay when the sweeping transaction is broadcast.
+	NumDeposits uint32
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost
