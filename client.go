@@ -646,9 +646,9 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	return swapInfo, nil
 }
 
-// LoopInQuote takes an amount and returns a break down of estimated
-// costs for the client. Both the swap server and the on-chain fee estimator are
-// queried to get to build the quote response.
+// LoopInQuote takes an amount and returns a breakdown of estimated costs for
+// the client. Both the swap server and the on-chain fee estimator are queried
+// to get to build the quote response.
 func (s *Client) LoopInQuote(ctx context.Context,
 	request *LoopInQuoteRequest) (*LoopInQuote, error) {
 
@@ -694,7 +694,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	quote, err := s.Server.GetLoopInQuote(
 		ctx, request.Amount, s.lndServices.NodePubkey, request.LastHop,
-		request.RouteHints, request.Initiator,
+		request.RouteHints, request.Initiator, request.NumDeposits,
 	)
 	if err != nil {
 		return nil, err
@@ -704,7 +704,9 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	// We don't calculate the on-chain fee if the HTLC is going to be
 	// published externally.
-	if request.ExternalHtlc {
+	// We also don't calculate the on-chain fee if the loop in is funded by
+	// static address deposits because we don't publish the HTLC on-chain.
+	if request.ExternalHtlc || request.NumDeposits > 0 {
 		return &LoopInQuote{
 			SwapFee:  swapFee,
 			MinerFee: 0,
