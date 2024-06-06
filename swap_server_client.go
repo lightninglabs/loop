@@ -82,7 +82,7 @@ type swapServerClient interface {
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
 		pubKey route.Vertex, lastHop *route.Vertex,
 		routeHints [][]zpay32.HopHint,
-		initiator string) (*LoopInQuote, error)
+		initiator string, numDeposits uint32) (*LoopInQuote, error)
 
 	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
 		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
@@ -268,7 +268,8 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context,
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
-	routeHints [][]zpay32.HopHint, initiator string) (*LoopInQuote, error) {
+	routeHints [][]zpay32.HopHint, initiator string,
+	numDeposits uint32) (*LoopInQuote, error) {
 
 	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
 	if err != nil && status.Code(err) != codes.Unavailable {
@@ -279,10 +280,11 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	defer rpcCancel()
 
 	req := &looprpc.ServerLoopInQuoteRequest{
-		Amt:             uint64(amt),
-		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
-		Pubkey:          pubKey[:],
-		UserAgent:       UserAgent(initiator),
+		Amt:                      uint64(amt),
+		ProtocolVersion:          loopdb.CurrentRPCProtocolVersion(),
+		Pubkey:                   pubKey[:],
+		UserAgent:                UserAgent(initiator),
+		NumStaticAddressDeposits: numDeposits,
 	}
 
 	if lastHop != nil {
