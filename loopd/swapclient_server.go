@@ -748,11 +748,51 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	log.Infof("Loop in quote request received")
 
+	var (
+		numDeposits = uint32(len(req.DepositOutpoints))
+		err         error
+	)
+
 	htlcConfTarget, err := validateLoopInRequest(
-		req.ConfTarget, req.ExternalHtlc,
+		req.ConfTarget, req.ExternalHtlc, numDeposits, req.Amt,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	// Retrieve deposits to calculate their total value.
+	var summary *looprpc.StaticAddressSummaryResponse
+	amount := btcutil.Amount(req.Amt)
+	if len(req.DepositOutpoints) > 0 {
+		summary, err = s.GetStaticAddressSummary(
+			ctx, &looprpc.StaticAddressSummaryRequest{
+				Outpoints: req.DepositOutpoints,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if summary == nil {
+			return nil, fmt.Errorf("no summary returned for " +
+				"deposit outpoints")
+		}
+
+		// The requested amount should be 0 here if the request
+		// contained deposit outpoints.
+		if amount != 0 && len(summary.FilteredDeposits) > 0 {
+			return nil, fmt.Errorf("amount should be 0 for " +
+				"deposit quotes")
+		}
+
+		// In case we quote for deposits we send the server both the
+		// total value and the number of deposits. This is so the server
+		// can probe the total amount and calculate the per input fee.
+		if amount == 0 && len(summary.FilteredDeposits) > 0 {
+			for _, deposit := range summary.FilteredDeposits {
+				amount += btcutil.Amount(deposit.Value)
+			}
+		}
 	}
 
 	var (
@@ -778,13 +818,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	}
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
-		Amount:         btcutil.Amount(req.Amt),
+		Amount:         amount,
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
 		LastHop:        lastHop,
 		RouteHints:     routeHints,
 		Private:        req.Private,
 		Initiator:      defaultLoopdInitiator,
+		NumDeposits:    numDeposits,
 	})
 	if err != nil {
 		return nil, err
@@ -881,7 +922,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	log.Infof("Loop in request received")
 
 	htlcConfTarget, err := validateLoopInRequest(
-		in.HtlcConfTarget, in.ExternalHtlc,
+		in.HtlcConfTarget, in.ExternalHtlc, 0, in.Amt,
 	)
 	if err != nil {
 		return nil, err
@@ -1730,7 +1771,13 @@ func validateConfTarget(target, defaultTarget int32) (int32, error) {
 
 // validateLoopInRequest fails if the mutually exclusive conf target and
 // external parameters are both set.
-func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
+func validateLoopInRequest(htlcConfTarget int32, external bool,
+	numDeposits uint32, amount int64) (int32, error) {
+
+	if amount == 0 && numDeposits == 0 {
+		return 0, errors.New("either amount or deposits must be set")
+	}
+
 	// If the htlc is going to be externally set, the htlcConfTarget should
 	// not be set, because it has no relevance when the htlc is external.
 	if external && htlcConfTarget != 0 {
@@ -1741,6 +1788,12 @@ func validateLoopInRequest(htlcConfTarget int32, external bool) (int32, error) {
 	// If the htlc is being externally published, we do not need to set a
 	// confirmation target.
 	if external {
+		return 0, nil
+	}
+
+	// If the loop in uses static address deposits, we do not need to set a
+	// confirmation target since the HTLC won't be published by the client.
+	if numDeposits > 0 {
 		return 0, nil
 	}
 

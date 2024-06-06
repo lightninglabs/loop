@@ -146,6 +146,8 @@ func TestValidateConfTarget(t *testing.T) {
 func TestValidateLoopInRequest(t *testing.T) {
 	tests := []struct {
 		name           string
+		amount         int64
+		numDeposits    uint32
 		external       bool
 		confTarget     int32
 		expectErr      bool
@@ -153,6 +155,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 	}{
 		{
 			name:           "external and htlc conf set",
+			amount:         100_000,
 			external:       true,
 			confTarget:     1,
 			expectErr:      true,
@@ -160,6 +163,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 		},
 		{
 			name:           "external and no conf",
+			amount:         100_000,
 			external:       true,
 			confTarget:     0,
 			expectErr:      false,
@@ -167,6 +171,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 		},
 		{
 			name:           "not external, zero conf",
+			amount:         100_000,
 			external:       false,
 			confTarget:     0,
 			expectErr:      false,
@@ -174,6 +179,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 		},
 		{
 			name:           "not external, bad conf",
+			amount:         100_000,
 			external:       false,
 			confTarget:     1,
 			expectErr:      true,
@@ -181,20 +187,35 @@ func TestValidateLoopInRequest(t *testing.T) {
 		},
 		{
 			name:           "not external, ok conf",
+			amount:         100_000,
 			external:       false,
 			confTarget:     5,
 			expectErr:      false,
 			expectedTarget: 5,
 		},
+		{
+			name:           "not external, amount no deposit",
+			amount:         100_000,
+			numDeposits:    0,
+			external:       false,
+			expectErr:      false,
+			expectedTarget: loop.DefaultHtlcConfTarget,
+		},
+		{
+			name:        "not external, deposit no amount",
+			amount:      100_000,
+			numDeposits: 1,
+			external:    false,
+			expectErr:   false,
+		},
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
 			external := test.external
 			conf, err := validateLoopInRequest(
-				test.confTarget, external,
+				test.confTarget, external, test.numDeposits,
+				test.amount,
 			)
 
 			if test.expectErr {
