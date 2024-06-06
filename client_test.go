@@ -106,7 +106,7 @@ func TestLoopOutFailOffchain(t *testing.T) {
 	ctx.finish()
 }
 
-// TestLoopOutWrongAmount asserts that the client checks the server invoice
+// TestLoopOutFailWrongAmount asserts that the client checks the server invoice
 // amounts.
 func TestLoopOutFailWrongAmount(t *testing.T) {
 	defer test.Guard(t)()

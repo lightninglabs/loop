@@ -177,7 +177,7 @@ func TestCalculateAmount(t *testing.T) {
 	}
 }
 
-// TestSuggestSwaps tests swap suggestions for the threshold rule. It does not
+// TestSuggestSwap tests swap suggestions for the threshold rule. It does not
 // many different values because we have separate tests for swap amount
 // calculation.
 func TestSuggestSwap(t *testing.T) {
