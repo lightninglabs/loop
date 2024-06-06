@@ -284,6 +284,12 @@ message ServerLoopInQuoteRequest {
     //    loopd/v0.10.0-beta/commit=3b635821
     //    litd/v0.2.0-alpha/commit=326d754
     string user_agent = 6;
+
+    // The number of static address deposits the client wants to quote for.
+    // If the number of deposits exceeds one the server will apply a per-input
+    // service fee. This is to cover for the increased on-chain fee the server
+    // has to pay when the sweeping transaction is broadcast.
+    uint32 num_static_address_deposits = 7;
 }
 
 message ServerLoopInQuoteResponse {

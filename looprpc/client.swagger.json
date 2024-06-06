@@ -257,7 +257,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "If the",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -418,7 +418,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "If the",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
             "in": "query",
             "required": false,
             "type": "array",
