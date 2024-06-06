@@ -1757,7 +1757,9 @@ type QuoteRequest struct {
 	// private. In which case, loop will generate hophints to assist with
 	// probing and payment.
 	Private bool `protobuf:"varint,7,opt,name=private,proto3" json:"private,omitempty"`
-	// If the
+	// Static address deposit outpoints that will be quoted for. This option only
+	// pertains to loop in swaps. Either this or the amt parameter can be set at
+	// the same time.
 	DepositOutpoints []string `protobuf:"bytes,8,rep,name=deposit_outpoints,json=depositOutpoints,proto3" json:"deposit_outpoints,omitempty"`
 }
 
