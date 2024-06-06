@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -19,10 +20,11 @@ var quoteCommand = cli.Command{
 }
 
 var quoteInCommand = cli.Command{
-	Name:        "in",
-	Usage:       "get a quote for the cost of a loop in swap",
-	ArgsUsage:   "amt",
-	Description: "Allows to determine the cost of a swap up front",
+	Name:      "in",
+	Usage:     "get a quote for the cost of a loop in swap",
+	ArgsUsage: "amt",
+	Description: "Allows to determine the cost of a swap up front." +
+		"Either specify an amount or deposit outpoints.",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name: lastHopFlag.Name,
@@ -33,20 +35,38 @@ var quoteInCommand = cli.Command{
 		verboseFlag,
 		privateFlag,
 		routeHintsFlag,
+		cli.StringSliceFlag{
+			Name: "deposit_outpoint",
+			Usage: "one or more static address deposit outpoints " +
+				"to quote for. Deposit outpoints are not to " +
+				"be used in combination with an amount. Each" +
+				"additional outpoint can be added by " +
+				"specifying --deposit_outpoint tx_id:idx",
+		},
 	},
 	Action: quoteIn,
 }
 
 func quoteIn(ctx *cli.Context) error {
 	// Show command help if the incorrect number arguments was provided.
-	if ctx.NArg() != 1 {
+	if ctx.NArg() != 1 && !ctx.IsSet("deposit_outpoint") {
 		return cli.ShowCommandHelp(ctx, "in")
 	}
 
-	args := ctx.Args()
-	amt, err := parseAmt(args[0])
-	if err != nil {
-		return err
+	var (
+		manualAmt        btcutil.Amount
+		depositAmt       btcutil.Amount
+		depositOutpoints []string
+		err              error
+		ctxb             = context.Background()
+	)
+
+	if ctx.NArg() == 1 {
+		args := ctx.Args()
+		manualAmt, err = parseAmt(args[0])
+		if err != nil {
+			return err
+		}
 	}
 
 	client, cleanup, err := getClient(ctx)
@@ -62,11 +82,20 @@ func quoteIn(ctx *cli.Context) error {
 		return err
 	}
 
+	if ctx.IsSet("deposit_outpoint") {
+		depositOutpoints = ctx.StringSlice("deposit_outpoint")
+		depositAmt, err = depositAmount(ctxb, client, depositOutpoints)
+		if err != nil {
+			return err
+		}
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
-		Amt:              int64(amt),
+		Amt:              int64(manualAmt),
 		ConfTarget:       int32(ctx.Uint64("conf_target")),
 		LoopInRouteHints: hints,
 		Private:          ctx.Bool(privateFlag.Name),
+		DepositOutpoints: depositOutpoints,
 	}
 
 	if ctx.IsSet(lastHopFlag.Name) {
@@ -80,7 +109,6 @@ func quoteIn(ctx *cli.Context) error {
 		quoteReq.LoopInLastHop = lastHopVertex[:]
 	}
 
-	ctxb := context.Background()
 	quoteResp, err := client.GetLoopInQuote(ctxb, quoteReq)
 	if err != nil {
 		return err
@@ -98,8 +126,34 @@ func quoteIn(ctx *cli.Context) error {
 			"amount.\n")
 	}
 
+	// If the user specified static address deposits, we quoted for their
+	// total value and need to display that value instead of the manually
+	// selected one.
+	if manualAmt == 0 {
+		quoteReq.Amt = int64(depositAmt)
+	}
 	printQuoteInResp(quoteReq, quoteResp, ctx.Bool("verbose"))
 	return nil
+}
+
+func depositAmount(ctx context.Context, client looprpc.SwapClientClient,
+	depositOutpoints []string) (btcutil.Amount, error) {
+
+	addressSummary, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{
+			Outpoints: depositOutpoints,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	var depositAmt btcutil.Amount
+	for _, deposit := range addressSummary.FilteredDeposits {
+		depositAmt += btcutil.Amount(deposit.Value)
+	}
+
+	return depositAmt, nil
 }
 
 var quoteOutCommand = cli.Command{
