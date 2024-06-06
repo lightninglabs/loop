@@ -254,6 +254,17 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "deposit_outpoints",
+            "description": "If the",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -404,6 +415,17 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "deposit_outpoints",
+            "description": "If the",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
