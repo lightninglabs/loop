@@ -30,30 +30,29 @@ var (
 
 // isPublicNode checks if a node is public, by simply checking if there's any
 // channels reported to the node.
-func isPublicNode(ctx context.Context, lnd *lndclient.LndServices,
+func isPublicNode(ctx context.Context, lndClient lndclient.LightningClient,
 	pubKey [33]byte) (bool, error) {
 
 	// GetNodeInfo doesn't report our private channels with the queried node
-	// so we can use it to determine if the node is considered public.
-	nodeInfo, err := lnd.Client.GetNodeInfo(
-		ctx, pubKey, true,
-	)
+	// so, we can use it to determine if the node is considered public.
+	nodeInfo, err := lndClient.GetNodeInfo(ctx, pubKey, true)
 
 	if err != nil {
 		return false, err
 	}
 
-	return (nodeInfo.ChannelCount > 0), nil
+	return nodeInfo.ChannelCount > 0, nil
 }
 
 // fetchChannelEdgesByID fetches the edge info for the passed channel and
 // returns the channeldb structs filled with the data that is needed for
 // LND's SelectHopHints implementation.
-func fetchChannelEdgesByID(ctx context.Context, lnd *lndclient.LndServices,
-	chanID uint64) (*models.ChannelEdgeInfo, *models.ChannelEdgePolicy,
+func fetchChannelEdgesByID(ctx context.Context,
+	lndClient lndclient.LightningClient, chanID uint64) (
+	*models.ChannelEdgeInfo, *models.ChannelEdgePolicy,
 	*models.ChannelEdgePolicy, error) {
 
-	chanInfo, err := lnd.Client.GetChanInfo(ctx, chanID)
+	chanInfo, err := lndClient.GetChanInfo(ctx, chanID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -125,14 +124,14 @@ func getAlias(aliasCache map[lnwire.ChannelID]lnwire.ShortChannelID,
 
 // SelectHopHints calls into LND's exposed SelectHopHints prefiltered to the
 // includeNodes map (unless it's empty).
-func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
+func SelectHopHints(ctx context.Context, lndClient lndclient.LightningClient,
 	amt btcutil.Amount, numMaxHophints int,
 	includeNodes map[route.Vertex]struct{}) ([][]zpay32.HopHint, error) {
 
 	aliasCache := make(map[lnwire.ChannelID]lnwire.ShortChannelID)
 
 	// Fetch all active and public channels.
-	channels, err := lnd.Client.ListChannels(ctx, false, false)
+	channels, err := lndClient.ListChannels(ctx, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -175,13 +174,13 @@ func SelectHopHints(ctx context.Context, lnd *lndclient.LndServices,
 
 	cfg := &SelectHopHintsCfg{
 		IsPublicNode: func(pubKey [33]byte) (bool, error) {
-			return isPublicNode(ctx, lnd, pubKey)
+			return isPublicNode(ctx, lndClient, pubKey)
 		},
 		FetchChannelEdgesByID: func(chanID uint64) (
 			*models.ChannelEdgeInfo, *models.ChannelEdgePolicy,
 			*models.ChannelEdgePolicy, error) {
 
-			return fetchChannelEdgesByID(ctx, lnd, chanID)
+			return fetchChannelEdgesByID(ctx, lndClient, chanID)
 		},
 		GetAlias: func(id lnwire.ChannelID) (
 			lnwire.ShortChannelID, error) {

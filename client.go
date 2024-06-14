@@ -683,7 +683,8 @@ func (s *Client) LoopInQuote(ctx context.Context,
 		// Because the Private flag is set, we'll generate our own
 		// set of hop hints and use that
 		request.RouteHints, err = SelectHopHints(
-			ctx, s.lndServices, request.Amount, DefaultMaxHopHints, includeNodes,
+			ctx, s.lndServices.Client, request.Amount,
+			DefaultMaxHopHints, includeNodes,
 		)
 		if err != nil {
 			return nil, err

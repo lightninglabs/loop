@@ -111,8 +111,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		// Because the Private flag is set, we'll generate our own set
 		// of hop hints.
 		request.RouteHints, err = SelectHopHints(
-			globalCtx, cfg.lnd, request.Amount, DefaultMaxHopHints,
-			includeNodes,
+			globalCtx, cfg.lnd.Client, request.Amount,
+			DefaultMaxHopHints, includeNodes,
 		)
 		if err != nil {
 			return nil, err
