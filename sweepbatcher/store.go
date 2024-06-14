@@ -111,7 +111,7 @@ func (s *SQLStore) InsertSweepBatch(ctx context.Context, batch *dbBatch) (int32,
 // DropBatch drops a batch from the database. Note that we only use this call
 // for batches that have no sweeps and so we'd not be able to resume.
 func (s *SQLStore) DropBatch(ctx context.Context, id int32) error {
-	readOpts := loopdb.NewSqlReadOpts()
+	readOpts := loopdb.NewSqlWriteOpts()
 	return s.baseDb.ExecTx(ctx, readOpts, func(tx *sqlc.Queries) error {
 		dbSweeps, err := tx.GetBatchSweeps(ctx, id)
 		if err != nil {
