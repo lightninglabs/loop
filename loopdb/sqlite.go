@@ -323,11 +323,19 @@ type SqliteTxOptions struct {
 	readOnly bool
 }
 
-// NewSqlReadOpts returns a new KeyStoreTxOptions instance triggers a read
+// NewSqlReadOpts returns a new KeyStoreTxOptions instance that triggers a read
 // transaction.
 func NewSqlReadOpts() *SqliteTxOptions {
 	return &SqliteTxOptions{
 		readOnly: true,
+	}
+}
+
+// NewSqlWriteOpts returns a new KeyStoreTxOptions instance that triggers a
+// write (regular) transaction.
+func NewSqlWriteOpts() *SqliteTxOptions {
+	return &SqliteTxOptions{
+		readOnly: false,
 	}
 }
 

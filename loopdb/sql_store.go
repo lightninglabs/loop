@@ -96,7 +96,7 @@ func (s *BaseDB) FetchLoopOutSwap(ctx context.Context,
 func (s *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *LoopOutContract) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
@@ -134,7 +134,7 @@ func (s *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 func (s *BaseDB) BatchCreateLoopOut(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopOutContract) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			swap := swap
@@ -223,7 +223,7 @@ func (s *BaseDB) FetchLoopInSwaps(ctx context.Context) (
 func (s *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *LoopInContract) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
@@ -260,7 +260,7 @@ func (s *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 func (s *BaseDB) BatchCreateLoopIn(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopInContract) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			swap := swap
@@ -351,7 +351,7 @@ var _ SwapStore = (*BaseDB)(nil)
 func (s *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		updateParams := sqlc.InsertSwapUpdateParams{
 			SwapHash:        hash[:],
@@ -379,7 +379,7 @@ func (s *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, updates := range updateData {
 			for _, update := range updates {
@@ -412,7 +412,7 @@ func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
 func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 	costs map[lntypes.Hash]SwapCost) error {
 
-	writeOpts := &SqliteTxOptions{}
+	writeOpts := NewSqlWriteOpts()
 	return b.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, cost := range costs {
 			lastUpdateID, err := tx.GetLastUpdateID(

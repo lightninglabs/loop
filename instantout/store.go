@@ -132,7 +132,7 @@ func (s *SQLStore) CreateInstantLoopOut(ctx context.Context,
 		UpdateState:     string(instantOut.State),
 	}
 
-	return s.baseDb.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+	return s.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q *sqlc.Queries) error {
 			err := q.InsertSwap(ctx, swapArgs)
 			if err != nil {
@@ -204,7 +204,7 @@ func (s *SQLStore) UpdateInstantLoopOut(ctx context.Context,
 		UpdateState:     string(instantOut.State),
 	}
 
-	return s.baseDb.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+	return s.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q *sqlc.Queries) error {
 			err := q.UpdateInstantOut(ctx, updateParams)
 			if err != nil {

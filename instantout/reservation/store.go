@@ -81,7 +81,7 @@ func (r *SQLStore) CreateReservation(ctx context.Context,
 		UpdateState:     string(reservation.State),
 	}
 
-	return r.baseDb.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+	return r.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q *sqlc.Queries) error {
 			err := q.CreateReservation(ctx, args)
 			if err != nil {
@@ -121,7 +121,7 @@ func (r *SQLStore) UpdateReservation(ctx context.Context,
 		),
 	}
 
-	return r.baseDb.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+	return r.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q *sqlc.Queries) error {
 			err := q.UpdateReservation(ctx, updateArgs)
 			if err != nil {
