@@ -193,8 +193,12 @@ type batch struct {
 	// main event loop.
 	callLeave chan struct{}
 
-	// stopped signals that the batch has stopped.
-	stopped chan struct{}
+	// stopping signals that the batch is stopping.
+	stopping chan struct{}
+
+	// finished signals that the batch has stopped and all child goroutines
+	// have finished.
+	finished chan struct{}
 
 	// quit is owned by the parent batcher and signals that the batch must
 	// stop.
@@ -273,7 +277,10 @@ func (b *batch) scheduleNextCall() (func(), error) {
 	case <-b.quit:
 		return func() {}, ErrBatcherShuttingDown
 
-	case <-b.stopped:
+	case <-b.stopping:
+		return func() {}, ErrBatchShuttingDown
+
+	case <-b.finished:
 		return func() {}, ErrBatchShuttingDown
 	}
 
@@ -297,7 +304,8 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		errChan:          make(chan error, 1),
 		callEnter:        make(chan struct{}),
 		callLeave:        make(chan struct{}),
-		stopped:          make(chan struct{}),
+		stopping:         make(chan struct{}),
+		finished:         make(chan struct{}),
 		quit:             bk.quit,
 		batchTxid:        bk.batchTxid,
 		wallet:           bk.wallet,
@@ -340,7 +348,8 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		errChan:          make(chan error, 1),
 		callEnter:        make(chan struct{}),
 		callLeave:        make(chan struct{}),
-		stopped:          make(chan struct{}),
+		stopping:         make(chan struct{}),
+		finished:         make(chan struct{}),
 		quit:             bk.quit,
 		batchTxid:        bk.batchTxid,
 		batchPkScript:    bk.batchPkScript,
@@ -460,7 +469,7 @@ func (b *batch) sweepExists(hash lntypes.Hash) bool {
 // Wait waits for the batch to gracefully stop.
 func (b *batch) Wait() {
 	b.log.Infof("Stopping")
-	b.wg.Wait()
+	<-b.finished
 }
 
 // Run is the batch's main event loop.
@@ -468,8 +477,12 @@ func (b *batch) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer func() {
 		cancel()
-		close(b.stopped)
+		close(b.stopping)
+
+		// Make sure not to call b.wg.Wait from any other place to avoid
+		// race condition between b.wg.Add(1) and b.wg.Wait().
 		b.wg.Wait()
+		close(b.finished)
 	}()
 
 	if b.muSig2SignSweep == nil {
