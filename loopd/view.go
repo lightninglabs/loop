@@ -32,7 +32,10 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 		return err
 	}
 
-	sweeperDb := sweepbatcher.NewSQLStore(baseDb, chainParams)
+	sweeperDb := sweepbatcher.NewSQLStore(
+		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb),
+		chainParams,
+	)
 
 	swapClient, cleanup, err := getClient(
 		config, swapDb, sweeperDb, &lnd.LndServices,

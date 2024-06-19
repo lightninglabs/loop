@@ -63,7 +63,7 @@ type InstantOutBaseDB interface {
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.
 	ExecTx(ctx context.Context, txOptions loopdb.TxOptions,
-		txBody func(*sqlc.Queries) error) error
+		txBody func(Querier) error) error
 }
 
 // ReservationStore is the interface that is required to load the reservations
@@ -139,7 +139,7 @@ func (s *SQLStore) CreateInstantLoopOut(ctx context.Context,
 	}
 
 	return s.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			err := q.InsertSwap(ctx, swapArgs)
 			if err != nil {
 				return err
@@ -211,7 +211,7 @@ func (s *SQLStore) UpdateInstantLoopOut(ctx context.Context,
 	}
 
 	return s.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			err := q.UpdateInstantOut(ctx, updateParams)
 			if err != nil {
 				return err

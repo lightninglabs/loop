@@ -19,7 +19,7 @@ func TestSqlStore(t *testing.T) {
 	testDb := loopdb.NewTestDB(t)
 	defer testDb.Close()
 
-	store := NewSQLStore(testDb)
+	store := NewSQLStore(loopdb.NewTypedStore[Querier](testDb))
 
 	// Create a reservation and store it.
 	reservation := &Reservation{

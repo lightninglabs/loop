@@ -52,7 +52,7 @@ type BaseDB interface {
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.
 	ExecTx(ctx context.Context, txOptions loopdb.TxOptions,
-		txBody func(*sqlc.Queries) error) error
+		txBody func(Querier) error) error
 }
 
 // SQLStore manages the reservations in the database.
@@ -92,7 +92,7 @@ func (r *SQLStore) CreateReservation(ctx context.Context,
 	}
 
 	return r.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			err := q.CreateReservation(ctx, args)
 			if err != nil {
 				return err
@@ -132,7 +132,7 @@ func (r *SQLStore) UpdateReservation(ctx context.Context,
 	}
 
 	return r.baseDb.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			err := q.UpdateReservation(ctx, updateArgs)
 			if err != nil {
 				return err
@@ -148,7 +148,7 @@ func (r *SQLStore) GetReservation(ctx context.Context,
 
 	var reservation *Reservation
 	err := r.baseDb.ExecTx(ctx, loopdb.NewSqlReadOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			var err error
 			reservationRow, err := q.GetReservation(
 				ctx, reservationId[:],
@@ -192,7 +192,7 @@ func (r *SQLStore) ListReservations(ctx context.Context) ([]*Reservation,
 	var result []*Reservation
 
 	err := r.baseDb.ExecTx(ctx, loopdb.NewSqlReadOpts(),
-		func(q *sqlc.Queries) error {
+		func(q Querier) error {
 			var err error
 
 			reservations, err := q.GetReservations(ctx)
