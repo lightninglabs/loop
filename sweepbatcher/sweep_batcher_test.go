@@ -1538,3 +1538,99 @@ func TestSweepFetcher(t *testing.T) {
 	// Make sure the batcher exited without an error.
 	checkBatcherError(t, runErr)
 }
+
+// TestSweepBatcherCloseDuringAdding tests that sweep batcher works correctly
+// if it is closed (stops running) during AddSweep call.
+func TestSweepBatcherCloseDuringAdding(t *testing.T) {
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	store := loopdb.NewStoreMock(t)
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcherStore := NewStoreMock()
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
+		sweepStore)
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Add many swaps.
+	for i := byte(1); i < 255; i++ {
+		swapHash := lntypes.Hash{i, i, i}
+
+		// Create a swap contract.
+		swap := &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      111,
+				AmountRequested: 111,
+			},
+
+			SwapInvoice: swapInvoice,
+		}
+
+		err = store.CreateLoopOut(ctx, swapHash, swap)
+		require.NoError(t, err)
+		store.AssertLoopOutStored()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Add many sweeps.
+		for i := byte(1); i < 255; i++ {
+			// Create a sweep request.
+			sweepReq := SweepRequest{
+				SwapHash: lntypes.Hash{i, i, i},
+				Value:    111,
+				Outpoint: wire.OutPoint{
+					Hash:  chainhash.Hash{i, i},
+					Index: 1,
+				},
+				Notifier: &dummyNotifier,
+			}
+
+			// Deliver sweep request to batcher.
+			err := batcher.AddSweep(&sweepReq)
+			if err == ErrBatcherShuttingDown {
+				break
+			}
+			require.NoError(t, err)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Close sweepbatcher during addings.
+		time.Sleep(1 * time.Millisecond)
+		cancel()
+	}()
+
+	// We don't know how many spend notification registrations will be
+	// issued, so accept them while waiting for two goroutines to stop.
+	quit := make(chan struct{})
+	registrationChan := make(chan struct{})
+	go func() {
+		defer close(registrationChan)
+		for {
+			select {
+			case <-lnd.RegisterSpendChannel:
+			case <-quit:
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(quit)
+	<-registrationChan
+}
