@@ -35,6 +35,10 @@ type BaseDB interface {
 	// made.
 	GetReservations(ctx context.Context) ([]sqlc.Reservation, error)
 
+	// InsertReservationUpdate inserts a new reservation update.
+	InsertReservationUpdate(ctx context.Context,
+		arg sqlc.InsertReservationUpdateParams) error
+
 	// UpdateReservation updates a reservation.
 	UpdateReservation(ctx context.Context,
 		arg sqlc.UpdateReservationParams) error
