@@ -194,7 +194,7 @@ func (db *BaseDB) BeginTx(ctx context.Context,
 }
 
 // ExecTx is a wrapper for txBody to abstract the creation and commit of a db
-// transaction. The db transaction is embedded in a `*postgres.Queries` that
+// transaction. The db transaction is embedded in a `*sqlc.Queries` that
 // txBody needs to use when executing each one of the queries that need to be
 // applied atomically.
 func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
