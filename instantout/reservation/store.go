@@ -16,9 +16,9 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
-// BaseDB is the interface that contains all the queries generated
+// Querier is the interface that contains all the queries generated
 // by sqlc for the reservation table.
-type BaseDB interface {
+type Querier interface {
 	// CreateReservation stores the reservation in the database.
 	CreateReservation(ctx context.Context,
 		arg sqlc.CreateReservationParams) error
@@ -42,6 +42,12 @@ type BaseDB interface {
 	// UpdateReservation updates a reservation.
 	UpdateReservation(ctx context.Context,
 		arg sqlc.UpdateReservationParams) error
+}
+
+// BaseDB is the interface that contains all the queries generated
+// by sqlc for the reservation table and transaction functionality.
+type BaseDB interface {
+	Querier
 
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.

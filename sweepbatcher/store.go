@@ -15,7 +15,9 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-type BaseDB interface {
+// Querier is the interface that contains all the queries generated
+// by sqlc for sweep batcher.
+type Querier interface {
 	// ConfirmBatch confirms a batch by setting the state to confirmed.
 	ConfirmBatch(ctx context.Context, id int32) error
 
@@ -52,6 +54,12 @@ type BaseDB interface {
 	// UpsertSweep inserts a sweep into the database, or updates an existing
 	// sweep if it already exists.
 	UpsertSweep(ctx context.Context, arg sqlc.UpsertSweepParams) error
+}
+
+// BaseDB is the interface that contains all the queries generated
+// by sqlc for sweep batcher and transaction functionality.
+type BaseDB interface {
+	Querier
 
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.

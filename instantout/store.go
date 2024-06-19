@@ -21,9 +21,9 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
-// InstantOutBaseDB is the interface that contains all the queries generated
+// Querier is the interface that contains all the queries generated
 // by sqlc for the instantout table.
-type InstantOutBaseDB interface {
+type Querier interface {
 	// InsertSwap inserts a new base swap.
 	InsertSwap(ctx context.Context, arg sqlc.InsertSwapParams) error
 
@@ -53,6 +53,12 @@ type InstantOutBaseDB interface {
 	// GetInstantOutSwaps retrieves all instant out swaps.
 	GetInstantOutSwaps(ctx context.Context) ([]sqlc.GetInstantOutSwapsRow,
 		error)
+}
+
+// InstantOutBaseDB is the interface that contains all the queries generated
+// by sqlc for the instantout table and transaction functionality.
+type InstantOutBaseDB interface {
+	Querier
 
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.
