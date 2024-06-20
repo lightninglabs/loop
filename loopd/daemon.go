@@ -417,7 +417,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
-	sweeperDb := sweepbatcher.NewSQLStore(baseDb, chainParams)
+	sweeperDb := sweepbatcher.NewSQLStore(
+		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb),
+		chainParams,
+	)
 
 	// Create an instance of the loop client library.
 	swapClient, clientCleanup, err := getClient(
@@ -501,7 +504,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	)
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
-		reservationStore := reservation.NewSQLStore(baseDb)
+		reservationStore := reservation.NewSQLStore(
+			loopdb.NewTypedStore[reservation.Querier](baseDb),
+		)
 		reservationConfig := &reservation.Config{
 			Store:             reservationStore,
 			Wallet:            d.lnd.WalletKit,
@@ -516,7 +521,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		// Create the instantout services.
 		instantOutStore := instantout.NewSQLStore(
-			baseDb, clock.NewDefaultClock(), reservationStore,
+			loopdb.NewTypedStore[instantout.Querier](baseDb),
+			clock.NewDefaultClock(), reservationStore,
 			d.lnd.ChainParams,
 		)
 		instantOutConfig := &instantout.Config{

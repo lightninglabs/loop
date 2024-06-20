@@ -18,13 +18,13 @@ import (
 )
 
 // FetchLoopOutSwaps returns all swaps currently in the store.
-func (s *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
+func (db *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 	error) {
 
 	var loopOuts []*LoopOut
 
-	err := s.ExecTx(ctx, NewSqlReadOpts(), func(*sqlc.Queries) error {
-		swaps, err := s.Queries.GetLoopOutSwaps(ctx)
+	err := db.ExecTx(ctx, NewSqlReadOpts(), func(tx *sqlc.Queries) error {
+		swaps, err := tx.GetLoopOutSwaps(ctx)
 		if err != nil {
 			return err
 		}
@@ -32,7 +32,7 @@ func (s *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 		loopOuts = make([]*LoopOut, len(swaps))
 
 		for i, swap := range swaps {
-			updates, err := s.Queries.GetSwapUpdates(
+			updates, err := tx.GetSwapUpdates(
 				ctx, swap.SwapHash,
 			)
 			if err != nil {
@@ -40,7 +40,7 @@ func (s *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 			}
 
 			loopOut, err := ConvertLoopOutRow(
-				s.network, sqlc.GetLoopOutSwapRow(swap),
+				db.network, sqlc.GetLoopOutSwapRow(swap),
 				updates,
 			)
 			if err != nil {
@@ -60,24 +60,24 @@ func (s *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 }
 
 // FetchLoopOutSwap returns the loop out swap with the given hash.
-func (s *BaseDB) FetchLoopOutSwap(ctx context.Context,
+func (db *BaseDB) FetchLoopOutSwap(ctx context.Context,
 	hash lntypes.Hash) (*LoopOut, error) {
 
 	var loopOut *LoopOut
 
-	err := s.ExecTx(ctx, NewSqlReadOpts(), func(*sqlc.Queries) error {
-		swap, err := s.Queries.GetLoopOutSwap(ctx, hash[:])
+	err := db.ExecTx(ctx, NewSqlReadOpts(), func(tx *sqlc.Queries) error {
+		swap, err := tx.GetLoopOutSwap(ctx, hash[:])
 		if err != nil {
 			return err
 		}
 
-		updates, err := s.Queries.GetSwapUpdates(ctx, swap.SwapHash)
+		updates, err := tx.GetSwapUpdates(ctx, swap.SwapHash)
 		if err != nil {
 			return err
 		}
 
 		loopOut, err = ConvertLoopOutRow(
-			s.network, swap, updates,
+			db.network, swap, updates,
 		)
 		if err != nil {
 			return err
@@ -93,11 +93,11 @@ func (s *BaseDB) FetchLoopOutSwap(ctx context.Context,
 }
 
 // CreateLoopOut adds an initiated swap to the store.
-func (s *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
+func (db *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *LoopOutContract) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
 		)
@@ -131,11 +131,11 @@ func (s *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 }
 
 // BatchCreateLoopOut adds multiple initiated swaps to the store.
-func (s *BaseDB) BatchCreateLoopOut(ctx context.Context,
+func (db *BaseDB) BatchCreateLoopOut(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopOutContract) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			swap := swap
 
@@ -174,20 +174,20 @@ func (s *BaseDB) BatchCreateLoopOut(ctx context.Context,
 // UpdateLoopOut stores a new event for a target loop out swap. This
 // appends to the event log for a particular swap as it goes through
 // the various stages in its lifetime.
-func (s *BaseDB) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
+func (db *BaseDB) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
-	return s.updateLoop(ctx, hash, time, state)
+	return db.updateLoop(ctx, hash, time, state)
 }
 
 // FetchLoopInSwaps returns all swaps currently in the store.
-func (s *BaseDB) FetchLoopInSwaps(ctx context.Context) (
+func (db *BaseDB) FetchLoopInSwaps(ctx context.Context) (
 	[]*LoopIn, error) {
 
 	var loopIns []*LoopIn
 
-	err := s.ExecTx(ctx, NewSqlReadOpts(), func(*sqlc.Queries) error {
-		swaps, err := s.Queries.GetLoopInSwaps(ctx)
+	err := db.ExecTx(ctx, NewSqlReadOpts(), func(tx *sqlc.Queries) error {
+		swaps, err := tx.GetLoopInSwaps(ctx)
 		if err != nil {
 			return err
 		}
@@ -195,12 +195,12 @@ func (s *BaseDB) FetchLoopInSwaps(ctx context.Context) (
 		loopIns = make([]*LoopIn, len(swaps))
 
 		for i, swap := range swaps {
-			updates, err := s.Queries.GetSwapUpdates(ctx, swap.SwapHash)
+			updates, err := tx.GetSwapUpdates(ctx, swap.SwapHash)
 			if err != nil {
 				return err
 			}
 
-			loopIn, err := s.convertLoopInRow(
+			loopIn, err := db.convertLoopInRow(
 				swap, updates,
 			)
 			if err != nil {
@@ -220,11 +220,11 @@ func (s *BaseDB) FetchLoopInSwaps(ctx context.Context) (
 }
 
 // CreateLoopIn adds an initiated swap to the store.
-func (s *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
+func (db *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *LoopInContract) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
 		)
@@ -257,11 +257,11 @@ func (s *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 }
 
 // BatchCreateLoopIn adds multiple initiated swaps to the store.
-func (s *BaseDB) BatchCreateLoopIn(ctx context.Context,
+func (db *BaseDB) BatchCreateLoopIn(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopInContract) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			swap := swap
 
@@ -301,10 +301,10 @@ func (s *BaseDB) BatchCreateLoopIn(ctx context.Context,
 // UpdateLoopIn stores a new event for a target loop in swap. This
 // appends to the event log for a particular swap as it goes through
 // the various stages in its lifetime.
-func (s *BaseDB) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
+func (db *BaseDB) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
-	return s.updateLoop(ctx, hash, time, state)
+	return db.updateLoop(ctx, hash, time, state)
 }
 
 // PutLiquidityParams writes the serialized `manager.Parameters` bytes
@@ -312,10 +312,10 @@ func (s *BaseDB) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 //
 // NOTE: it's the caller's responsibility to encode the param. Atm,
 // it's encoding using the proto package's `Marshal` method.
-func (s *BaseDB) PutLiquidityParams(ctx context.Context,
+func (db *BaseDB) PutLiquidityParams(ctx context.Context,
 	params []byte) error {
 
-	err := s.Queries.UpsertLiquidityParams(ctx, params)
+	err := db.Queries.UpsertLiquidityParams(ctx, params)
 	if err != nil {
 		return err
 	}
@@ -328,11 +328,11 @@ func (s *BaseDB) PutLiquidityParams(ctx context.Context,
 //
 // NOTE: it's the caller's responsibility to decode the param. Atm,
 // it's decoding using the proto package's `Unmarshal` method.
-func (s *BaseDB) FetchLiquidityParams(ctx context.Context) ([]byte,
+func (db *BaseDB) FetchLiquidityParams(ctx context.Context) ([]byte,
 	error) {
 
 	var params []byte
-	params, err := s.Queries.FetchLiquidityParams(ctx)
+	params, err := db.Queries.FetchLiquidityParams(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return params, nil
 	} else if err != nil {
@@ -348,11 +348,11 @@ var _ SwapStore = (*BaseDB)(nil)
 
 // updateLoop updates the swap with the given hash by inserting a new update
 // in the swap_updates table.
-func (s *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
+func (db *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		updateParams := sqlc.InsertSwapUpdateParams{
 			SwapHash:        hash[:],
 			UpdateTimestamp: time.UTC(),
@@ -376,11 +376,11 @@ func (s *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 }
 
 // BatchInsertUpdate inserts multiple swap updates to the store.
-func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
+func (db *BaseDB) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return s.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, updates := range updateData {
 			for _, update := range updates {
 				updateParams := sqlc.InsertSwapUpdateParams{
@@ -409,11 +409,11 @@ func (s *BaseDB) BatchInsertUpdate(ctx context.Context,
 
 // BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of loop out
 // swaps.
-func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
+func (db *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 	costs map[lntypes.Hash]SwapCost) error {
 
 	writeOpts := NewSqlWriteOpts()
-	return b.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
+	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, cost := range costs {
 			lastUpdateID, err := tx.GetLastUpdateID(
 				ctx, swapHash[:],
@@ -440,10 +440,10 @@ func (b *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 }
 
 // HasMigration returns true if the migration with the given ID has been done.
-func (b *BaseDB) HasMigration(ctx context.Context, migrationID string) (
+func (db *BaseDB) HasMigration(ctx context.Context, migrationID string) (
 	bool, error) {
 
-	migration, err := b.GetMigration(ctx, migrationID)
+	migration, err := db.GetMigration(ctx, migrationID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
@@ -452,8 +452,8 @@ func (b *BaseDB) HasMigration(ctx context.Context, migrationID string) (
 }
 
 // SetMigration marks the migration with the given ID as done.
-func (b *BaseDB) SetMigration(ctx context.Context, migrationID string) error {
-	return b.InsertMigration(ctx, sqlc.InsertMigrationParams{
+func (db *BaseDB) SetMigration(ctx context.Context, migrationID string) error {
+	return db.InsertMigration(ctx, sqlc.InsertMigrationParams{
 		MigrationID: migrationID,
 		MigrationTs: sql.NullTime{
 			Time:  time.Now().UTC(),
@@ -627,7 +627,7 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 
 // convertLoopInRow converts a database row containing a loop in swap to a
 // LoopIn struct.
-func (s *BaseDB) convertLoopInRow(row sqlc.GetLoopInSwapsRow,
+func (db *BaseDB) convertLoopInRow(row sqlc.GetLoopInSwapsRow,
 	updates []sqlc.SwapUpdate) (*LoopIn, error) {
 
 	htlcKeys, err := fetchHtlcKeys(

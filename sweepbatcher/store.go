@@ -15,7 +15,9 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-type BaseDB interface {
+// Querier is the interface that contains all the queries generated
+// by sqlc for sweep batcher.
+type Querier interface {
 	// ConfirmBatch confirms a batch by setting the state to confirmed.
 	ConfirmBatch(ctx context.Context, id int32) error
 
@@ -52,11 +54,17 @@ type BaseDB interface {
 	// UpsertSweep inserts a sweep into the database, or updates an existing
 	// sweep if it already exists.
 	UpsertSweep(ctx context.Context, arg sqlc.UpsertSweepParams) error
+}
+
+// BaseDB is the interface that contains all the queries generated
+// by sqlc for sweep batcher and transaction functionality.
+type BaseDB interface {
+	Querier
 
 	// ExecTx allows for executing a function in the context of a database
 	// transaction.
 	ExecTx(ctx context.Context, txOptions loopdb.TxOptions,
-		txBody func(*sqlc.Queries) error) error
+		txBody func(Querier) error) error
 }
 
 // SQLStore manages the reservations in the database.
@@ -112,7 +120,7 @@ func (s *SQLStore) InsertSweepBatch(ctx context.Context, batch *dbBatch) (int32,
 // for batches that have no sweeps and so we'd not be able to resume.
 func (s *SQLStore) DropBatch(ctx context.Context, id int32) error {
 	readOpts := loopdb.NewSqlWriteOpts()
-	return s.baseDb.ExecTx(ctx, readOpts, func(tx *sqlc.Queries) error {
+	return s.baseDb.ExecTx(ctx, readOpts, func(tx Querier) error {
 		dbSweeps, err := tx.GetBatchSweeps(ctx, id)
 		if err != nil {
 			return err
@@ -143,7 +151,7 @@ func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) (
 	readOpts := loopdb.NewSqlReadOpts()
 	var sweeps []*dbSweep
 
-	err := s.baseDb.ExecTx(ctx, readOpts, func(tx *sqlc.Queries) error {
+	err := s.baseDb.ExecTx(ctx, readOpts, func(tx Querier) error {
 		dbSweeps, err := tx.GetBatchSweeps(ctx, id)
 		if err != nil {
 			return err

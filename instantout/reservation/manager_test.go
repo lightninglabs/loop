@@ -112,7 +112,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	dbFixture := loopdb.NewTestDB(t)
 
-	store := NewSQLStore(dbFixture)
+	store := NewSQLStore(loopdb.NewTypedStore[Querier](dbFixture))
 
 	mockReservationClient := new(mockReservationClient)
 
