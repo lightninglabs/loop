@@ -224,9 +224,9 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 
 // FixFaultyTimestamps fixes faulty timestamps in the database, caused
 // by using milliseconds instead of seconds as the publication deadline.
-func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
+func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// Manually fetch all the loop out swaps.
-	rows, err := b.DB.QueryContext(
+	rows, err := db.DB.QueryContext(
 		ctx, "SELECT swap_hash, swap_invoice, publication_deadline FROM loopout_swaps",
 	)
 	if err != nil {
@@ -262,7 +262,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 		return err
 	}
 
-	tx, err := b.BeginTx(ctx, &SqliteTxOptions{})
+	tx, err := db.BeginTx(ctx, &SqliteTxOptions{})
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func (b *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 			continue
 		}
 
-		payReq, err := zpay32.Decode(swap.SwapInvoice, b.network)
+		payReq, err := zpay32.Decode(swap.SwapInvoice, db.network)
 		if err != nil {
 			return err
 		}
