@@ -14,6 +14,8 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // Sweeper creates htlc sweep txes.
@@ -181,10 +183,26 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	destAddr btcutil.Address, sweepConfTarget int32) (
 	btcutil.Amount, error) {
 
+	// Use GetSweepFeeDetails to get the fee and other unused data.
+	fee, _, _, err := s.GetSweepFeeDetails(
+		ctx, addInputEstimate, destAddr, sweepConfTarget,
+	)
+
+	return fee, err
+}
+
+// GetSweepFee calculates the required tx fee to spend to P2WKH. It takes a
+// function that is expected to add the weight of the input to the weight
+// estimator. It returns also the fee rate and transaction weight.
+func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
+	addInputEstimate func(*input.TxWeightEstimator) error,
+	destAddr btcutil.Address, sweepConfTarget int32) (
+	btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit, error) {
+
 	// Get fee estimate from lnd.
 	feeRate, err := s.Lnd.WalletKit.EstimateFeeRate(ctx, sweepConfTarget)
 	if err != nil {
-		return 0, fmt.Errorf("estimate fee: %v", err)
+		return 0, 0, 0, fmt.Errorf("estimate fee: %v", err)
 	}
 
 	// Calculate weight for this tx.
@@ -206,16 +224,16 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 		weightEstimate.AddP2TROutput()
 
 	default:
-		return 0, fmt.Errorf("estimate fee: unknown address type %T",
-			destAddr)
+		return 0, 0, 0, fmt.Errorf("estimate fee: unknown address "+
+			"type %T", destAddr)
 	}
 
 	err = addInputEstimate(&weightEstimate)
 	if err != nil {
-		return 0, err
+		return 0, 0, 0, err
 	}
 
 	weight := weightEstimate.Weight()
 
-	return feeRate.FeeForWeight(weight), nil
+	return feeRate.FeeForWeight(weight), feeRate, weight, nil
 }
