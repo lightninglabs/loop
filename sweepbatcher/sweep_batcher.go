@@ -120,6 +120,10 @@ type SweepInfo struct {
 
 	// DestAddr is the destination address of the sweep.
 	DestAddr btcutil.Address
+
+	// MinFeeRate is minimum fee rate that must be used by a batch of
+	// the sweep. If it is specified, confTarget is ignored.
+	MinFeeRate chainfee.SatPerKWeight
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -523,6 +527,9 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	sweeps := make(map[lntypes.Hash]sweep)
 
+	// Collect feeRate from sweeps and stored batch.
+	feeRate := batch.rbfCache.FeeRate
+
 	for _, dbSweep := range dbSweeps {
 		sweep, err := b.convertSweep(ctx, dbSweep)
 		if err != nil {
@@ -530,11 +537,16 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 		}
 
 		sweeps[sweep.swapHash] = *sweep
+
+		// Set minFeeRate to max(sweep.minFeeRate) for all sweeps.
+		if feeRate < sweep.minFeeRate {
+			feeRate = sweep.minFeeRate
+		}
 	}
 
 	rbfCache := rbfCache{
 		LastHeight: batch.rbfCache.LastHeight,
-		FeeRate:    batch.rbfCache.FeeRate,
+		FeeRate:    feeRate,
 	}
 
 	logger := batchPrefixLogger(fmt.Sprintf("%d", batch.id))
@@ -758,6 +770,7 @@ func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
 		protocolVersion:        s.ProtocolVersion,
 		isExternalAddr:         s.IsExternalAddr,
 		destAddr:               s.DestAddr,
+		minFeeRate:             s.MinFeeRate,
 	}, nil
 }
 
@@ -855,5 +868,6 @@ func (b *Batcher) fetchSweep(ctx context.Context,
 		protocolVersion:        s.ProtocolVersion,
 		isExternalAddr:         s.IsExternalAddr,
 		destAddr:               s.DestAddr,
+		minFeeRate:             s.MinFeeRate,
 	}, nil
 }
