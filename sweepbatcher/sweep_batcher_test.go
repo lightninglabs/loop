@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -15,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +43,20 @@ var destAddr = func() btcutil.Address {
 	}
 	return addr
 }()
+
+var senderKey, receiverKey [33]byte
+
+func init() {
+	// Generate keys.
+	_, senderPubKey := test.CreateKey(1)
+	copy(senderKey[:], senderPubKey.SerializeCompressed())
+	_, receiverPubKey := test.CreateKey(2)
+	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
+}
+
+func testVerifySchnorrSig(pubKey *btcec.PublicKey, hash, sig []byte) error {
+	return nil
+}
 
 func testMuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
@@ -243,6 +259,103 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	require.True(t, batcherStore.AssertSweepStored(sweepReq1.SwapHash))
 	require.True(t, batcherStore.AssertSweepStored(sweepReq2.SwapHash))
 	require.True(t, batcherStore.AssertSweepStored(sweepReq3.SwapHash))
+}
+
+// testFeeBumping tests that sweep is RBFed with slightly higher fee rate after
+// each block unless WithNoBumping is passed.
+func testFeeBumping(t *testing.T, store testStore,
+	batcherStore testBatcherStore, noFeeBumping bool) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	// Disable fee bumping, if requested.
+	var opts []BatcherOption
+	if noFeeBumping {
+		opts = append(opts, WithNoBumping())
+	}
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore, opts...)
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Create a sweep request.
+	sweepReq1 := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    1_000_000,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &SpendNotifier{
+			SpendChan:    make(chan *SpendDetail, ntfnBufferSize),
+			SpendErrChan: make(chan error, ntfnBufferSize),
+			QuitChan:     make(chan bool, ntfnBufferSize),
+		},
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 1_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverInternalPubKey: receiverKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	tx1 := <-lnd.TxPublishChannel
+	out1 := tx1.TxOut[0].Value
+
+	// Tick tock next block.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for another sweep tx to be published.
+	tx2 := <-lnd.TxPublishChannel
+	out2 := tx2.TxOut[0].Value
+
+	if noFeeBumping {
+		// Expect output to stay the same.
+		require.Equal(t, out1, out2, "expected out to stay the same")
+	} else {
+		// Expect output to drop.
+		require.Greater(t, out1, out2, "expected out to drop")
+	}
 }
 
 // testSweepBatcherSimpleLifecycle tests the simple lifecycle of the batches
@@ -1835,6 +1948,26 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
 	runTests(t, testSweepBatcherBatchCreation)
+}
+
+// TestFeeBumping tests that sweep is RBFed with slightly higher fee rate after
+// each block unless WithNoBumping is passed.
+func TestFeeBumping(t *testing.T) {
+	t.Run("regular", func(t *testing.T) {
+		runTests(t, func(t *testing.T, store testStore,
+			batcherStore testBatcherStore) {
+
+			testFeeBumping(t, store, batcherStore, false)
+		})
+	})
+
+	t.Run("WithNoBumping", func(t *testing.T) {
+		runTests(t, func(t *testing.T, store testStore,
+			batcherStore testBatcherStore) {
+
+			testFeeBumping(t, store, batcherStore, true)
+		})
+	})
 }
 
 // TestSweepBatcherSimpleLifecycle tests the simple lifecycle of the batches
