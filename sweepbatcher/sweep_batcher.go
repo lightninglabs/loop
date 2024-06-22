@@ -701,7 +701,7 @@ func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
 
 	s, err := b.sweepStore.FetchSweep(ctx, dbSweep.SwapHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch sweep data for %x: %v",
+		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
 			dbSweep.SwapHash[:6], err)
 	}
 
@@ -748,7 +748,7 @@ func (f *SwapStoreWrapper) FetchSweep(ctx context.Context,
 
 	swap, err := f.swapStore.FetchLoopOutSwap(ctx, swapHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch loop out for %x: %v",
+		return nil, fmt.Errorf("failed to fetch loop out for %x: %w",
 			swapHash[:6], err)
 	}
 
@@ -756,14 +756,14 @@ func (f *SwapStoreWrapper) FetchSweep(ctx context.Context,
 		swapHash, &swap.Contract.SwapContract, f.chainParams,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get htlc: %v", err)
+		return nil, fmt.Errorf("failed to get htlc: %w", err)
 	}
 
 	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
 		swap.Contract.SwapInvoice, f.chainParams,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get payment addr: %v", err)
+		return nil, fmt.Errorf("failed to get payment addr: %w", err)
 	}
 
 	return &SweepInfo{
@@ -798,7 +798,7 @@ func (b *Batcher) fetchSweep(ctx context.Context,
 
 	s, err := b.sweepStore.FetchSweep(ctx, sweepReq.SwapHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch sweep data for %x: %v",
+		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
 			sweepReq.SwapHash[:6], err)
 	}
 
