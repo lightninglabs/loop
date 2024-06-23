@@ -896,11 +896,9 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		return fee, err, false
 	}
 
-	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
-
 	// Attempt to cooperatively sign the batch tx with the server.
 	err = b.coopSignBatchTx(
-		ctx, packet, sweeps, prevOutputFetcher, prevOuts, psbtBuf,
+		ctx, packet, sweeps, prevOuts, psbtBuf.Bytes(),
 	)
 	if err != nil {
 		return fee, err, false
@@ -942,127 +940,14 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 // coopSignBatchTx collects the necessary signatures from the server in order
 // to cooperatively sweep the funds.
 func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
-	sweeps []sweep, prevOutputFetcher *txscript.MultiPrevOutFetcher,
-	prevOuts map[wire.OutPoint]*wire.TxOut, psbtBuf bytes.Buffer) error {
+	sweeps []sweep, prevOuts map[wire.OutPoint]*wire.TxOut,
+	psbt []byte) error {
 
 	for i, sweep := range sweeps {
 		sweep := sweep
 
-		sigHashes := txscript.NewTxSigHashes(
-			packet.UnsignedTx, prevOutputFetcher,
-		)
-
-		sigHash, err := txscript.CalcTaprootSignatureHash(
-			sigHashes, txscript.SigHashDefault, packet.UnsignedTx,
-			i, prevOutputFetcher,
-		)
-		if err != nil {
-			return err
-		}
-
-		var (
-			signers       [][]byte
-			muSig2Version input.MuSig2Version
-		)
-
-		// Depending on the MuSig2 version we either pass 32 byte
-		// Schnorr public keys or normal 33 byte public keys.
-		if sweep.protocolVersion >= loopdb.ProtocolVersionMuSig2 {
-			muSig2Version = input.MuSig2Version100RC2
-			signers = [][]byte{
-				sweep.htlcKeys.SenderInternalPubKey[:],
-				sweep.htlcKeys.ReceiverInternalPubKey[:],
-			}
-		} else {
-			muSig2Version = input.MuSig2Version040
-			signers = [][]byte{
-				sweep.htlcKeys.SenderInternalPubKey[1:],
-				sweep.htlcKeys.ReceiverInternalPubKey[1:],
-			}
-		}
-
-		htlcScript, ok := sweep.htlc.HtlcScript.(*swap.HtlcScriptV3)
-		if !ok {
-			return fmt.Errorf("invalid htlc script version")
-		}
-
-		// Now we're creating a local MuSig2 session using the receiver
-		// key's key locator and the htlc's root hash.
-		musig2SessionInfo, err := b.signerClient.MuSig2CreateSession(
-			ctx, muSig2Version,
-			&sweep.htlcKeys.ClientScriptKeyLocator, signers,
-			lndclient.MuSig2TaprootTweakOpt(
-				htlcScript.RootHash[:], false,
-			),
-		)
-		if err != nil {
-			return fmt.Errorf("signerClient.MuSig2CreateSession "+
-				"failed: %w", err)
-		}
-
-		// With the session active, we can now send the server our
-		// public nonce and the sig hash, so that it can create it's own
-		// MuSig2 session and return the server side nonce and partial
-		// signature.
-		serverNonce, serverSig, err := b.muSig2SignSweep(
-			ctx, sweep.protocolVersion, sweep.swapHash,
-			sweep.swapInvoicePaymentAddr,
-			musig2SessionInfo.PublicNonce[:], psbtBuf.Bytes(),
-			prevOuts,
-		)
-		if err != nil {
-			return err
-		}
-
-		var serverPublicNonce [musig2.PubNonceSize]byte
-		copy(serverPublicNonce[:], serverNonce)
-
-		// Register the server's nonce before attempting to create our
-		// partial signature.
-		haveAllNonces, err := b.signerClient.MuSig2RegisterNonces(
-			ctx, musig2SessionInfo.SessionID,
-			[][musig2.PubNonceSize]byte{serverPublicNonce},
-		)
-		if err != nil {
-			return err
-		}
-
-		// Sanity check that we have all the nonces.
-		if !haveAllNonces {
-			return fmt.Errorf("invalid MuSig2 session: " +
-				"nonces missing")
-		}
-
-		var digest [32]byte
-		copy(digest[:], sigHash)
-
-		// Since our MuSig2 session has all nonces, we can now create
-		// the local partial signature by signing the sig hash.
-		_, err = b.signerClient.MuSig2Sign(
-			ctx, musig2SessionInfo.SessionID, digest, false,
-		)
-		if err != nil {
-			return err
-		}
-
-		// Now combine the partial signatures to use the final combined
-		// signature in the sweep transaction's witness.
-		haveAllSigs, finalSig, err := b.signerClient.MuSig2CombineSig(
-			ctx, musig2SessionInfo.SessionID, [][]byte{serverSig},
-		)
-		if err != nil {
-			return err
-		}
-
-		if !haveAllSigs {
-			return fmt.Errorf("failed to combine signatures")
-		}
-
-		// To be sure that we're good, parse and validate that the
-		// combined signature is indeed valid for the sig hash and the
-		// internal pubkey.
-		err = b.verifySchnorrSig(
-			htlcScript.TaprootKey, sigHash, finalSig,
+		finalSig, err := b.musig2sign(
+			ctx, i, sweep, packet.UnsignedTx, prevOuts, psbt,
 		)
 		if err != nil {
 			return err
@@ -1074,6 +959,129 @@ func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
 	}
 
 	return nil
+}
+
+// musig2sign signs one sweep using musig2.
+func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
+	unsignedTx *wire.MsgTx, prevOuts map[wire.OutPoint]*wire.TxOut,
+	psbt []byte) ([]byte, error) {
+
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
+
+	sigHashes := txscript.NewTxSigHashes(unsignedTx, prevOutputFetcher)
+
+	sigHash, err := txscript.CalcTaprootSignatureHash(
+		sigHashes, txscript.SigHashDefault, unsignedTx, inputIndex,
+		prevOutputFetcher,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		signers       [][]byte
+		muSig2Version input.MuSig2Version
+	)
+
+	// Depending on the MuSig2 version we either pass 32 byte
+	// Schnorr public keys or normal 33 byte public keys.
+	if sweep.protocolVersion >= loopdb.ProtocolVersionMuSig2 {
+		muSig2Version = input.MuSig2Version100RC2
+		signers = [][]byte{
+			sweep.htlcKeys.SenderInternalPubKey[:],
+			sweep.htlcKeys.ReceiverInternalPubKey[:],
+		}
+	} else {
+		muSig2Version = input.MuSig2Version040
+		signers = [][]byte{
+			sweep.htlcKeys.SenderInternalPubKey[1:],
+			sweep.htlcKeys.ReceiverInternalPubKey[1:],
+		}
+	}
+
+	htlcScript, ok := sweep.htlc.HtlcScript.(*swap.HtlcScriptV3)
+	if !ok {
+		return nil, fmt.Errorf("invalid htlc script version")
+	}
+
+	// Now we're creating a local MuSig2 session using the receiver key's
+	// key locator and the htlc's root hash.
+	keyLocator := &sweep.htlcKeys.ClientScriptKeyLocator
+	musig2SessionInfo, err := b.signerClient.MuSig2CreateSession(
+		ctx, muSig2Version, keyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(htlcScript.RootHash[:], false),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("signerClient.MuSig2CreateSession "+
+			"failed: %w", err)
+	}
+
+	// With the session active, we can now send the server our
+	// public nonce and the sig hash, so that it can create it's own
+	// MuSig2 session and return the server side nonce and partial
+	// signature.
+	serverNonce, serverSig, err := b.muSig2SignSweep(
+		ctx, sweep.protocolVersion, sweep.swapHash,
+		sweep.swapInvoicePaymentAddr,
+		musig2SessionInfo.PublicNonce[:], psbt, prevOuts,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var serverPublicNonce [musig2.PubNonceSize]byte
+	copy(serverPublicNonce[:], serverNonce)
+
+	// Register the server's nonce before attempting to create our
+	// partial signature.
+	haveAllNonces, err := b.signerClient.MuSig2RegisterNonces(
+		ctx, musig2SessionInfo.SessionID,
+		[][musig2.PubNonceSize]byte{serverPublicNonce},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sanity check that we have all the nonces.
+	if !haveAllNonces {
+		return nil, fmt.Errorf("invalid MuSig2 session: " +
+			"nonces missing")
+	}
+
+	var digest [32]byte
+	copy(digest[:], sigHash)
+
+	// Since our MuSig2 session has all nonces, we can now create
+	// the local partial signature by signing the sig hash.
+	_, err = b.signerClient.MuSig2Sign(
+		ctx, musig2SessionInfo.SessionID, digest, false,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now combine the partial signatures to use the final combined
+	// signature in the sweep transaction's witness.
+	haveAllSigs, finalSig, err := b.signerClient.MuSig2CombineSig(
+		ctx, musig2SessionInfo.SessionID, [][]byte{serverSig},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if !haveAllSigs {
+		return nil, fmt.Errorf("failed to combine signatures")
+	}
+
+	// To be sure that we're good, parse and validate that the
+	// combined signature is indeed valid for the sig hash and the
+	// internal pubkey.
+	err = b.verifySchnorrSig(htlcScript.TaprootKey, sigHash, finalSig)
+	if err != nil {
+		return nil, err
+	}
+
+	return finalSig, nil
 }
 
 // updateRbfRate updates the fee rate we should use for the new batch
