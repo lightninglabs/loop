@@ -996,7 +996,8 @@ func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
 			),
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("signerClient.MuSig2CreateSession "+
+				"failed: %w", err)
 		}
 
 		// With the session active, we can now send the server our
