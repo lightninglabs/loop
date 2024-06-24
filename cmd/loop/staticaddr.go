@@ -22,6 +22,7 @@ var staticAddressCommands = cli.Command{
 		newStaticAddressCommand,
 		listUnspentCommand,
 		withdrawalCommand,
+		summaryCommand,
 	},
 }
 
@@ -172,6 +173,83 @@ func withdraw(ctx *cli.Context) error {
 		Outpoints: outpoints,
 		All:       isAllSelected,
 	})
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+var summaryCommand = cli.Command{
+	Name:      "summary",
+	ShortName: "s",
+	Usage:     "Display a summary of static address related information.",
+	Description: `
+	Displays various static address related information like deposits, 
+	withdrawals and statistics. The information can be filtered by state.
+	`,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "filter",
+			Usage: "specify a filter to only display deposits in " +
+				"the specified state. The state can be one " +
+				"of [deposited|withdrawing|withdrawn|" +
+				"publish_expired_deposit|" +
+				"wait_for_expiry_sweep|expired|failed].",
+		},
+	},
+	Action: summary,
+}
+
+func summary(ctx *cli.Context) error {
+	ctxb := context.Background()
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "summary")
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	var filterState looprpc.DepositState
+	switch ctx.String("filter") {
+	case "":
+		// If no filter is specified, we'll default to showing all.
+
+	case "deposited":
+		filterState = looprpc.DepositState_DEPOSITED
+
+	case "withdrawing":
+		filterState = looprpc.DepositState_WITHDRAWING
+
+	case "withdrawn":
+		filterState = looprpc.DepositState_WITHDRAWN
+
+	case "publish_expired_deposit":
+		filterState = looprpc.DepositState_PUBLISH_EXPIRED
+
+	case "wait_for_expiry_sweep":
+		filterState = looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
+
+	case "expired":
+		filterState = looprpc.DepositState_EXPIRED
+
+	case "failed":
+		filterState = looprpc.DepositState_FAILED_STATE
+
+	default:
+		filterState = looprpc.DepositState_UNKNOWN_STATE
+	}
+
+	resp, err := client.GetStaticAddressSummary(
+		ctxb, &looprpc.StaticAddressSummaryRequest{
+			StateFilter: filterState,
+		},
+	)
 	if err != nil {
 		return err
 	}
