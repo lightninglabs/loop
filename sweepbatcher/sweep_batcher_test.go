@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -66,6 +67,18 @@ func testMuSig2SignSweep(ctx context.Context,
 	[]byte, []byte, error) {
 
 	return nil, nil, nil
+}
+
+var customSignature = func() []byte {
+	sig := [64]byte{10, 20, 30}
+	return sig[:]
+}()
+
+func testSignMuSig2func(ctx context.Context, muSig2Version input.MuSig2Version,
+	swapHash lntypes.Hash, rootHash chainhash.Hash,
+	sigHash [32]byte) ([]byte, error) {
+
+	return customSignature, nil
 }
 
 var dummyNotifier = SpendNotifier{
@@ -1985,6 +1998,89 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	<-registrationChan
 }
 
+// testCustomSignMuSig2 tests the operation with custom musig2 signer.
+func testCustomSignMuSig2(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	// Use custom MuSig2 signer function.
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		nil, testVerifySchnorrSig, lnd.ChainParams, batcherStore,
+		sweepStore, WithCustomSignMuSig2(testSignMuSig2func))
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverInternalPubKey: receiverKey,
+			},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	tx := <-lnd.TxPublishChannel
+
+	// Check the signature.
+	gotSig := tx.TxIn[0].Witness[0]
+	require.Equal(t, customSignature, gotSig, "signatures don't match")
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	checkBatcherError(t, runErr)
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -2068,6 +2164,11 @@ func TestSweepFetcher(t *testing.T) {
 // if it is closed (stops running) during AddSweep call.
 func TestSweepBatcherCloseDuringAdding(t *testing.T) {
 	runTests(t, testSweepBatcherCloseDuringAdding)
+}
+
+// TestCustomSignMuSig2 tests the operation with custom musig2 signer.
+func TestCustomSignMuSig2(t *testing.T) {
+	runTests(t, testCustomSignMuSig2)
 }
 
 // testBatcherStore is BatcherStore used in tests.

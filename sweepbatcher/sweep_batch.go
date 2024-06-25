@@ -137,6 +137,12 @@ type batchConfig struct {
 	// the caller has to update it in the source of SweepInfo (interface
 	// SweepFetcher) and re-add the sweep by calling AddSweep.
 	noBumping bool
+
+	// customMuSig2Signer is a custom signer. If it is set, it is used to
+	// create musig2 signatures instead of musig2SignSweep and signerClient.
+	// Note that musig2SignSweep must be nil in this case, however signer
+	// client must still be provided, as it is used for non-coop spendings.
+	customMuSig2Signer SignMuSig2
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -503,8 +509,11 @@ func (b *batch) Run(ctx context.Context) error {
 		close(b.finished)
 	}()
 
-	if b.muSig2SignSweep == nil {
+	if b.muSig2SignSweep == nil && b.cfg.customMuSig2Signer == nil {
 		return fmt.Errorf("no musig2 signer available")
+	}
+	if b.muSig2SignSweep != nil && b.cfg.customMuSig2Signer != nil {
+		return fmt.Errorf("both musig2 signers provided")
 	}
 
 	blockChan, blockErrChan, err :=
@@ -1008,6 +1017,36 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 		return nil, fmt.Errorf("invalid htlc script version")
 	}
 
+	var digest [32]byte
+	copy(digest[:], sigHash)
+
+	// If a custom signer is installed, use it instead of b.signerClient
+	// and b.muSig2SignSweep.
+	if b.cfg.customMuSig2Signer != nil {
+		// Produce a signature.
+		finalSig, err := b.cfg.customMuSig2Signer(
+			ctx, muSig2Version, sweep.swapHash,
+			htlcScript.RootHash, digest,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("customMuSig2Signer failed: %w",
+				err)
+		}
+
+		// To be sure that we're good, parse and validate that the
+		// combined signature is indeed valid for the sig hash and the
+		// internal pubkey.
+		err = b.verifySchnorrSig(
+			htlcScript.TaprootKey, sigHash, finalSig,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("verifySchnorrSig failed: %w",
+				err)
+		}
+
+		return finalSig, nil
+	}
+
 	// Now we're creating a local MuSig2 session using the receiver key's
 	// key locator and the htlc's root hash.
 	keyLocator := &sweep.htlcKeys.ClientScriptKeyLocator
@@ -1051,9 +1090,6 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 		return nil, fmt.Errorf("invalid MuSig2 session: " +
 			"nonces missing")
 	}
-
-	var digest [32]byte
-	copy(digest[:], sigHash)
 
 	// Since our MuSig2 session has all nonces, we can now create
 	// the local partial signature by signing the sig hash.
