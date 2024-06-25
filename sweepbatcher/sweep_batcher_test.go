@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
@@ -2255,6 +2257,10 @@ func (s *loopdbStore) AssertLoopOutStored() {
 // runTests runs a test with both mock and loopdb.
 func runTests(t *testing.T, testFn func(t *testing.T, store testStore,
 	batcherStore testBatcherStore)) {
+
+	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
+	logger.SetLevel(btclog.LevelTrace)
+	UseLogger(logger)
 
 	t.Run("mocks", func(t *testing.T) {
 		store := loopdb.NewStoreMock(t)
