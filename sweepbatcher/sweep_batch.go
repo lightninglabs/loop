@@ -727,10 +727,11 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 
 	weightEstimate.AddP2TROutput()
 
-	fee = b.rbfCache.FeeRate.FeeForWeight(weightEstimate.Weight())
+	weight := weightEstimate.Weight()
+	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee = clampBatchFee(fee, batchAmt)
+	fee = clampBatchFee(feeForWeight, batchAmt)
 
 	// Add the batch transaction output, which excludes the fees paid to
 	// miners.
@@ -761,8 +762,9 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 	}
 
 	b.log.Infof("attempting to publish non-coop tx=%v with feerate=%v, "+
-		"totalfee=%v, sweeps=%d, destAddr=%s", batchTx.TxHash(),
-		b.rbfCache.FeeRate, fee, len(batchTx.TxIn), address)
+		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, destAddr=%s",
+		batchTx.TxHash(), b.rbfCache.FeeRate, weight, feeForWeight, fee,
+		len(batchTx.TxIn), address)
 
 	b.debugLogTx("serialized non-coop sweep", batchTx)
 
@@ -857,10 +859,11 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 
 	weightEstimate.AddP2TROutput()
 
-	fee = b.rbfCache.FeeRate.FeeForWeight(weightEstimate.Weight())
+	weight := weightEstimate.Weight()
+	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee = clampBatchFee(fee, batchAmt)
+	fee = clampBatchFee(feeForWeight, batchAmt)
 
 	// Add the batch transaction output, which excludes the fees paid to
 	// miners.
@@ -905,8 +908,9 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 	}
 
 	b.log.Infof("attempting to publish coop tx=%v with feerate=%v, "+
-		"totalfee=%v, sweeps=%d, destAddr=%s", batchTx.TxHash(),
-		b.rbfCache.FeeRate, fee, len(batchTx.TxIn), address)
+		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, destAddr=%s",
+		batchTx.TxHash(), b.rbfCache.FeeRate, weight, feeForWeight, fee,
+		len(batchTx.TxIn), address)
 
 	b.debugLogTx("serialized coop sweep", batchTx)
 
