@@ -127,6 +127,12 @@ type batchConfig struct {
 	// batchPublishDelay is the delay between receiving a new block and
 	// publishing the batch transaction.
 	batchPublishDelay time.Duration
+
+	// noBumping instructs sweepbatcher not to fee bump itself and rely on
+	// external source of fee rates (MinFeeRate). To change the fee rate,
+	// the caller has to update it in the source of SweepInfo (interface
+	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	noBumping bool
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -1079,7 +1085,7 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 
 		// Set the initial value for our fee rate.
 		b.rbfCache.FeeRate = rate
-	} else {
+	} else if !b.cfg.noBumping {
 		// Bump the fee rate by the configured step.
 		b.rbfCache.FeeRate += defaultFeeRateStep
 	}

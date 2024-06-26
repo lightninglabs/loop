@@ -235,6 +235,34 @@ type Batcher struct {
 	// wg is a waitgroup that is used to wait for all the goroutines to
 	// exit.
 	wg sync.WaitGroup
+
+	// noBumping instructs sweepbatcher not to fee bump itself and rely on
+	// external source of fee rates (MinFeeRate). To change the fee rate,
+	// the caller has to update it in the source of SweepInfo (interface
+	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	noBumping bool
+}
+
+// BatcherConfig holds batcher configuration.
+type BatcherConfig struct {
+	// noBumping instructs sweepbatcher not to fee bump itself and rely on
+	// external source of fee rates (MinFeeRate). To change the fee rate,
+	// the caller has to update it in the source of SweepInfo (interface
+	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	noBumping bool
+}
+
+// BatcherOption configures batcher behaviour.
+type BatcherOption func(*BatcherConfig)
+
+// WithNoBumping instructs sweepbatcher not to fee bump itself and
+// rely on external source of fee rates (MinFeeRate). To change the
+// fee rate, the caller has to update it in the source of SweepInfo
+// (interface SweepFetcher) and re-add the sweep by calling AddSweep.
+func WithNoBumping() BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.noBumping = true
+	}
 }
 
 // NewBatcher creates a new Batcher instance.
@@ -242,7 +270,13 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
 	signerClient lndclient.SignerClient, musig2ServerSigner MuSig2SignSweep,
 	verifySchnorrSig VerifySchnorrSig, chainparams *chaincfg.Params,
-	store BatcherStore, sweepStore SweepFetcher) *Batcher {
+	store BatcherStore, sweepStore SweepFetcher,
+	opts ...BatcherOption) *Batcher {
+
+	var cfg BatcherConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	return &Batcher{
 		batches:          make(map[int32]*batch),
@@ -258,6 +292,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		chainParams:      chainparams,
 		store:            store,
 		sweepStore:       sweepStore,
+		noBumping:        cfg.noBumping,
 	}
 }
 
@@ -416,6 +451,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	cfg := batchConfig{
 		maxTimeoutDistance: defaultMaxTimeoutDistance,
+		noBumping:          b.noBumping,
 	}
 
 	switch b.chainParams {
@@ -525,6 +561,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	cfg := batchConfig{
 		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
+		noBumping:          b.noBumping,
 	}
 
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
@@ -587,6 +624,7 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 
 		bchCfg := batchConfig{
 			maxTimeoutDistance: bch.MaxTimeoutDistance,
+			noBumping:          b.noBumping,
 		}
 		batch.cfg = &bchCfg
 
