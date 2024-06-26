@@ -18,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1746,20 +1747,64 @@ func testSweepFetcher(t *testing.T, store testStore,
 	)
 	require.NoError(t, err)
 
+	swapHash := lntypes.Hash{1, 1, 1}
+
+	// Provide min fee rate for the sweep.
+	feeRate := chainfee.SatPerKWeight(30000)
+	amt := btcutil.Amount(1_000_000)
+	weight := lntypes.WeightUnit(445) // Weight for 1-to-1 tx.
+	bumpedFee := feeRate + 100
+	expectedFee := bumpedFee.FeeForWeight(weight)
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      222,
+			AmountRequested: amt,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderKey,
+				ReceiverInternalPubKey: receiverKey,
+			},
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 321,
+	}
+
+	htlc, err := utils.GetHtlc(
+		swapHash, &swap.SwapContract, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	sweepInfo := &SweepInfo{
+		ConfTarget:             123,
+		Timeout:                111,
+		SwapInvoicePaymentAddr: *swapPaymentAddr,
+		MinFeeRate:             feeRate,
+		ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
+		HTLCKeys: loopdb.HtlcKeys{
+			SenderScriptKey:        senderKey,
+			ReceiverScriptKey:      receiverKey,
+			SenderInternalPubKey:   senderKey,
+			ReceiverInternalPubKey: receiverKey,
+		},
+		HTLC:                 *htlc,
+		HTLCSuccessEstimator: htlc.AddSuccessToEstimator,
+		DestAddr:             destAddr,
+	}
+
 	sweepFetcher := &sweepFetcherMock{
 		store: map[lntypes.Hash]*SweepInfo{
-			{1, 1, 1}: {
-				ConfTarget:             123,
-				Timeout:                111,
-				SwapInvoicePaymentAddr: *swapPaymentAddr,
-			},
+			swapHash: sweepInfo,
 		},
 	}
 
 	// Create a sweep request.
 	sweepReq := SweepRequest{
-		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
+		SwapHash: swapHash,
+		Value:    amt,
 		Outpoint: wire.OutPoint{
 			Hash:  chainhash.Hash{1, 1},
 			Index: 1,
@@ -1770,23 +1815,13 @@ func testSweepFetcher(t *testing.T, store testStore,
 	// Create a swap in the DB. It is needed to satisfy SQL constraints in
 	// case of SQL test. The data is not actually used, since we pass sweep
 	// fetcher, so put different conf target to make sure it is not used.
-	swap := &loopdb.LoopOutContract{
-		SwapContract: loopdb.SwapContract{
-			CltvExpiry:      222,
-			AmountRequested: 222,
-		},
-
-		DestAddr:        destAddr,
-		SwapInvoice:     swapInvoice,
-		SweepConfTarget: 321,
-	}
-	err = store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
+	err = store.CreateLoopOut(ctx, swapHash, swap)
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepFetcher)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepFetcher)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1811,7 +1846,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(swapHash) {
 			return false
 		}
 
@@ -1831,6 +1866,12 @@ func testSweepFetcher(t *testing.T, store testStore,
 		// Make sure the batch has proper batchConfTarget.
 		return batch.cfg.batchConfTarget == 123
 	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Get the published transaction and check the fee rate.
+	tx := <-lnd.TxPublishChannel
+	out := btcutil.Amount(tx.TxOut[0].Value)
+	gotFee := amt - out
+	require.Equal(t, expectedFee, gotFee, "fees don't match")
 
 	// Make sure we have stored the batch.
 	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)

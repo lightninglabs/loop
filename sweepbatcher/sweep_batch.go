@@ -97,6 +97,10 @@ type sweep struct {
 	// notifier is a collection of channels used to communicate the status
 	// of the sweep back to the swap that requested it.
 	notifier *SpendNotifier
+
+	// minFeeRate is minimum fee rate that must be used by a batch of
+	// the sweep. If it is specified, confTarget is ignored.
+	minFeeRate chainfee.SatPerKWeight
 }
 
 // batchState is the state of the batch.
@@ -399,9 +403,10 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		b.sweeps[sweep.swapHash] = *sweep
 
 		// If this is the primary sweep, we also need to update the
-		// batch's confirmation target.
+		// batch's confirmation target and fee rate.
 		if b.primarySweepID == sweep.swapHash {
 			b.cfg.batchConfTarget = sweep.confTarget
+			b.rbfCache.FeeRate = sweep.minFeeRate
 		}
 
 		return true, nil
@@ -443,6 +448,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	if b.primarySweepID == lntypes.ZeroHash {
 		b.primarySweepID = sweep.swapHash
 		b.cfg.batchConfTarget = sweep.confTarget
+		b.rbfCache.FeeRate = sweep.minFeeRate
 
 		// We also need to start the spend monitor for this new primary
 		// sweep.
@@ -455,6 +461,12 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// Add the sweep to the batch's sweeps.
 	b.log.Infof("adding sweep %x", sweep.swapHash[:6])
 	b.sweeps[sweep.swapHash] = *sweep
+
+	// Update FeeRate. Max(sweep.minFeeRate) for all the sweeps of
+	// the batch is the basis for fee bumps.
+	if b.rbfCache.FeeRate < sweep.minFeeRate {
+		b.rbfCache.FeeRate = sweep.minFeeRate
+	}
 
 	return true, b.persistSweep(ctx, *sweep, false)
 }
