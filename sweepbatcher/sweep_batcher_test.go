@@ -313,11 +313,7 @@ func testFeeBumping(t *testing.T, store testStore,
 			Hash:  chainhash.Hash{1, 1},
 			Index: 1,
 		},
-		Notifier: &SpendNotifier{
-			SpendChan:    make(chan *SpendDetail, ntfnBufferSize),
-			SpendErrChan: make(chan error, ntfnBufferSize),
-			QuitChan:     make(chan bool, ntfnBufferSize),
-		},
+		Notifier: &dummyNotifier,
 	}
 
 	swap1 := &loopdb.LoopOutContract{
