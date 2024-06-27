@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
@@ -48,15 +47,22 @@ var destAddr = func() btcutil.Address {
 	return addr
 }()
 
-var senderKey, receiverKey [33]byte
+var htlcKeys = func() loopdb.HtlcKeys {
+	var senderKey, receiverKey [33]byte
 
-func init() {
 	// Generate keys.
 	_, senderPubKey := test.CreateKey(1)
 	copy(senderKey[:], senderPubKey.SerializeCompressed())
 	_, receiverPubKey := test.CreateKey(2)
 	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
-}
+
+	return loopdb.HtlcKeys{
+		SenderScriptKey:        senderKey,
+		ReceiverScriptKey:      receiverKey,
+		SenderInternalPubKey:   senderKey,
+		ReceiverInternalPubKey: receiverKey,
+	}
+}()
 
 func testVerifySchnorrSig(pubKey *btcec.PublicKey, hash, sig []byte) error {
 	return nil
@@ -127,8 +133,8 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -149,10 +155,13 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
 
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
@@ -175,6 +184,9 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		return len(batcher.batches) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
 	// Create a second sweep request that has a timeout distance less than
 	// our configured threshold.
 	sweepReq2 := SweepRequest{
@@ -191,12 +203,16 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance - 1,
 			AmountRequested: 222,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{2},
 		},
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq2.SwapHash, swap2)
@@ -204,6 +220,13 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Tick tock next block.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Batcher should not create a second batch as timeout distance is small
 	// enough.
@@ -227,12 +250,16 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance + 1,
 			AmountRequested: 333,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{3},
 		},
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq3.SwapHash, swap3)
@@ -250,6 +277,9 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	// Since the second batch got created we check that it registered its
 	// primary sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps
@@ -321,16 +351,7 @@ func testFeeBumping(t *testing.T, store testStore,
 			CltvExpiry:      111,
 			AmountRequested: 1_000_000,
 			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-			HtlcKeys: loopdb.HtlcKeys{
-				SenderScriptKey:        senderKey,
-				ReceiverScriptKey:      receiverKey,
-				SenderInternalPubKey:   senderKey,
-				ReceiverInternalPubKey: receiverKey,
-				ClientScriptKeyLocator: keychain.KeyLocator{
-					Family: 1,
-					Index:  2,
-				},
-			},
+			HtlcKeys:        htlcKeys,
 		},
 
 		DestAddr:        destAddr,
@@ -385,8 +406,8 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -407,7 +428,10 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
+
 		DestAddr:        destAddr,
 		SwapInvoice:     swapInvoice,
 		SweepConfTarget: 111,
@@ -445,6 +469,9 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// The primary sweep id should be that of the first inserted sweep.
 	require.Equal(t, batch.primarySweepID, sweepReq1.SwapHash)
 
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
 	err = lnd.NotifyHeight(601)
 	require.NoError(t, err)
 
@@ -453,6 +480,9 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		return batch.currentHeight == 601
 	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Create the spending tx that will trigger the spend monitor of the
 	// batch.
@@ -525,8 +555,8 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -548,6 +578,8 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
 		DestAddr:        destAddr,
 		SwapInvoice:     swapInvoice,
@@ -572,6 +604,8 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 222,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{2},
@@ -599,6 +633,8 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 333,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{3},
@@ -619,9 +655,28 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	// registered.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Add the second sweep.
 	require.NoError(t, batcher.AddSweep(&sweepReq2))
 
+	// Add next block to trigger batch publishing.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Add the third sweep.
 	require.NoError(t, batcher.AddSweep(&sweepReq3))
+
+	// Add next block to trigger batch publishing.
+	err = lnd.NotifyHeight(602)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Batcher should create a batch for the sweeps.
 	require.Eventually(t, func() bool {
@@ -674,7 +729,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		SpendingTx:        spendingTx,
 		SpenderTxHash:     &spendingTxHash,
 		SpenderInputIndex: 0,
-		SpendingHeight:    601,
+		SpendingHeight:    603,
 	}
 
 	// Send the spending notification to the mock channel.
@@ -705,6 +760,15 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
 		Tx: spendingTx,
 	}
+
+	// Wait for tx to be published.
+	// Here is a race condition, which is unlikely to cause a crash: if we
+	// wait for publish tx before sending a conf notification (previous
+	// action), then conf notification can go to the second batch (since
+	// the mock does not have a way to direct a notification to proper
+	// subscriber) and the first batch does not exit, waiting for the
+	// confirmation forever.
+	<-lnd.TxPublishChannel
 
 	// Eventually the batch receives the confirmation notification,
 	// gracefully exits and the batcher deletes it.
@@ -743,8 +807,8 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -765,10 +829,13 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
-		IsExternalAddr: true,
-		DestAddr:       destAddr,
-		SwapInvoice:    swapInvoice,
+		IsExternalAddr:  true,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
@@ -787,6 +854,9 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Insert the same swap twice, this should be a noop.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
@@ -807,13 +877,16 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance - 1,
 			AmountRequested: 222,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{2},
 		},
-		DestAddr:       destAddr,
-		SwapInvoice:    swapInvoice,
-		IsExternalAddr: true,
+		IsExternalAddr:  true,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq2.SwapHash, swap2)
@@ -832,6 +905,9 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for second batch to be published.
+	<-lnd.TxPublishChannel
+
 	// Create a third sweep request that has more timeout distance than
 	// the default.
 	sweepReq3 := SweepRequest{
@@ -847,14 +923,17 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	swap3 := &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance + 1,
-			AmountRequested: 333,
+			AmountRequested: 222,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{3},
 		},
-		DestAddr:       destAddr,
-		SwapInvoice:    swapInvoice,
-		IsExternalAddr: true,
+		IsExternalAddr:  true,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq3.SwapHash, swap3)
@@ -872,6 +951,9 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published for 3rd batch.
+	<-lnd.TxPublishChannel
 
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps
@@ -919,8 +1001,8 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -941,10 +1023,12 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
-
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
@@ -967,12 +1051,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance - 1,
 			AmountRequested: 222,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{2},
 		},
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq2.SwapHash, swap2)
@@ -995,13 +1082,16 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance - 3,
 			AmountRequested: 333,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{3},
 		},
-		DestAddr:       destAddr,
-		SwapInvoice:    swapInvoice,
-		IsExternalAddr: true,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+		IsExternalAddr:  true,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq3.SwapHash, swap3)
@@ -1024,12 +1114,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance + 1,
 			AmountRequested: 444,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{4},
 		},
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq4.SwapHash, swap4)
@@ -1052,12 +1145,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance + 5,
 			AmountRequested: 555,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{5},
 		},
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq5.SwapHash, swap5)
@@ -1080,13 +1176,16 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111 + defaultMaxTimeoutDistance + 6,
 			AmountRequested: 666,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
 			Preimage: lntypes.Preimage{6},
 		},
-		DestAddr:       destAddr,
-		SwapInvoice:    swapInvoice,
-		IsExternalAddr: true,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+		IsExternalAddr:  true,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq6.SwapHash, swap6)
@@ -1106,6 +1205,9 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
 	// Insert the same swap twice, this should be a noop.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
@@ -1116,6 +1218,14 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		return len(batcher.batches) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Publish a block to trigger batch 1 republishing.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for tx for the first batch to be published (2 sweeps).
+	tx := <-lnd.TxPublishChannel
+	require.Equal(t, 2, len(tx.TxIn))
 
 	require.NoError(t, batcher.AddSweep(&sweepReq3))
 
@@ -1129,6 +1239,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for tx for the second batch to be published (1 sweep).
+	tx = <-lnd.TxPublishChannel
+	require.Equal(t, 1, len(tx.TxIn))
+
 	require.NoError(t, batcher.AddSweep(&sweepReq4))
 
 	// Batcher should create a third batch as timeout distance is greater
@@ -1141,7 +1255,20 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for tx for the third batch to be published (1 sweep).
+	tx = <-lnd.TxPublishChannel
+	require.Equal(t, 1, len(tx.TxIn))
+
 	require.NoError(t, batcher.AddSweep(&sweepReq5))
+
+	// Publish a block to trigger batch 3 republishing.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for 3 txs for the 3 batches.
+	<-lnd.TxPublishChannel
+	<-lnd.TxPublishChannel
+	<-lnd.TxPublishChannel
 
 	// Batcher should not create a fourth batch as timeout distance is small
 	// enough for it to join the last batch.
@@ -1160,6 +1287,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx for the 4th batch to be published (1 sweep).
+	tx = <-lnd.TxPublishChannel
+	require.Equal(t, 1, len(tx.TxIn))
 
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps in
@@ -1264,8 +1395,8 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1294,10 +1425,12 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
-
-		DestAddr:    destAddr,
-		SwapInvoice: swapInvoice,
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
 	}
 
 	err = store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
@@ -1310,6 +1443,9 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Once batcher receives sweep request it will eventually spin up a
 	// batch.
@@ -1433,8 +1569,8 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1471,9 +1607,12 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 			SwapContract: loopdb.SwapContract{
 				CltvExpiry:      shortCltv,
 				AmountRequested: 111,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
 			},
-			DestAddr:    destAddr,
-			SwapInvoice: swapInvoice,
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
 		},
 	}
 
@@ -1495,9 +1634,12 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 			SwapContract: loopdb.SwapContract{
 				CltvExpiry:      longCltv,
 				AmountRequested: 222,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
 			},
-			DestAddr:    destAddr,
-			SwapInvoice: swapInvoice,
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
 		},
 	}
 
@@ -1511,10 +1653,16 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	// primary sweep's spend.
 	<-lnd.RegisterSpendChannel
 
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
 	// Deliver the second sweep. It will go to a separate batch,
 	// since CltvExpiry values are distant enough.
 	require.NoError(t, batcher.AddSweep(&sweepReq2))
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Once batcher receives sweep request it will eventually spin up
 	// batches.
@@ -1536,9 +1684,12 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 			SwapContract: loopdb.SwapContract{
 				CltvExpiry:      shortCltv,
 				AmountRequested: 222,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
 			},
-			DestAddr:    destAddr,
-			SwapInvoice: swapInvoice,
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
 		},
 	}
 	store.putLoopOutSwap(sweepReq2.SwapHash, loopOut2)
@@ -1580,6 +1731,14 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		require.Equal(t, 1, len(batch.sweeps))
 	}
 
+	// Publish a block to trigger batch 2 republishing.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for txs to be published.
+	<-lnd.TxPublishChannel
+	<-lnd.TxPublishChannel
+
 	// Now make the batcher quit by canceling the context.
 	cancel()
 	wg.Wait()
@@ -1601,8 +1760,8 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1631,6 +1790,8 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:      111,
 			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
 		},
 
 		DestAddr:        destAddr,
@@ -1648,6 +1809,9 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Once batcher receives sweep request it will eventually spin up a
 	// batch.
@@ -1688,8 +1852,8 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 
 	// Now launch it again.
 	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	ctx, cancel = context.WithCancel(context.Background())
 	wg.Add(1)
 	go func() {
@@ -1724,6 +1888,9 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 
 	// Expect registration for spend notification.
 	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Now make the batcher quit by canceling the context.
 	cancel()
@@ -1772,12 +1939,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 			CltvExpiry:      222,
 			AmountRequested: amt,
 			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-			HtlcKeys: loopdb.HtlcKeys{
-				SenderScriptKey:        senderKey,
-				ReceiverScriptKey:      receiverKey,
-				SenderInternalPubKey:   senderKey,
-				ReceiverInternalPubKey: receiverKey,
-			},
+			HtlcKeys:        htlcKeys,
 		},
 		DestAddr:        destAddr,
 		SwapInvoice:     swapInvoice,
@@ -1795,15 +1957,10 @@ func testSweepFetcher(t *testing.T, store testStore,
 		SwapInvoicePaymentAddr: *swapPaymentAddr,
 		MinFeeRate:             feeRate,
 		ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
-		HTLCKeys: loopdb.HtlcKeys{
-			SenderScriptKey:        senderKey,
-			ReceiverScriptKey:      receiverKey,
-			SenderInternalPubKey:   senderKey,
-			ReceiverInternalPubKey: receiverKey,
-		},
-		HTLC:                 *htlc,
-		HTLCSuccessEstimator: htlc.AddSuccessToEstimator,
-		DestAddr:             destAddr,
+		HTLCKeys:               htlcKeys,
+		HTLC:                   *htlc,
+		HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
+		DestAddr:               destAddr,
 	}
 
 	sweepFetcher := &sweepFetcherMock{
@@ -1912,8 +2069,8 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	require.NoError(t, err)
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, nil, lnd.ChainParams, batcherStore,
-		sweepStore)
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -2041,12 +2198,7 @@ func testCustomSignMuSig2(t *testing.T, store testStore,
 			CltvExpiry:      111,
 			AmountRequested: 111,
 			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-			HtlcKeys: loopdb.HtlcKeys{
-				SenderScriptKey:        senderKey,
-				ReceiverScriptKey:      receiverKey,
-				SenderInternalPubKey:   senderKey,
-				ReceiverInternalPubKey: receiverKey,
-			},
+			HtlcKeys:        htlcKeys,
 		},
 
 		DestAddr:        destAddr,
