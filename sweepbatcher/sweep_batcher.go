@@ -121,10 +121,6 @@ type SweepInfo struct {
 
 	// DestAddr is the destination address of the sweep.
 	DestAddr btcutil.Address
-
-	// MinFeeRate is minimum fee rate that must be used by a batch of
-	// the sweep. If it is specified, confTarget is ignored.
-	MinFeeRate chainfee.SatPerKWeight
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -150,6 +146,11 @@ type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 // VerifySchnorrSig is a function that can be used to verify a schnorr
 // signature.
 type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
+
+// FeeRateProvider is a function that returns min fee rate of a batch sweeping
+// the UTXO of the swap.
+type FeeRateProvider func(ctx context.Context,
+	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
 
 // SweepRequest is a request to sweep a specific outpoint.
 type SweepRequest struct {
@@ -247,11 +248,10 @@ type Batcher struct {
 	// exit.
 	wg sync.WaitGroup
 
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -262,11 +262,10 @@ type Batcher struct {
 
 // BatcherConfig holds batcher configuration.
 type BatcherConfig struct {
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -278,13 +277,12 @@ type BatcherConfig struct {
 // BatcherOption configures batcher behaviour.
 type BatcherOption func(*BatcherConfig)
 
-// WithNoBumping instructs sweepbatcher not to fee bump itself and
-// rely on external source of fee rates (MinFeeRate). To change the
-// fee rate, the caller has to update it in the source of SweepInfo
-// (interface SweepFetcher) and re-add the sweep by calling AddSweep.
-func WithNoBumping() BatcherOption {
+// WithCustomFeeRate instructs sweepbatcher not to fee bump itself and rely on
+// external source of fee rates (FeeRateProvider). To apply a fee rate change,
+// the caller should re-add the sweep by calling AddSweep.
+func WithCustomFeeRate(customFeeRate FeeRateProvider) BatcherOption {
 	return func(cfg *BatcherConfig) {
-		cfg.noBumping = true
+		cfg.customFeeRate = customFeeRate
 	}
 }
 
@@ -331,7 +329,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		chainParams:        chainparams,
 		store:              store,
 		sweepStore:         sweepStore,
-		noBumping:          cfg.noBumping,
+		customFeeRate:      cfg.customFeeRate,
 		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
 }
@@ -859,6 +857,22 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 			swapHash[:6], err)
 	}
 
+	// minFeeRate is 0 by default. If customFeeRate is not provided, then
+	// rbfCache.FeeRate is also 0 and method batch.updateRbfRate() updates
+	// it to current fee rate according to batchConfTarget.
+	var minFeeRate chainfee.SatPerKWeight
+	if b.customFeeRate != nil {
+		minFeeRate, err = b.customFeeRate(ctx, swapHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch min fee rate "+
+				"for %x: %w", swapHash[:6], err)
+		}
+		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
+			return nil, fmt.Errorf("min fee rate too low (%v) for "+
+				"%x", minFeeRate, swapHash[:6])
+		}
+	}
+
 	return &sweep{
 		swapHash:               swapHash,
 		outpoint:               outpoint,
@@ -874,7 +888,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		protocolVersion:        s.ProtocolVersion,
 		isExternalAddr:         s.IsExternalAddr,
 		destAddr:               s.DestAddr,
-		minFeeRate:             s.MinFeeRate,
+		minFeeRate:             minFeeRate,
 	}, nil
 }
 
@@ -882,7 +896,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 	return batchConfig{
 		maxTimeoutDistance: maxTimeoutDistance,
-		noBumping:          b.noBumping,
+		noBumping:          b.customFeeRate != nil,
 		customMuSig2Signer: b.customMuSig2Signer,
 	}
 }

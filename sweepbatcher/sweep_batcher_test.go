@@ -308,7 +308,7 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 }
 
 // testFeeBumping tests that sweep is RBFed with slightly higher fee rate after
-// each block unless WithNoBumping is passed.
+// each block unless WithCustomFeeRate is passed.
 func testFeeBumping(t *testing.T, store testStore,
 	batcherStore testBatcherStore, noFeeBumping bool) {
 
@@ -324,7 +324,14 @@ func testFeeBumping(t *testing.T, store testStore,
 	// Disable fee bumping, if requested.
 	var opts []BatcherOption
 	if noFeeBumping {
-		opts = append(opts, WithNoBumping())
+		customFeeRate := func(ctx context.Context,
+			swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+			// Always provide the same value, no bumping.
+			return test.DefaultMockFee, nil
+		}
+
+		opts = append(opts, WithCustomFeeRate(customFeeRate))
 	}
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
@@ -1931,8 +1938,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	feeRate := chainfee.SatPerKWeight(30000)
 	amt := btcutil.Amount(1_000_000)
 	weight := lntypes.WeightUnit(445) // Weight for 1-to-1 tx.
-	bumpedFee := feeRate + 100
-	expectedFee := bumpedFee.FeeForWeight(weight)
+	expectedFee := feeRate.FeeForWeight(weight)
 
 	swap := &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
@@ -1955,7 +1961,6 @@ func testSweepFetcher(t *testing.T, store testStore,
 		ConfTarget:             123,
 		Timeout:                111,
 		SwapInvoicePaymentAddr: *swapPaymentAddr,
-		MinFeeRate:             feeRate,
 		ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
 		HTLCKeys:               htlcKeys,
 		HTLC:                   *htlc,
@@ -1987,9 +1992,16 @@ func testSweepFetcher(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
+	customFeeRate := func(ctx context.Context,
+		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		// Always provide the same value, no bumping.
+		return feeRate, nil
+	}
+
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepFetcher)
+		batcherStore, sweepFetcher, WithCustomFeeRate(customFeeRate))
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -2238,7 +2250,7 @@ func TestSweepBatcherBatchCreation(t *testing.T) {
 }
 
 // TestFeeBumping tests that sweep is RBFed with slightly higher fee rate after
-// each block unless WithNoBumping is passed.
+// each block unless WithCustomFeeRate is passed.
 func TestFeeBumping(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		runTests(t, func(t *testing.T, store testStore,
@@ -2248,7 +2260,7 @@ func TestFeeBumping(t *testing.T) {
 		})
 	})
 
-	t.Run("WithNoBumping", func(t *testing.T) {
+	t.Run("fixed fee rate", func(t *testing.T) {
 		runTests(t, func(t *testing.T, store testStore,
 			batcherStore testBatcherStore) {
 

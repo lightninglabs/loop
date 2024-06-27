@@ -133,9 +133,7 @@ type batchConfig struct {
 	batchPublishDelay time.Duration
 
 	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	// external source of fee rates (FeeRateProvider).
 	noBumping bool
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
