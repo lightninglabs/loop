@@ -516,17 +516,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		cfg.batchPublishDelay = defaultPublishDelay
 	}
 
-	batchKit := batchKit{
-		returnChan:       b.sweepReqs,
-		wallet:           b.wallet,
-		chainNotifier:    b.chainNotifier,
-		signerClient:     b.signerClient,
-		musig2SignSweep:  b.musig2ServerSign,
-		verifySchnorrSig: b.VerifySchnorrSig,
-		purger:           b.AddSweep,
-		store:            b.store,
-		quit:             b.quit,
-	}
+	batchKit := b.newBatchKit()
 
 	batch := NewBatch(cfg, batchKit)
 
@@ -601,25 +591,15 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	logger := batchPrefixLogger(fmt.Sprintf("%d", batch.id))
 
-	batchKit := batchKit{
-		id:               batch.id,
-		batchTxid:        batch.batchTxid,
-		batchPkScript:    batch.batchPkScript,
-		state:            batch.state,
-		primaryID:        primarySweep.SwapHash,
-		sweeps:           sweeps,
-		rbfCache:         rbfCache,
-		returnChan:       b.sweepReqs,
-		wallet:           b.wallet,
-		chainNotifier:    b.chainNotifier,
-		signerClient:     b.signerClient,
-		musig2SignSweep:  b.musig2ServerSign,
-		verifySchnorrSig: b.VerifySchnorrSig,
-		purger:           b.AddSweep,
-		store:            b.store,
-		log:              logger,
-		quit:             b.quit,
-	}
+	batchKit := b.newBatchKit()
+	batchKit.id = batch.id
+	batchKit.batchTxid = batch.batchTxid
+	batchKit.batchPkScript = batch.batchPkScript
+	batchKit.state = batch.state
+	batchKit.primaryID = primarySweep.SwapHash
+	batchKit.sweeps = sweeps
+	batchKit.rbfCache = rbfCache
+	batchKit.log = logger
 
 	cfg := b.newBatchConfig(batch.cfg.maxTimeoutDistance)
 
@@ -904,5 +884,20 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		maxTimeoutDistance: maxTimeoutDistance,
 		noBumping:          b.noBumping,
 		customMuSig2Signer: b.customMuSig2Signer,
+	}
+}
+
+// newBatchKit creates new batch kit.
+func (b *Batcher) newBatchKit() batchKit {
+	return batchKit{
+		returnChan:       b.sweepReqs,
+		wallet:           b.wallet,
+		chainNotifier:    b.chainNotifier,
+		signerClient:     b.signerClient,
+		musig2SignSweep:  b.musig2ServerSign,
+		verifySchnorrSig: b.VerifySchnorrSig,
+		purger:           b.AddSweep,
+		store:            b.store,
+		quit:             b.quit,
 	}
 }
