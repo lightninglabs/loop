@@ -799,29 +799,8 @@ func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
 func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
 	*sweep, error) {
 
-	s, err := b.sweepStore.FetchSweep(ctx, dbSweep.SwapHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
-			dbSweep.SwapHash[:6], err)
-	}
-
-	return &sweep{
-		swapHash:               dbSweep.SwapHash,
-		outpoint:               dbSweep.Outpoint,
-		value:                  dbSweep.Amount,
-		confTarget:             s.ConfTarget,
-		timeout:                s.Timeout,
-		initiationHeight:       s.InitiationHeight,
-		htlc:                   s.HTLC,
-		preimage:               s.Preimage,
-		swapInvoicePaymentAddr: s.SwapInvoicePaymentAddr,
-		htlcKeys:               s.HTLCKeys,
-		htlcSuccessEstimator:   s.HTLCSuccessEstimator,
-		protocolVersion:        s.ProtocolVersion,
-		isExternalAddr:         s.IsExternalAddr,
-		destAddr:               s.DestAddr,
-		minFeeRate:             s.MinFeeRate,
-	}, nil
+	return b.loadSweep(ctx, dbSweep.SwapHash, dbSweep.Outpoint,
+		dbSweep.Amount)
 }
 
 // LoopOutFetcher is used to load LoopOut swaps from the database.
@@ -897,16 +876,25 @@ func NewSweepFetcherFromSwapStore(swapStore LoopOutFetcher,
 func (b *Batcher) fetchSweep(ctx context.Context,
 	sweepReq SweepRequest) (*sweep, error) {
 
-	s, err := b.sweepStore.FetchSweep(ctx, sweepReq.SwapHash)
+	return b.loadSweep(ctx, sweepReq.SwapHash, sweepReq.Outpoint,
+		sweepReq.Value)
+}
+
+// loadSweep loads inputs of sweep from the database and from FeeRateProvider
+// if needed and returns an assembled sweep object.
+func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
+	outpoint wire.OutPoint, value btcutil.Amount) (*sweep, error) {
+
+	s, err := b.sweepStore.FetchSweep(ctx, swapHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
-			sweepReq.SwapHash[:6], err)
+			swapHash[:6], err)
 	}
 
 	return &sweep{
-		swapHash:               sweepReq.SwapHash,
-		outpoint:               sweepReq.Outpoint,
-		value:                  sweepReq.Value,
+		swapHash:               swapHash,
+		outpoint:               outpoint,
+		value:                  value,
 		confTarget:             s.ConfTarget,
 		timeout:                s.Timeout,
 		initiationHeight:       s.InitiationHeight,
