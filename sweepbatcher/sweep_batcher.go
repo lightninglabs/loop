@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -140,6 +141,12 @@ type MuSig2SignSweep func(ctx context.Context,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) (
 	[]byte, []byte, error)
 
+// SignMuSig2 is a function that can be used to sign a sweep transaction in a
+// custom way.
+type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
+	swapHash lntypes.Hash, rootHash chainhash.Hash, sigHash [32]byte,
+) ([]byte, error)
+
 // VerifySchnorrSig is a function that can be used to verify a schnorr
 // signature.
 type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
@@ -245,6 +252,12 @@ type Batcher struct {
 	// the caller has to update it in the source of SweepInfo (interface
 	// SweepFetcher) and re-add the sweep by calling AddSweep.
 	noBumping bool
+
+	// customMuSig2Signer is a custom signer. If it is set, it is used to
+	// create musig2 signatures instead of musig2SignSweep and signerClient.
+	// Note that musig2SignSweep must be nil in this case, however signer
+	// client must still be provided, as it is used for non-coop spendings.
+	customMuSig2Signer SignMuSig2
 }
 
 // BatcherConfig holds batcher configuration.
@@ -254,6 +267,12 @@ type BatcherConfig struct {
 	// the caller has to update it in the source of SweepInfo (interface
 	// SweepFetcher) and re-add the sweep by calling AddSweep.
 	noBumping bool
+
+	// customMuSig2Signer is a custom signer. If it is set, it is used to
+	// create musig2 signatures instead of musig2SignSweep and signerClient.
+	// Note that musig2SignSweep must be nil in this case, however signer
+	// client must still be provided, as it is used for non-coop spendings.
+	customMuSig2Signer SignMuSig2
 }
 
 // BatcherOption configures batcher behaviour.
@@ -266,6 +285,17 @@ type BatcherOption func(*BatcherConfig)
 func WithNoBumping() BatcherOption {
 	return func(cfg *BatcherConfig) {
 		cfg.noBumping = true
+	}
+}
+
+// WithCustomSignMuSig2 instructs sweepbatcher to use a custom function to
+// produce MuSig2 signatures. If it is set, it is used to create
+// musig2 signatures instead of musig2SignSweep and signerClient. Note
+// that musig2SignSweep must be nil in this case, however signerClient
+// must still be provided, as it is used for non-coop spendings.
+func WithCustomSignMuSig2(customMuSig2Signer SignMuSig2) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.customMuSig2Signer = customMuSig2Signer
 	}
 }
 
@@ -282,21 +312,27 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		opt(&cfg)
 	}
 
+	if cfg.customMuSig2Signer != nil && musig2ServerSigner != nil {
+		panic("customMuSig2Signer must not be used with " +
+			"musig2ServerSigner")
+	}
+
 	return &Batcher{
-		batches:          make(map[int32]*batch),
-		sweepReqs:        make(chan SweepRequest),
-		errChan:          make(chan error, 1),
-		quit:             make(chan struct{}),
-		initDone:         make(chan struct{}),
-		wallet:           wallet,
-		chainNotifier:    chainNotifier,
-		signerClient:     signerClient,
-		musig2ServerSign: musig2ServerSigner,
-		VerifySchnorrSig: verifySchnorrSig,
-		chainParams:      chainparams,
-		store:            store,
-		sweepStore:       sweepStore,
-		noBumping:        cfg.noBumping,
+		batches:            make(map[int32]*batch),
+		sweepReqs:          make(chan SweepRequest),
+		errChan:            make(chan error, 1),
+		quit:               make(chan struct{}),
+		initDone:           make(chan struct{}),
+		wallet:             wallet,
+		chainNotifier:      chainNotifier,
+		signerClient:       signerClient,
+		musig2ServerSign:   musig2ServerSigner,
+		VerifySchnorrSig:   verifySchnorrSig,
+		chainParams:        chainparams,
+		store:              store,
+		sweepStore:         sweepStore,
+		noBumping:          cfg.noBumping,
+		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
 }
 
@@ -456,6 +492,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	cfg := batchConfig{
 		maxTimeoutDistance: defaultMaxTimeoutDistance,
 		noBumping:          b.noBumping,
+		customMuSig2Signer: b.customMuSig2Signer,
 	}
 
 	switch b.chainParams {
@@ -574,6 +611,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	cfg := batchConfig{
 		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
 		noBumping:          b.noBumping,
+		customMuSig2Signer: b.customMuSig2Signer,
 	}
 
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
@@ -637,6 +675,7 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 		bchCfg := batchConfig{
 			maxTimeoutDistance: bch.MaxTimeoutDistance,
 			noBumping:          b.noBumping,
+			customMuSig2Signer: b.customMuSig2Signer,
 		}
 		batch.cfg = &bchCfg
 
