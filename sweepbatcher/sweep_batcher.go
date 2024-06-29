@@ -121,6 +121,11 @@ type SweepInfo struct {
 
 	// DestAddr is the destination address of the sweep.
 	DestAddr btcutil.Address
+
+	// NonCoopHint is set, if the sweep can not be spent cooperatively and
+	// has to be spent using preimage. This is only used in fee estimations
+	// when selecting a batch for the sweep to minimize fees.
+	NonCoopHint bool
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -465,6 +470,19 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		}
 	}
 
+	// If custom fee rate provider is used, run the greedy algorithm of
+	// batch selection to minimize costs.
+	if b.customFeeRate != nil {
+		err := b.greedyAddSweep(ctx, sweep)
+		if err == nil {
+			// The greedy algorithm succeeded.
+			return nil
+		}
+
+		log.Warnf("Greedy batch selection algorithm failed for sweep "+
+			"%x, falling back to old approach.", sweep.swapHash[:6])
+	}
+
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
 		accepted, err := batch.addSweep(ctx, sweep)
@@ -481,13 +499,19 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	// If no batch is capable of accepting the sweep, we spin up a fresh
 	// batch and hand the sweep over to it.
-	batch, err := b.spinUpBatch(ctx)
+	return b.spinUpNewBatch(ctx, sweep)
+}
+
+// spinUpNewBatch creates new batch, starts it and adds the sweep to it.
+func (b *Batcher) spinUpNewBatch(ctx context.Context, sweep *sweep) error {
+	// Spin up a fresh batch.
+	newBatch, err := b.spinUpBatch(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Add the sweep to the fresh batch.
-	accepted, err := batch.addSweep(ctx, sweep)
+	accepted, err := newBatch.addSweep(ctx, sweep)
 	if err != nil {
 		return err
 	}
@@ -496,7 +520,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// we should return the error.
 	if !accepted {
 		return fmt.Errorf("sweep %x was not accepted by new batch %d",
-			sweep.swapHash[:6], batch.id)
+			sweep.swapHash[:6], newBatch.id)
 	}
 
 	return nil
@@ -889,6 +913,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		isExternalAddr:         s.IsExternalAddr,
 		destAddr:               s.DestAddr,
 		minFeeRate:             minFeeRate,
+		nonCoopHint:            s.NonCoopHint,
 	}, nil
 }
 

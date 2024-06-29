@@ -101,6 +101,11 @@ type sweep struct {
 	// minFeeRate is minimum fee rate that must be used by a batch of
 	// the sweep. If it is specified, confTarget is ignored.
 	minFeeRate chainfee.SatPerKWeight
+
+	// nonCoopHint is set, if the sweep can not be spent cooperatively and
+	// has to be spent using preimage. This is only used in fee estimations
+	// when selecting a batch for the sweep to minimize fees.
+	nonCoopHint bool
 }
 
 // batchState is the state of the batch.
@@ -838,6 +843,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 			PreviousOutPoint: sweep.outpoint,
 		})
 
+		// TODO: it should be txscript.SigHashDefault.
 		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashAll)
 	}
 
