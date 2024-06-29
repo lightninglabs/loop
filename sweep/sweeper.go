@@ -207,6 +207,30 @@ func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 
 	// Calculate weight for this tx.
 	var weightEstimate input.TxWeightEstimator
+
+	// Add output.
+	if err := AddOutputEstimate(&weightEstimate, destAddr); err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to add output weight "+
+			"estimate: %w", err)
+	}
+
+	// Add input.
+	err = addInputEstimate(&weightEstimate)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to add input weight "+
+			"estimate: %w", err)
+	}
+
+	// Find weight.
+	weight := weightEstimate.Weight()
+
+	return feeRate.FeeForWeight(weight), feeRate, weight, nil
+}
+
+// AddOutputEstimate adds output to weight estimator.
+func AddOutputEstimate(weightEstimate *input.TxWeightEstimator,
+	destAddr btcutil.Address) error {
+
 	switch destAddr.(type) {
 	case *btcutil.AddressWitnessScriptHash:
 		weightEstimate.AddP2WSHOutput()
@@ -224,16 +248,8 @@ func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 		weightEstimate.AddP2TROutput()
 
 	default:
-		return 0, 0, 0, fmt.Errorf("estimate fee: unknown address "+
-			"type %T", destAddr)
+		return fmt.Errorf("unknown address type %T", destAddr)
 	}
 
-	err = addInputEstimate(&weightEstimate)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	weight := weightEstimate.Weight()
-
-	return feeRate.FeeForWeight(weight), feeRate, weight, nil
+	return nil
 }
