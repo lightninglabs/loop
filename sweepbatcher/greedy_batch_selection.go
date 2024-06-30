@@ -199,8 +199,7 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 
 	// Add inputs.
 	for _, sweep := range batch.sweeps {
-		// TODO: it should be txscript.SigHashDefault.
-		coopWeight.AddTaprootKeySpendInput(txscript.SigHashAll)
+		coopWeight.AddTaprootKeySpendInput(txscript.SigHashDefault)
 
 		err = sweep.htlcSuccessEstimator(&nonCoopWeight)
 		if err != nil {

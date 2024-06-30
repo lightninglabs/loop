@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -1937,7 +1938,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	// Provide min fee rate for the sweep.
 	feeRate := chainfee.SatPerKWeight(30000)
 	amt := btcutil.Amount(1_000_000)
-	weight := lntypes.WeightUnit(445) // Weight for 1-to-1 tx.
+	weight := lntypes.WeightUnit(396) // Weight for 1-to-1 tx.
 	expectedFee := feeRate.FeeForWeight(weight)
 
 	swap := &loopdb.LoopOutContract{
@@ -2000,8 +2001,9 @@ func testSweepFetcher(t *testing.T, store testStore,
 	}
 
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepFetcher, WithCustomFeeRate(customFeeRate))
+		nil, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepFetcher, WithCustomFeeRate(customFeeRate),
+		WithCustomSignMuSig2(testSignMuSig2func))
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -2052,6 +2054,12 @@ func testSweepFetcher(t *testing.T, store testStore,
 	out := btcutil.Amount(tx.TxOut[0].Value)
 	gotFee := amt - out
 	require.Equal(t, expectedFee, gotFee, "fees don't match")
+	gotWeight := lntypes.WeightUnit(
+		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+	)
+	require.Equal(t, weight, gotWeight, "weights don't match")
+	gotFeeRate := chainfee.NewSatPerKWeight(gotFee, gotWeight)
+	require.Equal(t, feeRate, gotFeeRate, "fee rates don't match")
 
 	// Make sure we have stored the batch.
 	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)

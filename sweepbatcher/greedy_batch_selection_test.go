@@ -17,10 +17,10 @@ const (
 	lowFeeRate  = chainfee.FeePerKwFloor
 	highFeeRate = chainfee.SatPerKWeight(30000)
 
-	coopInputWeight       = lntypes.WeightUnit(231)
+	coopInputWeight       = lntypes.WeightUnit(230)
 	nonCoopInputWeight    = lntypes.WeightUnit(521)
 	nonCoopPenalty        = nonCoopInputWeight - coopInputWeight
-	coopNewBatchWeight    = lntypes.WeightUnit(445)
+	coopNewBatchWeight    = lntypes.WeightUnit(444)
 	nonCoopNewBatchWeight = coopNewBatchWeight + nonCoopPenalty
 
 	// p2pkhDiscount is weight discount P2PKH output has over P2TR output.

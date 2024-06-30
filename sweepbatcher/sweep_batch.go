@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -737,7 +738,10 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 		return fee, err
 	}
 
-	weightEstimate.AddP2TROutput()
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return fee, err
+	}
 
 	weight := weightEstimate.Weight()
 	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
@@ -843,8 +847,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 			PreviousOutPoint: sweep.outpoint,
 		})
 
-		// TODO: it should be txscript.SigHashDefault.
-		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashAll)
+		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashDefault)
 	}
 
 	var address btcutil.Address
@@ -870,7 +873,10 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		return fee, err, false
 	}
 
-	weightEstimate.AddP2TROutput()
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return fee, err, false
+	}
 
 	weight := weightEstimate.Weight()
 	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
