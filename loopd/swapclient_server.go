@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"reflect"
 	"sort"
 	"strings"
@@ -91,6 +92,7 @@ type swapClientServer struct {
 	staticAddressManager *address.Manager
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
+	staticLoopInManager  *loopin.Manager
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo
@@ -1461,6 +1463,46 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	)
 }
 
+type LoopInRequest struct {
+}
+
+// StaticAddressLoopIn ...
+func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
+	in *clientrpc.StaticAddressLoopInRequest) (
+	*clientrpc.StaticAddressLoopInResponse, error) {
+
+	log.Infof("Static loop in request received")
+
+	routeHints, err := unmarshallRouteHints(in.RouteHints)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: in.Outpoints,
+		MaxMinerFee:      btcutil.Amount(in.MaxMinerFee),
+		MaxSwapFee:       btcutil.Amount(in.MaxSwapFee),
+		Label:            in.Label,
+		Initiator:        in.Initiator,
+		RouteHints:       routeHints,
+		Private:          in.Private,
+	}
+	if in.LastHop != nil {
+		lastHop, err := route.NewVertexFromBytes(in.LastHop)
+		if err != nil {
+			return nil, err
+		}
+		req.LastHop = &lastHop
+	}
+
+	err = s.staticLoopInManager.LoopIn(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.StaticAddressLoopInResponse{}, nil
+}
+
 func (s *swapClientServer) depositSummary(ctx context.Context,
 	deposits []*deposit.Deposit, stateFilter clientrpc.DepositState,
 	outpointsFilter []string) (*clientrpc.StaticAddressSummaryResponse,
@@ -1472,6 +1514,7 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 		valueDeposited   int64
 		valueExpired     int64
 		valueWithdrawn   int64
+		valueLoopedIn    int64
 	)
 
 	// Value unconfirmed.
@@ -1497,6 +1540,9 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 
 		case deposit.Withdrawn:
 			valueWithdrawn += value
+
+		case deposit.LoopedIn:
+			valueLoopedIn += value
 		}
 	}
 
@@ -1549,6 +1595,7 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 		ValueDeposited:   valueDeposited,
 		ValueExpired:     valueExpired,
 		ValueWithdrawn:   valueWithdrawn,
+		ValueLoopedIn:    valueLoopedIn,
 		FilteredDeposits: clientDeposits,
 	}, nil
 }
@@ -1592,6 +1639,12 @@ func toClientState(state fsm.StateType) clientrpc.DepositState {
 	case deposit.PublishExpiredDeposit:
 		return clientrpc.DepositState_PUBLISH_EXPIRED
 
+	case deposit.LoopingIn:
+		return clientrpc.DepositState_LOOPING_IN
+
+	case deposit.LoopedIn:
+		return clientrpc.DepositState_LOOPED_IN
+
 	case deposit.WaitForExpirySweep:
 		return clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
 
@@ -1616,6 +1669,12 @@ func toServerState(state clientrpc.DepositState) fsm.StateType {
 
 	case clientrpc.DepositState_WITHDRAWN:
 		return deposit.Withdrawn
+
+	case clientrpc.DepositState_LOOPING_IN:
+		return deposit.LoopingIn
+
+	case clientrpc.DepositState_LOOPED_IN:
+		return deposit.LoopedIn
 
 	case clientrpc.DepositState_PUBLISH_EXPIRED:
 		return deposit.PublishExpiredDeposit

@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"fmt"
+	"github.com/btcsuite/btcd/btcutil"
 	"sort"
 	"sync"
 	"time"
@@ -480,6 +481,22 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	return deposits, true
 }
 
+func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
+	stateFilter fsm.StateType) ([]*Deposit, bool) {
+
+	outPoints := make([]wire.OutPoint, len(outpoints))
+	for i, o := range outpoints {
+		op, err := wire.NewOutPointFromString(o)
+		if err != nil {
+			return nil, false
+		}
+
+		outPoints[i] = *op
+	}
+
+	return m.AllOutpointsActiveDeposits(outPoints, stateFilter)
+}
+
 // TransitionDeposits allows a caller to transition a set of deposits to a new
 // state.
 func (m *Manager) TransitionDeposits(deposits []*Deposit, event fsm.EventType,
@@ -511,4 +528,12 @@ func (m *Manager) TransitionDeposits(deposits []*Deposit, event fsm.EventType,
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
 func (m *Manager) UpdateDeposit(d *Deposit) error {
 	return m.cfg.Store.UpdateDeposit(m.runCtx, d)
+}
+
+func TotalDepositAmount(deposits []*Deposit) btcutil.Amount {
+	var total btcutil.Amount
+	for _, d := range deposits {
+		total += d.Value
+	}
+	return total
 }

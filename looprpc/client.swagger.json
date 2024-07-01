@@ -698,13 +698,15 @@
         "DEPOSITED",
         "WITHDRAWING",
         "WITHDRAWN",
+        "LOOPING_IN",
+        "LOOPED_IN",
         "PUBLISH_EXPIRED",
         "WAIT_FOR_EXPIRY_SWEEP",
         "EXPIRED",
         "FAILED_STATE"
       ],
       "default": "UNKNOWN_STATE",
-      "description": " - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed.\n - FAILED_STATE: FAILED_STATE indicates that the deposit has failed."
+      "description": " - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - LOOPING_IN: LOOPING_IN indicates that the deposit is currently being used in a static\naddress loop-in swap.\n - LOOPED_IN: LOOPED_IN indicates that the deposit was used in a static address loop-in\nswap.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed.\n - FAILED_STATE: FAILED_STATE indicates that the deposit has failed."
     },
     "looprpcDisqualified": {
       "type": "object",
@@ -1503,6 +1505,9 @@
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
     },
+    "looprpcStaticAddressLoopInResponse": {
+      "type": "object"
+    },
     "looprpcStaticAddressSummaryResponse": {
       "type": "object",
       "properties": {
@@ -1534,6 +1539,11 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all deposits that have been withdrawn."
+        },
+        "value_looped_in": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all loop-ins that have been finalized."
         },
         "filtered_deposits": {
           "type": "array",
