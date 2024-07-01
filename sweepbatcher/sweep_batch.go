@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -101,6 +102,11 @@ type sweep struct {
 	// minFeeRate is minimum fee rate that must be used by a batch of
 	// the sweep. If it is specified, confTarget is ignored.
 	minFeeRate chainfee.SatPerKWeight
+
+	// nonCoopHint is set, if the sweep can not be spend cooperatively and
+	// has to be spent using preimage. This is only used in fee estimations
+	// when selecting a batch for the sweep to minimize fees.
+	nonCoopHint bool
 }
 
 // batchState is the state of the batch.
@@ -133,9 +139,7 @@ type batchConfig struct {
 	batchPublishDelay time.Duration
 
 	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	// external source of fee rates (FeeRateProvider).
 	noBumping bool
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
@@ -840,7 +844,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 			PreviousOutPoint: sweep.outpoint,
 		})
 
-		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashAll)
+		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashDefault)
 	}
 
 	var address btcutil.Address
@@ -866,7 +870,10 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		return fee, err, false
 	}
 
-	weightEstimate.AddP2TROutput()
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return fee, err, false
+	}
 
 	weight := weightEstimate.Weight()
 	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
