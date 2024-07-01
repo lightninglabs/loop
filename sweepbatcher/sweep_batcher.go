@@ -375,18 +375,22 @@ func (b *Batcher) Run(ctx context.Context) error {
 		case sweepReq := <-b.sweepReqs:
 			sweep, err := b.fetchSweep(runCtx, sweepReq)
 			if err != nil {
+				log.Warnf("fetchSweep failed: %v.", err)
 				return err
 			}
 
 			err = b.handleSweep(runCtx, sweep, sweepReq.Notifier)
 			if err != nil {
+				log.Warnf("handleSweep failed: %v.", err)
 				return err
 			}
 
 		case err := <-b.errChan:
+			log.Warnf("Batcher received an error: %v.", err)
 			return err
 
 		case <-runCtx.Done():
+			log.Infof("Stopping Batcher: run context cancelled.")
 			return runCtx.Err()
 		}
 	}
