@@ -72,7 +72,8 @@ func (d *Deposit) IsInFinalState() bool {
 	d.Lock()
 	defer d.Unlock()
 
-	return d.state == Expired || d.state == Withdrawn || d.state == Failed
+	return d.state == Expired || d.state == Withdrawn ||
+		d.state == Failed || d.state == LoopedIn
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {

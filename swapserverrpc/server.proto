@@ -672,6 +672,15 @@ service StaticAddressServer {
     // the partial sigs for the client's selected deposits.
     rpc ServerWithdrawDeposits (ServerWithdrawRequest)
         returns (ServerWithdrawResponse);
+
+    rpc ServerStaticAddressLoopIn (ServerStaticAddressLoopInRequest)
+        returns (ServerStaticAddressLoopInResponse);
+
+    rpc PushStaticAddressHtlcSigs (PushStaticAddressHtlcSigsRequest)
+        returns (PushStaticAddressHtlcSigsResponse);
+
+    rpc PushStaticAddressSweeplessSigs (PushStaticAddressSweeplessSigsRequest)
+        returns (PushStaticAddressSweeplessSigsResponse);
 }
 
 message ServerNewAddressRequest {
@@ -715,4 +724,77 @@ message ServerWithdrawResponse {
 
     // The nonces that the server used to generate the sweepless sweep sigs.
     repeated bytes server_nonces = 2;
+}
+
+message ServerStaticAddressLoopInRequest {
+    // The protocol version that the client adheres to.
+    StaticAddressProtocolVersion protocol_version = 6;
+
+    bytes htlc_client_key = 1;
+
+    bytes swap_hash = 2;
+
+    repeated string deposit_outpoints = 3;
+
+    string swap_invoice = 4;
+
+    bytes last_hop = 5;
+
+    // The user agent string that identifies the software running on the user's
+    // side. This can be changed in the user's client software but it _SHOULD_
+    // conform to the following pattern:
+    //    Agent-Name/semver-version(/additional-info)
+    // Examples:
+    //    loopd/v0.10.0-beta/commit=3b635821
+    //    litd/v0.2.0-alpha/commit=326d754
+    string user_agent = 7;
+}
+
+message ServerStaticAddressLoopInResponse {
+    bytes loop_in_id = 1;
+
+    bytes htlc_server_key = 2;
+
+    int32 htlc_expiry = 3;
+
+    // The nonces that the server used to generate the htlc sigs.
+    repeated bytes htlc_server_nonces = 4;
+
+    // The fee rate in sat/kw that the server wants to use for the htlc tx.
+    uint64 htlc_fee_rate = 5;
+}
+
+message PushStaticAddressHtlcSigsRequest {
+    bytes loop_in_id = 1;
+
+    // The nonces that the client used to generate the htlc sigs.
+    repeated bytes htlc_client_nonces = 2;
+
+    // The musig2 htlc sigs that the client generated for the htlc.
+    repeated bytes htlc_client_sigs = 3;
+}
+
+message PushStaticAddressHtlcSigsResponse {
+    // The nonces that the client used to generate the htlc sigs.
+    repeated bytes sweepless_server_nonces = 1;
+
+    // The fee rate in sat/kw that the server wants to use for the htlc tx.
+    uint64 sweepless_fee_rate = 2;
+
+    // The address that the client wants to sweep the static address deposits
+    // to.
+    string sweepless_sweep_addr = 3;
+}
+
+message PushStaticAddressSweeplessSigsRequest {
+    bytes loop_in_id = 1;
+
+    // The nonces that the client used to generate the htlc sigs.
+    repeated bytes sweepless_client_nonces = 2;
+
+    // The musig2 htlc sigs that the client generated for the htlc.
+    repeated bytes sweepless_client_sigs = 3;
+}
+
+message PushStaticAddressSweeplessSigsResponse {
 }

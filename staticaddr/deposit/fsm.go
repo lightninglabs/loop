@@ -33,6 +33,10 @@ var (
 
 	Withdrawn = fsm.StateType("Withdrawn")
 
+	LoopingIn = fsm.StateType("LoopingIn")
+
+	LoopedIn = fsm.StateType("LoopedIn")
+
 	PublishExpiredDeposit = fsm.StateType("PublishExpiredDeposit")
 
 	WaitForExpirySweep = fsm.StateType("WaitForExpirySweep")
@@ -47,6 +51,8 @@ var (
 	OnStart             = fsm.EventType("OnStart")
 	OnWithdrawInitiated = fsm.EventType("OnWithdrawInitiated")
 	OnWithdrawn         = fsm.EventType("OnWithdrawn")
+	OnLoopinInitiated   = fsm.EventType("OnLoopinInitiated")
+	OnLoopedIn          = fsm.EventType("OnLoopedIn")
 	OnExpiry            = fsm.EventType("OnExpiry")
 	OnExpiryPublished   = fsm.EventType("OnExpiryPublished")
 	OnExpirySwept       = fsm.EventType("OnExpirySwept")
@@ -169,6 +175,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry:            PublishExpiredDeposit,
 				OnWithdrawInitiated: Withdrawing,
+				OnLoopinInitiated:   LoopingIn,
 				OnRecover:           Deposited,
 			},
 			Action: fsm.NoOpAction,
@@ -232,7 +239,40 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry: Expired,
 			},
-			Action: f.WithdrawnDepositAction,
+			Action: f.FinalizeDepositAction,
+		},
+		LoopingIn: fsm.State{
+			Transitions: fsm.Transitions{
+				// This event is triggered when the loop in
+				// payment has been received. We consider the
+				// swap to be completed and transition to a
+				// final state.
+				OnLoopedIn: LoopedIn,
+
+				// If the deposit expires while the loop in is
+				// still pending, we publish the expiry sweep.
+				OnExpiry: PublishExpiredDeposit,
+
+				// Upon recovery, we start from the beginning.
+				OnRecover: Deposited,
+
+				OnLoopinInitiated: LoopingIn,
+
+				fsm.OnError: Deposited,
+			},
+			Action: fsm.NoOpAction,
+		},
+		LoopedIn: fsm.State{
+			Transitions: fsm.Transitions{
+				OnExpiry: Expired,
+			},
+			Action: f.FinalizeDepositAction,
+		},
+		Withdrawn: fsm.State{
+			Transitions: fsm.Transitions{
+				OnExpiry: Expired,
+			},
+			Action: f.FinalizeDepositAction,
 		},
 		Failed: fsm.State{
 			Transitions: fsm.Transitions{

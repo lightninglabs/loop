@@ -9,7 +9,10 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
 
@@ -24,6 +27,46 @@ var staticAddressCommands = cli.Command{
 		withdrawalCommand,
 		summaryCommand,
 	},
+	Description: `
+	TODO .
+	`,
+	Flags: []cli.Flag{
+		cli.StringSliceFlag{
+			Name: "utxo",
+			Usage: "specify the utxos of deposits as " +
+				"outpoints(tx:idx) that should be looped in.",
+		},
+		cli.StringFlag{
+			Name: "last_hop",
+			Usage: "the pubkey of the last hop to use for this " +
+				"swap",
+		},
+		cli.StringFlag{
+			Name: "label",
+			Usage: fmt.Sprintf("an optional label for this swap,"+
+				"limited to %v characters. The label may not "+
+				"start with our reserved prefix: %v.",
+				labels.MaxLength, labels.Reserved),
+		},
+		cli.StringSliceFlag{
+			Name: "route_hints",
+			Usage: "route hints that can each be individually " +
+				"used to assist in reaching the invoice's " +
+				"destination",
+		},
+		cli.BoolFlag{
+			Name: "private",
+			Usage: "generates and passes routehints. Should be " +
+				"used if the connected node is only " +
+				"reachable via private channels",
+		},
+		cli.BoolFlag{
+			Name: "force, f",
+			Usage: "Assumes yes during confirmation. Using this " +
+				"option will result in an immediate swap",
+		},
+	},
+	Action: staticAddressLoopIn,
 }
 
 var newStaticAddressCommand = cli.Command{
@@ -196,7 +239,7 @@ var summaryCommand = cli.Command{
 			Usage: "specify a filter to only display deposits in " +
 				"the specified state. The state can be one " +
 				"of [deposited|withdrawing|withdrawn|" +
-				"publish_expired_deposit|" +
+				"loopingin|loopedin|publish_expired_deposit|" +
 				"wait_for_expiry_sweep|expired|failed].",
 		},
 	},
@@ -228,6 +271,12 @@ func summary(ctx *cli.Context) error {
 
 	case "withdrawn":
 		filterState = looprpc.DepositState_WITHDRAWN
+
+	case "loopingin":
+		filterState = looprpc.DepositState_LOOPING_IN
+
+	case "loopedin":
+		filterState = looprpc.DepositState_LOOPED_IN
 
 	case "publish_expired_deposit":
 		filterState = looprpc.DepositState_PUBLISH_EXPIRED
@@ -296,4 +345,132 @@ func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
 		TxidStr:     txid,
 		OutputIndex: uint32(outputIndex),
 	}, nil
+}
+
+func staticAddressLoopIn(ctx *cli.Context) error {
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "static")
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	var (
+		ctxb           = context.Background()
+		isAllSelected  = ctx.IsSet("all")
+		isUtxoSelected = ctx.IsSet("utxo")
+		label          = ctx.String("static-loop-in")
+		hints          []*swapserverrpc.RouteHint
+		lastHop        []byte
+	)
+
+	// Validate our label early so that we can fail before getting a quote.
+	if err := labels.Validate(label); err != nil {
+		return err
+	}
+
+	// Private and route hints are mutually exclusive as setting private
+	// means we retrieve our own route hints from the connected node.
+	hints, err = validateRouteHints(ctx)
+	if err != nil {
+		return err
+	}
+
+	if ctx.IsSet(lastHopFlag.Name) {
+		lastHopVertex, err := route.NewVertexFromStr(
+			ctx.String(lastHopFlag.Name),
+		)
+		if err != nil {
+			return err
+		}
+
+		lastHop = lastHopVertex[:]
+	}
+
+	// Get the amount we need to quote for.
+	summaryResp, err := client.GetStaticAddressSummary(
+		ctxb, &looprpc.StaticAddressSummaryRequest{
+			StateFilter: looprpc.DepositState_DEPOSITED,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	var depositOutpoints []string
+	switch {
+	case isAllSelected == isUtxoSelected:
+		return errors.New("must select either all or some utxos")
+
+	case isAllSelected:
+		depositOutpoints = depositsToOutpoints(
+			summaryResp.FilteredDeposits,
+		)
+
+	case isUtxoSelected:
+		depositOutpoints = ctx.StringSlice("utxo")
+
+	default:
+		return fmt.Errorf("unknown quote request")
+	}
+
+	quote, err := client.GetLoopInQuote(
+		ctxb, &looprpc.QuoteRequest{
+			LoopInRouteHints: hints,
+			LoopInLastHop:    lastHop,
+			Private:          ctx.Bool(privateFlag.Name),
+			DepositOutpoints: depositOutpoints,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	limits := getInLimits(quote)
+
+	req := &looprpc.StaticAddressLoopInRequest{
+		Outpoints:   depositOutpoints,
+		MaxMinerFee: int64(limits.maxMinerFee),
+		MaxSwapFee:  int64(limits.maxSwapFee),
+		LastHop:     lastHop,
+		Label:       label,
+		Initiator:   defaultInitiator,
+		RouteHints:  hints,
+		Private:     ctx.Bool("private"),
+	}
+
+	resp, err := client.StaticAddressLoopIn(ctxb, req)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Static loop-in response from the server: %v\n", resp)
+
+	return nil
+}
+
+func sumOutpointValues(outpoints []string, deposits []*looprpc.Deposit) int64 {
+	var total int64
+	for _, outpoint := range outpoints {
+		for _, deposit := range deposits {
+			if deposit.Outpoint == outpoint {
+				total += deposit.Value
+				break
+			}
+		}
+	}
+
+	return total
+}
+
+func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
+	outpoints := make([]string, 0, len(deposits))
+	for _, deposit := range deposits {
+		outpoints = append(outpoints, deposit.Outpoint)
+	}
+
+	return outpoints
 }
