@@ -922,6 +922,47 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 	return fee, nil
 }
 
+// createPsbt creates serialized PSBT and prevOuts map from unsignedTx and
+// the list of sweeps.
+func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
+	map[wire.OutPoint]*wire.TxOut, error) {
+
+	// Create PSBT packet object.
+	packet, err := psbt.NewFromUnsignedTx(unsignedTx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create PSBT: %w", err)
+	}
+
+	// Sanity check: the number of inputs in PSBT must be equal to the
+	// number of sweeps.
+	if len(packet.Inputs) != len(sweeps) {
+		return nil, nil, fmt.Errorf("invalid number of packet inputs")
+	}
+
+	// Create prevOuts map.
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(sweeps))
+
+	// Fill input info in PSBT and prevOuts.
+	for i, sweep := range sweeps {
+		txOut := &wire.TxOut{
+			Value:    int64(sweep.value),
+			PkScript: sweep.htlc.PkScript,
+		}
+
+		prevOuts[sweep.outpoint] = txOut
+		packet.Inputs[i].WitnessUtxo = txOut
+	}
+
+	// Serialize PSBT.
+	var psbtBuf bytes.Buffer
+	err = packet.Serialize(&psbtBuf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to serialize PSBT: %w", err)
+	}
+
+	return psbtBuf.Bytes(), prevOuts, nil
+}
+
 // publishBatchCoop attempts to construct and publish a batch transaction that
 // collects all the required signatures interactively from the server. This
 // helps with collecting the funds immediately without revealing any information
@@ -1013,36 +1054,15 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		Value:    int64(batchAmt - fee),
 	})
 
-	packet, err := psbt.NewFromUnsignedTx(batchTx)
-	if err != nil {
-		return fee, err, false
-	}
-
-	if len(packet.Inputs) != len(sweeps) {
-		return fee, fmt.Errorf("invalid number of packet inputs"), false
-	}
-
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
-
-	for i, sweep := range sweeps {
-		txOut := &wire.TxOut{
-			Value:    int64(sweep.value),
-			PkScript: sweep.htlc.PkScript,
-		}
-
-		prevOuts[sweep.outpoint] = txOut
-		packet.Inputs[i].WitnessUtxo = txOut
-	}
-
-	var psbtBuf bytes.Buffer
-	err = packet.Serialize(&psbtBuf)
+	// Create PSBT and prevOuts.
+	psbtBytes, prevOuts, err := b.createPsbt(batchTx, sweeps)
 	if err != nil {
 		return fee, err, false
 	}
 
 	// Attempt to cooperatively sign the batch tx with the server.
 	err = b.coopSignBatchTx(
-		ctx, batchTx, sweeps, prevOuts, psbtBuf.Bytes(),
+		ctx, batchTx, sweeps, prevOuts, psbtBytes,
 	)
 	if err != nil {
 		return fee, err, false
