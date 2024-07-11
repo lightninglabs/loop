@@ -73,11 +73,7 @@ FROM
 JOIN
         sweeps ON sweep_batches.id = sweeps.batch_id
 WHERE
-        sweeps.swap_hash = $1
-AND
-        sweeps.completed = TRUE
-AND
-        sweep_batches.confirmed = TRUE;
+        sweeps.swap_hash = $1;
 
 -- name: GetBatchSweptAmount :one
 SELECT

@@ -418,7 +418,24 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
 	if completed && *notifier != (SpendNotifier{}) {
-		return b.monitorSpendAndNotify(ctx, sweep, notifier)
+		// Verify that the parent batch is confirmed. Note that a batch
+		// is only considered confirmed after it has received three
+		// on-chain confirmations to prevent issues caused by reorgs.
+		parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
+		if err != nil {
+			log.Errorf("unable to get parent batch for sweep %x: "+
+				"%v", sweep.swapHash[:6], err)
+
+			return err
+		}
+
+		// The parent batch is indeed confirmed, meaning it is complete
+		// and we won't be able to attach this sweep to it.
+		if parentBatch.State == batchConfirmed {
+			return b.monitorSpendAndNotify(
+				ctx, sweep, parentBatch.ID, notifier,
+			)
+		}
 	}
 
 	sweep.notifier = notifier
@@ -688,19 +705,13 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // monitorSpendAndNotify monitors the spend of a specific outpoint and writes
 // the response back to the response channel.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
-	notifier *SpendNotifier) error {
+	parentBatchID int32, notifier *SpendNotifier) error {
 
 	spendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// First get the batch that completed the sweep.
-	parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
-	if err != nil {
-		return err
-	}
-
 	// Then we get the total amount that was swept by the batch.
-	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatch.ID)
+	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatchID)
 	if err != nil {
 		return err
 	}

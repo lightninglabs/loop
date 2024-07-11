@@ -196,10 +196,6 @@ func (s *SQLStore) GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
 		return nil, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	return convertBatchRow(batch), nil
 }
 
