@@ -1042,7 +1042,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 
 	// Attempt to cooperatively sign the batch tx with the server.
 	err = b.coopSignBatchTx(
-		ctx, packet, sweeps, prevOuts, psbtBuf.Bytes(),
+		ctx, batchTx, sweeps, prevOuts, psbtBuf.Bytes(),
 	)
 	if err != nil {
 		return fee, err, false
@@ -1084,7 +1084,7 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 
 // coopSignBatchTx collects the necessary signatures from the server in order
 // to cooperatively sweep the funds.
-func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
+func (b *batch) coopSignBatchTx(ctx context.Context, tx *wire.MsgTx,
 	sweeps []sweep, prevOuts map[wire.OutPoint]*wire.TxOut,
 	psbt []byte) error {
 
@@ -1092,13 +1092,13 @@ func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
 		sweep := sweep
 
 		finalSig, err := b.musig2sign(
-			ctx, i, sweep, packet.UnsignedTx, prevOuts, psbt,
+			ctx, i, sweep, tx, prevOuts, psbt,
 		)
 		if err != nil {
 			return err
 		}
 
-		packet.UnsignedTx.TxIn[i].Witness = wire.TxWitness{
+		tx.TxIn[i].Witness = wire.TxWitness{
 			finalSig,
 		}
 	}
