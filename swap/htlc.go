@@ -266,8 +266,6 @@ func (h *Htlc) GenSuccessWitness(receiverSig []byte,
 
 // AddSuccessToEstimator adds a successful spend to a weight estimator.
 func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) error {
-	maxSuccessWitnessSize := h.MaxSuccessWitnessSize()
-
 	switch h.OutputType {
 	case HtlcP2TR:
 		// Generate tapscript.
@@ -283,10 +281,20 @@ func (h *Htlc) AddSuccessToEstimator(estimator *input.TxWeightEstimator) error {
 			trHtlc.InternalPubKey, successLeaf, timeoutLeafHash[:],
 		)
 
-		estimator.AddTapscriptInput(maxSuccessWitnessSize, tapscript)
+		// The leaf witness size must be calculated without the byte
+		// that accounts for the number of witness elements, only the
+		// total size of all elements on the stack that are consumed by
+		// the revealed script should be counted. Consumed elements:
+		// - sigLength: 1 byte
+		// - sig: 64 bytes
+		// - preimage_length: 1 byte
+		// - preimage: 32 bytes
+		const leafWitnessSize = 1 + 64 + 1 + 32
+
+		estimator.AddTapscriptInput(leafWitnessSize, tapscript)
 
 	case HtlcP2WSH:
-		estimator.AddWitnessInput(maxSuccessWitnessSize)
+		estimator.AddWitnessInput(h.MaxSuccessWitnessSize())
 	}
 
 	return nil
