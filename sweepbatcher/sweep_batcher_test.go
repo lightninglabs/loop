@@ -2880,6 +2880,552 @@ func testCustomSignMuSig2(t *testing.T, store testStore,
 	checkBatcherError(t, runErr)
 }
 
+// testWithMixedBatch tests mixed batches construction. It also tests
+// non-cooperative sweeping (using a preimage). Sweeps are added one by one.
+func testWithMixedBatch(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Extract payment address from the invoice.
+	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
+		swapInvoice, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	// Use sweepFetcher to provide NonCoopHint for swapHash1.
+	sweepFetcher := &sweepFetcherMock{
+		store: map[lntypes.Hash]*SweepInfo{},
+	}
+
+	// Create 3 sweeps:
+	//  1. known in advance to be non-cooperative,
+	//  2. fails cosigning during an attempt,
+	//  3. co-signs successfully.
+
+	// Create 3 preimages, for 3 sweeps.
+	var preimages = []lntypes.Preimage{
+		{1},
+		{2},
+		{3},
+	}
+
+	// Swap hashes must match the preimages, for non-cooperative spending
+	// path to work.
+	var swapHashes = []lntypes.Hash{
+		preimages[0].Hash(),
+		preimages[1].Hash(),
+		preimages[2].Hash(),
+	}
+
+	// Create muSig2SignSweep working only for 3rd swapHash.
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		if swapHash == swapHashes[2] {
+			return nil, nil, nil
+		} else {
+			return nil, nil, fmt.Errorf("test error")
+		}
+	}
+
+	// Use mixed batches.
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		muSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepFetcher, WithMixedBatch())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Expected weights for transaction having 1, 2, and 3 sweeps.
+	wantWeights := []lntypes.WeightUnit{559, 952, 1182}
+
+	// Two non-cooperative sweeps, one cooperative.
+	wantWitnessSizes := []int{4, 4, 1}
+
+	// Create 3 swaps and 3 sweeps.
+	for i, swapHash := range swapHashes {
+		// Publish a block to trigger republishing.
+		err = lnd.NotifyHeight(601 + int32(i))
+		require.NoError(t, err)
+
+		// Put a swap into store to satisfy SQL constraints.
+		swap := &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      111,
+				AmountRequested: 1_000_000,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
+
+				// Make preimage unique to pass SQL constraints.
+				Preimage: preimages[i],
+			},
+
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
+		}
+
+		require.NoError(t, store.CreateLoopOut(ctx, swapHash, swap))
+		store.AssertLoopOutStored()
+
+		// Add SweepInfo to sweepFetcher.
+		htlc, err := utils.GetHtlc(
+			swapHash, &swap.SwapContract, lnd.ChainParams,
+		)
+		require.NoError(t, err)
+
+		sweepInfo := &SweepInfo{
+			Preimage:               preimages[i],
+			ConfTarget:             123,
+			Timeout:                111,
+			SwapInvoicePaymentAddr: *swapPaymentAddr,
+			ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
+			HTLCKeys:               htlcKeys,
+			HTLC:                   *htlc,
+			HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
+			DestAddr:               destAddr,
+		}
+		// The first sweep is known in advance to be non-cooperative.
+		if i == 0 {
+			sweepInfo.NonCoopHint = true
+		}
+		sweepFetcher.store[swapHash] = sweepInfo
+
+		// Create sweep request.
+		sweepReq := SweepRequest{
+			SwapHash: swapHash,
+			Value:    1_000_000,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+			Notifier: &dummyNotifier,
+		}
+		require.NoError(t, batcher.AddSweep(&sweepReq))
+
+		if i == 0 {
+			// Since a batch was created we check that it registered
+			// for its primary sweep's spend.
+			<-lnd.RegisterSpendChannel
+		}
+
+		// Expect mockSigner.SignOutputRaw call to sign non-cooperative
+		// sweeps.
+		<-lnd.SignOutputRawChannel
+
+		// A transaction is published.
+		tx := <-lnd.TxPublishChannel
+		require.Equal(t, i+1, len(tx.TxIn))
+
+		// Check types of inputs.
+		var witnessSizes []int
+		for _, txIn := range tx.TxIn {
+			witnessSizes = append(witnessSizes, len(txIn.Witness))
+		}
+		// The order of inputs is not deterministic, because they
+		// are stored in map.
+		require.ElementsMatch(t, wantWitnessSizes[:i+1], witnessSizes)
+
+		// Calculate expected values.
+		feeRate := test.DefaultMockFee
+		for range i {
+			// Bump fee the number of blocks passed.
+			feeRate += defaultFeeRateStep
+		}
+		amt := btcutil.Amount(1_000_000 * (i + 1))
+		weight := wantWeights[i]
+		expectedFee := feeRate.FeeForWeight(weight)
+
+		// Check weight.
+		gotWeight := lntypes.WeightUnit(
+			blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+		)
+		require.Equal(t, weight, gotWeight, "weights don't match")
+
+		// Check fee.
+		out := btcutil.Amount(tx.TxOut[0].Value)
+		gotFee := amt - out
+		require.Equal(t, expectedFee, gotFee, "fees don't match")
+
+		// Check fee rate.
+		gotFeeRate := chainfee.NewSatPerKWeight(gotFee, gotWeight)
+		require.Equal(t, feeRate, gotFeeRate, "fee rates don't match")
+	}
+
+	// Make sure we have stored the batch.
+	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
+// testWithMixedBatchCustom tests mixed batches construction, custom scenario.
+// All sweeps are added at once.
+func testWithMixedBatchCustom(t *testing.T, store testStore,
+	batcherStore testBatcherStore, preimages []lntypes.Preimage,
+	muSig2SignSweep MuSig2SignSweep, nonCoopHints []bool,
+	expectSignOutputRawChannel bool, wantWeight lntypes.WeightUnit,
+	wantWitnessSizes []int) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Extract payment address from the invoice.
+	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
+		swapInvoice, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	// Use sweepFetcher to provide NonCoopHint for swapHash1.
+	sweepFetcher := &sweepFetcherMock{
+		store: map[lntypes.Hash]*SweepInfo{},
+	}
+
+	// Swap hashes must match the preimages, for non-cooperative spending
+	// path to work.
+	swapHashes := make([]lntypes.Hash, len(preimages))
+	for i, preimage := range preimages {
+		swapHashes[i] = preimage.Hash()
+	}
+
+	// Use mixed batches.
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		muSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepFetcher, WithMixedBatch())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create swaps and sweeps.
+	for i, swapHash := range swapHashes {
+		// Put a swap into store to satisfy SQL constraints.
+		swap := &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      111,
+				AmountRequested: 1_000_000,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
+
+				// Make preimage unique to pass SQL constraints.
+				Preimage: preimages[i],
+			},
+
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
+		}
+
+		require.NoError(t, store.CreateLoopOut(ctx, swapHash, swap))
+		store.AssertLoopOutStored()
+
+		// Add SweepInfo to sweepFetcher.
+		htlc, err := utils.GetHtlc(
+			swapHash, &swap.SwapContract, lnd.ChainParams,
+		)
+		require.NoError(t, err)
+
+		sweepFetcher.store[swapHash] = &SweepInfo{
+			Preimage:    preimages[i],
+			NonCoopHint: nonCoopHints[i],
+
+			ConfTarget:             123,
+			Timeout:                111,
+			SwapInvoicePaymentAddr: *swapPaymentAddr,
+			ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
+			HTLCKeys:               htlcKeys,
+			HTLC:                   *htlc,
+			HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
+			DestAddr:               destAddr,
+		}
+
+		// Create sweep request.
+		sweepReq := SweepRequest{
+			SwapHash: swapHash,
+			Value:    1_000_000,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+			Notifier: &dummyNotifier,
+		}
+		require.NoError(t, batcher.AddSweep(&sweepReq))
+
+		if i == 0 {
+			// Since a batch was created we check that it registered
+			// for its primary sweep's spend.
+			<-lnd.RegisterSpendChannel
+		}
+	}
+
+	if expectSignOutputRawChannel {
+		// Expect mockSigner.SignOutputRaw call to sign non-cooperative
+		// sweeps.
+		<-lnd.SignOutputRawChannel
+	}
+
+	// A transaction is published.
+	tx := <-lnd.TxPublishChannel
+	require.Equal(t, len(preimages), len(tx.TxIn))
+
+	// Check types of inputs.
+	var witnessSizes []int
+	for _, txIn := range tx.TxIn {
+		witnessSizes = append(witnessSizes, len(txIn.Witness))
+	}
+	// The order of inputs is not deterministic, because they
+	// are stored in map.
+	require.ElementsMatch(t, wantWitnessSizes, witnessSizes)
+
+	// Calculate expected values.
+	feeRate := test.DefaultMockFee
+	amt := btcutil.Amount(1_000_000 * len(preimages))
+	expectedFee := feeRate.FeeForWeight(wantWeight)
+
+	// Check weight.
+	gotWeight := lntypes.WeightUnit(
+		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+	)
+	require.Equal(t, wantWeight, gotWeight, "weights don't match")
+
+	// Check fee.
+	out := btcutil.Amount(tx.TxOut[0].Value)
+	gotFee := amt - out
+	require.Equal(t, expectedFee, gotFee, "fees don't match")
+
+	// Check fee rate.
+	gotFeeRate := chainfee.NewSatPerKWeight(gotFee, gotWeight)
+	require.Equal(t, feeRate, gotFeeRate, "fee rates don't match")
+
+	// Make sure we have stored the batch.
+	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
+// testWithMixedBatchLarge tests mixed batches construction, many sweeps.
+// All sweeps are added at once.
+func testWithMixedBatchLarge(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	// Create 9 sweeps. 3 groups of 3 sweeps.
+	//  1. known in advance to be non-cooperative,
+	//  2. fails cosigning during an attempt,
+	//  3. co-signs successfully.
+	var preimages = []lntypes.Preimage{
+		{1}, {2}, {3},
+		{4}, {5}, {6},
+		{7}, {8}, {9},
+	}
+
+	// Create muSig2SignSweep. It fails all the sweeps, works only one time
+	// for swapHashes[2] and works any number of times for 5 and 8. This
+	// emulates client disconnect after first successful co-signing.
+	swapHash2Used := false
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		switch {
+		case swapHash == preimages[2].Hash():
+			if swapHash2Used {
+				return nil, nil, fmt.Errorf("disconnected")
+			} else {
+				swapHash2Used = true
+
+				return nil, nil, nil
+			}
+
+		case swapHash == preimages[5].Hash():
+			return nil, nil, nil
+
+		case swapHash == preimages[8].Hash():
+			return nil, nil, nil
+
+		default:
+			return nil, nil, fmt.Errorf("test error")
+		}
+	}
+
+	// The first sweep in a group is known in advance to be
+	// non-cooperative.
+	nonCoopHints := []bool{
+		true, false, false,
+		true, false, false,
+		true, false, false,
+	}
+
+	// Expect mockSigner.SignOutputRaw call to sign non-cooperative
+	// sweeps.
+	expectSignOutputRawChannel := true
+
+	// Two non-cooperative sweeps, one cooperative.
+	wantWitnessSizes := []int{4, 4, 4, 4, 4, 1, 4, 4, 1}
+
+	// Expected weight.
+	wantWeight := lntypes.WeightUnit(3377)
+
+	testWithMixedBatchCustom(t, store, batcherStore, preimages,
+		muSig2SignSweep, nonCoopHints, expectSignOutputRawChannel,
+		wantWeight, wantWitnessSizes)
+}
+
+// testWithMixedBatchCoopOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps are cooperative.
+func testWithMixedBatchCoopOnly(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	// Create 3 sweeps, all cooperative.
+	var preimages = []lntypes.Preimage{
+		{1}, {2}, {3},
+	}
+
+	// Create muSig2SignSweep, working for all sweeps.
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		return nil, nil, nil
+	}
+
+	// All the sweeps are cooperative.
+	nonCoopHints := []bool{false, false, false}
+
+	// Do not expect a mockSigner.SignOutputRaw call, because there are no
+	// non-cooperative sweeps.
+	expectSignOutputRawChannel := false
+
+	// Two non-cooperative sweeps, one cooperative.
+	wantWitnessSizes := []int{1, 1, 1}
+
+	// Expected weight.
+	wantWeight := lntypes.WeightUnit(856)
+
+	testWithMixedBatchCustom(t, store, batcherStore, preimages,
+		muSig2SignSweep, nonCoopHints, expectSignOutputRawChannel,
+		wantWeight, wantWitnessSizes)
+}
+
+// testWithMixedBatchNonCoopHintOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps are known to be non-cooperative
+// in advance.
+func testWithMixedBatchNonCoopHintOnly(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	// Create 3 sweeps, all known to be non-cooperative in advance.
+	var preimages = []lntypes.Preimage{
+		{1}, {2}, {3},
+	}
+
+	// Create muSig2SignSweep, panicking for all sweeps.
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		panic("must not be called in this test")
+	}
+
+	// All the sweeps are non-cooperative, this is known in advance.
+	nonCoopHints := []bool{true, true, true}
+
+	// Expect mockSigner.SignOutputRaw call to sign non-cooperative
+	// sweeps.
+	expectSignOutputRawChannel := true
+
+	// Two non-cooperative sweeps, one cooperative.
+	wantWitnessSizes := []int{4, 4, 4}
+
+	// Expected weight.
+	wantWeight := lntypes.WeightUnit(1345)
+
+	testWithMixedBatchCustom(t, store, batcherStore, preimages,
+		muSig2SignSweep, nonCoopHints, expectSignOutputRawChannel,
+		wantWeight, wantWitnessSizes)
+}
+
+// testWithMixedBatchCoopFailedOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps fail co-signing.
+func testWithMixedBatchCoopFailedOnly(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	// Create 3 sweeps, all fail co-signing.
+	var preimages = []lntypes.Preimage{
+		{1}, {2}, {3},
+	}
+
+	// Create muSig2SignSweep, failing any co-sign attempt.
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		return nil, nil, fmt.Errorf("test error")
+	}
+
+	// All the sweeps are non-cooperative, but this is not known in advance.
+	nonCoopHints := []bool{false, false, false}
+
+	// Expect mockSigner.SignOutputRaw call to sign non-cooperative
+	// sweeps.
+	expectSignOutputRawChannel := true
+
+	// Two non-cooperative sweeps, one cooperative.
+	wantWitnessSizes := []int{4, 4, 4}
+
+	// Expected weight.
+	wantWeight := lntypes.WeightUnit(1345)
+
+	testWithMixedBatchCustom(t, store, batcherStore, preimages,
+		muSig2SignSweep, nonCoopHints, expectSignOutputRawChannel,
+		wantWeight, wantWitnessSizes)
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -2978,6 +3524,37 @@ func TestSweepBatcherCloseDuringAdding(t *testing.T) {
 // TestCustomSignMuSig2 tests the operation with custom musig2 signer.
 func TestCustomSignMuSig2(t *testing.T) {
 	runTests(t, testCustomSignMuSig2)
+}
+
+// TestWithMixedBatch tests mixed batches construction. It also tests
+// non-cooperative sweeping (using a preimage). Sweeps are added one by one.
+func TestWithMixedBatch(t *testing.T) {
+	runTests(t, testWithMixedBatch)
+}
+
+// TestWithMixedBatchLarge tests mixed batches construction, many sweeps.
+// All sweeps are added at once.
+func TestWithMixedBatchLarge(t *testing.T) {
+	runTests(t, testWithMixedBatchLarge)
+}
+
+// TestWithMixedBatchCoopOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps are cooperative.
+func TestWithMixedBatchCoopOnly(t *testing.T) {
+	runTests(t, testWithMixedBatchCoopOnly)
+}
+
+// TestWithMixedBatchNonCoopHintOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps are known to be non-cooperative
+// in advance.
+func TestWithMixedBatchNonCoopHintOnly(t *testing.T) {
+	runTests(t, testWithMixedBatchNonCoopHintOnly)
+}
+
+// TestWithMixedBatchCoopFailedOnly tests mixed batches construction,
+// All sweeps are added at once. All the sweeps fail co-signing.
+func TestWithMixedBatchCoopFailedOnly(t *testing.T) {
+	runTests(t, testWithMixedBatchCoopFailedOnly)
 }
 
 // testBatcherStore is BatcherStore used in tests.
