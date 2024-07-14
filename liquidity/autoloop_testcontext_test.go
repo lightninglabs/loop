@@ -30,7 +30,7 @@ type autoloopTestCtx struct {
 	lnd       *test.LndMockServices
 	testClock *clock.TestClock
 
-	// quoteRequests is a channel that requests for quotes are pushed into.
+	// quoteRequest is a channel that requests for quotes are pushed into.
 	quoteRequest chan *loop.LoopOutQuoteRequest
 
 	// quotes is a channel that we get loop out quote requests on.

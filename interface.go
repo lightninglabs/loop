@@ -318,7 +318,7 @@ type LoopInSwapInfo struct { // nolint
 	// HtlcAddressP2TR contains the v3 (pay to taproot) htlc address.
 	HtlcAddressP2TR btcutil.Address
 
-	// ServerMessages is the human-readable message received from the loop
+	// ServerMessage is the human-readable message received from the loop
 	// server.
 	ServerMessage string
 }
@@ -333,7 +333,7 @@ type LoopOutSwapInfo struct { // nolint:revive
 	// publish to.
 	HtlcAddress btcutil.Address
 
-	// ServerMessages is the human-readable message received from the loop
+	// ServerMessage is the human-readable message received from the loop
 	// server.
 	ServerMessage string
 }
@@ -354,7 +354,7 @@ type SwapInfo struct {
 
 	loopdb.SwapContract
 
-	// LastUpdateTime is the time of the last state change.
+	// LastUpdate is the time of the last state change.
 	LastUpdate time.Time
 
 	// SwapHash stores the swap preimage hash.
