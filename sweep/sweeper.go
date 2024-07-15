@@ -191,8 +191,8 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 	return fee, err
 }
 
-// GetSweepFee calculates the required tx fee to spend to P2WKH. It takes a
-// function that is expected to add the weight of the input to the weight
+// GetSweepFeeDetails calculates the required tx fee to spend to P2WKH. It takes
+// a function that is expected to add the weight of the input to the weight
 // estimator. It returns also the fee rate and transaction weight.
 func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
