@@ -28,11 +28,6 @@ import (
 // creation fails, this method returns an error. If this method fails for any
 // reason, the caller falls back to the simple algorithm (method handleSweep).
 func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
-	if b.customFeeRate == nil {
-		return errors.New("greedy batch selection algorithm requires " +
-			"setting custom fee rate provider")
-	}
-
 	// Collect weight and fee rate info about the sweep and new batch.
 	sweepFeeDetails, newBatchFeeDetails, err := estimateSweepFeeIncrement(
 		sweep,

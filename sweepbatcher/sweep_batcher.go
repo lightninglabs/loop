@@ -474,18 +474,15 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		}
 	}
 
-	// If custom fee rate provider is used, run the greedy algorithm of
-	// batch selection to minimize costs.
-	if b.customFeeRate != nil {
-		err := b.greedyAddSweep(ctx, sweep)
-		if err == nil {
-			// The greedy algorithm succeeded.
-			return nil
-		}
-
-		log.Warnf("Greedy batch selection algorithm failed for sweep "+
-			"%x, falling back to old approach.", sweep.swapHash[:6])
+	// Try to run the greedy algorithm of batch selection to minimize costs.
+	err = b.greedyAddSweep(ctx, sweep)
+	if err == nil {
+		// The greedy algorithm succeeded.
+		return nil
 	}
+
+	log.Warnf("Greedy batch selection algorithm failed for sweep %x: %v. "+
+		"Falling back to old approach.", sweep.swapHash[:6], err)
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
