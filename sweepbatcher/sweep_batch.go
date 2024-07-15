@@ -156,6 +156,10 @@ type rbfCache struct {
 
 	// FeeRate is the last used fee rate we used to publish a batch tx.
 	FeeRate chainfee.SatPerKWeight
+
+	// SkipNextBump instructs updateRbfRate to skip one fee bumping.
+	// It is set upon updating FeeRate externally.
+	SkipNextBump bool
 }
 
 // batch is a collection of sweeps that are published together.
@@ -417,6 +421,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		if b.primarySweepID == sweep.swapHash {
 			b.cfg.batchConfTarget = sweep.confTarget
 			b.rbfCache.FeeRate = sweep.minFeeRate
+			b.rbfCache.SkipNextBump = true
 		}
 
 		return true, nil
@@ -459,6 +464,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		b.primarySweepID = sweep.swapHash
 		b.cfg.batchConfTarget = sweep.confTarget
 		b.rbfCache.FeeRate = sweep.minFeeRate
+		b.rbfCache.SkipNextBump = true
 
 		// We also need to start the spend monitor for this new primary
 		// sweep.
@@ -476,6 +482,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// the batch is the basis for fee bumps.
 	if b.rbfCache.FeeRate < sweep.minFeeRate {
 		b.rbfCache.FeeRate = sweep.minFeeRate
+		b.rbfCache.SkipNextBump = true
 	}
 
 	return true, b.persistSweep(ctx, *sweep, false)
@@ -1141,10 +1148,15 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 	// If the feeRate is unset then we never published before, so we
 	// retrieve the fee estimate from our wallet.
 	if b.rbfCache.FeeRate == 0 {
+		// We set minFeeRate in each sweep, so fee rate is expected to
+		// be initiated here.
+		b.log.Warnf("rbfCache.FeeRate is 0, which must not happen.")
+
 		if b.cfg.batchConfTarget == 0 {
 			b.log.Warnf("updateRbfRate called with zero " +
 				"batchConfTarget")
 		}
+
 		b.log.Infof("initializing rbf fee rate for conf target=%v",
 			b.cfg.batchConfTarget)
 		rate, err := b.wallet.EstimateFeeRate(
@@ -1157,8 +1169,13 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 		// Set the initial value for our fee rate.
 		b.rbfCache.FeeRate = rate
 	} else if !b.cfg.noBumping {
-		// Bump the fee rate by the configured step.
-		b.rbfCache.FeeRate += defaultFeeRateStep
+		if b.rbfCache.SkipNextBump {
+			// Skip fee bumping, unset the flag, to bump next time.
+			b.rbfCache.SkipNextBump = false
+		} else {
+			// Bump the fee rate by the configured step.
+			b.rbfCache.FeeRate += defaultFeeRateStep
+		}
 	}
 
 	b.rbfCache.LastHeight = b.currentHeight

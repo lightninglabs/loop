@@ -885,9 +885,8 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 			swapHash[:6], err)
 	}
 
-	// minFeeRate is 0 by default. If customFeeRate is not provided, then
-	// rbfCache.FeeRate is also 0 and method batch.updateRbfRate() updates
-	// it to current fee rate according to batchConfTarget.
+	// Find minimum fee rate for the sweep. Use customFeeRate if it is
+	// provided, otherwise use wallet's EstimateFeeRate.
 	var minFeeRate chainfee.SatPerKWeight
 	if b.customFeeRate != nil {
 		minFeeRate, err = b.customFeeRate(ctx, swapHash)
@@ -898,6 +897,17 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
 			return nil, fmt.Errorf("min fee rate too low (%v) for "+
 				"%x", minFeeRate, swapHash[:6])
+		}
+	} else {
+		if s.ConfTarget == 0 {
+			log.Warnf("Fee estimation was requested for zero "+
+				"confTarget for sweep %x.", swapHash[:6])
+		}
+		minFeeRate, err = b.wallet.EstimateFeeRate(ctx, s.ConfTarget)
+		if err != nil {
+			return nil, fmt.Errorf("failed to estimate fee rate "+
+				"for %x, confTarget=%d: %w", swapHash[:6],
+				s.ConfTarget, err)
 		}
 	}
 

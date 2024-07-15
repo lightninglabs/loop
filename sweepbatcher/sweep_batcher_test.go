@@ -2110,8 +2110,9 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 				Preimage: lntypes.Preimage{i},
 			},
 
-			DestAddr:    destAddr,
-			SwapInvoice: swapInvoice,
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 111,
 		}
 
 		err = store.CreateLoopOut(ctx, swapHash, swap)
