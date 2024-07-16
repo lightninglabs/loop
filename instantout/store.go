@@ -89,6 +89,7 @@ func NewSQLStore(db InstantOutBaseDB, clock clock.Clock,
 		baseDb:           db,
 		clock:            clock,
 		reservationStore: reservationStore,
+		network:          network,
 	}
 }
 
