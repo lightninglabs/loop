@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -101,6 +102,11 @@ type sweep struct {
 	// minFeeRate is minimum fee rate that must be used by a batch of
 	// the sweep. If it is specified, confTarget is ignored.
 	minFeeRate chainfee.SatPerKWeight
+
+	// nonCoopHint is set, if the sweep can not be spent cooperatively and
+	// has to be spent using preimage. This is only used in fee estimations
+	// when selecting a batch for the sweep to minimize fees.
+	nonCoopHint bool
 }
 
 // batchState is the state of the batch.
@@ -133,9 +139,7 @@ type batchConfig struct {
 	batchPublishDelay time.Duration
 
 	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
+	// external source of fee rates (FeeRateProvider).
 	noBumping bool
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
@@ -152,6 +156,10 @@ type rbfCache struct {
 
 	// FeeRate is the last used fee rate we used to publish a batch tx.
 	FeeRate chainfee.SatPerKWeight
+
+	// SkipNextBump instructs updateRbfRate to skip one fee bumping.
+	// It is set upon updating FeeRate externally.
+	SkipNextBump bool
 }
 
 // batch is a collection of sweeps that are published together.
@@ -413,6 +421,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		if b.primarySweepID == sweep.swapHash {
 			b.cfg.batchConfTarget = sweep.confTarget
 			b.rbfCache.FeeRate = sweep.minFeeRate
+			b.rbfCache.SkipNextBump = true
 		}
 
 		return true, nil
@@ -455,6 +464,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		b.primarySweepID = sweep.swapHash
 		b.cfg.batchConfTarget = sweep.confTarget
 		b.rbfCache.FeeRate = sweep.minFeeRate
+		b.rbfCache.SkipNextBump = true
 
 		// We also need to start the spend monitor for this new primary
 		// sweep.
@@ -472,6 +482,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// the batch is the basis for fee bumps.
 	if b.rbfCache.FeeRate < sweep.minFeeRate {
 		b.rbfCache.FeeRate = sweep.minFeeRate
+		b.rbfCache.SkipNextBump = true
 	}
 
 	return true, b.persistSweep(ctx, *sweep, false)
@@ -734,7 +745,10 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 		return fee, err
 	}
 
-	weightEstimate.AddP2TROutput()
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return fee, err
+	}
 
 	weight := weightEstimate.Weight()
 	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
@@ -840,7 +854,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 			PreviousOutPoint: sweep.outpoint,
 		})
 
-		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashAll)
+		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashDefault)
 	}
 
 	var address btcutil.Address
@@ -866,7 +880,10 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		return fee, err, false
 	}
 
-	weightEstimate.AddP2TROutput()
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return fee, err, false
+	}
 
 	weight := weightEstimate.Weight()
 	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
@@ -1131,10 +1148,15 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 	// If the feeRate is unset then we never published before, so we
 	// retrieve the fee estimate from our wallet.
 	if b.rbfCache.FeeRate == 0 {
+		// We set minFeeRate in each sweep, so fee rate is expected to
+		// be initiated here.
+		b.log.Warnf("rbfCache.FeeRate is 0, which must not happen.")
+
 		if b.cfg.batchConfTarget == 0 {
 			b.log.Warnf("updateRbfRate called with zero " +
 				"batchConfTarget")
 		}
+
 		b.log.Infof("initializing rbf fee rate for conf target=%v",
 			b.cfg.batchConfTarget)
 		rate, err := b.wallet.EstimateFeeRate(
@@ -1147,8 +1169,13 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 		// Set the initial value for our fee rate.
 		b.rbfCache.FeeRate = rate
 	} else if !b.cfg.noBumping {
-		// Bump the fee rate by the configured step.
-		b.rbfCache.FeeRate += defaultFeeRateStep
+		if b.rbfCache.SkipNextBump {
+			// Skip fee bumping, unset the flag, to bump next time.
+			b.rbfCache.SkipNextBump = false
+		} else {
+			// Bump the fee rate by the configured step.
+			b.rbfCache.FeeRate += defaultFeeRateStep
+		}
 	}
 
 	b.rbfCache.LastHeight = b.currentHeight

@@ -122,9 +122,10 @@ type SweepInfo struct {
 	// DestAddr is the destination address of the sweep.
 	DestAddr btcutil.Address
 
-	// MinFeeRate is minimum fee rate that must be used by a batch of
-	// the sweep. If it is specified, confTarget is ignored.
-	MinFeeRate chainfee.SatPerKWeight
+	// NonCoopHint is set, if the sweep can not be spent cooperatively and
+	// has to be spent using preimage. This is only used in fee estimations
+	// when selecting a batch for the sweep to minimize fees.
+	NonCoopHint bool
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -150,6 +151,11 @@ type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 // VerifySchnorrSig is a function that can be used to verify a schnorr
 // signature.
 type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
+
+// FeeRateProvider is a function that returns min fee rate of a batch sweeping
+// the UTXO of the swap.
+type FeeRateProvider func(ctx context.Context,
+	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
 
 // SweepRequest is a request to sweep a specific outpoint.
 type SweepRequest struct {
@@ -247,11 +253,10 @@ type Batcher struct {
 	// exit.
 	wg sync.WaitGroup
 
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -262,11 +267,10 @@ type Batcher struct {
 
 // BatcherConfig holds batcher configuration.
 type BatcherConfig struct {
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (MinFeeRate). To change the fee rate,
-	// the caller has to update it in the source of SweepInfo (interface
-	// SweepFetcher) and re-add the sweep by calling AddSweep.
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -278,13 +282,12 @@ type BatcherConfig struct {
 // BatcherOption configures batcher behaviour.
 type BatcherOption func(*BatcherConfig)
 
-// WithNoBumping instructs sweepbatcher not to fee bump itself and
-// rely on external source of fee rates (MinFeeRate). To change the
-// fee rate, the caller has to update it in the source of SweepInfo
-// (interface SweepFetcher) and re-add the sweep by calling AddSweep.
-func WithNoBumping() BatcherOption {
+// WithCustomFeeRate instructs sweepbatcher not to fee bump itself and rely on
+// external source of fee rates (FeeRateProvider). To apply a fee rate change,
+// the caller should re-add the sweep by calling AddSweep.
+func WithCustomFeeRate(customFeeRate FeeRateProvider) BatcherOption {
 	return func(cfg *BatcherConfig) {
-		cfg.noBumping = true
+		cfg.customFeeRate = customFeeRate
 	}
 }
 
@@ -331,7 +334,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		chainParams:        chainparams,
 		store:              store,
 		sweepStore:         sweepStore,
-		noBumping:          cfg.noBumping,
+		customFeeRate:      cfg.customFeeRate,
 		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
 }
@@ -372,18 +375,22 @@ func (b *Batcher) Run(ctx context.Context) error {
 		case sweepReq := <-b.sweepReqs:
 			sweep, err := b.fetchSweep(runCtx, sweepReq)
 			if err != nil {
+				log.Warnf("fetchSweep failed: %v.", err)
 				return err
 			}
 
 			err = b.handleSweep(runCtx, sweep, sweepReq.Notifier)
 			if err != nil {
+				log.Warnf("handleSweep failed: %v.", err)
 				return err
 			}
 
 		case err := <-b.errChan:
+			log.Warnf("Batcher received an error: %v.", err)
 			return err
 
 		case <-runCtx.Done():
+			log.Infof("Stopping Batcher: run context cancelled.")
 			return runCtx.Err()
 		}
 	}
@@ -467,6 +474,16 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		}
 	}
 
+	// Try to run the greedy algorithm of batch selection to minimize costs.
+	err = b.greedyAddSweep(ctx, sweep)
+	if err == nil {
+		// The greedy algorithm succeeded.
+		return nil
+	}
+
+	log.Warnf("Greedy batch selection algorithm failed for sweep %x: %v. "+
+		"Falling back to old approach.", sweep.swapHash[:6], err)
+
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
 		accepted, err := batch.addSweep(ctx, sweep)
@@ -483,13 +500,19 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	// If no batch is capable of accepting the sweep, we spin up a fresh
 	// batch and hand the sweep over to it.
-	batch, err := b.spinUpBatch(ctx)
+	return b.spinUpNewBatch(ctx, sweep)
+}
+
+// spinUpNewBatch creates new batch, starts it and adds the sweep to it.
+func (b *Batcher) spinUpNewBatch(ctx context.Context, sweep *sweep) error {
+	// Spin up a fresh batch.
+	newBatch, err := b.spinUpBatch(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Add the sweep to the fresh batch.
-	accepted, err := batch.addSweep(ctx, sweep)
+	accepted, err := newBatch.addSweep(ctx, sweep)
 	if err != nil {
 		return err
 	}
@@ -498,7 +521,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// we should return the error.
 	if !accepted {
 		return fmt.Errorf("sweep %x was not accepted by new batch %d",
-			sweep.swapHash[:6], batch.id)
+			sweep.swapHash[:6], newBatch.id)
 	}
 
 	return nil
@@ -506,11 +529,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 // spinUpBatch spins up a new batch and returns it.
 func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
-	cfg := batchConfig{
-		maxTimeoutDistance: defaultMaxTimeoutDistance,
-		noBumping:          b.noBumping,
-		customMuSig2Signer: b.customMuSig2Signer,
-	}
+	cfg := b.newBatchConfig(defaultMaxTimeoutDistance)
 
 	switch b.chainParams {
 	case &chaincfg.MainNetParams:
@@ -520,17 +539,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		cfg.batchPublishDelay = defaultPublishDelay
 	}
 
-	batchKit := batchKit{
-		returnChan:       b.sweepReqs,
-		wallet:           b.wallet,
-		chainNotifier:    b.chainNotifier,
-		signerClient:     b.signerClient,
-		musig2SignSweep:  b.musig2ServerSign,
-		verifySchnorrSig: b.VerifySchnorrSig,
-		purger:           b.AddSweep,
-		store:            b.store,
-		quit:             b.quit,
-	}
+	batchKit := b.newBatchKit()
 
 	batch := NewBatch(cfg, batchKit)
 
@@ -605,31 +614,17 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	logger := batchPrefixLogger(fmt.Sprintf("%d", batch.id))
 
-	batchKit := batchKit{
-		id:               batch.id,
-		batchTxid:        batch.batchTxid,
-		batchPkScript:    batch.batchPkScript,
-		state:            batch.state,
-		primaryID:        primarySweep.SwapHash,
-		sweeps:           sweeps,
-		rbfCache:         rbfCache,
-		returnChan:       b.sweepReqs,
-		wallet:           b.wallet,
-		chainNotifier:    b.chainNotifier,
-		signerClient:     b.signerClient,
-		musig2SignSweep:  b.musig2ServerSign,
-		verifySchnorrSig: b.VerifySchnorrSig,
-		purger:           b.AddSweep,
-		store:            b.store,
-		log:              logger,
-		quit:             b.quit,
-	}
+	batchKit := b.newBatchKit()
+	batchKit.id = batch.id
+	batchKit.batchTxid = batch.batchTxid
+	batchKit.batchPkScript = batch.batchPkScript
+	batchKit.state = batch.state
+	batchKit.primaryID = primarySweep.SwapHash
+	batchKit.sweeps = sweeps
+	batchKit.rbfCache = rbfCache
+	batchKit.log = logger
 
-	cfg := batchConfig{
-		maxTimeoutDistance: batch.cfg.maxTimeoutDistance,
-		noBumping:          b.noBumping,
-		customMuSig2Signer: b.customMuSig2Signer,
-	}
+	cfg := b.newBatchConfig(batch.cfg.maxTimeoutDistance)
 
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
 	if err != nil {
@@ -689,11 +684,7 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 		}
 		batch.rbfCache = rbfCache
 
-		bchCfg := batchConfig{
-			maxTimeoutDistance: bch.MaxTimeoutDistance,
-			noBumping:          b.noBumping,
-			customMuSig2Signer: b.customMuSig2Signer,
-		}
+		bchCfg := b.newBatchConfig(bch.MaxTimeoutDistance)
 		batch.cfg = &bchCfg
 
 		batches = append(batches, &batch)
@@ -799,29 +790,8 @@ func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
 func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
 	*sweep, error) {
 
-	s, err := b.sweepStore.FetchSweep(ctx, dbSweep.SwapHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
-			dbSweep.SwapHash[:6], err)
-	}
-
-	return &sweep{
-		swapHash:               dbSweep.SwapHash,
-		outpoint:               dbSweep.Outpoint,
-		value:                  dbSweep.Amount,
-		confTarget:             s.ConfTarget,
-		timeout:                s.Timeout,
-		initiationHeight:       s.InitiationHeight,
-		htlc:                   s.HTLC,
-		preimage:               s.Preimage,
-		swapInvoicePaymentAddr: s.SwapInvoicePaymentAddr,
-		htlcKeys:               s.HTLCKeys,
-		htlcSuccessEstimator:   s.HTLCSuccessEstimator,
-		protocolVersion:        s.ProtocolVersion,
-		isExternalAddr:         s.IsExternalAddr,
-		destAddr:               s.DestAddr,
-		minFeeRate:             s.MinFeeRate,
-	}, nil
+	return b.loadSweep(ctx, dbSweep.SwapHash, dbSweep.Outpoint,
+		dbSweep.Amount)
 }
 
 // LoopOutFetcher is used to load LoopOut swaps from the database.
@@ -897,16 +867,51 @@ func NewSweepFetcherFromSwapStore(swapStore LoopOutFetcher,
 func (b *Batcher) fetchSweep(ctx context.Context,
 	sweepReq SweepRequest) (*sweep, error) {
 
-	s, err := b.sweepStore.FetchSweep(ctx, sweepReq.SwapHash)
+	return b.loadSweep(ctx, sweepReq.SwapHash, sweepReq.Outpoint,
+		sweepReq.Value)
+}
+
+// loadSweep loads inputs of sweep from the database and from FeeRateProvider
+// if needed and returns an assembled sweep object.
+func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
+	outpoint wire.OutPoint, value btcutil.Amount) (*sweep, error) {
+
+	s, err := b.sweepStore.FetchSweep(ctx, swapHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
-			sweepReq.SwapHash[:6], err)
+			swapHash[:6], err)
+	}
+
+	// Find minimum fee rate for the sweep. Use customFeeRate if it is
+	// provided, otherwise use wallet's EstimateFeeRate.
+	var minFeeRate chainfee.SatPerKWeight
+	if b.customFeeRate != nil {
+		minFeeRate, err = b.customFeeRate(ctx, swapHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch min fee rate "+
+				"for %x: %w", swapHash[:6], err)
+		}
+		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
+			return nil, fmt.Errorf("min fee rate too low (%v) for "+
+				"%x", minFeeRate, swapHash[:6])
+		}
+	} else {
+		if s.ConfTarget == 0 {
+			log.Warnf("Fee estimation was requested for zero "+
+				"confTarget for sweep %x.", swapHash[:6])
+		}
+		minFeeRate, err = b.wallet.EstimateFeeRate(ctx, s.ConfTarget)
+		if err != nil {
+			return nil, fmt.Errorf("failed to estimate fee rate "+
+				"for %x, confTarget=%d: %w", swapHash[:6],
+				s.ConfTarget, err)
+		}
 	}
 
 	return &sweep{
-		swapHash:               sweepReq.SwapHash,
-		outpoint:               sweepReq.Outpoint,
-		value:                  sweepReq.Value,
+		swapHash:               swapHash,
+		outpoint:               outpoint,
+		value:                  value,
 		confTarget:             s.ConfTarget,
 		timeout:                s.Timeout,
 		initiationHeight:       s.InitiationHeight,
@@ -918,6 +923,31 @@ func (b *Batcher) fetchSweep(ctx context.Context,
 		protocolVersion:        s.ProtocolVersion,
 		isExternalAddr:         s.IsExternalAddr,
 		destAddr:               s.DestAddr,
-		minFeeRate:             s.MinFeeRate,
+		minFeeRate:             minFeeRate,
+		nonCoopHint:            s.NonCoopHint,
 	}, nil
+}
+
+// newBatchConfig creates new batch config.
+func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
+	return batchConfig{
+		maxTimeoutDistance: maxTimeoutDistance,
+		noBumping:          b.customFeeRate != nil,
+		customMuSig2Signer: b.customMuSig2Signer,
+	}
+}
+
+// newBatchKit creates new batch kit.
+func (b *Batcher) newBatchKit() batchKit {
+	return batchKit{
+		returnChan:       b.sweepReqs,
+		wallet:           b.wallet,
+		chainNotifier:    b.chainNotifier,
+		signerClient:     b.signerClient,
+		musig2SignSweep:  b.musig2ServerSign,
+		verifySchnorrSig: b.VerifySchnorrSig,
+		purger:           b.AddSweep,
+		store:            b.store,
+		quit:             b.quit,
+	}
 }
