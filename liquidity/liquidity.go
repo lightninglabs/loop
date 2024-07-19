@@ -671,7 +671,7 @@ type Suggestions struct {
 	// swaps on to the reason that we did not recommend a swap.
 	DisqualifiedChans map[lnwire.ShortChannelID]Reason
 
-	// Disqualified peers maps the set of peers that we do not recommend
+	// DisqualifiedPeers maps the set of peers that we do not recommend
 	// swaps for to the reason that they were excluded.
 	DisqualifiedPeers map[route.Vertex]Reason
 }

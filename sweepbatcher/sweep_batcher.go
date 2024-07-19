@@ -229,7 +229,7 @@ type Batcher struct {
 	// signerClient is the signer client that is used by batches.
 	signerClient lndclient.SignerClient
 
-	// musig2ServerKit includes all the required functionality to collect
+	// musig2ServerSign includes all the required functionality to collect
 	// and verify signatures by the swap server in order to cooperatively
 	// sweep funds.
 	musig2ServerSign MuSig2SignSweep

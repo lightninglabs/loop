@@ -196,7 +196,7 @@ type batch struct {
 	// errChan is the channel over which errors are received.
 	errChan chan error
 
-	// batchTx is the transaction that is currently being monitored for
+	// batchTxid is the transaction that is currently being monitored for
 	// confirmations.
 	batchTxid *chainhash.Hash
 
