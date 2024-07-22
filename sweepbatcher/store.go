@@ -287,7 +287,7 @@ func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
 	return &batch
 }
 
-// BatchToUpsertArgs converts a Batch struct to the arguments needed to insert
+// batchToInsertArgs converts a Batch struct to the arguments needed to insert
 // it into the database.
 func batchToInsertArgs(batch dbBatch) sqlc.InsertBatchParams {
 	args := sqlc.InsertBatchParams{
@@ -315,7 +315,7 @@ func batchToInsertArgs(batch dbBatch) sqlc.InsertBatchParams {
 	return args
 }
 
-// BatchToUpsertArgs converts a Batch struct to the arguments needed to insert
+// batchToUpdateArgs converts a Batch struct to the arguments needed to insert
 // it into the database.
 func batchToUpdateArgs(batch dbBatch) sqlc.UpdateBatchParams {
 	args := sqlc.UpdateBatchParams{
