@@ -564,7 +564,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	return batch, nil
 }
 
-// spinUpBatchDB spins up a batch that already existed in storage, then
+// spinUpBatchFromDB spins up a batch that already existed in storage, then
 // returns it.
 func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	dbSweeps, err := b.store.FetchBatchSweeps(ctx, batch.id)
