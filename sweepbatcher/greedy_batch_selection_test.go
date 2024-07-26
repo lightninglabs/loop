@@ -180,6 +180,27 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 				NonCoopHint:   true,
 			},
 		},
+
+		{
+			name: "coop-failed",
+			sweep: &sweep{
+				minFeeRate:           lowFeeRate,
+				htlcSuccessEstimator: se3,
+				coopFailed:           true,
+			},
+			wantSweepFeeDetails: feeDetails{
+				FeeRate:       lowFeeRate,
+				CoopWeight:    coopInputWeight,
+				NonCoopWeight: nonCoopInputWeight,
+				NonCoopHint:   true,
+			},
+			wantNewBatchFeeDetails: feeDetails{
+				FeeRate:       lowFeeRate,
+				CoopWeight:    coopNewBatchWeight,
+				NonCoopWeight: nonCoopNewBatchWeight,
+				NonCoopHint:   true,
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -318,6 +339,32 @@ func TestEstimateBatchWeight(t *testing.T) {
 					swapHash2: {
 						htlcSuccessEstimator: se3,
 						nonCoopHint:          true,
+					},
+				},
+			},
+			wantBatchFeeDetails: feeDetails{
+				BatchId:       1,
+				FeeRate:       lowFeeRate,
+				CoopWeight:    coopTwoSweepBatchWeight,
+				NonCoopWeight: nonCoopTwoSweepBatchWeight,
+				NonCoopHint:   true,
+			},
+		},
+
+		{
+			name: "coop-failed",
+			batch: &batch{
+				id: 1,
+				rbfCache: rbfCache{
+					FeeRate: lowFeeRate,
+				},
+				sweeps: map[lntypes.Hash]sweep{
+					swapHash1: {
+						htlcSuccessEstimator: se3,
+					},
+					swapHash2: {
+						htlcSuccessEstimator: se3,
+						coopFailed:           true,
 					},
 				},
 			},

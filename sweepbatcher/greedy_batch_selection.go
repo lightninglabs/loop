@@ -125,7 +125,7 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 	// Create feeDetails for sweep.
 	sweepFeeDetails := feeDetails{
 		FeeRate:        s.minFeeRate,
-		NonCoopHint:    s.nonCoopHint,
+		NonCoopHint:    s.nonCoopHint || s.coopFailed,
 		IsExternalAddr: s.isExternalAddr,
 
 		// Calculate sweep weight as a difference.
@@ -152,7 +152,7 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 	// Find if the batch has at least one non-cooperative sweep.
 	hasNonCoop := false
 	for _, sweep := range batch.sweeps {
-		if sweep.nonCoopHint {
+		if sweep.nonCoopHint || sweep.coopFailed {
 			hasNonCoop = true
 		}
 	}
