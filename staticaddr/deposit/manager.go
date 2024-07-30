@@ -34,7 +34,7 @@ const (
 
 	// DefaultTransitionTimeout is the default timeout for transitions in
 	// the deposit state machine.
-	DefaultTransitionTimeout = 1 * time.Minute
+	DefaultTransitionTimeout = 5 * time.Second
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -74,9 +74,8 @@ type ManagerConfig struct {
 type Manager struct {
 	cfg *ManagerConfig
 
-	runCtx context.Context
-
-	sync.Mutex
+	// mu guards access to activeDeposits map.
+	mu sync.Mutex
 
 	// initChan signals the daemon that the address manager has completed
 	// its initialization.
@@ -87,9 +86,6 @@ type Manager struct {
 
 	// initiationHeight stores the currently best known block height.
 	initiationHeight uint32
-
-	// currentHeight stores the currently best known block height.
-	currentHeight uint32
 
 	// deposits contains all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
@@ -116,25 +112,21 @@ func NewManager(cfg *ManagerConfig) *Manager {
 
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
-	m.runCtx = ctx
+	m.initiationHeight = currentHeight
 
-	m.Lock()
-	m.currentHeight, m.initiationHeight = currentHeight, currentHeight
-	m.Unlock()
-
-	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(m.runCtx) //nolint:lll
+	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
 	if err != nil {
 		return err
 	}
 
 	// Recover previous deposits and static address parameters from the DB.
-	err = m.recover(m.runCtx)
+	err = m.recoverDeposits(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Start the deposit notifier.
-	m.pollDeposits(m.runCtx)
+	m.pollDeposits(ctx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -143,17 +135,13 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			m.Lock()
-			m.currentHeight = uint32(height)
-			m.Unlock()
-
 			// Inform all active deposits about a new block arrival.
 			for _, fsm := range m.activeDeposits {
 				select {
 				case fsm.blockNtfnChan <- uint32(height):
 
-				case <-m.runCtx.Done():
-					return m.runCtx.Err()
+				case <-ctx.Done():
+					return ctx.Err()
 				}
 			}
 		case outpoint := <-m.finalizedDepositChan:
@@ -162,18 +150,18 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 			// finalized deposit from memory.
 			m.finalizeDeposit(outpoint)
 
-		case err := <-newBlockErrChan:
+		case err = <-newBlockErrChan:
 			return err
 
-		case <-m.runCtx.Done():
-			return m.runCtx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }
 
-// recover recovers static address parameters, previous deposits and state
-// machines from the database and starts the deposit notifier.
-func (m *Manager) recover(ctx context.Context) error {
+// recoverDeposits recovers static address parameters, previous deposits and
+// state machines from the database and starts the deposit notifier.
+func (m *Manager) recoverDeposits(ctx context.Context) error {
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -195,10 +183,7 @@ func (m *Manager) recover(ctx context.Context) error {
 		log.Debugf("Recovering deposit %x", d.ID)
 
 		// Create a state machine for a given deposit.
-		fsm, err := NewFSM(
-			m.runCtx, d, m.cfg,
-			m.finalizedDepositChan, true,
-		)
+		fsm, err := NewFSM(ctx, d, m.cfg, m.finalizedDepositChan, true)
 		if err != nil {
 			return err
 		}
@@ -259,12 +244,12 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 		ctx, MinConfs, MaxConfs,
 	)
 	if err != nil {
-		return fmt.Errorf("unable to list new deposits: %v", err)
+		return fmt.Errorf("unable to list new deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
 	if err != nil {
-		return fmt.Errorf("unable to filter new deposits: %v", err)
+		return fmt.Errorf("unable to filter new deposits: %w", err)
 	}
 
 	if len(newDeposits) == 0 {
@@ -275,14 +260,14 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	for _, utxo := range newDeposits {
 		deposit, err := m.createNewDeposit(ctx, utxo)
 		if err != nil {
-			return fmt.Errorf("unable to retain new deposit: %v",
+			return fmt.Errorf("unable to retain new deposit: %w",
 				err)
 		}
 
 		log.Debugf("Received deposit: %v", deposit)
-		err = m.startDepositFsm(deposit)
+		err = m.startDepositFsm(ctx, deposit)
 		if err != nil {
-			return fmt.Errorf("unable to start new deposit FSM: %v",
+			return fmt.Errorf("unable to start new deposit FSM: %w",
 				err)
 		}
 	}
@@ -332,9 +317,9 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		return nil, err
 	}
 
-	m.Lock()
+	m.mu.Lock()
 	m.deposits[deposit.OutPoint] = deposit
-	m.Unlock()
+	m.mu.Unlock()
 
 	return deposit, nil
 }
@@ -348,7 +333,7 @@ func (m *Manager) getBlockHeight(ctx context.Context,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %v", err)
+			"deposit, %w", err)
 	}
 
 	notifChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
@@ -374,8 +359,8 @@ func (m *Manager) getBlockHeight(ctx context.Context,
 // filterNewDeposits filters the given utxos for new deposits that we haven't
 // seen before.
 func (m *Manager) filterNewDeposits(utxos []*lnwallet.Utxo) []*lnwallet.Utxo {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	var newDeposits []*lnwallet.Utxo
 	for _, utxo := range utxos {
@@ -390,115 +375,158 @@ func (m *Manager) filterNewDeposits(utxos []*lnwallet.Utxo) []*lnwallet.Utxo {
 
 // startDepositFsm creates a new state machine flow from the latest deposit to
 // our static address.
-func (m *Manager) startDepositFsm(deposit *Deposit) error {
+func (m *Manager) startDepositFsm(ctx context.Context, deposit *Deposit) error {
 	// Create a state machine for a given deposit.
-	fsm, err := NewFSM(
-		m.runCtx, deposit, m.cfg, m.finalizedDepositChan, false,
-	)
+	fsm, err := NewFSM(ctx, deposit, m.cfg, m.finalizedDepositChan, false)
 	if err != nil {
 		return err
 	}
 
 	// Send the start event to the state machine.
 	go func() {
-		err = fsm.SendEvent(m.runCtx, OnStart, nil)
+		err = fsm.SendEvent(ctx, OnStart, nil)
 		if err != nil {
 			log.Errorf("Error sending OnStart event: %v", err)
 		}
 	}()
 
-	err = fsm.DefaultObserver.WaitForState(m.runCtx, time.Minute, Deposited)
+	err = fsm.DefaultObserver.WaitForState(ctx, time.Minute, Deposited)
 	if err != nil {
 		return err
 	}
 
 	// Add the FSM to the active FSMs map.
-	m.Lock()
+	m.mu.Lock()
 	m.activeDeposits[deposit.OutPoint] = fsm
-	m.Unlock()
+	m.mu.Unlock()
 
 	return nil
 }
 
 func (m *Manager) finalizeDeposit(outpoint wire.OutPoint) {
-	m.Lock()
+	m.mu.Lock()
 	delete(m.activeDeposits, outpoint)
-	delete(m.deposits, outpoint)
-	m.Unlock()
+	m.mu.Unlock()
 }
 
-// GetActiveDepositsInState returns all active deposits.
+// GetActiveDepositsInState returns all active deposits. This function is called
+// on a client restart before the manager is fully initialized, hence we don't
+// have to lock the deposits.
 func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	[]*Deposit, error) {
 
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	var deposits []*Deposit
 	for _, fsm := range m.activeDeposits {
-		if fsm.deposit.GetState() != stateFilter {
-			continue
-		}
 		deposits = append(deposits, fsm.deposit)
 	}
 
-	sort.Slice(deposits, func(i, j int) bool {
-		return deposits[i].ConfirmationHeight <
-			deposits[j].ConfirmationHeight
+	lockDeposits(deposits)
+	defer unlockDeposits(deposits)
+
+	filteredDeposits := make([]*Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if !d.IsInStateNoLock(stateFilter) {
+			continue
+		}
+
+		filteredDeposits = append(filteredDeposits, d)
+	}
+
+	sort.Slice(filteredDeposits, func(i, j int) bool {
+		return filteredDeposits[i].ConfirmationHeight <
+			filteredDeposits[j].ConfirmationHeight
 	})
 
-	return deposits, nil
-}
-
-// GetAllDeposits returns all active deposits.
-func (m *Manager) GetAllDeposits() ([]*Deposit, error) {
-	return m.cfg.Store.AllDeposits(m.runCtx)
+	return filteredDeposits, nil
 }
 
 // AllOutpointsActiveDeposits checks if all deposits referenced by the outpoints
-// are active and in the specified state.
+// are in our in-mem active deposits map and in the specified state. If
+// fsm.EmptyState is set as targetState all deposits are returned regardless of
+// their state. Each existent deposit is locked during the check.
 func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
-	stateFilter fsm.StateType) ([]*Deposit, bool) {
+	targetState fsm.StateType) ([]*Deposit, bool) {
 
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	deposits := make([]*Deposit, 0, len(outpoints))
-	for _, o := range outpoints {
-		if _, ok := m.activeDeposits[o]; !ok {
+	_, deposits := m.toActiveDeposits(&outpoints)
+	if deposits == nil {
+		return nil, false
+	}
+
+	// If the targetState is empty we return all active deposits regardless
+	// of state.
+	if targetState == fsm.EmptyState {
+		return deposits, true
+	}
+
+	lockDeposits(deposits)
+	defer unlockDeposits(deposits)
+	for _, d := range deposits {
+		if !d.IsInStateNoLock(targetState) {
 			return nil, false
 		}
-
-		deposit := m.deposits[o]
-		if deposit.GetState() != stateFilter {
-			return nil, false
-		}
-
-		deposits = append(deposits, m.deposits[o])
 	}
 
 	return deposits, true
 }
 
-// TransitionDeposits allows a caller to transition a set of deposits to a new
-// state.
-func (m *Manager) TransitionDeposits(deposits []*Deposit, event fsm.EventType,
-	expectedFinalState fsm.StateType) error {
+// AllStringOutpointsActiveDeposits converts outpoint strings of format txid:idx
+// to wire outpoints and checks if all deposits referenced by the outpoints are
+// active and in the specified state. If fsm.EmptyState is referenced as
+// stateFilter all deposits are returned regardless of their state.
+func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
+	stateFilter fsm.StateType) ([]*Deposit, bool) {
 
-	for _, d := range deposits {
-		m.Lock()
-		sm, ok := m.activeDeposits[d.OutPoint]
-		m.Unlock()
-		if !ok {
-			return fmt.Errorf("deposit not found")
+	outPoints := make([]wire.OutPoint, len(outpoints))
+	for i, o := range outpoints {
+		op, err := wire.NewOutPointFromString(o)
+		if err != nil {
+			return nil, false
 		}
 
-		err := sm.SendEvent(m.runCtx, event, nil)
+		outPoints[i] = *op
+	}
+
+	return m.AllOutpointsActiveDeposits(outPoints, stateFilter)
+}
+
+// TransitionDeposits allows a caller to transition a set of deposits to a new
+// state.
+// Caveat: The action triggered by the state transitions should not compute
+// heavy things or call external endpoints that can block for a long time.
+// Deposits will be released if a transition takes longer than
+// DefaultTransitionTimeout which is set to 5 seconds.
+func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
+	event fsm.EventType, expectedFinalState fsm.StateType) error {
+
+	outpoints := make([]wire.OutPoint, len(deposits))
+	for i, d := range deposits {
+		outpoints[i] = d.OutPoint
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	stateMachines, _ := m.toActiveDeposits(&outpoints)
+	if stateMachines == nil {
+		return fmt.Errorf("deposits not found in active deposits")
+	}
+
+	lockDeposits(deposits)
+	defer unlockDeposits(deposits)
+	for _, sm := range stateMachines {
+		err := sm.SendEvent(ctx, event, nil)
 		if err != nil {
 			return err
 		}
+
 		err = sm.DefaultObserver.WaitForState(
-			m.runCtx, DefaultTransitionTimeout, expectedFinalState,
+			ctx, DefaultTransitionTimeout, expectedFinalState,
 		)
 		if err != nil {
 			return err
@@ -508,7 +536,44 @@ func (m *Manager) TransitionDeposits(deposits []*Deposit, event fsm.EventType,
 	return nil
 }
 
+func lockDeposits(deposits []*Deposit) {
+	for _, d := range deposits {
+		d.Lock()
+	}
+}
+
+func unlockDeposits(deposits []*Deposit) {
+	for _, d := range deposits {
+		d.Unlock()
+	}
+}
+
+// GetAllDeposits returns all active deposits.
+func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
+	return m.cfg.Store.AllDeposits(ctx)
+}
+
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
-func (m *Manager) UpdateDeposit(d *Deposit) error {
-	return m.cfg.Store.UpdateDeposit(m.runCtx, d)
+func (m *Manager) UpdateDeposit(ctx context.Context, d *Deposit) error {
+	return m.cfg.Store.UpdateDeposit(ctx, d)
+}
+
+// toActiveDeposits converts a list of outpoints to a list of FSMs and deposits.
+// The caller should call mu.Lock() before calling this function.
+func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
+	[]*Deposit) {
+
+	fsms := make([]*FSM, 0, len(*outpoints))
+	deposits := make([]*Deposit, 0, len(*outpoints))
+	for _, o := range *outpoints {
+		sm, ok := m.activeDeposits[o]
+		if !ok {
+			return nil, nil
+		}
+
+		fsms = append(fsms, sm)
+		deposits = append(deposits, m.deposits[o])
+	}
+
+	return fsms, deposits
 }

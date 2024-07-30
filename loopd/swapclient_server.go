@@ -1451,7 +1451,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 			"outpoints")
 	}
 
-	allDeposits, err := s.depositManager.GetAllDeposits()
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1589,7 +1589,7 @@ func toClientState(state fsm.StateType) looprpc.DepositState {
 	case deposit.Withdrawn:
 		return looprpc.DepositState_WITHDRAWN
 
-	case deposit.PublishExpiredDeposit:
+	case deposit.PublishExpirySweep:
 		return looprpc.DepositState_PUBLISH_EXPIRED
 
 	case deposit.WaitForExpirySweep:
@@ -1615,7 +1615,7 @@ func toServerState(state looprpc.DepositState) fsm.StateType {
 		return deposit.Withdrawn
 
 	case looprpc.DepositState_PUBLISH_EXPIRED:
-		return deposit.PublishExpiredDeposit
+		return deposit.PublishExpirySweep
 
 	case looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP:
 		return deposit.WaitForExpirySweep
