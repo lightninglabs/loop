@@ -115,6 +115,9 @@ type SwapClientClient interface {
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
 	GetStaticAddressSummary(ctx context.Context, in *StaticAddressSummaryRequest, opts ...grpc.CallOption) (*StaticAddressSummaryResponse, error)
+	// loop:`static`
+	// StaticAddressLoopIn initiates a static address loop-in swap.
+	StaticAddressLoopIn(ctx context.Context, in *StaticAddressLoopInRequest, opts ...grpc.CallOption) (*StaticAddressLoopInResponse, error)
 }
 
 type swapClientClient struct {
@@ -373,6 +376,15 @@ func (c *swapClientClient) GetStaticAddressSummary(ctx context.Context, in *Stat
 	return out, nil
 }
 
+func (c *swapClientClient) StaticAddressLoopIn(ctx context.Context, in *StaticAddressLoopInRequest, opts ...grpc.CallOption) (*StaticAddressLoopInResponse, error) {
+	out := new(StaticAddressLoopInResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/StaticAddressLoopIn", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -474,6 +486,9 @@ type SwapClientServer interface {
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
 	GetStaticAddressSummary(context.Context, *StaticAddressSummaryRequest) (*StaticAddressSummaryResponse, error)
+	// loop:`static`
+	// StaticAddressLoopIn initiates a static address loop-in swap.
+	StaticAddressLoopIn(context.Context, *StaticAddressLoopInRequest) (*StaticAddressLoopInResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -555,6 +570,9 @@ func (UnimplementedSwapClientServer) WithdrawDeposits(context.Context, *Withdraw
 }
 func (UnimplementedSwapClientServer) GetStaticAddressSummary(context.Context, *StaticAddressSummaryRequest) (*StaticAddressSummaryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStaticAddressSummary not implemented")
+}
+func (UnimplementedSwapClientServer) StaticAddressLoopIn(context.Context, *StaticAddressLoopInRequest) (*StaticAddressLoopInResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StaticAddressLoopIn not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -1022,6 +1040,24 @@ func _SwapClient_GetStaticAddressSummary_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_StaticAddressLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StaticAddressLoopInRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).StaticAddressLoopIn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/StaticAddressLoopIn",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).StaticAddressLoopIn(ctx, req.(*StaticAddressLoopInRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1124,6 +1160,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStaticAddressSummary",
 			Handler:    _SwapClient_GetStaticAddressSummary_Handler,
+		},
+		{
+			MethodName: "StaticAddressLoopIn",
+			Handler:    _SwapClient_StaticAddressLoopIn_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

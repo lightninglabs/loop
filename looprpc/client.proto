@@ -168,6 +168,12 @@ service SwapClient {
     */
     rpc GetStaticAddressSummary (StaticAddressSummaryRequest)
         returns (StaticAddressSummaryResponse);
+
+    /* loop:`static`
+    StaticAddressLoopIn initiates a static address loop-in swap.
+    */
+    rpc StaticAddressLoopIn (StaticAddressLoopInRequest)
+        returns (StaticAddressLoopInResponse);
 }
 
 message LoopOutRequest {
@@ -1553,6 +1559,15 @@ message WithdrawDepositsRequest {
 }
 
 message WithdrawDepositsResponse {
+    /*
+    The transaction hash of the withdrawal transaction.
+    */
+    string withdrawal_tx_hash = 1;
+
+    /*
+    The pkscript of the withdrawal transaction.
+    */
+    string pk_script = 2;
 }
 
 message OutPoint {
@@ -1598,27 +1613,37 @@ message StaticAddressSummaryResponse {
     /*
     The total value of unconfirmed deposits.
     */
-    int64 value_unconfirmed = 3;
+    int64 value_unconfirmed_satoshis = 3;
 
     /*
     The total value of confirmed deposits.
     */
-    int64 value_deposited = 4;
+    int64 value_deposited_satoshis = 4;
 
     /*
     The total value of all expired deposits.
     */
-    int64 value_expired = 5;
+    int64 value_expired_satoshis = 5;
 
     /*
     The total value of all deposits that have been withdrawn.
     */
-    int64 value_withdrawn = 6;
+    int64 value_withdrawn_satoshis = 6;
+
+    /*
+    The total value of all loop-ins that have been finalized.
+    */
+    int64 value_looped_in_satoshis = 7;
+
+    /*
+    The total value of all htlc timeout sweeps that the client swept.
+    */
+    int64 value_htlc_timeout_sweeps_satoshis = 8;
 
     /*
     A list of all deposits that match the filtered state.
     */
-    repeated Deposit filtered_deposits = 7;
+    repeated Deposit filtered_deposits = 9;
 }
 
 enum DepositState {
@@ -1646,27 +1671,47 @@ enum DepositState {
     WITHDRAWN = 3;
 
     /*
+    LOOPING_IN indicates that the deposit is currently being used in a static
+    address loop-in swap.
+    */
+    LOOPING_IN = 4;
+
+    /*
+    LOOPED_IN indicates that the deposit was used in a static address loop-in
+    swap.
+    */
+    LOOPED_IN = 5;
+
+    /*
+    SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in
+    of which the respective htlc was published by the server and the timeout
+    path has opened up for the client to sweep.
+    */
+    SWEEP_HTLC_TIMEOUT = 6;
+
+    /*
+    HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been
+    swept by the client.
+    */
+    HTLC_TIMEOUT_SWEPT = 7;
+
+    /*
     PUBLISH_EXPIRED indicates that the deposit has expired and the sweep
     transaction has been published.
     */
-    PUBLISH_EXPIRED = 4;
+    PUBLISH_EXPIRED = 8;
 
     /*
     WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep
     transaction has not yet been sufficiently confirmed.
     */
-    WAIT_FOR_EXPIRY_SWEEP = 5;
+    WAIT_FOR_EXPIRY_SWEEP = 9;
 
     /*
     EXPIRED indicates that the deposit has expired and the sweep transaction
     has been sufficiently confirmed.
     */
-    EXPIRED = 6;
-
-    /*
-    FAILED_STATE indicates that the deposit has failed.
-    */
-    FAILED_STATE = 7;
+    EXPIRED = 10;
 }
 
 message Deposit {
@@ -1694,4 +1739,125 @@ message Deposit {
     The block height at which the deposit was confirmed.
     */
     int64 confirmation_height = 5;
+}
+
+message StaticAddressLoopInRequest {
+    /*
+    The outpoints of the deposits to loop-in.
+    */
+    repeated string outpoints = 1;
+
+    /*
+    Maximum satoshis we are willing to pay the server for the swap. This value
+    is not disclosed in the swap initiation call, but if the server asks for a
+    higher fee, we abort the swap. Typically this value is taken from the
+    response of the GetQuote call.
+    */
+    int64 max_swap_fee_satoshis = 2;
+
+    /*
+    Optionally the client can specify the last hop pubkey when requesting a
+    loop-in quote. This is useful to get better off-chain routing fee from the
+    server.
+    */
+    bytes last_hop = 3;
+
+    /*
+    An optional label for this swap. This field is limited to 500 characters and
+    may not be one of the reserved values in loop/labels Reserved list.
+    */
+    string label = 4;
+
+    /*
+    An optional identification string that will be appended to the user agent
+    string sent to the server to give information about the usage of loop. This
+    initiator part is meant for user interfaces to add their name to give the
+    full picture of the binary used (loopd, LiT) and the method used for
+    triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+    */
+    string initiator = 5;
+
+    /*
+    Optional route hints to reach the destination through private channels.
+    */
+    repeated looprpc.RouteHint route_hints = 6;
+
+    /*
+    Private indicates whether the destination node should be considered private.
+    In which case, loop will generate hop hints to assist with probing and
+    payment.
+    */
+    bool private = 7;
+
+    /*
+    The swap payment timeout allows the user to specify an upper limit for the
+    amount of time the server is allowed to take to fulfill the off-chain swap
+    payment. If the timeout is reached the swap will be aborted on the server
+    side and the client can retry the swap with different parameters.
+    */
+    uint32 payment_timeout_seconds = 8;
+}
+
+message StaticAddressLoopInResponse {
+    /*
+    The swap hash that identifies this swap.
+    */
+    bytes swap_hash = 1;
+
+    /*
+    The state the swap is in.
+    */
+    string state = 2;
+
+    /*
+    The amount of the swap.
+    */
+    uint64 amount = 3;
+
+    /*
+    The htlc cltv expiry height of the swap.
+    */
+    int32 htlc_cltv = 4;
+
+    /*
+    The quoted swap fee in satoshis.
+    */
+    int64 quoted_swap_fee_satoshis = 5;
+
+    /*
+    The maximum total swap fee the client is willing to pay for the swap.
+    */
+    int64 max_swap_fee_satoshis = 6;
+
+    /*
+    The block height at which the swap was initiated.
+    */
+    uint32 initiation_height = 7;
+
+    /*
+    The static address protocol version.
+    */
+    string protocol_version = 8;
+
+    /*
+    An optional label for this swap.
+    */
+    string label = 9;
+
+    /*
+    An optional identification string that will be appended to the user agent
+    string sent to the server to give information about the usage of loop. This
+    initiator part is meant for user interfaces to add their name to give the
+    full picture of the binary used (loopd, LiT) and the method used for
+    triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+    */
+    string initiator = 10;
+
+    /*
+    The swap payment timeout allows the user to specify an upper limit for the
+    amount of time the server is allowed to take to fulfill the off-chain swap
+    payment. If the timeout is reached the swap will be aborted on the server
+    side and the client can retry the swap with different parameters.
+    */
+    uint32 payment_timeout_seconds = 11;
 }
