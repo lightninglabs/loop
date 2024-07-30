@@ -67,7 +67,7 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 	insertUpdateArgs := sqlc.InsertDepositUpdateParams{
 		DepositID:       deposit.ID[:],
 		UpdateTimestamp: s.clock.Now().UTC(),
-		UpdateState:     string(deposit.GetState()),
+		UpdateState:     string(deposit.state),
 	}
 
 	var (
@@ -213,9 +213,4 @@ func (s *SqlStore) toDeposit(row sqlc.Deposit,
 		ExpirySweepTxid:        expirySweepTxid,
 		WithdrawalSweepAddress: row.WithdrawalSweepAddress.String,
 	}, nil
-}
-
-// Close closes the database connection.
-func (s *SqlStore) Close() {
-	s.baseDB.DB.Close()
 }
