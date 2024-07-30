@@ -29,9 +29,9 @@ const (
 	) * 4
 
 	coopTwoSweepBatchWeight    = coopNewBatchWeight + coopInputWeight
-	nonCoopTwoSweepBatchWeight = coopTwoSweepBatchWeight +
-		2*nonCoopPenalty
-	v2v3BatchWeight = nonCoopTwoSweepBatchWeight - 25
+	nonCoopTwoSweepBatchWeight = coopTwoSweepBatchWeight + 2*nonCoopPenalty
+	v2v3BatchWeight            = nonCoopTwoSweepBatchWeight - 25
+	mixedTwoSweepBatchWeight   = coopTwoSweepBatchWeight + nonCoopPenalty
 )
 
 // testHtlcV2SuccessEstimator adds weight of non-cooperative input to estimator
@@ -86,11 +86,13 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -104,11 +106,13 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -124,12 +128,14 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:        lowFeeRate,
+				MixedWeight:    coopInputWeight,
 				CoopWeight:     coopInputWeight,
 				NonCoopWeight:  nonCoopInputWeight,
 				IsExternalAddr: true,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate:        lowFeeRate,
+				MixedWeight:    coopNewBatchWeight,
 				CoopWeight:     coopNewBatchWeight,
 				NonCoopWeight:  nonCoopNewBatchWeight,
 				IsExternalAddr: true,
@@ -146,12 +152,15 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:        lowFeeRate,
+				MixedWeight:    coopInputWeight,
 				CoopWeight:     coopInputWeight,
 				NonCoopWeight:  nonCoopInputWeight,
 				IsExternalAddr: true,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate: lowFeeRate,
+				MixedWeight: coopNewBatchWeight -
+					p2pkhDiscount,
 				CoopWeight: coopNewBatchWeight -
 					p2pkhDiscount,
 				NonCoopWeight: nonCoopNewBatchWeight -
@@ -169,12 +178,14 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -190,12 +201,14 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			wantNewBatchFeeDetails: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -251,6 +264,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -275,6 +289,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopTwoSweepBatchWeight,
 				CoopWeight:    coopTwoSweepBatchWeight,
 				NonCoopWeight: nonCoopTwoSweepBatchWeight,
 			},
@@ -299,6 +314,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopTwoSweepBatchWeight,
 				CoopWeight:    coopTwoSweepBatchWeight,
 				NonCoopWeight: v2v3BatchWeight,
 			},
@@ -320,6 +336,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -345,6 +362,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       lowFeeRate,
+				MixedWeight:   mixedTwoSweepBatchWeight,
 				CoopWeight:    coopTwoSweepBatchWeight,
 				NonCoopWeight: nonCoopTwoSweepBatchWeight,
 				NonCoopHint:   true,
@@ -371,6 +389,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:       1,
 				FeeRate:       lowFeeRate,
+				MixedWeight:   mixedTwoSweepBatchWeight,
 				CoopWeight:    coopTwoSweepBatchWeight,
 				NonCoopWeight: nonCoopTwoSweepBatchWeight,
 				NonCoopHint:   true,
@@ -395,6 +414,7 @@ func TestEstimateBatchWeight(t *testing.T) {
 			wantBatchFeeDetails: feeDetails{
 				BatchId:        1,
 				FeeRate:        lowFeeRate,
+				MixedWeight:    coopNewBatchWeight,
 				CoopWeight:     coopNewBatchWeight,
 				NonCoopWeight:  nonCoopNewBatchWeight,
 				IsExternalAddr: true,
@@ -420,6 +440,7 @@ func TestSelectBatches(t *testing.T) {
 		name                 string
 		batches              []feeDetails
 		sweep, oneSweepBatch feeDetails
+		mixedBatch           bool
 		wantBestBatchesIds   []int32
 	}{
 		{
@@ -427,11 +448,13 @@ func TestSelectBatches(t *testing.T) {
 			batches: []feeDetails{},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -444,17 +467,20 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -467,17 +493,20 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -490,23 +519,27 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -519,23 +552,27 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -548,24 +585,28 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -579,24 +620,28 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   10000,
 					CoopWeight:    10000,
 					NonCoopWeight: 15000,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   10000,
 					CoopWeight:    10000,
 					NonCoopWeight: 15000,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -605,17 +650,55 @@ func TestSelectBatches(t *testing.T) {
 		},
 
 		{
+			name: "high fee noncoop sweep, large batches, mixed",
+			batches: []feeDetails{
+				{
+					BatchId:       1,
+					FeeRate:       lowFeeRate,
+					MixedWeight:   10000,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+				{
+					BatchId:       2,
+					FeeRate:       highFeeRate,
+					MixedWeight:   10000,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopInputWeight,
+				CoopWeight:    coopInputWeight,
+				NonCoopWeight: nonCoopInputWeight,
+				NonCoopHint:   true,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
+				CoopWeight:    coopNewBatchWeight,
+				NonCoopWeight: nonCoopNewBatchWeight,
+				NonCoopHint:   true,
+			},
+			mixedBatch:         true,
+			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+		},
+
+		{
 			name: "high fee noncoop sweep, high batch noncoop",
 			batches: []feeDetails{
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   nonCoopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 					NonCoopHint:   true,
@@ -623,12 +706,14 @@ func TestSelectBatches(t *testing.T) {
 			},
 			sweep: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -642,24 +727,28 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -673,24 +762,28 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   10000,
 					CoopWeight:    10000,
 					NonCoopWeight: 15000,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   10000,
 					CoopWeight:    10000,
 					NonCoopWeight: 15000,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -699,11 +792,48 @@ func TestSelectBatches(t *testing.T) {
 		},
 
 		{
+			name: "low fee noncoop sweep, large batches, mixed",
+			batches: []feeDetails{
+				{
+					BatchId:       1,
+					FeeRate:       lowFeeRate,
+					MixedWeight:   10000,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+				{
+					BatchId:       2,
+					FeeRate:       highFeeRate,
+					MixedWeight:   10000,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
+				CoopWeight:    coopInputWeight,
+				NonCoopWeight: nonCoopInputWeight,
+				NonCoopHint:   true,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
+				CoopWeight:    coopNewBatchWeight,
+				NonCoopWeight: nonCoopNewBatchWeight,
+				NonCoopHint:   true,
+			},
+			mixedBatch:         true,
+			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+		},
+
+		{
 			name: "low fee noncoop sweep, low batch noncoop",
 			batches: []feeDetails{
 				{
 					BatchId:       1,
 					FeeRate:       lowFeeRate,
+					MixedWeight:   nonCoopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 					NonCoopHint:   true,
@@ -711,18 +841,21 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 				NonCoopHint:   true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       lowFeeRate,
+				MixedWeight:   nonCoopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
@@ -736,24 +869,28 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:       2,
 					FeeRate:       highFeeRate,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 			},
 			sweep: feeDetails{
 				FeeRate:        highFeeRate,
+				MixedWeight:    coopInputWeight,
 				CoopWeight:     coopInputWeight,
 				NonCoopWeight:  nonCoopInputWeight,
 				IsExternalAddr: true,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:        highFeeRate,
+				MixedWeight:    coopNewBatchWeight,
 				CoopWeight:     coopNewBatchWeight,
 				NonCoopWeight:  nonCoopNewBatchWeight,
 				IsExternalAddr: true,
@@ -767,12 +904,14 @@ func TestSelectBatches(t *testing.T) {
 				{
 					BatchId:       1,
 					FeeRate:       highFeeRate - 1,
+					MixedWeight:   coopNewBatchWeight,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
 				},
 				{
 					BatchId:        2,
 					FeeRate:        highFeeRate,
+					MixedWeight:    coopNewBatchWeight,
 					CoopWeight:     coopNewBatchWeight,
 					NonCoopWeight:  nonCoopNewBatchWeight,
 					IsExternalAddr: true,
@@ -780,11 +919,13 @@ func TestSelectBatches(t *testing.T) {
 			},
 			sweep: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopInputWeight,
 				CoopWeight:    coopInputWeight,
 				NonCoopWeight: nonCoopInputWeight,
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate:       highFeeRate,
+				MixedWeight:   coopNewBatchWeight,
 				CoopWeight:    coopNewBatchWeight,
 				NonCoopWeight: nonCoopNewBatchWeight,
 			},
@@ -797,6 +938,7 @@ func TestSelectBatches(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gotBestBatchesIds, err := selectBatches(
 				tc.batches, tc.sweep, tc.oneSweepBatch,
+				tc.mixedBatch,
 			)
 			require.NoError(t, err)
 			require.Equal(
