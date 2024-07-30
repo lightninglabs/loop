@@ -124,6 +124,25 @@ type StaticAddress struct {
 	ProtocolVersion int32
 }
 
+type StaticAddressSwap struct {
+	SwapHash                []byte
+	SwapInvoice             string
+	LastHop                 []byte
+	QuotedSwapFee           int64
+	DepositOutpoints        []byte
+	HtlcTx                  []byte
+	HtlcTxFeeRate           int64
+	HtlcTimeoutSweepTx      []byte
+	HtlcTimeoutSweepAddress sql.NullString
+}
+
+type StaticAddressSwapUpdate struct {
+	ID              int32
+	SwapHash        []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type Swap struct {
 	ID               int32
 	SwapHash         []byte
