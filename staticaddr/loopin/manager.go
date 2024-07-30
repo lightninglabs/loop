@@ -258,7 +258,9 @@ func (m *Manager) InitiateLoopIn(req *loop.StaticAddressLoopInRequest) error {
 	}
 	loopIn.RouteHints = req.RouteHints
 	loopIn.Private = req.Private
-	loopIn.LastHop = req.LastHop[:]
+	if req.LastHop != nil {
+		loopIn.LastHop = req.LastHop[:]
+	}
 
 	// Request current server loop in terms and use these to calculate the
 	// swap fee that we should subtract from the swap amount in the payment
