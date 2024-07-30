@@ -33,6 +33,14 @@ var (
 
 	Withdrawn = fsm.StateType("Withdrawn")
 
+	LoopingIn = fsm.StateType("LoopingIn")
+
+	LoopedIn = fsm.StateType("LoopedIn")
+
+	SweepHtlcTimout = fsm.StateType("SweepHtlcTimout")
+
+	HtlcTimeoutSwept = fsm.StateType("HtlcTimeoutSwept")
+
 	PublishExpiredDeposit = fsm.StateType("PublishExpiredDeposit")
 
 	WaitForExpirySweep = fsm.StateType("WaitForExpirySweep")
@@ -44,13 +52,17 @@ var (
 
 // Events.
 var (
-	OnStart             = fsm.EventType("OnStart")
-	OnWithdrawInitiated = fsm.EventType("OnWithdrawInitiated")
-	OnWithdrawn         = fsm.EventType("OnWithdrawn")
-	OnExpiry            = fsm.EventType("OnExpiry")
-	OnExpiryPublished   = fsm.EventType("OnExpiryPublished")
-	OnExpirySwept       = fsm.EventType("OnExpirySwept")
-	OnRecover           = fsm.EventType("OnRecover")
+	OnStart              = fsm.EventType("OnStart")
+	OnWithdrawInitiated  = fsm.EventType("OnWithdrawInitiated")
+	OnWithdrawn          = fsm.EventType("OnWithdrawn")
+	OnLoopinInitiated    = fsm.EventType("OnLoopinInitiated")
+	OnSweepingHtlcTimout = fsm.EventType("OnSweepingHtlcTimout")
+	OnHtlcTimeoutSwept   = fsm.EventType("OnHtlcTimeoutSwept")
+	OnLoopedIn           = fsm.EventType("OnLoopedIn")
+	OnExpiry             = fsm.EventType("OnExpiry")
+	OnExpiryPublished    = fsm.EventType("OnExpiryPublished")
+	OnExpirySwept        = fsm.EventType("OnExpirySwept")
+	OnRecover            = fsm.EventType("OnRecover")
 )
 
 // FSM is the state machine that handles the instant out.
@@ -169,6 +181,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry:            PublishExpiredDeposit,
 				OnWithdrawInitiated: Withdrawing,
+				OnLoopinInitiated:   LoopingIn,
 				OnRecover:           Deposited,
 			},
 			Action: fsm.NoOpAction,
@@ -228,11 +241,55 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			},
 			Action: fsm.NoOpAction,
 		},
+		LoopingIn: fsm.State{
+			Transitions: fsm.Transitions{
+				// This event is triggered when the loop in
+				// payment has been received. We consider the
+				// swap to be completed and transition to a
+				// final state.
+				OnLoopedIn: LoopedIn,
+
+				// If the deposit expires while the loop in is
+				// still pending, we publish the expiry sweep.
+				OnExpiry: PublishExpiredDeposit,
+
+				// We encounter this signal if the server
+				// published the htlc tx without paying us. We
+				// then need to monitor for the timeout path to
+				// open up to sweep it.
+				OnSweepingHtlcTimout: SweepHtlcTimout,
+
+				OnLoopinInitiated: LoopingIn,
+
+				OnRecover:   LoopingIn,
+				fsm.OnError: Deposited,
+			},
+			Action: fsm.NoOpAction,
+		},
+		LoopedIn: fsm.State{
+			Transitions: fsm.Transitions{
+				OnExpiry: Expired,
+			},
+			Action: f.FinalizeDepositAction,
+		},
+		SweepHtlcTimout: fsm.State{
+			Transitions: fsm.Transitions{
+				OnHtlcTimeoutSwept: HtlcTimeoutSwept,
+				OnRecover:          SweepHtlcTimout,
+			},
+			Action: fsm.NoOpAction,
+		},
+		HtlcTimeoutSwept: fsm.State{
+			Transitions: fsm.Transitions{
+				OnExpiry: HtlcTimeoutSwept,
+			},
+			Action: f.FinalizeDepositAction,
+		},
 		Withdrawn: fsm.State{
 			Transitions: fsm.Transitions{
 				OnExpiry: Expired,
 			},
-			Action: f.WithdrawnDepositAction,
+			Action: f.FinalizeDepositAction,
 		},
 		Failed: fsm.State{
 			Transitions: fsm.Transitions{
@@ -257,14 +314,7 @@ func (f *FSM) updateDeposit(notification fsm.Notification) {
 
 	f.deposit.SetState(notification.NextState)
 
-	// Don't update the deposit if we are in an initial state or if we
-	// are transitioning from an initial state to a failed state.
-	d := f.deposit
-	if d.IsInState(fsm.EmptyState) || d.IsInState(Deposited) ||
-		(notification.PreviousState == Deposited && d.IsInState(
-			Failed,
-		)) {
-
+	if skipUpdate(notification, f.deposit) {
 		return
 	}
 
@@ -272,6 +322,23 @@ func (f *FSM) updateDeposit(notification fsm.Notification) {
 	if err != nil {
 		f.Errorf("unable to update deposit: %v", err)
 	}
+}
+
+// Don't update the deposit if we are in an initial state or if we are
+// transitioning from an initial state to a failed state.
+func skipUpdate(notification fsm.Notification, d *Deposit) bool {
+	prevState := notification.PreviousState
+	if d.IsInState(fsm.EmptyState) || d.IsInState(Deposited) &&
+		prevState == fsm.EmptyState ||
+		d.IsInState(prevState) ||
+		prevState == Deposited && d.IsInState(Deposited) ||
+		prevState == Deposited && d.IsInState(Failed) ||
+		prevState == LoopingIn && d.IsInState(LoopingIn) {
+
+		return true
+	}
+
+	return false
 }
 
 // Infof logs an info message with the deposit outpoint.

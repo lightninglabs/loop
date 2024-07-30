@@ -148,9 +148,9 @@ func (f *FSM) SweptExpiredDepositAction(_ fsm.EventContext) fsm.EventType {
 	return fsm.NoOp
 }
 
-// WithdrawnDepositAction is the final action after a withdrawal. It signals to
+// FinalizeDepositAction is the final action after a withdrawal. It signals to
 // the manager that the deposit has been swept and the FSM can be removed.
-func (f *FSM) WithdrawnDepositAction(_ fsm.EventContext) fsm.EventType {
+func (f *FSM) FinalizeDepositAction(_ fsm.EventContext) fsm.EventType {
 	select {
 	case <-f.ctx.Done():
 		return fsm.OnError
