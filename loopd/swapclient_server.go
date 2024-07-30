@@ -1558,13 +1558,13 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 	}
 
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:    address.String(),
-		TotalNumDeposits: uint32(totalNumDeposits),
-		ValueUnconfirmed: valueUnconfirmed,
-		ValueDeposited:   valueDeposited,
-		ValueExpired:     valueExpired,
-		ValueWithdrawn:   valueWithdrawn,
-		FilteredDeposits: clientDeposits,
+		StaticAddress:            address.String(),
+		TotalNumDeposits:         uint32(totalNumDeposits),
+		ValueUnconfirmedSatoshis: valueUnconfirmed,
+		ValueDepositedSatoshis:   valueDeposited,
+		ValueExpiredSatoshis:     valueExpired,
+		ValueWithdrawnSatoshis:   valueWithdrawn,
+		FilteredDeposits:         clientDeposits,
 	}, nil
 }
 
@@ -1613,9 +1613,6 @@ func toClientState(state fsm.StateType) looprpc.DepositState {
 	case deposit.Expired:
 		return looprpc.DepositState_EXPIRED
 
-	case deposit.Failed:
-		return looprpc.DepositState_FAILED_STATE
-
 	default:
 		return looprpc.DepositState_UNKNOWN_STATE
 	}
@@ -1640,9 +1637,6 @@ func toServerState(state looprpc.DepositState) fsm.StateType {
 
 	case looprpc.DepositState_EXPIRED:
 		return deposit.Expired
-
-	case looprpc.DepositState_FAILED_STATE:
-		return deposit.Failed
 
 	default:
 		return fsm.EmptyState
