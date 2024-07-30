@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -26,6 +27,7 @@ type Querier interface {
 	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
+	GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
@@ -35,6 +37,8 @@ type Querier interface {
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)
 	GetReservations(ctx context.Context) ([]Reservation, error)
 	GetStaticAddress(ctx context.Context, pkscript []byte) (StaticAddress, error)
+	GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byte) (GetStaticAddressLoopInSwapRow, error)
+	GetStaticAddressLoopInSwapsByStates(ctx context.Context, dollar_1 sql.NullString) ([]GetStaticAddressLoopInSwapsByStatesRow, error)
 	GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUpdate, error)
 	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
@@ -47,13 +51,17 @@ type Querier interface {
 	InsertLoopOut(ctx context.Context, arg InsertLoopOutParams) error
 	InsertMigration(ctx context.Context, arg InsertMigrationParams) error
 	InsertReservationUpdate(ctx context.Context, arg InsertReservationUpdateParams) error
+	InsertStaticAddressLoopIn(ctx context.Context, arg InsertStaticAddressLoopInParams) error
+	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) error
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
+	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
+	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
 	UpsertSweep(ctx context.Context, arg UpsertSweepParams) error
 }
