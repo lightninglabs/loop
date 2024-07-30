@@ -238,9 +238,6 @@ func summary(ctx *cli.Context) error {
 	case "expired":
 		filterState = looprpc.DepositState_EXPIRED
 
-	case "failed":
-		filterState = looprpc.DepositState_FAILED_STATE
-
 	default:
 		filterState = looprpc.DepositState_UNKNOWN_STATE
 	}
