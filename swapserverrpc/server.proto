@@ -672,6 +672,15 @@ service StaticAddressServer {
     // the partial sigs for the client's selected deposits.
     rpc ServerWithdrawDeposits (ServerWithdrawRequest)
         returns (ServerWithdrawResponse);
+
+    rpc ServerStaticAddressLoopIn (ServerStaticAddressLoopInRequest)
+        returns (ServerStaticAddressLoopInResponse);
+
+    rpc PushStaticAddressHtlcSigs (PushStaticAddressHtlcSigsRequest)
+        returns (PushStaticAddressHtlcSigsResponse);
+
+    rpc PushStaticAddressSweeplessSigs (PushStaticAddressSweeplessSigsRequest)
+        returns (PushStaticAddressSweeplessSigsResponse);
 }
 
 message ServerNewAddressRequest {
@@ -715,4 +724,90 @@ message ServerWithdrawResponse {
 
     // The nonces that the server used to generate the sweepless sweep sigs.
     repeated bytes server_nonces = 2;
+}
+
+message ServerStaticAddressLoopInRequest {
+    // The client's key for the htlc output.
+    bytes htlc_client_key = 1;
+
+    // The hashed swap invoice preimage of the swap.
+    bytes swap_hash = 2;
+
+    // The deposit outpoints the client wishes to loop in. They implicitly state
+    // the swap amount.
+    repeated string deposit_outpoints = 3;
+
+    // The swap invoice that the client wants the server to pay.
+    string swap_invoice = 4;
+
+    // An optional last hop the client wants to receive the invoice payment
+    // from.
+    bytes last_hop = 5;
+
+    // The protocol version that the client adheres to.
+    StaticAddressProtocolVersion protocol_version = 6;
+
+    // The user agent string that identifies the software running on the user's
+    // side. This can be changed in the user's client software but it _SHOULD_
+    // conform to the following pattern:
+    //    Agent-Name/semver-version(/additional-info)
+    // Examples:
+    //    loopd/v0.10.0-beta/commit=3b635821
+    //    litd/v0.2.0-alpha/commit=326d754
+    string user_agent = 7;
+}
+
+message ServerStaticAddressLoopInResponse {
+    // The server's key for the htlc output.
+    bytes htlc_server_key = 1;
+
+    // The cltv expiry height for the htlc. This is the height at which the
+    // htlc will expire and the client is free to claim the funds back.
+    int32 htlc_expiry = 2;
+
+    // The nonces that the server used to generate the partial htlc sigs.
+    repeated bytes htlc_server_nonces = 3;
+
+    // The fee rate in sat/kw that the server wants to use for the htlc tx.
+    uint64 htlc_fee_rate = 4;
+}
+
+message PushStaticAddressHtlcSigsRequest {
+    // The swap hash of the swap that the client wants to push the htlc sigs
+    // for.
+    bytes swap_hash = 1;
+
+    // The nonces that the client used to generate the htlc sigs.
+    repeated bytes htlc_client_nonces = 2;
+
+    // The partial htlc sigs that the client generated for the htlc tx.
+    repeated bytes htlc_client_sigs = 3;
+}
+
+message PushStaticAddressHtlcSigsResponse {
+    // The nonces that the server used to generate the sweeless sweep sigs.
+    repeated bytes sweepless_server_nonces = 1;
+
+    // The fee rate in sat/kw that the server wants to use for the sweepless
+    // sweep tx.
+    uint64 sweepless_fee_rate = 2;
+
+    // The address that the server wants to sweep the static address deposits
+    // to.
+    string sweepless_sweep_addr = 3;
+}
+
+message PushStaticAddressSweeplessSigsRequest {
+    // The swap hash of the swap that the client wants to push the sweepless
+    // sigs for.
+    bytes swap_hash = 1;
+
+    // The nonces that the client used to generate the sweepless sweep tx sigs.
+    repeated bytes sweepless_client_nonces = 2;
+
+    // The partial sweepless sweep tx sigs that the client generated.
+    repeated bytes sweepless_client_sigs = 3;
+}
+
+message PushStaticAddressSweeplessSigsResponse {
 }
