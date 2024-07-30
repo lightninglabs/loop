@@ -228,7 +228,11 @@ func printQuoteInResp(req *looprpc.QuoteRequest,
 
 	totalFee := resp.HtlcPublishFeeSat + resp.SwapFeeSat
 
-	fmt.Printf(satAmtFmt, "Send on-chain:", req.Amt)
+	if req.DepositOutpoints != nil {
+		fmt.Printf(satAmtFmt, "Previously deposited on-chain:", req.Amt)
+	} else {
+		fmt.Printf(satAmtFmt, "Send on-chain:", req.Amt)
+	}
 	fmt.Printf(satAmtFmt, "Receive off-chain:", req.Amt-totalFee)
 
 	switch {
