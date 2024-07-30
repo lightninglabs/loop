@@ -1543,13 +1543,13 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 	}
 
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:    address.String(),
-		TotalNumDeposits: uint32(totalNumDeposits),
-		ValueUnconfirmed: valueUnconfirmed,
-		ValueDeposited:   valueDeposited,
-		ValueExpired:     valueExpired,
-		ValueWithdrawn:   valueWithdrawn,
-		FilteredDeposits: clientDeposits,
+		StaticAddress:            address.String(),
+		TotalNumDeposits:         uint32(totalNumDeposits),
+		ValueUnconfirmedSatoshis: valueUnconfirmed,
+		ValueDepositedSatoshis:   valueDeposited,
+		ValueExpiredSatoshis:     valueExpired,
+		ValueWithdrawnSatoshis:   valueWithdrawn,
+		FilteredDeposits:         clientDeposits,
 	}, nil
 }
 
