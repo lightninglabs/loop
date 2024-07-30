@@ -52,9 +52,6 @@ var (
 		Name:      "in",
 		Usage:     "perform an on-chain to off-chain swap (loop in)",
 		ArgsUsage: "amt",
-		Subcommands: []cli.Command{
-			staticAddressCommands,
-		},
 		Description: `
 		Send the amount in satoshis specified by the amt argument 
 		off-chain.
