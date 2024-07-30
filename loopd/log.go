@@ -65,7 +65,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 // genSubLogger creates a logger for a subsystem. We provide an instance of
 // a signal.Interceptor to be able to shutdown in the case of a critical error.
 func genSubLogger(root *build.RotatingLogWriter,
-    interceptor signal.Interceptor) func(string) btclog.Logger {
+	interceptor signal.Interceptor) func(string) btclog.Logger {
 
 	// Create a shutdown function which will request shutdown from our
 	// interceptor if it is listening.
