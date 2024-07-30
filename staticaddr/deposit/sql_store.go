@@ -214,8 +214,3 @@ func (s *SqlStore) toDeposit(row sqlc.Deposit,
 		WithdrawalSweepAddress: row.WithdrawalSweepAddress.String,
 	}, nil
 }
-
-// Close closes the database connection.
-func (s *SqlStore) Close() {
-	s.baseDB.DB.Close()
-}
