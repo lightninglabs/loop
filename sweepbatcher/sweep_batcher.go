@@ -265,6 +265,12 @@ type Batcher struct {
 	// skipped.
 	initialDelay time.Duration
 
+	// publishDelay is the delay of batch publishing that is applied in the
+	// beginning, after the appearance of a new block in the network or
+	// after the end of initial delay. For batches recovered from DB this
+	// value is always 0s, regardless of this setting.
+	publishDelay time.Duration
+
 	// customFeeRate provides custom min fee rate per swap. The batch uses
 	// max of the fee rates of its swaps. In this mode confTarget is
 	// ignored and fee bumping by sweepbatcher is disabled.
@@ -289,6 +295,12 @@ type BatcherConfig struct {
 	// (time until timeout is less that 2x initialDelay), then waiting is
 	// skipped.
 	initialDelay time.Duration
+
+	// publishDelay is the delay of batch publishing that is applied in the
+	// beginning, after the appearance of a new block in the network or
+	// after the end of initial delay. For batches recovered from DB this
+	// value is always 0s, regardless of this setting.
+	publishDelay time.Duration
 
 	// customFeeRate provides custom min fee rate per swap. The batch uses
 	// max of the fee rates of its swaps. In this mode confTarget is
@@ -321,6 +333,18 @@ func WithClock(clock clock.Clock) BatcherOption {
 func WithInitialDelay(initialDelay time.Duration) BatcherOption {
 	return func(cfg *BatcherConfig) {
 		cfg.initialDelay = initialDelay
+	}
+}
+
+// WithPublishDelay sets the delay of batch publishing that is applied in the
+// beginning, after the appearance of a new block in the network or after the
+// end of initial delay (see WithInitialDelay). It is needed to prevent
+// unnecessary transaction publishments when a spend is detected on that block.
+// Default value depends on the network: 5 seconds in mainnet, 0.5s in testnet.
+// For batches recovered from DB this value is always 0s.
+func WithPublishDelay(publishDelay time.Duration) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.publishDelay = publishDelay
 	}
 }
 
@@ -383,6 +407,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		sweepStore:         sweepStore,
 		clock:              cfg.clock,
 		initialDelay:       cfg.initialDelay,
+		publishDelay:       cfg.publishDelay,
 		customFeeRate:      cfg.customFeeRate,
 		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
@@ -586,6 +611,14 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 
 	default:
 		cfg.batchPublishDelay = defaultTestnetPublishDelay
+	}
+
+	if b.publishDelay != 0 {
+		if b.publishDelay < 0 {
+			return nil, fmt.Errorf("negative publishDelay: %v",
+				b.publishDelay)
+		}
+		cfg.batchPublishDelay = b.publishDelay
 	}
 
 	if b.initialDelay < 0 {
