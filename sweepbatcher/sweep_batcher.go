@@ -44,7 +44,7 @@ const (
 
 	// defaultTestnetPublishDelay is the default publish delay that is used
 	// for testnet.
-	defaultPublishDelay = 500 * time.Millisecond
+	defaultTestnetPublishDelay = 500 * time.Millisecond
 )
 
 type BatcherStore interface {
@@ -536,7 +536,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		cfg.batchPublishDelay = defaultMainnetPublishDelay
 
 	default:
-		cfg.batchPublishDelay = defaultPublishDelay
+		cfg.batchPublishDelay = defaultTestnetPublishDelay
 	}
 
 	batchKit := b.newBatchKit()
