@@ -24,6 +24,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -133,6 +134,9 @@ type batchConfig struct {
 
 	// batchConfTarget is the confirmation target of the batch transaction.
 	batchConfTarget int32
+
+	// clock provides methods to work with time and timers.
+	clock clock.Clock
 
 	// batchPublishDelay is the delay between receiving a new block and
 	// publishing the batch transaction.
@@ -527,6 +531,9 @@ func (b *batch) Run(ctx context.Context) error {
 		return fmt.Errorf("both musig2 signers provided")
 	}
 
+	// Cache clock variable.
+	clock := b.cfg.clock
+
 	blockChan, blockErrChan, err :=
 		b.chainNotifier.RegisterBlockEpochNtfn(runCtx)
 	if err != nil {
@@ -562,7 +569,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 			// Set the timer to publish the batch transaction after
 			// the configured delay.
-			timerChan = time.After(b.cfg.batchPublishDelay)
+			timerChan = clock.TickAfter(b.cfg.batchPublishDelay)
 			b.currentHeight = height
 
 		case <-timerChan:
