@@ -193,25 +193,33 @@ func extractPathArgs(ctx *cli.Context) (string, string, error) {
 	// properly read the macaroons and also the cert. This will either be
 	// the default, or will have been overwritten by the end user.
 	loopDir := lncfg.CleanAndExpandPath(ctx.GlobalString(loopDirFlag.Name))
-	tlsCertPath := lncfg.CleanAndExpandPath(ctx.GlobalString(
-		tlsCertFlag.Name,
-	))
-	macPath := lncfg.CleanAndExpandPath(ctx.GlobalString(
-		macaroonPathFlag.Name,
-	))
 
-	// If a custom loop directory was set, we'll also check if custom paths
-	// for the TLS cert and macaroon file were set as well. If not, we'll
-	// override their paths so they can be found within the custom loop
-	// directory set. This allows us to set a custom loop directory, along
-	// with custom paths to the TLS cert and macaroon file.
+	tlsCertPathRaw := ctx.GlobalString(tlsCertFlag.Name)
+	tlsCertPath := lncfg.CleanAndExpandPath(tlsCertPathRaw)
+
+	macPathRaw := ctx.GlobalString(macaroonPathFlag.Name)
+	macPath := lncfg.CleanAndExpandPath(macPathRaw)
+
+	// If a custom loop directory or network was set, we'll also check if
+	// custom paths for the TLS cert and macaroon file were set as well. If
+	// not, we'll override their paths so they can be found within the
+	// custom loop directory set. This allows us to set a custom loop
+	// directory and/or network, along with custom paths to the TLS cert and
+	// macaroon file.
 	if loopDir != loopd.LoopDirBase || networkStr != loopd.DefaultNetwork {
-		tlsCertPath = filepath.Join(
-			loopDir, networkStr, loopd.DefaultTLSCertFilename,
-		)
-		macPath = filepath.Join(
-			loopDir, networkStr, loopd.DefaultMacaroonFilename,
-		)
+		if tlsCertPathRaw == loopd.DefaultTLSCertPath {
+			tlsCertPath = filepath.Join(
+				loopDir, networkStr,
+				loopd.DefaultTLSCertFilename,
+			)
+		}
+
+		if macPathRaw == loopd.DefaultMacaroonPath {
+			macPath = filepath.Join(
+				loopDir, networkStr,
+				loopd.DefaultMacaroonFilename,
+			)
+		}
 	}
 
 	return tlsCertPath, macPath, nil
