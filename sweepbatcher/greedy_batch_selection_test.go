@@ -18,7 +18,7 @@ const (
 	highFeeRate = chainfee.SatPerKWeight(30000)
 
 	coopInputWeight       = lntypes.WeightUnit(230)
-	nonCoopInputWeight    = lntypes.WeightUnit(521)
+	nonCoopInputWeight    = lntypes.WeightUnit(393)
 	nonCoopPenalty        = nonCoopInputWeight - coopInputWeight
 	coopNewBatchWeight    = lntypes.WeightUnit(444)
 	nonCoopNewBatchWeight = coopNewBatchWeight + nonCoopPenalty
@@ -31,7 +31,7 @@ const (
 	coopTwoSweepBatchWeight    = coopNewBatchWeight + coopInputWeight
 	nonCoopTwoSweepBatchWeight = coopTwoSweepBatchWeight +
 		2*nonCoopPenalty
-	v2v3BatchWeight = nonCoopTwoSweepBatchWeight - 153
+	v2v3BatchWeight = nonCoopTwoSweepBatchWeight - 25
 )
 
 // testHtlcV2SuccessEstimator adds weight of non-cooperative input to estimator
@@ -523,6 +523,37 @@ func TestSelectBatches(t *testing.T) {
 				NonCoopWeight: nonCoopNewBatchWeight,
 				NonCoopHint:   true,
 			},
+			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+		},
+
+		{
+			name: "high fee noncoop sweep, large batches",
+			batches: []feeDetails{
+				{
+					BatchId:       1,
+					FeeRate:       lowFeeRate,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+				{
+					BatchId:       2,
+					FeeRate:       highFeeRate,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate:       highFeeRate,
+				CoopWeight:    coopInputWeight,
+				NonCoopWeight: nonCoopInputWeight,
+				NonCoopHint:   true,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate:       highFeeRate,
+				CoopWeight:    coopNewBatchWeight,
+				NonCoopWeight: nonCoopNewBatchWeight,
+				NonCoopHint:   true,
+			},
 			wantBestBatchesIds: []int32{newBatchSignal, 2, 1},
 		},
 
@@ -572,6 +603,37 @@ func TestSelectBatches(t *testing.T) {
 					FeeRate:       highFeeRate,
 					CoopWeight:    coopNewBatchWeight,
 					NonCoopWeight: nonCoopNewBatchWeight,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate:       lowFeeRate,
+				CoopWeight:    coopInputWeight,
+				NonCoopWeight: nonCoopInputWeight,
+				NonCoopHint:   true,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate:       lowFeeRate,
+				CoopWeight:    coopNewBatchWeight,
+				NonCoopWeight: nonCoopNewBatchWeight,
+				NonCoopHint:   true,
+			},
+			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+		},
+
+		{
+			name: "low fee noncoop sweep, large batches",
+			batches: []feeDetails{
+				{
+					BatchId:       1,
+					FeeRate:       lowFeeRate,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
+				},
+				{
+					BatchId:       2,
+					FeeRate:       highFeeRate,
+					CoopWeight:    10000,
+					NonCoopWeight: 15000,
 				},
 			},
 			sweep: feeDetails{
