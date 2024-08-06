@@ -1544,6 +1544,9 @@
         "label": {
           "type": "string",
           "description": "An optional label given to the swap on creation."
+        },
+        "sweep_tx_hash": {
+          "type": "string"
         }
       }
     },

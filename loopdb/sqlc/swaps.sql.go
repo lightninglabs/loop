@@ -371,7 +371,7 @@ func (q *Queries) GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, er
 
 const getSwapUpdates = `-- name: GetSwapUpdates :many
 SELECT
-    id, swap_hash, update_timestamp, update_state, htlc_txhash, server_cost, onchain_cost, offchain_cost
+    id, swap_hash, update_timestamp, update_state, htlc_txhash, server_cost, onchain_cost, offchain_cost, sweep_tx_hash
 FROM
     swap_updates
 WHERE
@@ -398,6 +398,7 @@ func (q *Queries) GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUp
 			&i.ServerCost,
 			&i.OnchainCost,
 			&i.OffchainCost,
+			&i.SweepTxHash,
 		); err != nil {
 			return nil, err
 		}
@@ -583,9 +584,10 @@ INSERT INTO swap_updates (
     htlc_txhash,
     server_cost,
     onchain_cost,
-    offchain_cost
+    offchain_cost,
+    sweep_tx_hash
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
 `
 
@@ -597,6 +599,7 @@ type InsertSwapUpdateParams struct {
 	ServerCost      int64
 	OnchainCost     int64
 	OffchainCost    int64
+	SweepTxHash     string
 }
 
 func (q *Queries) InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error {
@@ -608,6 +611,7 @@ func (q *Queries) InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdatePara
 		arg.ServerCost,
 		arg.OnchainCost,
 		arg.OffchainCost,
+		arg.SweepTxHash,
 	)
 	return err
 }

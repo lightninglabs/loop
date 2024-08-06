@@ -197,4 +197,7 @@ type SwapStateData struct {
 
 	// HtlcTxHash is the tx id of the confirmed htlc.
 	HtlcTxHash *chainhash.Hash
+
+	// SweepTxHash is the tx id of the confirmed htlc.
+	SweepTxHash *chainhash.Hash
 }

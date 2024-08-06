@@ -488,6 +488,8 @@ message SwapStatus {
 
     // An optional label given to the swap on creation.
     string label = 15;
+
+    string sweep_tx_hash = 19;
 }
 
 enum SwapType {

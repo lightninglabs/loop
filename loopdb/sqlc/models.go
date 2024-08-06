@@ -117,6 +117,7 @@ type SwapUpdate struct {
 	ServerCost      int64
 	OnchainCost     int64
 	OffchainCost    int64
+	SweepTxHash     string
 }
 
 type Sweep struct {

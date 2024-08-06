@@ -75,6 +75,8 @@ type loopOutSwap struct {
 	// htlcTxHash is the confirmed htlc tx id.
 	htlcTxHash *chainhash.Hash
 
+	sweepTxHash *chainhash.Hash
+
 	swapInvoicePaymentAddr [32]byte
 
 	// prepayAmount holds the amount of the prepay invoice. We use this
@@ -301,6 +303,7 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 		swap.state = lastUpdate.State
 		swap.lastUpdateTime = lastUpdate.Time
 		swap.htlcTxHash = lastUpdate.HtlcTxHash
+		swap.sweepTxHash = lastUpdate.SweepTxHash
 	}
 
 	return swap, nil
@@ -324,6 +327,10 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 		copy(outgoingChanSet[:], s.OutgoingChanSet[:])
 
 		info.OutgoingChanSet = outgoingChanSet
+	}
+
+	if s.sweepTxHash != nil {
+		info.SweepTxHash = s.sweepTxHash
 	}
 
 	select {
@@ -597,9 +604,10 @@ func (s *loopOutSwap) persistState(ctx context.Context) error {
 	err := s.store.UpdateLoopOut(
 		ctx, s.hash, updateTime,
 		loopdb.SwapStateData{
-			State:      s.state,
-			Cost:       s.cost,
-			HtlcTxHash: s.htlcTxHash,
+			State:       s.state,
+			Cost:        s.cost,
+			HtlcTxHash:  s.htlcTxHash,
+			SweepTxHash: s.sweepTxHash,
 		},
 	)
 	if err != nil {
@@ -1071,15 +1079,17 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	spendChan := make(chan *sweepbatcher.SpendDetail)
 	spendErrChan := make(chan error, 1)
 	quitChan := make(chan bool, 1)
+	sweepTxHashChan := make(chan *chainhash.Hash, 1)
 
 	defer func() {
 		quitChan <- true
 	}()
 
 	notifier := sweepbatcher.SpendNotifier{
-		SpendChan:    spendChan,
-		SpendErrChan: spendErrChan,
-		QuitChan:     quitChan,
+		SpendChan:       spendChan,
+		SpendErrChan:    spendErrChan,
+		QuitChan:        quitChan,
+		SweepTxHashChan: sweepTxHashChan,
 	}
 
 	sweepReq := sweepbatcher.SweepRequest{
@@ -1123,6 +1133,19 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 		// Spend notification error.
 		case err := <-spendErrChan:
 			return nil, err
+
+		case sweepTxHash := <-sweepTxHashChan:
+			s.sweepTxHash = sweepTxHash
+			err = s.persistState(ctx)
+			if err != nil {
+				log.Warnf("unable to persist sweep tx hash "+
+					"%v", sweepTxHash)
+			}
+
+			err = s.sendUpdate(ctx)
+			if err != nil {
+				log.Warnf("unable to send update")
+			}
 
 		// Receive status updates for our payment so that we can detect
 		// whether we've successfully pushed our preimage.
