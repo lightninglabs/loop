@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +45,23 @@ var (
 
 	defaultConfirmations = int32(loopdb.DefaultLoopOutHtlcConfirmations)
 )
+
+var htlcKeys = func() loopdb.HtlcKeys {
+	var senderKey, receiverKey [33]byte
+
+	// Generate keys.
+	_, senderPubKey := test.CreateKey(1)
+	copy(senderKey[:], senderPubKey.SerializeCompressed())
+	_, receiverPubKey := test.CreateKey(2)
+	copy(receiverKey[:], receiverPubKey.SerializeCompressed())
+
+	return loopdb.HtlcKeys{
+		SenderScriptKey:        senderKey,
+		ReceiverScriptKey:      receiverKey,
+		SenderInternalPubKey:   senderKey,
+		ReceiverInternalPubKey: receiverKey,
+	}
+}()
 
 // TestLoopOutSuccess tests the loop out happy flow, using a custom htlc
 // confirmation target.
@@ -436,4 +454,60 @@ func TestWrapGrpcError(t *testing.T) {
 			require.Equal(t, testCase.expectedCode, status.Code())
 		})
 	}
+}
+
+// TestFetchSwapsLastHop asserts that FetchSwaps loads LastHop for LoopIn's.
+func TestFetchSwapsLastHop(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctx := createClientTestContext(t, nil)
+
+	lastHop := route.Vertex{1, 2, 3}
+
+	// Create a loop in swap.
+	swapHash := lntypes.Hash{1, 1, 1}
+	swap := &loopdb.LoopInContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+		LastHop: &lastHop,
+	}
+	err := ctx.store.CreateLoopIn(context.Background(), swapHash, swap)
+	require.NoError(t, err, "CreateLoopOut failed")
+
+	// Now read all the swaps from the store
+	swapInfos, err := ctx.swapClient.FetchSwaps(context.Background())
+	require.NoError(t, err, "FetchSwaps failed")
+
+	// Find the loop-in and compare with the expected value.
+	require.Len(t, swapInfos, 1)
+	loopInInfo := swapInfos[0]
+	wantLoopInInfo := &SwapInfo{
+		SwapHash: swapHash,
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+
+		// Make sure LastHop is filled.
+		LastHop: &lastHop,
+	}
+
+	// Calculate HtlcAddressP2TR.
+	htlc, err := utils.GetHtlc(
+		swapHash, &wantLoopInInfo.SwapContract,
+		&chaincfg.TestNet3Params,
+	)
+	require.NoError(t, err)
+	wantLoopInInfo.HtlcAddressP2TR = htlc.Address
+
+	require.Equal(t, wantLoopInInfo, loopInInfo)
+
+	// Shutdown the client not to leak goroutines.
+	ctx.finish()
 }
