@@ -283,6 +283,7 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			SwapStateData: swp.State(),
 			SwapHash:      swp.Hash,
 			LastUpdate:    swp.LastUpdateTime(),
+			LastHop:       swp.Contract.LastHop,
 		}
 
 		htlc, err := utils.GetHtlc(

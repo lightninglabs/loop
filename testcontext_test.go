@@ -108,6 +108,7 @@ func newSwapClient(t *testing.T, config *clientConfig) *Client {
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
+		abandonChans: make(map[lntypes.Hash]chan struct{}),
 	}
 }
 
