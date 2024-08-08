@@ -58,6 +58,10 @@ var (
 	// PushPreimage is the state where the preimage is pushed to the server.
 	PushPreimage = fsm.StateType("PushPreimage")
 
+	// PublishSweeplessSweep is the state where the sweepless sweep is
+	// published.
+	PublishSweeplessSweep = fsm.StateType("PublishSweeplessSweep")
+
 	// WaitForSweeplessSweepConfirmed is the state where we wait for the
 	// sweepless sweep to be confirmed.
 	WaitForSweeplessSweepConfirmed = fsm.StateType(
@@ -105,9 +109,9 @@ var (
 	// is received.
 	OnHtlcSigReceived = fsm.EventType("OnHtlcSigReceived")
 
-	// OnPreimagePushed is the event that is triggered when the preimage
-	// is pushed to the server.
-	OnPreimagePushed = fsm.EventType("OnPreimagePushed")
+	// OnSweeplessSweepBuilt is the event that is triggered when the preimage
+	// is pushed to the server and the sweepless sweep tx has been built.
+	OnSweeplessSweepBuilt = fsm.EventType("OnPreimagePushed")
 
 	// OnSweeplessSweepPublished is the event that is triggered when the
 	// sweepless sweep is published.
@@ -267,17 +271,25 @@ func (f *FSM) GetV1ReservationStates() fsm.States {
 		},
 		PushPreimage: fsm.State{
 			Transitions: fsm.Transitions{
-				OnSweeplessSweepPublished: WaitForSweeplessSweepConfirmed,
-				fsm.OnError:               Failed,
-				OnErrorPublishHtlc:        PublishHtlc,
-				OnRecover:                 PushPreimage,
+				OnSweeplessSweepBuilt: PublishSweeplessSweep,
+				fsm.OnError:           Failed,
+				OnErrorPublishHtlc:    PublishHtlc,
+				OnRecover:             PushPreimage,
 			},
 			Action: f.PushPreimageAction,
+		},
+		PublishSweeplessSweep: fsm.State{
+			Transitions: fsm.Transitions{
+				OnSweeplessSweepPublished: WaitForSweeplessSweepConfirmed,
+				fsm.OnError:               PublishHtlc,
+				OnRecover:                 PublishSweeplessSweep,
+			},
+			Action: f.PublishSweeplessSweepAction,
 		},
 		WaitForSweeplessSweepConfirmed: fsm.State{
 			Transitions: fsm.Transitions{
 				OnSweeplessSweepConfirmed: FinishedSweeplessSweep,
-				OnRecover:                 WaitForSweeplessSweepConfirmed,
+				OnRecover:                 PublishSweeplessSweep,
 				fsm.OnError:               PublishHtlc,
 			},
 			Action: f.WaitForSweeplessSweepConfirmedAction,
