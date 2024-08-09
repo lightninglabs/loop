@@ -88,9 +88,10 @@ INSERT INTO swap_updates (
     htlc_txhash,
     server_cost,
     onchain_cost,
-    offchain_cost
+    offchain_cost,
+    sweep_tx_hash
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 );
 
 -- name: InsertLoopOut :exec

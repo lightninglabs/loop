@@ -195,6 +195,8 @@ type SpendNotifier struct {
 
 	// QuitChan is a channel that can be closed to stop the notifier.
 	QuitChan chan bool
+
+	SweepTxHashChan chan *chainhash.Hash
 }
 
 var (

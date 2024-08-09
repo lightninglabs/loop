@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -382,6 +383,8 @@ type SwapInfo struct {
 	// channels that may be used to loop out. On a loop in this field
 	// is nil.
 	OutgoingChanSet loopdb.ChannelSet
+
+	SweepTxHash *chainhash.Hash
 }
 
 // LastUpdate returns the last update time of the swap.

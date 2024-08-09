@@ -641,6 +641,11 @@ func (b *batch) publish(ctx context.Context) error {
 	for _, sweep := range b.sweeps {
 		b.log.Infof("published sweep %x, value: %v",
 			sweep.swapHash[:6], sweep.value)
+
+		select {
+		case sweep.notifier.SweepTxHashChan <- b.batchTxid:
+		case <-ctx.Done():
+		}
 	}
 
 	return b.persist(ctx)
