@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
-	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -72,7 +71,6 @@ type SQLStore struct {
 	baseDb BaseDB
 
 	network *chaincfg.Params
-	clock   clock.Clock
 }
 
 // NewSQLStore creates a new SQLStore.
@@ -80,7 +78,6 @@ func NewSQLStore(db BaseDB, network *chaincfg.Params) *SQLStore {
 	return &SQLStore{
 		baseDb:  db,
 		network: network,
-		clock:   clock.NewDefaultClock(),
 	}
 }
 
