@@ -27,7 +27,12 @@ func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		SignDescriptors: signDescriptors,
 	}
 
-	rawSigs := [][]byte{{1, 2, 3}}
+	rawSigs := make([][]byte, len(signDescriptors))
+	for i := range signDescriptors {
+		sig := make([]byte, 64)
+		sig[0] = byte(i + 1)
+		rawSigs[i] = sig
+	}
 
 	return rawSigs, nil
 }
@@ -118,7 +123,10 @@ func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
 func (s *mockSigner) MuSig2CombineSig(context.Context, [32]byte,
 	[][]byte) (bool, []byte, error) {
 
-	return true, nil, nil
+	sig := make([]byte, 64)
+	sig[0] = 42
+
+	return true, sig, nil
 }
 
 // MuSig2Cleanup removes a session from memory to free up resources.
