@@ -423,7 +423,6 @@ func (m *Manager) startDepositFsm(deposit *Deposit) error {
 func (m *Manager) finalizeDeposit(outpoint wire.OutPoint) {
 	m.Lock()
 	delete(m.activeDeposits, outpoint)
-	delete(m.deposits, outpoint)
 	m.Unlock()
 }
 
@@ -456,7 +455,8 @@ func (m *Manager) GetAllDeposits() ([]*Deposit, error) {
 }
 
 // AllOutpointsActiveDeposits checks if all deposits referenced by the outpoints
-// are active and in the specified state.
+// are active and in the specified state. If fsm.EmptyState is reference as
+// stateFilter all deposits are returned regardless of their state.
 func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	stateFilter fsm.StateType) ([]*Deposit, bool) {
 
@@ -470,7 +470,9 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 		}
 
 		deposit := m.deposits[o]
-		if deposit.GetState() != stateFilter {
+		if stateFilter != fsm.EmptyState &&
+			deposit.GetState() != stateFilter {
+
 			return nil, false
 		}
 
@@ -478,6 +480,22 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	}
 
 	return deposits, true
+}
+
+func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
+	stateFilter fsm.StateType) ([]*Deposit, bool) {
+
+	outPoints := make([]wire.OutPoint, len(outpoints))
+	for i, o := range outpoints {
+		op, err := wire.NewOutPointFromString(o)
+		if err != nil {
+			return nil, false
+		}
+
+		outPoints[i] = *op
+	}
+
+	return m.AllOutpointsActiveDeposits(outPoints, stateFilter)
 }
 
 // TransitionDeposits allows a caller to transition a set of deposits to a new

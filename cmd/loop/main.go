@@ -272,6 +272,13 @@ func displayInDetails(req *looprpc.QuoteRequest,
 			"wallet.\n\n")
 	}
 
+	if req.DepositOutpoints != nil {
+		fmt.Printf("On-chain fees for static address loop-ins is not " +
+			"included.\nThey were already paid when the deposits " +
+			"were created.\n\n")
+
+	}
+
 	printQuoteInResp(req, resp, verbose)
 
 	fmt.Printf("\nCONTINUE SWAP? (y/n): ")

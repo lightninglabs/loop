@@ -28,6 +28,7 @@ import (
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -91,6 +92,7 @@ type swapClientServer struct {
 	staticAddressManager *address.Manager
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
+	staticLoopInManager  *loopin.Manager
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo
@@ -1461,6 +1463,44 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	)
 }
 
+// StaticAddressLoopIn initiates a loop-in request using static address
+// deposits.
+func (s *swapClientServer) StaticAddressLoopIn(_ context.Context,
+	in *clientrpc.StaticAddressLoopInRequest) (
+	*clientrpc.StaticAddressLoopInResponse, error) {
+
+	log.Infof("Static loop-in request received")
+
+	routeHints, err := unmarshallRouteHints(in.RouteHints)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: in.Outpoints,
+		MaxSwapFee:       btcutil.Amount(in.MaxSwapFee),
+		Label:            in.Label,
+		Initiator:        in.Initiator,
+		Private:          in.Private,
+		RouteHints:       routeHints,
+	}
+
+	if in.LastHop != nil {
+		lastHop, err := route.NewVertexFromBytes(in.LastHop)
+		if err != nil {
+			return nil, err
+		}
+		req.LastHop = &lastHop
+	}
+
+	err = s.staticLoopInManager.InitiateLoopIn(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientrpc.StaticAddressLoopInResponse{}, nil
+}
+
 func (s *swapClientServer) depositSummary(ctx context.Context,
 	deposits []*deposit.Deposit, stateFilter clientrpc.DepositState,
 	outpointsFilter []string) (*clientrpc.StaticAddressSummaryResponse,
@@ -1472,6 +1512,8 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 		valueDeposited   int64
 		valueExpired     int64
 		valueWithdrawn   int64
+		valueLoopedIn    int64
+		htlcTimeoutSwept int64
 	)
 
 	// Value unconfirmed.
@@ -1497,6 +1539,12 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 
 		case deposit.Withdrawn:
 			valueWithdrawn += value
+
+		case deposit.LoopedIn:
+			valueLoopedIn += value
+
+		case deposit.HtlcTimeoutSwept:
+			htlcTimeoutSwept += value
 		}
 	}
 
@@ -1525,7 +1573,7 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 				return true
 			}
 
-			return d.GetState() == toServerState(stateFilter)
+			return d.IsInState(toServerState(stateFilter))
 		}
 		clientDeposits = filter(deposits, f)
 	}
@@ -1543,13 +1591,15 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 	}
 
 	return &clientrpc.StaticAddressSummaryResponse{
-		StaticAddress:    address.String(),
-		TotalNumDeposits: uint32(totalNumDeposits),
-		ValueUnconfirmed: valueUnconfirmed,
-		ValueDeposited:   valueDeposited,
-		ValueExpired:     valueExpired,
-		ValueWithdrawn:   valueWithdrawn,
-		FilteredDeposits: clientDeposits,
+		StaticAddress:          address.String(),
+		TotalNumDeposits:       uint32(totalNumDeposits),
+		ValueUnconfirmed:       valueUnconfirmed,
+		ValueDeposited:         valueDeposited,
+		ValueExpired:           valueExpired,
+		ValueWithdrawn:         valueWithdrawn,
+		ValueLoopedIn:          valueLoopedIn,
+		ValueHtlcTimeoutSweeps: htlcTimeoutSwept,
+		FilteredDeposits:       clientDeposits,
 	}, nil
 }
 
@@ -1592,6 +1642,18 @@ func toClientState(state fsm.StateType) clientrpc.DepositState {
 	case deposit.PublishExpiredDeposit:
 		return clientrpc.DepositState_PUBLISH_EXPIRED
 
+	case deposit.LoopingIn:
+		return clientrpc.DepositState_LOOPING_IN
+
+	case deposit.LoopedIn:
+		return clientrpc.DepositState_LOOPED_IN
+
+	case deposit.SweepHtlcTimout:
+		return clientrpc.DepositState_SWEEP_HTLC_TIMEOUT
+
+	case deposit.HtlcTimeoutSwept:
+		return clientrpc.DepositState_HTLC_TIMEOUT_SWEPT
+
 	case deposit.WaitForExpirySweep:
 		return clientrpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
 
@@ -1616,6 +1678,18 @@ func toServerState(state clientrpc.DepositState) fsm.StateType {
 
 	case clientrpc.DepositState_WITHDRAWN:
 		return deposit.Withdrawn
+
+	case clientrpc.DepositState_LOOPING_IN:
+		return deposit.LoopingIn
+
+	case clientrpc.DepositState_LOOPED_IN:
+		return deposit.LoopedIn
+
+	case clientrpc.DepositState_SWEEP_HTLC_TIMEOUT:
+		return deposit.SweepHtlcTimout
+
+	case clientrpc.DepositState_HTLC_TIMEOUT_SWEPT:
+		return deposit.HtlcTimeoutSwept
 
 	case clientrpc.DepositState_PUBLISH_EXPIRED:
 		return deposit.PublishExpiredDeposit

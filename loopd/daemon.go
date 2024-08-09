@@ -23,6 +23,7 @@ import (
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
@@ -513,6 +514,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticAddressManager *address.Manager
 		depositManager       *deposit.Manager
 		withdrawalManager    *withdraw.Manager
+		staticLoopInManager  *loopin.Manager
 	)
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
@@ -589,6 +591,28 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			Signer:                    d.lnd.Signer,
 		}
 		withdrawalManager = withdraw.NewManager(withdrawalCfg)
+
+		// Static address loop-in manager setup.
+		staticAddressLoopInStore := loopin.NewSqlStore(
+			loopdb.NewTypedStore[loopin.Querier](baseDb),
+			clock.NewDefaultClock(), d.lnd.ChainParams,
+		)
+
+		loopinCfg := &loopin.Config{
+			StaticAddressServerClient: staticAddressClient,
+			SwapClient:                swapClient,
+			LndClient:                 d.lnd.Client,
+			InvoicesClient:            d.lnd.Invoices,
+			NodePubkey:                d.lnd.NodePubkey,
+			AddressManager:            staticAddressManager,
+			DepositManager:            depositManager,
+			Store:                     staticAddressLoopInStore,
+			WalletKit:                 d.lnd.WalletKit,
+			ChainNotifier:             d.lnd.ChainNotifier,
+			ChainParams:               d.lnd.ChainParams,
+			Signer:                    d.lnd.Signer,
+		}
+		staticLoopInManager = loopin.NewManager(loopinCfg)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -607,6 +631,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticAddressManager: staticAddressManager,
 		depositManager:       depositManager,
 		withdrawalManager:    withdrawalManager,
+		staticLoopInManager:  staticLoopInManager,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -762,6 +787,33 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				"stopped")
 		}()
 		withdrawalManager.WaitInitComplete()
+	}
+
+	// Start the static address loop-in manager.
+	if staticLoopInManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address loop-in manager...")
+			err = staticLoopInManager.Run(
+				d.mainCtx, info.BlockHeight,
+			)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Starting static address loop-in manager " +
+				"stopped")
+		}()
+		staticLoopInManager.WaitInitComplete()
 	}
 
 	// Last, start our internal error handler. This will return exactly one
