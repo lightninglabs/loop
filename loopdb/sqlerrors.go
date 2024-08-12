@@ -30,7 +30,7 @@ func MapSQLError(err error) error {
 	return err
 }
 
-// parsePostgresError attempts to parse a sqlite error as a database agnostic
+// parseSqliteError attempts to parse a sqlite error as a database agnostic
 // SQL error.
 func parseSqliteError(sqliteErr *sqlite.Error) error {
 	switch sqliteErr.Code() {

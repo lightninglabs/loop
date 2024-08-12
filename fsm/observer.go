@@ -200,7 +200,7 @@ type FixedSizeSlice[T any] struct {
 	sync.Mutex
 }
 
-// NewFixedSlice initializes a new FixedSlice with a given maximum length.
+// NewFixedSizeSlice initializes a new FixedSlice with a given maximum length.
 func NewFixedSizeSlice[T any](maxLen int) *FixedSizeSlice[T] {
 	return &FixedSizeSlice[T]{
 		data:   make([]T, 0, maxLen),

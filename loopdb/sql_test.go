@@ -283,7 +283,7 @@ func testSqliteLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	require.NoError(t, err)
 }
 
-// TestLiquidityParams checks that reading and writing to liquidty bucket are
+// TestSqliteLiquidityParams checks that reading and writing to liquidty bucket are
 // as expected.
 func TestSqliteLiquidityParams(t *testing.T) {
 	ctxb := context.Background()
