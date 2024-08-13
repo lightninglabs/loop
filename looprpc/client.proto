@@ -143,6 +143,11 @@ service SwapClient {
     */
     rpc ListInstantOuts (ListInstantOutsRequest)
         returns (ListInstantOutsResponse);
+
+    rpc HyperLoopOut (HyperLoopOutRequest) returns (HyperLoopOutResponse);
+
+    rpc ListHyperLoopOuts (ListHyperLoopOutsRequest)
+        returns (ListHyperLoopOutsResponse);
 }
 
 message LoopOutRequest {
@@ -1439,4 +1444,29 @@ message InstantOut {
     The sweep transaction id of the swap.
     */
     string sweep_tx_id = 5;
+}
+
+message HyperLoopOutRequest {
+    uint64 amt = 1;
+    bool private = 2;
+    int64 private_publish_time = 3;
+    string custom_sweep_addr = 4;
+}
+
+message HyperLoopOutResponse {
+    bytes id_bytes = 1;
+}
+
+message ListHyperLoopOutsRequest {
+}
+
+message ListHyperLoopOutsResponse {
+    repeated HyperLoopOut swaps = 1;
+}
+
+message HyperLoopOut {
+    bytes id_bytes = 1;
+    uint64 amt = 2;
+    string state = 3;
+    string server_message = 4;
 }
