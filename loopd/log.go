@@ -6,6 +6,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/hyperloop"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/liquidity"
@@ -53,6 +54,9 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	)
 	lnd.AddSubLogger(
 		root, sweep.Subsystem, intercept, sweep.UseLogger,
+	)
+	lnd.AddSubLogger(
+		root, hyperloop.Subsystem, intercept, hyperloop.UseLogger,
 	)
 }
 
