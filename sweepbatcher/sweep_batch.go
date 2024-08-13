@@ -19,7 +19,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	sweeppkg "github.com/lightninglabs/loop/sweep"
@@ -151,6 +150,10 @@ type batchConfig struct {
 	// noBumping instructs sweepbatcher not to fee bump itself and rely on
 	// external source of fee rates (FeeRateProvider).
 	noBumping bool
+
+	// txLabeler is a function generating a transaction label. It is called
+	// before publishing a batch transaction. Batch ID is passed to it.
+	txLabeler func(batchID int32) string
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -904,7 +907,7 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 	b.debugLogTx("serialized non-coop sweep", batchTx)
 
 	err = b.wallet.PublishTransaction(
-		ctx, batchTx, labels.LoopOutBatchSweepSuccess(b.id),
+		ctx, batchTx, b.cfg.txLabeler(b.id),
 	)
 	if err != nil {
 		return fee, err
@@ -1053,7 +1056,7 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 	b.debugLogTx("serialized coop sweep", batchTx)
 
 	err = b.wallet.PublishTransaction(
-		ctx, batchTx, labels.LoopOutBatchSweepSuccess(b.id),
+		ctx, batchTx, b.cfg.txLabeler(b.id),
 	)
 	if err != nil {
 		return fee, err, true

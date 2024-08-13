@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
@@ -276,6 +277,10 @@ type Batcher struct {
 	// ignored and fee bumping by sweepbatcher is disabled.
 	customFeeRate FeeRateProvider
 
+	// txLabeler is a function generating a transaction label. It is called
+	// before publishing a batch transaction. Batch ID is passed to it.
+	txLabeler func(batchID int32) string
+
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
 	// Note that musig2SignSweep must be nil in this case, however signer
@@ -306,6 +311,10 @@ type BatcherConfig struct {
 	// max of the fee rates of its swaps. In this mode confTarget is
 	// ignored and fee bumping by sweepbatcher is disabled.
 	customFeeRate FeeRateProvider
+
+	// txLabeler is a function generating a transaction label. It is called
+	// before publishing a batch transaction. Batch ID is passed to it.
+	txLabeler func(batchID int32) string
 
 	// customMuSig2Signer is a custom signer. If it is set, it is used to
 	// create musig2 signatures instead of musig2SignSweep and signerClient.
@@ -357,6 +366,15 @@ func WithCustomFeeRate(customFeeRate FeeRateProvider) BatcherOption {
 	}
 }
 
+// WithTxLabeler sets a function generating a transaction label. It is called
+// before publishing a batch transaction. Batch ID is passed to the function.
+// By default, loop/labels.LoopOutBatchSweepSuccess is used.
+func WithTxLabeler(txLabeler func(batchID int32) string) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.txLabeler = txLabeler
+	}
+}
+
 // WithCustomSignMuSig2 instructs sweepbatcher to use a custom function to
 // produce MuSig2 signatures. If it is set, it is used to create
 // musig2 signatures instead of musig2SignSweep and signerClient. Note
@@ -376,7 +394,11 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	store BatcherStore, sweepStore SweepFetcher,
 	opts ...BatcherOption) *Batcher {
 
-	var cfg BatcherConfig
+	cfg := BatcherConfig{
+		// By default, loop/labels.LoopOutBatchSweepSuccess is used
+		// to label sweep transactions.
+		txLabeler: labels.LoopOutBatchSweepSuccess,
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -409,6 +431,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		initialDelay:       cfg.initialDelay,
 		publishDelay:       cfg.publishDelay,
 		customFeeRate:      cfg.customFeeRate,
+		txLabeler:          cfg.txLabeler,
 		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
 }
@@ -1024,6 +1047,7 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 	return batchConfig{
 		maxTimeoutDistance: maxTimeoutDistance,
 		noBumping:          b.customFeeRate != nil,
+		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
 		clock:              b.clock,
 	}
