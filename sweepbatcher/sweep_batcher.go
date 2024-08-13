@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -44,7 +45,7 @@ const (
 
 	// defaultTestnetPublishDelay is the default publish delay that is used
 	// for testnet.
-	defaultPublishDelay = 500 * time.Millisecond
+	defaultTestnetPublishDelay = 500 * time.Millisecond
 )
 
 type BatcherStore interface {
@@ -253,6 +254,23 @@ type Batcher struct {
 	// exit.
 	wg sync.WaitGroup
 
+	// clock provides methods to work with time and timers.
+	clock clock.Clock
+
+	// initialDelay is the delay of first batch publishing after creation.
+	// It only affects newly created batches, not batches loaded from DB,
+	// so publishing does happen in case of a daemon restart (especially
+	// important in case of a crashloop). If a sweep is about to expire
+	// (time until timeout is less that 2x initialDelay), then waiting is
+	// skipped.
+	initialDelay time.Duration
+
+	// publishDelay is the delay of batch publishing that is applied in the
+	// beginning, after the appearance of a new block in the network or
+	// after the end of initial delay. For batches recovered from DB this
+	// value is always 0s, regardless of this setting.
+	publishDelay time.Duration
+
 	// customFeeRate provides custom min fee rate per swap. The batch uses
 	// max of the fee rates of its swaps. In this mode confTarget is
 	// ignored and fee bumping by sweepbatcher is disabled.
@@ -267,6 +285,23 @@ type Batcher struct {
 
 // BatcherConfig holds batcher configuration.
 type BatcherConfig struct {
+	// clock provides methods to work with time and timers.
+	clock clock.Clock
+
+	// initialDelay is the delay of first batch publishing after creation.
+	// It only affects newly created batches, not batches loaded from DB,
+	// so publishing does happen in case of a daemon restart (especially
+	// important in case of a crashloop). If a sweep is about to expire
+	// (time until timeout is less that 2x initialDelay), then waiting is
+	// skipped.
+	initialDelay time.Duration
+
+	// publishDelay is the delay of batch publishing that is applied in the
+	// beginning, after the appearance of a new block in the network or
+	// after the end of initial delay. For batches recovered from DB this
+	// value is always 0s, regardless of this setting.
+	publishDelay time.Duration
+
 	// customFeeRate provides custom min fee rate per swap. The batch uses
 	// max of the fee rates of its swaps. In this mode confTarget is
 	// ignored and fee bumping by sweepbatcher is disabled.
@@ -281,6 +316,37 @@ type BatcherConfig struct {
 
 // BatcherOption configures batcher behaviour.
 type BatcherOption func(*BatcherConfig)
+
+// WithClock sets the clock used by sweepbatcher and its batches. It is needed
+// to manipulate time in tests.
+func WithClock(clock clock.Clock) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.clock = clock
+	}
+}
+
+// WithInitialDelay instructs sweepbatcher to wait for the duration provided
+// after new batch creation before it is first published. This facilitates
+// better grouping. Defaults to 0s (no initial delay). If a sweep is about
+// to expire (time until timeout is less that 2x initialDelay), then waiting
+// is skipped.
+func WithInitialDelay(initialDelay time.Duration) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.initialDelay = initialDelay
+	}
+}
+
+// WithPublishDelay sets the delay of batch publishing that is applied in the
+// beginning, after the appearance of a new block in the network or after the
+// end of initial delay (see WithInitialDelay). It is needed to prevent
+// unnecessary transaction publishments when a spend is detected on that block.
+// Default value depends on the network: 5 seconds in mainnet, 0.5s in testnet.
+// For batches recovered from DB this value is always 0s.
+func WithPublishDelay(publishDelay time.Duration) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.publishDelay = publishDelay
+	}
+}
 
 // WithCustomFeeRate instructs sweepbatcher not to fee bump itself and rely on
 // external source of fee rates (FeeRateProvider). To apply a fee rate change,
@@ -315,6 +381,11 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		opt(&cfg)
 	}
 
+	// If WithClock was not provided, use default clock.
+	if cfg.clock == nil {
+		cfg.clock = clock.NewDefaultClock()
+	}
+
 	if cfg.customMuSig2Signer != nil && musig2ServerSigner != nil {
 		panic("customMuSig2Signer must not be used with " +
 			"musig2ServerSigner")
@@ -334,6 +405,9 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		chainParams:        chainparams,
 		store:              store,
 		sweepStore:         sweepStore,
+		clock:              cfg.clock,
+		initialDelay:       cfg.initialDelay,
+		publishDelay:       cfg.publishDelay,
 		customFeeRate:      cfg.customFeeRate,
 		customMuSig2Signer: cfg.customMuSig2Signer,
 	}
@@ -536,8 +610,22 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		cfg.batchPublishDelay = defaultMainnetPublishDelay
 
 	default:
-		cfg.batchPublishDelay = defaultPublishDelay
+		cfg.batchPublishDelay = defaultTestnetPublishDelay
 	}
+
+	if b.publishDelay != 0 {
+		if b.publishDelay < 0 {
+			return nil, fmt.Errorf("negative publishDelay: %v",
+				b.publishDelay)
+		}
+		cfg.batchPublishDelay = b.publishDelay
+	}
+
+	if b.initialDelay < 0 {
+		return nil, fmt.Errorf("negative initialDelay: %v",
+			b.initialDelay)
+	}
+	cfg.initialDelay = b.initialDelay
 
 	batchKit := b.newBatchKit()
 
@@ -626,6 +714,9 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	cfg := b.newBatchConfig(batch.cfg.maxTimeoutDistance)
 
+	// Note that initialDelay and batchPublishDelay are 0 for batches
+	// recovered from DB so publishing happen in case of a daemon restart
+	// (especially important in case of a crashloop).
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
 	if err != nil {
 		return fmt.Errorf("failed in NewBatchFromDB: %w", err)
@@ -934,6 +1025,7 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		maxTimeoutDistance: maxTimeoutDistance,
 		noBumping:          b.customFeeRate != nil,
 		customMuSig2Signer: b.customMuSig2Signer,
+		clock:              b.clock,
 	}
 }
 
