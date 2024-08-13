@@ -106,6 +106,8 @@ type SwapClientClient interface {
 	// ListInstantOuts returns a list of all currently known instant out swaps and
 	// their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
+	HyperLoopOut(ctx context.Context, in *HyperLoopOutRequest, opts ...grpc.CallOption) (*HyperLoopOutResponse, error)
+	ListHyperLoopOuts(ctx context.Context, in *ListHyperLoopOutsRequest, opts ...grpc.CallOption) (*ListHyperLoopOutsResponse, error)
 }
 
 type swapClientClient struct {
@@ -337,6 +339,24 @@ func (c *swapClientClient) ListInstantOuts(ctx context.Context, in *ListInstantO
 	return out, nil
 }
 
+func (c *swapClientClient) HyperLoopOut(ctx context.Context, in *HyperLoopOutRequest, opts ...grpc.CallOption) (*HyperLoopOutResponse, error) {
+	out := new(HyperLoopOutResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/HyperLoopOut", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) ListHyperLoopOuts(ctx context.Context, in *ListHyperLoopOutsRequest, opts ...grpc.CallOption) (*ListHyperLoopOutsResponse, error) {
+	out := new(ListHyperLoopOutsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListHyperLoopOuts", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -429,6 +449,8 @@ type SwapClientServer interface {
 	// ListInstantOuts returns a list of all currently known instant out swaps and
 	// their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
+	HyperLoopOut(context.Context, *HyperLoopOutRequest) (*HyperLoopOutResponse, error)
+	ListHyperLoopOuts(context.Context, *ListHyperLoopOutsRequest) (*ListHyperLoopOutsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -501,6 +523,12 @@ func (UnimplementedSwapClientServer) InstantOutQuote(context.Context, *InstantOu
 }
 func (UnimplementedSwapClientServer) ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListInstantOuts not implemented")
+}
+func (UnimplementedSwapClientServer) HyperLoopOut(context.Context, *HyperLoopOutRequest) (*HyperLoopOutResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HyperLoopOut not implemented")
+}
+func (UnimplementedSwapClientServer) ListHyperLoopOuts(context.Context, *ListHyperLoopOutsRequest) (*ListHyperLoopOutsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListHyperLoopOuts not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -914,6 +942,42 @@ func _SwapClient_ListInstantOuts_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_HyperLoopOut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HyperLoopOutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).HyperLoopOut(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/HyperLoopOut",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).HyperLoopOut(ctx, req.(*HyperLoopOutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_ListHyperLoopOuts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListHyperLoopOutsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListHyperLoopOuts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListHyperLoopOuts",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListHyperLoopOuts(ctx, req.(*ListHyperLoopOutsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1004,6 +1068,14 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInstantOuts",
 			Handler:    _SwapClient_ListInstantOuts_Handler,
+		},
+		{
+			MethodName: "HyperLoopOut",
+			Handler:    _SwapClient_HyperLoopOut_Handler,
+		},
+		{
+			MethodName: "ListHyperLoopOuts",
+			Handler:    _SwapClient_ListHyperLoopOuts_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
