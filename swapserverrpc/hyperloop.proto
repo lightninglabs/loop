@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service HyperloopServer {
+    rpc HyperloopNotificationStream (HyperloopNotificationStreamRequest)
+        returns (stream HyperloopNotificationStreamResponse);
+    rpc GetPendingHyperloop (GetPendingHyperloopRequest)
+        returns (GetPendingHyperloopResponse);
+    rpc RegisterHyperloop (RegisterHyperloopRequest)
+        returns (RegisterHyperloopResponse);
+    rpc FetchHyperloopHtlcFeeRates (FetchHyperloopHtlcFeeRatesRequest)
+        returns (FetchHyperloopHtlcFeeRatesResponse);
+    rpc FetchHyperloopParticipants (FetchHyperloopParticipantsRequest)
+        returns (FetchHyperloopParticipantsResponse);
+    rpc PushHyperloopHtlcNonces (PushHyperloopHtlcNoncesRequest)
+        returns (PushHyperloopHtlcNoncesResponse);
+    rpc FetchHyperloopHtlcNonces (FetchHyperloopHtlcNoncesRequest)
+        returns (FetchHyperloopHtlcNoncesResponse);
+    rpc PushHyperloopHtlcSigs (PushHyperloopHtlcSigRequest)
+        returns (PushHyperloopHtlcSigResponse);
+    rpc FetchHyperloopHtlcSigs (FetchHyperloopHtlcSigRequest)
+        returns (FetchHyperloopHtlcSigResponse);
+    rpc PushHyperloopPreimage (PushHyperloopPreimageRequest)
+        returns (PushHyperloopPreimageResponse);
+    rpc FetchHyperloopSweeplessSweepNonce (
+        FetchHyperloopSweeplessSweepNonceRequest)
+        returns (FetchHyperloopSweeplessSweepNonceResponse);
+    rpc PushHyperloopSweeplessSweepSig (PushHyperloopSweeplessSweepSigRequest)
+        returns (PushHyperloopSweeplessSweepSigResponse);
+}
+
+message HyperloopNotificationStreamRequest {
+    bytes hyperloop_id = 1;
+}
+
+enum HyperloopStatus {
+    UNDEFINED = 0;
+    PENDING = 1;
+    PUBLISHED = 2;
+    WAIT_FOR_HTLC_NONCES = 3;
+    WAIT_FOR_HTLC_SIGS = 4;
+    WAIT_FOR_PREIMAGES = 5;
+    WAIT_FOR_SWEEPLESS_SWEEP_SIGS = 6;
+    SWEEPLESS_SWEEP_PUBLISHED = 7;
+    SWEEPLESS_SWEEP_CONFIRMED = 8;
+    HYPERLOOP_FAILED = 9;
+}
+
+message HyperloopNotificationStreamResponse {
+    HyperloopStatus status = 1;
+}
+
+message GetPendingHyperloopRequest {
+}
+
+message GetPendingHyperloopResponse {
+    PendingHyperloop pending_private_hyperloop = 1;
+}
+
+message PendingHyperloop {
+    bytes hyperloop_id = 1;
+    int64 publish_deadline_unix = 2;
+    int32 participant_count = 3;
+}
+
+message RegisterHyperloopRequest {
+    bytes receiver_key = 1;
+    bytes swap_hash = 2;
+    int64 amt = 3;
+    int64 hyperloop_publish_time_unix = 4;
+    string sweep_addr = 5;
+    bool private = 6;
+}
+
+message RegisterHyperloopResponse {
+    bytes hyperloop_id = 1;
+    bytes server_key = 2;
+    int32 htlc_cltv_expiry = 3;
+    int32 hyperloop_csv_expiry = 4;
+    string invoice = 5;
+}
+
+message FetchHyperloopHtlcFeeRatesRequest {
+    bytes hyperloop_id = 1;
+}
+
+message FetchHyperloopHtlcFeeRatesResponse {
+    repeated int64 htlc_fee_rates = 1;
+}
+
+message FetchHyperloopParticipantsRequest {
+    bytes hyperloop_id = 1;
+}
+
+message FetchHyperloopParticipantsResponse {
+    repeated HyperloopParticipant participants = 1;
+}
+
+message HyperloopParticipant {
+    bytes public_key = 1;
+    string sweep_addr = 2;
+}
+
+message PushHyperloopHtlcNoncesRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    map<int64, bytes> htlc_nonces = 3;
+}
+
+message PushHyperloopHtlcNoncesResponse {
+    map<int64, bytes> server_htlc_nonces = 1;
+    map<int64, bytes> htlc_raw_txns = 2;
+}
+
+message FetchHyperloopHtlcNoncesRequest {
+    bytes hyperloop_id = 1;
+}
+
+message ParticipantNonces {
+    repeated bytes participant_nonce = 1;
+}
+
+message FetchHyperloopHtlcNoncesResponse {
+    map<int64, ParticipantNonces> htlc_nonces_by_fees = 1;
+}
+
+message PushHyperloopHtlcSigRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    map<int64, bytes> htlc_sigs = 3;
+}
+
+message PushHyperloopHtlcSigResponse {
+}
+
+message FetchHyperloopHtlcSigRequest {
+    bytes hyperloop_id = 1;
+}
+
+message FetchHyperloopHtlcSigResponse {
+    map<int64, bytes> htlc_sigs_by_fees = 1;
+}
+
+message PushHyperloopPreimageRequest {
+    bytes hyperloop_id = 1;
+    bytes preimage = 2;
+    bytes sweep_nonce = 3;
+}
+
+message PushHyperloopPreimageResponse {
+    bytes server_sweep_nonce = 1;
+    bytes sweep_raw_tx = 2;
+    int64 sweep_fee_rate = 3;
+}
+
+message FetchHyperloopSweeplessSweepNonceRequest {
+    bytes hyperloop_id = 1;
+}
+
+message FetchHyperloopSweeplessSweepNonceResponse {
+    repeated bytes sweepless_sweep_nonces = 1;
+}
+
+message PushHyperloopSweeplessSweepSigRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    bytes sweep_sig = 3;
+}
+
+message PushHyperloopSweeplessSweepSigResponse {
+}
