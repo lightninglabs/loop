@@ -16,6 +16,7 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/hyperloop"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopd/perms"
@@ -450,6 +451,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient.Conn,
 	)
 
+	// Create a hyperloop server client.
+	hyperloopClient := loop_swaprpc.NewHyperloopServerClient(
+		swapClient.Conn,
+	)
+
 	// Both the client RPC server and the swap server client should stop
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
@@ -529,6 +535,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
+		hyperloopManager   *hyperloop.Manager
 	)
 
 	// Create the reservation and instantout managers.
@@ -569,6 +576,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig,
 		)
+
+		hyperloopConfig := &hyperloop.Config{
+			Wallet:          d.lnd.WalletKit,
+			ChainNotifier:   d.lnd.ChainNotifier,
+			Signer:          d.lnd.Signer,
+			Router:          d.lnd.Router,
+			HyperloopClient: hyperloopClient,
+			ChainParams:     d.lnd.ChainParams,
+		}
+		hyperloopManager = hyperloop.NewManager(hyperloopConfig)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -584,6 +601,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		mainCtx:            d.mainCtx,
 		reservationManager: reservationManager,
 		instantOutManager:  instantOutManager,
+		hyperloopManager:   hyperloopManager,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -726,6 +744,34 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
+	}
+
+	// Start the hyperloop manager.
+	if d.hyperloopManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			log.Info("Starting hyperloop manager")
+			defer log.Info("Hyperloop manager stopped")
+
+			// We need to know the current block height to properly
+			// initialize the hyperloop manager.
+			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			err = d.hyperloopManager.Run(
+				d.mainCtx, int32(getInfo.BlockHeight),
+			)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Errorf("Error running hyperloop manager:"+
+					" %v", err)
+				d.internalErrChan <- err
+			}
+		}()
 	}
 
 	// Last, start our internal error handler. This will return exactly one
