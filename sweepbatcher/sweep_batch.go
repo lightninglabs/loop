@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -107,6 +109,11 @@ type sweep struct {
 	// has to be spent using preimage. This is only used in fee estimations
 	// when selecting a batch for the sweep to minimize fees.
 	nonCoopHint bool
+
+	// coopFailed is set, if we have tried to spend the sweep cooperatively,
+	// but it failed. We try to spend a sweep cooperatively only once. This
+	// status is not persisted in the DB.
+	coopFailed bool
 }
 
 // batchState is the state of the batch.
@@ -160,6 +167,16 @@ type batchConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// mixedBatch instructs sweepbatcher to create mixed batches with regard
+	// to cooperativeness. Such a batch can include sweeps signed both
+	// cooperatively and non-cooperatively. If cooperative signing fails for
+	// a sweep, transaction is updated to sign that sweep non-cooperatively
+	// and another round of cooperative signing runs on the remaining
+	// sweeps. The remaining sweeps are signed in non-cooperative (more
+	// expensive) way. If the whole procedure fails for whatever reason, the
+	// batch is signed non-cooperatively (the fallback).
+	mixedBatch bool
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -421,13 +438,18 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 
 	// Before we run through the acceptance checks, let's just see if this
 	// sweep is already in our batch. In that case, just update the sweep.
-	_, ok := b.sweeps[sweep.swapHash]
+	oldSweep, ok := b.sweeps[sweep.swapHash]
 	if ok {
+		// Preserve coopFailed value not to forget about cooperative
+		// spending failure in this sweep.
+		tmp := *sweep
+		tmp.coopFailed = oldSweep.coopFailed
+
 		// If the sweep was resumed from storage, and the swap requested
 		// to sweep again, a new sweep notifier will be created by the
 		// swap. By re-assigning to the batch's sweep we make sure that
 		// everything, including the notifier, is up to date.
-		b.sweeps[sweep.swapHash] = *sweep
+		b.sweeps[sweep.swapHash] = tmp
 
 		// If this is the primary sweep, we also need to update the
 		// batch's confirmation target and fee rate.
@@ -724,7 +746,7 @@ func (b *batch) publish(ctx context.Context) error {
 	var (
 		err         error
 		fee         btcutil.Amount
-		coopSuccess bool
+		signSuccess bool
 	)
 
 	if len(b.sweeps) == 0 {
@@ -739,12 +761,19 @@ func (b *batch) publish(ctx context.Context) error {
 		return err
 	}
 
-	fee, err, coopSuccess = b.publishBatchCoop(ctx)
-	if err != nil {
-		b.log.Warnf("co-op publish error: %v", err)
+	if b.cfg.mixedBatch {
+		fee, err, signSuccess = b.publishMixedBatch(ctx)
+		if err != nil {
+			b.log.Warnf("Mixed batch publish error: %v", err)
+		}
+	} else {
+		fee, err, signSuccess = b.publishBatchCoop(ctx)
+		if err != nil {
+			b.log.Warnf("co-op publish error: %v", err)
+		}
 	}
 
-	if !coopSuccess {
+	if !signSuccess {
 		fee, err = b.publishBatch(ctx)
 	}
 	if err != nil {
@@ -922,6 +951,47 @@ func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
 	return fee, nil
 }
 
+// createPsbt creates serialized PSBT and prevOuts map from unsignedTx and
+// the list of sweeps.
+func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
+	map[wire.OutPoint]*wire.TxOut, error) {
+
+	// Create PSBT packet object.
+	packet, err := psbt.NewFromUnsignedTx(unsignedTx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create PSBT: %w", err)
+	}
+
+	// Sanity check: the number of inputs in PSBT must be equal to the
+	// number of sweeps.
+	if len(packet.Inputs) != len(sweeps) {
+		return nil, nil, fmt.Errorf("invalid number of packet inputs")
+	}
+
+	// Create prevOuts map.
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(sweeps))
+
+	// Fill input info in PSBT and prevOuts.
+	for i, sweep := range sweeps {
+		txOut := &wire.TxOut{
+			Value:    int64(sweep.value),
+			PkScript: sweep.htlc.PkScript,
+		}
+
+		prevOuts[sweep.outpoint] = txOut
+		packet.Inputs[i].WitnessUtxo = txOut
+	}
+
+	// Serialize PSBT.
+	var psbtBuf bytes.Buffer
+	err = packet.Serialize(&psbtBuf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to serialize PSBT: %w", err)
+	}
+
+	return psbtBuf.Bytes(), prevOuts, nil
+}
+
 // publishBatchCoop attempts to construct and publish a batch transaction that
 // collects all the required signatures interactively from the server. This
 // helps with collecting the funds immediately without revealing any information
@@ -1013,36 +1083,15 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 		Value:    int64(batchAmt - fee),
 	})
 
-	packet, err := psbt.NewFromUnsignedTx(batchTx)
-	if err != nil {
-		return fee, err, false
-	}
-
-	if len(packet.Inputs) != len(sweeps) {
-		return fee, fmt.Errorf("invalid number of packet inputs"), false
-	}
-
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
-
-	for i, sweep := range sweeps {
-		txOut := &wire.TxOut{
-			Value:    int64(sweep.value),
-			PkScript: sweep.htlc.PkScript,
-		}
-
-		prevOuts[sweep.outpoint] = txOut
-		packet.Inputs[i].WitnessUtxo = txOut
-	}
-
-	var psbtBuf bytes.Buffer
-	err = packet.Serialize(&psbtBuf)
+	// Create PSBT and prevOuts.
+	psbtBytes, prevOuts, err := b.createPsbt(batchTx, sweeps)
 	if err != nil {
 		return fee, err, false
 	}
 
 	// Attempt to cooperatively sign the batch tx with the server.
 	err = b.coopSignBatchTx(
-		ctx, packet, sweeps, prevOuts, psbtBuf.Bytes(),
+		ctx, batchTx, sweeps, prevOuts, psbtBytes,
 	)
 	if err != nil {
 		return fee, err, false
@@ -1071,6 +1120,361 @@ func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
 	return fee, nil, true
 }
 
+// constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
+// It also returns absolute fee (from weight and clamped).
+func (b *batch) constructUnsignedTx(sweeps []sweep,
+	address btcutil.Address) (*wire.MsgTx, lntypes.WeightUnit,
+	btcutil.Amount, btcutil.Amount, error) {
+
+	// Sanity check, there should be at least 1 sweep in this batch.
+	if len(sweeps) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("no sweeps in batch")
+	}
+
+	// Create the batch transaction.
+	batchTx := &wire.MsgTx{
+		Version:  2,
+		LockTime: uint32(b.currentHeight),
+	}
+
+	// Add transaction inputs and estimate its weight.
+	var weightEstimate input.TxWeightEstimator
+	for _, sweep := range sweeps {
+		if sweep.nonCoopHint || sweep.coopFailed {
+			// Non-cooperative sweep.
+			batchTx.AddTxIn(&wire.TxIn{
+				PreviousOutPoint: sweep.outpoint,
+				Sequence:         sweep.htlc.SuccessSequence(),
+			})
+
+			err := sweep.htlcSuccessEstimator(&weightEstimate)
+			if err != nil {
+				return nil, 0, 0, 0, fmt.Errorf("sweep."+
+					"htlcSuccessEstimator failed: %w", err)
+			}
+		} else {
+			// Cooperative sweep.
+			batchTx.AddTxIn(&wire.TxIn{
+				PreviousOutPoint: sweep.outpoint,
+			})
+
+			weightEstimate.AddTaprootKeySpendInput(
+				txscript.SigHashDefault,
+			)
+		}
+	}
+
+	// Convert the destination address to pkScript.
+	batchPkScript, err := txscript.PayToAddrScript(address)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("txscript.PayToAddrScript "+
+			"failed: %w", err)
+	}
+
+	// Add the output to weight estimates.
+	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("sweep.AddOutputEstimate "+
+			"failed: %w", err)
+	}
+
+	// Keep track of the total amount this batch is sweeping back.
+	batchAmt := btcutil.Amount(0)
+	for _, sweep := range sweeps {
+		batchAmt += sweep.value
+	}
+
+	// Find weight and fee.
+	weight := weightEstimate.Weight()
+	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
+
+	// Clamp the calculated fee to the max allowed fee amount for the batch.
+	fee := clampBatchFee(feeForWeight, batchAmt)
+
+	// Add the batch transaction output, which excludes the fees paid to
+	// miners.
+	batchTx.AddTxOut(&wire.TxOut{
+		PkScript: batchPkScript,
+		Value:    int64(batchAmt - fee),
+	})
+
+	return batchTx, weight, feeForWeight, fee, nil
+}
+
+// publishMixedBatch constructs and publishes a batch transaction that can
+// include sweeps spent both cooperatively and non-cooperatively. If a sweep is
+// marked with nonCoopHint or coopFailed flags, it is spent non-cooperatively.
+// If a cooperative sweep fails to sign cooperatively, the whole transaction
+// is re-signed again, with this sweep signing non-cooperatively. This process
+// is optimized, trying to detect all non-cooperative sweeps in one round. The
+// function returns the absolute fee. The last result of the function indicates
+// if signing succeeded.
+func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
+	bool) {
+
+	// Sanity check, there should be at least 1 sweep in this batch.
+	if len(b.sweeps) == 0 {
+		return 0, fmt.Errorf("no sweeps in batch"), false
+	}
+
+	// Append this sweep to an array of sweeps. This is needed to keep the
+	// order of sweeps stored, as iterating the sweeps map does not
+	// guarantee same order.
+	sweeps := make([]sweep, 0, len(b.sweeps))
+	for _, sweep := range b.sweeps {
+		sweeps = append(sweeps, sweep)
+	}
+
+	// Determine if an external address is used.
+	addrOverride := false
+	for _, sweep := range sweeps {
+		if sweep.isExternalAddr {
+			addrOverride = true
+		}
+	}
+
+	// Find destination address.
+	var address btcutil.Address
+	if addrOverride {
+		// Sanity check, there should be exactly 1 sweep in this batch.
+		if len(sweeps) != 1 {
+			return 0, fmt.Errorf("external address sweep batched " +
+				"with other sweeps"), false
+		}
+
+		address = sweeps[0].destAddr
+	} else {
+		var err error
+		address, err = b.getBatchDestAddr(ctx)
+		if err != nil {
+			return 0, err, false
+		}
+	}
+
+	// Each iteration of this loop is one attempt to sign the transaction
+	// cooperatively. We try cooperative signing only for the sweeps not
+	// known in advance to be non-cooperative (nonCoopHint) and not failed
+	// to sign cooperatively in previous rounds (coopFailed). If any of them
+	// fails, the sweep is excluded from all following rounds and another
+	// round is attempted. Otherwise the cycle completes and we sign the
+	// remaining sweeps non-cooperatively.
+	var (
+		tx           *wire.MsgTx
+		weight       lntypes.WeightUnit
+		feeForWeight btcutil.Amount
+		fee          btcutil.Amount
+		coopInputs   int
+	)
+	for attempt := 1; ; attempt++ {
+		b.log.Infof("Attempt %d of collecting cooperative signatures.",
+			attempt)
+
+		// Construct unsigned batch transaction.
+		var err error
+		tx, weight, feeForWeight, fee, err = b.constructUnsignedTx(
+			sweeps, address,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to construct tx: %w", err),
+				false
+		}
+
+		// Create PSBT and prevOutsMap.
+		psbtBytes, prevOutsMap, err := b.createPsbt(tx, sweeps)
+		if err != nil {
+			return 0, fmt.Errorf("createPsbt failed: %w", err),
+				false
+		}
+
+		// Keep track if any new sweep failed to sign cooperatively.
+		newCoopFailures := false
+
+		// Try to sign all cooperative sweeps first.
+		coopInputs = 0
+		for i, sweep := range sweeps {
+			// Skip non-cooperative sweeps.
+			if sweep.nonCoopHint || sweep.coopFailed {
+				continue
+			}
+
+			// Try to sign the sweep cooperatively.
+			finalSig, err := b.musig2sign(
+				ctx, i, sweep, tx, prevOutsMap, psbtBytes,
+			)
+			if err != nil {
+				b.log.Infof("cooperative signing failed for "+
+					"sweep %x: %v", sweep.swapHash[:6], err)
+
+				// Set coopFailed flag for this sweep in all the
+				// places we store the sweep.
+				sweep.coopFailed = true
+				sweeps[i] = sweep
+				b.sweeps[sweep.swapHash] = sweep
+
+				// Update newCoopFailures to know if we need
+				// another attempt of cooperative signing.
+				newCoopFailures = true
+			} else {
+				// Put the signature to witness of the input.
+				tx.TxIn[i].Witness = wire.TxWitness{finalSig}
+				coopInputs++
+			}
+		}
+
+		// If there was any failure of cooperative signing, we need to
+		// update weight estimates (since non-cooperative signing has
+		// larger witness) and hence update the whole transaction and
+		// all the signatures. Otherwise we complete cooperative part.
+		if !newCoopFailures {
+			break
+		}
+	}
+
+	// Calculate the expected number of non-cooperative sweeps.
+	nonCoopInputs := len(sweeps) - coopInputs
+
+	// Now sign the remaining sweeps' inputs non-cooperatively.
+	// For that, first collect sign descriptors for the signatures.
+	// Also collect prevOuts for all inputs.
+	signDescs := make([]*lndclient.SignDescriptor, 0, nonCoopInputs)
+	prevOutsList := make([]*wire.TxOut, 0, len(sweeps))
+	for i, sweep := range sweeps {
+		// Create and store the previous outpoint for this sweep.
+		prevOut := &wire.TxOut{
+			Value:    int64(sweep.value),
+			PkScript: sweep.htlc.PkScript,
+		}
+		prevOutsList = append(prevOutsList, prevOut)
+
+		// Skip cooperative sweeps.
+		if !sweep.nonCoopHint && !sweep.coopFailed {
+			continue
+		}
+
+		key, err := btcec.ParsePubKey(
+			sweep.htlcKeys.ReceiverScriptKey[:],
+		)
+		if err != nil {
+			return 0, fmt.Errorf("btcec.ParsePubKey failed: %w",
+				err), false
+		}
+
+		// Create and store the sign descriptor for this sweep.
+		signDesc := lndclient.SignDescriptor{
+			WitnessScript: sweep.htlc.SuccessScript(),
+			Output:        prevOut,
+			HashType:      sweep.htlc.SigHash(),
+			InputIndex:    i,
+			KeyDesc: keychain.KeyDescriptor{
+				PubKey: key,
+			},
+		}
+
+		if sweep.htlc.Version == swap.HtlcV3 {
+			signDesc.SignMethod = input.TaprootScriptSpendSignMethod
+		}
+
+		signDescs = append(signDescs, &signDesc)
+	}
+
+	// Sanity checks.
+	if len(signDescs) != nonCoopInputs {
+		// This must not happen by construction.
+		return 0, fmt.Errorf("unexpected size of signDescs: %d != %d",
+			len(signDescs), nonCoopInputs), false
+	}
+	if len(prevOutsList) != len(sweeps) {
+		// This must not happen by construction.
+		return 0, fmt.Errorf("unexpected size of prevOutsList: "+
+			"%d != %d", len(prevOutsList), len(sweeps)), false
+	}
+
+	var rawSigs [][]byte
+	if nonCoopInputs > 0 {
+		// Produce the signatures for our inputs using sign descriptors.
+		var err error
+		rawSigs, err = b.signerClient.SignOutputRaw(
+			ctx, tx, signDescs, prevOutsList,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("signerClient.SignOutputRaw "+
+				"failed: %w", err), false
+		}
+	}
+
+	// Sanity checks.
+	if len(rawSigs) != nonCoopInputs {
+		// This must not happen by construction.
+		return 0, fmt.Errorf("unexpected size of rawSigs: %d != %d",
+			len(rawSigs), nonCoopInputs), false
+	}
+
+	// Generate success witnesses for non-cooperative sweeps.
+	sigIndex := 0
+	for i, sweep := range sweeps {
+		// Skip cooperative sweeps.
+		if !sweep.nonCoopHint && !sweep.coopFailed {
+			continue
+		}
+
+		witness, err := sweep.htlc.GenSuccessWitness(
+			rawSigs[sigIndex], sweep.preimage,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("sweep.htlc.GenSuccessWitness "+
+				"failed: %w", err), false
+		}
+		sigIndex++
+
+		// Add the success witness to our batch transaction's inputs.
+		tx.TxIn[i].Witness = witness
+	}
+
+	// Log transaction's details.
+	var coopHexs, nonCoopHexs []string
+	for _, sweep := range sweeps {
+		swapHex := fmt.Sprintf("%x", sweep.swapHash[:6])
+		if sweep.nonCoopHint || sweep.coopFailed {
+			nonCoopHexs = append(nonCoopHexs, swapHex)
+		} else {
+			coopHexs = append(coopHexs, swapHex)
+		}
+	}
+	txHash := tx.TxHash()
+	b.log.Infof("attempting to publish mixed tx=%v with feerate=%v, "+
+		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, "+
+		"%d cooperative: (%s) and %d non-cooperative (%s), destAddr=%s",
+		txHash, b.rbfCache.FeeRate, weight, feeForWeight, fee,
+		len(tx.TxIn), coopInputs, strings.Join(coopHexs, ", "),
+		nonCoopInputs, strings.Join(nonCoopHexs, ", "), address)
+
+	b.debugLogTx("serialized mixed batch", tx)
+
+	// Make sure tx weight matches the expected value.
+	realWeight := lntypes.WeightUnit(
+		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+	)
+	if realWeight != weight {
+		b.log.Warnf("actual weight of tx %v is %v, estimated as %d",
+			txHash, realWeight, weight)
+	}
+
+	// Publish the transaction.
+	err := b.wallet.PublishTransaction(
+		ctx, tx, b.cfg.txLabeler(b.id),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("publishing tx failed: %w", err), true
+	}
+
+	// Store the batch transaction's txid and pkScript, for monitoring
+	// purposes.
+	b.batchTxid = &txHash
+	b.batchPkScript = tx.TxOut[0].PkScript
+
+	return fee, nil, true
+}
+
 func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 	// Serialize the transaction and convert to hex string.
 	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
@@ -1084,7 +1488,7 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 
 // coopSignBatchTx collects the necessary signatures from the server in order
 // to cooperatively sweep the funds.
-func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
+func (b *batch) coopSignBatchTx(ctx context.Context, tx *wire.MsgTx,
 	sweeps []sweep, prevOuts map[wire.OutPoint]*wire.TxOut,
 	psbt []byte) error {
 
@@ -1092,13 +1496,13 @@ func (b *batch) coopSignBatchTx(ctx context.Context, packet *psbt.Packet,
 		sweep := sweep
 
 		finalSig, err := b.musig2sign(
-			ctx, i, sweep, packet.UnsignedTx, prevOuts, psbt,
+			ctx, i, sweep, tx, prevOuts, psbt,
 		)
 		if err != nil {
 			return err
 		}
 
-		packet.UnsignedTx.TxIn[i].Witness = wire.TxWitness{
+		tx.TxIn[i].Witness = wire.TxWitness{
 			finalSig,
 		}
 	}

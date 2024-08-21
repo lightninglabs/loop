@@ -286,6 +286,16 @@ type Batcher struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// mixedBatch instructs sweepbatcher to create mixed batches with regard
+	// to cooperativeness. Such a batch can include sweeps signed both
+	// cooperatively and non-cooperatively. If cooperative signing fails for
+	// a sweep, transaction is updated to sign that sweep non-cooperatively
+	// and another round of cooperative signing runs on the remaining
+	// sweeps. The remaining sweeps are signed in non-cooperative (more
+	// expensive) way. If the whole procedure fails for whatever reason, the
+	// batch is signed non-cooperatively (the fallback).
+	mixedBatch bool
 }
 
 // BatcherConfig holds batcher configuration.
@@ -321,6 +331,16 @@ type BatcherConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// mixedBatch instructs sweepbatcher to create mixed batches with regard
+	// to cooperativeness. Such a batch can include sweeps signed both
+	// cooperatively and non-cooperatively. If cooperative signing fails for
+	// a sweep, transaction is updated to sign that sweep non-cooperatively
+	// and another round of cooperative signing runs on the remaining
+	// sweeps. The remaining sweeps are signed in non-cooperative (more
+	// expensive) way. If the whole procedure fails for whatever reason, the
+	// batch is signed non-cooperatively (the fallback).
+	mixedBatch bool
 }
 
 // BatcherOption configures batcher behaviour.
@@ -386,6 +406,20 @@ func WithCustomSignMuSig2(customMuSig2Signer SignMuSig2) BatcherOption {
 	}
 }
 
+// WithMixedBatch instructs sweepbatcher to create mixed batches with
+// regard to cooperativeness. Such a batch can include both sweeps signed
+// both cooperatively and non-cooperatively. If cooperative signing fails
+// for a sweep, transaction is updated to sign that sweep non-cooperatively
+// and another round of cooperative signing runs on the remaining sweeps.
+// The remaining sweeps are signed in non-cooperative (more expensive) way.
+// If the whole procedure fails for whatever reason, the batch is signed
+// non-cooperatively (the fallback).
+func WithMixedBatch() BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.mixedBatch = true
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -433,6 +467,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		customFeeRate:      cfg.customFeeRate,
 		txLabeler:          cfg.txLabeler,
 		customMuSig2Signer: cfg.customMuSig2Signer,
+		mixedBatch:         cfg.mixedBatch,
 	}
 }
 
@@ -1050,6 +1085,7 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
 		clock:              b.clock,
+		mixedBatch:         b.mixedBatch,
 	}
 }
 
