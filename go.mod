@@ -21,7 +21,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.2-beta
 	github.com/lightninglabs/lndclient v0.18.0-1
-	github.com/lightninglabs/loop/looprpc v0.0.0-00010101000000-000000000000
+	github.com/lightninglabs/loop/looprpc v1.0.0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.8
 	github.com/lightningnetwork/lnd v0.18.0-beta.1
 	github.com/lightningnetwork/lnd/cert v1.2.2
