@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
@@ -1167,6 +1168,161 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for tx to be published.
 	tx := <-lnd.TxPublishChannel
 	require.Equal(t, 2, len(tx.TxIn))
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
+// testMaxSweepsPerBatch tests the limit on max number of sweeps per batch.
+func testMaxSweepsPerBatch(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	// Disable logging, because this test is very noisy.
+	oldLogger := log
+	UseLogger(build.NewSubLogger("SWEEP", nil))
+	defer UseLogger(oldLogger)
+
+	defer test.Guard(t, test.WithGuardTimeout(5*time.Minute))()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	startTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
+	testClock := clock.NewTestClock(startTime)
+
+	// Create muSig2SignSweep failing all sweeps to force non-cooperative
+	// scenario (it increases transaction size).
+	muSig2SignSweep := func(ctx context.Context,
+		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
+		prevoutMap map[wire.OutPoint]*wire.TxOut) (
+		[]byte, []byte, error) {
+
+		return nil, nil, fmt.Errorf("test error")
+	}
+
+	// Set publish delay.
+	const publishDelay = 3 * time.Second
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		muSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore, WithPublishDelay(publishDelay),
+		WithClock(testClock),
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	const swapsNum = MaxSweepsPerBatch + 1
+
+	// Expect 2 batches to be registered.
+	expectedBatches := (swapsNum + MaxSweepsPerBatch - 1) /
+		MaxSweepsPerBatch
+
+	for i := 0; i < swapsNum; i++ {
+		preimage := lntypes.Preimage{2, byte(i % 256), byte(i / 256)}
+		swapHash := preimage.Hash()
+
+		// Create a sweep request.
+		sweepReq := SweepRequest{
+			SwapHash: swapHash,
+			Value:    111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+			Notifier: &dummyNotifier,
+		}
+
+		swap := &loopdb.LoopOutContract{
+			SwapContract: loopdb.SwapContract{
+				CltvExpiry:      1000,
+				AmountRequested: 111,
+				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+				HtlcKeys:        htlcKeys,
+
+				// Make preimage unique to pass SQL constraints.
+				Preimage: preimage,
+			},
+
+			DestAddr:        destAddr,
+			SwapInvoice:     swapInvoice,
+			SweepConfTarget: 123,
+		}
+
+		err = store.CreateLoopOut(ctx, swapHash, swap)
+		require.NoError(t, err)
+		store.AssertLoopOutStored()
+
+		// Deliver sweep request to batcher.
+		require.NoError(t, batcher.AddSweep(&sweepReq))
+
+		// If this is new batch, expect a spend registration.
+		if i%MaxSweepsPerBatch == 0 {
+			<-lnd.RegisterSpendChannel
+		}
+	}
+
+	// Eventually the batches are launched and all the sweeps are added.
+	require.Eventually(t, func() bool {
+		// Make sure all the batches have started.
+		if len(batcher.batches) != expectedBatches {
+			return false
+		}
+
+		// Make sure all the sweeps were added.
+		sweepsNum := 0
+		for _, batch := range batcher.batches {
+			sweepsNum += len(batch.sweeps)
+		}
+		return sweepsNum == swapsNum
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Advance the clock to publishDelay, so batches are published.
+	now := startTime.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Expect mockSigner.SignOutputRaw calls to sign non-cooperative
+	// sweeps.
+	for i := 0; i < expectedBatches; i++ {
+		<-lnd.SignOutputRawChannel
+	}
+
+	// Wait for txs to be published.
+	inputsNum := 0
+	const maxWeight = lntypes.WeightUnit(400_000)
+	for i := 0; i < expectedBatches; i++ {
+		tx := <-lnd.TxPublishChannel
+		inputsNum += len(tx.TxIn)
+
+		// Make sure the transaction size is standard.
+		weight := lntypes.WeightUnit(
+			blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+		)
+		require.Less(t, weight, maxWeight)
+		t.Logf("tx weight: %v", weight)
+	}
+
+	// Make sure the number of inputs in batch transactions is equal
+	// to the number of swaps.
+	require.Equal(t, swapsNum, inputsNum)
 
 	// Now make the batcher quit by canceling the context.
 	cancel()
@@ -3466,6 +3622,11 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 // TestDelays tests that WithInitialDelay and WithPublishDelay work.
 func TestDelays(t *testing.T) {
 	runTests(t, testDelays)
+}
+
+// TestMaxSweepsPerBatch tests the limit on max number of sweeps per batch.
+func TestMaxSweepsPerBatch(t *testing.T) {
+	runTests(t, testMaxSweepsPerBatch)
 }
 
 // TestSweepBatcherSweepReentry tests that when an old version of the batch tx

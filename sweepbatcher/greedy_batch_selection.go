@@ -17,7 +17,8 @@ import (
 // greedyAddSweep selects a batch for the sweep using the greedy algorithm,
 // which minimizes costs, and adds the sweep to the batch. To accomplish this,
 // it first collects fee details about the sweep being added, about a potential
-// new batch composed of this sweep only, and about all existing batches. Then
+// new batch composed of this sweep only, and about all existing batches. It
+// skips batches with at least MaxSweepsPerBatch swaps to keep tx standard. Then
 // it passes the data to selectBatches() function, which emulates adding the
 // sweep to each batch and creating new batch for the sweep, and calculates the
 // costs of each alternative. Based on the estimates of selectBatches(), this
@@ -40,6 +41,13 @@ func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
 	// Collect weight and fee rate info about existing batches.
 	batches := make([]feeDetails, 0, len(b.batches))
 	for _, existingBatch := range b.batches {
+		// Enforce MaxSweepsPerBatch. If there are already too many
+		// sweeps in the batch, do not add another sweep to prevent the
+		// tx from becoming non-standard.
+		if len(existingBatch.sweeps) >= MaxSweepsPerBatch {
+			continue
+		}
+
 		batchFeeDetails, err := estimateBatchWeight(existingBatch)
 		if err != nil {
 			return fmt.Errorf("failed to estimate tx weight for "+

@@ -45,6 +45,11 @@ const (
 	// maxFeeToSwapAmtRatio is the maximum fee to swap amount ratio that
 	// we allow for a batch transaction.
 	maxFeeToSwapAmtRatio = 0.2
+
+	// MaxSweepsPerBatch is the maximum number of sweeps in a single batch.
+	// It is needed to prevent sweep tx from becoming non-standard. Max
+	// standard transaction is 400k wu, a non-cooperative input is 393 wu.
+	MaxSweepsPerBatch = 1000
 )
 
 var (
@@ -460,6 +465,13 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		}
 
 		return true, nil
+	}
+
+	// Enforce MaxSweepsPerBatch. If there are already too many sweeps in
+	// the batch, do not add another sweep to prevent the tx from becoming
+	// non-standard.
+	if len(b.sweeps) >= MaxSweepsPerBatch {
+		return false, nil
 	}
 
 	// Since all the actions of the batch happen sequentially, we could
