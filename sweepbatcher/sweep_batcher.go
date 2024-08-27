@@ -236,7 +236,7 @@ type Batcher struct {
 	// sweep funds.
 	musig2ServerSign MuSig2SignSweep
 
-	// verifySchnorrSig is a function that can be used to verify a schnorr
+	// VerifySchnorrSig is a function that can be used to verify a schnorr
 	// signature.
 	VerifySchnorrSig VerifySchnorrSig
 
