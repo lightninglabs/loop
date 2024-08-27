@@ -45,6 +45,11 @@ const (
 	// maxFeeToSwapAmtRatio is the maximum fee to swap amount ratio that
 	// we allow for a batch transaction.
 	maxFeeToSwapAmtRatio = 0.2
+
+	// MaxSweepsPerBatch is the maximum number of sweeps in a single batch.
+	// It is needed to prevent sweep tx from becoming non-standard. Max
+	// standard transaction is 400k wu, a non-cooperative input is 393 wu.
+	MaxSweepsPerBatch = 1000
 )
 
 var (
@@ -433,6 +438,8 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// If the provided sweep is nil, we can't proceed with any checks, so
 	// we just return early.
 	if sweep == nil {
+		b.log.Infof("the sweep is nil")
+
 		return false, nil
 	}
 
@@ -462,10 +469,22 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		return true, nil
 	}
 
+	// Enforce MaxSweepsPerBatch. If there are already too many sweeps in
+	// the batch, do not add another sweep to prevent the tx from becoming
+	// non-standard.
+	if len(b.sweeps) >= MaxSweepsPerBatch {
+		b.log.Infof("the batch has already too many sweeps (%d >= %d)",
+			len(b.sweeps), MaxSweepsPerBatch)
+
+		return false, nil
+	}
+
 	// Since all the actions of the batch happen sequentially, we could
 	// arrive here after the batch got closed because of a spend. In this
 	// case we cannot add the sweep to this batch.
 	if b.state != Open {
+		b.log.Infof("the batch state (%v) is not open", b.state)
+
 		return false, nil
 	}
 
@@ -473,7 +492,17 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// address, or the incoming sweep is spending to non-wallet address,
 	// we cannot add this sweep to the batch.
 	for _, s := range b.sweeps {
-		if s.isExternalAddr || sweep.isExternalAddr {
+		if s.isExternalAddr {
+			b.log.Infof("the batch already has a sweep (%x) with "+
+				"an external address", s.swapHash[:6])
+
+			return false, nil
+		}
+
+		if sweep.isExternalAddr {
+			b.log.Infof("the batch is not empty and new sweep (%x)"+
+				" has an external address", sweep.swapHash[:6])
+
 			return false, nil
 		}
 	}
@@ -486,6 +515,11 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 			int32(math.Abs(float64(sweep.timeout - s.timeout)))
 
 		if timeoutDistance > b.cfg.maxTimeoutDistance {
+			b.log.Infof("too long timeout distance between the "+
+				"batch and sweep %x: %d > %d",
+				sweep.swapHash[:6], timeoutDistance,
+				b.cfg.maxTimeoutDistance)
+
 			return false, nil
 		}
 	}
