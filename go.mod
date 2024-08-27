@@ -23,7 +23,7 @@ require (
 	github.com/lightninglabs/lndclient v0.18.0-1
 	github.com/lightninglabs/loop/looprpc v1.0.0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.8
-	github.com/lightningnetwork/lnd v0.18.0-beta.1
+	github.com/lightningnetwork/lnd v0.18.3-beta.rc1
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
@@ -37,7 +37,7 @@ require (
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/macaroon-bakery.v2 v2.1.0
 	gopkg.in/macaroon.v2 v2.1.0
-	modernc.org/sqlite v1.29.8
+	modernc.org/sqlite v1.29.10
 )
 
 require (
@@ -99,6 +99,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/pgtype v1.14.0 // indirect
 	github.com/jackc/pgx/v4 v4.18.2 // indirect
+	github.com/jackc/pgx/v5 v5.3.1 // indirect
 	github.com/jackpal/gateway v1.0.5 // indirect
 	github.com/jackpal/go-nat-pmp v0.0.0-20170405195558-28a68d0c24ad // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
@@ -109,11 +110,11 @@ require (
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.16.1-0.20240425105051-602843d34ffd // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f // indirect
-	github.com/lightningnetwork/lnd/fn v1.0.5 // indirect
-	github.com/lightningnetwork/lnd/healthcheck v1.2.4 // indirect
-	github.com/lightningnetwork/lnd/kvdb v1.4.8 // indirect
-	github.com/lightningnetwork/lnd/sqldb v1.0.2 // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
+	github.com/lightningnetwork/lnd/fn v1.2.0 // indirect
+	github.com/lightningnetwork/lnd/healthcheck v1.2.5 // indirect
+	github.com/lightningnetwork/lnd/kvdb v1.4.10 // indirect
+	github.com/lightningnetwork/lnd/sqldb v1.0.3 // indirect
 	github.com/lightningnetwork/lnd/tlv v1.2.3 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
