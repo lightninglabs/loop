@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
@@ -159,6 +162,25 @@ type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
 type FeeRateProvider func(ctx context.Context,
 	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
 
+// PublishErrorHandler is a function that handles transaction publishing error.
+type PublishErrorHandler func(err error, errMsg string, log btclog.Logger)
+
+// defaultPublishErrorLogger is an instance of PublishErrorHandler which logs
+// all errors as warnings, but "insufficient fee" as info (since they are
+// expected, if RBF fails).
+func defaultPublishErrorLogger(err error, errMsg string, log btclog.Logger) {
+	// Check if the error is "insufficient fee" error.
+	if strings.Contains(err.Error(), chain.ErrInsufficientFee.Error()) {
+		// Log "insufficient fee" with level Info.
+		log.Infof("%s: %v", errMsg, err)
+
+		return
+	}
+
+	// Log any other error as a warning.
+	log.Warnf("%s: %v", errMsg, err)
+}
+
 // SweepRequest is a request to sweep a specific outpoint.
 type SweepRequest struct {
 	// SwapHash is the hash of the swap that is being swept.
@@ -296,6 +318,11 @@ type Batcher struct {
 	// expensive) way. If the whole procedure fails for whatever reason, the
 	// batch is signed non-cooperatively (the fallback).
 	mixedBatch bool
+
+	// publishErrorHandler is a function that handles transaction publishing
+	// error. By default, it logs all errors as warnings, but "insufficient
+	// fee" as Info.
+	publishErrorHandler PublishErrorHandler
 }
 
 // BatcherConfig holds batcher configuration.
@@ -341,6 +368,11 @@ type BatcherConfig struct {
 	// expensive) way. If the whole procedure fails for whatever reason, the
 	// batch is signed non-cooperatively (the fallback).
 	mixedBatch bool
+
+	// publishErrorHandler is a function that handles transaction publishing
+	// error. By default, it logs all errors as warnings, but "insufficient
+	// fee" as Info.
+	publishErrorHandler PublishErrorHandler
 }
 
 // BatcherOption configures batcher behaviour.
@@ -420,6 +452,14 @@ func WithMixedBatch() BatcherOption {
 	}
 }
 
+// WithPublishErrorHandler sets the callback used to handle publish errors.
+// It can be used to filter out noisy messages.
+func WithPublishErrorHandler(handler PublishErrorHandler) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.publishErrorHandler = handler
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -432,6 +472,11 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		// By default, loop/labels.LoopOutBatchSweepSuccess is used
 		// to label sweep transactions.
 		txLabeler: labels.LoopOutBatchSweepSuccess,
+
+		// publishErrorHandler is a function that handles transaction
+		// publishing error. By default, it logs all errors as warnings,
+		// but "insufficient fee" as Info.
+		publishErrorHandler: defaultPublishErrorLogger,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -448,26 +493,27 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	}
 
 	return &Batcher{
-		batches:            make(map[int32]*batch),
-		sweepReqs:          make(chan SweepRequest),
-		errChan:            make(chan error, 1),
-		quit:               make(chan struct{}),
-		initDone:           make(chan struct{}),
-		wallet:             wallet,
-		chainNotifier:      chainNotifier,
-		signerClient:       signerClient,
-		musig2ServerSign:   musig2ServerSigner,
-		VerifySchnorrSig:   verifySchnorrSig,
-		chainParams:        chainparams,
-		store:              store,
-		sweepStore:         sweepStore,
-		clock:              cfg.clock,
-		initialDelay:       cfg.initialDelay,
-		publishDelay:       cfg.publishDelay,
-		customFeeRate:      cfg.customFeeRate,
-		txLabeler:          cfg.txLabeler,
-		customMuSig2Signer: cfg.customMuSig2Signer,
-		mixedBatch:         cfg.mixedBatch,
+		batches:             make(map[int32]*batch),
+		sweepReqs:           make(chan SweepRequest),
+		errChan:             make(chan error, 1),
+		quit:                make(chan struct{}),
+		initDone:            make(chan struct{}),
+		wallet:              wallet,
+		chainNotifier:       chainNotifier,
+		signerClient:        signerClient,
+		musig2ServerSign:    musig2ServerSigner,
+		VerifySchnorrSig:    verifySchnorrSig,
+		chainParams:         chainparams,
+		store:               store,
+		sweepStore:          sweepStore,
+		clock:               cfg.clock,
+		initialDelay:        cfg.initialDelay,
+		publishDelay:        cfg.publishDelay,
+		customFeeRate:       cfg.customFeeRate,
+		txLabeler:           cfg.txLabeler,
+		customMuSig2Signer:  cfg.customMuSig2Signer,
+		mixedBatch:          cfg.mixedBatch,
+		publishErrorHandler: cfg.publishErrorHandler,
 	}
 }
 
@@ -1092,14 +1138,15 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 // newBatchKit creates new batch kit.
 func (b *Batcher) newBatchKit() batchKit {
 	return batchKit{
-		returnChan:       b.sweepReqs,
-		wallet:           b.wallet,
-		chainNotifier:    b.chainNotifier,
-		signerClient:     b.signerClient,
-		musig2SignSweep:  b.musig2ServerSign,
-		verifySchnorrSig: b.VerifySchnorrSig,
-		purger:           b.AddSweep,
-		store:            b.store,
-		quit:             b.quit,
+		returnChan:          b.sweepReqs,
+		wallet:              b.wallet,
+		chainNotifier:       b.chainNotifier,
+		signerClient:        b.signerClient,
+		musig2SignSweep:     b.musig2ServerSign,
+		verifySchnorrSig:    b.VerifySchnorrSig,
+		publishErrorHandler: b.publishErrorHandler,
+		purger:              b.AddSweep,
+		store:               b.store,
+		quit:                b.quit,
 	}
 }
