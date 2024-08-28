@@ -1429,12 +1429,17 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	err = s.withdrawalManager.WithdrawDeposits(ctx, outpoints)
+	txhash, pkScript, err := s.withdrawalManager.DeliverWithdrawalRequest(
+		ctx, outpoints,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return &looprpc.WithdrawDepositsResponse{}, err
+	return &looprpc.WithdrawDepositsResponse{
+		WithdrawalTxHash: txhash,
+		PkScript:         pkScript,
+	}, err
 }
 
 // GetStaticAddressSummary returns a summary static address related information.
