@@ -52,9 +52,9 @@ type Deposit struct {
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
 
-	// WithdrawalSweepAddress is the address that is used to
-	// cooperatively sweep the deposit to before it is expired.
-	WithdrawalSweepAddress string
+	// FinalizedWithdrawalTx is the coop signed withdrawal transaction. It
+	// is republished on new block arrivals and on client restarts.
+	FinalizedWithdrawalTx *wire.MsgTx
 
 	sync.Mutex
 }

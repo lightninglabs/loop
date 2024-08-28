@@ -7,7 +7,7 @@ INSERT INTO deposits (
     confirmation_height,
     timeout_sweep_pk_script,
     expiry_sweep_txid,
-    withdrawal_sweep_address
+    finalized_withdrawal_tx
 ) VALUES (
              $1,
              $2,
@@ -26,7 +26,7 @@ SET
     out_index = $3,
     confirmation_height = $4,
     expiry_sweep_txid = $5,
-    withdrawal_sweep_address = $6
+    finalized_withdrawal_tx = $6
 WHERE
     deposits.deposit_id = $1;
 
