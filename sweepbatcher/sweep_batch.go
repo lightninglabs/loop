@@ -282,6 +282,11 @@ type batch struct {
 	// verifySchnorrSig is a function that verifies a schnorr signature.
 	verifySchnorrSig VerifySchnorrSig
 
+	// publishErrorHandler is a function that handles transaction publishing
+	// error. By default, it logs all errors as warnings, but "insufficient
+	// fee" as Info.
+	publishErrorHandler PublishErrorHandler
+
 	// purger is a function that can take a sweep which is being purged and
 	// hand it over to the batcher for further processing.
 	purger Purger
@@ -308,23 +313,24 @@ type Purger func(sweepReq *SweepRequest) error
 // struct is only used as a wrapper for the arguments that are required to
 // create a new batch.
 type batchKit struct {
-	id               int32
-	batchTxid        *chainhash.Hash
-	batchPkScript    []byte
-	state            batchState
-	primaryID        lntypes.Hash
-	sweeps           map[lntypes.Hash]sweep
-	rbfCache         rbfCache
-	returnChan       chan SweepRequest
-	wallet           lndclient.WalletKitClient
-	chainNotifier    lndclient.ChainNotifierClient
-	signerClient     lndclient.SignerClient
-	musig2SignSweep  MuSig2SignSweep
-	verifySchnorrSig VerifySchnorrSig
-	purger           Purger
-	store            BatcherStore
-	log              btclog.Logger
-	quit             chan struct{}
+	id                  int32
+	batchTxid           *chainhash.Hash
+	batchPkScript       []byte
+	state               batchState
+	primaryID           lntypes.Hash
+	sweeps              map[lntypes.Hash]sweep
+	rbfCache            rbfCache
+	returnChan          chan SweepRequest
+	wallet              lndclient.WalletKitClient
+	chainNotifier       lndclient.ChainNotifierClient
+	signerClient        lndclient.SignerClient
+	musig2SignSweep     MuSig2SignSweep
+	verifySchnorrSig    VerifySchnorrSig
+	publishErrorHandler PublishErrorHandler
+	purger              Purger
+	store               BatcherStore
+	log                 btclog.Logger
+	quit                chan struct{}
 }
 
 // scheduleNextCall schedules the next call to the batch handler's main event
@@ -353,28 +359,29 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 	return &batch{
 		// We set the ID to a negative value to flag that this batch has
 		// never been persisted, so it needs to be assigned a new ID.
-		id:               -1,
-		state:            Open,
-		sweeps:           make(map[lntypes.Hash]sweep),
-		blockEpochChan:   make(chan int32),
-		spendChan:        make(chan *chainntnfs.SpendDetail),
-		confChan:         make(chan *chainntnfs.TxConfirmation, 1),
-		reorgChan:        make(chan struct{}, 1),
-		errChan:          make(chan error, 1),
-		callEnter:        make(chan struct{}),
-		callLeave:        make(chan struct{}),
-		stopping:         make(chan struct{}),
-		finished:         make(chan struct{}),
-		quit:             bk.quit,
-		batchTxid:        bk.batchTxid,
-		wallet:           bk.wallet,
-		chainNotifier:    bk.chainNotifier,
-		signerClient:     bk.signerClient,
-		muSig2SignSweep:  bk.musig2SignSweep,
-		verifySchnorrSig: bk.verifySchnorrSig,
-		purger:           bk.purger,
-		store:            bk.store,
-		cfg:              &cfg,
+		id:                  -1,
+		state:               Open,
+		sweeps:              make(map[lntypes.Hash]sweep),
+		blockEpochChan:      make(chan int32),
+		spendChan:           make(chan *chainntnfs.SpendDetail),
+		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
+		reorgChan:           make(chan struct{}, 1),
+		errChan:             make(chan error, 1),
+		callEnter:           make(chan struct{}),
+		callLeave:           make(chan struct{}),
+		stopping:            make(chan struct{}),
+		finished:            make(chan struct{}),
+		quit:                bk.quit,
+		batchTxid:           bk.batchTxid,
+		wallet:              bk.wallet,
+		chainNotifier:       bk.chainNotifier,
+		signerClient:        bk.signerClient,
+		muSig2SignSweep:     bk.musig2SignSweep,
+		verifySchnorrSig:    bk.verifySchnorrSig,
+		publishErrorHandler: bk.publishErrorHandler,
+		purger:              bk.purger,
+		store:               bk.store,
+		cfg:                 &cfg,
 	}
 }
 
@@ -396,32 +403,33 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 	}
 
 	return &batch{
-		id:               bk.id,
-		state:            bk.state,
-		primarySweepID:   bk.primaryID,
-		sweeps:           bk.sweeps,
-		blockEpochChan:   make(chan int32),
-		spendChan:        make(chan *chainntnfs.SpendDetail),
-		confChan:         make(chan *chainntnfs.TxConfirmation, 1),
-		reorgChan:        make(chan struct{}, 1),
-		errChan:          make(chan error, 1),
-		callEnter:        make(chan struct{}),
-		callLeave:        make(chan struct{}),
-		stopping:         make(chan struct{}),
-		finished:         make(chan struct{}),
-		quit:             bk.quit,
-		batchTxid:        bk.batchTxid,
-		batchPkScript:    bk.batchPkScript,
-		rbfCache:         bk.rbfCache,
-		wallet:           bk.wallet,
-		chainNotifier:    bk.chainNotifier,
-		signerClient:     bk.signerClient,
-		muSig2SignSweep:  bk.musig2SignSweep,
-		verifySchnorrSig: bk.verifySchnorrSig,
-		purger:           bk.purger,
-		store:            bk.store,
-		log:              bk.log,
-		cfg:              &cfg,
+		id:                  bk.id,
+		state:               bk.state,
+		primarySweepID:      bk.primaryID,
+		sweeps:              bk.sweeps,
+		blockEpochChan:      make(chan int32),
+		spendChan:           make(chan *chainntnfs.SpendDetail),
+		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
+		reorgChan:           make(chan struct{}, 1),
+		errChan:             make(chan error, 1),
+		callEnter:           make(chan struct{}),
+		callLeave:           make(chan struct{}),
+		stopping:            make(chan struct{}),
+		finished:            make(chan struct{}),
+		quit:                bk.quit,
+		batchTxid:           bk.batchTxid,
+		batchPkScript:       bk.batchPkScript,
+		rbfCache:            bk.rbfCache,
+		wallet:              bk.wallet,
+		chainNotifier:       bk.chainNotifier,
+		signerClient:        bk.signerClient,
+		muSig2SignSweep:     bk.musig2SignSweep,
+		verifySchnorrSig:    bk.verifySchnorrSig,
+		publishErrorHandler: bk.publishErrorHandler,
+		purger:              bk.purger,
+		store:               bk.store,
+		log:                 bk.log,
+		cfg:                 &cfg,
 	}, nil
 }
 
@@ -795,23 +803,31 @@ func (b *batch) publish(ctx context.Context) error {
 		return err
 	}
 
+	// logPublishError is a function which logs publish errors.
+	logPublishError := func(errMsg string, err error) {
+		b.publishErrorHandler(err, errMsg, b.log)
+	}
+
 	if b.cfg.mixedBatch {
 		fee, err, signSuccess = b.publishMixedBatch(ctx)
 		if err != nil {
-			b.log.Warnf("Mixed batch publish error: %v", err)
+			logPublishError("mixed batch publish error", err)
 		}
 	} else {
 		fee, err, signSuccess = b.publishBatchCoop(ctx)
 		if err != nil {
-			b.log.Warnf("co-op publish error: %v", err)
+			logPublishError("co-op publish error", err)
 		}
 	}
 
 	if !signSuccess {
 		fee, err = b.publishBatch(ctx)
+		if err != nil {
+			logPublishError("non-coop publish error", err)
+		}
 	}
+
 	if err != nil {
-		b.log.Warnf("publish error: %v", err)
 		return nil
 	}
 

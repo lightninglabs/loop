@@ -541,6 +541,122 @@ func testTxLabeler(t *testing.T, store testStore,
 	checkBatcherError(t, runErr)
 }
 
+// testTransactionPublisher wraps a wallet kit and returns publish error on
+// the first publish attempt. Further attempts succeed.
+type testTransactionPublisher struct {
+	lndclient.WalletKitClient
+
+	attempts int
+}
+
+var testPublishError = errors.New("test publish error")
+
+// PublishTransaction publishes the transaction or fails it's the first attempt.
+func (p *testTransactionPublisher) PublishTransaction(ctx context.Context,
+	tx *wire.MsgTx, label string) error {
+
+	p.attempts++
+	if p.attempts == 1 {
+		return testPublishError
+	}
+
+	return p.WalletKitClient.PublishTransaction(ctx, tx, label)
+}
+
+// testPublishErrorHandler tests that publish error handler installed with
+// WithPublishErrorHandler, works as expected.
+func testPublishErrorHandler(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	walletKit := &testTransactionPublisher{WalletKitClient: lnd.WalletKit}
+
+	// Catch all publish errors and send them to a channel.
+	publishErrorChan := make(chan error)
+	errorHandler := func(err error, errMsg string, log btclog.Logger) {
+		log.Warnf("%s: %v", errMsg, err)
+
+		publishErrorChan <- err
+	}
+
+	batcher := NewBatcher(walletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore, WithPublishErrorHandler(errorHandler))
+
+	var (
+		runErr error
+		wg     sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Create a sweep request.
+	sweepReq1 := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Eventually request will be consumed and a new batch will spin up.
+	require.Eventually(t, func() bool {
+		return len(batcher.batches) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// When batch is successfully created it will execute it's first step,
+	// which leads to a spend monitor of the primary sweep.
+	<-lnd.RegisterSpendChannel
+
+	// The first attempt to publish the batch tx is expected to fail.
+	require.ErrorIs(t, <-publishErrorChan, testPublishError)
+
+	// Mine a block to trigger another publishing attempt.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Now publishing should succeed for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+	checkBatcherError(t, runErr)
+}
+
 // testSweepBatcherSimpleLifecycle tests the simple lifecycle of the batches
 // that are created and run by the batcher.
 func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
@@ -3611,6 +3727,11 @@ func TestFeeBumping(t *testing.T) {
 // TestTxLabeler tests transaction labels.
 func TestTxLabeler(t *testing.T) {
 	runTests(t, testTxLabeler)
+}
+
+// TestPublishErrorHandler tests transaction labels.
+func TestPublishErrorHandler(t *testing.T) {
+	runTests(t, testPublishErrorHandler)
 }
 
 // TestSweepBatcherSimpleLifecycle tests the simple lifecycle of the batches
