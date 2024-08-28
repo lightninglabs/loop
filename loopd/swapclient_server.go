@@ -1429,10 +1429,7 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	err = s.withdrawalManager.WithdrawDeposits(ctx, outpoints)
-	if err != nil {
-		return nil, err
-	}
+	s.withdrawalManager.DeliverWithdrawalRequest(ctx, outpoints)
 
 	return &looprpc.WithdrawDepositsResponse{}, err
 }
