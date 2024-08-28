@@ -10,15 +10,15 @@ import (
 )
 
 type Deposit struct {
-	ID                     int32
-	DepositID              []byte
-	TxHash                 []byte
-	OutIndex               int32
-	Amount                 int64
-	ConfirmationHeight     int64
-	TimeoutSweepPkScript   []byte
-	ExpirySweepTxid        []byte
-	WithdrawalSweepAddress sql.NullString
+	ID                    int32
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
 }
 
 type DepositUpdate struct {
