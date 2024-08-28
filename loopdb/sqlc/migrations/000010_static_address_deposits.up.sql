@@ -26,9 +26,10 @@ CREATE TABLE IF NOT EXISTS deposits (
     -- expiry_sweep_txid is the transaction id of the expiry sweep.
     expiry_sweep_txid BLOB,
 
-    -- withdrawal_sweep_address is the address that will be used to sweep the
-    -- deposit cooperatively with the server before it has expired.
-    withdrawal_sweep_address TEXT
+    -- finalized_withdrawal_tx is the coop signed tx that will be used to sweep
+    -- the deposit back to the clients wallet. It will be republished on block
+    -- arrival and after daemon restarts.
+    finalized_withdrawal_tx TEXT
 );
 
 -- deposit_updates contains all the updates to a deposit.
