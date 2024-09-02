@@ -678,7 +678,7 @@ func (b *batch) Run(ctx context.Context) error {
 			// Check that batch is still open.
 			if b.state != Open {
 				b.log.Debugf("Skipping publishing, because the"+
-					"batch is not open (%v).", b.state)
+					" batch is not open (%v).", b.state)
 				continue
 			}
 
