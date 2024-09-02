@@ -27,6 +27,8 @@ import (
 var DefaultMockFee = chainfee.SatPerKWeight(10000)
 
 type mockWalletKit struct {
+	lndclient.WalletKitClient
+
 	lnd      *LndMockServices
 	keyIndex int32
 
