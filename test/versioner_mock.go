@@ -25,6 +25,8 @@ var (
 )
 
 type mockVersioner struct {
+	lndclient.VersionerClient
+
 	version *verrpc.Version
 }
 

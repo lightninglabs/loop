@@ -15,6 +15,8 @@ import (
 )
 
 type mockSigner struct {
+	lndclient.SignerClient
+
 	lnd *LndMockServices
 }
 

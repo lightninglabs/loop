@@ -15,6 +15,8 @@ import (
 )
 
 type mockInvoices struct {
+	lndclient.InvoicesClient
+
 	lnd *LndMockServices
 	wg  sync.WaitGroup
 }
