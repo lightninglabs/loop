@@ -1997,7 +1997,7 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 // handleConf handles a confirmation notification. This is the final step of the
 // batch. Here we signal to the batcher that this batch was completed.
 func (b *batch) handleConf(ctx context.Context) error {
-	b.log.Infof("confirmed")
+	b.log.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
 	return b.store.ConfirmBatch(ctx, b.id)
