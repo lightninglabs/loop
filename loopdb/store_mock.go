@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 
 // StoreMock implements a mock client swap store.
 type StoreMock struct {
+	sync.RWMutex
+
 	LoopOutSwaps      map[lntypes.Hash]*LoopOutContract
 	LoopOutUpdates    map[lntypes.Hash][]SwapStateData
 	loopOutStoreChan  chan LoopOutContract
@@ -50,6 +53,9 @@ func NewStoreMock(t *testing.T) *StoreMock {
 //
 // NOTE: Part of the SwapStore interface.
 func (s *StoreMock) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	result := []*LoopOut{}
 
 	for hash, contract := range s.LoopOutSwaps {
@@ -79,6 +85,9 @@ func (s *StoreMock) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error) {
 // NOTE: Part of the SwapStore interface.
 func (s *StoreMock) FetchLoopOutSwap(ctx context.Context,
 	hash lntypes.Hash) (*LoopOut, error) {
+
+	s.RLock()
+	defer s.RUnlock()
 
 	contract, ok := s.LoopOutSwaps[hash]
 	if !ok {
@@ -110,6 +119,9 @@ func (s *StoreMock) FetchLoopOutSwap(ctx context.Context,
 func (s *StoreMock) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *LoopOutContract) error {
 
+	s.Lock()
+	defer s.Unlock()
+
 	_, ok := s.LoopOutSwaps[hash]
 	if ok {
 		return errors.New("swap already exists")
@@ -125,6 +137,9 @@ func (s *StoreMock) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 // FetchLoopInSwaps returns all in swaps currently in the store.
 func (s *StoreMock) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn,
 	error) {
+
+	s.RLock()
+	defer s.RUnlock()
 
 	result := []*LoopIn{}
 
@@ -156,6 +171,9 @@ func (s *StoreMock) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn,
 func (s *StoreMock) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *LoopInContract) error {
 
+	s.Lock()
+	defer s.Unlock()
+
 	_, ok := s.LoopInSwaps[hash]
 	if ok {
 		return errors.New("swap already exists")
@@ -176,6 +194,9 @@ func (s *StoreMock) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 func (s *StoreMock) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
+	s.Lock()
+	defer s.Unlock()
+
 	updates, ok := s.LoopOutUpdates[hash]
 	if !ok {
 		return errors.New("swap does not exists")
@@ -195,6 +216,9 @@ func (s *StoreMock) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
 // NOTE: Part of the SwapStore interface.
 func (s *StoreMock) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
+
+	s.Lock()
+	defer s.Unlock()
 
 	updates, ok := s.LoopInUpdates[hash]
 	if !ok {
@@ -347,6 +371,9 @@ func (b *StoreMock) BatchInsertUpdate(ctx context.Context,
 func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 	costs map[lntypes.Hash]SwapCost) error {
 
+	s.Lock()
+	defer s.Unlock()
+
 	for hash, cost := range costs {
 		if _, ok := s.LoopOutUpdates[hash]; !ok {
 			return fmt.Errorf("swap has no updates: %v", hash)
@@ -367,6 +394,9 @@ func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
 	bool, error) {
 
+	s.RLock()
+	defer s.RUnlock()
+
 	_, ok := s.migrations[migrationID]
 
 	return ok, nil
@@ -375,6 +405,9 @@ func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
 // SetMigration marks the migration with the given ID as done.
 func (s *StoreMock) SetMigration(ctx context.Context,
 	migrationID string) error {
+
+	s.Lock()
+	defer s.Unlock()
 
 	if _, ok := s.migrations[migrationID]; ok {
 		return errors.New("migration already done")
