@@ -331,14 +331,15 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		state = clientrpc.SwapState_FAILED
 	}
 
-	var swapType clientrpc.SwapType
 	var (
 		htlcAddress      string
 		htlcAddressP2TR  string
 		htlcAddressP2WSH string
+		outGoingChanSet  []uint64
+		lastHop          []byte
+		swapType         clientrpc.SwapType
+		sweepTxHash      string
 	)
-	var outGoingChanSet []uint64
-	var lastHop []byte
 
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
@@ -369,6 +370,10 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 		outGoingChanSet = loopSwap.OutgoingChanSet
 
+		if loopSwap.SweepTxHash != nil {
+			sweepTxHash = loopSwap.SweepTxHash.String()
+		}
+
 	default:
 		return nil, errors.New("unknown swap type")
 	}
@@ -391,6 +396,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		Label:            loopSwap.Label,
 		LastHop:          lastHop,
 		OutgoingChanSet:  outGoingChanSet,
+		SweepTxHash:      sweepTxHash,
 	}, nil
 }
 

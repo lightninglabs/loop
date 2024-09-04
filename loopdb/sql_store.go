@@ -365,6 +365,10 @@ func (db *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 		if state.HtlcTxHash != nil {
 			updateParams.HtlcTxhash = state.HtlcTxHash.String()
 		}
+
+		if state.SweepTxHash != nil {
+			updateParams.SweepTxHash = state.SweepTxHash.String()
+		}
 		// First we insert the swap update.
 		err := tx.InsertSwapUpdate(ctx, updateParams)
 		if err != nil {
@@ -610,7 +614,7 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 		loopOut.Contract.OutgoingChanSet = chanSet
 	}
 
-	// If we don't have any updates yet we can return early
+	// If we don't have any updates yet we can return early.
 	if len(updates) == 0 {
 		return loopOut, nil
 	}
@@ -719,6 +723,15 @@ func getSwapEvents(updates []sqlc.SwapUpdate) ([]*LoopEvent, error) {
 			}
 
 			events[i].HtlcTxHash = chainHash
+		}
+
+		if updates[i].SweepTxHash != "" {
+			chainHash, err := chainhash.NewHashFromStr(updates[i].SweepTxHash)
+			if err != nil {
+				return nil, err
+			}
+
+			events[i].SweepTxHash = chainHash
 		}
 	}
 
