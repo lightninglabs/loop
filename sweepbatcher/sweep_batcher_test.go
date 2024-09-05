@@ -3698,6 +3698,160 @@ func testWithMixedBatchCoopFailedOnly(t *testing.T, store testStore,
 		wantWeight, wantWitnessSizes)
 }
 
+// testWithWaitForAddSweep tests that with WithWaitForAddSweep option
+// batcher is waiting for AddSweep in Run if there are existing sweeps.
+func testWithWaitForAddSweep(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Value:    111,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 123,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq.SwapHash, swap)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Once batcher receives sweep request it will eventually spin up a
+	// batch.
+	require.Eventually(t, func() bool {
+		// Make sure that the sweep was stored
+		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+			return false
+		}
+
+		// Make sure there is exactly one active batch.
+		if len(batcher.batches) != 1 {
+			return false
+		}
+
+		// Get the batch.
+		batch := getOnlyBatch(batcher)
+
+		// Make sure the batch has one sweep.
+		if len(batch.sweeps) != 1 {
+			return false
+		}
+
+		// Make sure the batch has proper batchConfTarget.
+		return batch.cfg.batchConfTarget == 123
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure we have stored the batch.
+	batches, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+
+	// Now launch it again with WithWaitForAddSweep option.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore, WithWaitForAddSweep())
+	ctx, cancel = context.WithCancel(context.Background())
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait 1 second to make sure the Batcher is really waiting in Run.
+	time.Sleep(time.Second)
+
+	// Make sure it is still starting, until AddSweep for existing sweep is
+	// called.
+	waiting := false
+	select {
+	case <-batcher.waitForAddSweepDone:
+	default:
+		waiting = true
+	}
+	require.True(t, waiting)
+
+	// Now add the existing sweep.
+	require.NoError(t, batcher.AddSweep(&sweepReq))
+
+	// Wait for the batcher to be initialized. It can do it now, because we
+	// have added the existing sweep.
+	<-batcher.waitForAddSweepDone
+	<-batcher.initDone
+
+	// Expect registration for spend notification.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Wait 1 second to give time to Batcher to handle the sweep
+	// from AddSweep to prevent handling errors.
+	time.Sleep(time.Second)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -3839,6 +3993,12 @@ func TestWithMixedBatchCoopFailedOnly(t *testing.T) {
 	runTests(t, testWithMixedBatchCoopFailedOnly)
 }
 
+// TestWithWaitForAddSweep tests that with WithWaitForAddSweep option
+// batcher is waiting for AddSweep in Run if there are existing sweeps.
+func TestWithWaitForAddSweep(t *testing.T) {
+	runTests(t, testWithWaitForAddSweep)
+}
+
 // testBatcherStore is BatcherStore used in tests.
 type testBatcherStore interface {
 	BatcherStore
@@ -3946,4 +4106,51 @@ func runTests(t *testing.T, testFn func(t *testing.T, store testStore,
 		}
 		testFn(t, testStore, testBatcherStore)
 	})
+}
+
+func TestMissingSweeps(t *testing.T) {
+	cases := []struct {
+		name        string
+		existing    []lntypes.Hash
+		sweepsAdded map[lntypes.Hash]struct{}
+		want        []lntypes.Hash
+	}{
+		{
+			name: "both empty",
+			want: []lntypes.Hash{},
+		},
+		{
+			name:     "the same one item in both",
+			existing: []lntypes.Hash{{1, 1, 1}},
+			sweepsAdded: map[lntypes.Hash]struct{}{
+				{1, 1, 1}: {},
+			},
+			want: []lntypes.Hash{},
+		},
+		{
+			name:     "the same two items in both",
+			existing: []lntypes.Hash{{1, 1, 1}, {2, 2, 2}},
+			sweepsAdded: map[lntypes.Hash]struct{}{
+				{1, 1, 1}: {},
+				{2, 2, 2}: {},
+			},
+			want: []lntypes.Hash{},
+		},
+		{
+			name:     "two items in existing, one of them in added",
+			existing: []lntypes.Hash{{1, 1, 1}, {2, 2, 2}},
+			sweepsAdded: map[lntypes.Hash]struct{}{
+				{1, 1, 1}: {},
+			},
+			want: []lntypes.Hash{{2, 2, 2}},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := missingSweeps(tc.existing, tc.sweepsAdded)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
