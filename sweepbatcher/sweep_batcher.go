@@ -517,6 +517,37 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	}
 }
 
+// DryRun tests if the batcher can start, but does not start it.
+// This method is useful to check if dependency databases are ready.
+func (b *Batcher) DryRun(ctx context.Context) error {
+	// First we fetch all the batches that are not in a confirmed state from
+	// the database. We will then load their sweeps to make sure it works.
+	batches, err := b.FetchUnconfirmedBatches(ctx)
+	if err != nil {
+		return fmt.Errorf("b.FetchUnconfirmedBatches failed: %w", err)
+	}
+
+	for _, batch := range batches {
+		dbSweeps, err := b.store.FetchBatchSweeps(ctx, batch.id)
+		if err != nil {
+			return fmt.Errorf("store.FetchBatchSweeps failed: %w",
+				err)
+		}
+
+		for _, dbSweep := range dbSweeps {
+			swapHash := dbSweep.SwapHash
+			_, err = b.sweepStore.FetchSweep(ctx, swapHash)
+			if err != nil {
+				return fmt.Errorf("failed to fetch sweep "+
+					"data for %x: %w", swapHash[:6], err)
+			}
+		}
+	}
+
+	// Everything was loaded successfully.
+	return nil
+}
+
 // Run starts the batcher and processes incoming sweep requests.
 func (b *Batcher) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)

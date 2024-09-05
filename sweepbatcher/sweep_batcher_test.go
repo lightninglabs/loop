@@ -2810,10 +2810,15 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 
 type sweepFetcherMock struct {
 	store map[lntypes.Hash]*SweepInfo
+	err   error
 }
 
 func (f *sweepFetcherMock) FetchSweep(ctx context.Context, hash lntypes.Hash) (
 	*SweepInfo, error) {
+
+	if f.err != nil {
+		return nil, f.err
+	}
 
 	return f.store[hash], nil
 }
@@ -2972,6 +2977,17 @@ func testSweepFetcher(t *testing.T, store testStore,
 
 	// Make sure the batcher exited without an error.
 	checkBatcherError(t, runErr)
+
+	// Check DryRun method.
+	batcher2 := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		nil, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepFetcher, WithCustomFeeRate(customFeeRate),
+		WithCustomSignMuSig2(testSignMuSig2func))
+	ctx = context.Background()
+	sweepFetcher.err = errors.New("test FetchSweep error")
+	require.ErrorIs(t, batcher2.DryRun(ctx), sweepFetcher.err)
+	sweepFetcher.err = nil
+	require.NoError(t, batcher2.DryRun(ctx))
 }
 
 // testSweepBatcherCloseDuringAdding tests that sweep batcher works correctly
