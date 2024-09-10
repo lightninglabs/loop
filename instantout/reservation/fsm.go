@@ -28,8 +28,9 @@ type Config struct {
 	// swap server.
 	ReservationClient swapserverrpc.ReservationServiceClient
 
-	// FetchL402 is the function used to fetch the l402 token.
-	FetchL402 func(context.Context) error
+	// NotificationManager is the manager that handles the notification
+	// subscriptions.
+	NotificationManager NotificationManager
 }
 
 // FSM is the state machine that manages the reservation lifecycle.
