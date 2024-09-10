@@ -12,7 +12,9 @@ service ReservationService {
     // ReservationNotificationStream is a server side stream that sends
     // notifications if the server wants to open a reservation to the client.
     rpc ReservationNotificationStream (ReservationNotificationRequest)
-        returns (stream ServerReservationNotification);
+        returns (stream ServerReservationNotification) {
+        option deprecated = true;
+    }
 
     // OpenReservation requests a new reservation UTXO from the server.
     rpc OpenReservation (ServerOpenReservationRequest)
