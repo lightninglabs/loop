@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/notifications"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -501,21 +502,41 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	// Start the notification manager.
+	notificationCfg := &notifications.Config{
+		Client:    loop_swaprpc.NewSwapServerClient(swapClient.Conn),
+		FetchL402: swapClient.Server.FetchL402,
+	}
+	notificationManager := notifications.NewManager(notificationCfg)
+
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+
+		log.Info("Starting notification manager")
+		err := notificationManager.Run(d.mainCtx)
+		if err != nil {
+			d.internalErrChan <- err
+			log.Errorf("Notification manager stopped: %v", err)
+		}
+	}()
+
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
 	)
+
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
 		reservationStore := reservation.NewSQLStore(
 			loopdb.NewTypedStore[reservation.Querier](baseDb),
 		)
 		reservationConfig := &reservation.Config{
-			Store:             reservationStore,
-			Wallet:            d.lnd.WalletKit,
-			ChainNotifier:     d.lnd.ChainNotifier,
-			ReservationClient: reservationClient,
-			FetchL402:         swapClient.Server.FetchL402,
+			Store:               reservationStore,
+			Wallet:              d.lnd.WalletKit,
+			ChainNotifier:       d.lnd.ChainNotifier,
+			ReservationClient:   reservationClient,
+			NotificationManager: notificationManager,
 		}
 
 		reservationManager = reservation.NewManager(
