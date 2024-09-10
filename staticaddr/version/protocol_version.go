@@ -1,7 +1,7 @@
 package version
 
 import (
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
 // AddressProtocolVersion represents the protocol version (declared on rpc
@@ -15,7 +15,7 @@ const (
 
 	// stableRPCProtocolVersion defines the current stable RPC protocol
 	// version.
-	stableRPCProtocolVersion = looprpc.StaticAddressProtocolVersion_V0
+	stableRPCProtocolVersion = swapserverrpc.StaticAddressProtocolVersion_V0
 )
 
 var (
@@ -27,7 +27,7 @@ var (
 
 // CurrentRPCProtocolVersion returns the RPC protocol version selected to be
 // used for new swaps.
-func CurrentRPCProtocolVersion() looprpc.StaticAddressProtocolVersion {
+func CurrentRPCProtocolVersion() swapserverrpc.StaticAddressProtocolVersion {
 	return currentRPCProtocolVersion
 }
 

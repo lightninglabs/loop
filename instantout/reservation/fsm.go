@@ -5,7 +5,7 @@ import (
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
 const (
@@ -26,7 +26,7 @@ type Config struct {
 
 	// ReservationClient is the client used to communicate with the
 	// swap server.
-	ReservationClient looprpc.ReservationServiceClient
+	ReservationClient swapserverrpc.ReservationServiceClient
 
 	// FetchL402 is the function used to fetch the l402 token.
 	FetchL402 func(context.Context) error

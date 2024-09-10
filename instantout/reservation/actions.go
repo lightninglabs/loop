@@ -6,7 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 )
 
@@ -40,7 +40,7 @@ func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 	log.Debugf("Dispatching reservation to server: %x",
 		reservationRequest.reservationID)
 
-	request := &looprpc.ServerOpenReservationRequest{
+	request := &swapserverrpc.ServerOpenReservationRequest{
 		ReservationId: reservationRequest.reservationID[:],
 		ClientKey:     keyRes.PubKey.SerializeCompressed(),
 	}

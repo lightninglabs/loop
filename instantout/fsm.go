@@ -7,7 +7,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
-	loop_rpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 )
 
@@ -28,8 +28,8 @@ func CurrentProtocolVersion() ProtocolVersion {
 }
 
 // CurrentRpcProtocolVersion returns the current rpc protocol version.
-func CurrentRpcProtocolVersion() loop_rpc.InstantOutProtocolVersion {
-	return loop_rpc.InstantOutProtocolVersion(CurrentProtocolVersion())
+func CurrentRpcProtocolVersion() swapserverrpc.InstantOutProtocolVersion {
+	return swapserverrpc.InstantOutProtocolVersion(CurrentProtocolVersion())
 }
 
 const (
@@ -163,7 +163,7 @@ type Config struct {
 	Wallet lndclient.WalletKitClient
 
 	// InstantOutClient is used to communicate with the swap server.
-	InstantOutClient loop_rpc.InstantSwapServerClient
+	InstantOutClient swapserverrpc.InstantSwapServerClient
 
 	// ReservationManager is used to get the reservations and lock them.
 	ReservationManager ReservationManager
