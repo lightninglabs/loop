@@ -203,16 +203,19 @@ func Run(rpcCfg RPCConfig) error {
 
 	// Initialize logging at the default logging level.
 	logWriter := build.NewRotatingLogWriter()
-	SetupLoggers(logWriter, shutdownInterceptor)
+	logMgr := build.NewSubLoggerManager(
+		build.NewDefaultLoggers(config.LogConfig, logWriter),
+	)
+	SetupLoggers(logMgr, shutdownInterceptor)
 
 	err = logWriter.InitLogRotator(
 		filepath.Join(config.LogDir, defaultLogFilename),
-		config.MaxLogFileSize, config.MaxLogFiles,
+		config.LogCompressor, config.MaxLogFileSize, config.MaxLogFiles,
 	)
 	if err != nil {
 		return err
 	}
-	err = build.ParseAndSetDebugLevels(config.DebugLevel, logWriter)
+	err = build.ParseAndSetDebugLevels(config.DebugLevel, logMgr)
 	if err != nil {
 		return err
 	}
