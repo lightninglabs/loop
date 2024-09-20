@@ -410,7 +410,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Run the costs migration.
-	err = loop.MigrateLoopOutCosts(d.mainCtx, d.lnd.LndServices, swapDb)
+	err = loop.MigrateLoopOutCosts(
+		d.mainCtx, d.lnd.LndServices, d.cfg.MigrationRPCBatchSize,
+		swapDb,
+	)
 	if err != nil {
 		log.Errorf("Cost migration failed: %v", err)
 
