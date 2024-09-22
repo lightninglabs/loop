@@ -81,7 +81,9 @@ type InstantLoopOutRequest struct {
 	ReceiverKey []byte `protobuf:"bytes,1,opt,name=receiver_key,json=receiverKey,proto3" json:"receiver_key,omitempty"`
 	// The hash of the preimage that will be used to settle the htlc.
 	SwapHash []byte `protobuf:"bytes,2,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
-	// The requested absolute block height of the on-chain htlc.
+	// The requested absolute block height of the on-chain htlc. This is
+	// subjected to min and max constraints as reported in the LoopOutTerms
+	// response.
 	Expiry int32 `protobuf:"varint,3,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	// The fee rate in sat/kw that should be used for the htlc.
 	HtlcFeeRate uint64 `protobuf:"varint,4,opt,name=htlc_fee_rate,json=htlcFeeRate,proto3" json:"htlc_fee_rate,omitempty"`

@@ -32,7 +32,8 @@ type InstantSwapServerClient interface {
 	// htlc.
 	PushPreimage(ctx context.Context, in *PushPreimageRequest, opts ...grpc.CallOption) (*PushPreimageResponse, error)
 	// CancelInstantSwap tries to cancel the instant swap. This can only be
-	// called if the swap has not been accepted yet.
+	// called if the swap has not been accepted yet. This allows the server to
+	// release the reservation inputs.
 	CancelInstantSwap(ctx context.Context, in *CancelInstantSwapRequest, opts ...grpc.CallOption) (*CancelInstantSwapResponse, error)
 	// GetInstantOutQuote returns the absolute fee in satoshis for the swap and
 	// the pubkey to query the route to estimate offchain payment fees.
@@ -128,7 +129,8 @@ type InstantSwapServerServer interface {
 	// htlc.
 	PushPreimage(context.Context, *PushPreimageRequest) (*PushPreimageResponse, error)
 	// CancelInstantSwap tries to cancel the instant swap. This can only be
-	// called if the swap has not been accepted yet.
+	// called if the swap has not been accepted yet. This allows the server to
+	// release the reservation inputs.
 	CancelInstantSwap(context.Context, *CancelInstantSwapRequest) (*CancelInstantSwapResponse, error)
 	// GetInstantOutQuote returns the absolute fee in satoshis for the swap and
 	// the pubkey to query the route to estimate offchain payment fees.

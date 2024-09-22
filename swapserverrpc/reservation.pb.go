@@ -32,7 +32,7 @@ const (
 	// RESERVATION_NONE is the default value and means that the reservation
 	// protocol version is not set.
 	ReservationProtocolVersion_RESERVATION_NONE ReservationProtocolVersion = 0
-	// RESERVATION_SERVER_REQUEST is the first version of the reservation
+	// RESERVATION_SERVER_NOTIFY is the first version of the reservation
 	// protocol where the server notifies the client about a reservation.
 	ReservationProtocolVersion_RESERVATION_SERVER_NOTIFY ReservationProtocolVersion = 1
 )
@@ -82,6 +82,9 @@ type ReservationNotificationRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
+
+	// protocol_version is the maximum version the client supports.
+	ProtocolVersion ReservationProtocolVersion `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3,enum=looprpc.ReservationProtocolVersion" json:"protocol_version,omitempty"`
 }
 
 func (x *ReservationNotificationRequest) Reset() {
@@ -114,6 +117,13 @@ func (x *ReservationNotificationRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ReservationNotificationRequest.ProtoReflect.Descriptor instead.
 func (*ReservationNotificationRequest) Descriptor() ([]byte, []int) {
 	return file_reservation_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ReservationNotificationRequest) GetProtocolVersion() ReservationProtocolVersion {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return ReservationProtocolVersion_RESERVATION_NONE
 }
 
 // ServerReservationNotification is a notification sent from the server to the
@@ -305,9 +315,14 @@ var File_reservation_proto protoreflect.FileDescriptor
 
 var file_reservation_proto_rawDesc = []byte{
 	0x0a, 0x11, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x12, 0x07, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x22, 0x20, 0x0a, 0x1e,
+	0x6f, 0x74, 0x6f, 0x12, 0x07, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70, 0x63, 0x22, 0x70, 0x0a, 0x1e,
 	0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4e, 0x6f, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0xe3,
+	0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x4e,
+	0x0a, 0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69,
+	0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x23, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72,
+	0x70, 0x63, 0x2e, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x72,
+	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x0f, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0xe3,
 	0x01, 0x0a, 0x1d, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61,
 	0x74, 0x69, 0x6f, 0x6e, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e,
 	0x12, 0x25, 0x0a, 0x0e, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
@@ -379,16 +394,17 @@ var file_reservation_proto_goTypes = []interface{}{
 	(*ServerOpenReservationResponse)(nil),  // 4: looprpc.ServerOpenReservationResponse
 }
 var file_reservation_proto_depIdxs = []int32{
-	0, // 0: looprpc.ServerReservationNotification.protocol_version:type_name -> looprpc.ReservationProtocolVersion
-	1, // 1: looprpc.ReservationService.ReservationNotificationStream:input_type -> looprpc.ReservationNotificationRequest
-	3, // 2: looprpc.ReservationService.OpenReservation:input_type -> looprpc.ServerOpenReservationRequest
-	2, // 3: looprpc.ReservationService.ReservationNotificationStream:output_type -> looprpc.ServerReservationNotification
-	4, // 4: looprpc.ReservationService.OpenReservation:output_type -> looprpc.ServerOpenReservationResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // 0: looprpc.ReservationNotificationRequest.protocol_version:type_name -> looprpc.ReservationProtocolVersion
+	0, // 1: looprpc.ServerReservationNotification.protocol_version:type_name -> looprpc.ReservationProtocolVersion
+	1, // 2: looprpc.ReservationService.ReservationNotificationStream:input_type -> looprpc.ReservationNotificationRequest
+	3, // 3: looprpc.ReservationService.OpenReservation:input_type -> looprpc.ServerOpenReservationRequest
+	2, // 4: looprpc.ReservationService.ReservationNotificationStream:output_type -> looprpc.ServerReservationNotification
+	4, // 5: looprpc.ReservationService.OpenReservation:output_type -> looprpc.ServerOpenReservationResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_reservation_proto_init() }
