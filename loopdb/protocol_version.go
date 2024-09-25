@@ -3,7 +3,7 @@ package loopdb
 import (
 	"math"
 
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
 // ProtocolVersion represents the protocol version (declared on rpc level) that
@@ -64,7 +64,7 @@ const (
 
 	// stableRPCProtocolVersion defines the current stable RPC protocol
 	// version.
-	stableRPCProtocolVersion = looprpc.ProtocolVersion_MUSIG2
+	stableRPCProtocolVersion = swapserverrpc.ProtocolVersion_MUSIG2
 
 	// experimentalRPCProtocolVersion defines the RPC protocol version that
 	// includes all currently experimentally released features.
@@ -80,7 +80,7 @@ var (
 
 // CurrentRPCProtocolVersion returns the RPC protocol version selected to be
 // used for new swaps.
-func CurrentRPCProtocolVersion() looprpc.ProtocolVersion {
+func CurrentRPCProtocolVersion() swapserverrpc.ProtocolVersion {
 	return currentRPCProtocolVersion
 }
 

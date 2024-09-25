@@ -15,7 +15,7 @@ import (
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
-	loop_rpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -137,7 +137,7 @@ func (f *FSM) InitInstantOutAction(eventCtx fsm.EventContext) fsm.EventType {
 	// Send the instantout request to the server.
 	instantOutResponse, err := f.cfg.InstantOutClient.RequestInstantLoopOut(
 		f.ctx,
-		&loop_rpc.InstantLoopOutRequest{
+		&swapserverrpc.InstantLoopOutRequest{
 			ReceiverKey:     keyRes.PubKey.SerializeCompressed(),
 			SwapHash:        swapHash[:],
 			Expiry:          initCtx.cltvExpiry,
@@ -259,7 +259,8 @@ func (f *FSM) PollPaymentAcceptedAction(_ fsm.EventContext) fsm.EventType {
 
 		case <-timer.C:
 			res, err := f.cfg.InstantOutClient.PollPaymentAccepted(
-				f.ctx, &loop_rpc.PollPaymentAcceptedRequest{
+				f.ctx,
+				&swapserverrpc.PollPaymentAcceptedRequest{
 					SwapHash: f.InstantOut.SwapHash[:],
 				},
 			)
@@ -292,7 +293,7 @@ func (f *FSM) BuildHTLCAction(eventCtx fsm.EventContext) fsm.EventType {
 	// Send the server the client nonces.
 	htlcInitRes, err := f.cfg.InstantOutClient.InitHtlcSig(
 		f.ctx,
-		&loop_rpc.InitHtlcSigRequest{
+		&swapserverrpc.InitHtlcSigRequest{
 			SwapHash:         f.InstantOut.SwapHash[:],
 			HtlcClientNonces: htlcClientNonces,
 		},
@@ -331,7 +332,7 @@ func (f *FSM) BuildHTLCAction(eventCtx fsm.EventContext) fsm.EventType {
 	// Send the server the htlc signatures.
 	htlcRes, err := f.cfg.InstantOutClient.PushHtlcSig(
 		f.ctx,
-		&loop_rpc.PushHtlcSigRequest{
+		&swapserverrpc.PushHtlcSigRequest{
 			SwapHash:   f.InstantOut.SwapHash[:],
 			ClientSigs: htlcSigs,
 		},
@@ -377,7 +378,7 @@ func (f *FSM) PushPreimageAction(eventCtx fsm.EventContext) fsm.EventType {
 
 	pushPreImageRes, err := f.cfg.InstantOutClient.PushPreimage(
 		f.ctx,
-		&loop_rpc.PushPreimageRequest{
+		&swapserverrpc.PushPreimageRequest{
 			Preimage:        f.InstantOut.swapPreimage[:],
 			ClientNonces:    coopClientNonces,
 			ClientSweepAddr: f.InstantOut.sweepAddress.String(),
@@ -615,7 +616,7 @@ func (f *FSM) handleErrorAndUnlockReservations(err error) fsm.EventType {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			ctx, &loop_rpc.CancelInstantSwapRequest{
+			ctx, &swapserverrpc.CancelInstantSwapRequest{
 				SwapHash: f.InstantOut.SwapHash[:],
 			},
 		)

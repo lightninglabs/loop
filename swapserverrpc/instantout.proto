@@ -30,7 +30,8 @@ service InstantSwapServer {
     rpc PushPreimage (PushPreimageRequest) returns (PushPreimageResponse);
 
     // CancelInstantSwap tries to cancel the instant swap. This can only be
-    // called if the swap has not been accepted yet.
+    // called if the swap has not been accepted yet. This allows the server to
+    // release the reservation inputs.
     rpc CancelInstantSwap (CancelInstantSwapRequest)
         returns (CancelInstantSwapResponse);
 
@@ -48,7 +49,9 @@ message InstantLoopOutRequest {
     // The hash of the preimage that will be used to settle the htlc.
     bytes swap_hash = 2;
 
-    // The requested absolute block height of the on-chain htlc.
+    // The requested absolute block height of the on-chain htlc. This is
+    // subjected to min and max constraints as reported in the LoopOutTerms
+    // response.
     int32 expiry = 3;
 
     // The fee rate in sat/kw that should be used for the htlc.
