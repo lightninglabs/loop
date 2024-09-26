@@ -248,7 +248,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Validate if the response parameters are outside our allowed range
 	// preventing us from continuing with a swap.
-	err = validateLoopInContract(currentHeight, swapResp)
+	err = ValidateLoopInContract(currentHeight, swapResp.expiry)
 	if err != nil {
 		return nil, err
 	}
@@ -429,12 +429,18 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 	return swap, nil
 }
 
-// validateLoopInContract validates the contract parameters against our request.
-func validateLoopInContract(height int32, response *newLoopInResponse) error {
+// ValidateLoopInContract validates the contract parameters against our
+// configured maximum values.
+func ValidateLoopInContract(height int32, htlcExpiry int32) error {
 	// Verify that we are not forced to publish a htlc that locks up our
 	// funds for too long in case the server doesn't follow through.
-	if response.expiry-height > MaxLoopInAcceptDelta {
+	if htlcExpiry-height > MaxLoopInAcceptDelta {
 		return ErrExpiryTooFar
+	}
+
+	// Ensure that the expiry height is in the future.
+	if htlcExpiry <= height {
+		return ErrExpiryTooSoon
 	}
 
 	return nil
