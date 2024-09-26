@@ -43,8 +43,12 @@ var (
 	ErrSwapAmountTooHigh = errors.New("swap amount too high")
 
 	// ErrExpiryTooFar is returned when the server proposes an expiry that
-	// is too soon for us.
+	// is too far in the future.
 	ErrExpiryTooFar = errors.New("swap expiry too far")
+
+	// ErrExpiryTooSoon is returned when the server proposes an expiry that
+	// is too soon.
+	ErrExpiryTooSoon = errors.New("swap expiry too soon")
 
 	// ErrInsufficientBalance indicates insufficient confirmed balance to
 	// publish a swap.
