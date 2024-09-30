@@ -139,8 +139,8 @@ func quoteIn(ctx *cli.Context) error {
 func depositAmount(ctx context.Context, client looprpc.SwapClientClient,
 	depositOutpoints []string) (btcutil.Amount, error) {
 
-	addressSummary, err := client.GetStaticAddressSummary(
-		ctx, &looprpc.StaticAddressSummaryRequest{
+	addressSummary, err := client.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{
 			Outpoints: depositOutpoints,
 		},
 	)

@@ -162,6 +162,20 @@ service SwapClient {
     rpc WithdrawDeposits (WithdrawDepositsRequest)
         returns (WithdrawDepositsResponse);
 
+    /* loop:`listdeposits`
+    ListStaticAddressDeposits returns a list of filtered static address
+    deposits.
+    */
+    rpc ListStaticAddressDeposits (ListStaticAddressDepositsRequest)
+        returns (ListStaticAddressDepositsResponse);
+
+    /* loop:`listswaps`
+    ListStaticAddressSwaps returns a list of filtered static address
+    swaps.
+    */
+    rpc ListStaticAddressSwaps (ListStaticAddressSwapsRequest)
+        returns (ListStaticAddressSwapsResponse);
+
     /* loop:`static summary`
     GetStaticAddressSummary returns a summary of static address related
     statistics.
@@ -1578,7 +1592,7 @@ message OutPoint {
     uint32 output_index = 3;
 }
 
-message StaticAddressSummaryRequest {
+message ListStaticAddressDepositsRequest {
     /*
     Filters the list of all stored deposits by deposit state.
     */
@@ -1588,6 +1602,26 @@ message StaticAddressSummaryRequest {
     Filters the list of all stored deposits by the outpoint.
     */
     repeated string outpoints = 2;
+}
+
+message ListStaticAddressDepositsResponse {
+    /*
+    A list of all deposits that match the filtered state.
+    */
+    repeated Deposit filtered_deposits = 1;
+}
+
+message ListStaticAddressSwapsRequest {
+}
+
+message ListStaticAddressSwapsResponse {
+    /*
+    A list of all swaps known static address loop-in swaps.
+    */
+    repeated StaticAddressLoopInSwap swaps = 1;
+}
+
+message StaticAddressSummaryRequest {
 }
 
 message StaticAddressSummaryResponse {
@@ -1630,11 +1664,6 @@ message StaticAddressSummaryResponse {
     The total value of all htlc timeout sweeps that the client swept.
     */
     int64 value_htlc_timeout_sweeps_satoshis = 8;
-
-    /*
-    A list of all deposits that match the filtered state.
-    */
-    repeated Deposit filtered_deposits = 9;
 }
 
 enum DepositState {
@@ -1735,6 +1764,81 @@ message Deposit {
     The block height at which the deposit was confirmed.
     */
     int64 confirmation_height = 5;
+}
+
+message StaticAddressLoopInSwap {
+    /*
+    The swap hash of the swap. It represents the unique identifier of the swap.
+    */
+    bytes swap_hash = 1;
+
+    /*
+     */
+    repeated string deposit_outpoints = 2;
+
+    /*
+     */
+    StaticAddressLoopInSwapState state = 3;
+
+    /*
+    The swap amount of the swap. It is the sum of the values of the deposit
+    outpoints that were used for this swap.
+    */
+    int64 swap_amount = 4;
+}
+
+enum StaticAddressLoopInSwapState {
+    /*
+     */
+    UNKNOWN_STATIC_ADDRESS_SWAP_STATE = 0;
+
+    /*
+     */
+    INIT_HTLC = 1;
+
+    /*
+     */
+    SIGN_HTLC_TX = 2;
+
+    /*
+     */
+    MONITOR_INVOICE_HTLC_TX = 3;
+
+    /*
+     */
+    PAYMENT_RECEIVED = 4;
+
+    /*
+     */
+    SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT = 5;
+
+    /*
+     */
+    MONITOR_HTLC_TIMEOUT_SWEEP = 6;
+
+    /*
+     */
+    HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT = 7;
+
+    /*
+     */
+    FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX = 8;
+
+    /*
+     */
+    SUCCEEDED = 9;
+
+    /*
+     */
+    SUCCEEDED_SWEEPLESS_SIG_FAILED = 10;
+
+    /*
+     */
+    UNLOCK_DEPOSITS = 11;
+
+    /*
+     */
+    FAILED_STATIC_ADDRESS_SWAP = 12;
 }
 
 message StaticAddressLoopInRequest {
