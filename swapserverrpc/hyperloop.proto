@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service HyperloopServer {
+    rpc HyperloopNotificationStream (HyperloopNotificationStreamRequest)
+        returns (stream HyperloopNotificationStreamResponse);
+    rpc RegisterHyperloop (RegisterHyperloopRequest)
+        returns (RegisterHyperloopResponse);
+    rpc PushHyperloopHtlcNonce (PushHyperloopHtlcNonceRequest)
+        returns (PushHyperloopHtlcNonceResponse);
+    rpc PushHyperloopHtlcSig (PushHyperloopHtlcSigRequest)
+        returns (PushHyperloopHtlcSigResponse);
+    rpc PushHyperloopPreimage (PushHyperloopPreimageRequest)
+        returns (PushHyperloopPreimageResponse);
+    rpc PushHyperloopSweeplessSweepSig (PushHyperloopSweeplessSweepSigRequest)
+        returns (PushHyperloopSweeplessSweepSigResponse);
+}
+message HyperloopNotificationStreamRequest {
+    bytes hyperloop_id = 1;
+}
+
+message HyperloopNotificationStreamResponse {
+    repeated HyperLoopParticipant participants = 1;
+    string hyperloop_txid = 2;
+    repeated bytes htlc_nonces = 3;
+    bytes final_htlc_sig = 4;
+    repeated bytes sweepless_sweep_nonces = 5;
+}
+
+message HyperloopReadyForSig {
+}
+
+message HyperLoopParticipant {
+    bytes participant_key = 1;
+    bytes swap_hash = 2;
+    int64 amt = 3;
+    string sweep_addr = 4;
+}
+
+message RegisterHyperloopRequest {
+    bytes receiver_key = 1;
+    bytes swap_hash = 2;
+    int64 amt = 3;
+    bytes private_hyperloop_id = 4;
+    int64 private_hyperloop_publish_time = 5;
+    string sweep_addr = 6;
+}
+
+message RegisterHyperloopResponse {
+    bytes hyperloop_id = 1;
+    bytes server_key = 2;
+    int32 htlc_expiry = 3;
+    int32 hyperloop_expiry = 4;
+    int64 hyperloop_fee = 5;
+    string invoice = 6;
+}
+
+message PushHyperloopHtlcNonceRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    bytes htlc_nonce = 3;
+}
+
+message PushHyperloopHtlcNonceResponse {
+    bytes server_htlc_nonce = 1;
+    int64 htlc_fee_rate = 2;
+}
+
+message PushHyperloopHtlcSigRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    bytes htlc_sig = 3;
+}
+
+message PushHyperloopHtlcSigResponse {
+}
+
+message PushHyperloopPreimageRequest {
+    bytes hyperloop_id = 1;
+    bytes preimage = 2;
+    bytes sweep_nonce = 3;
+}
+
+message PushHyperloopPreimageResponse {
+    bytes server_sweep_nonce = 1;
+    int64 sweep_fee_rate = 2;
+}
+
+message PushHyperloopSweeplessSweepSigRequest {
+    bytes hyperloop_id = 1;
+    bytes swap_hash = 2;
+    bytes sweep_sig = 3;
+}
+
+message PushHyperloopSweeplessSweepSigResponse {
+}

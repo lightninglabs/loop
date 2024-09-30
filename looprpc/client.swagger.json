@@ -743,6 +743,34 @@
         }
       }
     },
+    "looprpcHyperLoopOut": {
+      "type": "object",
+      "properties": {
+        "id_bytes": {
+          "type": "string",
+          "format": "byte"
+        },
+        "amt": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "state": {
+          "type": "string"
+        },
+        "server_message": {
+          "type": "string"
+        }
+      }
+    },
+    "looprpcHyperLoopOutResponse": {
+      "type": "object",
+      "properties": {
+        "id_bytes": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
     "looprpcInQuoteResponse": {
       "type": "object",
       "properties": {
@@ -1056,6 +1084,17 @@
         "THRESHOLD"
       ],
       "default": "UNKNOWN"
+    },
+    "looprpcListHyperLoopOutsResponse": {
+      "type": "object",
+      "properties": {
+        "swaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcHyperLoopOut"
+          }
+        }
+      }
     },
     "looprpcListInstantOutsResponse": {
       "type": "object",
