@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -162,9 +163,11 @@ type Config struct {
 
 	MacaroonPath string `long:"macaroonpath" description:"Path to write the macaroon for loop's RPC and REST services if it doesn't exist."`
 
-	LogDir         string `long:"logdir" description:"Directory to log output."`
-	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)."`
-	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
+	LogDir         string           `long:"logdir" description:"Directory to log output."`
+	LogCompressor  string           `long:"logcompressor" description:"Compression algorithm to use when rotating logs." choice:"gzip" choice:"zstd"`
+	MaxLogFiles    int              `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)."`
+	MaxLogFileSize int              `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
+	LogConfig      *build.LogConfig `group:"logging" namespace:"logging"`
 
 	DebugLevel  string `long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 	MaxLSATCost uint32 `long:"maxlsatcost" hidden:"true"`
@@ -208,8 +211,10 @@ func DefaultConfig() Config {
 			DatabaseFileName: defaultSqliteDatabasePath,
 		},
 		LogDir:              defaultLogDir,
+		LogCompressor:       build.Gzip,
 		MaxLogFiles:         defaultMaxLogFiles,
 		MaxLogFileSize:      defaultMaxLogFileSize,
+		LogConfig:           build.DefaultLogConfig(),
 		DebugLevel:          defaultLogLevel,
 		TLSCertPath:         DefaultTLSCertPath,
 		TLSKeyPath:          DefaultTLSKeyPath,

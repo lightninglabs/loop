@@ -170,7 +170,7 @@ type PublishErrorHandler func(err error, errMsg string, log btclog.Logger)
 // expected, if RBF fails).
 func defaultPublishErrorLogger(err error, errMsg string, log btclog.Logger) {
 	// Check if the error is "insufficient fee" error.
-	if strings.Contains(err.Error(), chain.ErrInsufficientFee.Error()) {
+	if strings.Contains(err.Error(), chain.ErrBitcoindClientShuttingDown.Error()) {
 		// Log "insufficient fee" with level Info.
 		log.Infof("%s: %v", errMsg, err)
 
