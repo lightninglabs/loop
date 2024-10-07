@@ -36,6 +36,7 @@ type SwapServerClient interface {
 	// FetchL402 is a simple non-l402-allowlisted request that is required
 	// in order to force the creation of an l402.
 	FetchL402(ctx context.Context, in *FetchL402Request, opts ...grpc.CallOption) (*FetchL402Response, error)
+	SubscribeNotifications(ctx context.Context, in *SubscribeNotificationsRequest, opts ...grpc.CallOption) (SwapServer_SubscribeNotificationsClient, error)
 }
 
 type swapServerClient struct {
@@ -236,6 +237,38 @@ func (c *swapServerClient) FetchL402(ctx context.Context, in *FetchL402Request, 
 	return out, nil
 }
 
+func (c *swapServerClient) SubscribeNotifications(ctx context.Context, in *SubscribeNotificationsRequest, opts ...grpc.CallOption) (SwapServer_SubscribeNotificationsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &SwapServer_ServiceDesc.Streams[2], "/looprpc.SwapServer/SubscribeNotifications", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &swapServerSubscribeNotificationsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type SwapServer_SubscribeNotificationsClient interface {
+	Recv() (*SubscribeNotificationsResponse, error)
+	grpc.ClientStream
+}
+
+type swapServerSubscribeNotificationsClient struct {
+	grpc.ClientStream
+}
+
+func (x *swapServerSubscribeNotificationsClient) Recv() (*SubscribeNotificationsResponse, error) {
+	m := new(SubscribeNotificationsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // SwapServerServer is the server API for SwapServer service.
 // All implementations must embed UnimplementedSwapServerServer
 // for forward compatibility
@@ -258,6 +291,7 @@ type SwapServerServer interface {
 	// FetchL402 is a simple non-l402-allowlisted request that is required
 	// in order to force the creation of an l402.
 	FetchL402(context.Context, *FetchL402Request) (*FetchL402Response, error)
+	SubscribeNotifications(*SubscribeNotificationsRequest, SwapServer_SubscribeNotificationsServer) error
 	mustEmbedUnimplementedSwapServerServer()
 }
 
@@ -312,6 +346,9 @@ func (UnimplementedSwapServerServer) PushKey(context.Context, *ServerPushKeyReq)
 }
 func (UnimplementedSwapServerServer) FetchL402(context.Context, *FetchL402Request) (*FetchL402Response, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchL402 not implemented")
+}
+func (UnimplementedSwapServerServer) SubscribeNotifications(*SubscribeNotificationsRequest, SwapServer_SubscribeNotificationsServer) error {
+	return status.Errorf(codes.Unimplemented, "method SubscribeNotifications not implemented")
 }
 func (UnimplementedSwapServerServer) mustEmbedUnimplementedSwapServerServer() {}
 
@@ -620,6 +657,27 @@ func _SwapServer_FetchL402_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapServer_SubscribeNotifications_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeNotificationsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SwapServerServer).SubscribeNotifications(m, &swapServerSubscribeNotificationsServer{stream})
+}
+
+type SwapServer_SubscribeNotificationsServer interface {
+	Send(*SubscribeNotificationsResponse) error
+	grpc.ServerStream
+}
+
+type swapServerSubscribeNotificationsServer struct {
+	grpc.ServerStream
+}
+
+func (x *swapServerSubscribeNotificationsServer) Send(m *SubscribeNotificationsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // SwapServer_ServiceDesc is the grpc.ServiceDesc for SwapServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -693,6 +751,11 @@ var SwapServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SubscribeLoopInUpdates",
 			Handler:       _SwapServer_SubscribeLoopInUpdates_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SubscribeNotifications",
+			Handler:       _SwapServer_SubscribeNotifications_Handler,
 			ServerStreams: true,
 		},
 	},

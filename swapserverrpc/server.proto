@@ -6,6 +6,7 @@ syntax = "proto3";
 // different golang and RPC package names to fix protobuf namespace conflicts.
 package looprpc;
 import "common.proto";
+import "reservation.proto";
 
 option go_package = "github.com/lightninglabs/loop/swapserverrpc";
 
@@ -50,6 +51,9 @@ service SwapServer {
     // FetchL402 is a simple non-l402-allowlisted request that is required
     // in order to force the creation of an l402.
     rpc FetchL402 (FetchL402Request) returns (FetchL402Response);
+
+    rpc SubscribeNotifications (SubscribeNotificationsRequest)
+        returns (stream SubscribeNotificationsResponse);
 }
 
 /**
@@ -653,6 +657,18 @@ message FetchL402Request {
 // FetchL402Response is an empty response sent from the server to the client to
 // confirm the lnd L402.
 message FetchL402Response {
+}
+
+// SubscribeNotificationsRequest is a request to subscribe to notifications.
+message SubscribeNotificationsRequest {
+}
+
+// SubscribeNotificationsResponse is a response to a
+// SubscribeNotificationsRequest.
+message SubscribeNotificationsResponse {
+    oneof notification {
+        ServerReservationNotification reservation_notification = 1;
+    }
 }
 
 // StaticAddressProtocolVersion represents the static address protocol version
