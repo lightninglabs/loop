@@ -158,7 +158,7 @@ func TestCostMigration(t *testing.T) {
 	}
 
 	// Now we can run the migration.
-	err = MigrateLoopOutCosts(context.Background(), lnd.LndServices, store)
+	err = MigrateLoopOutCosts(context.Background(), lnd.LndServices, 1, store)
 	require.NoError(t, err)
 
 	// Finally check that the swap cost has been updated correctly.
@@ -179,6 +179,6 @@ func TestCostMigration(t *testing.T) {
 	// Now run the migration again to make sure it doesn't fail. This also
 	// indicates that the migration did not run the second time as
 	// otherwise the store mocks SetMigration function would fail.
-	err = MigrateLoopOutCosts(context.Background(), lnd.LndServices, store)
+	err = MigrateLoopOutCosts(context.Background(), lnd.LndServices, 1, store)
 	require.NoError(t, err)
 }

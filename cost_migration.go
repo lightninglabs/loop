@@ -16,10 +16,6 @@ import (
 const (
 	// costMigrationID is the identifier for the cost migration.
 	costMigrationID = "cost_migration"
-
-	// paymentBatchSize is the maximum number of payments we'll fetch in
-	// one go.
-	paymentBatchSize = 1000
 )
 
 // CalculateLoopOutCost calculates the total cost of a loop out swap. It will
@@ -112,7 +108,7 @@ func CalculateLoopOutCost(params *chaincfg.Params, loopOutSwap *loopdb.LoopOut,
 // MigrateLoopOutCosts will calculate the correct cost for all loop out swaps
 // and override the cost values of the last update in the database.
 func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
-	db loopdb.SwapStore) error {
+	paymentBatchSize int, db loopdb.SwapStore) error {
 
 	migrationDone, err := db.HasMigration(ctx, costMigrationID)
 	if err != nil {
@@ -145,7 +141,7 @@ func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
 		payments, err := lnd.Client.ListPayments(
 			ctx, lndclient.ListPaymentsRequest{
 				Offset:      offset,
-				MaxPayments: paymentBatchSize,
+				MaxPayments: uint64(paymentBatchSize),
 			},
 		)
 		if err != nil {
