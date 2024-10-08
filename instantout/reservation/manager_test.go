@@ -13,7 +13,6 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 var (
@@ -119,26 +118,21 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	sendChan := make(chan *swapserverrpc.ServerReservationNotification)
 
 	mockReservationClient.On(
-		"ReservationNotificationStream", mock.Anything, mock.Anything,
-		mock.Anything,
-	).Return(
-		&dummyReservationNotificationServer{
-			SendChan: sendChan,
-		}, nil,
-	)
-
-	mockReservationClient.On(
 		"OpenReservation", mock.Anything, mock.Anything, mock.Anything,
 	).Return(
 		&swapserverrpc.ServerOpenReservationResponse{}, nil,
 	)
 
+	mockNtfnManager := &mockNtfnManager{
+		sendChan: sendChan,
+	}
+
 	cfg := &Config{
-		Store:             store,
-		Wallet:            mockLnd.WalletKit,
-		ChainNotifier:     mockLnd.ChainNotifier,
-		FetchL402:         func(context.Context) error { return nil },
-		ReservationClient: mockReservationClient,
+		Store:               store,
+		Wallet:              mockLnd.WalletKit,
+		ChainNotifier:       mockLnd.ChainNotifier,
+		ReservationClient:   mockReservationClient,
+		NotificationManager: mockNtfnManager,
 	}
 
 	manager := NewManager(cfg)
@@ -152,17 +146,15 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	}
 }
 
-type dummyReservationNotificationServer struct {
-	grpc.ClientStream
-
-	// SendChan is the channel that is used to send notifications.
-	SendChan chan *swapserverrpc.ServerReservationNotification
+type mockNtfnManager struct {
+	sendChan chan *swapserverrpc.ServerReservationNotification
 }
 
-func (d *dummyReservationNotificationServer) Recv() (
-	*swapserverrpc.ServerReservationNotification, error) {
+func (m *mockNtfnManager) SubscribeReservations(
+	ctx context.Context,
+) <-chan *swapserverrpc.ServerReservationNotification {
 
-	return <-d.SendChan, nil
+	return m.sendChan
 }
 
 func mustDecodeID(id string) ID {

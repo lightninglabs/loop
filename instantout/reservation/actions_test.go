@@ -47,16 +47,6 @@ type mockReservationClient struct {
 	mock.Mock
 }
 
-func (m *mockReservationClient) OpenReservation(ctx context.Context,
-	in *swapserverrpc.ServerOpenReservationRequest,
-	opts ...grpc.CallOption) (*swapserverrpc.ServerOpenReservationResponse,
-	error) {
-
-	args := m.Called(ctx, in, opts)
-	return args.Get(0).(*swapserverrpc.ServerOpenReservationResponse),
-		args.Error(1)
-}
-
 func (m *mockReservationClient) ReservationNotificationStream(
 	ctx context.Context, in *swapserverrpc.ReservationNotificationRequest,
 	opts ...grpc.CallOption,
@@ -65,6 +55,16 @@ func (m *mockReservationClient) ReservationNotificationStream(
 
 	args := m.Called(ctx, in, opts)
 	return args.Get(0).(swapserverrpc.ReservationService_ReservationNotificationStreamClient),
+		args.Error(1)
+}
+
+func (m *mockReservationClient) OpenReservation(ctx context.Context,
+	in *swapserverrpc.ServerOpenReservationRequest,
+	opts ...grpc.CallOption) (*swapserverrpc.ServerOpenReservationResponse,
+	error) {
+
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*swapserverrpc.ServerOpenReservationResponse),
 		args.Error(1)
 }
 

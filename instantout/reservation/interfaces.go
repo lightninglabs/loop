@@ -3,6 +3,8 @@ package reservation
 import (
 	"context"
 	"fmt"
+
+	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
 var (
@@ -30,4 +32,11 @@ type Store interface {
 	// ListReservations lists all existing reservations the client has ever
 	// made.
 	ListReservations(ctx context.Context) ([]*Reservation, error)
+}
+
+// NotificationManager handles subscribing to incoming reservation
+// subscriptions.
+type NotificationManager interface {
+	SubscribeReservations(context.Context,
+	) <-chan *swapserverrpc.ServerReservationNotification
 }

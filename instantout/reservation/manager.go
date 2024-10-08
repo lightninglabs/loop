@@ -22,9 +22,6 @@ type Manager struct {
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
 
-	// hasL402 is true if the client has a valid L402.
-	hasL402 bool
-
 	runCtx context.Context
 
 	sync.Mutex
@@ -59,14 +56,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 		return err
 	}
 
-	reservationResChan := make(
-		chan *reservationrpc.ServerReservationNotification,
-	)
-
-	err = m.RegisterReservationNotifications(reservationResChan)
-	if err != nil {
-		return err
-	}
+	ntfnChan := m.cfg.NotificationManager.SubscribeReservations(ctx)
 
 	for {
 		select {
@@ -74,7 +64,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 			log.Debugf("Received block %v", height)
 			currentHeight = height
 
-		case reservationRes := <-reservationResChan:
+		case reservationRes := <-ntfnChan:
 			log.Debugf("Received reservation %x",
 				reservationRes.ReservationId)
 			_, err := m.newReservation(
@@ -155,101 +145,6 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	}
 
 	return reservationFSM, nil
-}
-
-// fetchL402 fetches the L402 from the server. This method will keep on
-// retrying until it gets a valid response.
-func (m *Manager) fetchL402(ctx context.Context) {
-	// Add a 0 timer so that we initially fetch the L402 immediately.
-	timer := time.NewTimer(0)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case <-timer.C:
-			err := m.cfg.FetchL402(ctx)
-			if err != nil {
-				log.Warnf("Error fetching L402: %v", err)
-				timer.Reset(time.Second * 10)
-				continue
-			}
-			m.hasL402 = true
-			return
-		}
-	}
-}
-
-// RegisterReservationNotifications registers a new reservation notification
-// stream.
-func (m *Manager) RegisterReservationNotifications(
-	reservationChan chan *reservationrpc.ServerReservationNotification) error {
-
-	// In order to create a valid l402 we first are going to call
-	// the FetchL402 method. As a client might not have outbound capacity
-	// yet, we'll retry until we get a valid response.
-	if !m.hasL402 {
-		m.fetchL402(m.runCtx)
-	}
-
-	ctx, cancel := context.WithCancel(m.runCtx)
-
-	// We'll now subscribe to the reservation notifications.
-	reservationStream, err := m.cfg.ReservationClient.
-		ReservationNotificationStream(
-			ctx, &reservationrpc.ReservationNotificationRequest{},
-		)
-	if err != nil {
-		cancel()
-		return err
-	}
-
-	log.Debugf("Successfully subscribed to reservation notifications")
-
-	// We'll now start a goroutine that will forward all the reservation
-	// notifications to the reservationChan.
-	go func() {
-		for {
-			reservationRes, err := reservationStream.Recv()
-			if err == nil && reservationRes != nil {
-				log.Debugf("Received reservation %x",
-					reservationRes.ReservationId)
-				reservationChan <- reservationRes
-				continue
-			}
-			log.Errorf("Error receiving "+
-				"reservation: %v", err)
-
-			cancel()
-
-			// If we encounter an error, we'll
-			// try to reconnect.
-			for {
-				select {
-				case <-m.runCtx.Done():
-					return
-
-				case <-time.After(time.Second * 10):
-					log.Debugf("Reconnecting to " +
-						"reservation notifications")
-					err = m.RegisterReservationNotifications(
-						reservationChan,
-					)
-					if err != nil {
-						log.Errorf("Error "+
-							"reconnecting: %v", err)
-						continue
-					}
-
-					// If we were able to reconnect, we'll
-					// return.
-					return
-				}
-			}
-		}
-	}()
-
-	return nil
 }
 
 // RecoverReservations tries to recover all reservations that are still active
