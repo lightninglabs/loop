@@ -52,54 +52,33 @@ type Deposit struct {
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
 
-	// WithdrawalSweepAddress is the address that is used to
-	// cooperatively sweep the deposit to before it is expired.
-	WithdrawalSweepAddress string
+	// FinalizedWithdrawalTx is the coop signed withdrawal transaction. It
+	// is republished on new block arrivals and on client restarts.
+	FinalizedWithdrawalTx *wire.MsgTx
 
 	sync.Mutex
 }
 
-// IsInPendingState returns true if the deposit is pending.
-func (d *Deposit) IsInPendingState() bool {
-	d.Lock()
-	defer d.Unlock()
-
-	return !d.IsInFinalState()
-}
-
 // IsInFinalState returns true if the deposit is final.
 func (d *Deposit) IsInFinalState() bool {
-	d.Lock()
-	defer d.Unlock()
-
-	return d.state == Expired || d.state == Withdrawn || d.state == Failed
+	return d.state == Expired || d.state == Withdrawn ||
+		d.state == Failed || d.state == LoopedIn ||
+		d.state == HtlcTimeoutSwept
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
-	d.Lock()
-	defer d.Unlock()
-
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
 
 func (d *Deposit) GetState() fsm.StateType {
-	d.Lock()
-	defer d.Unlock()
-
 	return d.state
 }
 
 func (d *Deposit) SetState(state fsm.StateType) {
-	d.Lock()
-	defer d.Unlock()
-
 	d.state = state
 }
 
 func (d *Deposit) IsInState(state fsm.StateType) bool {
-	d.Lock()
-	defer d.Unlock()
-
 	return d.state == state
 }
 
