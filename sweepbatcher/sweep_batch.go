@@ -470,8 +470,16 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		// batch's confirmation target and fee rate.
 		if b.primarySweepID == sweep.swapHash {
 			b.cfg.batchConfTarget = sweep.confTarget
-			b.rbfCache.FeeRate = sweep.minFeeRate
 			b.rbfCache.SkipNextBump = true
+		}
+
+		// Update batch's fee rate to be greater than or equal to
+		// minFeeRate of the sweep. Make sure batch's fee rate does not
+		// decrease (otherwise it won't pass RBF rules and won't be
+		// broadcasted) and that it is not lower that minFeeRate of
+		// other sweeps (so it is applied).
+		if b.rbfCache.FeeRate < sweep.minFeeRate {
+			b.rbfCache.FeeRate = sweep.minFeeRate
 		}
 
 		return true, nil
