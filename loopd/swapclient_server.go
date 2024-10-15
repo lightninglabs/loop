@@ -1481,6 +1481,7 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	requiredBalance := btcutil.Amount(req.Amt + req.MaxSwapRoutingFee)
 	isRoutable, _ := hasBandwidth(activeChannelSet, requiredBalance,
 		int(maxParts))
+
 	if !isRoutable {
 		return 0, fmt.Errorf("%w: Requested swap amount of %d "+
 			"sats along with the maximum routing fee of %d sats "+
@@ -1505,40 +1506,87 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	maxParts int) (bool, int) {
 
-	scratch := make([]btcutil.Amount, len(channels))
+	log.Tracef("Checking if %v sats can be routed with %v parts over "+
+		"channel set of length %v", amt, maxParts, len(channels))
+
+	localBalances := make([]btcutil.Amount, len(channels))
 	var totalBandwidth btcutil.Amount
 	for i, channel := range channels {
-		scratch[i] = channel.LocalBalance
+		log.Tracef("Channel %v: local=%v remote=%v", channel.ChannelID,
+			channel.LocalBalance, channel.RemoteBalance)
+
+		localBalances[i] = channel.LocalBalance
 		totalBandwidth += channel.LocalBalance
 	}
 
+	log.Tracef("Total bandwidth: %v", totalBandwidth)
 	if totalBandwidth < amt {
 		return false, 0
 	}
 
+	logLocalBalances := func(shard int) {
+		log.Tracef("Local balances for %v shards:", shard)
+		for i, balance := range localBalances {
+			log.Tracef("Channel %v: localBalances[%v]=%v",
+				channels[i].ChannelID, i, balance)
+		}
+	}
+
 	split := amt
 	for shard := 0; shard <= maxParts; {
+		log.Tracef("Trying to split %v sats into %v parts", amt, shard)
+
 		paid := false
-		for i := 0; i < len(scratch); i++ {
-			if scratch[i] >= split {
-				scratch[i] -= split
+		for i := 0; i < len(localBalances); i++ {
+			// TODO(hieblmi): Consider channel reserves because the
+			//      channel can't send its full local balance.
+			if localBalances[i] >= split {
+				log.Tracef("len(shards)=%v: Local channel "+
+					"balance %v can pay %v sats",
+					shard, localBalances[i], split)
+
+				localBalances[i] -= split
+				log.Tracef("len(shards)=%v: Subtracted "+
+					"%v sats from localBalance[%v]=%v",
+					shard, split, i, localBalances[i])
+
 				amt -= split
+				log.Tracef("len(shards)=%v: Remaining total "+
+					"amount amt=%v", shard, amt)
+
 				paid = true
 				shard++
+
 				break
 			}
 		}
 
+		logLocalBalances(shard)
+
 		if amt == 0 {
+			log.Tracef("Payment is routable with %v part(s)", shard)
+
 			return true, shard
 		}
 
 		if !paid {
+			log.Tracef("len(shards)=%v: No channel could pay %v "+
+				"sats, halving payment to %v and trying again",
+				split/2)
+
 			split /= 2
 		} else {
+			log.Tracef("len(shards)=%v: Payment was made, trying "+
+				"to pay remaining sats %v", shard, amt)
+
 			split = amt
 		}
 	}
+
+	log.Tracef("Payment is not routable, remaining amount that can't be "+
+		"sent: %v sats", amt)
+
+	logLocalBalances(maxParts)
 
 	return false, 0
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -470,6 +471,13 @@ func TestValidateLoopOutRequest(t *testing.T) {
 				SweepConfTarget:   test.confTarget,
 			}
 
+			log = build.NewSubLogger(
+				Subsystem,
+				genSubLogger(
+					build.NewRotatingLogWriter(),
+					interceptor,
+				),
+			)
 			conf, err := validateLoopOutRequest(
 				ctx, lnd.Client, &test.chain, req,
 				test.destAddr, test.maxParts,
