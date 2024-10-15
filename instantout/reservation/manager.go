@@ -56,7 +56,7 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 		return err
 	}
 
-	ntfnChan := m.cfg.NotificationManager.SubscribeReservations(ctx)
+	ntfnChan := m.cfg.NotificationManager.SubscribeReservations(runCtx)
 
 	for {
 		select {
@@ -64,7 +64,14 @@ func (m *Manager) Run(ctx context.Context, height int32) error {
 			log.Debugf("Received block %v", height)
 			currentHeight = height
 
-		case reservationRes := <-ntfnChan:
+		case reservationRes, ok := <-ntfnChan:
+			if !ok {
+				// The channel has been closed, we'll stop the
+				// reservation manager.
+				log.Debugf("Stopping reservation manager (ntfnChan closed)")
+				return nil
+			}
+
 			log.Debugf("Received reservation %x",
 				reservationRes.ReservationId)
 			_, err := m.newReservation(
