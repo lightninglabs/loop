@@ -3698,6 +3698,180 @@ func testWithMixedBatchCoopFailedOnly(t *testing.T, store testStore,
 		wantWeight, wantWitnessSizes)
 }
 
+// testFeeRateGrows tests that fee rate of a batch does not decrease and is at
+// least as high as the highest fee rate of sweeps.
+func testFeeRateGrows(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	// Create a map to store fee rates.
+	swap2feeRate := map[lntypes.Hash]chainfee.SatPerKWeight{}
+	var swap2feeRateMu sync.Mutex
+	setFeeRate := func(swapHash lntypes.Hash, rate chainfee.SatPerKWeight) {
+		swap2feeRateMu.Lock()
+		defer swap2feeRateMu.Unlock()
+
+		swap2feeRate[swapHash] = rate
+	}
+
+	customFeeRate := func(ctx context.Context,
+		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		swap2feeRateMu.Lock()
+		defer swap2feeRateMu.Unlock()
+
+		return swap2feeRate[swapHash], nil
+	}
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(50_000)
+	)
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore, WithCustomFeeRate(customFeeRate))
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	setFeeRate(swapHash1, feeRateMedium)
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 1_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{1},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash1, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Make sure the fee rate is feeRateMedium.
+	batch := getOnlyBatch(batcher)
+	require.Len(t, batch.sweeps, 1)
+	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+
+	// Now decrease the fee of sweep1.
+	setFeeRate(swapHash1, feeRateLow)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Tick tock next block.
+	err = lnd.NotifyHeight(601)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Make sure the fee rate is still feeRateMedium.
+	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+
+	// Add sweep2, with feeRateMedium.
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	setFeeRate(swapHash2, feeRateMedium)
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    1_000_000,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2, 2},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 1_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash2, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Tick tock next block.
+	err = lnd.NotifyHeight(602)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Make sure the fee rate is still feeRateMedium.
+	require.Len(t, batch.sweeps, 2)
+	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+
+	// Now update fee rate of second sweep (which is not primary) to
+	// feeRateHigh. Fee rate of sweep 1 is still feeRateLow.
+	setFeeRate(swapHash2, feeRateHigh)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Tick tock next block.
+	err = lnd.NotifyHeight(603)
+	require.NoError(t, err)
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Make sure the fee rate increased to feeRateHigh.
+	require.Equal(t, feeRateHigh, batch.rbfCache.FeeRate)
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -3837,6 +4011,12 @@ func TestWithMixedBatchNonCoopHintOnly(t *testing.T) {
 // All sweeps are added at once. All the sweeps fail co-signing.
 func TestWithMixedBatchCoopFailedOnly(t *testing.T) {
 	runTests(t, testWithMixedBatchCoopFailedOnly)
+}
+
+// TestFeeRateGrows tests that fee rate of a batch does not decrease and is at
+// least as high as the highest fee rate of sweeps.
+func TestFeeRateGrows(t *testing.T) {
+	runTests(t, testFeeRateGrows)
 }
 
 // testBatcherStore is BatcherStore used in tests.
