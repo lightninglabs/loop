@@ -76,6 +76,8 @@ type Notification struct {
 	NextState StateType
 	// Event is the event that was processed.
 	Event EventType
+	// EventContext is the event context that was processed.
+	EventContext EventContext
 	// LastActionError is the error returned by the last action executed.
 	LastActionError error
 }
@@ -222,6 +224,7 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 			PreviousState:   s.previous,
 			NextState:       s.current,
 			Event:           event,
+			EventContext:    eventCtx,
 			LastActionError: s.LastActionError,
 		}
 
