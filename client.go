@@ -135,6 +135,22 @@ type ClientConfig struct {
 	// MaxPaymentRetries is the maximum times we retry an off-chain payment
 	// (used in loop out).
 	MaxPaymentRetries int
+
+	// MaxStaticAddrHtlcFeePercentage is the percentage of the swap amount
+	// that we allow the server to charge for the htlc transaction.
+	// Although highly unlikely, this is a defense against the server
+	// publishing the htlc without paying the swap invoice, forcing us to
+	// sweep the timeout path.
+	MaxStaticAddrHtlcFeePercentage float64
+
+	// MaxStaticAddrHtlcBackupFeePercentage is the percentage of the swap
+	// amount that we allow the server to charge for the htlc backup
+	// transactions. This is a defense against the server publishing the
+	// htlc backup without paying the swap invoice, forcing us to sweep the
+	// timeout path. This value is elevated compared to
+	// MaxStaticAddrHtlcFeePercentage since it serves the server as backup
+	// transaction in case of fee spikes.
+	MaxStaticAddrHtlcBackupFeePercentage float64
 }
 
 // NewClient returns a new instance to initiate swaps with.
