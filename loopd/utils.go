@@ -40,16 +40,18 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 	}
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:       cfg.Server.Host,
-		ProxyAddress:        cfg.Server.Proxy,
-		SwapServerNoTLS:     cfg.Server.NoTLS,
-		TLSPathServer:       cfg.Server.TLSPath,
-		Lnd:                 lnd,
-		MaxL402Cost:         btcutil.Amount(cfg.MaxL402Cost),
-		MaxL402Fee:          btcutil.Amount(cfg.MaxL402Fee),
-		LoopOutMaxParts:     cfg.LoopOutMaxParts,
-		TotalPaymentTimeout: cfg.TotalPaymentTimeout,
-		MaxPaymentRetries:   cfg.MaxPaymentRetries,
+		ServerAddress:                        cfg.Server.Host,
+		ProxyAddress:                         cfg.Server.Proxy,
+		SwapServerNoTLS:                      cfg.Server.NoTLS,
+		TLSPathServer:                        cfg.Server.TLSPath,
+		Lnd:                                  lnd,
+		MaxL402Cost:                          btcutil.Amount(cfg.MaxL402Cost),
+		MaxL402Fee:                           btcutil.Amount(cfg.MaxL402Fee),
+		LoopOutMaxParts:                      cfg.LoopOutMaxParts,
+		TotalPaymentTimeout:                  cfg.TotalPaymentTimeout,
+		MaxPaymentRetries:                    cfg.MaxPaymentRetries,
+		MaxStaticAddrHtlcFeePercentage:       cfg.MaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: cfg.MaxStaticAddrHtlcBackupFeePercentage,
 	}
 
 	if cfg.MaxL402Cost == defaultCost && cfg.MaxLSATCost != 0 {
