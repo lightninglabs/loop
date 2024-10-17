@@ -2,7 +2,6 @@ package test
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"runtime/pprof"
 	"testing"
@@ -46,13 +45,9 @@ func EncodePayReq(payReq *zpay32.Invoice) (string, error) {
 			SignCompact: func(hash []byte) ([]byte, error) {
 				// ecdsa.SignCompact returns a
 				// pubkey-recoverable signature.
-				sig, err := ecdsa.SignCompact(
+				sig := ecdsa.SignCompact(
 					privKey, payReq.PaymentHash[:], true,
 				)
-				if err != nil {
-					return nil, fmt.Errorf("can't sign "+
-						"the hash: %v", err)
-				}
 
 				return sig, nil
 			},

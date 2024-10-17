@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"golang.org/x/net/context"
 )
 
@@ -19,6 +20,15 @@ type mockChainNotifier struct {
 	lnd               *LndMockServices
 	confRegistrations []*ConfRegistration
 	wg                sync.WaitGroup
+}
+
+var _ lndclient.ChainNotifierClient = (*mockChainNotifier)(nil)
+
+func (c *mockChainNotifier) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	chainrpc.ChainNotifierClient) {
+
+	return ctx, 0, nil
 }
 
 // SpendRegistration contains registration details.

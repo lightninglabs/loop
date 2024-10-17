@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -886,11 +887,15 @@ func testFailedOffChainCancelation(t *testing.T) {
 		swap.LoopOutContract.SwapInvoice, lnd.ChainParams,
 	)
 	require.NoError(t, err)
-	require.NotNil(t, invoice.PaymentAddr)
+
+	payAddr, err := invoice.PaymentAddr.UnwrapOrErr(
+		fmt.Errorf("expected payment address"),
+	)
+	require.NoError(t, err)
 
 	swapCancelation := &outCancelDetails{
 		hash:        swap.hash,
-		paymentAddr: *invoice.PaymentAddr,
+		paymentAddr: payAddr,
 		metadata: routeCancelMetadata{
 			paymentType:   paymentTypeInvoice,
 			failureReason: failUpdate.FailureReason,
