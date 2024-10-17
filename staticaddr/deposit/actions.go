@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	defaultConfTarget = 3
+	DefaultConfTarget = 3
 )
 
-// PublishDepositExpirySweepAction creates and publishes the timeout transaction
-// that spends the deposit from the static address timeout leaf to the
-// predefined timeout sweep pkscript.
-func (f *FSM) PublishDepositExpirySweepAction(_ fsm.EventContext) fsm.EventType {
+// PublishExpirySweepAction creates and publishes the timeout transaction that
+// spends the deposit from the static address timeout leaf to the  predefined
+// timeout sweep pkscript.
+func (f *FSM) PublishExpirySweepAction(_ fsm.EventContext) fsm.EventType {
 	msgTx := wire.NewMsgTx(2)
 
 	params, err := f.cfg.AddressManager.GetStaticAddressParameters(f.ctx)
@@ -36,11 +36,11 @@ func (f *FSM) PublishDepositExpirySweepAction(_ fsm.EventContext) fsm.EventType 
 
 	// Estimate the fee rate of an expiry spend transaction.
 	feeRateEstimator, err := f.cfg.WalletKit.EstimateFeeRate(
-		f.ctx, defaultConfTarget,
+		f.ctx, DefaultConfTarget,
 	)
 	if err != nil {
 		return f.HandleError(fmt.Errorf("timeout sweep fee "+
-			"estimation failed: %v", err))
+			"estimation failed: %w", err))
 	}
 
 	weight := script.ExpirySpendWeight()
@@ -111,7 +111,7 @@ func (f *FSM) PublishDepositExpirySweepAction(_ fsm.EventContext) fsm.EventType 
 // before a timeout sweep is considered successful.
 func (f *FSM) WaitForExpirySweepAction(_ fsm.EventContext) fsm.EventType {
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		f.ctx, nil, f.deposit.TimeOutSweepPkScript, defaultConfTarget,
+		f.ctx, nil, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.ConfirmationHeight),
 	)
 	if err != nil {
@@ -119,7 +119,7 @@ func (f *FSM) WaitForExpirySweepAction(_ fsm.EventContext) fsm.EventType {
 	}
 
 	select {
-	case err := <-errSpendChan:
+	case err = <-errSpendChan:
 		log.Debugf("error while sweeping expired deposit: %v", err)
 		return fsm.OnError
 
@@ -148,9 +148,9 @@ func (f *FSM) SweptExpiredDepositAction(_ fsm.EventContext) fsm.EventType {
 	return fsm.NoOp
 }
 
-// WithdrawnDepositAction is the final action after a withdrawal. It signals to
+// FinalizeDepositAction is the final action after a withdrawal. It signals to
 // the manager that the deposit has been swept and the FSM can be removed.
-func (f *FSM) WithdrawnDepositAction(_ fsm.EventContext) fsm.EventType {
+func (f *FSM) FinalizeDepositAction(_ fsm.EventContext) fsm.EventType {
 	select {
 	case <-f.ctx.Done():
 		return fsm.OnError
