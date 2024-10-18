@@ -62,7 +62,13 @@ var (
 	// probeTimeout is the maximum time until a probe is allowed to take.
 	probeTimeout = 3 * time.Minute
 
+	// repushDelay is the delay of (re)adding a sweep to sweepbatcher after
+	// a block is mined.
 	repushDelay = 1 * time.Second
+
+	// additionalDelay is the delay added on top of repushDelay inside the
+	// sweepbatcher to publish a sweep transaction.
+	additionalDelay = 1 * time.Second
 
 	// MinerFeeEstimationFailed is a magic number that is returned in a
 	// quote call as the miner fee if the fee estimation in lnd's wallet
@@ -185,13 +191,52 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 			"NewSweepFetcherFromSwapStore failed: %w", err)
 	}
 
+	// There is circular dependency between executor and sweepbatcher, as
+	// executor stores sweepbatcher and sweepbatcher depends on
+	// executor.height() though loopOutSweepFeerateProvider.
+	var executor *executor
+
+	// getHeight returns current height, according to executor.
+	getHeight := func() int32 {
+		if executor == nil {
+			// This must not happen, because executor is set in this
+			// function, before sweepbatcher.Run is called.
+			log.Errorf("getHeight called when executor is nil")
+
+			return 0
+		}
+
+		return executor.height()
+	}
+
+	loopOutSweepFeerateProvider := newLoopOutSweepFeerateProvider(
+		sweeper, loopDB, cfg.Lnd.ChainParams, getHeight,
+	)
+
 	batcher := sweepbatcher.NewBatcher(
 		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
 		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
 		cfg.Lnd.ChainParams, sweeperDb, sweepStore,
+
+		// Disable 100 sats/kw fee bump every block and retarget feerate
+		// every block according to the current mempool condition.
+		sweepbatcher.WithCustomFeeRate(
+			loopOutSweepFeerateProvider.GetMinFeeRate,
+		),
+
+		// Upon new block arrival, republishing is triggered in both
+		// loopout.go code (waitForHtlcSpendConfirmedV2/ <-timerChan)
+		// and in sweepbatcher code (batch.Run/case <-timerChan). The
+		// former updates the fee rate which is used by the later by
+		// calling AddSweep. Make sure they are ordered, add additional
+		// delay time to sweepbatcher's handling. The delay used in
+		// loopout.go is repushDelay.
+		sweepbatcher.WithPublishDelay(
+			repushDelay+additionalDelay,
+		),
 	)
 
-	executor := newExecutor(&executorConfig{
+	executor = newExecutor(&executorConfig{
 		lnd:                 cfg.Lnd,
 		store:               loopDB,
 		sweeper:             sweeper,

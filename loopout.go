@@ -52,11 +52,19 @@ const (
 	DefaultHtlcConfTarget = 6
 
 	// DefaultSweepConfTargetDelta is the delta of blocks from a Loop Out
-	// swap's expiration height at which we begin to use the default sweep
-	// confirmation target.
-	//
-	// TODO(wilmer): tune?
-	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
+	// swap's expiration height at which we begin to cap the sweep
+	// confirmation target with urgentSweepConfTarget and multiply feerate
+	// by factor urgentSweepConfTargetFactor.
+	DefaultSweepConfTargetDelta = 10
+
+	// urgentSweepConfTarget is the confirmation target we'll use when the
+	// loop-out swap is about to expire (<= DefaultSweepConfTargetDelta
+	// blocks to expire).
+	urgentSweepConfTarget = 3
+
+	// urgentSweepConfTargetFactor is the factor we apply to feerate of
+	// loop-out sweep if it is about to expire.
+	urgentSweepConfTargetFactor = 1.1
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
