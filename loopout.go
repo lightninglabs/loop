@@ -1169,12 +1169,12 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			timerChan = s.timerFactory(repushDelay)
 
 		case <-timerChan:
-			// sweepConfTarget will return false if the preimage is
+			// canSweep will return false if the preimage is
 			// not revealed yet but the conf target is closer than
 			// 20 blocks. In this case to be sure we won't attempt
 			// to sweep at all and we won't reveal the preimage
 			// either.
-			_, canSweep := s.sweepConfTarget()
+			canSweep := s.canSweep()
 			if !canSweep {
 				s.log.Infof("Aborting swap, timed " +
 					"out on-chain")
@@ -1375,9 +1375,9 @@ func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
 	return nil
 }
 
-// sweepConfTarget returns the confirmation target for the htlc sweep or false
-// if we're too late.
-func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
+// canSweep will return false if the preimage is not revealed yet but the conf
+// target is closer than 20 blocks (i.e. it is too late to reveal the preimage).
+func (s *loopOutSwap) canSweep() bool {
 	remainingBlocks := s.CltvExpiry - s.height
 	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
 	preimageRevealed := s.state == loopdb.StatePreimageRevealed
@@ -1393,20 +1393,8 @@ func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
 			s.height)
 
 		s.state = loopdb.StateFailTimeout
-		return 0, false
+		return false
 	}
 
-	// Calculate the transaction fee based on the confirmation target
-	// required to sweep the HTLC before the timeout. We'll use the
-	// confirmation target provided by the client unless we've come too
-	// close to the expiration height, in which case we'll use the default
-	// if it is better than what the client provided.
-	confTarget := s.SweepConfTarget
-	if remainingBlocks <= DefaultSweepConfTargetDelta &&
-		confTarget > DefaultSweepConfTarget {
-
-		confTarget = DefaultSweepConfTarget
-	}
-
-	return confTarget, true
+	return true
 }
