@@ -37,8 +37,8 @@ type DepositManager interface {
 	AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 		stateFilter fsm.StateType) ([]*deposit.Deposit, bool)
 
-	TransitionDeposits(deposits []*deposit.Deposit, event fsm.EventType,
-		expectedFinalState fsm.StateType) error
+	TransitionDeposits(ctx context.Context, deposits []*deposit.Deposit,
+		event fsm.EventType, expectedFinalState fsm.StateType) error
 
-	UpdateDeposit(d *deposit.Deposit) error
+	UpdateDeposit(ctx context.Context, d *deposit.Deposit) error
 }
