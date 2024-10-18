@@ -28,6 +28,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -91,6 +92,7 @@ type swapClientServer struct {
 	staticAddressManager *address.Manager
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
+	staticLoopInManager  *loopin.Manager
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo
@@ -761,11 +763,11 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	}
 
 	// Retrieve deposits to calculate their total value.
-	var summary *looprpc.StaticAddressSummaryResponse
+	var depositList *looprpc.ListStaticAddressDepositsResponse
 	amount := btcutil.Amount(req.Amt)
 	if len(req.DepositOutpoints) > 0 {
-		summary, err = s.GetStaticAddressSummary(
-			ctx, &looprpc.StaticAddressSummaryRequest{
+		depositList, err = s.ListStaticAddressDeposits(
+			ctx, &looprpc.ListStaticAddressDepositsRequest{
 				Outpoints: req.DepositOutpoints,
 			},
 		)
@@ -773,14 +775,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			return nil, err
 		}
 
-		if summary == nil {
+		if depositList == nil {
 			return nil, fmt.Errorf("no summary returned for " +
 				"deposit outpoints")
 		}
 
 		// The requested amount should be 0 here if the request
 		// contained deposit outpoints.
-		if amount != 0 && len(summary.FilteredDeposits) > 0 {
+		if amount != 0 && len(depositList.FilteredDeposits) > 0 {
 			return nil, fmt.Errorf("amount should be 0 for " +
 				"deposit quotes")
 		}
@@ -788,8 +790,8 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		// In case we quote for deposits we send the server both the
 		// total value and the number of deposits. This is so the server
 		// can probe the total amount and calculate the per input fee.
-		if amount == 0 && len(summary.FilteredDeposits) > 0 {
-			for _, deposit := range summary.FilteredDeposits {
+		if amount == 0 && len(depositList.FilteredDeposits) > 0 {
+			for _, deposit := range depositList.FilteredDeposits {
 				amount += btcutil.Amount(deposit.Value)
 			}
 		}
@@ -1429,49 +1431,144 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	err = s.withdrawalManager.WithdrawDeposits(ctx, outpoints)
+	s.withdrawalManager.DeliverWithdrawalRequest(ctx, outpoints)
+
+	return &looprpc.WithdrawDepositsResponse{}, err
+}
+
+func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
+	req *looprpc.ListStaticAddressDepositsRequest) (
+	*looprpc.ListStaticAddressDepositsResponse, error) {
+
+	outpoints := req.Outpoints
+	if req.StateFilter != looprpc.DepositState_UNKNOWN_STATE &&
+		len(outpoints) > 0 {
+
+		return nil, fmt.Errorf("can either filter by state or " +
+			"outpoints")
+	}
+
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return &looprpc.WithdrawDepositsResponse{}, err
+	// Deposits filtered by state or outpoints.
+	var filteredDeposits []*looprpc.Deposit
+	if len(outpoints) > 0 {
+		f := func(d *deposit.Deposit) bool {
+			for _, outpoint := range outpoints {
+				if outpoint == d.OutPoint.String() {
+					return true
+				}
+			}
+			return false
+		}
+		filteredDeposits = filter(allDeposits, f)
+
+		if len(outpoints) != len(filteredDeposits) {
+			return nil, fmt.Errorf("not all outpoints found in " +
+				"deposits")
+		}
+	} else {
+		f := func(d *deposit.Deposit) bool {
+			if req.StateFilter == looprpc.DepositState_UNKNOWN_STATE {
+				// Per default, we return deposits in all
+				// states.
+				return true
+			}
+
+			return d.IsInState(toServerState(req.StateFilter))
+		}
+		filteredDeposits = filter(allDeposits, f)
+	}
+
+	// Calculate the blocks until expiry for each deposit.
+	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bestBlockHeight := int64(lndInfo.BlockHeight)
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(filteredDeposits); i++ {
+		filteredDeposits[i].BlocksUntilExpiry =
+			filteredDeposits[i].ConfirmationHeight +
+				int64(params.Expiry) - bestBlockHeight
+	}
+
+	return &looprpc.ListStaticAddressDepositsResponse{
+		FilteredDeposits: filteredDeposits,
+	}, nil
+}
+
+func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
+	_ *looprpc.ListStaticAddressSwapsRequest) (
+	*looprpc.ListStaticAddressSwapsResponse, error) {
+
+	swaps, err := s.staticLoopInManager.GetAllSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(swaps) == 0 {
+		return &looprpc.ListStaticAddressSwapsResponse{}, nil
+	}
+
+	var clientSwaps []*looprpc.StaticAddressLoopInSwap
+	for _, swp := range swaps {
+		chainParams, err := s.network.ChainParams()
+		if err != nil {
+			return nil, fmt.Errorf("error getting chain params")
+		}
+		swapPayReq, err := zpay32.Decode(swp.SwapInvoice, chainParams)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding swap invoice: "+
+				"%v", err)
+		}
+		swap := &looprpc.StaticAddressLoopInSwap{
+			SwapHash:         swp.SwapHash[:],
+			DepositOutpoints: swp.DepositOutpoints,
+			State: toClientStaticAddressLoopInState(
+				swp.GetState(),
+			),
+			SwapAmountSatoshis: int64(swp.TotalDepositAmount()),
+			PaymentRequestAmountSatoshis: int64(
+				swapPayReq.MilliSat.ToSatoshis(),
+			),
+		}
+
+		clientSwaps = append(clientSwaps, swap)
+	}
+
+	return &looprpc.ListStaticAddressSwapsResponse{
+		Swaps: clientSwaps,
+	}, nil
 }
 
 // GetStaticAddressSummary returns a summary static address related information.
 // Amongst deposits and withdrawals and their total values it also includes a
 // list of detailed deposit information filtered by their state.
 func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
-	req *looprpc.StaticAddressSummaryRequest) (
+	_ *looprpc.StaticAddressSummaryRequest) (
 	*looprpc.StaticAddressSummaryResponse, error) {
 
-	if req.StateFilter != looprpc.DepositState_UNKNOWN_STATE &&
-		len(req.Outpoints) > 0 {
-
-		return nil, fmt.Errorf("can either filter by state or " +
-			"outpoints")
-	}
-
-	allDeposits, err := s.depositManager.GetAllDeposits()
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.depositSummary(
-		ctx, allDeposits, req.StateFilter, req.Outpoints,
-	)
-}
-
-func (s *swapClientServer) depositSummary(ctx context.Context,
-	deposits []*deposit.Deposit, stateFilter looprpc.DepositState,
-	outpointsFilter []string) (*looprpc.StaticAddressSummaryResponse,
-	error) {
-
 	var (
-		totalNumDeposits = len(deposits)
+		totalNumDeposits = len(allDeposits)
 		valueUnconfirmed int64
 		valueDeposited   int64
 		valueExpired     int64
 		valueWithdrawn   int64
+		valueLoopedIn    int64
+		htlcTimeoutSwept int64
 	)
 
 	// Value unconfirmed.
@@ -1486,7 +1583,7 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 	}
 
 	// Confirmed total values by category.
-	for _, d := range deposits {
+	for _, d := range allDeposits {
 		value := int64(d.Value)
 		switch d.GetState() {
 		case deposit.Deposited:
@@ -1497,37 +1594,13 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 
 		case deposit.Withdrawn:
 			valueWithdrawn += value
-		}
-	}
 
-	// Deposits filtered by state or outpoints.
-	var clientDeposits []*looprpc.Deposit
-	if len(outpointsFilter) > 0 {
-		f := func(d *deposit.Deposit) bool {
-			for _, outpoint := range outpointsFilter {
-				if outpoint == d.OutPoint.String() {
-					return true
-				}
-			}
-			return false
-		}
-		clientDeposits = filter(deposits, f)
+		case deposit.LoopedIn:
+			valueLoopedIn += value
 
-		if len(outpointsFilter) != len(clientDeposits) {
-			return nil, fmt.Errorf("not all outpoints found in " +
-				"deposits")
+		case deposit.HtlcTimeoutSwept:
+			htlcTimeoutSwept += value
 		}
-	} else {
-		f := func(d *deposit.Deposit) bool {
-			if stateFilter == looprpc.DepositState_UNKNOWN_STATE {
-				// Per default, we return deposits in all
-				// states.
-				return true
-			}
-
-			return d.GetState() == toServerState(stateFilter)
-		}
-		clientDeposits = filter(deposits, f)
 	}
 
 	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
@@ -1543,14 +1616,62 @@ func (s *swapClientServer) depositSummary(ctx context.Context,
 	}
 
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:    address.String(),
-		TotalNumDeposits: uint32(totalNumDeposits),
-		ValueUnconfirmed: valueUnconfirmed,
-		ValueDeposited:   valueDeposited,
-		ValueExpired:     valueExpired,
-		ValueWithdrawn:   valueWithdrawn,
-		FilteredDeposits: clientDeposits,
+		StaticAddress:                  address.String(),
+		RelativeExpiryBlocks:           uint64(params.Expiry),
+		TotalNumDeposits:               uint32(totalNumDeposits),
+		ValueUnconfirmedSatoshis:       valueUnconfirmed,
+		ValueDepositedSatoshis:         valueDeposited,
+		ValueExpiredSatoshis:           valueExpired,
+		ValueWithdrawnSatoshis:         valueWithdrawn,
+		ValueLoopedInSatoshis:          valueLoopedIn,
+		ValueHtlcTimeoutSweepsSatoshis: htlcTimeoutSwept,
 	}, nil
+}
+
+// StaticAddressLoopIn initiates a loop-in request using static address
+// deposits.
+func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
+	in *looprpc.StaticAddressLoopInRequest) (
+	*looprpc.StaticAddressLoopInResponse, error) {
+
+	log.Infof("Static loop-in request received")
+
+	routeHints, err := unmarshallRouteHints(in.RouteHints)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &loop.StaticAddressLoopInRequest{
+		DepositOutpoints:      in.Outpoints,
+		MaxSwapFee:            btcutil.Amount(in.MaxSwapFeeSatoshis),
+		Label:                 in.Label,
+		Initiator:             in.Initiator,
+		Private:               in.Private,
+		RouteHints:            routeHints,
+		PaymentTimeoutSeconds: in.PaymentTimeoutSeconds,
+	}
+
+	if in.LastHop != nil {
+		lastHop, err := route.NewVertexFromBytes(in.LastHop)
+		if err != nil {
+			return nil, err
+		}
+		req.LastHop = &lastHop
+	}
+
+	errChan := s.staticLoopInManager.DeliverLoopInRequest(ctx, req)
+	select {
+	case err = <-errChan:
+
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.StaticAddressLoopInResponse{}, nil
 }
 
 type filterFunc func(deposits *deposit.Deposit) bool
@@ -1565,8 +1686,10 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 		hash := d.Hash
 		outpoint := wire.NewOutPoint(&hash, d.Index).String()
 		deposit := &looprpc.Deposit{
-			Id:                 d.ID[:],
-			State:              toClientState(d.GetState()),
+			Id: d.ID[:],
+			State: toClientDepositState(
+				d.GetState(),
+			),
 			Outpoint:           outpoint,
 			Value:              int64(d.Value),
 			ConfirmationHeight: d.ConfirmationHeight,
@@ -1578,7 +1701,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 	return clientDeposits
 }
 
-func toClientState(state fsm.StateType) looprpc.DepositState {
+func toClientDepositState(state fsm.StateType) looprpc.DepositState {
 	switch state {
 	case deposit.Deposited:
 		return looprpc.DepositState_DEPOSITED
@@ -1589,8 +1712,20 @@ func toClientState(state fsm.StateType) looprpc.DepositState {
 	case deposit.Withdrawn:
 		return looprpc.DepositState_WITHDRAWN
 
-	case deposit.PublishExpiredDeposit:
+	case deposit.PublishExpirySweep:
 		return looprpc.DepositState_PUBLISH_EXPIRED
+
+	case deposit.LoopingIn:
+		return looprpc.DepositState_LOOPING_IN
+
+	case deposit.LoopedIn:
+		return looprpc.DepositState_LOOPED_IN
+
+	case deposit.SweepHtlcTimeout:
+		return looprpc.DepositState_SWEEP_HTLC_TIMEOUT
+
+	case deposit.HtlcTimeoutSwept:
+		return looprpc.DepositState_HTLC_TIMEOUT_SWEPT
 
 	case deposit.WaitForExpirySweep:
 		return looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP
@@ -1606,6 +1741,51 @@ func toClientState(state fsm.StateType) looprpc.DepositState {
 	}
 }
 
+func toClientStaticAddressLoopInState(
+	state fsm.StateType) looprpc.StaticAddressLoopInSwapState {
+
+	switch state {
+	case loopin.InitHtlcTx:
+		return looprpc.StaticAddressLoopInSwapState_INIT_HTLC
+
+	case loopin.SignHtlcTx:
+		return looprpc.StaticAddressLoopInSwapState_SIGN_HTLC_TX
+
+	case loopin.MonitorInvoiceAndHtlcTx:
+		return looprpc.StaticAddressLoopInSwapState_MONITOR_INVOICE_HTLC_TX
+
+	case loopin.PaymentReceived:
+		return looprpc.StaticAddressLoopInSwapState_PAYMENT_RECEIVED
+
+	case loopin.SweepHtlcTimeout:
+		return looprpc.StaticAddressLoopInSwapState_SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT
+
+	case loopin.MonitorHtlcTimeoutSweep:
+		return looprpc.StaticAddressLoopInSwapState_MONITOR_HTLC_TIMEOUT_SWEEP
+
+	case loopin.HtlcTimeoutSwept:
+		return looprpc.StaticAddressLoopInSwapState_HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT
+
+	case loopin.FetchSignPushSweeplessSweepTx:
+		return looprpc.StaticAddressLoopInSwapState_FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX
+
+	case loopin.Succeeded:
+		return looprpc.StaticAddressLoopInSwapState_SUCCEEDED
+
+	case loopin.SucceededSweeplessSigFailed:
+		return looprpc.StaticAddressLoopInSwapState_SUCCEEDED_SWEEPLESS_SIG_FAILED
+
+	case loopin.UnlockDeposits:
+		return looprpc.StaticAddressLoopInSwapState_UNLOCK_DEPOSITS
+
+	case loopin.Failed:
+		return looprpc.StaticAddressLoopInSwapState_FAILED_STATIC_ADDRESS_SWAP
+
+	default:
+		return looprpc.StaticAddressLoopInSwapState_UNKNOWN_STATIC_ADDRESS_SWAP_STATE
+	}
+}
+
 func toServerState(state looprpc.DepositState) fsm.StateType {
 	switch state {
 	case looprpc.DepositState_DEPOSITED:
@@ -1618,7 +1798,19 @@ func toServerState(state looprpc.DepositState) fsm.StateType {
 		return deposit.Withdrawn
 
 	case looprpc.DepositState_PUBLISH_EXPIRED:
-		return deposit.PublishExpiredDeposit
+		return deposit.PublishExpirySweep
+
+	case looprpc.DepositState_LOOPING_IN:
+		return deposit.LoopingIn
+
+	case looprpc.DepositState_LOOPED_IN:
+		return deposit.LoopedIn
+
+	case looprpc.DepositState_SWEEP_HTLC_TIMEOUT:
+		return deposit.SweepHtlcTimeout
+
+	case looprpc.DepositState_HTLC_TIMEOUT_SWEPT:
+		return deposit.HtlcTimeoutSwept
 
 	case looprpc.DepositState_WAIT_FOR_EXPIRY_SWEEP:
 		return deposit.WaitForExpirySweep
