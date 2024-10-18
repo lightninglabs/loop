@@ -38,20 +38,18 @@ const (
 	// We'll try to sweep with MuSig2 at most 10 times. If that fails we'll
 	// fail back to using standard scriptspend sweep.
 	maxMusigSweepRetries = 10
-)
 
-var (
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
 	// remaining blocks before htlc expiry required to reveal preimage.
-	MinLoopOutPreimageRevealDelta int32 = 20
+	MinLoopOutPreimageRevealDelta = 20
 
 	// DefaultSweepConfTarget is the default confirmation target we'll use
 	// when sweeping on-chain HTLCs.
-	DefaultSweepConfTarget int32 = 9
+	DefaultSweepConfTarget = 9
 
 	// DefaultHtlcConfTarget is the default confirmation target we'll use
 	// for on-chain htlcs published by the swap client for Loop In.
-	DefaultHtlcConfTarget int32 = 6
+	DefaultHtlcConfTarget = 6
 
 	// DefaultSweepConfTargetDelta is the delta of blocks from a Loop Out
 	// swap's expiration height at which we begin to use the default sweep
