@@ -648,6 +648,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Start the reservation manager.
 	if d.reservationManager != nil {
 		d.wg.Add(1)
+		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
 
@@ -663,12 +664,25 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer log.Info("Reservation manager stopped")
 
 			err = d.reservationManager.Run(
-				d.mainCtx, int32(getInfo.BlockHeight),
+				d.mainCtx, int32(getInfo.BlockHeight), initChan,
 			)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 		}()
+
+		// Wait for the reservation server to be ready before starting the
+		// grpc server.
+		timeOutCtx, cancel := context.WithTimeout(d.mainCtx, 10*time.Second)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("reservation server not ready: %v",
+				timeOutCtx.Err())
+
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Start the instant out manager.
@@ -701,8 +715,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
-			return fmt.Errorf("reservation server not ready: %v",
+			return fmt.Errorf("instantout server not ready: %v",
 				timeOutCtx.Err())
+
 		case <-initChan:
 			cancel()
 		}

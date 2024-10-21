@@ -25,11 +25,15 @@ func TestManager(t *testing.T) {
 
 	testContext := newManagerTestContext(t)
 
+	initChan := make(chan struct{})
 	// Start the manager.
 	go func() {
-		err := testContext.manager.Run(ctxb, testContext.mockLnd.Height)
+		err := testContext.manager.Run(ctxb, testContext.mockLnd.Height, initChan)
 		require.NoError(t, err)
 	}()
+
+	// We'll now wait for the manager to be initialized.
+	<-initChan
 
 	// Create a new reservation.
 	reservationFSM, err := testContext.manager.newReservation(
