@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -22,7 +23,7 @@ type TestStateMachineContext struct {
 func (c *TestStateMachineContext) GetStates() States {
 	return States{
 		"State1": State{
-			Action: func(ctx EventContext) EventType {
+			Action: func(_ context.Context, ctx EventContext) EventType {
 				return "Event1"
 			},
 			Transitions: Transitions{
@@ -30,7 +31,7 @@ func (c *TestStateMachineContext) GetStates() States {
 			},
 		},
 		"State2": State{
-			Action: func(ctx EventContext) EventType {
+			Action: func(_ context.Context, ctx EventContext) EventType {
 				return "NoOp"
 			},
 			Transitions: Transitions{},
@@ -39,7 +40,9 @@ func (c *TestStateMachineContext) GetStates() States {
 }
 
 // errorAction returns an error.
-func (c *TestStateMachineContext) errorAction(eventCtx EventContext) EventType {
+func (c *TestStateMachineContext) errorAction(ctx context.Context,
+	eventCtx EventContext) EventType {
+
 	return c.StateMachine.HandleError(errAction)
 }
 
@@ -58,9 +61,9 @@ func setupTestStateMachineContext() *TestStateMachineContext {
 // TestStateMachine_Success tests the state machine with a successful event.
 func TestStateMachine_Success(t *testing.T) {
 	ctx := setupTestStateMachineContext()
-
+	ctxb := context.Background()
 	// Send an event to the state machine.
-	err := ctx.SendEvent("Event1", nil)
+	err := ctx.SendEvent(ctxb, "Event1", nil)
 	require.NoError(t, err)
 
 	// Check that the state machine has transitioned to the next state.
@@ -72,8 +75,9 @@ func TestStateMachine_Success(t *testing.T) {
 func TestStateMachine_ConfigurationError(t *testing.T) {
 	ctx := setupTestStateMachineContext()
 	ctx.StateMachine.States = nil
+	ctxb := context.Background()
 
-	err := ctx.SendEvent("Event1", nil)
+	err := ctx.SendEvent(ctxb, "Event1", nil)
 	require.EqualError(
 		t, err,
 		NewErrConfigError("state machine config is nil").Error(),
@@ -83,6 +87,7 @@ func TestStateMachine_ConfigurationError(t *testing.T) {
 // TestStateMachine_ActionError tests the state machine with an action error.
 func TestStateMachine_ActionError(t *testing.T) {
 	ctx := setupTestStateMachineContext()
+	ctxb := context.Background()
 
 	states := ctx.StateMachine.States
 
@@ -99,13 +104,13 @@ func TestStateMachine_ActionError(t *testing.T) {
 	}
 
 	states["ErrorState"] = State{
-		Action: func(ctx EventContext) EventType {
+		Action: func(_ context.Context, ctx EventContext) EventType {
 			return "NoOp"
 		},
 		Transitions: Transitions{},
 	}
 
-	err := ctx.SendEvent("Event1", nil)
+	err := ctx.SendEvent(ctxb, "Event1", nil)
 
 	// Sending an event to the state machine should not return an error.
 	require.NoError(t, err)

@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -45,7 +46,7 @@ type EventType string
 type EventContext interface{}
 
 // Action represents the action to be executed in a given state.
-type Action func(eventCtx EventContext) EventType
+type Action func(ctx context.Context, eventCtx EventContext) EventType
 
 // Transitions represents a mapping of events and states.
 type Transitions map[EventType]StateType
@@ -95,11 +96,11 @@ type StateMachine struct {
 
 	// ActionEntryFunc is a function that is called before an action is
 	// executed.
-	ActionEntryFunc func(Notification)
+	ActionEntryFunc func(context.Context, Notification)
 
 	// ActionExitFunc is a function that is called after an action is
 	// executed, it is called with the EventType returned by the action.
-	ActionExitFunc func(NextEvent EventType)
+	ActionExitFunc func(ctx context.Context, NextEvent EventType)
 
 	// LastActionError is an error set by the last action executed.
 	LastActionError error
@@ -200,7 +201,9 @@ func (s *StateMachine) getNextState(event EventType) (State, error) {
 // SendEvent sends an event to the state machine. It returns an error if the
 // event cannot be processed in the current state. Otherwise, it only returns
 // nil if the event for the last action is a no-op.
-func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
+func (s *StateMachine) SendEvent(ctx context.Context, event EventType,
+	eventCtx EventContext) error {
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -235,7 +238,7 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 
 		// Execute the state machines ActionEntryFunc.
 		if s.ActionEntryFunc != nil {
-			s.ActionEntryFunc(notification)
+			s.ActionEntryFunc(ctx, notification)
 		}
 
 		// Execute the current state's entry function
@@ -245,7 +248,7 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 
 		// Execute the next state's action and loop over again if the
 		// event returned is not a no-op.
-		nextEvent := state.Action(eventCtx)
+		nextEvent := state.Action(ctx, eventCtx)
 
 		// Execute the current state's exit function
 		if state.ExitFunc != nil {
@@ -254,7 +257,7 @@ func (s *StateMachine) SendEvent(event EventType, eventCtx EventContext) error {
 
 		// Execute the state machines ActionExitFunc.
 		if s.ActionExitFunc != nil {
-			s.ActionExitFunc(nextEvent)
+			s.ActionExitFunc(ctx, nextEvent)
 		}
 
 		// If the next event is a no-op, we're done.
@@ -304,7 +307,7 @@ func (s *StateMachine) HandleError(err error) EventType {
 
 // NoOpAction is a no-op action that can be used by states that don't need to
 // execute any action.
-func NoOpAction(_ EventContext) EventType {
+func NoOpAction(_ context.Context, _ EventContext) EventType {
 	return NoOp
 }
 
