@@ -570,8 +570,11 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 		htlc = swap.QuoteHtlcP2WSH
 	}
 
+	label := "loopout-quote"
+
 	return s.sweeper.GetSweepFee(
 		ctx, htlc.AddSuccessToEstimator, p2wshAddress, confTarget,
+		label,
 	)
 }
 
