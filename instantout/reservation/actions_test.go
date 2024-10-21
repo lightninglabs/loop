@@ -144,7 +144,6 @@ func TestInitReservationAction(t *testing.T) {
 		).Return(tc.mockStoreErr)
 
 		reservationFSM := &FSM{
-			ctx: ctxb,
 			cfg: &Config{
 				Wallet:            mockLnd.WalletKit,
 				ChainNotifier:     mockLnd.ChainNotifier,
@@ -154,7 +153,7 @@ func TestInitReservationAction(t *testing.T) {
 			StateMachine: &fsm.StateMachine{},
 		}
 
-		event := reservationFSM.InitAction(tc.eventCtx)
+		event := reservationFSM.InitAction(ctxb, tc.eventCtx)
 		require.Equal(t, tc.expectedEvent, event)
 	}
 }
@@ -227,10 +226,10 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			chainNotifier := new(MockChainNotifier)
-
+			ctxb := context.Background()
 			// Create the FSM.
 			r := NewFSMFromReservation(
-				context.Background(), &Config{
+				&Config{
 					ChainNotifier: chainNotifier,
 				},
 				&Reservation{
@@ -296,7 +295,7 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 				}
 			}()
 
-			eventType := r.SubscribeToConfirmationAction(nil)
+			eventType := r.SubscribeToConfirmationAction(ctxb, nil)
 			// Assert that the return value is as expected
 			require.Equal(t, tc.expectedEvent, eventType)
 
@@ -335,10 +334,11 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) { // Create a mock ChainNotifier and Reservation
 			chainNotifier := new(MockChainNotifier)
+			ctxb := context.Background()
 
 			// Define your FSM
 			r := NewFSMFromReservation(
-				context.Background(), &Config{
+				&Config{
 					ChainNotifier: chainNotifier,
 				},
 				&Reservation{
@@ -361,7 +361,7 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 				make(chan error), tc.spendErr,
 			)
 
-			eventType := r.AsyncWaitForExpiredOrSweptAction(nil)
+			eventType := r.AsyncWaitForExpiredOrSweptAction(ctxb, nil)
 			// Assert that the return value is as expected
 			require.Equal(t, tc.expectedEvent, eventType)
 		})
@@ -415,7 +415,7 @@ func TestHandleSubcriptions(t *testing.T) {
 
 			// Create the FSM.
 			r := NewFSMFromReservation(
-				context.Background(), &Config{
+				&Config{
 					ChainNotifier: chainNotifier,
 				},
 				&Reservation{
