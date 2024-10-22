@@ -176,8 +176,6 @@ type Config struct {
 type FSM struct {
 	*fsm.StateMachine
 
-	ctx context.Context
-
 	// cfg contains all the services that the reservation manager needs to
 	// operate.
 	cfg *Config
@@ -195,24 +193,19 @@ type FSM struct {
 }
 
 // NewFSM creates a new instant out FSM.
-func NewFSM(ctx context.Context, cfg *Config,
-	protocolVersion ProtocolVersion) (*FSM, error) {
-
+func NewFSM(cfg *Config, protocolVersion ProtocolVersion) (*FSM, error) {
 	instantOut := &InstantOut{
 		State:           fsm.EmptyState,
 		protocolVersion: protocolVersion,
 	}
 
-	return NewFSMFromInstantOut(ctx, cfg, instantOut)
+	return NewFSMFromInstantOut(cfg, instantOut)
 }
 
 // NewFSMFromInstantOut creates a new instantout FSM from an existing instantout
 // recovered from the database.
-func NewFSMFromInstantOut(ctx context.Context, cfg *Config,
-	instantOut *InstantOut) (*FSM, error) {
-
+func NewFSMFromInstantOut(cfg *Config, instantOut *InstantOut) (*FSM, error) {
 	instantOutFSM := &FSM{
-		ctx:        ctx,
 		cfg:        cfg,
 		InstantOut: instantOut,
 	}
@@ -328,7 +321,9 @@ func (f *FSM) GetV1ReservationStates() fsm.States {
 
 // updateInstantOut is called after every action and updates the reservation
 // in the db.
-func (f *FSM) updateInstantOut(notification fsm.Notification) {
+func (f *FSM) updateInstantOut(ctx context.Context,
+	notification fsm.Notification) {
+
 	f.Infof("Previous: %v, Event: %v, Next: %v", notification.PreviousState,
 		notification.Event, notification.NextState)
 
@@ -349,7 +344,7 @@ func (f *FSM) updateInstantOut(notification fsm.Notification) {
 		return
 	}
 
-	err := f.cfg.Store.UpdateInstantLoopOut(f.ctx, f.InstantOut)
+	err := f.cfg.Store.UpdateInstantLoopOut(ctx, f.InstantOut)
 	if err != nil {
 		log.Errorf("Error updating instant out: %v", err)
 		return

@@ -79,6 +79,7 @@ func TestExampleFSM(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			ctxb := context.Background()
 			respondChan := make(chan string, 1)
 			if req, ok := tc.eventCtx.(*InitStuffRequest); ok {
 				req.respondChan = respondChan
@@ -102,7 +103,7 @@ func TestExampleFSM(t *testing.T) {
 			exampleContext.RegisterObserver(cachedObserver)
 
 			err := exampleContext.SendEvent(
-				tc.sendEvent, tc.eventCtx,
+				ctxb, tc.sendEvent, tc.eventCtx,
 			)
 			require.Equal(t, tc.sendEventErr, err)
 
@@ -195,6 +196,7 @@ func TestExampleFSMFlow(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			exampleContext, cachedObserver := getTestContext()
+			ctxb := context.Background()
 
 			if tc.storeError != nil {
 				exampleContext.store.(*mockStore).
@@ -208,8 +210,7 @@ func TestExampleFSMFlow(t *testing.T) {
 
 			go func() {
 				err := exampleContext.SendEvent(
-					OnRequestStuff,
-					newInitStuffRequest(),
+					ctxb, OnRequestStuff, newInitStuffRequest(),
 				)
 
 				require.NoError(t, err)
@@ -273,6 +274,7 @@ func TestObserverAsyncWait(t *testing.T) {
 			service := &mockService{
 				respondChan: make(chan bool),
 			}
+			ctxb := context.Background()
 
 			store := &mockStore{}
 
@@ -282,7 +284,7 @@ func TestObserverAsyncWait(t *testing.T) {
 
 			t0 := time.Now()
 			timeoutCtx, cancel := context.WithTimeout(
-				context.Background(), tc.waitTime,
+				ctxb, tc.waitTime,
 			)
 			defer cancel()
 
@@ -293,8 +295,7 @@ func TestObserverAsyncWait(t *testing.T) {
 
 			go func() {
 				err := exampleContext.SendEvent(
-					OnRequestStuff,
-					newInitStuffRequest(),
+					ctxb, OnRequestStuff, newInitStuffRequest(),
 				)
 
 				require.NoError(t, err)

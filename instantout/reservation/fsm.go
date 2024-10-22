@@ -40,26 +40,21 @@ type FSM struct {
 	cfg *Config
 
 	reservation *Reservation
-
-	ctx context.Context
 }
 
 // NewFSM creates a new reservation FSM.
-func NewFSM(ctx context.Context, cfg *Config) *FSM {
+func NewFSM(cfg *Config) *FSM {
 	reservation := &Reservation{
 		State: fsm.EmptyState,
 	}
 
-	return NewFSMFromReservation(ctx, cfg, reservation)
+	return NewFSMFromReservation(cfg, reservation)
 }
 
 // NewFSMFromReservation creates a new reservation FSM from an existing
 // reservation recovered from the database.
-func NewFSMFromReservation(ctx context.Context, cfg *Config,
-	reservation *Reservation) *FSM {
-
+func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
 	reservationFsm := &FSM{
-		ctx:         ctx,
 		cfg:         cfg,
 		reservation: reservation,
 	}
@@ -206,7 +201,9 @@ func (f *FSM) GetReservationStates() fsm.States {
 
 // updateReservation updates the reservation in the database. This function
 // is called after every new state transition.
-func (r *FSM) updateReservation(notification fsm.Notification) {
+func (r *FSM) updateReservation(ctx context.Context,
+	notification fsm.Notification) {
+
 	if r.reservation == nil {
 		return
 	}
@@ -229,7 +226,7 @@ func (r *FSM) updateReservation(notification fsm.Notification) {
 		return
 	}
 
-	err := r.cfg.Store.UpdateReservation(r.ctx, r.reservation)
+	err := r.cfg.Store.UpdateReservation(ctx, r.reservation)
 	if err != nil {
 		r.Errorf("unable to update reservation: %v", err)
 	}

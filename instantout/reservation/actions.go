@@ -22,16 +22,16 @@ type InitReservationContext struct {
 // InitAction is the action that is executed when the reservation state machine
 // is initialized. It creates the reservation in the database and dispatches the
 // payment to the server.
-func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
+func (f *FSM) InitAction(ctx context.Context,
+	eventCtx fsm.EventContext) fsm.EventType {
+
 	// Check if the context is of the correct type.
 	reservationRequest, ok := eventCtx.(*InitReservationContext)
 	if !ok {
 		return f.HandleError(fsm.ErrInvalidContextType)
 	}
 
-	keyRes, err := f.cfg.Wallet.DeriveNextKey(
-		f.ctx, KeyFamily,
-	)
+	keyRes, err := f.cfg.Wallet.DeriveNextKey(ctx, KeyFamily)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -45,7 +45,7 @@ func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 		ClientKey:     keyRes.PubKey.SerializeCompressed(),
 	}
 
-	_, err = f.cfg.ReservationClient.OpenReservation(f.ctx, request)
+	_, err = f.cfg.ReservationClient.OpenReservation(ctx, request)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -66,7 +66,7 @@ func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 	f.reservation = reservation
 
 	// Create the reservation in the database.
-	err = f.cfg.Store.CreateReservation(f.ctx, reservation)
+	err = f.cfg.Store.CreateReservation(ctx, reservation)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -77,13 +77,15 @@ func (f *FSM) InitAction(eventCtx fsm.EventContext) fsm.EventType {
 // SubscribeToConfirmationAction is the action that is executed when the
 // reservation is waiting for confirmation. It subscribes to the confirmation
 // of the reservation transaction.
-func (f *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
+func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
+	_ fsm.EventContext) fsm.EventType {
+
 	pkscript, err := f.reservation.GetPkScript()
 	if err != nil {
 		return f.HandleError(err)
 	}
 
-	callCtx, cancel := context.WithCancel(f.ctx)
+	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Subscribe to the confirmation of the reservation transaction.
@@ -141,7 +143,7 @@ func (f *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 				return OnTimedOut
 			}
 
-		case <-f.ctx.Done():
+		case <-ctx.Done():
 			return fsm.NoOp
 		}
 	}
@@ -150,10 +152,10 @@ func (f *FSM) SubscribeToConfirmationAction(_ fsm.EventContext) fsm.EventType {
 // AsyncWaitForExpiredOrSweptAction waits for the reservation to be either
 // expired or swept. This is non-blocking and can be used to wait for the
 // reservation to expire while expecting other events.
-func (f *FSM) AsyncWaitForExpiredOrSweptAction(_ fsm.EventContext,
-) fsm.EventType {
+func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
+	_ fsm.EventContext) fsm.EventType {
 
-	notifCtx, cancel := context.WithCancel(f.ctx)
+	notifCtx, cancel := context.WithCancel(ctx)
 
 	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
 		RegisterBlockEpochNtfn(notifCtx)
@@ -184,13 +186,13 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(_ fsm.EventContext,
 			errSpendChan,
 		)
 		if err != nil {
-			f.handleAsyncError(err)
+			f.handleAsyncError(ctx, err)
 			return
 		}
 		if op == fsm.NoOp {
 			return
 		}
-		err = f.SendEvent(op, nil)
+		err = f.SendEvent(ctx, op, nil)
 		if err != nil {
 			f.Errorf("Error sending %s event: %v", op, err)
 		}
@@ -229,10 +231,10 @@ func (f *FSM) handleSubcriptions(ctx context.Context,
 	}
 }
 
-func (f *FSM) handleAsyncError(err error) {
+func (f *FSM) handleAsyncError(ctx context.Context, err error) {
 	f.LastActionError = err
 	f.Errorf("Error on async action: %v", err)
-	err2 := f.SendEvent(fsm.OnError, err)
+	err2 := f.SendEvent(ctx, fsm.OnError, err)
 	if err2 != nil {
 		f.Errorf("Error sending event: %v", err2)
 	}

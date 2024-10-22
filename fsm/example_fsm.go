@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -90,7 +91,9 @@ type InitStuffRequest struct {
 }
 
 // initFSM is the action for the InitFSM state.
-func (e *ExampleFSM) initFSM(eventCtx EventContext) EventType {
+func (e *ExampleFSM) initFSM(_ context.Context, eventCtx EventContext,
+) EventType {
+
 	req, ok := eventCtx.(*InitStuffRequest)
 	if !ok {
 		return e.HandleError(
@@ -109,7 +112,9 @@ func (e *ExampleFSM) initFSM(eventCtx EventContext) EventType {
 }
 
 // waitForStuff is an action that waits for stuff to happen.
-func (e *ExampleFSM) waitForStuff(eventCtx EventContext) EventType {
+func (e *ExampleFSM) waitForStuff(ctx context.Context, eventCtx EventContext,
+) EventType {
+
 	waitChan, err := e.service.WaitForStuffHappening()
 	if err != nil {
 		return e.HandleError(err)
@@ -117,7 +122,7 @@ func (e *ExampleFSM) waitForStuff(eventCtx EventContext) EventType {
 
 	go func() {
 		<-waitChan
-		err := e.SendEvent(OnStuffSuccess, nil)
+		err := e.SendEvent(ctx, OnStuffSuccess, nil)
 		if err != nil {
 			log.Errorf("unable to send event: %v", err)
 		}
