@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -15,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -161,6 +163,13 @@ func TestInitReservationAction(t *testing.T) {
 
 type MockChainNotifier struct {
 	mock.Mock
+}
+
+func (m *MockChainNotifier) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	chainrpc.ChainNotifierClient) {
+
+	return ctx, 0, nil
 }
 
 func (m *MockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,

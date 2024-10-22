@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"time"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
@@ -46,6 +47,13 @@ func newMockVersioner() *mockVersioner {
 			GoVersion:     defaultMockAppGoVersion,
 		},
 	}
+}
+
+func (v *mockVersioner) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	verrpc.VersionerClient) {
+
+	return ctx, 0, nil
 }
 
 func (v *mockVersioner) GetVersion(_ context.Context) (*verrpc.Version, error) {

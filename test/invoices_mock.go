@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -19,6 +18,15 @@ type mockInvoices struct {
 
 	lnd *LndMockServices
 	wg  sync.WaitGroup
+}
+
+var _ lndclient.InvoicesClient = (*mockInvoices)(nil)
+
+func (s *mockInvoices) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	invoicesrpc.InvoicesClient) {
+
+	return ctx, 0, nil
 }
 
 func (s *mockInvoices) SettleInvoice(ctx context.Context,
@@ -95,13 +103,7 @@ func (s *mockInvoices) AddHoldInvoice(ctx context.Context,
 			SignCompact: func(hash []byte) ([]byte, error) {
 				// ecdsa.SignCompact returns a
 				// pubkey-recoverable signature.
-				sig, err := ecdsa.SignCompact(
-					privKey, hash, true,
-				)
-				if err != nil {
-					return nil, fmt.Errorf("can't sign "+
-						"the hash: %v", err)
-				}
+				sig := ecdsa.SignCompact(privKey, hash, true)
 
 				return sig, nil
 			},
@@ -112,4 +114,10 @@ func (s *mockInvoices) AddHoldInvoice(ctx context.Context,
 	}
 
 	return payReqString, nil
+}
+
+func (s *mockInvoices) HtlcModifier(context.Context,
+	lndclient.InvoiceHtlcModifyHandler) error {
+
+	return nil
 }
