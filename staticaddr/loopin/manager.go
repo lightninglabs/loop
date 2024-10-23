@@ -456,3 +456,38 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 
 	return loopIn, nil
 }
+
+// GetAllSwaps returns all static address loop-in swaps from the database store.
+func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
+	error) {
+
+	swaps, err := m.cfg.Store.GetStaticAddressLoopInSwapsByStates(
+		ctx, AllStates,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	allDeposits, err := m.cfg.DepositManager.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var depositLookup = make(map[string]*deposit.Deposit)
+	for i, d := range allDeposits {
+		depositLookup[d.OutPoint.String()] = allDeposits[i]
+	}
+
+	for i, s := range swaps {
+		var deposits []*deposit.Deposit
+		for _, outpoint := range s.DepositOutpoints {
+			if d, ok := depositLookup[outpoint]; ok {
+				deposits = append(deposits, d)
+			}
+		}
+
+		swaps[i].Deposits = deposits
+	}
+
+	return swaps, nil
+}
