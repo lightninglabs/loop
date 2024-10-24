@@ -51,6 +51,50 @@ type mockStaticAddressClient struct {
 	mock.Mock
 }
 
+func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
+	in *swapserverrpc.ServerStaticAddressLoopInRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.ServerStaticAddressLoopInResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.ServerStaticAddressLoopInResponse),
+		args.Error(1)
+}
+
+func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(ctx context.Context,
+	in *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.PushStaticAddressSweeplessSigsResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.PushStaticAddressSweeplessSigsResponse),
+		args.Error(1)
+}
+
+func (m *mockStaticAddressClient) FetchSweeplessSweepTx(ctx context.Context,
+	in *swapserverrpc.FetchSweeplessSweepTxRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.FetchSweeplessSweepTxResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.FetchSweeplessSweepTxResponse),
+		args.Error(1)
+}
+
+func (m *mockStaticAddressClient) PushStaticAddressHtlcSigs(ctx context.Context,
+	in *swapserverrpc.PushStaticAddressHtlcSigsRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.PushStaticAddressHtlcSigsResponse),
+		args.Error(1)
+}
+
 func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 	in *swapserverrpc.ServerWithdrawRequest,
 	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,
