@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -69,27 +68,41 @@ type ManagerConfig struct {
 	Signer lndclient.SignerClient
 }
 
-// Manager manages the address state machines.
+// newWithdrawalRequest is used to send withdrawal request to the manager main
+// loop.
+type newWithdrawalRequest struct {
+	outpoints []wire.OutPoint
+	respChan  chan *newWithdrawalResponse
+}
+
+// newWithdrawalResponse is used to return withdrawal info and error to the
+// server.
+type newWithdrawalResponse struct {
+	txHash             string
+	withdrawalPkScript string
+	err                error
+}
+
+// Manager manages the withdrawal state machines.
 type Manager struct {
 	cfg *ManagerConfig
 
-	runCtx context.Context
-
-	sync.Mutex
-
-	// initChan signals the daemon that the address manager has completed
+	// initChan signals the daemon that the withdrawal manager has completed
 	// its initialization.
 	initChan chan struct{}
 
+	// newWithdrawalRequestChan receives a list of outpoints that should be
+	// withdrawn. The request is forwarded to the managers main loop.
+	newWithdrawalRequestChan chan newWithdrawalRequest
+
+	// exitChan signals subroutines that the withdrawal manager is exiting.
+	exitChan chan struct{}
+
+	// errChan forwards errors from the withdrawal manager to the server.
+	errChan chan error
+
 	// initiationHeight stores the currently best known block height.
 	initiationHeight uint32
-
-	// currentHeight stores the currently best known block height.
-	currentHeight uint32
-
-	// activeWithdrawals stores pending withdrawals by their withdrawal
-	// address.
-	activeWithdrawals map[string][]*deposit.Deposit
 
 	// finalizedWithdrawalTx are the finalized withdrawal transactions that
 	// are published to the network and re-published on block arrivals.
@@ -99,27 +112,27 @@ type Manager struct {
 // NewManager creates a new deposit withdrawal manager.
 func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
-		cfg:                     cfg,
-		initChan:                make(chan struct{}),
-		activeWithdrawals:       make(map[string][]*deposit.Deposit),
-		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+		cfg:                      cfg,
+		initChan:                 make(chan struct{}),
+		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
+		exitChan:                 make(chan struct{}),
+		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
+		errChan:                  make(chan error),
 	}
 }
 
 // Run runs the deposit withdrawal manager.
 func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
-	m.runCtx = ctx
+	m.initiationHeight = currentHeight
 
-	m.Lock()
-	m.currentHeight, m.initiationHeight = currentHeight, currentHeight
-	m.Unlock()
+	newBlockChan, newBlockErrChan, err :=
+		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
-	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(m.runCtx) //nolint:lll
 	if err != nil {
 		return err
 	}
 
-	err = m.recover()
+	err = m.recoverWithdrawals(ctx)
 	if err != nil {
 		return err
 	}
@@ -128,29 +141,59 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 	// initialization.
 	close(m.initChan)
 
+	var (
+		txHash   string
+		pkScript string
+	)
 	for {
 		select {
-		case height := <-newBlockChan:
-			m.Lock()
-			m.currentHeight = uint32(height)
-			m.Unlock()
-
-			err = m.republishWithdrawals()
+		case <-newBlockChan:
+			err = m.republishWithdrawals(ctx)
 			if err != nil {
 				log.Errorf("Error republishing withdrawals: %v",
 					err)
 			}
 
+		case request := <-m.newWithdrawalRequestChan:
+			txHash, pkScript, err = m.WithdrawDeposits(
+				ctx, request.outpoints,
+			)
+			if err != nil {
+				log.Errorf("Error withdrawing deposits: %v",
+					err)
+			}
+
+			// We forward the initialized loop-in and error to
+			// DeliverLoopInRequest.
+			resp := &newWithdrawalResponse{
+				txHash:             txHash,
+				withdrawalPkScript: pkScript,
+				err:                err,
+			}
+			select {
+			case request.respChan <- resp:
+
+			case <-ctx.Done():
+				// Notify subroutines that the main loop has
+				// been canceled.
+				close(m.exitChan)
+
+				return ctx.Err()
+			}
+
 		case err = <-newBlockErrChan:
 			return err
 
-		case <-m.runCtx.Done():
-			return m.runCtx.Err()
+		case <-ctx.Done():
+			// Signal subroutines that the manager is exiting.
+			close(m.exitChan)
+
+			return ctx.Err()
 		}
 	}
 }
 
-func (m *Manager) recover() error {
+func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	// To recover withdrawals we skim through all active deposits and check
 	// if they have a withdrawal address set. For the ones that do we
 	// cluster those with equal withdrawal addresses and kick-off
@@ -163,58 +206,43 @@ func (m *Manager) recover() error {
 		return err
 	}
 
-	// Group the deposits by their withdrawal address.
-	depositsByWithdrawalAddress := make(map[string][]*deposit.Deposit)
+	// Group the deposits by their finalized withdrawal transaction.
+	depositsByWithdrawalTx := make(map[*wire.MsgTx][]*deposit.Deposit)
 	for _, d := range activeDeposits {
-		sweepAddress := d.WithdrawalSweepAddress
-		if sweepAddress == "" {
+		withdrawalTx := d.FinalizedWithdrawalTx
+		if withdrawalTx == nil {
 			continue
 		}
 
-		depositsByWithdrawalAddress[sweepAddress] = append(
-			depositsByWithdrawalAddress[sweepAddress], d,
+		depositsByWithdrawalTx[withdrawalTx] = append(
+			depositsByWithdrawalTx[withdrawalTx], d,
 		)
 	}
 
 	// We can now reinstate each cluster of deposits for a withdrawal.
-	for address, deposits := range depositsByWithdrawalAddress {
-		withdrawalAddress, err := btcutil.DecodeAddress(
-			address, m.cfg.ChainParams,
-		)
-		if err != nil {
-			return err
-		}
-
+	for finalizedWithdrawalTx, deposits := range depositsByWithdrawalTx {
+		tx := finalizedWithdrawalTx
 		err = m.cfg.DepositManager.TransitionDeposits(
-			deposits, deposit.OnWithdrawInitiated,
+			ctx, deposits, deposit.OnWithdrawInitiated,
 			deposit.Withdrawing,
 		)
 		if err != nil {
 			return err
 		}
 
-		finalizedTx, err := m.createFinalizedWithdrawalTx(
-			m.runCtx, deposits, withdrawalAddress,
-		)
-		if err != nil {
-			return err
-		}
-
-		err = m.publishFinalizedWithdrawalTx(finalizedTx)
+		err = m.publishFinalizedWithdrawalTx(ctx, tx)
 		if err != nil {
 			return err
 		}
 
 		err = m.handleWithdrawal(
-			deposits, finalizedTx.TxHash(), withdrawalAddress,
+			ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
 		)
 		if err != nil {
 			return err
 		}
 
-		m.Lock()
-		m.activeWithdrawals[address] = deposits
-		m.Unlock()
+		m.finalizedWithdrawalTxns[tx.TxHash()] = tx
 	}
 
 	return nil
@@ -230,10 +258,11 @@ func (m *Manager) WaitInitComplete() {
 
 // WithdrawDeposits starts a deposits withdrawal flow.
 func (m *Manager) WithdrawDeposits(ctx context.Context,
-	outpoints []wire.OutPoint) error {
+	outpoints []wire.OutPoint) (string, string, error) {
 
 	if len(outpoints) == 0 {
-		return fmt.Errorf("no outpoints selected to withdraw")
+		return "", "", fmt.Errorf("no outpoints selected to " +
+			"withdraw, unconfirmed deposits can't be withdrawn")
 	}
 
 	// Ensure that the deposits are in a state in which they can be
@@ -242,7 +271,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		outpoints, deposit.Deposited)
 
 	if !allActive {
-		return ErrWithdrawingInactiveDeposits
+		return "", "", ErrWithdrawingInactiveDeposits
 	}
 
 	// Generate the withdrawal address from our local lnd wallet.
@@ -251,16 +280,23 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		walletrpc.AddressType_TAPROOT_PUBKEY, false,
 	)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	// Attach the withdrawal address to the deposits. After a client restart
-	// we can use this address as an indicator to continue the withdrawal.
-	// If there are multiple deposits with the same withdrawal address, we
-	// bundle them together in the same withdrawal transaction.
+	finalizedTx, err := m.createFinalizedWithdrawalTx(
+		ctx, deposits, withdrawalAddress,
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Attach the finalized withdrawal tx to the deposits. After a client
+	// restart we can use this address as an indicator to republish the
+	// withdrawal tx and continue the withdrawal.
+	// Deposits with the same withdrawal tx are part of the same withdrawal.
 	for _, d := range deposits {
 		d.Lock()
-		d.WithdrawalSweepAddress = withdrawalAddress.String()
+		d.FinalizedWithdrawalTx = finalizedTx
 		d.Unlock()
 	}
 
@@ -270,36 +306,32 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	// to an error in the state machine. The already transitioned deposits
 	// should be reset to the Deposit state after a restart.
 	err = m.cfg.DepositManager.TransitionDeposits(
-		deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
+		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
 	)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	finalizedTx, err := m.createFinalizedWithdrawalTx(
-		ctx, deposits, withdrawalAddress,
-	)
+	err = m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	err = m.publishFinalizedWithdrawalTx(finalizedTx)
+	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
 	err = m.handleWithdrawal(
-		deposits, finalizedTx.TxHash(), withdrawalAddress,
+		ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
 	)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	m.Lock()
-	m.activeWithdrawals[withdrawalAddress.String()] = deposits
-	m.Unlock()
+	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
 
-	return nil
+	return finalizedTx.TxID(), withdrawalAddress.String(), nil
 }
 
 func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
@@ -316,7 +348,7 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 
 	// Get the fee rate for the withdrawal sweep.
 	withdrawalSweepFeeRate, err := m.cfg.WalletKit.EstimateFeeRate(
-		m.runCtx, defaultConfTarget,
+		ctx, defaultConfTarget,
 	)
 	if err != nil {
 		return nil, err
@@ -324,7 +356,7 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 
 	outpoints := toOutpoints(deposits)
 	resp, err := m.cfg.StaticAddressServerClient.ServerWithdrawDeposits(
-		m.runCtx, &staticaddressrpc.ServerWithdrawRequest{
+		ctx, &staticaddressrpc.ServerWithdrawRequest{
 			Outpoints:       toPrevoutInfo(outpoints),
 			ClientNonces:    clientNonces,
 			ClientSweepAddr: withdrawalAddress.String(),
@@ -340,7 +372,7 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %v", err)
+			"deposit, %w", err)
 	}
 
 	prevOuts := m.toPrevOuts(deposits, addressParams.PkScript)
@@ -361,7 +393,7 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 	// Next we'll get our sweep tx signatures.
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 	_, err = m.signMusig2Tx(
-		m.runCtx, prevOutFetcher, outpoints, m.cfg.Signer, withdrawalTx,
+		ctx, prevOutFetcher, outpoints, m.cfg.Signer, withdrawalTx,
 		withdrawalSessions, coopServerNonces,
 	)
 	if err != nil {
@@ -370,19 +402,19 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 
 	// Now we'll finalize the sweepless sweep transaction.
 	finalizedTx, err := m.finalizeMusig2Transaction(
-		m.runCtx, outpoints, m.cfg.Signer, withdrawalSessions,
+		ctx, outpoints, m.cfg.Signer, withdrawalSessions,
 		withdrawalTx, resp.Musig2SweepSigs,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
-
 	return finalizedTx, nil
 }
 
-func (m *Manager) publishFinalizedWithdrawalTx(tx *wire.MsgTx) error {
+func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
+	tx *wire.MsgTx) error {
+
 	if tx == nil {
 		return errors.New("can't publish, finalized withdrawal tx is " +
 			"nil")
@@ -391,7 +423,7 @@ func (m *Manager) publishFinalizedWithdrawalTx(tx *wire.MsgTx) error {
 	txLabel := fmt.Sprintf("deposit-withdrawal-%v", tx.TxHash())
 
 	// Publish the withdrawal sweep transaction.
-	err := m.cfg.WalletKit.PublishTransaction(m.runCtx, tx, txLabel)
+	err := m.cfg.WalletKit.PublishTransaction(ctx, tx, txLabel)
 
 	if err != nil {
 		if !strings.Contains(err.Error(), "output already spent") {
@@ -404,20 +436,14 @@ func (m *Manager) publishFinalizedWithdrawalTx(tx *wire.MsgTx) error {
 	return nil
 }
 
-func (m *Manager) handleWithdrawal(deposits []*deposit.Deposit,
-	txHash chainhash.Hash, withdrawalAddress btcutil.Address) error {
+func (m *Manager) handleWithdrawal(ctx context.Context,
+	deposits []*deposit.Deposit, txHash chainhash.Hash,
+	withdrawalPkScript []byte) error {
 
-	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
-	if err != nil {
-		return err
-	}
-
-	m.Lock()
 	confChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		m.runCtx, &txHash, withdrawalPkScript, MinConfs,
+		ctx, &txHash, withdrawalPkScript, MinConfs,
 		int32(m.initiationHeight),
 	)
-	m.Unlock()
 	if err != nil {
 		return err
 	}
@@ -426,7 +452,7 @@ func (m *Manager) handleWithdrawal(deposits []*deposit.Deposit,
 		select {
 		case <-confChan:
 			err = m.cfg.DepositManager.TransitionDeposits(
-				deposits, deposit.OnWithdrawn,
+				ctx, deposits, deposit.OnWithdrawn,
 				deposit.Withdrawn,
 			)
 			if err != nil {
@@ -437,15 +463,12 @@ func (m *Manager) handleWithdrawal(deposits []*deposit.Deposit,
 			// Remove the withdrawal from the active withdrawals and
 			// remove its finalized to stop republishing it on block
 			// arrivals.
-			m.Lock()
-			delete(m.activeWithdrawals, withdrawalAddress.String())
 			delete(m.finalizedWithdrawalTxns, txHash)
-			m.Unlock()
 
 		case err := <-errChan:
 			log.Errorf("Error waiting for confirmation: %v", err)
 
-		case <-m.runCtx.Done():
+		case <-ctx.Done():
 			log.Errorf("Withdrawal tx confirmation wait canceled")
 		}
 	}()
@@ -701,7 +724,7 @@ func (m *Manager) createMusig2Session(ctx context.Context) (
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %v", err)
+			"deposit, %w", err)
 	}
 
 	signers := [][]byte{
@@ -712,7 +735,7 @@ func (m *Manager) createMusig2Session(ctx context.Context) (
 	address, err := m.cfg.AddressManager.GetStaticAddress(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %v", err)
+			"deposit, %w", err)
 	}
 
 	expiryLeaf := address.TimeoutLeaf
@@ -744,14 +767,14 @@ func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
 	return prevOuts
 }
 
-func (m *Manager) republishWithdrawals() error {
+func (m *Manager) republishWithdrawals(ctx context.Context) error {
 	for _, finalizedTx := range m.finalizedWithdrawalTxns {
 		if finalizedTx == nil {
 			log.Warnf("Finalized withdrawal tx is nil")
 			continue
 		}
 
-		err := m.publishFinalizedWithdrawalTx(finalizedTx)
+		err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 		if err != nil {
 			log.Errorf("Error republishing withdrawal: %v", err)
 
@@ -760,4 +783,41 @@ func (m *Manager) republishWithdrawals() error {
 	}
 
 	return nil
+}
+
+// DeliverWithdrawalRequest forwards a withdrawal request to the manager main
+// loop.
+func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
+	outpoints []wire.OutPoint) (string, string, error) {
+
+	request := newWithdrawalRequest{
+		outpoints: outpoints,
+		respChan:  make(chan *newWithdrawalResponse),
+	}
+
+	// Send the new loop-in request to the manager run loop.
+	select {
+	case m.newWithdrawalRequestChan <- request:
+
+	case <-m.exitChan:
+		return "", "", fmt.Errorf("withdrawal manager has been " +
+			"canceled")
+
+	case <-ctx.Done():
+		return "", "", fmt.Errorf("context canceled while withdrawing")
+	}
+
+	// Wait for the response from the manager run loop.
+	select {
+	case resp := <-request.respChan:
+		return resp.txHash, resp.withdrawalPkScript, resp.err
+
+	case <-m.exitChan:
+		return "", "", fmt.Errorf("withdrawal manager has been " +
+			"canceled")
+
+	case <-ctx.Done():
+		return "", "", fmt.Errorf("context canceled while waiting " +
+			"for withdrawal response")
+	}
 }

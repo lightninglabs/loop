@@ -10,15 +10,15 @@ import (
 )
 
 type Deposit struct {
-	ID                     int32
-	DepositID              []byte
-	TxHash                 []byte
-	OutIndex               int32
-	Amount                 int64
-	ConfirmationHeight     int64
-	TimeoutSweepPkScript   []byte
-	ExpirySweepTxid        []byte
-	WithdrawalSweepAddress sql.NullString
+	ID                    int32
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
 }
 
 type DepositUpdate struct {
@@ -122,6 +122,26 @@ type StaticAddress struct {
 	ClientKeyIndex  int32
 	Pkscript        []byte
 	ProtocolVersion int32
+}
+
+type StaticAddressSwap struct {
+	ID                      int32
+	SwapHash                []byte
+	SwapInvoice             string
+	LastHop                 []byte
+	PaymentTimeoutSeconds   int32
+	QuotedSwapFeeSatoshis   int64
+	DepositOutpoints        string
+	HtlcTxFeeRateSatKw      int64
+	HtlcTimeoutSweepTxID    sql.NullString
+	HtlcTimeoutSweepAddress string
+}
+
+type StaticAddressSwapUpdate struct {
+	ID              int32
+	SwapHash        []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
 }
 
 type Swap struct {

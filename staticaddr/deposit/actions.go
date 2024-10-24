@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultConfTarget = 3
+	DefaultConfTarget = 3
 )
 
 // PublishDepositExpirySweepAction creates and publishes the timeout transaction
@@ -39,11 +39,11 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	// Estimate the fee rate of an expiry spend transaction.
 	feeRateEstimator, err := f.cfg.WalletKit.EstimateFeeRate(
-		ctx, defaultConfTarget,
+		ctx, DefaultConfTarget,
 	)
 	if err != nil {
 		return f.HandleError(fmt.Errorf("timeout sweep fee "+
-			"estimation failed: %v", err))
+			"estimation failed: %w", err))
 	}
 
 	weight := script.ExpirySpendWeight()
@@ -116,7 +116,7 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, nil, f.deposit.TimeOutSweepPkScript, defaultConfTarget,
+		ctx, nil, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.ConfirmationHeight),
 	)
 	if err != nil {
@@ -124,7 +124,7 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	}
 
 	select {
-	case err := <-errSpendChan:
+	case err = <-errSpendChan:
 		log.Debugf("error while sweeping expired deposit: %v", err)
 		return fsm.OnError
 
@@ -155,9 +155,9 @@ func (f *FSM) SweptExpiredDepositAction(ctx context.Context,
 	return fsm.NoOp
 }
 
-// WithdrawnDepositAction is the final action after a withdrawal. It signals to
+// FinalizeDepositAction is the final action after a withdrawal. It signals to
 // the manager that the deposit has been swept and the FSM can be removed.
-func (f *FSM) WithdrawnDepositAction(ctx context.Context,
+func (f *FSM) FinalizeDepositAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	select {
