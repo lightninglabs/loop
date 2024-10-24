@@ -106,13 +106,13 @@ const (
 	// time we reach timeout. We set this to a high estimate so that we can
 	// account for worst-case fees, (1250 * 4 / 1000) = 50 sat/byte.
 	defaultLoopInSweepFee = chainfee.SatPerKWeight(1250)
-)
 
-var (
 	// defaultHtlcConfTarget is the default confirmation target we use for
 	// loop in swap htlcs, set to the same default at the client.
 	defaultHtlcConfTarget = loop.DefaultHtlcConfTarget
+)
 
+var (
 	// defaultBudget is the default autoloop budget we set. This budget will
 	// only be used for automatically dispatched swaps if autoloop is
 	// explicitly enabled, so we are happy to set a non-zero value here. The

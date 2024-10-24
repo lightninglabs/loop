@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
@@ -51,6 +52,9 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	)
 	lnd.AddSubLogger(
 		root, notifications.Subsystem, intercept, notifications.UseLogger,
+	)
+	lnd.AddSubLogger(
+		root, sweep.Subsystem, intercept, sweep.UseLogger,
 	)
 }
 

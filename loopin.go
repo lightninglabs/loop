@@ -1077,10 +1077,12 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 		}
 	}
 
+	label := fmt.Sprintf("loopin-timeout-%x", s.hash[:6])
+
 	// Calculate sweep tx fee.
 	fee, err := s.sweeper.GetSweepFee(
 		ctx, s.htlc.AddTimeoutToEstimator, s.timeoutAddr,
-		TimeoutTxConfTarget,
+		TimeoutTxConfTarget, label,
 	)
 	if err != nil {
 		return 0, err

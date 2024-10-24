@@ -312,11 +312,13 @@ func handleHtlcExpiry(t *testing.T, ctx *loopInTestContext, inSwap *loopInSwap,
 	// Expect timeout tx to be published.
 	timeoutTx := <-ctx.lnd.TxPublishChannel
 
+	label := fmt.Sprintf("loopin-timeout-%x", inSwap.hash[:6])
+
 	// We can just get our sweep fee as we would in the swap code because
 	// our estimate is static.
 	fee, err := inSwap.sweeper.GetSweepFee(
 		context.Background(), inSwap.htlc.AddTimeoutToEstimator,
-		inSwap.timeoutAddr, TimeoutTxConfTarget,
+		inSwap.timeoutAddr, TimeoutTxConfTarget, label,
 	)
 	require.NoError(t, err)
 	cost.Onchain += fee

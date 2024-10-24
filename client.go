@@ -185,13 +185,41 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 			"NewSweepFetcherFromSwapStore failed: %w", err)
 	}
 
+	// There is circular dependency between executor and sweepbatcher, as
+	// executor stores sweepbatcher and sweepbatcher depends on
+	// executor.height() though loopOutSweepFeerateProvider.
+	var executor *executor
+
+	// getHeight returns current height, according to executor.
+	getHeight := func() int32 {
+		if executor == nil {
+			// This must not happen, because executor is set in this
+			// function, before sweepbatcher.Run is called.
+			log.Errorf("getHeight called when executor is nil")
+
+			return 0
+		}
+
+		return executor.height()
+	}
+
+	loopOutSweepFeerateProvider := newLoopOutSweepFeerateProvider(
+		sweeper, loopDB, cfg.Lnd.ChainParams, getHeight,
+	)
+
 	batcher := sweepbatcher.NewBatcher(
 		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
 		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
 		cfg.Lnd.ChainParams, sweeperDb, sweepStore,
+
+		// Disable 100 sats/kw fee bump every block and retarget feerate
+		// every block according to the current mempool condition.
+		sweepbatcher.WithCustomFeeRate(
+			loopOutSweepFeerateProvider.GetMinFeeRate,
+		),
 	)
 
-	executor := newExecutor(&executorConfig{
+	executor = newExecutor(&executorConfig{
 		lnd:                 cfg.Lnd,
 		store:               loopDB,
 		sweeper:             sweeper,
@@ -570,8 +598,11 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 		htlc = swap.QuoteHtlcP2WSH
 	}
 
+	label := "loopout-quote"
+
 	return s.sweeper.GetSweepFee(
 		ctx, htlc.AddSuccessToEstimator, p2wshAddress, confTarget,
+		label,
 	)
 }
 
