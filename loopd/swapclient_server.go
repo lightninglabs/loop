@@ -991,6 +991,21 @@ func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	return s.GetL402Tokens(ctx, req)
 }
 
+// FetchL402Token fetches a L402 Token from the server. This is required to
+// listen for server notifications such as reservations. If a token is already
+// in the local L402, nothing will happen.
+func (s *swapClientServer) FetchL402Token(ctx context.Context,
+	_ *looprpc.FetchL402TokenRequest) (*looprpc.FetchL402TokenResponse,
+	error) {
+
+	err := s.impl.Server.FetchL402(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.FetchL402TokenResponse{}, nil
+}
+
 // GetInfo returns basic information about the loop daemon and details to swaps
 // from the swap store.
 func (s *swapClientServer) GetInfo(ctx context.Context,
