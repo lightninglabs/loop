@@ -363,6 +363,31 @@ func RegisterSwapClientJSONCallbacks(registry map[string]func(ctx context.Contex
 		callback(string(respBytes), nil)
 	}
 
+	registry["looprpc.SwapClient.FetchL402Token"] = func(ctx context.Context,
+		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
+
+		req := &FetchL402TokenRequest{}
+		err := marshaler.Unmarshal([]byte(reqJSON), req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		client := NewSwapClientClient(conn)
+		resp, err := client.FetchL402Token(ctx, req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		respBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			callback("", err)
+			return
+		}
+		callback(string(respBytes), nil)
+	}
+
 	registry["looprpc.SwapClient.GetInfo"] = func(ctx context.Context,
 		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
 

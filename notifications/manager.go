@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"google.golang.org/grpc"
 )
@@ -37,8 +38,9 @@ type Config struct {
 	// Client is the client used to communicate with the swap server.
 	Client Client
 
-	// FetchL402 is the function used to fetch the l402 token.
-	FetchL402 func(context.Context) error
+	// CurrentToken returns the token that is currently contained in the
+	// store or an l402.ErrNoToken error if there is none.
+	CurrentToken func() (*l402.Token, error)
 }
 
 // Manager is a manager for notifications that the swap server sends to the
@@ -113,9 +115,13 @@ func (m *Manager) Run(ctx context.Context) error {
 		// the FetchL402 method. As a client might not have outbound capacity
 		// yet, we'll retry until we get a valid response.
 		if !m.hasL402 {
-			err := m.cfg.FetchL402(ctx)
+			_, err := m.cfg.CurrentToken()
 			if err != nil {
-				log.Errorf("Error fetching L402: %v", err)
+				// We only log the error if it's not the case that we
+				// don't have a token yet to avoid spamming the logs.
+				if err != l402.ErrNoToken {
+					log.Errorf("Error getting L402 from store: %v", err)
+				}
 				continue
 			}
 			m.hasL402 = true

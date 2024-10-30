@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -101,9 +102,9 @@ func TestManager_ReservationNotification(t *testing.T) {
 	// Create a Manager with the mock client
 	mgr := NewManager(&Config{
 		Client: mockClient,
-		FetchL402: func(ctx context.Context) error {
+		CurrentToken: func() (*l402.Token, error) {
 			// Simulate successful fetching of L402
-			return nil
+			return nil, nil
 		},
 	})
 

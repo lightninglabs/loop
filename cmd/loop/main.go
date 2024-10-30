@@ -144,7 +144,7 @@ func main() {
 	}
 	app.Commands = []cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
-		monitorCommand, quoteCommand, listAuthCommand,
+		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,

@@ -677,6 +677,9 @@
       "default": "FAILURE_REASON_NONE",
       "description": " - FAILURE_REASON_NONE: FAILURE_REASON_NONE is set when the swap did not fail, it is either in\nprogress or succeeded.\n - FAILURE_REASON_OFFCHAIN: FAILURE_REASON_OFFCHAIN indicates that a loop out failed because it wasn't\npossible to find a route for one or both off chain payments that met the fee\nand timelock limits required.\n - FAILURE_REASON_TIMEOUT: FAILURE_REASON_TIMEOUT indicates that the swap failed because on chain htlc\ndid not confirm before its expiry, or it confirmed too late for us to reveal\nour preimage and claim.\n - FAILURE_REASON_SWEEP_TIMEOUT: FAILURE_REASON_SWEEP_TIMEOUT indicates that a loop out permanently failed\nbecause the on chain htlc wasn't swept before the server revoked the\nhtlc.\n - FAILURE_REASON_INSUFFICIENT_VALUE: FAILURE_REASON_INSUFFICIENT_VALUE indicates that a loop out has failed\nbecause the on chain htlc had a lower value than requested.\n - FAILURE_REASON_TEMPORARY: FAILURE_REASON_TEMPORARY indicates that a swap cannot continue due to an\ninternal error. Manual intervention such as a restart is required.\n - FAILURE_REASON_INCORRECT_AMOUNT: FAILURE_REASON_INCORRECT_AMOUNT indicates that a loop in permanently failed\nbecause the amount extended by an external loop in htlc is insufficient.\n - FAILURE_REASON_ABANDONED: FAILURE_REASON_ABANDONED indicates that a swap permanently failed because\nthe client manually abandoned the swap.\n - FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE: FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE indicates that a swap\nwasn't published due to insufficient confirmed balance.\n - FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT: FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT indicates that a swap\nwasn't published due to insufficient confirmed balance."
     },
+    "looprpcFetchL402TokenResponse": {
+      "type": "object"
+    },
     "looprpcGetInfoResponse": {
       "type": "object",
       "properties": {

@@ -73,3 +73,31 @@ func listAuth(ctx *cli.Context) error {
 	printJSON(tokens)
 	return nil
 }
+
+var fetchL402Command = cli.Command{
+	Name:  "fetchl402",
+	Usage: "fetches a new L402 authentication token from the server",
+	Description: "Fetches a new L402 authentication token from the server. " +
+		"This token is required to listen to notifications from the server, " +
+		"such as reservation notifications. If a L402 is already present in " +
+		"the store, this command is a no-op.",
+	Action: fetchL402,
+}
+
+func fetchL402(ctx *cli.Context) error {
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	res, err := client.FetchL402Token(
+		context.Background(), &looprpc.FetchL402TokenRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(res)
+	return nil
+}
