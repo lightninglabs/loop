@@ -504,8 +504,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Start the notification manager.
 	notificationCfg := &notifications.Config{
-		Client:    loop_swaprpc.NewSwapServerClient(swapClient.Conn),
-		FetchL402: swapClient.Server.FetchL402,
+		Client:       loop_swaprpc.NewSwapServerClient(swapClient.Conn),
+		CurrentToken: swapClient.L402Store.CurrentToken,
 	}
 	notificationManager := notifications.NewManager(notificationCfg)
 
