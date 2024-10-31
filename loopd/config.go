@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -111,6 +112,8 @@ var (
 	// DefaultAutogenValidity is the default validity of a self-signed
 	// certificate in number of days.
 	DefaultAutogenValidity = 365 * 24 * time.Hour
+
+	defaultLogCompressor = build.Gzip
 )
 
 type lndConfig struct {
@@ -169,6 +172,7 @@ type Config struct {
 	MacaroonPath string `long:"macaroonpath" description:"Path to write the macaroon for loop's RPC and REST services if it doesn't exist."`
 
 	LogDir         string `long:"logdir" description:"Directory to log output."`
+	LogCompressor  string `long:"logcompressor" description:"Compression algorithm to use when rotating logs." choice:"gzip" choice:"zstd"`
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)."`
 	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
 
@@ -192,6 +196,8 @@ type Config struct {
 	Server *loopServerConfig `group:"server" namespace:"server"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
+
+	Logging *build.LogConfig `group:"logging" namespace:"logging"`
 }
 
 const (
@@ -235,6 +241,8 @@ func DefaultConfig() Config {
 			MacaroonPath: DefaultLndMacaroonPath,
 			RPCTimeout:   DefaultLndRPCTimeout,
 		},
+		Logging:       build.DefaultLogConfig(),
+		LogCompressor: defaultLogCompressor,
 	}
 }
 

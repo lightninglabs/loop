@@ -183,7 +183,7 @@ func Run(rpcCfg RPCConfig) error {
 	// Special show command to list supported subsystems and exit.
 	if config.DebugLevel == "show" {
 		fmt.Printf("Supported subsystems: %v\n",
-			logWriter.SupportedSubsystems())
+			subLogMgr.SupportedSubsystems())
 		os.Exit(0)
 	}
 
@@ -203,16 +203,19 @@ func Run(rpcCfg RPCConfig) error {
 
 	// Initialize logging at the default logging level.
 	logWriter := build.NewRotatingLogWriter()
-	SetupLoggers(logWriter, shutdownInterceptor)
+	subLogMgr := build.NewSubLoggerManager(
+		build.NewDefaultLogHandlers(config.Logging, logWriter)...,
+	)
+	SetupLoggers(subLogMgr, shutdownInterceptor)
 
 	err = logWriter.InitLogRotator(
 		filepath.Join(config.LogDir, defaultLogFilename),
-		config.MaxLogFileSize, config.MaxLogFiles,
+		config.LogCompressor, config.MaxLogFileSize, config.MaxLogFiles,
 	)
 	if err != nil {
 		return err
 	}
-	err = build.ParseAndSetDebugLevels(config.DebugLevel, logWriter)
+	err = build.ParseAndSetDebugLevels(config.DebugLevel, subLogMgr)
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
@@ -4104,9 +4104,9 @@ func (s *loopdbStore) AssertLoopOutStored() {
 func runTests(t *testing.T, testFn func(t *testing.T, store testStore,
 	batcherStore testBatcherStore)) {
 
-	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
-	logger.SetLevel(btclog.LevelTrace)
-	UseLogger(logger)
+	handler := btclog.NewDefaultHandler(os.Stdout).SubSystem("SWEEP")
+	handler.SetLevel(btclog.LevelTrace)
+	UseLogger(btclog.NewSLogger(handler))
 
 	t.Run("mocks", func(t *testing.T) {
 		store := loopdb.NewStoreMock(t)

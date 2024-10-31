@@ -3,10 +3,12 @@ package loopd
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -472,10 +474,12 @@ func TestValidateLoopOutRequest(t *testing.T) {
 			}
 
 			log = build.NewSubLogger(
-				Subsystem,
-				genSubLogger(
-					build.NewRotatingLogWriter(),
-					interceptor,
+				Subsystem, genSubLogger(
+					build.NewSubLoggerManager(
+						btclog.NewDefaultHandler(
+							os.Stdout,
+						),
+					), interceptor,
 				),
 			)
 			conf, err := validateLoopOutRequest(

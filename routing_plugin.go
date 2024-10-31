@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/clock"
