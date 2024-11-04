@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -804,152 +805,65 @@ func (f *FSM) FetchSignPushSweeplessSweepTxAction(ctx context.Context,
 		f.Warnf("unable to decode sweep address: %v", err)
 	}
 
-	// Standard fee.
-	feeRate := chainfee.SatPerKWeight(fetchResp.StandardFeeInfo.FeeRate)
-	serverNonces, err := toNonces(fetchResp.StandardFeeInfo.Nonces)
-	if err != nil {
-		err = fmt.Errorf("unable to convert server nonces: %w", err)
+	clientResponse := make(map[uint64]*looprpc.ClientSweeplessSigningInfo)
 
-		return f.HandleError(err)
-	}
-
-	// High fee.
-	highFeeRate := chainfee.SatPerKWeight(fetchResp.HighFeeInfo.FeeRate)
-	serverHighFeeNonces, err := toNonces(fetchResp.HighFeeInfo.Nonces)
-	if err != nil {
-		err = fmt.Errorf("unable to convert high fee server "+
-			"nonces: %w", err)
-
-		return f.HandleError(err)
-	}
-
-	// Extremely high fee.
-	extremeFeeRate := chainfee.SatPerKWeight(
-		fetchResp.ExtremeFeeInfo.FeeRate,
+	var (
+		nonces              [][]byte
+		clientNonces        [][musig2.PubNonceSize]byte
+		serverNonces        [][musig2.PubNonceSize]byte
+		sessions            []*input.MuSig2SessionInfo
+		sweepTx             *wire.MsgTx
+		sweeplessClientSigs [][]byte
 	)
-	serverExtremeNonces, err := toNonces(
-		fetchResp.ExtremeFeeInfo.Nonces,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to convert extremely high fee "+
-			"server nonces: %w", err)
+	for feeRate, serverInfo := range fetchResp.FeeRateToNonces {
+		satPerKW := chainfee.SatPerKWeight(feeRate)
+		serverNonces, err = toNonces(serverInfo.Nonces)
+		if err != nil {
+			err = fmt.Errorf("unable to convert server nonces: %w",
+				err)
+			return f.HandleError(err)
+		}
 
-		return f.HandleError(err)
-	}
+		sessions, nonces, err = f.loopIn.createMusig2Sessions(
+			ctx, f.cfg.Signer,
+		)
+		if err != nil {
+			return f.HandleError(err)
+		}
 
-	// Standard sessions.
-	sessions, nonces, err := f.loopIn.createMusig2Sessions(
-		ctx, f.cfg.Signer,
-	)
-	if err != nil {
-		return f.HandleError(err)
-	}
-	clientNonces, err := toNonces(nonces)
-	if err != nil {
-		return f.HandleError(err)
-	}
+		clientNonces, err = toNonces(nonces)
+		if err != nil {
+			return f.HandleError(err)
+		}
 
-	// High fee sessions.
-	highFeeSessions, highFeeClientNonces, err :=
-		f.loopIn.createMusig2Sessions(ctx, f.cfg.Signer)
+		sweepTx, err = f.loopIn.createSweeplessSweepTx(
+			address, satPerKW,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to create sweepless sweep "+
+				"tx: %w", err)
+			return f.HandleError(err)
+		}
 
-	if err != nil {
-		return f.HandleError(err)
-	}
-	highClientNonces, err := toNonces(highFeeClientNonces)
-	if err != nil {
-		return f.HandleError(err)
-	}
+		sweeplessClientSigs, err = f.loopIn.signMusig2Tx(
+			ctx, sweepTx, f.cfg.Signer, sessions, serverNonces,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to sign sweepless sweep tx: "+
+				"%w", err)
+			return f.HandleError(err)
+		}
 
-	// Extremely high sessions.
-	extremeSessions, extremeClientNonces, err :=
-		f.loopIn.createMusig2Sessions(ctx, f.cfg.Signer)
-
-	if err != nil {
-		return f.HandleError(err)
-	}
-	extremelyHighClientNonces, err := toNonces(extremeClientNonces)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
-	// Create standard fee.
-	sweepTx, err := f.loopIn.createSweeplessSweepTx(address, feeRate)
-	if err != nil {
-		err = fmt.Errorf("unable to create sweepless sweep tx: %w", err)
-		return f.HandleError(err)
-	}
-
-	// Create high fee.
-	highFeeSweepTx, err := f.loopIn.createSweeplessSweepTx(
-		address, highFeeRate,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to create high fee sweepless sweep "+
-			"tx: %w", err)
-
-		return f.HandleError(err)
-	}
-
-	// Create extremely high fee.
-	extremelyHighFeeSweepTx, err := f.loopIn.createSweeplessSweepTx(
-		address, extremeFeeRate,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to create extremely high fee "+
-			"sweepless sweep tx: %w", err)
-
-		return f.HandleError(err)
-	}
-
-	// Sign standard.
-	sweeplessClientSigs, err := f.loopIn.signMusig2Tx(
-		ctx, sweepTx, f.cfg.Signer, sessions, serverNonces,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to sign sweepless sweep tx: %w", err)
-		return f.HandleError(err)
-	}
-
-	// Sign high fee.
-	highFeeSigs, err := f.loopIn.signMusig2Tx(
-		ctx, highFeeSweepTx, f.cfg.Signer, highFeeSessions,
-		serverHighFeeNonces,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to sign high fee sweepless sweep "+
-			"tx: %w", err)
-
-		return f.HandleError(err)
-	}
-
-	// Sign extremely high fee.
-	extremelyHighSigs, err := f.loopIn.signMusig2Tx(
-		ctx, extremelyHighFeeSweepTx, f.cfg.Signer, extremeSessions,
-		serverExtremeNonces,
-	)
-	if err != nil {
-		err = fmt.Errorf("unable to sign extremely high fee "+
-			"sweepless sweep tx: %w", err)
-
-		return f.HandleError(err)
+		clientResponse[feeRate] = &looprpc.ClientSweeplessSigningInfo{
+			Nonces: fromNonces(clientNonces),
+			Sigs:   sweeplessClientSigs,
+		}
 	}
 
 	// Push sweepless sigs to the server.
 	req := &looprpc.PushStaticAddressSweeplessSigsRequest{
-		SwapHash: f.loopIn.SwapHash[:],
-		StandardSigningInfo: &looprpc.ClientSweeplessSigningInfo{
-			Nonces: fromNonces(clientNonces),
-			Sigs:   sweeplessClientSigs,
-		},
-		HighFeeSigningInfo: &looprpc.ClientSweeplessSigningInfo{
-			Nonces: fromNonces(highClientNonces),
-			Sigs:   highFeeSigs,
-		},
-		ExtremeFeeSigningInfo: &looprpc.ClientSweeplessSigningInfo{
-			Nonces: fromNonces(extremelyHighClientNonces),
-			Sigs:   extremelyHighSigs,
-		},
+		SwapHash:    f.loopIn.SwapHash[:],
+		SigningInfo: clientResponse,
 	}
 	_, err = f.cfg.Server.PushStaticAddressSweeplessSigs(ctx, req)
 	if err != nil {

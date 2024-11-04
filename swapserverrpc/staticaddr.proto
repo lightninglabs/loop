@@ -195,26 +195,14 @@ message FetchSweeplessSweepTxResponse {
     // to.
     string sweep_addr = 1;
 
-    // The info the server used to generate the standard fee partial sweepless
-    // tx sigs.
-    ServerSweeplessSigningInfo standard_fee_info = 2;
-
-    // The info the server used to generate the high fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo high_fee_info = 3;
-
-    // The info the server used to generate the extreme fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo extreme_fee_info = 4;
+    // A map of fee rate to the nonces.
+    map<uint64, ServerSweeplessSigningInfo> fee_rate_to_nonces = 2;
 }
 
 message ServerSweeplessSigningInfo {
     // The nonces that the server used to generate the partial sweepless tx
     // sigs.
     repeated bytes nonces = 1;
-
-    // The fee rate in sat/kw that the server wants to use for the sweepless tx.
-    uint64 fee_rate = 2;
 }
 
 message PushStaticAddressSweeplessSigsRequest {
@@ -222,17 +210,8 @@ message PushStaticAddressSweeplessSigsRequest {
     // sigs for.
     bytes swap_hash = 1;
 
-    // The info the client used to generate the standard fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo standard_signing_info = 2;
-
-    // The info the client used to generate the high fee partial sweepless tx
-    // sigs.
-    ClientSweeplessSigningInfo high_fee_signing_info = 3;
-
-    // The info the client used to generate the extreme fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo extreme_fee_signing_info = 4;
+    // A map of fee rate to the nonces.
+    map<uint64, ClientSweeplessSigningInfo> signing_info = 2;
 }
 
 message ClientSweeplessSigningInfo {
