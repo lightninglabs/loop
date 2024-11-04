@@ -111,10 +111,6 @@ var (
 	// transaction was sufficiently confirmed.
 	HtlcTimeoutSwept = fsm.StateType("HtlcTimeoutSwept")
 
-	// FetchSignPushSweeplessSweepTx is the state where the client fetches,
-	// signs and pushes the sweepless sweep tx signatures to the server.
-	FetchSignPushSweeplessSweepTx = fsm.StateType("FetchSignPushSweeplessSweepTx") //nolint:lll
-
 	// Succeeded is the state the swap is in if it was successful.
 	Succeeded = fsm.StateType("Succeeded")
 
@@ -135,7 +131,7 @@ var (
 
 var PendingStates = []fsm.StateType{
 	InitHtlcTx, SignHtlcTx, MonitorInvoiceAndHtlcTx, PaymentReceived,
-	SweepHtlcTimeout, MonitorHtlcTimeoutSweep, FetchSignPushSweeplessSweepTx,
+	SweepHtlcTimeout, MonitorHtlcTimeoutSweep,
 	UnlockDeposits,
 }
 
@@ -147,18 +143,17 @@ var AllStates = append(PendingStates, FinalStates...)
 
 // Events.
 var (
-	OnInitHtlc                      = fsm.EventType("OnInitHtlc")
-	OnHtlcInitiated                 = fsm.EventType("OnHtlcInitiated")
-	OnHtlcTxSigned                  = fsm.EventType("OnHtlcTxSigned")
-	OnSweepHtlcTimeout              = fsm.EventType("OnSweepHtlcTimeout")
-	OnHtlcTimeoutSweepPublished     = fsm.EventType("OnHtlcTimeoutSweepPublished")
-	OnHtlcTimeoutSwept              = fsm.EventType("OnHtlcTimeoutSwept")
-	OnPaymentReceived               = fsm.EventType("OnPaymentReceived")
-	OnPaymentDeadlineExceeded       = fsm.EventType("OnPaymentDeadlineExceeded")
-	OnSwapTimedOut                  = fsm.EventType("OnSwapTimedOut")
-	OnFetchSignPushSweeplessSweepTx = fsm.EventType("OnFetchSignPushSweeplessSweepTx")
-	OnSweeplessSweepSigned          = fsm.EventType("OnSweeplessSweepSigned")
-	OnRecover                       = fsm.EventType("OnRecover")
+	OnInitHtlc                  = fsm.EventType("OnInitHtlc")
+	OnHtlcInitiated             = fsm.EventType("OnHtlcInitiated")
+	OnHtlcTxSigned              = fsm.EventType("OnHtlcTxSigned")
+	OnSweepHtlcTimeout          = fsm.EventType("OnSweepHtlcTimeout")
+	OnHtlcTimeoutSweepPublished = fsm.EventType("OnHtlcTimeoutSweepPublished")
+	OnHtlcTimeoutSwept          = fsm.EventType("OnHtlcTimeoutSwept")
+	OnPaymentReceived           = fsm.EventType("OnPaymentReceived")
+	OnPaymentDeadlineExceeded   = fsm.EventType("OnPaymentDeadlineExceeded")
+	OnSwapTimedOut              = fsm.EventType("OnSwapTimedOut")
+	OnSweepFinished             = fsm.EventType("OnSweepFinished")
+	OnRecover                   = fsm.EventType("OnRecover")
 )
 
 // LoopInStatesV0 returns the state and transition map for the loop-in state
@@ -215,20 +210,13 @@ func (f *FSM) LoopInStatesV0() fsm.States {
 		},
 		PaymentReceived: fsm.State{
 			Transitions: fsm.Transitions{
-				OnFetchSignPushSweeplessSweepTx: FetchSignPushSweeplessSweepTx,
-				OnRecover:                       SucceededSweeplessSigFailed,
-				fsm.OnError:                     SucceededSweeplessSigFailed,
+				OnSweepFinished: Succeeded,
+				OnRecover:       PaymentReceived,
+				fsm.OnError:     SucceededSweeplessSigFailed,
 			},
 			Action: f.PaymentReceivedAction,
 		},
-		FetchSignPushSweeplessSweepTx: fsm.State{
-			Transitions: fsm.Transitions{
-				OnSweeplessSweepSigned: Succeeded,
-				OnRecover:              SucceededSweeplessSigFailed,
-				fsm.OnError:            SucceededSweeplessSigFailed,
-			},
-			Action: f.FetchSignPushSweeplessSweepTxAction,
-		},
+
 		HtlcTimeoutSwept: fsm.State{
 			Action: fsm.NoOpAction,
 		},
