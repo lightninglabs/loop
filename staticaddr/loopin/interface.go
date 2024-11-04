@@ -61,6 +61,10 @@ type StaticAddressLoopInStore interface {
 
 	// IsStored checks if the loop-in is already stored in the database.
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
+
+	// FetchLoopInByHash returns the loop-in swap with the given hash.
+	FetchLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
+		*StaticAddressLoopIn, error)
 }
 
 type QuoteGetter interface {
