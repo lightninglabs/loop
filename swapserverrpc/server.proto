@@ -667,7 +667,27 @@ message SubscribeNotificationsRequest {
 message SubscribeNotificationsResponse {
     oneof notification {
         ServerReservationNotification reservation_notification = 1;
+        ServerStaticLoopInSweepRequest static_loop_in_sweep_request = 2;
     }
+}
+
+// ServerStaticLoopInSweepRequest is a request from the server to the client to
+// cosign a transaction that contains loop in swaps from static loop ins.
+message ServerStaticLoopInSweepRequest {
+    // The psbt of the sweep transaction.
+    bytes sweep_tx_psbt = 1;
+
+    // The swap hash the deposit is associated with.
+    bytes swap_hash = 2;
+
+    // Index of the deposit in the sweep tx.
+    uint32 output_index = 3;
+
+    // Nonce used to generate the signature.
+    bytes nonce = 4;
+
+    // The prevout information of the sweep txn.
+    repeated PrevoutInfo prevout_info = 5;
 }
 
 // StaticAddressProtocolVersion represents the static address protocol version
@@ -699,11 +719,6 @@ service StaticAddressServer {
     // PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
     rpc PushStaticAddressHtlcSigs (PushStaticAddressHtlcSigsRequest)
         returns (PushStaticAddressHtlcSigsResponse);
-
-    // FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
-    // to sign it.
-    rpc FetchSweeplessSweepTx (FetchSweeplessSweepTxRequest)
-        returns (FetchSweeplessSweepTxResponse);
 
     // PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
     // sigs to the server.
@@ -845,29 +860,6 @@ message ClientHtlcSigningInfo {
 message PushStaticAddressHtlcSigsResponse {
 }
 
-message FetchSweeplessSweepTxRequest {
-    // The swap hash of the swap that the client wants to fetch the sweepless
-    // sweep tx for.
-    bytes swap_hash = 1;
-}
-
-message FetchSweeplessSweepTxResponse {
-    // The address that the server wants to sweep the static address deposits
-    // to.
-    string sweep_addr = 1;
-
-    // The info the server used to generate the standard fee partial sweepless
-    // tx sigs.
-    ServerSweeplessSigningInfo standard_fee_info = 2;
-
-    // The info the server used to generate the high fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo high_fee_info = 3;
-
-    // The info the server used to generate the extreme fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo extreme_fee_info = 4;
-}
 
 message ServerSweeplessSigningInfo {
     // The nonces that the server used to generate the partial sweepless tx
@@ -879,30 +871,21 @@ message ServerSweeplessSigningInfo {
 }
 
 message PushStaticAddressSweeplessSigsRequest {
-    // The swap hash of the swap that the client wants to push the sweepless
-    // sigs for.
-    bytes swap_hash = 1;
+    // The hash of the sweep transaction as a unique identifier.
+    bytes tx_hash = 1;
 
-    // The info the client used to generate the standard fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo standard_signing_info = 2;
+    // The swap hash that the client used to generate the sweepless tx sigs.
+    bytes swap_hash = 2;
 
-    // The info the client used to generate the high fee partial sweepless tx
-    // sigs.
-    ClientSweeplessSigningInfo high_fee_signing_info = 3;
+    // The index of the deposit in the sweep tx.
+    uint32 output_index = 3;
 
-    // The info the client used to generate the extreme fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo extreme_fee_signing_info = 4;
-}
+    // The nonce that the client used to generate the partial sweepless tx
+    // sig.
+    bytes nonce = 4;
 
-message ClientSweeplessSigningInfo {
-    // The nonces that the client used to generate the partial sweepless tx
-    // sigs.
-    repeated bytes nonces = 1;
-
-    // The musig2 htlc sigs that the client generated for the sweepless tx.
-    repeated bytes sigs = 2;
+    // The musig2 sig that the client generated for the sweepless tx.
+    bytes sig = 5;
 }
 
 message PushStaticAddressSweeplessSigsResponse {
