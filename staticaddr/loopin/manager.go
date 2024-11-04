@@ -1,17 +1,24 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -62,6 +69,10 @@ type Config struct {
 	// Store is the database store that is used to store static address
 	// loop-in related records.
 	Store StaticAddressLoopInStore
+
+	// NotificationManager is the manager that handles the notification
+	// subscriptions.
+	NotificationManager NotificationManager
 
 	// ValidateLoopInContract validates the contract parameters against our
 	// request.
@@ -150,6 +161,12 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 		return err
 	}
 
+	// Register for notifications of loop-in sweep requests.
+	sweepReqs := m.cfg.NotificationManager.
+		SubscribeStaticLoopInSweepRequests(
+			ctx,
+		)
+
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
 	close(m.initChan)
@@ -189,10 +206,167 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 				return ctx.Err()
 			}
 
+		case sweepReq := <-sweepReqs:
+			err = m.handleLoopInSweepReq(ctx, sweepReq)
+			if err != nil {
+				log.Errorf("Error handling loop-in sweep request: %v",
+					err)
+			}
+
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// handleLoopInSweepReq handles a loop-in sweep request from the server.
+// It first checks if the requested loop-in is finished as expected and if
+// yes will send signature to the server for the provided psbt.
+func (m *Manager) handleLoopInSweepReq(ctx context.Context,
+	req *swapserverrpc.ServerStaticLoopInSweepRequest) error {
+
+	// First we'll check if the loop-ins are known to us and in
+	// the expected state.
+	swapHash, err := lntypes.MakeHash(req.SwapHash)
+	if err != nil {
+		return err
+	}
+
+	// Fetch the loop-in from the store.
+	loopIn, err := m.cfg.Store.FetchLoopInByHash(ctx, swapHash)
+	if err != nil {
+		return err
+	}
+
+	// If the loop-in is not in the Succeeded state we return an
+	// error.
+	if loopIn.state != Succeeded {
+		return fmt.Errorf("loop-in %v not in Succeeded state",
+			swapHash)
+	}
+
+	reader := bytes.NewReader(req.SweepTxPsbt)
+	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
+	if err != nil {
+		return err
+	}
+
+	sweepTx := sweepPacket.UnsignedTx
+
+	// Perform a sanity check on the number of unsigned tx inputs and
+	// prevout info.
+	if len(sweepTx.TxIn) != len(req.PrevoutInfo) {
+		return fmt.Errorf("expected %v inputs, got %v",
+			len(req.PrevoutInfo), len(sweepTx.TxIn))
+	}
+
+	prevoutMap := make(map[wire.OutPoint]*wire.TxOut)
+	var depositOutpoint *wire.OutPoint
+
+	for i := range req.PrevoutInfo {
+		prevout := req.PrevoutInfo[i]
+
+		txid, err := chainhash.NewHash(prevout.TxidBytes)
+		if err != nil {
+			return err
+		}
+
+		if i == int(req.OutputIndex) {
+			depositOutpoint = &wire.OutPoint{
+				Hash:  *txid,
+				Index: prevout.OutputIndex,
+			}
+		}
+
+		prevoutMap[wire.OutPoint{
+			Hash:  *txid,
+			Index: prevout.OutputIndex,
+		}] = &wire.TxOut{
+			Value:    int64(req.PrevoutInfo[i].Value),
+			PkScript: req.PrevoutInfo[i].PkScript,
+		}
+	}
+
+	// Check if the deposit outpoint is part of the loop-in.
+	if depositOutpoint == nil {
+		return fmt.Errorf("deposit outpoint not part of loop-in")
+	}
+
+	foundDeposit := false
+	for _, loopInDeposit := range loopIn.DepositOutpoints {
+		if loopInDeposit == fmt.Sprintf("%v:%v",
+			depositOutpoint.Hash, depositOutpoint.Index) {
+			foundDeposit = true
+		}
+	}
+
+	if !foundDeposit {
+		return fmt.Errorf("deposit outpoint not part of loop-in")
+	}
+
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(
+		prevoutMap,
+	)
+
+	sigHashes := txscript.NewTxSigHashes(
+		sweepPacket.UnsignedTx, prevOutputFetcher,
+	)
+
+	taprootSigHash, err := txscript.CalcTaprootSignatureHash(
+		sigHashes, txscript.SigHashDefault, sweepPacket.UnsignedTx,
+		int(req.OutputIndex), prevOutputFetcher,
+	)
+	if err != nil {
+		return err
+	}
+
+	var (
+		serverNonce [musig2.PubNonceSize]byte
+		sigHash     [32]byte
+	)
+
+	copy(serverNonce[:], req.Nonce)
+	musig2Session, err := loopIn.createMusig2Session(ctx, m.cfg.Signer)
+	if err != nil {
+		return err
+	}
+
+	haveAllNonces, err := m.cfg.Signer.MuSig2RegisterNonces(
+		ctx, musig2Session.SessionID,
+		[][musig2.PubNonceSize]byte{serverNonce},
+	)
+	if err != nil {
+		return err
+	}
+
+	if !haveAllNonces {
+		return fmt.Errorf("expected all nonces to be registered")
+	}
+
+	copy(sigHash[:], taprootSigHash)
+
+	// Since our MuSig2 session has all nonces, we can now create
+	// the local partial signature by signing the sig hash.
+	sig, err := m.cfg.Signer.MuSig2Sign(
+		ctx, musig2Session.SessionID, sigHash, false,
+	)
+	if err != nil {
+		return err
+	}
+
+	txHash := sweepTx.TxHash()
+
+	// We'll now push the signature to the server.
+	_, err = m.cfg.Server.PushStaticAddressSweeplessSigs(
+		ctx, &looprpc.PushStaticAddressSweeplessSigsRequest{
+			TxHash:      txHash[:],
+			SwapHash:    loopIn.SwapHash[:],
+			OutputIndex: req.OutputIndex,
+			Nonce:       musig2Session.PublicNonce[:],
+			Sig:         sig,
+		},
+	)
+	return err
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
