@@ -331,7 +331,7 @@ func (f *FSM) Infof(format string, args ...interface{}) {
 // Debugf logs a debug message with the loop-in swap hash.
 func (f *FSM) Debugf(format string, args ...interface{}) {
 	if f.loopIn == nil {
-		log.Infof(format, args...)
+		log.Debugf(format, args...)
 		return
 	}
 	log.Debugf(
