@@ -168,6 +168,20 @@ service SwapClient {
     rpc WithdrawDeposits (WithdrawDepositsRequest)
         returns (WithdrawDepositsResponse);
 
+    /* loop:`listdeposits`
+    ListStaticAddressDeposits returns a list of filtered static address
+    deposits.
+    */
+    rpc ListStaticAddressDeposits (ListStaticAddressDepositsRequest)
+        returns (ListStaticAddressDepositsResponse);
+
+    /* loop:`listswaps`
+    ListStaticAddressSwaps returns a list of filtered static address
+    swaps.
+    */
+    rpc ListStaticAddressSwaps (ListStaticAddressSwapsRequest)
+        returns (ListStaticAddressSwapsResponse);
+
     /* loop:`static summary`
     GetStaticAddressSummary returns a summary of static address related
     statistics.
@@ -1599,7 +1613,7 @@ message OutPoint {
     uint32 output_index = 3;
 }
 
-message StaticAddressSummaryRequest {
+message ListStaticAddressDepositsRequest {
     /*
     Filters the list of all stored deposits by deposit state.
     */
@@ -1611,6 +1625,26 @@ message StaticAddressSummaryRequest {
     repeated string outpoints = 2;
 }
 
+message ListStaticAddressDepositsResponse {
+    /*
+    A list of all deposits that match the filtered state.
+    */
+    repeated Deposit filtered_deposits = 1;
+}
+
+message ListStaticAddressSwapsRequest {
+}
+
+message ListStaticAddressSwapsResponse {
+    /*
+    A list of all swaps known static address loop-in swaps.
+    */
+    repeated StaticAddressLoopInSwap swaps = 1;
+}
+
+message StaticAddressSummaryRequest {
+}
+
 message StaticAddressSummaryResponse {
     /*
     The static address of the client.
@@ -1618,44 +1652,44 @@ message StaticAddressSummaryResponse {
     string static_address = 1;
 
     /*
+    The CSV expiry of the static address.
+    */
+    uint64 relative_expiry_blocks = 2;
+
+    /*
     The total number of deposits.
     */
-    uint32 total_num_deposits = 2;
+    uint32 total_num_deposits = 3;
 
     /*
     The total value of unconfirmed deposits.
     */
-    int64 value_unconfirmed_satoshis = 3;
+    int64 value_unconfirmed_satoshis = 4;
 
     /*
     The total value of confirmed deposits.
     */
-    int64 value_deposited_satoshis = 4;
+    int64 value_deposited_satoshis = 5;
 
     /*
     The total value of all expired deposits.
     */
-    int64 value_expired_satoshis = 5;
+    int64 value_expired_satoshis = 6;
 
     /*
     The total value of all deposits that have been withdrawn.
     */
-    int64 value_withdrawn_satoshis = 6;
+    int64 value_withdrawn_satoshis = 7;
 
     /*
     The total value of all loop-ins that have been finalized.
     */
-    int64 value_looped_in_satoshis = 7;
+    int64 value_looped_in_satoshis = 8;
 
     /*
     The total value of all htlc timeout sweeps that the client swept.
     */
-    int64 value_htlc_timeout_sweeps_satoshis = 8;
-
-    /*
-    A list of all deposits that match the filtered state.
-    */
-    repeated Deposit filtered_deposits = 9;
+    int64 value_htlc_timeout_sweeps_satoshis = 9;
 }
 
 enum DepositState {
@@ -1751,6 +1785,93 @@ message Deposit {
     The block height at which the deposit was confirmed.
     */
     int64 confirmation_height = 5;
+
+    /*
+    The number of blocks that are left until the deposit cannot be used for a
+    loop-in swap anymore.
+    */
+    int64 blocks_until_expiry = 6;
+}
+
+message StaticAddressLoopInSwap {
+    /*
+    The swap hash of the swap. It represents the unique identifier of the swap.
+    */
+    bytes swap_hash = 1;
+
+    /*
+     */
+    repeated string deposit_outpoints = 2;
+
+    /*
+     */
+    StaticAddressLoopInSwapState state = 3;
+
+    /*
+    The swap amount of the swap. It is the sum of the values of the deposit
+    outpoints that were used for this swap.
+    */
+    int64 swap_amount_satoshis = 4;
+
+    /*
+    The invoiced swap amount. It is the swap amount minus the quoted server
+    fees.
+    */
+    int64 payment_request_amount_satoshis = 5;
+}
+
+enum StaticAddressLoopInSwapState {
+    /*
+     */
+    UNKNOWN_STATIC_ADDRESS_SWAP_STATE = 0;
+
+    /*
+     */
+    INIT_HTLC = 1;
+
+    /*
+     */
+    SIGN_HTLC_TX = 2;
+
+    /*
+     */
+    MONITOR_INVOICE_HTLC_TX = 3;
+
+    /*
+     */
+    PAYMENT_RECEIVED = 4;
+
+    /*
+     */
+    SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT = 5;
+
+    /*
+     */
+    MONITOR_HTLC_TIMEOUT_SWEEP = 6;
+
+    /*
+     */
+    HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT = 7;
+
+    /*
+     */
+    FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX = 8;
+
+    /*
+     */
+    SUCCEEDED = 9;
+
+    /*
+     */
+    SUCCEEDED_SWEEPLESS_SIG_FAILED = 10;
+
+    /*
+     */
+    UNLOCK_DEPOSITS = 11;
+
+    /*
+     */
+    FAILED_STATIC_ADDRESS_SWAP = 12;
 }
 
 message StaticAddressLoopInRequest {
