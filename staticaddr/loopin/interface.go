@@ -33,6 +33,9 @@ type AddressManager interface {
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// GetAllDeposits returns all known deposits from the database store.
+	GetAllDeposits(ctx context.Context) ([]*deposit.Deposit, error)
+
 	// AllStringOutpointsActiveDeposits returns all deposits that have the
 	// given outpoints and are in the given state. If any of the outpoints
 	// does not correspond to an active deposit, the function returns false.

@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -24,6 +25,8 @@ var staticAddressCommands = cli.Command{
 	Subcommands: []cli.Command{
 		newStaticAddressCommand,
 		listUnspentCommand,
+		listDepositsCommand,
+		listStaticAddressSwapsCommand,
 		withdrawalCommand,
 		summaryCommand,
 	},
@@ -217,6 +220,36 @@ func withdraw(ctx *cli.Context) error {
 	return nil
 }
 
+var listDepositsCommand = cli.Command{
+	Name:  "listdeposits",
+	Usage: "Display a summary of static address related information.",
+	Description: `
+	`,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "filter",
+			Usage: "specify a filter to only display deposits in " +
+				"the specified state. Leaving out the filter " +
+				"returns all deposits.\nThe state can be one " +
+				"of the following: \n" +
+				"deposited\nwithdrawing\nwithdrawn\n" +
+				"looping_in\nlooped_in\n" +
+				"publish_expired_deposit\n" +
+				"sweep_htlc_timeout\nhtlc_timeout_swept\n" +
+				"wait_for_expiry_sweep\nexpired\nfailed\n.",
+		},
+	},
+	Action: listDeposits,
+}
+
+var listStaticAddressSwapsCommand = cli.Command{
+	Name:  "listswaps",
+	Usage: "Display a summary of static address related information.",
+	Description: `
+	`,
+	Action: listStaticAddressSwaps,
+}
+
 var summaryCommand = cli.Command{
 	Name:      "summary",
 	ShortName: "s",
@@ -242,10 +275,10 @@ var summaryCommand = cli.Command{
 	Action: summary,
 }
 
-func summary(ctx *cli.Context) error {
+func listDeposits(ctx *cli.Context) error {
 	ctxb := context.Background()
 	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "summary")
+		return cli.ShowCommandHelp(ctx, "listdeposits")
 	}
 
 	client, cleanup, err := getClient(ctx)
@@ -293,10 +326,58 @@ func summary(ctx *cli.Context) error {
 		filterState = looprpc.DepositState_UNKNOWN_STATE
 	}
 
-	resp, err := client.GetStaticAddressSummary(
-		ctxb, &looprpc.StaticAddressSummaryRequest{
+	resp, err := client.ListStaticAddressDeposits(
+		ctxb, &looprpc.ListStaticAddressDepositsRequest{
 			StateFilter: filterState,
 		},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+func listStaticAddressSwaps(ctx *cli.Context) error {
+	ctxb := context.Background()
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "listswaps")
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.ListStaticAddressSwaps(
+		ctxb, &looprpc.ListStaticAddressSwapsRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+func summary(ctx *cli.Context) error {
+	ctxb := context.Background()
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "summary")
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.GetStaticAddressSummary(
+		ctxb, &looprpc.StaticAddressSummaryRequest{},
 	)
 	if err != nil {
 		return err
@@ -391,13 +472,21 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	// Get the amount we need to quote for.
-	summaryResp, err := client.GetStaticAddressSummary(
-		ctxb, &looprpc.StaticAddressSummaryRequest{
+	depositList, err := client.ListStaticAddressDeposits(
+		ctxb, &looprpc.ListStaticAddressDepositsRequest{
 			StateFilter: looprpc.DepositState_DEPOSITED,
 		},
 	)
 	if err != nil {
 		return err
+	}
+
+	if len(depositList.FilteredDeposits) == 0 {
+		errString := fmt.Sprintf("no confirmed deposits available, "+
+			"deposits need at least %v confirmations",
+			deposit.DefaultConfTarget)
+
+		return errors.New(errString)
 	}
 
 	var depositOutpoints []string
@@ -407,7 +496,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 
 	case isAllSelected:
 		depositOutpoints = depositsToOutpoints(
-			summaryResp.FilteredDeposits,
+			depositList.FilteredDeposits,
 		)
 
 	case isUtxoSelected:
@@ -437,7 +526,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	// populate the quote request with the sum of selected deposits and
 	// prompt the user for acceptance.
 	quoteReq.Amt, err = sumDeposits(
-		depositOutpoints, summaryResp.FilteredDeposits,
+		depositOutpoints, depositList.FilteredDeposits,
 	)
 	if err != nil {
 		return err
