@@ -1,0 +1,250 @@
+syntax = "proto3";
+import "server.proto";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+// StaticAddressProtocolVersion represents the static address protocol version
+// the client adheres to.
+enum StaticAddressProtocolVersion {
+    // V0 is the initially released static address protocol version.
+    V0 = 0;
+}
+
+service StaticAddressServer {
+    // ServerNewAddress generates a new static address for the client to use.
+    // The server will generate the address and return the server key and the
+    // address's CSV expiry.
+    rpc ServerNewAddress (ServerNewAddressRequest)
+        returns (ServerNewAddressResponse);
+
+    // ServerWithdrawDeposits allows to cooperatively sweep deposits that
+    // haven't timed out yet to the client's wallet. The server will generate
+    // the partial sigs for the client's selected deposits.
+    rpc ServerWithdrawDeposits (ServerWithdrawRequest)
+        returns (ServerWithdrawResponse);
+
+    // ServerStaticAddressLoopIn initiates a static address loop-in swap. The
+    // server will respond with htlc details that the client can use to
+    // construct and sign the htlc tx.
+    rpc ServerStaticAddressLoopIn (ServerStaticAddressLoopInRequest)
+        returns (ServerStaticAddressLoopInResponse);
+
+    // PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
+    rpc PushStaticAddressHtlcSigs (PushStaticAddressHtlcSigsRequest)
+        returns (PushStaticAddressHtlcSigsResponse);
+
+    // FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
+    // to sign it.
+    rpc FetchSweeplessSweepTx (FetchSweeplessSweepTxRequest)
+        returns (FetchSweeplessSweepTxResponse);
+
+    // PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
+    // sigs to the server.
+    rpc PushStaticAddressSweeplessSigs (PushStaticAddressSweeplessSigsRequest)
+        returns (PushStaticAddressSweeplessSigsResponse);
+}
+
+message ServerNewAddressRequest {
+    // The protocol version that the client adheres to.
+    StaticAddressProtocolVersion protocol_version = 1;
+
+    // The client key for the MuSig2 static address output.
+    bytes client_key = 2;
+}
+
+message ServerNewAddressResponse {
+    // The server address parameters that the client needs to know to create the
+    // static address output.
+    ServerAddressParameters params = 1;
+}
+
+message ServerAddressParameters {
+    // The server key for the MuSig2 static address output.
+    bytes server_key = 1;
+
+    // The CSV expiry of the static address output.
+    uint32 expiry = 2;
+}
+
+message ServerWithdrawRequest {
+    // The deposit outpoints the client wishes to withdraw.
+    repeated PrevoutInfo outpoints = 1;
+
+    // The nonces that the client used to generate the withdrawal tx sigs.
+    repeated bytes client_nonces = 2;
+
+    // The address that the client wants to sweep the static address deposits
+    // to.
+    string client_sweep_addr = 3;
+
+    // The fee rate in sat/kw that the client wants to use for the sweep.
+    uint64 tx_fee_rate = 4;
+}
+
+message ServerWithdrawResponse {
+    // The sweep sigs that the server generated for the htlc.
+    repeated bytes musig2_sweep_sigs = 1;
+
+    // The nonces that the server used to generate the sweepless sweep sigs.
+    repeated bytes server_nonces = 2;
+}
+
+message ServerStaticAddressLoopInRequest {
+    // The client's public key for the htlc output.
+    bytes htlc_client_pub_key = 1;
+
+    // The hashed swap invoice preimage of the swap.
+    bytes swap_hash = 2;
+
+    // The deposit outpoints the client wishes to loop in. They implicitly state
+    // the swap amount.
+    repeated string deposit_outpoints = 3;
+
+    // The swap invoice that the client wants the server to pay.
+    string swap_invoice = 4;
+
+    // An optional last hop the client wants to receive the invoice payment
+    // from.
+    bytes last_hop = 5;
+
+    // The protocol version that the client adheres to.
+    StaticAddressProtocolVersion protocol_version = 6;
+
+    // The user agent string that identifies the software running on the user's
+    // side. This can be changed in the user's client software but it _SHOULD_
+    // conform to the following pattern:
+    //    Agent-Name/semver-version(/additional-info)
+    // Examples:
+    //    loopd/v0.10.0-beta/commit=3b635821
+    //    litd/v0.2.0-alpha/commit=326d754
+    //    loopd/v0.10.0-beta/commit=3b635823,initiator=easy-autoloop
+    string user_agent = 7;
+
+    // The swap payment timeout allows the user to specify an upper limit for
+    // the amount of time the server is allowed to take to fulfill the off-chain
+    // swap payment. If the timeout is reached the swap will be aborted on the
+    // server side and the client can retry the swap with different parameters.
+    uint32 payment_timeout_seconds = 8;
+}
+
+message ServerStaticAddressLoopInResponse {
+    // The server's public key for the htlc output.
+    bytes htlc_server_pub_key = 1;
+
+    // The cltv expiry height for the htlc. This is the height at which the
+    // htlc will expire and the client is free to claim the funds back.
+    int32 htlc_expiry = 2;
+
+    // The info the server used to generate the standard fee partial htlc tx
+    // sigs.
+    ServerHtlcSigningInfo standard_htlc_info = 3;
+
+    // The info the server used to generate the high fee partial htlc tx sigs.
+    ServerHtlcSigningInfo high_fee_htlc_info = 4;
+
+    // The info the server used to generate the extreme fee partial htlc tx
+    // sigs.
+    ServerHtlcSigningInfo extreme_fee_htlc_info = 5;
+}
+
+message ServerHtlcSigningInfo {
+    // The nonces that the server used to generate the partial htlc tx sigs.
+    repeated bytes nonces = 1;
+
+    // The fee rate in sat/kw that the server wants to use for the htlc tx.
+    uint64 fee_rate = 2;
+}
+
+message PushStaticAddressHtlcSigsRequest {
+    // The swap hash that the client wants to push the htlc sigs for.
+    bytes swap_hash = 1;
+
+    // The nonces that the client used to generate the htlc sigs.
+    ClientHtlcSigningInfo standard_htlc_info = 2;
+
+    // The nonces that the client used to generate the high fee htlc sigs.
+    ClientHtlcSigningInfo high_fee_htlc_info = 3;
+
+    // The nonces that the client used to generate the extreme fee htlc sigs.
+    ClientHtlcSigningInfo extreme_fee_htlc_info = 4;
+}
+
+message ClientHtlcSigningInfo {
+    // The nonces that the client used to generate the partial htlc tx sigs.
+    repeated bytes nonces = 1;
+
+    // The musig2 htlc sigs that the client generated for the htlc tx.
+    repeated bytes sigs = 2;
+}
+
+message PushStaticAddressHtlcSigsResponse {
+}
+
+message FetchSweeplessSweepTxRequest {
+    // The swap hash of the swap that the client wants to fetch the sweepless
+    // sweep tx for.
+    bytes swap_hash = 1;
+}
+
+message FetchSweeplessSweepTxResponse {
+    // The address that the server wants to sweep the static address deposits
+    // to.
+    string sweep_addr = 1;
+
+    // The info the server used to generate the standard fee partial sweepless
+    // tx sigs.
+    ServerSweeplessSigningInfo standard_fee_info = 2;
+
+    // The info the server used to generate the high fee partial sweepless tx
+    // sigs.
+    ServerSweeplessSigningInfo high_fee_info = 3;
+
+    // The info the server used to generate the extreme fee partial sweepless tx
+    // sigs.
+    ServerSweeplessSigningInfo extreme_fee_info = 4;
+}
+
+message ServerSweeplessSigningInfo {
+    // The nonces that the server used to generate the partial sweepless tx
+    // sigs.
+    repeated bytes nonces = 1;
+
+    // The fee rate in sat/kw that the server wants to use for the sweepless tx.
+    uint64 fee_rate = 2;
+}
+
+message PushStaticAddressSweeplessSigsRequest {
+    // The swap hash of the swap that the client wants to push the sweepless
+    // sigs for.
+    bytes swap_hash = 1;
+
+    // The info the client used to generate the standard fee partial sweepless
+    // tx sigs.
+    ClientSweeplessSigningInfo standard_signing_info = 2;
+
+    // The info the client used to generate the high fee partial sweepless tx
+    // sigs.
+    ClientSweeplessSigningInfo high_fee_signing_info = 3;
+
+    // The info the client used to generate the extreme fee partial sweepless
+    // tx sigs.
+    ClientSweeplessSigningInfo extreme_fee_signing_info = 4;
+}
+
+message ClientSweeplessSigningInfo {
+    // The nonces that the client used to generate the partial sweepless tx
+    // sigs.
+    repeated bytes nonces = 1;
+
+    // The musig2 htlc sigs that the client generated for the sweepless tx.
+    repeated bytes sigs = 2;
+}
+
+message PushStaticAddressSweeplessSigsResponse {
+}
