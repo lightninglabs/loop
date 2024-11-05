@@ -688,6 +688,11 @@
           "type": "string",
           "format": "int64",
           "description": "The block height at which the deposit was confirmed."
+        },
+        "blocks_until_expiry": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of blocks that are left until the deposit cannot be used for a\nloop-in swap anymore."
         }
       }
     },
@@ -1152,6 +1157,30 @@
         }
       }
     },
+    "looprpcListStaticAddressDepositsResponse": {
+      "type": "object",
+      "properties": {
+        "filtered_deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "A list of all deposits that match the filtered state."
+        }
+      }
+    },
+    "looprpcListStaticAddressSwapsResponse": {
+      "type": "object",
+      "properties": {
+        "swaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcStaticAddressLoopInSwap"
+          },
+          "description": "A list of all swaps known static address loop-in swaps."
+        }
+      }
+    },
     "looprpcListSwapsFilter": {
       "type": "object",
       "properties": {
@@ -1565,12 +1594,65 @@
         }
       }
     },
+    "looprpcStaticAddressLoopInSwap": {
+      "type": "object",
+      "properties": {
+        "swap_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The swap hash of the swap. It represents the unique identifier of the swap."
+        },
+        "deposit_outpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "state": {
+          "$ref": "#/definitions/looprpcStaticAddressLoopInSwapState"
+        },
+        "swap_amount_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The swap amount of the swap. It is the sum of the values of the deposit\noutpoints that were used for this swap."
+        },
+        "payment_request_amount_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The invoiced swap amount. It is the swap amount minus the quoted server\nfees."
+        }
+      }
+    },
+    "looprpcStaticAddressLoopInSwapState": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN_STATIC_ADDRESS_SWAP_STATE",
+        "INIT_HTLC",
+        "SIGN_HTLC_TX",
+        "MONITOR_INVOICE_HTLC_TX",
+        "PAYMENT_RECEIVED",
+        "SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT",
+        "MONITOR_HTLC_TIMEOUT_SWEEP",
+        "HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT",
+        "FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX",
+        "SUCCEEDED",
+        "SUCCEEDED_SWEEPLESS_SIG_FAILED",
+        "UNLOCK_DEPOSITS",
+        "FAILED_STATIC_ADDRESS_SWAP"
+      ],
+      "default": "UNKNOWN_STATIC_ADDRESS_SWAP_STATE"
+    },
     "looprpcStaticAddressSummaryResponse": {
       "type": "object",
       "properties": {
         "static_address": {
           "type": "string",
           "description": "The static address of the client."
+        },
+        "relative_expiry_blocks": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The CSV expiry of the static address."
         },
         "total_num_deposits": {
           "type": "integer",
@@ -1606,13 +1688,6 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all htlc timeout sweeps that the client swept."
-        },
-        "filtered_deposits": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/looprpcDeposit"
-          },
-          "description": "A list of all deposits that match the filtered state."
         }
       }
     },

@@ -115,6 +115,14 @@ type SwapClientClient interface {
 	// loop:`static withdraw`
 	// WithdrawDeposits withdraws a selection or all deposits of a static address.
 	WithdrawDeposits(ctx context.Context, in *WithdrawDepositsRequest, opts ...grpc.CallOption) (*WithdrawDepositsResponse, error)
+	// loop:`listdeposits`
+	// ListStaticAddressDeposits returns a list of filtered static address
+	// deposits.
+	ListStaticAddressDeposits(ctx context.Context, in *ListStaticAddressDepositsRequest, opts ...grpc.CallOption) (*ListStaticAddressDepositsResponse, error)
+	// loop:`listswaps`
+	// ListStaticAddressSwaps returns a list of filtered static address
+	// swaps.
+	ListStaticAddressSwaps(ctx context.Context, in *ListStaticAddressSwapsRequest, opts ...grpc.CallOption) (*ListStaticAddressSwapsResponse, error)
 	// loop:`static summary`
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
@@ -380,6 +388,24 @@ func (c *swapClientClient) WithdrawDeposits(ctx context.Context, in *WithdrawDep
 	return out, nil
 }
 
+func (c *swapClientClient) ListStaticAddressDeposits(ctx context.Context, in *ListStaticAddressDepositsRequest, opts ...grpc.CallOption) (*ListStaticAddressDepositsResponse, error) {
+	out := new(ListStaticAddressDepositsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListStaticAddressDeposits", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) ListStaticAddressSwaps(ctx context.Context, in *ListStaticAddressSwapsRequest, opts ...grpc.CallOption) (*ListStaticAddressSwapsResponse, error) {
+	out := new(ListStaticAddressSwapsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListStaticAddressSwaps", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetStaticAddressSummary(ctx context.Context, in *StaticAddressSummaryRequest, opts ...grpc.CallOption) (*StaticAddressSummaryResponse, error) {
 	out := new(StaticAddressSummaryResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetStaticAddressSummary", in, out, opts...)
@@ -499,6 +525,14 @@ type SwapClientServer interface {
 	// loop:`static withdraw`
 	// WithdrawDeposits withdraws a selection or all deposits of a static address.
 	WithdrawDeposits(context.Context, *WithdrawDepositsRequest) (*WithdrawDepositsResponse, error)
+	// loop:`listdeposits`
+	// ListStaticAddressDeposits returns a list of filtered static address
+	// deposits.
+	ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error)
+	// loop:`listswaps`
+	// ListStaticAddressSwaps returns a list of filtered static address
+	// swaps.
+	ListStaticAddressSwaps(context.Context, *ListStaticAddressSwapsRequest) (*ListStaticAddressSwapsResponse, error)
 	// loop:`static summary`
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
@@ -587,6 +621,12 @@ func (UnimplementedSwapClientServer) ListUnspentDeposits(context.Context, *ListU
 }
 func (UnimplementedSwapClientServer) WithdrawDeposits(context.Context, *WithdrawDepositsRequest) (*WithdrawDepositsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WithdrawDeposits not implemented")
+}
+func (UnimplementedSwapClientServer) ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListStaticAddressDeposits not implemented")
+}
+func (UnimplementedSwapClientServer) ListStaticAddressSwaps(context.Context, *ListStaticAddressSwapsRequest) (*ListStaticAddressSwapsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListStaticAddressSwaps not implemented")
 }
 func (UnimplementedSwapClientServer) GetStaticAddressSummary(context.Context, *StaticAddressSummaryRequest) (*StaticAddressSummaryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStaticAddressSummary not implemented")
@@ -1060,6 +1100,42 @@ func _SwapClient_WithdrawDeposits_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_ListStaticAddressDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStaticAddressDepositsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListStaticAddressDeposits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListStaticAddressDeposits",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListStaticAddressDeposits(ctx, req.(*ListStaticAddressDepositsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_ListStaticAddressSwaps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStaticAddressSwapsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListStaticAddressSwaps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListStaticAddressSwaps",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListStaticAddressSwaps(ctx, req.(*ListStaticAddressSwapsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_GetStaticAddressSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StaticAddressSummaryRequest)
 	if err := dec(in); err != nil {
@@ -1198,6 +1274,14 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WithdrawDeposits",
 			Handler:    _SwapClient_WithdrawDeposits_Handler,
+		},
+		{
+			MethodName: "ListStaticAddressDeposits",
+			Handler:    _SwapClient_ListStaticAddressDeposits_Handler,
+		},
+		{
+			MethodName: "ListStaticAddressSwaps",
+			Handler:    _SwapClient_ListStaticAddressSwaps_Handler,
 		},
 		{
 			MethodName: "GetStaticAddressSummary",
