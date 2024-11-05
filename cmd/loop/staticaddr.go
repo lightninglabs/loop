@@ -484,7 +484,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	if len(depositList.FilteredDeposits) == 0 {
 		errString := fmt.Sprintf("no confirmed deposits available, "+
 			"deposits need at least %v confirmations",
-			deposit.DefaultConfTarget)
+			deposit.MinConfs)
 
 		return errors.New(errString)
 	}
