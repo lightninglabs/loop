@@ -42,11 +42,13 @@ var (
 		LoopDirBase, DefaultNetwork, defaultSqliteDatabaseFileName,
 	)
 
-	defaultMaxLogFiles         = 3
-	defaultMaxLogFileSize      = 10
-	defaultLoopOutMaxParts     = uint32(5)
-	defaultTotalPaymentTimeout = time.Minute * 60
-	defaultMaxPaymentRetries   = 3
+	defaultMaxLogFiles                          = 3
+	defaultMaxLogFileSize                       = 10
+	defaultLoopOutMaxParts                      = uint32(5)
+	defaultTotalPaymentTimeout                  = time.Minute * 60
+	defaultMaxPaymentRetries                    = 3
+	defaultMaxStaticAddrHtlcFeePercentage       = 0.2
+	defaultMaxStaticAddrHtlcBackupFeePercentage = 0.5
 
 	// defaultRPCBatchSize is the default batch size to use for RPC calls
 	// we make to LND during migrations. If operations on the LND side are
@@ -183,6 +185,9 @@ type Config struct {
 	TotalPaymentTimeout time.Duration `long:"totalpaymenttimeout" description:"The timeout to use for off-chain payments."`
 	MaxPaymentRetries   int           `long:"maxpaymentretries" description:"The maximum number of times an off-chain payment may be retried."`
 
+	MaxStaticAddrHtlcFeePercentage       float64 `long:"maxstaticaddrhtlcfeepercentage" description:"The maximum fee percentage that the server can charge for the htlc tx."`
+	MaxStaticAddrHtlcBackupFeePercentage float64 `long:"maxstaticaddrhtlcbackupfeepercentage" description:"The maximum fee percentage that the server can charge for the htlc backup tx. The backup transaction is only used in rare cases when the regular htlc tx is not confirmed on time. These backup transactions refer to high fee or extremely high fee transactions in the API."`
+
 	EnableExperimental bool `long:"experimental" description:"Enable experimental features: reservations"`
 
 	MigrationRPCBatchSize int `long:"migrationrpcbatchsize" description:"The RPC batch size to use during migrations."`
@@ -215,21 +220,23 @@ func DefaultConfig() Config {
 		Sqlite: &loopdb.SqliteConfig{
 			DatabaseFileName: defaultSqliteDatabasePath,
 		},
-		LogDir:                defaultLogDir,
-		MaxLogFiles:           defaultMaxLogFiles,
-		MaxLogFileSize:        defaultMaxLogFileSize,
-		DebugLevel:            defaultLogLevel,
-		TLSCertPath:           DefaultTLSCertPath,
-		TLSKeyPath:            DefaultTLSKeyPath,
-		TLSValidity:           DefaultAutogenValidity,
-		MacaroonPath:          DefaultMacaroonPath,
-		MaxL402Cost:           l402.DefaultMaxCostSats,
-		MaxL402Fee:            l402.DefaultMaxRoutingFeeSats,
-		LoopOutMaxParts:       defaultLoopOutMaxParts,
-		TotalPaymentTimeout:   defaultTotalPaymentTimeout,
-		MaxPaymentRetries:     defaultMaxPaymentRetries,
-		EnableExperimental:    false,
-		MigrationRPCBatchSize: defaultRPCBatchSize,
+		LogDir:                               defaultLogDir,
+		MaxLogFiles:                          defaultMaxLogFiles,
+		MaxLogFileSize:                       defaultMaxLogFileSize,
+		DebugLevel:                           defaultLogLevel,
+		TLSCertPath:                          DefaultTLSCertPath,
+		TLSKeyPath:                           DefaultTLSKeyPath,
+		TLSValidity:                          DefaultAutogenValidity,
+		MacaroonPath:                         DefaultMacaroonPath,
+		MaxL402Cost:                          l402.DefaultMaxCostSats,
+		MaxL402Fee:                           l402.DefaultMaxRoutingFeeSats,
+		LoopOutMaxParts:                      defaultLoopOutMaxParts,
+		TotalPaymentTimeout:                  defaultTotalPaymentTimeout,
+		MaxPaymentRetries:                    defaultMaxPaymentRetries,
+		MaxStaticAddrHtlcFeePercentage:       defaultMaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: defaultMaxStaticAddrHtlcBackupFeePercentage,
+		EnableExperimental:                   false,
+		MigrationRPCBatchSize:                defaultRPCBatchSize,
 		Lnd: &lndConfig{
 			Host:         "localhost:10009",
 			MacaroonPath: DefaultLndMacaroonPath,
