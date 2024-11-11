@@ -38,27 +38,33 @@ const (
 	// We'll try to sweep with MuSig2 at most 10 times. If that fails we'll
 	// fail back to using standard scriptspend sweep.
 	maxMusigSweepRetries = 10
-)
 
-var (
 	// MinLoopOutPreimageRevealDelta configures the minimum number of
 	// remaining blocks before htlc expiry required to reveal preimage.
-	MinLoopOutPreimageRevealDelta int32 = 20
+	MinLoopOutPreimageRevealDelta = 20
 
 	// DefaultSweepConfTarget is the default confirmation target we'll use
 	// when sweeping on-chain HTLCs.
-	DefaultSweepConfTarget int32 = 9
+	DefaultSweepConfTarget = 9
 
 	// DefaultHtlcConfTarget is the default confirmation target we'll use
 	// for on-chain htlcs published by the swap client for Loop In.
-	DefaultHtlcConfTarget int32 = 6
+	DefaultHtlcConfTarget = 6
 
 	// DefaultSweepConfTargetDelta is the delta of blocks from a Loop Out
-	// swap's expiration height at which we begin to use the default sweep
-	// confirmation target.
-	//
-	// TODO(wilmer): tune?
-	DefaultSweepConfTargetDelta = DefaultSweepConfTarget * 2
+	// swap's expiration height at which we begin to cap the sweep
+	// confirmation target with urgentSweepConfTarget and multiply feerate
+	// by factor urgentSweepConfTargetFactor.
+	DefaultSweepConfTargetDelta = 10
+
+	// urgentSweepConfTarget is the confirmation target we'll use when the
+	// loop-out swap is about to expire (<= DefaultSweepConfTargetDelta
+	// blocks to expire).
+	urgentSweepConfTarget = 3
+
+	// urgentSweepConfTargetFactor is the factor we apply to feerate of
+	// loop-out sweep if it is about to expire.
+	urgentSweepConfTargetFactor = 1.1
 )
 
 // loopOutSwap contains all the in-memory state related to a pending loop out
@@ -1169,12 +1175,12 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			timerChan = s.timerFactory(repushDelay)
 
 		case <-timerChan:
-			// sweepConfTarget will return false if the preimage is
+			// canSweep will return false if the preimage is
 			// not revealed yet but the conf target is closer than
 			// 20 blocks. In this case to be sure we won't attempt
 			// to sweep at all and we won't reveal the preimage
 			// either.
-			_, canSweep := s.sweepConfTarget()
+			canSweep := s.canSweep()
 			if !canSweep {
 				s.log.Infof("Aborting swap, timed " +
 					"out on-chain")
@@ -1375,9 +1381,9 @@ func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
 	return nil
 }
 
-// sweepConfTarget returns the confirmation target for the htlc sweep or false
-// if we're too late.
-func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
+// canSweep will return false if the preimage is not revealed yet but the conf
+// target is closer than 20 blocks (i.e. it is too late to reveal the preimage).
+func (s *loopOutSwap) canSweep() bool {
 	remainingBlocks := s.CltvExpiry - s.height
 	blocksToLastReveal := remainingBlocks - MinLoopOutPreimageRevealDelta
 	preimageRevealed := s.state == loopdb.StatePreimageRevealed
@@ -1393,20 +1399,8 @@ func (s *loopOutSwap) sweepConfTarget() (int32, bool) {
 			s.height)
 
 		s.state = loopdb.StateFailTimeout
-		return 0, false
+		return false
 	}
 
-	// Calculate the transaction fee based on the confirmation target
-	// required to sweep the HTLC before the timeout. We'll use the
-	// confirmation target provided by the client unless we've come too
-	// close to the expiration height, in which case we'll use the default
-	// if it is better than what the client provided.
-	confTarget := s.SweepConfTarget
-	if remainingBlocks <= DefaultSweepConfTargetDelta &&
-		confTarget > DefaultSweepConfTarget {
-
-		confTarget = DefaultSweepConfTarget
-	}
-
-	return confTarget, true
+	return true
 }

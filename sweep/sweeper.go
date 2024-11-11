@@ -177,15 +177,15 @@ func (s *Sweeper) CreateSweepTx(
 
 // GetSweepFee calculates the required tx fee to spend to P2WKH. It takes a
 // function that is expected to add the weight of the input to the weight
-// estimator.
+// estimator. It also takes a label used for logging.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32) (
+	destAddr btcutil.Address, sweepConfTarget int32, label string) (
 	btcutil.Amount, error) {
 
 	// Use GetSweepFeeDetails to get the fee and other unused data.
 	fee, _, _, err := s.GetSweepFeeDetails(
-		ctx, addInputEstimate, destAddr, sweepConfTarget,
+		ctx, addInputEstimate, destAddr, sweepConfTarget, label,
 	)
 
 	return fee, err
@@ -193,10 +193,11 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 
 // GetSweepFeeDetails calculates the required tx fee to spend to P2WKH. It takes
 // a function that is expected to add the weight of the input to the weight
-// estimator. It returns also the fee rate and transaction weight.
+// estimator. It also takes a label used for logging. It returns also the fee
+// rate and transaction weight.
 func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32) (
+	destAddr btcutil.Address, sweepConfTarget int32, label string) (
 	btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit, error) {
 
 	// Get fee estimate from lnd.
@@ -224,7 +225,14 @@ func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 	// Find weight.
 	weight := weightEstimate.Weight()
 
-	return feeRate.FeeForWeight(weight), feeRate, weight, nil
+	// Find fee.
+	fee := feeRate.FeeForWeight(weight)
+
+	log.Debugf("Estimations for a tx (label=%s): weight=%v, fee=%v, "+
+		"feerate=%v, sweepConfTarget=%d.", label, weight, fee, feeRate,
+		sweepConfTarget)
+
+	return fee, feeRate, weight, nil
 }
 
 // AddOutputEstimate adds output to weight estimator.
