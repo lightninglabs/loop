@@ -100,6 +100,30 @@ func NewSqlStore(db BaseDB, clock clock.Clock,
 	}
 }
 
+// GetLoopInByHash returns the loop-in swap with the given hash.
+func (s *SqlStore) GetLoopInByHash(ctx context.Context,
+	swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+
+	var (
+		err     error
+		row     sqlc.GetStaticAddressLoopInSwapRow
+		updates []sqlc.StaticAddressSwapUpdate
+	)
+	row, err = s.baseDB.GetStaticAddressLoopInSwap(ctx, swapHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	updates, err = s.baseDB.GetLoopInSwapUpdates(ctx, swapHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	return toStaticAddressLoopIn(
+		ctx, s.network, row, updates,
+	)
+}
+
 // GetStaticAddressLoopInSwapsByStates returns all static address loop-ins from
 // the db that are in the given states.
 func (s *SqlStore) GetStaticAddressLoopInSwapsByStates(ctx context.Context,
