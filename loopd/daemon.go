@@ -638,6 +638,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			Store:                                staticAddressLoopInStore,
 			WalletKit:                            d.lnd.WalletKit,
 			ChainNotifier:                        d.lnd.ChainNotifier,
+			NotificationManager:                  notificationManager,
 			ChainParams:                          d.lnd.ChainParams,
 			Signer:                               d.lnd.Signer,
 			ValidateLoopInContract:               loop.ValidateLoopInContract,
