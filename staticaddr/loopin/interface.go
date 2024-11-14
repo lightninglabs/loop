@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -76,4 +77,12 @@ type QuoteGetter interface {
 		pubKey route.Vertex, lastHop *route.Vertex,
 		routeHints [][]zpay32.HopHint,
 		initiator string, numDeposits uint32) (*loop.LoopInQuote, error)
+}
+
+type NotificationManager interface {
+	// SubscribeStaticLoopInSweepRequests subscribes to the static loop in
+	// sweep requests. These are sent by the server to the client to request
+	// a sweep of a static loop in that has been finished.
+	SubscribeStaticLoopInSweepRequests(ctx context.Context,
+	) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification
 }
