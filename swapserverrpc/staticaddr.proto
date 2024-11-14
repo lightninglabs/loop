@@ -39,11 +39,6 @@ service StaticAddressServer {
     rpc PushStaticAddressHtlcSigs (PushStaticAddressHtlcSigsRequest)
         returns (PushStaticAddressHtlcSigsResponse);
 
-    // FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
-    // to sign it.
-    rpc FetchSweeplessSweepTx (FetchSweeplessSweepTxRequest)
-        returns (FetchSweeplessSweepTxResponse);
-
     // PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
     // sigs to the server.
     rpc PushStaticAddressSweeplessSigs (PushStaticAddressSweeplessSigsRequest)
@@ -184,64 +179,30 @@ message ClientHtlcSigningInfo {
 message PushStaticAddressHtlcSigsResponse {
 }
 
-message FetchSweeplessSweepTxRequest {
-    // The swap hash of the swap that the client wants to fetch the sweepless
-    // sweep tx for.
-    bytes swap_hash = 1;
-}
-
-message FetchSweeplessSweepTxResponse {
-    // The address that the server wants to sweep the static address deposits
-    // to.
-    string sweep_addr = 1;
-
-    // The info the server used to generate the standard fee partial sweepless
-    // tx sigs.
-    ServerSweeplessSigningInfo standard_fee_info = 2;
-
-    // The info the server used to generate the high fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo high_fee_info = 3;
-
-    // The info the server used to generate the extreme fee partial sweepless tx
-    // sigs.
-    ServerSweeplessSigningInfo extreme_fee_info = 4;
-}
-
-message ServerSweeplessSigningInfo {
-    // The nonces that the server used to generate the partial sweepless tx
-    // sigs.
-    repeated bytes nonces = 1;
-
-    // The fee rate in sat/kw that the server wants to use for the sweepless tx.
-    uint64 fee_rate = 2;
-}
-
 message PushStaticAddressSweeplessSigsRequest {
     // The swap hash of the swap that the client wants to push the sweepless
     // sigs for.
     bytes swap_hash = 1;
 
-    // The info the client used to generate the standard fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo standard_signing_info = 2;
+    // The txid of the sweep tx that the client wants to push the sweepless
+    // sigs for.
+    bytes txid = 2;
 
-    // The info the client used to generate the high fee partial sweepless tx
-    // sigs.
-    ClientSweeplessSigningInfo high_fee_signing_info = 3;
+    // A map of deposits in format txid:idx to the nonces.
+    map<string, ClientSweeplessSigningInfo> signing_info = 3;
 
-    // The info the client used to generate the extreme fee partial sweepless
-    // tx sigs.
-    ClientSweeplessSigningInfo extreme_fee_signing_info = 4;
+    // An optional error message that the client can provide, e.g. if the
+    // client does not consider the swap finished yet.bool
+    string error_message = 4;
 }
 
 message ClientSweeplessSigningInfo {
     // The nonces that the client used to generate the partial sweepless tx
     // sigs.
-    repeated bytes nonces = 1;
+    bytes nonce = 1;
 
     // The musig2 htlc sigs that the client generated for the sweepless tx.
-    repeated bytes sigs = 2;
+    bytes sig = 2;
 }
 
 message PushStaticAddressSweeplessSigsResponse {
