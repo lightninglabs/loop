@@ -667,5 +667,23 @@ message SubscribeNotificationsRequest {
 message SubscribeNotificationsResponse {
     oneof notification {
         ServerReservationNotification reservation_notification = 1;
+        ServerStaticLoopInSweepNotification static_loop_in_sweep = 2;
     }
+}
+
+// ServerStaticLoopInSweepNotification is a request from the server to the
+// client to cosign a transaction that contains deposits from a finished static
+// loop ins.
+message ServerStaticLoopInSweepNotification {
+    // The psbt of the sweep transaction.
+    bytes sweep_tx_psbt = 1;
+
+    // The swap hash the deposits are associated with.
+    bytes swap_hash = 2;
+
+    // The map of deposit txid:idx to the nonce used by the server.
+    map<string, bytes> deposit_to_nonces = 3;
+
+    // The prevout information of the sweep txn.
+    repeated PrevoutInfo prevout_info = 4;
 }
