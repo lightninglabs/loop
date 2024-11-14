@@ -1855,23 +1855,19 @@ enum StaticAddressLoopInSwapState {
 
     /*
      */
-    FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX = 8;
+    SUCCEEDED = 8;
 
     /*
      */
-    SUCCEEDED = 9;
+    SUCCEEDED_TRANSITIONING_FAILED = 9;
 
     /*
      */
-    SUCCEEDED_SWEEPLESS_SIG_FAILED = 10;
+    UNLOCK_DEPOSITS = 10;
 
     /*
      */
-    UNLOCK_DEPOSITS = 11;
-
-    /*
-     */
-    FAILED_STATIC_ADDRESS_SWAP = 12;
+    FAILED_STATIC_ADDRESS_SWAP = 11;
 }
 
 message StaticAddressLoopInRequest {
