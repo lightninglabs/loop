@@ -1796,14 +1796,11 @@ func toClientStaticAddressLoopInState(
 	case loopin.HtlcTimeoutSwept:
 		return looprpc.StaticAddressLoopInSwapState_HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT
 
-	case loopin.FetchSignPushSweeplessSweepTx:
-		return looprpc.StaticAddressLoopInSwapState_FETCH_SIGN_PUSH_SWEEPLESS_SWEEP_TX
-
 	case loopin.Succeeded:
 		return looprpc.StaticAddressLoopInSwapState_SUCCEEDED
 
-	case loopin.SucceededSweeplessSigFailed:
-		return looprpc.StaticAddressLoopInSwapState_SUCCEEDED_SWEEPLESS_SIG_FAILED
+	case loopin.SucceededTransitioningFailed:
+		return looprpc.StaticAddressLoopInSwapState_SUCCEEDED_TRANSITIONING_FAILED
 
 	case loopin.UnlockDeposits:
 		return looprpc.StaticAddressLoopInSwapState_UNLOCK_DEPOSITS
