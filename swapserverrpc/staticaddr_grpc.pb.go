@@ -32,9 +32,6 @@ type StaticAddressServerClient interface {
 	ServerStaticAddressLoopIn(ctx context.Context, in *ServerStaticAddressLoopInRequest, opts ...grpc.CallOption) (*ServerStaticAddressLoopInResponse, error)
 	// PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
 	PushStaticAddressHtlcSigs(ctx context.Context, in *PushStaticAddressHtlcSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressHtlcSigsResponse, error)
-	// FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
-	// to sign it.
-	FetchSweeplessSweepTx(ctx context.Context, in *FetchSweeplessSweepTxRequest, opts ...grpc.CallOption) (*FetchSweeplessSweepTxResponse, error)
 	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
 	// sigs to the server.
 	PushStaticAddressSweeplessSigs(ctx context.Context, in *PushStaticAddressSweeplessSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressSweeplessSigsResponse, error)
@@ -84,15 +81,6 @@ func (c *staticAddressServerClient) PushStaticAddressHtlcSigs(ctx context.Contex
 	return out, nil
 }
 
-func (c *staticAddressServerClient) FetchSweeplessSweepTx(ctx context.Context, in *FetchSweeplessSweepTxRequest, opts ...grpc.CallOption) (*FetchSweeplessSweepTxResponse, error) {
-	out := new(FetchSweeplessSweepTxResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/FetchSweeplessSweepTx", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *staticAddressServerClient) PushStaticAddressSweeplessSigs(ctx context.Context, in *PushStaticAddressSweeplessSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressSweeplessSigsResponse, error) {
 	out := new(PushStaticAddressSweeplessSigsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/PushStaticAddressSweeplessSigs", in, out, opts...)
@@ -120,9 +108,6 @@ type StaticAddressServerServer interface {
 	ServerStaticAddressLoopIn(context.Context, *ServerStaticAddressLoopInRequest) (*ServerStaticAddressLoopInResponse, error)
 	// PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
 	PushStaticAddressHtlcSigs(context.Context, *PushStaticAddressHtlcSigsRequest) (*PushStaticAddressHtlcSigsResponse, error)
-	// FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
-	// to sign it.
-	FetchSweeplessSweepTx(context.Context, *FetchSweeplessSweepTxRequest) (*FetchSweeplessSweepTxResponse, error)
 	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
 	// sigs to the server.
 	PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error)
@@ -144,9 +129,6 @@ func (UnimplementedStaticAddressServerServer) ServerStaticAddressLoopIn(context.
 }
 func (UnimplementedStaticAddressServerServer) PushStaticAddressHtlcSigs(context.Context, *PushStaticAddressHtlcSigsRequest) (*PushStaticAddressHtlcSigsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PushStaticAddressHtlcSigs not implemented")
-}
-func (UnimplementedStaticAddressServerServer) FetchSweeplessSweepTx(context.Context, *FetchSweeplessSweepTxRequest) (*FetchSweeplessSweepTxResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FetchSweeplessSweepTx not implemented")
 }
 func (UnimplementedStaticAddressServerServer) PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PushStaticAddressSweeplessSigs not implemented")
@@ -236,24 +218,6 @@ func _StaticAddressServer_PushStaticAddressHtlcSigs_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
-func _StaticAddressServer_FetchSweeplessSweepTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FetchSweeplessSweepTxRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StaticAddressServerServer).FetchSweeplessSweepTx(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.StaticAddressServer/FetchSweeplessSweepTx",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StaticAddressServerServer).FetchSweeplessSweepTx(ctx, req.(*FetchSweeplessSweepTxRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _StaticAddressServer_PushStaticAddressSweeplessSigs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PushStaticAddressSweeplessSigsRequest)
 	if err := dec(in); err != nil {
@@ -294,10 +258,6 @@ var StaticAddressServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushStaticAddressHtlcSigs",
 			Handler:    _StaticAddressServer_PushStaticAddressHtlcSigs_Handler,
-		},
-		{
-			MethodName: "FetchSweeplessSweepTx",
-			Handler:    _StaticAddressServer_FetchSweeplessSweepTx_Handler,
 		},
 		{
 			MethodName: "PushStaticAddressSweeplessSigs",

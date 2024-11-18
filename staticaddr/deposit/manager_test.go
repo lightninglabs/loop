@@ -73,17 +73,6 @@ func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(ctx context.Con
 		args.Error(1)
 }
 
-func (m *mockStaticAddressClient) FetchSweeplessSweepTx(ctx context.Context,
-	in *swapserverrpc.FetchSweeplessSweepTxRequest,
-	opts ...grpc.CallOption) (
-	*swapserverrpc.FetchSweeplessSweepTxResponse, error) {
-
-	args := m.Called(ctx, in, opts)
-
-	return args.Get(0).(*swapserverrpc.FetchSweeplessSweepTxResponse),
-		args.Error(1)
-}
-
 func (m *mockStaticAddressClient) PushStaticAddressHtlcSigs(ctx context.Context,
 	in *swapserverrpc.PushStaticAddressHtlcSigsRequest,
 	opts ...grpc.CallOption) (
