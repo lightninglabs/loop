@@ -21,7 +21,6 @@ import (
 const Subsystem = "LOOPD"
 
 var (
-	logWriter   *build.RotatingLogWriter
 	log         btclog.Logger
 	interceptor signal.Interceptor
 )
@@ -30,7 +29,6 @@ var (
 func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	genLogger := genSubLogger(root, intercept)
 
-	logWriter = root
 	log = build.NewSubLogger(Subsystem, genLogger)
 	interceptor = intercept
 
