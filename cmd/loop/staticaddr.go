@@ -29,38 +29,8 @@ var staticAddressCommands = cli.Command{
 		listStaticAddressSwapsCommand,
 		withdrawalCommand,
 		summaryCommand,
+		staticAddressLoopInCommand,
 	},
-	Description: `
-	Requests a loop-in swap based on static address deposits. After the
-	creation of a static address funds can be send to it. Once the funds are
-	confirmed on-chain they can be swapped instantaneously. If deposited
-	funds are not needed they can we withdrawn back to the local lnd wallet.
-	`,
-	Flags: []cli.Flag{
-		cli.StringSliceFlag{
-			Name: "utxo",
-			Usage: "specify the utxos of deposits as " +
-				"outpoints(tx:idx) that should be looped in.",
-		},
-		cli.BoolFlag{
-			Name:  "all",
-			Usage: "loop in all static address deposits.",
-		},
-		cli.DurationFlag{
-			Name: "payment_timeout",
-			Usage: "the maximum time in seconds that the server " +
-				"is allowed to take for the swap payment. " +
-				"The client can retry the swap with adjusted " +
-				"parameters after the payment timed out.",
-		},
-		lastHopFlag,
-		labelFlag,
-		routeHintsFlag,
-		privateFlag,
-		forceFlag,
-		verboseFlag,
-	},
-	Action: staticAddressLoopIn,
 }
 
 var newStaticAddressCommand = cli.Command{
@@ -427,9 +397,45 @@ func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
 	}, nil
 }
 
+var staticAddressLoopInCommand = cli.Command{
+	Name:  "in",
+	Usage: "Loop in funds from static address deposits.",
+	Description: `
+	Requests a loop-in swap based on static address deposits. After the
+	creation of a static address funds can be sent to it. Once the funds are
+	confirmed on-chain they can be swapped instantaneously. If deposited
+	funds are not needed they can we withdrawn back to the local lnd wallet.
+	`,
+	Flags: []cli.Flag{
+		cli.StringSliceFlag{
+			Name: "utxo",
+			Usage: "specify the utxos of deposits as " +
+				"outpoints(tx:idx) that should be looped in.",
+		},
+		cli.BoolFlag{
+			Name:  "all",
+			Usage: "loop in all static address deposits.",
+		},
+		cli.DurationFlag{
+			Name: "payment_timeout",
+			Usage: "the maximum time in seconds that the server " +
+				"is allowed to take for the swap payment. " +
+				"The client can retry the swap with adjusted " +
+				"parameters after the payment timed out.",
+		},
+		lastHopFlag,
+		labelFlag,
+		routeHintsFlag,
+		privateFlag,
+		forceFlag,
+		verboseFlag,
+	},
+	Action: staticAddressLoopIn,
+}
+
 func staticAddressLoopIn(ctx *cli.Context) error {
 	if ctx.NumFlags() == 0 && ctx.NArg() == 0 {
-		return cli.ShowAppHelp(ctx)
+		return cli.ShowCommandHelp(ctx, "in")
 	}
 
 	client, cleanup, err := getClient(ctx)
