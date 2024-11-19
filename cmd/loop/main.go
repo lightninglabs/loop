@@ -76,6 +76,15 @@ var (
 		Name:  "verbose, v",
 		Usage: "show expanded details",
 	}
+
+	commands = []cli.Command{
+		loopOutCommand, loopInCommand, termsCommand,
+		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
+		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
+		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
+		getInfoCommand, abandonSwapCommand, reservationsCommands,
+		instantOutCommand, listInstantOutsCommand,
+	}
 )
 
 const (
@@ -142,15 +151,7 @@ func main() {
 		tlsCertFlag,
 		macaroonPathFlag,
 	}
-	app.Commands = []cli.Command{
-		loopOutCommand, loopInCommand, termsCommand,
-		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
-		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
-		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
-		getInfoCommand, abandonSwapCommand, reservationsCommands,
-		instantOutCommand, listInstantOutsCommand,
-		staticAddressCommands,
-	}
+	app.Commands = commands
 
 	err := app.Run(os.Args)
 	if err != nil {
