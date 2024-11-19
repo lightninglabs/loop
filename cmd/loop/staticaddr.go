@@ -1,3 +1,6 @@
+//go:build staticaddr
+// +build staticaddr
+
 package main
 
 import (
@@ -17,6 +20,10 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
+
+func init() {
+	commands = append(commands, staticAddressCommands)
+}
 
 var staticAddressCommands = cli.Command{
 	Name:      "static",
