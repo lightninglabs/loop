@@ -774,6 +774,18 @@ type StaticAddressServerClient interface {
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
 	ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error)
+	// ServerStaticAddressLoopIn initiates a static address loop-in swap. The
+	// server will respond with htlc details that the client can use to
+	// construct and sign the htlc tx.
+	ServerStaticAddressLoopIn(ctx context.Context, in *ServerStaticAddressLoopInRequest, opts ...grpc.CallOption) (*ServerStaticAddressLoopInResponse, error)
+	// PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
+	PushStaticAddressHtlcSigs(ctx context.Context, in *PushStaticAddressHtlcSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressHtlcSigsResponse, error)
+	// FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
+	// to sign it.
+	FetchSweeplessSweepTx(ctx context.Context, in *FetchSweeplessSweepTxRequest, opts ...grpc.CallOption) (*FetchSweeplessSweepTxResponse, error)
+	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
+	// sigs to the server.
+	PushStaticAddressSweeplessSigs(ctx context.Context, in *PushStaticAddressSweeplessSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressSweeplessSigsResponse, error)
 }
 
 type staticAddressServerClient struct {
@@ -802,6 +814,42 @@ func (c *staticAddressServerClient) ServerWithdrawDeposits(ctx context.Context, 
 	return out, nil
 }
 
+func (c *staticAddressServerClient) ServerStaticAddressLoopIn(ctx context.Context, in *ServerStaticAddressLoopInRequest, opts ...grpc.CallOption) (*ServerStaticAddressLoopInResponse, error) {
+	out := new(ServerStaticAddressLoopInResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/ServerStaticAddressLoopIn", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *staticAddressServerClient) PushStaticAddressHtlcSigs(ctx context.Context, in *PushStaticAddressHtlcSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressHtlcSigsResponse, error) {
+	out := new(PushStaticAddressHtlcSigsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/PushStaticAddressHtlcSigs", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *staticAddressServerClient) FetchSweeplessSweepTx(ctx context.Context, in *FetchSweeplessSweepTxRequest, opts ...grpc.CallOption) (*FetchSweeplessSweepTxResponse, error) {
+	out := new(FetchSweeplessSweepTxResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/FetchSweeplessSweepTx", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *staticAddressServerClient) PushStaticAddressSweeplessSigs(ctx context.Context, in *PushStaticAddressSweeplessSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressSweeplessSigsResponse, error) {
+	out := new(PushStaticAddressSweeplessSigsResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/PushStaticAddressSweeplessSigs", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StaticAddressServerServer is the server API for StaticAddressServer service.
 // All implementations must embed UnimplementedStaticAddressServerServer
 // for forward compatibility
@@ -814,6 +862,18 @@ type StaticAddressServerServer interface {
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
 	ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error)
+	// ServerStaticAddressLoopIn initiates a static address loop-in swap. The
+	// server will respond with htlc details that the client can use to
+	// construct and sign the htlc tx.
+	ServerStaticAddressLoopIn(context.Context, *ServerStaticAddressLoopInRequest) (*ServerStaticAddressLoopInResponse, error)
+	// PushStaticAddressHtlcSigs pushes the client's htlc tx sigs to the server.
+	PushStaticAddressHtlcSigs(context.Context, *PushStaticAddressHtlcSigsRequest) (*PushStaticAddressHtlcSigsResponse, error)
+	// FetchSweeplessSweepTx fetches the sweepless sweep tx for the client to
+	// to sign it.
+	FetchSweeplessSweepTx(context.Context, *FetchSweeplessSweepTxRequest) (*FetchSweeplessSweepTxResponse, error)
+	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
+	// sigs to the server.
+	PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error)
 	mustEmbedUnimplementedStaticAddressServerServer()
 }
 
@@ -826,6 +886,18 @@ func (UnimplementedStaticAddressServerServer) ServerNewAddress(context.Context, 
 }
 func (UnimplementedStaticAddressServerServer) ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ServerWithdrawDeposits not implemented")
+}
+func (UnimplementedStaticAddressServerServer) ServerStaticAddressLoopIn(context.Context, *ServerStaticAddressLoopInRequest) (*ServerStaticAddressLoopInResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ServerStaticAddressLoopIn not implemented")
+}
+func (UnimplementedStaticAddressServerServer) PushStaticAddressHtlcSigs(context.Context, *PushStaticAddressHtlcSigsRequest) (*PushStaticAddressHtlcSigsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PushStaticAddressHtlcSigs not implemented")
+}
+func (UnimplementedStaticAddressServerServer) FetchSweeplessSweepTx(context.Context, *FetchSweeplessSweepTxRequest) (*FetchSweeplessSweepTxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchSweeplessSweepTx not implemented")
+}
+func (UnimplementedStaticAddressServerServer) PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PushStaticAddressSweeplessSigs not implemented")
 }
 func (UnimplementedStaticAddressServerServer) mustEmbedUnimplementedStaticAddressServerServer() {}
 
@@ -876,6 +948,78 @@ func _StaticAddressServer_ServerWithdrawDeposits_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StaticAddressServer_ServerStaticAddressLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerStaticAddressLoopInRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).ServerStaticAddressLoopIn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/ServerStaticAddressLoopIn",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).ServerStaticAddressLoopIn(ctx, req.(*ServerStaticAddressLoopInRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StaticAddressServer_PushStaticAddressHtlcSigs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PushStaticAddressHtlcSigsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).PushStaticAddressHtlcSigs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/PushStaticAddressHtlcSigs",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).PushStaticAddressHtlcSigs(ctx, req.(*PushStaticAddressHtlcSigsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StaticAddressServer_FetchSweeplessSweepTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchSweeplessSweepTxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).FetchSweeplessSweepTx(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/FetchSweeplessSweepTx",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).FetchSweeplessSweepTx(ctx, req.(*FetchSweeplessSweepTxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StaticAddressServer_PushStaticAddressSweeplessSigs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PushStaticAddressSweeplessSigsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).PushStaticAddressSweeplessSigs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/PushStaticAddressSweeplessSigs",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).PushStaticAddressSweeplessSigs(ctx, req.(*PushStaticAddressSweeplessSigsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StaticAddressServer_ServiceDesc is the grpc.ServiceDesc for StaticAddressServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -890,6 +1034,22 @@ var StaticAddressServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ServerWithdrawDeposits",
 			Handler:    _StaticAddressServer_ServerWithdrawDeposits_Handler,
+		},
+		{
+			MethodName: "ServerStaticAddressLoopIn",
+			Handler:    _StaticAddressServer_ServerStaticAddressLoopIn_Handler,
+		},
+		{
+			MethodName: "PushStaticAddressHtlcSigs",
+			Handler:    _StaticAddressServer_PushStaticAddressHtlcSigs_Handler,
+		},
+		{
+			MethodName: "FetchSweeplessSweepTx",
+			Handler:    _StaticAddressServer_FetchSweeplessSweepTx_Handler,
+		},
+		{
+			MethodName: "PushStaticAddressSweeplessSigs",
+			Handler:    _StaticAddressServer_PushStaticAddressSweeplessSigs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
