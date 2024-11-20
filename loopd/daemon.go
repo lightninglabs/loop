@@ -373,8 +373,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		switch d.cfg.Network {
 		case "mainnet":
 			d.cfg.Server.Host = mainnetServer
+
 		case "testnet":
 			d.cfg.Server.Host = testnetServer
+
+		case "signet":
+			d.cfg.Server.Host = signetServer
+
 		default:
 			return errors.New("no swap server address specified")
 		}

@@ -145,7 +145,7 @@ type viewParameters struct{}
 
 type Config struct {
 	ShowVersion bool   `long:"version" description:"Display version information and exit"`
-	Network     string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	Network     string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet" choice:"signet"`
 	RPCListen   string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
 	RESTListen  string `long:"restlisten" description:"Address to listen on for REST clients"`
 	CORSOrigin  string `long:"corsorigin" description:"The value to send in the Access-Control-Allow-Origin header. Header will be omitted if empty."`
@@ -197,6 +197,7 @@ type Config struct {
 const (
 	mainnetServer = "swap.lightning.today:11010"
 	testnetServer = "test.swap.lightning.today:11010"
+	signetServer  = "signet.swap.lightning.today:11010"
 )
 
 // DefaultConfig returns all default values for the Config struct.
