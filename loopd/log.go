@@ -5,6 +5,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -14,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
@@ -57,6 +59,13 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	)
 	lnd.AddSubLogger(
 		root, sweep.Subsystem, intercept, sweep.UseLogger,
+	)
+
+	lnd.AddSubLogger(
+		root, assets.Subsystem, intercept, assets.UseLogger,
+	)
+	lnd.AddSubLogger(
+		root, utils.Subsystem, intercept, utils.UseLogger,
 	)
 }
 
