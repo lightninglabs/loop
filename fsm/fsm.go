@@ -297,6 +297,16 @@ func (s *StateMachine) RemoveObserver(observer Observer) bool {
 	return false
 }
 
+// Lock locks the state machine.
+func (s *StateMachine) Lock() {
+	s.mutex.Lock()
+}
+
+// Unlock unlocks the state machine.
+func (s *StateMachine) Unlock() {
+	s.mutex.Unlock()
+}
+
 // HandleError is a helper function that can be used by actions to handle
 // errors.
 func (s *StateMachine) HandleError(err error) EventType {

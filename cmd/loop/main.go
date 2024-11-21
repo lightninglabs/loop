@@ -87,6 +87,20 @@ const (
 	//      Estimated on-chain fee:                      7262 sat
 	satAmtFmt = "%-36s %12d sat\n"
 
+	// bpsFmt formats a basis point value into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Service fee:", fee)
+	// prints out as,
+	//      Service fee:                                    20 bps
+	bpsFmt = "%-36s %12d bps\n"
+
+	// assetFmt formats an asset into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Receive asset onchain:", assetName, assetAmt)
+	// prints out as,
+	//      Receive asset onchain:                       0.0001 USD
+	assetFmt = "%-36s %12d %s\n"
+
 	// blkFmt formats the number of blocks into a one line string, intended
 	// to prettify the terminal output. For Instance,
 	// 	fmt.Printf(f, "Conf target", target)
@@ -148,7 +162,7 @@ func main() {
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,
-		instantOutCommand, listInstantOutsCommand,
+		instantOutCommand, listInstantOutsCommand, assetsCommands,
 	}
 
 	err := app.Run(os.Args)

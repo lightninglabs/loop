@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
@@ -83,6 +84,8 @@ type swapClientServer struct {
 	lnd                *lndclient.LndServices
 	reservationManager *reservation.Manager
 	instantOutManager  *instantout.Manager
+	assetManager       *assets.AssetsSwapManager
+	assetsServer       *assets.AssetsClientServer
 	swaps              map[lntypes.Hash]loop.SwapInfo
 	subscribers        map[int]chan<- interface{}
 	statusChan         chan loop.SwapInfo

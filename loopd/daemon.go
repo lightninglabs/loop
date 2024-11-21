@@ -16,6 +16,7 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopd/perms"
@@ -234,6 +235,8 @@ func (d *Daemon) startWebServers() error {
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
+	loop_looprpc.RegisterAssetsClientServer(d.grpcServer, d.assetsServer)
+
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
 
@@ -317,7 +320,7 @@ func (d *Daemon) startWebServers() error {
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
-
+			defer log.Info("REST proxy stopped")
 			log.Infof("REST proxy listening on %s",
 				d.restListener.Addr())
 			err := d.restServer.Serve(d.restListener)
@@ -339,7 +342,7 @@ func (d *Daemon) startWebServers() error {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-
+		defer log.Info("RPC server stopped")
 		log.Infof("RPC server listening on %s", d.grpcListener.Addr())
 		err = d.grpcServer.Serve(d.grpcListener)
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
@@ -450,6 +453,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient.Conn,
 	)
 
+	// Create a assets server client.
+	assetsClient := loop_swaprpc.NewAssetsSwapServerClient(
+		swapClient.Conn,
+	)
+
 	// Both the client RPC server and the swap server client should stop
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
@@ -529,6 +537,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
+		assetManager       *assets.AssetsSwapManager
+		assetClientServer  *assets.AssetsClientServer
 	)
 
 	// Create the reservation and instantout managers.
@@ -569,6 +579,27 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig,
 		)
+
+		tapdClient, err := assets.NewTapdClient(
+			d.cfg.TapdConfig,
+		)
+		if err != nil {
+			return err
+		}
+		assetsStore := assets.NewPostgresStore(baseDb)
+		assetsConfig := &assets.Config{
+			ServerClient:         assetsClient,
+			Store:                assetsStore,
+			AssetClient:          tapdClient,
+			LndClient:            d.lnd.Client,
+			Router:               d.lnd.Router,
+			ChainNotifier:        d.lnd.ChainNotifier,
+			Signer:               d.lnd.Signer,
+			Wallet:               d.lnd.WalletKit,
+			ExchangeRateProvider: assets.NewFixedExchangeRateProvider(),
+		}
+		assetManager = assets.NewAssetSwapServer(assetsConfig)
+		assetClientServer = assets.NewAssetsServer(assetManager)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -584,6 +615,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		mainCtx:            d.mainCtx,
 		reservationManager: reservationManager,
 		instantOutManager:  instantOutManager,
+		assetManager:       assetManager,
+		assetsServer:       assetClientServer,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -689,6 +722,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			cancel()
 		}
 	}
+	getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+	if err != nil {
+		return err
+	}
 
 	// Start the instant out manager.
 	if d.instantOutManager != nil {
@@ -696,12 +733,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
-
-			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
 
 			log.Info("Starting instantout manager")
 			defer log.Info("Instantout manager stopped")
@@ -726,6 +757,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
+	}
+
+	// Start the asset manager.
+	if d.assetManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			log.Infof("Starting asset manager")
+			defer log.Infof("Asset manager stopped")
+			err := d.assetManager.Run(d.mainCtx, int32(getInfo.BlockHeight))
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		}()
 	}
 
 	// Last, start our internal error handler. This will return exactly one
@@ -773,6 +818,9 @@ func (d *Daemon) Stop() {
 
 // stop does the actual shutdown and blocks until all goroutines have exit.
 func (d *Daemon) stop() {
+	// Sleep a second in order to fix a blocking issue when having a
+	// startup error.
+	<-time.After(time.Second)
 	// First of all, we can cancel the main context that all event handlers
 	// are using. This should stop all swap activity and all event handlers
 	// should exit.
@@ -790,6 +838,7 @@ func (d *Daemon) stop() {
 	if d.restServer != nil {
 		// Don't return the error here, we first want to give everything
 		// else a chance to shut down cleanly.
+
 		err := d.restServer.Close()
 		if err != nil {
 			log.Errorf("Error stopping REST server: %v", err)
