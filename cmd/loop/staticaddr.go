@@ -1,6 +1,3 @@
-//go:build staticaddr
-// +build staticaddr
-
 package main
 
 import (
@@ -145,6 +142,18 @@ var withdrawalCommand = cli.Command{
 			Name:  "all",
 			Usage: "withdraws all static address deposits.",
 		},
+		cli.StringFlag{
+			Name: "addr",
+			Usage: "the optional address that the withdrawn " +
+				"funds should be sent to, if let blank the " +
+				"funds will go to lnd's wallet",
+		},
+		cli.Int64Flag{
+			Name: "sat_per_vbyte",
+			Usage: "(optional) a manual fee expressed in " +
+				"sat/vbyte that should be used when crafting " +
+				"the transaction",
+		},
 	},
 	Action: withdraw,
 }
@@ -165,6 +174,7 @@ func withdraw(ctx *cli.Context) error {
 		isUtxoSelected = ctx.IsSet("utxo")
 		outpoints      []*looprpc.OutPoint
 		ctxb           = context.Background()
+		destAddr       string
 	)
 
 	switch {
@@ -183,10 +193,16 @@ func withdraw(ctx *cli.Context) error {
 		return fmt.Errorf("unknown withdrawal request")
 	}
 
+	if ctx.IsSet("addr") {
+		destAddr = ctx.String("addr")
+	}
+
 	resp, err := client.WithdrawDeposits(ctxb,
 		&looprpc.WithdrawDepositsRequest{
-			Outpoints: outpoints,
-			All:       isAllSelected,
+			Outpoints:   outpoints,
+			All:         isAllSelected,
+			DestAddr:    destAddr,
+			SatPerVbyte: int64(ctx.Uint64("sat_per_vbyte")),
 		})
 	if err != nil {
 		return err

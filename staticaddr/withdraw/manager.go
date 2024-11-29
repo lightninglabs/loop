@@ -71,8 +71,10 @@ type ManagerConfig struct {
 // newWithdrawalRequest is used to send withdrawal request to the manager main
 // loop.
 type newWithdrawalRequest struct {
-	outpoints []wire.OutPoint
-	respChan  chan *newWithdrawalResponse
+	outpoints   []wire.OutPoint
+	respChan    chan *newWithdrawalResponse
+	destAddr    string
+	satPerVbyte int64
 }
 
 // newWithdrawalResponse is used to return withdrawal info and error to the
@@ -156,7 +158,8 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 
 		case request := <-m.newWithdrawalRequestChan:
 			txHash, pkScript, err = m.WithdrawDeposits(
-				ctx, request.outpoints,
+				ctx, request.outpoints, request.destAddr,
+				request.satPerVbyte,
 			)
 			if err != nil {
 				log.Errorf("Error withdrawing deposits: %v",
@@ -258,7 +261,8 @@ func (m *Manager) WaitInitComplete() {
 
 // WithdrawDeposits starts a deposits withdrawal flow.
 func (m *Manager) WithdrawDeposits(ctx context.Context,
-	outpoints []wire.OutPoint) (string, string, error) {
+	outpoints []wire.OutPoint, destAddr string, satPerVbyte int64) (string,
+	string, error) {
 
 	if len(outpoints) == 0 {
 		return "", "", fmt.Errorf("no outpoints selected to " +
@@ -274,17 +278,32 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", ErrWithdrawingInactiveDeposits
 	}
 
-	// Generate the withdrawal address from our local lnd wallet.
-	withdrawalAddress, err := m.cfg.WalletKit.NextAddr(
-		ctx, lnwallet.DefaultAccountName,
-		walletrpc.AddressType_TAPROOT_PUBKEY, false,
+	var (
+		withdrawalAddress btcutil.Address
+		err               error
 	)
-	if err != nil {
-		return "", "", err
+
+	// Check if the user provided an address to withdraw to. If not, we'll
+	// generate a new address for them.
+	if destAddr != "" {
+		withdrawalAddress, err = btcutil.DecodeAddress(
+			destAddr, m.cfg.ChainParams,
+		)
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		withdrawalAddress, err = m.cfg.WalletKit.NextAddr(
+			ctx, lnwallet.DefaultAccountName,
+			walletrpc.AddressType_TAPROOT_PUBKEY, false,
+		)
+		if err != nil {
+			return "", "", err
+		}
 	}
 
 	finalizedTx, err := m.createFinalizedWithdrawalTx(
-		ctx, deposits, withdrawalAddress,
+		ctx, deposits, withdrawalAddress, satPerVbyte,
 	)
 	if err != nil {
 		return "", "", err
@@ -335,8 +354,8 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 }
 
 func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
-	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address) (
-	*wire.MsgTx, error) {
+	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
+	satPerVbyte int64) (*wire.MsgTx, error) {
 
 	// Create a musig2 session for each deposit.
 	withdrawalSessions, clientNonces, err := m.createMusig2Sessions(
@@ -346,12 +365,19 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 		return nil, err
 	}
 
-	// Get the fee rate for the withdrawal sweep.
-	withdrawalSweepFeeRate, err := m.cfg.WalletKit.EstimateFeeRate(
-		ctx, defaultConfTarget,
-	)
-	if err != nil {
-		return nil, err
+	var withdrawalSweepFeeRate chainfee.SatPerKWeight
+	if satPerVbyte == 0 {
+		// Get the fee rate for the withdrawal sweep.
+		withdrawalSweepFeeRate, err = m.cfg.WalletKit.EstimateFeeRate(
+			ctx, defaultConfTarget,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		withdrawalSweepFeeRate = chainfee.SatPerKVByte(
+			satPerVbyte * 1000,
+		).FeePerKWeight()
 	}
 
 	outpoints := toOutpoints(deposits)
@@ -788,11 +814,14 @@ func (m *Manager) republishWithdrawals(ctx context.Context) error {
 // DeliverWithdrawalRequest forwards a withdrawal request to the manager main
 // loop.
 func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
-	outpoints []wire.OutPoint) (string, string, error) {
+	outpoints []wire.OutPoint, destAddr string, satPerVbyte int64) (string,
+	string, error) {
 
 	request := newWithdrawalRequest{
-		outpoints: outpoints,
-		respChan:  make(chan *newWithdrawalResponse),
+		outpoints:   outpoints,
+		destAddr:    destAddr,
+		satPerVbyte: satPerVbyte,
+		respChan:    make(chan *newWithdrawalResponse),
 	}
 
 	// Send the new loop-in request to the manager run loop.

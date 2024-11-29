@@ -1447,7 +1447,7 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 	}
 
 	txhash, pkScript, err := s.withdrawalManager.DeliverWithdrawalRequest(
-		ctx, outpoints,
+		ctx, outpoints, req.DestAddr, req.SatPerVbyte,
 	)
 	if err != nil {
 		return nil, err
