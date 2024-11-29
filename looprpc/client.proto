@@ -1582,6 +1582,16 @@ message WithdrawDepositsRequest {
     If set to true, all deposits will be withdrawn.
     */
     bool all = 2;
+
+    /*
+    The address to withdraw the funds to.
+    */
+    string dest_addr = 3;
+
+    /*
+    The fee rate in sat/vbyte to use for the withdrawal transaction.
+    */
+    int64 sat_per_vbyte = 4;
 }
 
 message WithdrawDepositsResponse {
