@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/hyperloop"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/labels"
@@ -83,12 +84,31 @@ type swapClientServer struct {
 	lnd                *lndclient.LndServices
 	reservationManager *reservation.Manager
 	instantOutManager  *instantout.Manager
+	hyperloopManager   *hyperloop.Manager
 	swaps              map[lntypes.Hash]loop.SwapInfo
 	subscribers        map[int]chan<- interface{}
 	statusChan         chan loop.SwapInfo
 	nextSubscriberID   int
 	swapsLock          sync.Mutex
 	mainCtx            context.Context
+}
+
+func (s *swapClientServer) HyperLoopOut(ctx context.Context,
+	req *looprpc.HyperLoopOutRequest) (
+	*looprpc.HyperLoopOutResponse, error) {
+
+	log.Infof("HyperLoop out request received")
+
+	hyperloop, err := s.hyperloopManager.RequestNewHyperloop(
+		ctx, btcutil.Amount(req.Amt), req.CustomSweepAddr,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.HyperLoopOutResponse{
+		Hyperloop: hyperloop.ToRpcHyperloop(),
+	}, nil
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns

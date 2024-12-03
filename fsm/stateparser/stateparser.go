@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/hyperloop"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 )
@@ -53,6 +54,13 @@ func run() error {
 	case "instantout":
 		instantout := &instantout.FSM{}
 		err = writeMermaidFile(fp, instantout.GetV1ReservationStates())
+		if err != nil {
+			return err
+		}
+
+	case "hyperloop":
+		hyperloop := hyperloop.FSM{}
+		err = writeMermaidFile(fp, hyperloop.GetStateMap())
 		if err != nil {
 			return err
 		}

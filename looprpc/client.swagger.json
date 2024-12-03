@@ -746,6 +746,47 @@
         }
       }
     },
+    "looprpcHyperLoopOut": {
+      "type": "object",
+      "properties": {
+        "id_bytes": {
+          "type": "string",
+          "format": "byte"
+        },
+        "id": {
+          "type": "string"
+        },
+        "swap_hash_bytes": {
+          "type": "string",
+          "format": "byte"
+        },
+        "swap_hash": {
+          "type": "string"
+        },
+        "amt": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "state": {
+          "type": "string"
+        },
+        "publish_time_unix": {
+          "type": "string",
+          "format": "int64"
+        },
+        "sweep_address": {
+          "type": "string"
+        }
+      }
+    },
+    "looprpcHyperLoopOutResponse": {
+      "type": "object",
+      "properties": {
+        "hyperloop": {
+          "$ref": "#/definitions/looprpcHyperLoopOut"
+        }
+      }
+    },
     "looprpcInQuoteResponse": {
       "type": "object",
       "properties": {
@@ -1059,6 +1100,17 @@
         "THRESHOLD"
       ],
       "default": "UNKNOWN"
+    },
+    "looprpcListHyperLoopOutsResponse": {
+      "type": "object",
+      "properties": {
+        "swaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcHyperLoopOut"
+          }
+        }
+      }
     },
     "looprpcListInstantOutsResponse": {
       "type": "object",

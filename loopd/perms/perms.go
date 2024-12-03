@@ -120,4 +120,8 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "swap",
 		Action: "read",
 	}},
+	"/looprpc.SwapClient/HyperLoopOut": {{
+		Entity: "swap",
+		Action: "write",
+	}},
 }
