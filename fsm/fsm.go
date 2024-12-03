@@ -269,6 +269,27 @@ func (s *StateMachine) SendEvent(ctx context.Context, event EventType,
 	}
 }
 
+// GetStateMachineLock locks the state machine mutex and returns a function that
+// unlocks it.
+func (s *StateMachine) GetStateMachineLock(ctx context.Context) (func(), error) {
+	gotLock := make(chan struct{})
+	// Try to get the lock.
+	go func() {
+		s.mutex.Lock()
+		close(gotLock)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, errors.New("context canceled")
+
+		case <-gotLock:
+			return s.mutex.Unlock, nil
+		}
+	}
+}
+
 // RegisterObserver registers an observer with the state machine.
 func (s *StateMachine) RegisterObserver(observer Observer) {
 	s.observerMutex.Lock()
