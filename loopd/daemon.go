@@ -606,6 +606,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			ChainParams:    d.lnd.ChainParams,
 			ChainNotifier:  d.lnd.ChainNotifier,
 			Signer:         d.lnd.Signer,
+			LndClient:      d.lnd.Client,
 		}
 		depositManager = deposit.NewManager(depoCfg)
 

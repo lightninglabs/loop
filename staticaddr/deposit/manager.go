@@ -68,6 +68,9 @@ type ManagerConfig struct {
 
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient
+
+	// LndClient is used to add invoices and select hop hints.
+	LndClient lndclient.LightningClient
 }
 
 // Manager manages the address state machines.
@@ -280,11 +283,6 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 func (m *Manager) createNewDeposit(ctx context.Context,
 	utxo *lnwallet.Utxo) (*Deposit, error) {
 
-	blockHeight, err := m.getBlockHeight(ctx, utxo)
-	if err != nil {
-		return nil, err
-	}
-
 	// Get the sweep pk script.
 	addr, err := m.cfg.WalletKit.NextAddr(
 		ctx, lnwallet.DefaultAccountName,
@@ -303,12 +301,18 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	info, err := m.cfg.LndClient.GetInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
 		OutPoint:             utxo.OutPoint,
 		Value:                utxo.Value,
-		ConfirmationHeight:   int64(blockHeight),
+		ConfirmationHeight:   int64(info.BlockHeight),
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 	}
 
@@ -322,38 +326,6 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	m.mu.Unlock()
 
 	return deposit, nil
-}
-
-// getBlockHeight retrieves the block height of a given utxo.
-func (m *Manager) getBlockHeight(ctx context.Context,
-	utxo *lnwallet.Utxo) (uint32, error) {
-
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	notifChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, &utxo.OutPoint.Hash, addressParams.PkScript, MinConfs,
-		int32(m.initiationHeight),
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	select {
-	case tx := <-notifChan:
-		return tx.BlockHeight, nil
-
-	case err := <-errChan:
-		return 0, err
-
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
 }
 
 // filterNewDeposits filters the given utxos for new deposits that we haven't
