@@ -1,3 +1,6 @@
+//go:build staticaddr
+// +build staticaddr
+
 package main
 
 import (
