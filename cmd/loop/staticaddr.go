@@ -146,7 +146,7 @@ var withdrawalCommand = cli.Command{
 			Usage: "withdraws all static address deposits.",
 		},
 		cli.StringFlag{
-			Name: "addr",
+			Name: "dest_addr",
 			Usage: "the optional address that the withdrawn " +
 				"funds should be sent to, if let blank the " +
 				"funds will go to lnd's wallet",
@@ -156,6 +156,12 @@ var withdrawalCommand = cli.Command{
 			Usage: "(optional) a manual fee expressed in " +
 				"sat/vbyte that should be used when crafting " +
 				"the transaction",
+		},
+		cli.IntFlag{
+			Name: "amount",
+			Usage: "the number of satoshis that should be " +
+				"withdrawn from the selected deposits. The " +
+				"change is sent back to the static address",
 		},
 	},
 	Action: withdraw,
@@ -196,8 +202,8 @@ func withdraw(ctx *cli.Context) error {
 		return fmt.Errorf("unknown withdrawal request")
 	}
 
-	if ctx.IsSet("addr") {
-		destAddr = ctx.String("addr")
+	if ctx.IsSet("dest_addr") {
+		destAddr = ctx.String("dest_addr")
 	}
 
 	resp, err := client.WithdrawDeposits(ctxb,
@@ -206,6 +212,7 @@ func withdraw(ctx *cli.Context) error {
 			All:         isAllSelected,
 			DestAddr:    destAddr,
 			SatPerVbyte: int64(ctx.Uint64("sat_per_vbyte")),
+			Amount:      ctx.Int64("amount"),
 		})
 	if err != nil {
 		return err
