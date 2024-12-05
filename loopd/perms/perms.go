@@ -73,6 +73,55 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "auth",
 		Action: "read",
 	}},
+	"/looprpc.SwapClient/NewStaticAddress": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/ListUnspentDeposits": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/WithdrawDeposits": {{
+		Entity: "swap",
+		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/ListStaticAddressDeposits": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/ListStaticAddressSwaps": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/GetStaticAddressSummary": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/StaticAddressLoopIn": {{
+		Entity: "swap",
+		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
 	"/looprpc.SwapClient/GetLsatTokens": {{
 		Entity: "auth",
 		Action: "read",

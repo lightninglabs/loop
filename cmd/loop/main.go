@@ -76,6 +76,15 @@ var (
 		Name:  "verbose, v",
 		Usage: "show expanded details",
 	}
+
+	commands = []cli.Command{
+		loopOutCommand, loopInCommand, termsCommand,
+		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
+		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
+		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
+		getInfoCommand, abandonSwapCommand, reservationsCommands,
+		instantOutCommand, listInstantOutsCommand,
+	}
 )
 
 const (
@@ -142,14 +151,7 @@ func main() {
 		tlsCertFlag,
 		macaroonPathFlag,
 	}
-	app.Commands = []cli.Command{
-		loopOutCommand, loopInCommand, termsCommand,
-		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
-		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
-		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
-		getInfoCommand, abandonSwapCommand, reservationsCommands,
-		instantOutCommand, listInstantOutsCommand,
-	}
+	app.Commands = commands
 
 	err := app.Run(os.Args)
 	if err != nil {
@@ -277,6 +279,12 @@ func displayInDetails(req *looprpc.QuoteRequest,
 			"included.\nSufficient fees will need to be paid " +
 			"when constructing the transaction in the external " +
 			"wallet.\n\n")
+	}
+
+	if req.DepositOutpoints != nil {
+		fmt.Printf("On-chain fees for static address loop-ins are not " +
+			"included.\nThey were already paid when the deposits " +
+			"were created.\n\n")
 	}
 
 	printQuoteInResp(req, resp, verbose)
