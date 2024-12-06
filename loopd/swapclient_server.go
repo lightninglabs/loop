@@ -1505,6 +1505,11 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 			req.MaxSwapRoutingFee)
 	}
 
+	if req.MaxSwapRoutingFee <= 0 {
+		return 0, fmt.Errorf("maximum swap routing fee must be " +
+			"greater than zero")
+	}
+
 	return validateConfTarget(
 		req.SweepConfTarget, loop.DefaultSweepConfTarget,
 	)
