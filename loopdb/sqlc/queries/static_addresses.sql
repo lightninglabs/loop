@@ -13,7 +13,8 @@ INSERT INTO static_addresses (
     client_key_family,
     client_key_index,
     pkscript,
-    protocol_version
+    protocol_version,
+    initiation_height
 ) VALUES (
              $1,
              $2,
@@ -21,5 +22,6 @@ INSERT INTO static_addresses (
              $4,
              $5,
              $6,
-             $7
+             $7,
+             $8
          );

@@ -40,6 +40,10 @@ type ManagerConfig struct {
 	// ChainParams is the chain configuration(mainnet, testnet...) this
 	// manager uses.
 	ChainParams *chaincfg.Params
+
+	// ChainNotifier is the chain notifier that is used to listen for new
+	// blocks.
+	ChainNotifier lndclient.ChainNotifierClient
 }
 
 // Manager manages the address state machines.
@@ -47,6 +51,8 @@ type Manager struct {
 	cfg *ManagerConfig
 
 	sync.Mutex
+
+	currentHeight int32
 }
 
 // NewManager creates a new address manager.
@@ -58,8 +64,26 @@ func NewManager(cfg *ManagerConfig) *Manager {
 
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
+	newBlockChan, newBlockErrChan, err :=
+		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case currentHeight := <-newBlockChan:
+			m.currentHeight = currentHeight
+
+		case err = <-newBlockErrChan:
+			return err
+
+		case <-ctx.Done():
+			// Signal subroutines that the manager is exiting.
+			return ctx.Err()
+		}
+	}
 }
 
 // NewAddress starts a new address creation flow.
@@ -85,6 +109,11 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
 	}
 	m.Unlock()
+
+	// Ensure that we have that we have a sane current block height.
+	if m.currentHeight == 0 {
+		return nil, fmt.Errorf("current block height is unknown")
+	}
 
 	// We are fetching a new L402 token from the server. There is one static
 	// address per L402 token allowed.
@@ -147,6 +176,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		ProtocolVersion: version.AddressProtocolVersion(
 			protocolVersion,
 		),
+		InitiationHeight: m.currentHeight,
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {

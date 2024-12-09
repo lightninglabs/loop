@@ -336,10 +336,11 @@ func (m *Manager) getBlockHeight(ctx context.Context,
 			"deposit, %w", err)
 	}
 
-	notifChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, &utxo.OutPoint.Hash, addressParams.PkScript, MinConfs,
-		int32(m.initiationHeight),
-	)
+	notifChan, errChan, err :=
+		m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+			ctx, &utxo.OutPoint.Hash, addressParams.PkScript,
+			MinConfs, addressParams.InitiationHeight,
+		)
 	if err != nil {
 		return 0, err
 	}

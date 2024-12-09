@@ -592,6 +592,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			Store:         staticAddressStore,
 			WalletKit:     d.lnd.WalletKit,
 			ChainParams:   d.lnd.ChainParams,
+			ChainNotifier: d.lnd.ChainNotifier,
 		}
 		staticAddressManager = address.NewManager(addrCfg)
 

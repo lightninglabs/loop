@@ -28,13 +28,14 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 	addrParams *Parameters) error {
 
 	createArgs := sqlc.CreateStaticAddressParams{
-		ClientPubkey:    addrParams.ClientPubkey.SerializeCompressed(),
-		ServerPubkey:    addrParams.ServerPubkey.SerializeCompressed(),
-		Expiry:          int32(addrParams.Expiry),
-		ClientKeyFamily: int32(addrParams.KeyLocator.Family),
-		ClientKeyIndex:  int32(addrParams.KeyLocator.Index),
-		Pkscript:        addrParams.PkScript,
-		ProtocolVersion: int32(addrParams.ProtocolVersion),
+		ClientPubkey:     addrParams.ClientPubkey.SerializeCompressed(),
+		ServerPubkey:     addrParams.ServerPubkey.SerializeCompressed(),
+		Expiry:           int32(addrParams.Expiry),
+		ClientKeyFamily:  int32(addrParams.KeyLocator.Family),
+		ClientKeyIndex:   int32(addrParams.KeyLocator.Index),
+		Pkscript:         addrParams.PkScript,
+		ProtocolVersion:  int32(addrParams.ProtocolVersion),
+		InitiationHeight: addrParams.InitiationHeight,
 	}
 
 	return s.baseDB.Queries.CreateStaticAddress(ctx, createArgs)
@@ -106,5 +107,6 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 		ProtocolVersion: version.AddressProtocolVersion(
 			row.ProtocolVersion,
 		),
+		InitiationHeight: row.InitiationHeight,
 	}, nil
 }

@@ -97,7 +97,7 @@ func TestManager(t *testing.T) {
 	// Start the manager.
 	go func() {
 		err := testContext.manager.Run(ctxb)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, context.Canceled)
 	}()
 
 	// Create the expected static address.
@@ -179,6 +179,7 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 		WalletKit:     mockLnd.WalletKit,
 		ChainParams:   mockLnd.ChainParams,
 		AddressClient: mockStaticAddressClient,
+		ChainNotifier: mockLnd.ChainNotifier,
 		FetchL402:     func(context.Context) error { return nil },
 	}
 
