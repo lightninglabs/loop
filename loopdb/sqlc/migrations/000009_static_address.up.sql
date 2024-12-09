@@ -34,5 +34,9 @@ CREATE TABLE IF NOT EXISTS static_addresses (
     -- Note that this version is not upgraded if the client upgrades or
     -- downgrades their protocol version for static address outputs already in
     -- use.
-    protocol_version INTEGER NOT NULL
+    protocol_version INTEGER NOT NULL,
+
+    -- initiation_height is the block height at which the static address was
+    -- created.
+    initiation_height INT NOT NULL
 );
