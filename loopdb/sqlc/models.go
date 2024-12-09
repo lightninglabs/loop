@@ -114,14 +114,15 @@ type ReservationUpdate struct {
 }
 
 type StaticAddress struct {
-	ID              int32
-	ClientPubkey    []byte
-	ServerPubkey    []byte
-	Expiry          int32
-	ClientKeyFamily int32
-	ClientKeyIndex  int32
-	Pkscript        []byte
-	ProtocolVersion int32
+	ID               int32
+	ClientPubkey     []byte
+	ServerPubkey     []byte
+	Expiry           int32
+	ClientKeyFamily  int32
+	ClientKeyIndex   int32
+	Pkscript         []byte
+	ProtocolVersion  int32
+	InitiationHeight int32
 }
 
 type StaticAddressSwap struct {

@@ -54,4 +54,7 @@ type Parameters struct {
 
 	// ProtocolVersion is the protocol version of the static address.
 	ProtocolVersion version.AddressProtocolVersion
+
+	// InitiationHeight is the height at which the address was initiated.
+	InitiationHeight int32
 }

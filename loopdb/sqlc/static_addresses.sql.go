@@ -10,7 +10,7 @@ import (
 )
 
 const allStaticAddresses = `-- name: AllStaticAddresses :many
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
 `
 
 func (q *Queries) AllStaticAddresses(ctx context.Context) ([]StaticAddress, error) {
@@ -31,6 +31,7 @@ func (q *Queries) AllStaticAddresses(ctx context.Context) ([]StaticAddress, erro
 			&i.ClientKeyIndex,
 			&i.Pkscript,
 			&i.ProtocolVersion,
+			&i.InitiationHeight,
 		); err != nil {
 			return nil, err
 		}
@@ -53,7 +54,8 @@ INSERT INTO static_addresses (
     client_key_family,
     client_key_index,
     pkscript,
-    protocol_version
+    protocol_version,
+    initiation_height
 ) VALUES (
              $1,
              $2,
@@ -61,18 +63,20 @@ INSERT INTO static_addresses (
              $4,
              $5,
              $6,
-             $7
+             $7,
+             $8
          )
 `
 
 type CreateStaticAddressParams struct {
-	ClientPubkey    []byte
-	ServerPubkey    []byte
-	Expiry          int32
-	ClientKeyFamily int32
-	ClientKeyIndex  int32
-	Pkscript        []byte
-	ProtocolVersion int32
+	ClientPubkey     []byte
+	ServerPubkey     []byte
+	Expiry           int32
+	ClientKeyFamily  int32
+	ClientKeyIndex   int32
+	Pkscript         []byte
+	ProtocolVersion  int32
+	InitiationHeight int32
 }
 
 func (q *Queries) CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error {
@@ -84,12 +88,13 @@ func (q *Queries) CreateStaticAddress(ctx context.Context, arg CreateStaticAddre
 		arg.ClientKeyIndex,
 		arg.Pkscript,
 		arg.ProtocolVersion,
+		arg.InitiationHeight,
 	)
 	return err
 }
 
 const getStaticAddress = `-- name: GetStaticAddress :one
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
 WHERE pkscript=$1
 `
 
@@ -105,6 +110,7 @@ func (q *Queries) GetStaticAddress(ctx context.Context, pkscript []byte) (Static
 		&i.ClientKeyIndex,
 		&i.Pkscript,
 		&i.ProtocolVersion,
+		&i.InitiationHeight,
 	)
 	return i, err
 }
