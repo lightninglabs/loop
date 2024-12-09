@@ -38,6 +38,10 @@ var (
 	// getting us to lock up our funds to an arbitrary point in the future.
 	MaxLoopInAcceptDelta = int32(1500)
 
+	// MinLoopInExpiryDelta defines the minimum number of remaining blocks
+	// that we accept until htlc expiry path that opens up for us to sweep.
+	MinLoopInExpiryDelta = int32(100)
+
 	// MinLoopInPublishDelta defines the minimum number of remaining blocks
 	// until on-chain htlc expiry required to proceed to publishing the htlc
 	// tx. This value isn't critical, as we could even safely publish the
@@ -128,7 +132,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// hints.
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
-		request.RouteHints, request.Initiator,
+		request.RouteHints, request.Initiator, 0,
 	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)
@@ -248,7 +252,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Validate if the response parameters are outside our allowed range
 	// preventing us from continuing with a swap.
-	err = validateLoopInContract(currentHeight, swapResp)
+	err = ValidateLoopInContract(currentHeight, swapResp.expiry)
 	if err != nil {
 		return nil, err
 	}
@@ -429,12 +433,18 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 	return swap, nil
 }
 
-// validateLoopInContract validates the contract parameters against our request.
-func validateLoopInContract(height int32, response *newLoopInResponse) error {
+// ValidateLoopInContract validates the contract parameters against our
+// configured maximum values.
+func ValidateLoopInContract(height int32, htlcExpiry int32) error {
 	// Verify that we are not forced to publish a htlc that locks up our
 	// funds for too long in case the server doesn't follow through.
-	if response.expiry-height > MaxLoopInAcceptDelta {
+	if htlcExpiry-height > MaxLoopInAcceptDelta {
 		return ErrExpiryTooFar
+	}
+
+	// Ensure that the expiry height is in the future.
+	if htlcExpiry < height+MinLoopInExpiryDelta {
+		return ErrExpiryTooSoon
 	}
 
 	return nil
