@@ -22,7 +22,7 @@ require (
 	github.com/lightninglabs/aperture v0.3.2-beta
 	github.com/lightninglabs/lndclient v0.18.4-0
 	github.com/lightninglabs/loop/looprpc v1.0.0
-	github.com/lightninglabs/loop/swapserverrpc v1.0.8
+	github.com/lightninglabs/loop/swapserverrpc v1.0.11
 	github.com/lightningnetwork/lnd v0.18.3-beta.rc3.0.20241011124628-ca3bde901eb8
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1

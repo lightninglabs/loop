@@ -20,6 +20,10 @@ const (
 	// NotificationTypeReservation is the notification type for reservation
 	// notifications.
 	NotificationTypeReservation
+
+	// NotificationTypeStaticLoopInSweepRequest is the notification type for
+	// static loop in sweep requests.
+	NotificationTypeStaticLoopInSweepRequest
 )
 
 // Client is the interface that the notification manager needs to implement in
@@ -79,10 +83,39 @@ func (m *Manager) SubscribeReservations(ctx context.Context,
 
 	m.addSubscriber(NotificationTypeReservation, sub)
 
-	// Start a goroutine to remove the subscriber when the context is canceled
+	// Start a goroutine to remove the subscriber when the context is
+	// canceled.
 	go func() {
 		<-ctx.Done()
 		m.removeSubscriber(NotificationTypeReservation, sub)
+		close(notifChan)
+	}()
+
+	return notifChan
+}
+
+// SubscribeStaticLoopInSweepRequests subscribes to the static loop in sweep
+// requests.
+func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
+) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	notifChan := make(
+		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 1,
+	)
+	sub := subscriber{
+		subCtx:   ctx,
+		recvChan: notifChan,
+	}
+
+	m.addSubscriber(NotificationTypeStaticLoopInSweepRequest, sub)
+
+	// Start a goroutine to remove the subscriber when the context is
+	// canceled.
+	go func() {
+		<-ctx.Done()
+		m.removeSubscriber(
+			NotificationTypeStaticLoopInSweepRequest, sub,
+		)
 		close(notifChan)
 	}()
 
@@ -160,7 +193,7 @@ func (m *Manager) subscribeNotifications(ctx context.Context,
 	for {
 		notification, err := notifStream.Recv()
 		if err == nil && notification != nil {
-			log.Debugf("Received notification: %v", notification)
+			log.Tracef("Received notification: %v", notification)
 			m.handleNotification(notification)
 			continue
 		}
@@ -173,13 +206,13 @@ func (m *Manager) subscribeNotifications(ctx context.Context,
 
 // handleNotification handles an incoming notification from the server,
 // forwarding it to the appropriate subscribers.
-func (m *Manager) handleNotification(notification *swapserverrpc.
+func (m *Manager) handleNotification(ntfn *swapserverrpc.
 	SubscribeNotificationsResponse) {
 
-	switch notification.Notification.(type) {
-	case *swapserverrpc.SubscribeNotificationsResponse_ReservationNotification:
+	switch ntfn.Notification.(type) {
+	case *swapserverrpc.SubscribeNotificationsResponse_ReservationNotification: // nolint: lll
 		// We'll forward the reservation notification to all subscribers.
-		reservationNtfn := notification.GetReservationNotification()
+		reservationNtfn := ntfn.GetReservationNotification()
 		m.Lock()
 		defer m.Unlock()
 
@@ -189,10 +222,23 @@ func (m *Manager) handleNotification(notification *swapserverrpc.
 
 			recvChan <- reservationNtfn
 		}
+	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInSweep: // nolint: lll
+		// We'll forward the static loop in sweep request to all
+		// subscribers.
+		staticLoopInSweepRequestNtfn := ntfn.GetStaticLoopInSweep()
+		m.Lock()
+		defer m.Unlock()
+
+		for _, sub := range m.subscribers[NotificationTypeStaticLoopInSweepRequest] { // nolint: lll
+			recvChan := sub.recvChan.(chan *swapserverrpc.
+				ServerStaticLoopInSweepNotification)
+
+			recvChan <- staticLoopInSweepRequestNtfn
+		}
 
 	default:
 		log.Warnf("Received unknown notification type: %v",
-			notification)
+			ntfn)
 	}
 }
 
