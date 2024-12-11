@@ -60,6 +60,11 @@ func newStaticAddress(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "new")
 	}
 
+	err := displayNewAddressWarning()
+	if err != nil {
+		return err
+	}
+
 	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
@@ -635,4 +640,24 @@ func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
 	}
 
 	return outpoints
+}
+
+func displayNewAddressWarning() error {
+	fmt.Printf("\nWARNING: Be aware that loosing your l402.token file in " +
+		".loop under your home directory \nwill take your ability to " +
+		"spend funds sent to the static address via loop-ins or " +
+		"\nwithdrawals. You will have to wait until the deposit " +
+		"expires and your loop client \nsweeps the funds back to your " +
+		"lnd wallet. The deposit expiry could be months in the " +
+		"future.\n")
+
+	fmt.Printf("\nCONTINUE WITH NEW ADDRESS? (y/n): ")
+
+	var answer string
+	fmt.Scanln(&answer)
+	if answer == "y" {
+		return nil
+	}
+
+	return errors.New("new address creation canceled")
 }
