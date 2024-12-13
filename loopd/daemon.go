@@ -536,13 +536,78 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}()
 
 	var (
-		reservationManager *reservation.Manager
-		instantOutManager  *instantout.Manager
-
 		staticAddressManager *address.Manager
 		depositManager       *deposit.Manager
 		withdrawalManager    *withdraw.Manager
 		staticLoopInManager  *loopin.Manager
+	)
+
+	// Static address manager setup.
+	staticAddressStore := address.NewSqlStore(baseDb)
+	addrCfg := &address.ManagerConfig{
+		AddressClient: staticAddressClient,
+		FetchL402:     swapClient.Server.FetchL402,
+		Store:         staticAddressStore,
+		WalletKit:     d.lnd.WalletKit,
+		ChainParams:   d.lnd.ChainParams,
+		ChainNotifier: d.lnd.ChainNotifier,
+	}
+	staticAddressManager = address.NewManager(addrCfg)
+
+	// Static address deposit manager setup.
+	depositStore := deposit.NewSqlStore(baseDb)
+	depoCfg := &deposit.ManagerConfig{
+		AddressClient:  staticAddressClient,
+		AddressManager: staticAddressManager,
+		SwapClient:     swapClient,
+		Store:          depositStore,
+		WalletKit:      d.lnd.WalletKit,
+		ChainParams:    d.lnd.ChainParams,
+		ChainNotifier:  d.lnd.ChainNotifier,
+		Signer:         d.lnd.Signer,
+	}
+	depositManager = deposit.NewManager(depoCfg)
+
+	// Static address deposit withdrawal manager setup.
+	withdrawalCfg := &withdraw.ManagerConfig{
+		StaticAddressServerClient: staticAddressClient,
+		AddressManager:            staticAddressManager,
+		DepositManager:            depositManager,
+		WalletKit:                 d.lnd.WalletKit,
+		ChainParams:               d.lnd.ChainParams,
+		ChainNotifier:             d.lnd.ChainNotifier,
+		Signer:                    d.lnd.Signer,
+	}
+	withdrawalManager = withdraw.NewManager(withdrawalCfg)
+
+	// Static address loop-in manager setup.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
+	staticLoopInManager = loopin.NewManager(&loopin.Config{
+		Server:                               staticAddressClient,
+		QuoteGetter:                          swapClient.Server,
+		LndClient:                            d.lnd.Client,
+		InvoicesClient:                       d.lnd.Invoices,
+		NodePubkey:                           d.lnd.NodePubkey,
+		AddressManager:                       staticAddressManager,
+		DepositManager:                       depositManager,
+		Store:                                staticAddressLoopInStore,
+		WalletKit:                            d.lnd.WalletKit,
+		ChainNotifier:                        d.lnd.ChainNotifier,
+		NotificationManager:                  notificationManager,
+		ChainParams:                          d.lnd.ChainParams,
+		Signer:                               d.lnd.Signer,
+		ValidateLoopInContract:               loop.ValidateLoopInContract,
+		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
+	})
+
+	var (
+		reservationManager *reservation.Manager
+		instantOutManager  *instantout.Manager
 	)
 
 	// Create the reservation and instantout managers.
@@ -583,69 +648,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig,
 		)
-
-		// Static address manager setup.
-		staticAddressStore := address.NewSqlStore(baseDb)
-		addrCfg := &address.ManagerConfig{
-			AddressClient: staticAddressClient,
-			FetchL402:     swapClient.Server.FetchL402,
-			Store:         staticAddressStore,
-			WalletKit:     d.lnd.WalletKit,
-			ChainParams:   d.lnd.ChainParams,
-			ChainNotifier: d.lnd.ChainNotifier,
-		}
-		staticAddressManager = address.NewManager(addrCfg)
-
-		// Static address deposit manager setup.
-		depositStore := deposit.NewSqlStore(baseDb)
-		depoCfg := &deposit.ManagerConfig{
-			AddressClient:  staticAddressClient,
-			AddressManager: staticAddressManager,
-			SwapClient:     swapClient,
-			Store:          depositStore,
-			WalletKit:      d.lnd.WalletKit,
-			ChainParams:    d.lnd.ChainParams,
-			ChainNotifier:  d.lnd.ChainNotifier,
-			Signer:         d.lnd.Signer,
-		}
-		depositManager = deposit.NewManager(depoCfg)
-
-		// Static address deposit withdrawal manager setup.
-		withdrawalCfg := &withdraw.ManagerConfig{
-			StaticAddressServerClient: staticAddressClient,
-			AddressManager:            staticAddressManager,
-			DepositManager:            depositManager,
-			WalletKit:                 d.lnd.WalletKit,
-			ChainParams:               d.lnd.ChainParams,
-			ChainNotifier:             d.lnd.ChainNotifier,
-			Signer:                    d.lnd.Signer,
-		}
-		withdrawalManager = withdraw.NewManager(withdrawalCfg)
-
-		// Static address loop-in manager setup.
-		staticAddressLoopInStore := loopin.NewSqlStore(
-			loopdb.NewTypedStore[loopin.Querier](baseDb),
-			clock.NewDefaultClock(), d.lnd.ChainParams,
-		)
-
-		staticLoopInManager = loopin.NewManager(&loopin.Config{
-			Server:                               staticAddressClient,
-			QuoteGetter:                          swapClient.Server,
-			LndClient:                            d.lnd.Client,
-			InvoicesClient:                       d.lnd.Invoices,
-			NodePubkey:                           d.lnd.NodePubkey,
-			AddressManager:                       staticAddressManager,
-			DepositManager:                       depositManager,
-			Store:                                staticAddressLoopInStore,
-			WalletKit:                            d.lnd.WalletKit,
-			ChainNotifier:                        d.lnd.ChainNotifier,
-			NotificationManager:                  notificationManager,
-			ChainParams:                          d.lnd.ChainParams,
-			Signer:                               d.lnd.Signer,
-			ValidateLoopInContract:               loop.ValidateLoopInContract,
-			MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
-			MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
-		})
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
