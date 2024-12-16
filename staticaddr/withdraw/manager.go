@@ -380,7 +380,39 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 		).FeePerKWeight()
 	}
 
+	// We'll now check the selected fee rate leaves a withdrawal output that
+	// is above the dust limit. If not we cancel the withdrawal instead of
+	// requesting a signature from the server.
+	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
+		ctx,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get confirmation height for "+
+			"deposit, %w", err)
+	}
+
+	// Calculate the fee value in satoshis.
 	outpoints := toOutpoints(deposits)
+	weight, err := withdrawalFee(len(outpoints), withdrawalAddress)
+	if err != nil {
+		return nil, err
+	}
+	feeValue := withdrawalSweepFeeRate.FeeForWeight(weight)
+
+	var (
+		prevOuts    = m.toPrevOuts(deposits, addressParams.PkScript)
+		totalValue  = withdrawalValue(prevOuts)
+		outputValue = int64(totalValue) - int64(feeValue)
+		// P2TRSize calculates a dust limit based on a 40 byte maximum
+		// size witness output.
+		dustLimit = lnwallet.DustLimitForSize(input.P2TRSize)
+	)
+
+	if outputValue < int64(dustLimit) {
+		return nil, fmt.Errorf("withdrawal output value %d sats "+
+			"below dust limit %d sats", outputValue, dustLimit)
+	}
+
 	resp, err := m.cfg.StaticAddressServerClient.ServerWithdrawDeposits(
 		ctx, &staticaddressrpc.ServerWithdrawRequest{
 			Outpoints:       toPrevoutInfo(outpoints),
@@ -393,19 +425,9 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 		return nil, err
 	}
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	prevOuts := m.toPrevOuts(deposits, addressParams.PkScript)
-	totalValue := withdrawalValue(prevOuts)
+	withdrawalOutputValue := int64(totalValue - feeValue)
 	withdrawalTx, err := m.createWithdrawalTx(
-		outpoints, totalValue, withdrawalAddress,
-		withdrawalSweepFeeRate,
+		outpoints, withdrawalOutputValue, withdrawalAddress,
 	)
 	if err != nil {
 		return nil, err
@@ -613,9 +635,8 @@ func byteSliceTo66ByteSlice(b []byte) ([musig2.PubNonceSize]byte, error) {
 }
 
 func (m *Manager) createWithdrawalTx(outpoints []wire.OutPoint,
-	withdrawlAmount btcutil.Amount, clientSweepAddress btcutil.Address,
-	feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
-	error) {
+	withdrawlOutputValue int64, clientSweepAddress btcutil.Address) (
+	*wire.MsgTx, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)
@@ -628,22 +649,14 @@ func (m *Manager) createWithdrawalTx(outpoints []wire.OutPoint,
 		})
 	}
 
-	// Estimate the fee.
-	weight, err := withdrawalFee(len(outpoints), clientSweepAddress)
-	if err != nil {
-		return nil, err
-	}
-
 	pkscript, err := txscript.PayToAddrScript(clientSweepAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	fee := feeRate.FeeForWeight(weight)
-
 	// Create the sweep output
 	sweepOutput := &wire.TxOut{
-		Value:    int64(withdrawlAmount) - int64(fee),
+		Value:    withdrawlOutputValue,
 		PkScript: pkscript,
 	}
 
