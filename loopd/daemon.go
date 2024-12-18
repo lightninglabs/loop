@@ -22,6 +22,10 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -415,7 +419,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
-	// Run the costs migration.
+	// Run the cost migration.
 	err = loop.MigrateLoopOutCosts(
 		d.mainCtx, d.lnd.LndServices, d.cfg.MigrationRPCBatchSize,
 		swapDb,
@@ -447,6 +451,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Create an instantout server client.
 	instantOutClient := loop_swaprpc.NewInstantSwapServerClient(
+		swapClient.Conn,
+	)
+
+	// Create a static address server client.
+	staticAddressClient := loop_swaprpc.NewStaticAddressServerClient(
 		swapClient.Conn,
 	)
 
@@ -527,6 +536,76 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}()
 
 	var (
+		staticAddressManager *address.Manager
+		depositManager       *deposit.Manager
+		withdrawalManager    *withdraw.Manager
+		staticLoopInManager  *loopin.Manager
+	)
+
+	// Static address manager setup.
+	staticAddressStore := address.NewSqlStore(baseDb)
+	addrCfg := &address.ManagerConfig{
+		AddressClient: staticAddressClient,
+		FetchL402:     swapClient.Server.FetchL402,
+		Store:         staticAddressStore,
+		WalletKit:     d.lnd.WalletKit,
+		ChainParams:   d.lnd.ChainParams,
+		ChainNotifier: d.lnd.ChainNotifier,
+	}
+	staticAddressManager = address.NewManager(addrCfg)
+
+	// Static address deposit manager setup.
+	depositStore := deposit.NewSqlStore(baseDb)
+	depoCfg := &deposit.ManagerConfig{
+		AddressClient:  staticAddressClient,
+		AddressManager: staticAddressManager,
+		SwapClient:     swapClient,
+		Store:          depositStore,
+		WalletKit:      d.lnd.WalletKit,
+		ChainParams:    d.lnd.ChainParams,
+		ChainNotifier:  d.lnd.ChainNotifier,
+		Signer:         d.lnd.Signer,
+	}
+	depositManager = deposit.NewManager(depoCfg)
+
+	// Static address deposit withdrawal manager setup.
+	withdrawalCfg := &withdraw.ManagerConfig{
+		StaticAddressServerClient: staticAddressClient,
+		AddressManager:            staticAddressManager,
+		DepositManager:            depositManager,
+		WalletKit:                 d.lnd.WalletKit,
+		ChainParams:               d.lnd.ChainParams,
+		ChainNotifier:             d.lnd.ChainNotifier,
+		Signer:                    d.lnd.Signer,
+	}
+	withdrawalManager = withdraw.NewManager(withdrawalCfg)
+
+	// Static address loop-in manager setup.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
+	staticLoopInManager = loopin.NewManager(&loopin.Config{
+		Server:                               staticAddressClient,
+		QuoteGetter:                          swapClient.Server,
+		LndClient:                            d.lnd.Client,
+		InvoicesClient:                       d.lnd.Invoices,
+		NodePubkey:                           d.lnd.NodePubkey,
+		AddressManager:                       staticAddressManager,
+		DepositManager:                       depositManager,
+		Store:                                staticAddressLoopInStore,
+		WalletKit:                            d.lnd.WalletKit,
+		ChainNotifier:                        d.lnd.ChainNotifier,
+		NotificationManager:                  notificationManager,
+		ChainParams:                          d.lnd.ChainParams,
+		Signer:                               d.lnd.Signer,
+		ValidateLoopInContract:               loop.ValidateLoopInContract,
+		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
+	})
+
+	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
 	)
@@ -573,17 +652,21 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
-		config:             d.cfg,
-		network:            lndclient.Network(d.cfg.Network),
-		impl:               swapClient,
-		liquidityMgr:       getLiquidityManager(swapClient),
-		lnd:                &d.lnd.LndServices,
-		swaps:              make(map[lntypes.Hash]loop.SwapInfo),
-		subscribers:        make(map[int]chan<- interface{}),
-		statusChan:         make(chan loop.SwapInfo),
-		mainCtx:            d.mainCtx,
-		reservationManager: reservationManager,
-		instantOutManager:  instantOutManager,
+		config:               d.cfg,
+		network:              lndclient.Network(d.cfg.Network),
+		impl:                 swapClient,
+		liquidityMgr:         getLiquidityManager(swapClient),
+		lnd:                  &d.lnd.LndServices,
+		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
+		subscribers:          make(map[int]chan<- interface{}),
+		statusChan:           make(chan loop.SwapInfo),
+		mainCtx:              d.mainCtx,
+		reservationManager:   reservationManager,
+		instantOutManager:    instantOutManager,
+		staticAddressManager: staticAddressManager,
+		depositManager:       depositManager,
+		withdrawalManager:    withdrawalManager,
+		staticLoopInManager:  staticLoopInManager,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -726,6 +809,99 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
+	}
+
+	// Start the static address manager.
+	if staticAddressManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			log.Info("Starting static address manager...")
+			err = staticAddressManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address manager stopped")
+		}()
+	}
+
+	// Start the static address deposit manager.
+	if depositManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit manager...")
+			err = depositManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit manager stopped")
+		}()
+		depositManager.WaitInitComplete()
+	}
+
+	// Start the static address deposit withdrawal manager.
+	if withdrawalManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit withdrawal " +
+				"manager...")
+			err = withdrawalManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit withdrawal manager " +
+				"stopped")
+		}()
+		withdrawalManager.WaitInitComplete()
+	}
+
+	// Start the static address loop-in manager.
+	if staticLoopInManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+
+				return
+			}
+
+			log.Info("Starting static address loop-in manager...")
+			err = staticLoopInManager.Run(
+				d.mainCtx, info.BlockHeight,
+			)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Starting static address loop-in manager " +
+				"stopped")
+		}()
+		staticLoopInManager.WaitInitComplete()
 	}
 
 	// Last, start our internal error handler. This will return exactly one

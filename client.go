@@ -43,8 +43,12 @@ var (
 	ErrSwapAmountTooHigh = errors.New("swap amount too high")
 
 	// ErrExpiryTooFar is returned when the server proposes an expiry that
-	// is too soon for us.
+	// is too far in the future.
 	ErrExpiryTooFar = errors.New("swap expiry too far")
+
+	// ErrExpiryTooSoon is returned when the server proposes an expiry that
+	// is too soon.
+	ErrExpiryTooSoon = errors.New("swap expiry too soon")
 
 	// ErrInsufficientBalance indicates insufficient confirmed balance to
 	// publish a swap.
@@ -137,6 +141,22 @@ type ClientConfig struct {
 	// MaxPaymentRetries is the maximum times we retry an off-chain payment
 	// (used in loop out).
 	MaxPaymentRetries int
+
+	// MaxStaticAddrHtlcFeePercentage is the percentage of the swap amount
+	// that we allow the server to charge for the htlc transaction.
+	// Although highly unlikely, this is a defense against the server
+	// publishing the htlc without paying the swap invoice, forcing us to
+	// sweep the timeout path.
+	MaxStaticAddrHtlcFeePercentage float64
+
+	// MaxStaticAddrHtlcBackupFeePercentage is the percentage of the swap
+	// amount that we allow the server to charge for the htlc backup
+	// transactions. This is a defense against the server publishing the
+	// htlc backup without paying the swap invoice, forcing us to sweep the
+	// timeout path. This value is elevated compared to
+	// MaxStaticAddrHtlcFeePercentage since it serves the server as backup
+	// transaction in case of fee spikes.
+	MaxStaticAddrHtlcBackupFeePercentage float64
 }
 
 // NewClient returns a new instance to initiate swaps with.
@@ -694,9 +714,9 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	return swapInfo, nil
 }
 
-// LoopInQuote takes an amount and returns a break down of estimated
-// costs for the client. Both the swap server and the on-chain fee estimator are
-// queried to get to build the quote response.
+// LoopInQuote takes an amount and returns a breakdown of estimated costs for
+// the client. Both the swap server and the on-chain fee estimator are queried
+// to get to build the quote response.
 func (s *Client) LoopInQuote(ctx context.Context,
 	request *LoopInQuoteRequest) (*LoopInQuote, error) {
 
@@ -742,7 +762,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	quote, err := s.Server.GetLoopInQuote(
 		ctx, request.Amount, s.lndServices.NodePubkey, request.LastHop,
-		request.RouteHints, request.Initiator,
+		request.RouteHints, request.Initiator, request.NumDeposits,
 	)
 	if err != nil {
 		return nil, err
@@ -752,7 +772,9 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	// We don't calculate the on-chain fee if the HTLC is going to be
 	// published externally.
-	if request.ExternalHtlc {
+	// We also don't calculate the on-chain fee if the loop in is funded by
+	// static address deposits because we don't publish the HTLC on-chain.
+	if request.ExternalHtlc || request.NumDeposits > 0 {
 		return &LoopInQuote{
 			SwapFee:  swapFee,
 			MinerFee: 0,
