@@ -20,10 +20,13 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/taproot-assets/fn"
+	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 const (
@@ -140,6 +143,18 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	log.Infof("Initiating swap request at height %v: amt=%v, expiry=%v",
 		currentHeight, request.Amount, request.Expiry)
 
+	// If we have an asset id, we'll add that to the user agent.
+	if request.AssetId != nil {
+		if request.AssetPrepayRfqId == nil ||
+			request.AssetSwapRfqId == nil {
+
+			return nil, errors.New("both rfq ids must be set for " +
+				"asset swaps")
+		}
+
+		request.Initiator += " asset_out"
+	}
+
 	// The swap deadline will be given to the server for it to use as the
 	// latest swap publication time.
 	swapResp, err := cfg.server.NewLoopOutSwap(
@@ -206,6 +221,14 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 		},
 		OutgoingChanSet: chanSet,
 		PaymentTimeout:  request.PaymentTimeout,
+	}
+
+	if request.AssetId != nil {
+		contract.AssetSwapInfo = &loopdb.LoopOutAssetSwap{
+			AssetId:     request.AssetId,
+			PrepayRfqId: request.AssetPrepayRfqId,
+			SwapRfqId:   request.AssetSwapRfqId,
+		}
 	}
 
 	swapKit := newSwapKit(
@@ -633,20 +656,31 @@ func (s *loopOutSwap) payInvoices(ctx context.Context) {
 	}
 
 	// Use the recommended routing plugin.
+	var assetSwapRfq []byte
+	if s.isAssetSwap() {
+		assetSwapRfq = s.AssetSwapInfo.SwapRfqId
+	}
 	s.swapPaymentChan = s.payInvoice(
 		ctx, s.SwapInvoice, s.MaxSwapRoutingFee,
 		s.LoopOutContract.OutgoingChanSet,
 		s.LoopOutContract.PaymentTimeout, pluginType, true,
+		assetSwapRfq,
 	)
 
 	// Pay the prepay invoice. Won't use the routing plugin here as the
 	// prepay is trivially small and shouldn't normally need any help. We
 	// are sending it over the same channel as the loop out payment.
 	s.log.Infof("Sending prepayment %v", s.PrepayInvoice)
+	var assetPrepayRfq []byte
+	if s.isAssetSwap() {
+		assetPrepayRfq = s.AssetSwapInfo.PrepayRfqId
+	}
+
 	s.prePaymentChan = s.payInvoice(
 		ctx, s.PrepayInvoice, s.MaxPrepayRoutingFee,
 		s.LoopOutContract.OutgoingChanSet,
 		s.LoopOutContract.PaymentTimeout, RoutingPluginNone, false,
+		assetPrepayRfq,
 	)
 }
 
@@ -675,7 +709,7 @@ func (p paymentResult) failure() error {
 func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 	maxFee btcutil.Amount, outgoingChanIds loopdb.ChannelSet,
 	paymentTimeout time.Duration, pluginType RoutingPluginType,
-	reportPluginResult bool) chan paymentResult {
+	reportPluginResult bool, rfqId []byte) chan paymentResult {
 
 	resultChan := make(chan paymentResult)
 	sendResult := func(result paymentResult) {
@@ -690,7 +724,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 
 		status, err := s.payInvoiceAsync(
 			ctx, invoice, maxFee, outgoingChanIds, paymentTimeout,
-			pluginType, reportPluginResult,
+			pluginType, reportPluginResult, rfqId,
 		)
 		if err != nil {
 			result.err = err
@@ -719,7 +753,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	invoice string, maxFee btcutil.Amount,
 	outgoingChanIds loopdb.ChannelSet, paymentTimeout time.Duration,
-	pluginType RoutingPluginType, reportPluginResult bool) (
+	pluginType RoutingPluginType, reportPluginResult bool, rfqId []byte) (
 	*lndclient.PaymentStatus, error) {
 
 	// Extract hash from payment request. Unfortunately the request
@@ -780,6 +814,25 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		OutgoingChanIds: outgoingChanIds,
 		Timeout:         paymentTimeout,
 		MaxParts:        s.executeConfig.loopOutMaxParts,
+	}
+
+	// If we want an asset swap, we'll need to set the custom first hop
+	// data to the rfq id. This will then allow LND to route the payment
+	// through the asset channel, as the edge nodes tap will know about the
+	// payment through the rfq id.
+	if s.isAssetSwap() {
+		var rfq rfqmsg.ID
+		if n := copy(rfq[:], rfqId); n != 32 {
+			return nil, fmt.Errorf("rfq id has wrong length: %v", n)
+		}
+
+		htlc := rfqmsg.NewHtlc(nil, fn.Some(rfq))
+		htlcMapRecords, err := tlv.RecordsToMap(htlc.Records())
+		if err != nil {
+			return nil, err
+		}
+
+		req.FirstHopCustomRecords = htlcMapRecords
 	}
 
 	// Lookup state of the swap payment.
@@ -1403,4 +1456,9 @@ func (s *loopOutSwap) canSweep() bool {
 	}
 
 	return true
+}
+
+// isAssetSwap returns true if the swap is an asset swap.
+func (s *loopOutSwap) isAssetSwap() bool {
+	return s.AssetSwapInfo != nil
 }

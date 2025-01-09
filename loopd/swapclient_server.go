@@ -210,6 +210,38 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		PaymentTimeout:          paymentTimeout,
 	}
 
+	// If the asset id is set, we need to set the asset amount and asset id
+	// in the request.
+	if in.AssetInfo != nil {
+		if len(in.AssetInfo.AssetId) != 0 &&
+			len(in.AssetInfo.AssetId) != 32 {
+
+			return nil, fmt.Errorf(
+				"asset id must be set to a 32 byte value",
+			)
+		}
+
+		if len(in.AssetRfqInfo.PrepayRfqId) != 0 &&
+			len(in.AssetRfqInfo.PrepayRfqId) != 32 {
+
+			return nil, fmt.Errorf(
+				"prepay rfq id must be set to a 32 byte value",
+			)
+		}
+
+		if len(in.AssetRfqInfo.SwapRfqId) != 0 &&
+			len(in.AssetRfqInfo.SwapRfqId) != 32 {
+
+			return nil, fmt.Errorf(
+				"swap rfq id must be set to a 32 byte value",
+			)
+		}
+
+		req.AssetId = in.AssetInfo.AssetId
+		req.AssetPrepayRfqId = in.AssetRfqInfo.PrepayRfqId
+		req.AssetSwapRfqId = in.AssetRfqInfo.SwapRfqId
+	}
+
 	switch {
 	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0: // nolint:staticcheck
 		return nil, errors.New("loop_out_channel and outgoing_" +
@@ -709,23 +741,52 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		req.SwapPublicationDeadline,
 	)
 
-	quote, err := s.impl.LoopOutQuote(ctx, &loop.LoopOutQuoteRequest{
+	loopOutQuoteReq := &loop.LoopOutQuoteRequest{
 		Amount:                  btcutil.Amount(req.Amt),
 		SweepConfTarget:         confTarget,
 		SwapPublicationDeadline: publicactionDeadline,
 		Initiator:               defaultLoopdInitiator,
-	})
+	}
+
+	if req.AssetInfo != nil {
+		if req.AssetInfo.AssetId == nil ||
+			req.AssetInfo.AssetEdgeNode == nil {
+
+			return nil, fmt.Errorf(
+				"asset id and edge node must both be set")
+		}
+		loopOutQuoteReq.AssetRFQRequest = &loop.AssetRFQRequest{
+			AssetId:            req.AssetInfo.AssetId,
+			AssetEdgeNode:      req.AssetInfo.AssetEdgeNode,
+			Expiry:             req.AssetInfo.Expiry,
+			MaxLimitMultiplier: req.AssetInfo.MaxLimitMultiplier,
+		}
+	}
+
+	quote, err := s.impl.LoopOutQuote(ctx, loopOutQuoteReq)
 	if err != nil {
 		return nil, err
 	}
 
-	return &looprpc.OutQuoteResponse{
+	response := &looprpc.OutQuoteResponse{
 		HtlcSweepFeeSat: int64(quote.MinerFee),
 		PrepayAmtSat:    int64(quote.PrepayAmount),
 		SwapFeeSat:      int64(quote.SwapFee),
 		SwapPaymentDest: quote.SwapPaymentDest[:],
 		ConfTarget:      confTarget,
-	}, nil
+	}
+
+	if quote.LoopOutRfq != nil {
+		response.AssetRfqInfo = &looprpc.AssetRfqInfo{
+			PrepayRfqId:    quote.LoopOutRfq.PrepayRfqId,
+			PrepayAssetAmt: quote.LoopOutRfq.PrepayAssetAmt,
+			SwapRfqId:      quote.LoopOutRfq.SwapRfqId,
+			SwapAssetAmt:   quote.LoopOutRfq.SwapAssetAmt,
+			AssetName:      quote.LoopOutRfq.AssetName,
+		}
+	}
+
+	return response, nil
 }
 
 // GetLoopInTerms returns the terms that the server enforces for swaps.
@@ -2023,6 +2084,15 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 
 	default:
 		return 0, errInvalidAddress
+	}
+
+	// If this is an asset payment, we'll check that we have the necessary
+	// outbound asset capacaity to fulfill the request.
+	if req.AssetInfo != nil {
+		// Todo(sputn1ck) actually check outbound capacity.
+		return validateConfTarget(
+			req.SweepConfTarget, loop.DefaultSweepConfTarget,
+		)
 	}
 
 	// Check that the label is valid.
