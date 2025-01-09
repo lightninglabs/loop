@@ -620,6 +620,16 @@ func (b *batch) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Set currentHeight here, because it may be needed in monitorSpend.
+	select {
+	case b.currentHeight = <-blockChan:
+		b.log.Debugf("initial height for the batch is %v",
+			b.currentHeight)
+
+	case <-runCtx.Done():
+		return runCtx.Err()
+	}
+
 	// If a primary sweep exists we immediately start monitoring for its
 	// spend.
 	if b.primarySweepID != lntypes.ZeroHash {
@@ -636,9 +646,9 @@ func (b *batch) Run(ctx context.Context) error {
 	skipBefore := clock.Now().Add(b.cfg.initialDelay)
 
 	// initialDelayChan is a timer which fires upon initial delay end.
-	// If initialDelay is 0, it does not fire to prevent race with
-	// blockChan which also fires immediately with current tip. Such a race
-	// may result in double publishing if batchPublishDelay is also 0.
+	// If initialDelay is set to 0, it will not trigger to avoid setting up
+	// timerChan twice, which could lead to double publishing if
+	// batchPublishDelay is also 0.
 	var initialDelayChan <-chan time.Time
 	if b.cfg.initialDelay > 0 {
 		initialDelayChan = clock.TickAfter(b.cfg.initialDelay)
@@ -647,9 +657,10 @@ func (b *batch) Run(ctx context.Context) error {
 	// We use a timer in order to not publish new transactions at the same
 	// time as the block epoch notification. This is done to prevent
 	// unnecessary transaction publishments when a spend is detected on that
-	// block. This timer starts after new block arrives or initialDelay
+	// block. This timer starts after new block arrives (including the
+	// current tip which we read from blockChan above) or when initialDelay
 	// completes.
-	var timerChan <-chan time.Time
+	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
 	b.log.Infof("started, primary %x, total sweeps %v",
 		b.primarySweepID[0:6], len(b.sweeps))
