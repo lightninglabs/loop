@@ -1872,7 +1872,10 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
 	totalSweptAmt btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
 
-	totalFee := int64(totalSweptAmt) - spendTx.TxOut[0].Value
+	totalFee := int64(totalSweptAmt)
+	if len(spendTx.TxOut) > 0 {
+		totalFee -= spendTx.TxOut[0].Value
+	}
 	feePortionPerSweep := totalFee / int64(numSweeps)
 	roundingDiff := totalFee - (int64(numSweeps) * feePortionPerSweep)
 
@@ -1900,7 +1903,11 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		notifyList = make([]sweep, 0, len(b.sweeps))
 	)
 	b.batchTxid = &txHash
-	b.batchPkScript = spendTx.TxOut[0].PkScript
+	if len(spendTx.TxOut) > 0 {
+		b.batchPkScript = spendTx.TxOut[0].PkScript
+	} else {
+		b.log.Warnf("transaction %v has no outputs", txHash)
+	}
 
 	// As a previous version of the batch transaction may get confirmed,
 	// which does not contain the latest sweeps, we need to detect the
