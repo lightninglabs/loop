@@ -265,6 +265,38 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "asset_info.asset_id",
+            "description": "The asset id to use to pay for the swap invoice. If set an\nasset client is needed to set to be able to pay the invoice.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_info.asset_edge_node",
+            "description": "The node identity public key of the peer to ask for a quote for sending out\nthe assets and converting them to satoshis. This must be specified if\nan asset id is set.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_info.max_limit_multiplier",
+            "description": "An optional maximum multiplier for the rfq rate. If not set, the default\nwill be 1.1. This means if we request a loop out quote for 1 BTC, the off\nchain cost will be at most 1.1 BTC.",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "asset_info.expiry",
+            "description": "An optional expiry unix timestamp for when the rfq quote should expire.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -426,6 +458,38 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "asset_info.asset_id",
+            "description": "The asset id to use to pay for the swap invoice. If set an\nasset client is needed to set to be able to pay the invoice.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_info.asset_edge_node",
+            "description": "The node identity public key of the peer to ask for a quote for sending out\nthe assets and converting them to satoshis. This must be specified if\nan asset id is set.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_info.max_limit_multiplier",
+            "description": "An optional maximum multiplier for the rfq rate. If not set, the default\nwill be 1.1. This means if we request a loop out quote for 1 BTC, the off\nchain cost will be at most 1.1 BTC.",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "asset_info.expiry",
+            "description": "An optional expiry unix timestamp for when the rfq quote should expire.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -608,6 +672,60 @@
       "default": "ADDRESS_TYPE_UNKNOWN",
       "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
       "title": "`AddressType` has to be one of:"
+    },
+    "looprpcAssetLoopOutRequest": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The asset id to use to pay for the swap invoice. If set an\nasset client is needed to set to be able to pay the invoice."
+        },
+        "asset_edge_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The node identity public key of the peer to ask for a quote for sending out\nthe assets and converting them to satoshis. This must be specified if\nan asset id is set."
+        },
+        "max_limit_multiplier": {
+          "type": "number",
+          "format": "double",
+          "description": "An optional maximum multiplier for the rfq rate. If not set, the default\nwill be 1.1. This means if we request a loop out quote for 1 BTC, the off\nchain cost will be at most 1.1 BTC."
+        },
+        "expiry": {
+          "type": "string",
+          "format": "int64",
+          "description": "An optional expiry unix timestamp for when the rfq quote should expire."
+        }
+      }
+    },
+    "looprpcAssetRfqInfo": {
+      "type": "object",
+      "properties": {
+        "prepay_rfq_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Prepay RFQ ID to use to pay for the prepay invoice."
+        },
+        "prepay_asset_amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The actual asset amt to prepay for the swap invoice."
+        },
+        "swap_rfq_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Swap RFQ ID to use to pay for the swap invoice."
+        },
+        "swap_asset_amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The actual asset amt to swap for the swap invoice."
+        },
+        "asset_name": {
+          "type": "string",
+          "description": "The name of the asset to swap."
+        }
+      }
     },
     "looprpcAutoReason": {
       "type": "string",
@@ -1385,6 +1503,14 @@
           "type": "integer",
           "format": "int64",
           "description": "The timeout in seconds to use for off-chain payments. Note that the swap\npayment is attempted multiple times where each attempt will set this value\nas the timeout for the payment."
+        },
+        "asset_info": {
+          "$ref": "#/definitions/looprpcAssetLoopOutRequest",
+          "description": "The optional asset information to use for the swap. If set, the swap will\nbe paid in the specified asset using the provided edge node. An Asset client\nmust be connected to the loop client to use this feature."
+        },
+        "asset_rfq_info": {
+          "$ref": "#/definitions/looprpcAssetRfqInfo",
+          "description": "The optional RFQ information to use for the swap. If set, the swap will\nuse the provided RFQs to pay for the swap invoice."
         }
       }
     },
@@ -1483,6 +1609,10 @@
           "type": "integer",
           "format": "int32",
           "description": "The confirmation target to be used for the sweep of the on-chain HTLC."
+        },
+        "asset_rfq_info": {
+          "$ref": "#/definitions/looprpcAssetRfqInfo",
+          "description": "If the request was for an asset swap, the quote will return the rfq ids\nthat will be used to pay for the swap and prepay invoices."
         }
       }
     },

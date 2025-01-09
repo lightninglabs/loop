@@ -336,6 +336,19 @@ message LoopOutRequest {
     as the timeout for the payment.
     */
     uint32 payment_timeout = 19;
+
+    /*
+    The optional asset information to use for the swap. If set, the swap will
+    be paid in the specified asset using the provided edge node. An Asset client
+    must be connected to the loop client to use this feature.
+    */
+    AssetLoopOutRequest asset_info = 20;
+
+    /*
+    The optional RFQ information to use for the swap. If set, the swap will
+    use the provided RFQs to pay for the swap invoice.
+    */
+    AssetRfqInfo asset_rfq_info = 21;
 }
 
 /*
@@ -793,6 +806,12 @@ message QuoteRequest {
     the same time.
     */
     repeated string deposit_outpoints = 8;
+
+    /*
+    The optional asset information to use for the swap. If set, the quote will
+    be returned in the specified asset.
+    */
+    AssetLoopOutRequest asset_info = 9;
 }
 
 message InQuoteResponse {
@@ -856,6 +875,12 @@ message OutQuoteResponse {
     The confirmation target to be used for the sweep of the on-chain HTLC.
     */
     int32 conf_target = 6;
+
+    /*
+    If the request was for an asset swap, the quote will return the rfq ids
+    that will be used to pay for the swap and prepay invoices.
+    */
+    AssetRfqInfo asset_rfq_info = 7;
 }
 
 message ProbeRequest {
@@ -1999,4 +2024,58 @@ message StaticAddressLoopInResponse {
     side and the client can retry the swap with different parameters.
     */
     uint32 payment_timeout_seconds = 11;
+}
+
+message AssetLoopOutRequest {
+    /*
+    The asset id to use to pay for the swap invoice. If set an
+    asset client is needed to set to be able to pay the invoice.
+    */
+    bytes asset_id = 1;
+
+    /*
+    The node identity public key of the peer to ask for a quote for sending out
+    the assets and converting them to satoshis. This must be specified if
+    an asset id is set.
+    */
+    bytes asset_edge_node = 2;
+
+    /*
+    An optional maximum multiplier for the rfq rate. If not set, the default
+    will be 1.1. This means if we request a loop out quote for 1 BTC, the off
+    chain cost will be at most 1.1 BTC.
+    */
+    double max_limit_multiplier = 3;
+
+    /*
+    An optional expiry unix timestamp for when the rfq quote should expire.
+    */
+    int64 expiry = 4;
+}
+
+message AssetRfqInfo {
+    /*
+    The Prepay RFQ ID to use to pay for the prepay invoice.
+    */
+    bytes prepay_rfq_id = 1;
+
+    /*
+    The actual asset amt to prepay for the swap invoice.
+    */
+    uint64 prepay_asset_amt = 2;
+
+    /*
+    The Swap RFQ ID to use to pay for the swap invoice.
+    */
+    bytes swap_rfq_id = 3;
+
+    /*
+    The actual asset amt to swap for the swap invoice.
+    */
+    uint64 swap_asset_amt = 4;
+
+    /*
+    The name of the asset to swap.
+    */
+    string asset_name = 5;
 }
