@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
@@ -37,8 +38,16 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 		chainParams,
 	)
 
+	var assetClient *assets.TapdClient
+	if config.Tapd.Host != "" {
+		assetClient, err = assets.NewTapdClient(config.Tapd)
+		if err != nil {
+			return err
+		}
+	}
+
 	swapClient, cleanup, err := getClient(
-		config, swapDb, sweeperDb, &lnd.LndServices,
+		config, swapDb, sweeperDb, &lnd.LndServices, assetClient,
 	)
 	if err != nil {
 		return err

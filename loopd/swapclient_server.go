@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -93,6 +94,7 @@ type swapClientServer struct {
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
 	staticLoopInManager  *loopin.Manager
+	assetClient          *assets.TapdClient
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo

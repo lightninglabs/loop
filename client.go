@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
@@ -94,6 +95,7 @@ type Client struct {
 	lndServices *lndclient.LndServices
 	sweeper     *sweep.Sweeper
 	executor    *executor
+	assetClient *assets.TapdClient
 
 	resumeReady chan struct{}
 	wg          sync.WaitGroup
@@ -120,6 +122,9 @@ type ClientConfig struct {
 
 	// Lnd is an instance of the lnd proxy.
 	Lnd *lndclient.LndServices
+
+	// AssetClient is an instance of the assets client.
+	AssetClient *assets.TapdClient
 
 	// MaxL402Cost is the maximum price we are willing to pay to the server
 	// for the token.
@@ -273,6 +278,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		errChan:      make(chan error),
 		clientConfig: *config,
 		lndServices:  cfg.Lnd,
+		assetClient:  cfg.AssetClient,
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
@@ -453,7 +459,7 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 func (s *Client) resumeSwaps(ctx context.Context,
 	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
 
 	for _, pend := range loopOutSwaps {
 		if pend.State().State.Type() != loopdb.StateTypePending {
@@ -523,7 +529,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	}
 
 	// Create a new swap object for this swap.
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
 	initResult, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
@@ -682,7 +688,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)

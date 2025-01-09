@@ -16,6 +16,7 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopd/perms"
@@ -28,6 +29,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -82,6 +84,7 @@ type Daemon struct {
 	internalErrChan chan error
 
 	lnd           *lndclient.GrpcLndServices
+	assetClient   *assets.TapdClient
 	clientCleanup func()
 
 	wg       sync.WaitGroup
@@ -136,6 +139,14 @@ func (d *Daemon) Start() error {
 	d.lnd, err = d.listenerCfg.getLnd(network, d.cfg.Lnd)
 	if err != nil {
 		return err
+	}
+
+	// Initialize the assets client.
+	if d.cfg.Tapd.Activate {
+		d.assetClient, err = assets.NewTapdClient(d.cfg.Tapd)
+		if err != nil {
+			return err
+		}
 	}
 
 	// With lnd connected, initialize everything else, such as the swap
@@ -435,9 +446,26 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		chainParams,
 	)
 
+	// If we're running an asset client, we'll log something here.
+	if d.assetClient != nil {
+		getInfo, err := d.assetClient.GetInfo(
+			d.mainCtx, &taprpc.GetInfoRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to get asset client info: %v", err)
+		}
+		if getInfo.LndIdentityPubkey != d.lnd.NodePubkey.String() {
+			return fmt.Errorf("asset client pubkey %v does not match "+
+				"lnd pubkey %v", getInfo.LndIdentityPubkey,
+				d.lnd.NodePubkey)
+		}
+
+		log.Infof("Using asset client with version %v", getInfo.Version)
+	}
+
 	// Create an instance of the loop client library.
 	swapClient, clientCleanup, err := getClient(
-		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices,
+		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices, d.assetClient,
 	)
 	if err != nil {
 		return err
@@ -667,6 +695,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		depositManager:       depositManager,
 		withdrawalManager:    withdrawalManager,
 		staticLoopInManager:  staticLoopInManager,
+		assetClient:          d.assetClient,
 	}
 
 	// Retrieve all currently existing swaps from the database.
