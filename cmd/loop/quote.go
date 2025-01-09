@@ -267,7 +267,14 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 
 	totalFee := resp.HtlcSweepFeeSat + resp.SwapFeeSat
 
-	fmt.Printf(satAmtFmt, "Send off-chain:", req.Amt)
+	if resp.AssetRfqInfo != nil {
+		fmt.Printf(assetAmtFmt, "Send off-chain:",
+			resp.AssetRfqInfo.SwapAssetAmt,
+			resp.AssetRfqInfo.AssetName)
+	} else {
+		fmt.Printf(satAmtFmt, "Send off-chain:", req.Amt)
+	}
+
 	fmt.Printf(satAmtFmt, "Receive on-chain:", req.Amt-totalFee)
 
 	if !verbose {
@@ -280,7 +287,14 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 	fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
 	fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
 	fmt.Println()
-	fmt.Printf(satAmtFmt, "No show penalty (prepay):", resp.PrepayAmtSat)
+	if resp.AssetRfqInfo != nil {
+		fmt.Printf(assetAmtFmt, "No show penalty (prepay):",
+			resp.AssetRfqInfo.PrepayAssetAmt,
+			resp.AssetRfqInfo.AssetName)
+	} else {
+		fmt.Printf(satAmtFmt, "No show penalty (prepay):",
+			resp.PrepayAmtSat)
+	}
 	fmt.Printf(blkFmt, "Conf target:", resp.ConfTarget)
 	fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
 	fmt.Printf("%-38s %s\n",
