@@ -214,10 +214,6 @@ type batch struct {
 	// currentHeight is the current block height.
 	currentHeight int32
 
-	// blockEpochChan is the channel over which block epoch notifications
-	// are received.
-	blockEpochChan chan int32
-
 	// spendChan is the channel over which spend notifications are received.
 	spendChan chan *chainntnfs.SpendDetail
 
@@ -362,7 +358,6 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		id:                  -1,
 		state:               Open,
 		sweeps:              make(map[lntypes.Hash]sweep),
-		blockEpochChan:      make(chan int32),
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
@@ -407,7 +402,6 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		state:               bk.state,
 		primarySweepID:      bk.primaryID,
 		sweeps:              bk.sweeps,
-		blockEpochChan:      make(chan int32),
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
