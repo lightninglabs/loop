@@ -2,13 +2,16 @@
 SELECT
     swaps.*,
     loopout_swaps.*,
-    htlc_keys.*
+    htlc_keys.*,
+    loopout_swaps_asset_info.*
 FROM
     swaps
 JOIN
     loopout_swaps ON swaps.swap_hash = loopout_swaps.swap_hash
 JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+LEFT JOIN
+    loopout_swaps_asset_info ON swaps.swap_hash = loopout_swaps_asset_info.swap_hash
 ORDER BY
     swaps.id;
 
@@ -16,13 +19,16 @@ ORDER BY
 SELECT
     swaps.*,
     loopout_swaps.*,
-    htlc_keys.*
+    htlc_keys.*,
+    loopout_swaps_asset_info.*
 FROM
     swaps
 JOIN
     loopout_swaps ON swaps.swap_hash = loopout_swaps.swap_hash
 JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+LEFT JOIN
+    loopout_swaps_asset_info ON swaps.swap_hash = loopout_swaps_asset_info.swap_hash
 WHERE
     swaps.swap_hash = $1;
 
@@ -110,6 +116,23 @@ INSERT INTO loopout_swaps (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 );
+
+-- name: InsertLoopOutAsset :exec
+INSERT INTO loopout_swaps_asset_info (
+    swap_hash,
+    asset_id,
+    swap_rfq_id,
+    prepay_rfq_id
+) VALUES (
+    $1, $2, $3, $4
+);
+
+-- name: UpdateLoopOutAssetOffchainPayments :exec
+UPDATE loopout_swaps_asset_info
+SET
+    asset_amt_paid_swap = $2,
+    asset_amt_paid_prepay = $3
+WHERE swap_hash = $1;
 
 -- name: InsertLoopIn :exec
 INSERT INTO loopin_swaps (
