@@ -949,8 +949,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			MinLoopOutPreimageRevealDelta
 
 		checkMaxRevealHeightExceeded := func() bool {
-			s.log.Infof("Checking preimage reveal height %v "+
-				"exceeded (height %v)",
+			s.log.Infof("Checking if preimage reveal height %v "+
+				"was exceeded (current height is %v)",
 				maxPreimageRevealHeight, s.height)
 
 			if s.height <= maxPreimageRevealHeight {
@@ -958,7 +958,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			}
 
 			s.log.Infof("Max preimage reveal height %v "+
-				"exceeded (height %v)",
+				"exceeded (current height %v)",
 				maxPreimageRevealHeight, s.height)
 
 			s.state = loopdb.StateFailTimeout
