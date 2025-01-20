@@ -552,6 +552,9 @@ message SwapStatus {
 
     // An optional label given to the swap on creation.
     string label = 15;
+
+    // If the swap was an asset swap, the asset information will be returned.
+    AssetLoopOutInfo asset_info = 19;
 }
 
 enum SwapType {
@@ -698,6 +701,9 @@ message ListSwapsFilter {
 
     // If specified on creation, the last hop of the swap.
     bytes loop_in_last_hop = 5;
+
+    // If specified, only returns asset swaps.
+    bool asset_swap_only = 6;
 }
 
 message ListSwapsResponse {
@@ -2078,4 +2084,19 @@ message AssetRfqInfo {
     The name of the asset to swap.
     */
     string asset_name = 5;
+}
+
+message AssetLoopOutInfo {
+    /*
+    The asset id that was used to pay for the swap invoice.
+    */
+    string asset_id = 1;
+    /*
+    The human readable name of the asset.
+    */
+    string asset_name = 2;
+    /*
+    The total asset offchain cost of the swap.
+    */
+    uint64 asset_cost_offchain = 3;
 }

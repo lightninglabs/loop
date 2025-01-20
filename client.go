@@ -349,6 +349,10 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 			return nil, swap.ErrInvalidOutputType
 		}
 
+		if swp.Contract.AssetSwapInfo != nil {
+			swapInfo.AssetSwapInfo = swp.Contract.AssetSwapInfo
+		}
+
 		swaps = append(swaps, swapInfo)
 	}
 

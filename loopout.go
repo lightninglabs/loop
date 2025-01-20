@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -355,6 +356,10 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 		info.OutgoingChanSet = outgoingChanSet
 	}
 
+	if s.isAssetSwap() {
+		info.AssetSwapInfo = s.AssetSwapInfo
+	}
+
 	select {
 	case s.statusChan <- *info:
 	case <-ctx.Done():
@@ -436,7 +441,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.swapPaymentChan:
 			s.swapPaymentChan = nil
 
-			err := s.handlePaymentResult(result, true)
+			err := s.handlePaymentResult(globalCtx, result, true)
 			if err != nil {
 				return err
 			}
@@ -452,7 +457,7 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 		case result := <-s.prePaymentChan:
 			s.prePaymentChan = nil
 
-			err := s.handlePaymentResult(result, false)
+			err := s.handlePaymentResult(globalCtx, result, false)
 			if err != nil {
 				return err
 			}
@@ -485,8 +490,8 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 // handlePaymentResult processes the result of a payment attempt. If the
 // payment was successful and this is the main swap payment, the cost of the
 // swap is updated.
-func (s *loopOutSwap) handlePaymentResult(result paymentResult,
-	swapPayment bool) error {
+func (s *loopOutSwap) handlePaymentResult(ctx context.Context,
+	result paymentResult, swapPayment bool) error {
 
 	switch {
 	// If our result has a non-nil error, our status will be nil. In this
@@ -512,6 +517,17 @@ func (s *loopOutSwap) handlePaymentResult(result paymentResult,
 		// is reflected in the fee. We add the off-chain fee for both
 		// the swap payment and the prepay.
 		s.cost.Offchain += result.status.Fee.ToSatoshis()
+
+		// If this is an asset payment, we'll write the asset amounts
+		// to the swap.
+		if s.isAssetSwap() {
+			err := s.fillAssetOffchainPaymentResult(
+				ctx, result, swapPayment,
+			)
+			if err != nil {
+				return err
+			}
+		}
 
 		return nil
 
@@ -1035,7 +1051,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.swapPaymentChan:
 				s.swapPaymentChan = nil
 
-				err := s.handlePaymentResult(result, true)
+				err := s.handlePaymentResult(ctx, result, true)
 				if err != nil {
 					return nil, err
 				}
@@ -1057,7 +1073,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 			case result := <-s.prePaymentChan:
 				s.prePaymentChan = nil
 
-				err := s.handlePaymentResult(result, false)
+				err := s.handlePaymentResult(ctx, result, false)
 				if err != nil {
 					return nil, err
 				}
@@ -1456,6 +1472,34 @@ func (s *loopOutSwap) canSweep() bool {
 	}
 
 	return true
+}
+
+func (s *loopOutSwap) fillAssetOffchainPaymentResult(ctx context.Context,
+	result paymentResult, isSwapPayment bool) error {
+
+	if len(result.status.Htlcs) == 0 {
+		return fmt.Errorf("no htlcs in payment result")
+	}
+
+	// We only expect one htlc in the result.
+	htlc := result.status.Htlcs[0]
+
+	var assetData rfqmsg.JsonHtlc
+
+	err := json.Unmarshal(htlc.Route.CustomChannelData, &assetData)
+	if err != nil {
+		return err
+	}
+
+	assetSendAmt := assetData.Balances[0].Amount
+	if isSwapPayment {
+		s.AssetSwapInfo.SwapPaidAmt = assetSendAmt
+		log.Debugf("Asset off-chain payment success: %v", assetSendAmt)
+	} else {
+		s.AssetSwapInfo.PrepayPaidAmt = assetSendAmt
+	}
+
+	return s.store.UpdateLoopOutAssetInfo(ctx, s.hash, s.AssetSwapInfo)
 }
 
 // isAssetSwap returns true if the swap is an asset swap.

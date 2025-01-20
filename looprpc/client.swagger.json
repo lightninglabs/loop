@@ -618,6 +618,13 @@
             "required": false,
             "type": "string",
             "format": "byte"
+          },
+          {
+            "name": "list_swap_filter.asset_swap_only",
+            "description": "If specified, only returns asset swaps.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -672,6 +679,24 @@
       "default": "ADDRESS_TYPE_UNKNOWN",
       "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
       "title": "`AddressType` has to be one of:"
+    },
+    "looprpcAssetLoopOutInfo": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "description": "The asset id that was used to pay for the swap invoice."
+        },
+        "asset_name": {
+          "type": "string",
+          "description": "The human readable name of the asset."
+        },
+        "asset_cost_offchain": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The total asset offchain cost of the swap."
+        }
+      }
     },
     "looprpcAssetLoopOutRequest": {
       "type": "object",
@@ -1326,6 +1351,10 @@
           "type": "string",
           "format": "byte",
           "description": "If specified on creation, the last hop of the swap."
+        },
+        "asset_swap_only": {
+          "type": "boolean",
+          "description": "If specified, only returns asset swaps."
         }
       }
     },
@@ -1971,6 +2000,10 @@
         "label": {
           "type": "string",
           "description": "An optional label given to the swap on creation."
+        },
+        "asset_info": {
+          "$ref": "#/definitions/looprpcAssetLoopOutInfo",
+          "description": "If the swap was an asset swap, the asset information will be returned."
         }
       }
     },

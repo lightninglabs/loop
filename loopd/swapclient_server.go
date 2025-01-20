@@ -309,8 +309,8 @@ func toWalletAddrType(addrType looprpc.AddressType) (walletrpc.AddressType,
 	}
 }
 
-func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
-	*looprpc.SwapStatus, error) {
+func (s *swapClientServer) marshallSwap(ctx context.Context,
+	loopSwap *loop.SwapInfo) (*looprpc.SwapStatus, error) {
 
 	var (
 		state         looprpc.SwapState
@@ -383,6 +383,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 	)
 	var outGoingChanSet []uint64
 	var lastHop []byte
+	var assetInfo *looprpc.AssetLoopOutInfo
 
 	switch loopSwap.SwapType {
 	case swap.TypeIn:
@@ -413,6 +414,22 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 
 		outGoingChanSet = loopSwap.OutgoingChanSet
 
+		if loopSwap.AssetSwapInfo != nil {
+			assetName, err := s.assetClient.GetAssetName(
+				ctx, loopSwap.AssetSwapInfo.AssetId,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			assetInfo = &looprpc.AssetLoopOutInfo{
+				AssetId: hex.EncodeToString(loopSwap.AssetSwapInfo.AssetId), // nolint:lll
+				AssetCostOffchain: loopSwap.AssetSwapInfo.PrepayPaidAmt +
+					loopSwap.AssetSwapInfo.SwapPaidAmt, // nolint:lll
+				AssetName: assetName,
+			}
+		}
+
 	default:
 		return nil, errors.New("unknown swap type")
 	}
@@ -435,6 +452,7 @@ func (s *swapClientServer) marshallSwap(loopSwap *loop.SwapInfo) (
 		Label:            loopSwap.Label,
 		LastHop:          lastHop,
 		OutgoingChanSet:  outGoingChanSet,
+		AssetInfo:        assetInfo,
 	}, nil
 }
 
@@ -445,7 +463,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	log.Infof("Monitor request received")
 
 	send := func(info loop.SwapInfo) error {
-		rpcSwap, err := s.marshallSwap(&info)
+		rpcSwap, err := s.marshallSwap(server.Context(), &info)
 		if err != nil {
 			return err
 		}
@@ -540,7 +558,7 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 
 // ListSwaps returns a list of all currently known swaps and their current
 // status.
-func (s *swapClientServer) ListSwaps(_ context.Context,
+func (s *swapClientServer) ListSwaps(ctx context.Context,
 	req *looprpc.ListSwapsRequest) (*looprpc.ListSwapsResponse, error) {
 
 	var (
@@ -563,7 +581,7 @@ func (s *swapClientServer) ListSwaps(_ context.Context,
 			continue
 		}
 
-		rpcSwap, err := s.marshallSwap(&swp)
+		rpcSwap, err := s.marshallSwap(ctx, &swp)
 		if err != nil {
 			return nil, err
 		}
@@ -641,11 +659,17 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 		}
 	}
 
+	// If we only want to return asset swaps, we only return swaps that have
+	// an asset id set.
+	if filter.AssetSwapOnly && swapInfo.AssetSwapInfo == nil {
+		return false
+	}
+
 	return true
 }
 
 // SwapInfo returns all known details about a single swap.
-func (s *swapClientServer) SwapInfo(_ context.Context,
+func (s *swapClientServer) SwapInfo(ctx context.Context,
 	req *looprpc.SwapInfoRequest) (*looprpc.SwapStatus, error) {
 
 	swapHash, err := lntypes.MakeHash(req.Id)
@@ -659,7 +683,7 @@ func (s *swapClientServer) SwapInfo(_ context.Context,
 	if !ok {
 		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
 	}
-	return s.marshallSwap(&swp)
+	return s.marshallSwap(ctx, &swp)
 }
 
 // AbandonSwap requests the server to abandon a swap with the given hash.
