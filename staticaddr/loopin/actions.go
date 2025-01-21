@@ -103,6 +103,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			Memo:       "static address loop-in",
 			Expiry:     3600 * 24 * 365,
 			RouteHints: f.loopIn.RouteHints,
+			Private:    true,
 		},
 	)
 	if err != nil {

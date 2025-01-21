@@ -177,6 +177,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			Memo:       "swap",
 			Expiry:     3600 * 24 * 365,
 			RouteHints: request.RouteHints,
+			Private:    true,
 		},
 	)
 	if err != nil {
@@ -197,6 +198,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			Memo:       "loop in probe",
 			Expiry:     3600,
 			RouteHints: request.RouteHints,
+			Private:    true,
 		},
 	)
 	if err != nil {
