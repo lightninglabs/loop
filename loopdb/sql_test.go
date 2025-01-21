@@ -22,6 +22,15 @@ const (
 	testLabel = "test label"
 )
 
+var (
+	testAssetId = []byte{
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 4,
+		1, 1, 1, 1, 2, 2, 2, 2,
+		3, 3, 3, 3, 4, 4, 4, 4,
+	}
+)
+
 // TestSqliteLoopOutStore tests all the basic functionality of the current
 // sqlite swap store.
 func TestSqliteLoopOutStore(t *testing.T) {
@@ -79,6 +88,17 @@ func TestSqliteLoopOutStore(t *testing.T) {
 	labelledSwap.Label = testLabel
 	t.Run("labelled swap", func(t *testing.T) {
 		testSqliteLoopOutStore(t, &labelledSwap)
+	})
+
+	assetSwap := unrestrictedSwap
+	assetSwap.AssetSwapInfo = &LoopOutAssetSwap{
+		AssetId:     testAssetId,
+		PrepayRfqId: testAssetId,
+		SwapRfqId:   testAssetId,
+	}
+
+	t.Run("asset swap", func(t *testing.T) {
+		testSqliteLoopOutStore(t, &assetSwap)
 	})
 }
 

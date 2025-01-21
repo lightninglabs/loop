@@ -568,6 +568,13 @@ func (s *boltSwapStore) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	})
 }
 
+// UpdateLoopOutAssetInfo is unused for the bolt swap store.
+func (db *boltSwapStore) UpdateLoopOutAssetInfo(ctx context.Context, hash lntypes.Hash,
+	asset *LoopOutAssetSwap) error {
+
+	return errors.New("unimplemented")
+}
+
 // CreateLoopIn adds an initiated swap to the store.
 //
 // NOTE: Part of the loopdb.SwapStore interface.

@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweep"
@@ -78,6 +79,13 @@ var (
 	// quote call as the miner fee if the fee estimation in lnd's wallet
 	// failed because of insufficient funds.
 	MinerFeeEstimationFailed btcutil.Amount = -1
+
+	// defaultRFQExpiry is the default expiry time for RFQs.
+	defaultRFQExpiry = 5 * time.Minute
+
+	// defaultRFQMaxLimitMultiplier is the default maximum fee multiplier for
+	// RFQs.
+	defaultRFQMaxLimitMultiplier = 1.2
 )
 
 // Client performs the client side part of swaps. This interface exists to be
@@ -94,6 +102,7 @@ type Client struct {
 	lndServices *lndclient.LndServices
 	sweeper     *sweep.Sweeper
 	executor    *executor
+	assetClient *assets.TapdClient
 
 	resumeReady chan struct{}
 	wg          sync.WaitGroup
@@ -120,6 +129,9 @@ type ClientConfig struct {
 
 	// Lnd is an instance of the lnd proxy.
 	Lnd *lndclient.LndServices
+
+	// AssetClient is an instance of the assets client.
+	AssetClient *assets.TapdClient
 
 	// MaxL402Cost is the maximum price we are willing to pay to the server
 	// for the token.
@@ -273,6 +285,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		errChan:      make(chan error),
 		clientConfig: *config,
 		lndServices:  cfg.Lnd,
+		assetClient:  cfg.AssetClient,
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
@@ -334,6 +347,10 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 
 		default:
 			return nil, swap.ErrInvalidOutputType
+		}
+
+		if swp.Contract.AssetSwapInfo != nil {
+			swapInfo.AssetSwapInfo = swp.Contract.AssetSwapInfo
 		}
 
 		swaps = append(swaps, swapInfo)
@@ -453,7 +470,7 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 func (s *Client) resumeSwaps(ctx context.Context,
 	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
 
 	for _, pend := range loopOutSwaps {
 		if pend.State().State.Type() != loopdb.StateTypePending {
@@ -500,9 +517,30 @@ func (s *Client) resumeSwaps(ctx context.Context,
 func (s *Client) LoopOut(globalCtx context.Context,
 	request *OutRequest) (*LoopOutSwapInfo, error) {
 
-	log.Infof("LoopOut %v to %v (channels: %v)",
-		request.Amount, request.DestAddr, request.OutgoingChanSet,
-	)
+	if request.AssetId != nil {
+		if request.AssetPrepayRfqId == nil ||
+			request.AssetSwapRfqId == nil {
+
+			return nil, errors.New("asset prepay and swap rfq ids " +
+				"must be set when using an asset id")
+		}
+
+		// Verify that if we have an asset id set, we have a valid asset
+		// client to use.
+		if s.assetClient == nil {
+			return nil, errors.New("asset client must be set " +
+				"when using an asset id")
+		}
+
+		log.Infof("LoopOut %v sats to %v with asset %x",
+			request.Amount, request.DestAddr, request.AssetId,
+		)
+	} else {
+		log.Infof("LoopOut %v to %v (channels: %v)",
+			request.Amount, request.DestAddr,
+			request.OutgoingChanSet,
+		)
+	}
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
 		return nil, err
@@ -523,7 +561,10 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	}
 
 	// Create a new swap object for this swap.
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(
+		s.lndServices, s.Store, s.Server, s.assetClient,
+	)
+
 	initResult, err := newLoopOutSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
@@ -568,6 +609,14 @@ func (s *Client) getExpiry(height int32, terms *LoopOutTerms,
 func (s *Client) LoopOutQuote(ctx context.Context,
 	request *LoopOutQuoteRequest) (*LoopOutQuote, error) {
 
+	if request.AssetRFQRequest != nil {
+		rfqReq := request.AssetRFQRequest
+		if rfqReq.AssetId == nil || rfqReq.AssetEdgeNode == nil {
+			return nil, errors.New("both asset edge node and " +
+				"asset id must be set")
+		}
+	}
+
 	terms, err := s.Server.GetLoopOutTerms(ctx, request.Initiator)
 	if err != nil {
 		return nil, err
@@ -602,12 +651,67 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		return nil, err
 	}
 
-	return &LoopOutQuote{
+	loopOutQuote := &LoopOutQuote{
 		SwapFee:         quote.SwapFee,
 		MinerFee:        minerFee,
 		PrepayAmount:    quote.PrepayAmount,
 		SwapPaymentDest: quote.SwapPaymentDest,
-	}, nil
+	}
+
+	// If we use an Asset we'll rfq to get the asset amounts to use for
+	// the swap.
+	if request.AssetRFQRequest != nil {
+		rfqReq := request.AssetRFQRequest
+		if rfqReq.Expiry == 0 {
+			rfqReq.Expiry = time.Now().Add(defaultRFQExpiry).Unix()
+		}
+
+		if rfqReq.MaxLimitMultiplier == 0 {
+			rfqReq.MaxLimitMultiplier = defaultRFQMaxLimitMultiplier
+		}
+
+		// First we'll get the prepay rfq.
+		prepayRfq, err := s.assetClient.GetRfqForAsset(
+			ctx, quote.PrepayAmount, rfqReq.AssetId,
+			rfqReq.AssetEdgeNode, rfqReq.Expiry,
+			rfqReq.MaxLimitMultiplier,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// The actual invoice swap amount is the requested amount plus
+		// the swap fee minus the prepay amount.
+		invoiceAmt := request.Amount + quote.SwapFee -
+			quote.PrepayAmount
+
+		swapRfq, err := s.assetClient.GetRfqForAsset(
+			ctx, invoiceAmt, rfqReq.AssetId,
+			rfqReq.AssetEdgeNode, rfqReq.Expiry,
+			rfqReq.MaxLimitMultiplier,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// We'll also want the asset name to verify for the client.
+		assetName, err := s.assetClient.GetAssetName(
+			ctx, rfqReq.AssetId,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		loopOutQuote.LoopOutRfq = &LoopOutRfq{
+			PrepayRfqId:    prepayRfq.Id,
+			PrepayAssetAmt: prepayRfq.AssetAmount,
+			SwapRfqId:      swapRfq.Id,
+			SwapAssetAmt:   swapRfq.AssetAmount,
+			AssetName:      assetName,
+		}
+	}
+
+	return loopOutQuote, nil
 }
 
 // getLoopOutSweepFee is a helper method to estimate the loop out htlc sweep
@@ -682,7 +786,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)

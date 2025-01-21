@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -19,8 +20,8 @@ import (
 
 // getClient returns an instance of the swap client.
 func getClient(cfg *Config, swapDb loopdb.SwapStore,
-	sweeperDb sweepbatcher.BatcherStore, lnd *lndclient.LndServices) (
-	*loop.Client, func(), error) {
+	sweeperDb sweepbatcher.BatcherStore, lnd *lndclient.LndServices,
+	assets *assets.TapdClient) (*loop.Client, func(), error) {
 
 	// Default is not set for MaxLSATCost and MaxLSATFee to distinguish
 	// it from user explicitly setting the option to default value.
@@ -45,6 +46,7 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 		SwapServerNoTLS:                      cfg.Server.NoTLS,
 		TLSPathServer:                        cfg.Server.TLSPath,
 		Lnd:                                  lnd,
+		AssetClient:                          assets,
 		MaxL402Cost:                          btcutil.Amount(cfg.MaxL402Cost),
 		MaxL402Fee:                           btcutil.Amount(cfg.MaxL402Fee),
 		LoopOutMaxParts:                      cfg.LoopOutMaxParts,

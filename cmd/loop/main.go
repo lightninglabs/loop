@@ -96,6 +96,13 @@ const (
 	//      Estimated on-chain fee:                      7262 sat
 	satAmtFmt = "%-36s %12d sat\n"
 
+	// assetAmtFormat formats a value into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Amount:", amt, "USD")
+	// prints out as,
+	//      Amount:                                    50 USD
+	assetAmtFmt = "%-36s %12d %s\n"
+
 	// blkFmt formats the number of blocks into a one line string, intended
 	// to prettify the terminal output. For Instance,
 	// 	fmt.Printf(f, "Conf target", target)

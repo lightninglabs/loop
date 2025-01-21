@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
@@ -79,14 +80,16 @@ type swapConfig struct {
 	lnd    *lndclient.LndServices
 	store  loopdb.SwapStore
 	server swapServerClient
+	assets *assets.TapdClient
 }
 
 func newSwapConfig(lnd *lndclient.LndServices, store loopdb.SwapStore,
-	server swapServerClient) *swapConfig {
+	server swapServerClient, assets *assets.TapdClient) *swapConfig {
 
 	return &swapConfig{
 		lnd:    lnd,
 		store:  store,
 		server: server,
+		assets: assets,
 	}
 }

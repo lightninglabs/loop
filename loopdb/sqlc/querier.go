@@ -49,6 +49,7 @@ type Querier interface {
 	InsertInstantOutUpdate(ctx context.Context, arg InsertInstantOutUpdateParams) error
 	InsertLoopIn(ctx context.Context, arg InsertLoopInParams) error
 	InsertLoopOut(ctx context.Context, arg InsertLoopOutParams) error
+	InsertLoopOutAsset(ctx context.Context, arg InsertLoopOutAssetParams) error
 	InsertMigration(ctx context.Context, arg InsertMigrationParams) error
 	InsertReservationUpdate(ctx context.Context, arg InsertReservationUpdateParams) error
 	InsertStaticAddressLoopIn(ctx context.Context, arg InsertStaticAddressLoopInParams) error
@@ -60,6 +61,7 @@ type Querier interface {
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
+	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error

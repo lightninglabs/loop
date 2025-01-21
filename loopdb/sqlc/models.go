@@ -86,6 +86,15 @@ type LoopoutSwap struct {
 	PaymentTimeout      int32
 }
 
+type LoopoutSwapsAssetInfo struct {
+	SwapHash           []byte
+	AssetID            []byte
+	SwapRfqID          []byte
+	PrepayRfqID        []byte
+	AssetAmtPaidSwap   int64
+	AssetAmtPaidPrepay int64
+}
+
 type MigrationTracker struct {
 	MigrationID string
 	MigrationTs sql.NullTime
