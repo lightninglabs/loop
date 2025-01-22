@@ -736,6 +736,10 @@
           "format": "uint64",
           "description": "The maximum asset amt we'll pay for the prepay payment. This includes the\nmax limit multiplier that was set in the request."
         },
+        "prepay_asset_rate": {
+          "$ref": "#/definitions/looprpcFixedPoint",
+          "description": "The asset to BTC conversion rate for the prepay invoice."
+        },
         "swap_rfq_id": {
           "type": "string",
           "format": "byte",
@@ -745,6 +749,10 @@
           "type": "string",
           "format": "uint64",
           "description": "The maximum asset amt we'll pay for the swap payment. This includes the\nmax limit multiplier that was set in the request."
+        },
+        "swap_asset_rate": {
+          "$ref": "#/definitions/looprpcFixedPoint",
+          "description": "The asset to BTC conversion rate for the swap invoice."
         },
         "asset_name": {
           "type": "string",
@@ -895,6 +903,21 @@
     },
     "looprpcFetchL402TokenResponse": {
       "type": "object"
+    },
+    "looprpcFixedPoint": {
+      "type": "object",
+      "properties": {
+        "coefficient": {
+          "type": "string",
+          "description": "The coefficient is the fractional value scaled-up as an integer. This\ninteger is represented as a string as it may be too large to fit in a\nuint64."
+        },
+        "scale": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The scale is the component that determines how many decimal places\nthe coefficient should be divided by to obtain the fractional value."
+        }
+      },
+      "description": "FixedPoint is a scaled integer representation of a fractional number.\n\nThis type consists of two integer fields: a coefficient and a scale.\nUsing this format enables precise and consistent representation of fractional\nnumbers while avoiding floating-point data types, which are prone to\nprecision errors.\n\nThe relationship between the fractional representation and its fixed-point\nrepresentation is expressed as:\n```\nV = F_c / (10^F_s)\n```\nwhere:\n\n* `V` is the fractional value.\n\n* `F_c` is the coefficient component of the fixed-point representation. It is\n   the scaled-up fractional value represented as an integer.\n\n* `F_s` is the scale component. It is an integer specifying how\n  many decimal places `F_c` should be divided by to obtain the fractional\n  representation."
     },
     "looprpcGetInfoResponse": {
       "type": "object",

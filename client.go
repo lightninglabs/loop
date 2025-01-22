@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
@@ -661,54 +662,12 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 	// If we use an Asset we'll rfq to get the asset amounts to use for
 	// the swap.
 	if request.AssetRFQRequest != nil {
-		rfqReq := request.AssetRFQRequest
-		if rfqReq.Expiry == 0 {
-			rfqReq.Expiry = time.Now().Add(defaultRFQExpiry).Unix()
-		}
-
-		if rfqReq.MaxLimitMultiplier == 0 {
-			rfqReq.MaxLimitMultiplier = defaultRFQMaxLimitMultiplier
-		}
-
-		// First we'll get the prepay rfq.
-		prepayRfq, err := s.assetClient.GetRfqForAsset(
-			ctx, quote.PrepayAmount, rfqReq.AssetId,
-			rfqReq.AssetEdgeNode, rfqReq.Expiry,
-			rfqReq.MaxLimitMultiplier,
-		)
+		rfq, err := s.getAssetRfq(ctx, loopOutQuote, request)
 		if err != nil {
 			return nil, err
 		}
 
-		// The actual invoice swap amount is the requested amount plus
-		// the swap fee minus the prepay amount.
-		invoiceAmt := request.Amount + quote.SwapFee -
-			quote.PrepayAmount
-
-		swapRfq, err := s.assetClient.GetRfqForAsset(
-			ctx, invoiceAmt, rfqReq.AssetId,
-			rfqReq.AssetEdgeNode, rfqReq.Expiry,
-			rfqReq.MaxLimitMultiplier,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// We'll also want the asset name to verify for the client.
-		assetName, err := s.assetClient.GetAssetName(
-			ctx, rfqReq.AssetId,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		loopOutQuote.LoopOutRfq = &LoopOutRfq{
-			PrepayRfqId:       prepayRfq.Id,
-			MaxPrepayAssetAmt: prepayRfq.AssetAmount,
-			SwapRfqId:         swapRfq.Id,
-			MaxSwapAssetAmt:   swapRfq.AssetAmount,
-			AssetName:         assetName,
-		}
+		loopOutQuote.LoopOutRfq = rfq
 	}
 
 	return loopOutQuote, nil
@@ -999,4 +958,78 @@ func (s *Client) AbandonSwap(ctx context.Context,
 	}
 
 	return nil
+}
+
+// getAssetRfq returns a prepay and swap rfq for the asset swap.
+func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
+	request *LoopOutQuoteRequest) (*LoopOutRfq, error) {
+
+	if s.assetClient == nil {
+		return nil, errors.New("asset client must be set " +
+			"when trying to loop out with an asset")
+	}
+	rfqReq := request.AssetRFQRequest
+	if rfqReq.Expiry == 0 {
+		rfqReq.Expiry = time.Now().Add(defaultRFQExpiry).Unix()
+	}
+
+	if rfqReq.MaxLimitMultiplier == 0 {
+		rfqReq.MaxLimitMultiplier = defaultRFQMaxLimitMultiplier
+	}
+
+	// First we'll get the prepay rfq.
+	prepayRfq, err := s.assetClient.GetRfqForAsset(
+		ctx, quote.PrepayAmount, rfqReq.AssetId,
+		rfqReq.AssetEdgeNode, rfqReq.Expiry,
+		rfqReq.MaxLimitMultiplier,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	prepayAssetRate, err := rfqrpc.UnmarshalFixedPoint(
+		prepayRfq.BidAssetRate,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// The actual invoice swap amount is the requested amount plus
+	// the swap fee minus the prepay amount.
+	invoiceAmt := request.Amount + quote.SwapFee -
+		quote.PrepayAmount
+
+	swapRfq, err := s.assetClient.GetRfqForAsset(
+		ctx, invoiceAmt, rfqReq.AssetId,
+		rfqReq.AssetEdgeNode, rfqReq.Expiry,
+		rfqReq.MaxLimitMultiplier,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	swapAssetRate, err := rfqrpc.UnmarshalFixedPoint(
+		swapRfq.BidAssetRate,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// We'll also want the asset name to verify for the client.
+	assetName, err := s.assetClient.GetAssetName(
+		ctx, rfqReq.AssetId,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoopOutRfq{
+		PrepayRfqId:       prepayRfq.Id,
+		MaxPrepayAssetAmt: prepayRfq.AssetAmount,
+		PrepayAssetRate:   prepayAssetRate,
+		SwapRfqId:         swapRfq.Id,
+		MaxSwapAssetAmt:   swapRfq.AssetAmount,
+		SwapAssetRate:     swapAssetRate,
+		AssetName:         assetName,
+	}, nil
 }

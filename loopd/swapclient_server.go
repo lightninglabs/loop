@@ -33,6 +33,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
@@ -804,8 +805,14 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 		response.AssetRfqInfo = &looprpc.AssetRfqInfo{
 			PrepayRfqId:       quote.LoopOutRfq.PrepayRfqId,
 			MaxPrepayAssetAmt: quote.LoopOutRfq.MaxPrepayAssetAmt,
+			PrepayAssetRate: marshalFixedPoint(
+				quote.LoopOutRfq.PrepayAssetRate,
+			),
 			SwapRfqId:       quote.LoopOutRfq.SwapRfqId,
 			MaxSwapAssetAmt: quote.LoopOutRfq.MaxSwapAssetAmt,
+			SwapAssetRate: marshalFixedPoint(
+				quote.LoopOutRfq.SwapAssetRate,
+			),
 			AssetName: quote.LoopOutRfq.AssetName,
 		}
 	}
@@ -2317,5 +2324,16 @@ func toClientReservation(
 		TxId:          txid,
 		Vout:          vout,
 		Expiry:        res.Expiry,
+	}
+}
+
+// marshalFixedpoint marshals a fixed point from the tap rfqmath package to the
+// looprpc package.
+func marshalFixedPoint(bigIntFixedPoint *rfqmath.BigIntFixedPoint,
+) *looprpc.FixedPoint {
+
+	return &looprpc.FixedPoint{
+		Coefficient: bigIntFixedPoint.Coefficient.String(),
+		Scale:       uint32(bigIntFixedPoint.Scale),
 	}
 }
