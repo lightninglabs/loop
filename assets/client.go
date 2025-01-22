@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -105,9 +106,12 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 	expiry int64, feeLimitMultiplier float64) (
 	*rfqrpc.PeerAcceptedSellQuote, error) {
 
-	feeLimit, err := lnrpc.UnmarshallAmt(
-		int64(satAmount)+int64(satAmount.MulF64(feeLimitMultiplier)), 0,
-	)
+	// paymentMaxAmt is the maximum amount we are willing to pay for the
+	// payment.
+	// E.g. on a 250k sats payment we'll multiply the sat amount by 1.2.
+	// The resulting maximum amount we're willing to pay is 300k sats.
+	// The response asset amount will be for those 300k sats.
+	paymentMaxAmt, err := getPaymentMaxAmount(satAmount, feeLimitMultiplier)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +124,7 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 				},
 			},
 			PeerPubKey:     peerPubkey,
-			PaymentMaxAmt:  uint64(feeLimit),
+			PaymentMaxAmt:  uint64(paymentMaxAmt),
 			Expiry:         uint64(expiry),
 			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
 		})
@@ -178,6 +182,28 @@ func (c *TapdClient) GetAssetName(ctx context.Context,
 	c.assetNameCache[assetIdStr] = assetName
 
 	return assetName, nil
+}
+
+// getPaymentMaxAmount returns the milisat amount we are willing to pay for the
+// payment.
+func getPaymentMaxAmount(satAmount btcutil.Amount, feeLimitMultiplier float64) (
+	lnwire.MilliSatoshi, error) {
+
+	if satAmount == 0 {
+		return 0, fmt.Errorf("satAmount cannot be zero")
+	}
+	if feeLimitMultiplier < 1 {
+		return 0, fmt.Errorf("feeLimitMultiplier must be at least 1")
+	}
+
+	// paymentMaxAmt is the maximum amount we are willing to pay for the
+	// payment.
+	// E.g. on a 250k sats payment we'll multiply the sat amount by 1.2.
+	// The resulting maximum amount we're willing to pay is 300k sats.
+	// The response asset amount will be for those 300k sats.
+	return lnrpc.UnmarshallAmt(
+		int64(satAmount.MulF64(feeLimitMultiplier)), 0,
+	)
 }
 
 func getClientConn(config *TapdConfig) (*grpc.ClientConn, error) {
