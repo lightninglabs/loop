@@ -2066,9 +2066,15 @@ message AssetRfqInfo {
     bytes prepay_rfq_id = 1;
 
     /*
-    The actual asset amt to prepay for the swap invoice.
+    The maximum asset amt we'll pay for the prepay payment. This includes the
+    max limit multiplier that was set in the request.
     */
-    uint64 prepay_asset_amt = 2;
+    uint64 max_prepay_asset_amt = 2;
+
+    /*
+    The asset to BTC conversion rate for the prepay invoice.
+    */
+    FixedPoint prepay_asset_rate = 6;
 
     /*
     The Swap RFQ ID to use to pay for the swap invoice.
@@ -2076,14 +2082,53 @@ message AssetRfqInfo {
     bytes swap_rfq_id = 3;
 
     /*
-    The actual asset amt to swap for the swap invoice.
+    The maximum asset amt we'll pay for the swap payment. This includes the
+    max limit multiplier that was set in the request.
     */
-    uint64 swap_asset_amt = 4;
+    uint64 max_swap_asset_amt = 4;
+
+    /*
+    The asset to BTC conversion rate for the swap invoice.
+    */
+    FixedPoint swap_asset_rate = 7;
 
     /*
     The name of the asset to swap.
     */
     string asset_name = 5;
+}
+
+// FixedPoint is a scaled integer representation of a fractional number.
+//
+// This type consists of two integer fields: a coefficient and a scale.
+// Using this format enables precise and consistent representation of fractional
+// numbers while avoiding floating-point data types, which are prone to
+// precision errors.
+//
+// The relationship between the fractional representation and its fixed-point
+// representation is expressed as:
+// ```
+// V = F_c / (10^F_s)
+// ```
+// where:
+//
+// * `V` is the fractional value.
+//
+// * `F_c` is the coefficient component of the fixed-point representation. It is
+//    the scaled-up fractional value represented as an integer.
+//
+// * `F_s` is the scale component. It is an integer specifying how
+//   many decimal places `F_c` should be divided by to obtain the fractional
+//   representation.
+message FixedPoint {
+    // The coefficient is the fractional value scaled-up as an integer. This
+    // integer is represented as a string as it may be too large to fit in a
+    // uint64.
+    string coefficient = 1;
+
+    // The scale is the component that determines how many decimal places
+    // the coefficient should be divided by to obtain the fractional value.
+    uint32 scale = 2;
 }
 
 message AssetLoopOutInfo {

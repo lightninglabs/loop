@@ -9,6 +9,9 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
@@ -268,8 +271,20 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 	totalFee := resp.HtlcSweepFeeSat + resp.SwapFeeSat
 
 	if resp.AssetRfqInfo != nil {
+		assetAmtSwap, err := getAssetAmt(
+			req.Amt, resp.AssetRfqInfo.SwapAssetRate,
+		)
+		if err != nil {
+			fmt.Printf("Error converting asset amount: %v\n", err)
+			return
+		}
+		exchangeRate := float64(assetAmtSwap) / float64(req.Amt)
 		fmt.Printf(assetAmtFmt, "Send off-chain:",
-			resp.AssetRfqInfo.SwapAssetAmt,
+			assetAmtSwap, resp.AssetRfqInfo.AssetName)
+		fmt.Printf(rateFmt, "Exchange rate:",
+			exchangeRate, resp.AssetRfqInfo.AssetName)
+		fmt.Printf(assetAmtFmt, "Limit Send off-chain:",
+			resp.AssetRfqInfo.MaxSwapAssetAmt,
 			resp.AssetRfqInfo.AssetName)
 	} else {
 		fmt.Printf(satAmtFmt, "Send off-chain:", req.Amt)
@@ -288,8 +303,18 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 	fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
 	fmt.Println()
 	if resp.AssetRfqInfo != nil {
+		assetAmtPrepay, err := getAssetAmt(
+			resp.PrepayAmtSat, resp.AssetRfqInfo.PrepayAssetRate,
+		)
+		if err != nil {
+			fmt.Printf("Error converting asset amount: %v\n", err)
+			return
+		}
 		fmt.Printf(assetAmtFmt, "No show penalty (prepay):",
-			resp.AssetRfqInfo.PrepayAssetAmt,
+			assetAmtPrepay,
+			resp.AssetRfqInfo.AssetName)
+		fmt.Printf(assetAmtFmt, "Limit no show penalty (prepay):",
+			resp.AssetRfqInfo.MaxPrepayAssetAmt,
 			resp.AssetRfqInfo.AssetName)
 	} else {
 		fmt.Printf(satAmtFmt, "No show penalty (prepay):",
@@ -301,4 +326,34 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 		"Publication deadline:",
 		time.Unix(int64(req.SwapPublicationDeadline), 0),
 	)
+}
+
+// getAssetAmt returns the asset amount for the given amount in satoshis and
+// the asset rate.
+func getAssetAmt(amt int64, assetRate *looprpc.FixedPoint) (
+	uint64, error) {
+
+	askAssetRate, err := unmarshalFixedPoint(assetRate)
+	if err != nil {
+		return 0, err
+	}
+
+	msatAmt := lnwire.MilliSatoshi((amt * 1000))
+
+	assetAmt := rfqmath.MilliSatoshiToUnits(msatAmt, *askAssetRate)
+
+	return assetAmt.ToUint64(), nil
+}
+
+// unmarshalFixedPoint converts an RPC FixedPoint to a BigIntFixedPoint.
+func unmarshalFixedPoint(fp *looprpc.FixedPoint) (*rfqmath.BigIntFixedPoint,
+	error) {
+
+	// convert the looprpc.FixedPoint to a rfqrpc.FixedPoint
+	rfqrpcFP := &rfqrpc.FixedPoint{
+		Coefficient: fp.Coefficient,
+		Scale:       fp.Scale,
+	}
+
+	return rfqrpc.UnmarshalFixedPoint(rfqrpcFP)
 }

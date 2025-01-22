@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -224,16 +225,23 @@ type LoopOutRfq struct {
 	// PrepayRfqId is the ID of the prepay RFQ.
 	PrepayRfqId []byte
 
-	// PrepayAssetAmt is the amount of the asset that will be used to pay
-	// for the prepay invoice.
-	PrepayAssetAmt uint64
+	// MaxPrepayAssetAmt is the maximum amount of the asset that will be
+	// used to pay for the prepay invoice.
+	MaxPrepayAssetAmt uint64
+
+	// PrepayAssetRate is the rate at which the asset is exchanged for
+	// bitcoin.
+	PrepayAssetRate *rfqmath.BigIntFixedPoint
 
 	// SwapRfqId is the ID of the swap RFQ.
 	SwapRfqId []byte
 
-	// SwapAssetAmt is the amount of the asset that will be used to pay for
-	// the swap invoice.
-	SwapAssetAmt uint64
+	// MaxSwapAssetAmt is the maximum amount of the asset that will be used
+	// to pay for the swap invoice.
+	MaxSwapAssetAmt uint64
+
+	// SwapAssetRate is the rate at which the asset is exchanged for bitcoin.
+	SwapAssetRate *rfqmath.BigIntFixedPoint
 
 	// AssetName is the human readable name of the asset.
 	AssetName string
