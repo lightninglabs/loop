@@ -269,7 +269,7 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 
 	if resp.AssetRfqInfo != nil {
 		fmt.Printf(assetAmtFmt, "Send off-chain:",
-			resp.AssetRfqInfo.SwapAssetAmt,
+			resp.AssetRfqInfo.MaxSwapAssetAmt,
 			resp.AssetRfqInfo.AssetName)
 	} else {
 		fmt.Printf(satAmtFmt, "Send off-chain:", req.Amt)
@@ -289,7 +289,7 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 	fmt.Println()
 	if resp.AssetRfqInfo != nil {
 		fmt.Printf(assetAmtFmt, "No show penalty (prepay):",
-			resp.AssetRfqInfo.PrepayAssetAmt,
+			resp.AssetRfqInfo.MaxPrepayAssetAmt,
 			resp.AssetRfqInfo.AssetName)
 	} else {
 		fmt.Printf(satAmtFmt, "No show penalty (prepay):",

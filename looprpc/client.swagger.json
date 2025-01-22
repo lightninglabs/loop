@@ -731,20 +731,20 @@
           "format": "byte",
           "description": "The Prepay RFQ ID to use to pay for the prepay invoice."
         },
-        "prepay_asset_amt": {
+        "max_prepay_asset_amt": {
           "type": "string",
           "format": "uint64",
-          "description": "The actual asset amt to prepay for the swap invoice."
+          "description": "The maximum asset amt we'll pay for the prepay payment. This includes the\nmax limit multiplier that was set in the request."
         },
         "swap_rfq_id": {
           "type": "string",
           "format": "byte",
           "description": "The Swap RFQ ID to use to pay for the swap invoice."
         },
-        "swap_asset_amt": {
+        "max_swap_asset_amt": {
           "type": "string",
           "format": "uint64",
-          "description": "The actual asset amt to swap for the swap invoice."
+          "description": "The maximum asset amt we'll pay for the swap payment. This includes the\nmax limit multiplier that was set in the request."
         },
         "asset_name": {
           "type": "string",

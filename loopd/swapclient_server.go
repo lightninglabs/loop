@@ -802,11 +802,11 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 
 	if quote.LoopOutRfq != nil {
 		response.AssetRfqInfo = &looprpc.AssetRfqInfo{
-			PrepayRfqId:    quote.LoopOutRfq.PrepayRfqId,
-			PrepayAssetAmt: quote.LoopOutRfq.PrepayAssetAmt,
-			SwapRfqId:      quote.LoopOutRfq.SwapRfqId,
-			SwapAssetAmt:   quote.LoopOutRfq.SwapAssetAmt,
-			AssetName:      quote.LoopOutRfq.AssetName,
+			PrepayRfqId:       quote.LoopOutRfq.PrepayRfqId,
+			MaxPrepayAssetAmt: quote.LoopOutRfq.MaxPrepayAssetAmt,
+			SwapRfqId:       quote.LoopOutRfq.SwapRfqId,
+			MaxSwapAssetAmt: quote.LoopOutRfq.MaxSwapAssetAmt,
+			AssetName: quote.LoopOutRfq.AssetName,
 		}
 	}
 

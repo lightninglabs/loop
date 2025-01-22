@@ -703,11 +703,11 @@ func (s *Client) LoopOutQuote(ctx context.Context,
 		}
 
 		loopOutQuote.LoopOutRfq = &LoopOutRfq{
-			PrepayRfqId:    prepayRfq.Id,
-			PrepayAssetAmt: prepayRfq.AssetAmount,
-			SwapRfqId:      swapRfq.Id,
-			SwapAssetAmt:   swapRfq.AssetAmount,
-			AssetName:      assetName,
+			PrepayRfqId:       prepayRfq.Id,
+			MaxPrepayAssetAmt: prepayRfq.AssetAmount,
+			SwapRfqId:         swapRfq.Id,
+			MaxSwapAssetAmt:   swapRfq.AssetAmount,
+			AssetName:         assetName,
 		}
 	}
 

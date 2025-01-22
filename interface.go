@@ -224,16 +224,16 @@ type LoopOutRfq struct {
 	// PrepayRfqId is the ID of the prepay RFQ.
 	PrepayRfqId []byte
 
-	// PrepayAssetAmt is the amount of the asset that will be used to pay
-	// for the prepay invoice.
-	PrepayAssetAmt uint64
+	// MaxPrepayAssetAmt is the maximum amount of the asset that will be
+	// used to pay for the prepay invoice.
+	MaxPrepayAssetAmt uint64
 
 	// SwapRfqId is the ID of the swap RFQ.
 	SwapRfqId []byte
 
-	// SwapAssetAmt is the amount of the asset that will be used to pay for
-	// the swap invoice.
-	SwapAssetAmt uint64
+	// MaxSwapAssetAmt is the maximum amount of the asset that will be used
+	// to pay for the swap invoice.
+	MaxSwapAssetAmt uint64
 
 	// AssetName is the human readable name of the asset.
 	AssetName string
