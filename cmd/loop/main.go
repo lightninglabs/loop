@@ -103,6 +103,13 @@ const (
 	//      Amount:                                    50 USD
 	assetAmtFmt = "%-36s %12d %s\n"
 
+	// rateFmt formats an exchange rate into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Exchange rate:", rate, "USD")
+	// prints out as,
+	//      Exchange rate:                            0.0002 USD/SAT
+	rateFmt = "%-36s %12.4f %s/SAT\n"
+
 	// blkFmt formats the number of blocks into a one line string, intended
 	// to prettify the terminal output. For Instance,
 	// 	fmt.Printf(f, "Conf target", target)
