@@ -17,7 +17,7 @@ type Querier interface {
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	DropBatch(ctx context.Context, id int32) error
-	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	FetchLiquidityParams(ctx context.Context) ([]LiquidityParam, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -64,7 +64,7 @@ type Querier interface {
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
-	UpsertLiquidityParams(ctx context.Context, params []byte) error
+	UpsertLiquidityParams(ctx context.Context, arg UpsertLiquidityParamsParams) error
 	UpsertSweep(ctx context.Context, arg UpsertSweepParams) error
 }
 

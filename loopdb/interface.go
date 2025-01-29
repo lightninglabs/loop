@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -61,14 +62,15 @@ type SwapStore interface {
 	//
 	// NOTE: it's the caller's responsibility to encode the param. Atm,
 	// it's encoding using the proto package's `Marshal` method.
-	PutLiquidityParams(ctx context.Context, params []byte) error
+	PutLiquidityParams(ctx context.Context, assetId string,
+		params []byte) error
 
 	// FetchLiquidityParams reads the serialized `manager.Parameters` bytes
 	// from the bucket.
 	//
 	// NOTE: it's the caller's responsibility to decode the param. Atm,
 	// it's decoding using the proto package's `Unmarshal` method.
-	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	FetchLiquidityParams(ctx context.Context) ([]sqlc.LiquidityParam, error)
 
 	// BatchUpdateLoopOutSwapCosts updates the swap costs for a batch of
 	// loop out swaps.

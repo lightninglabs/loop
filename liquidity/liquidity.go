@@ -46,6 +46,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/clock"
@@ -229,13 +230,15 @@ type Config struct {
 	//
 	// NOTE: the params are encoded using `proto.Marshal` over an RPC
 	// request.
-	PutLiquidityParams func(ctx context.Context, params []byte) error
+	PutLiquidityParams func(ctx context.Context, assetId string,
+		params []byte) error
 
 	// FetchLiquidityParams reads the serialized `Parameters` from db.
 	//
 	// NOTE: the params are decoded using `proto.Unmarshal` over a
 	// serialized RPC request.
-	FetchLiquidityParams func(ctx context.Context) ([]byte, error)
+	FetchLiquidityParams func(ctx context.Context) ([]sqlc.LiquidityParam,
+		error)
 }
 
 // Manager contains a set of desired liquidity rules for our channel
@@ -392,7 +395,8 @@ func (m *Manager) saveParams(ctx context.Context, req proto.Message) error {
 	}
 
 	// Save the params on disk.
-	if err := m.cfg.PutLiquidityParams(ctx, paramsBytes); err != nil {
+	err = m.cfg.PutLiquidityParams(ctx, swap.DefaultBtcAssetID, paramsBytes)
+	if err != nil {
 		return fmt.Errorf("failed to save params: %v", err)
 	}
 
@@ -404,19 +408,24 @@ func (m *Manager) saveParams(ctx context.Context, req proto.Message) error {
 func (m *Manager) loadParams(ctx context.Context) (
 	*clientrpc.LiquidityParameters, error) {
 
-	paramsBytes, err := m.cfg.FetchLiquidityParams(ctx)
+	params, err := m.cfg.FetchLiquidityParams(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read params: %v", err)
 	}
 
 	// Return early if there's nothing saved.
-	if paramsBytes == nil {
+	if params == nil {
 		return nil, nil
+	}
+
+	if len(params) != 1 {
+		return nil, fmt.Errorf("expected 1 param, got %v", len(params))
 	}
 
 	// Unmarshal the params.
 	req := &clientrpc.LiquidityParameters{}
-	err = proto.Unmarshal(paramsBytes, req)
+
+	err = proto.Unmarshal(params[0].Params, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal params: %v", err)
 	}

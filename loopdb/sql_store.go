@@ -342,10 +342,15 @@ func (db *BaseDB) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 //
 // NOTE: it's the caller's responsibility to encode the param. Atm,
 // it's encoding using the proto package's `Marshal` method.
-func (db *BaseDB) PutLiquidityParams(ctx context.Context,
+func (db *BaseDB) PutLiquidityParams(ctx context.Context, assetId string,
 	params []byte) error {
 
-	err := db.Queries.UpsertLiquidityParams(ctx, params)
+	err := db.Queries.UpsertLiquidityParams(
+		ctx, sqlc.UpsertLiquidityParamsParams{
+			AssetID: assetId,
+			Params:  params,
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -358,10 +363,10 @@ func (db *BaseDB) PutLiquidityParams(ctx context.Context,
 //
 // NOTE: it's the caller's responsibility to decode the param. Atm,
 // it's decoding using the proto package's `Unmarshal` method.
-func (db *BaseDB) FetchLiquidityParams(ctx context.Context) ([]byte,
-	error) {
+func (db *BaseDB) FetchLiquidityParams(ctx context.Context) (
+	[]sqlc.LiquidityParam, error) {
 
-	var params []byte
+	var params []sqlc.LiquidityParam
 	params, err := db.Queries.FetchLiquidityParams(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return params, nil

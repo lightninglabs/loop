@@ -9,27 +9,48 @@ import (
 	"context"
 )
 
-const fetchLiquidityParams = `-- name: FetchLiquidityParams :one
-SELECT params FROM liquidity_params WHERE id = 1
+const fetchLiquidityParams = `-- name: FetchLiquidityParams :many
+SELECT asset_id, params FROM liquidity_params
 `
 
-func (q *Queries) FetchLiquidityParams(ctx context.Context) ([]byte, error) {
-	row := q.db.QueryRowContext(ctx, fetchLiquidityParams)
-	var params []byte
-	err := row.Scan(&params)
-	return params, err
+func (q *Queries) FetchLiquidityParams(ctx context.Context) ([]LiquidityParam, error) {
+	rows, err := q.db.QueryContext(ctx, fetchLiquidityParams)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiquidityParam
+	for rows.Next() {
+		var i LiquidityParam
+		if err := rows.Scan(&i.AssetID, &i.Params); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertLiquidityParams = `-- name: UpsertLiquidityParams :exec
 INSERT INTO liquidity_params (
-    id, params
+    asset_id, params
 ) VALUES (
-    1, $1
-) ON CONFLICT (id) DO UPDATE SET
-    params = excluded.params
+    $1, $2
+) ON CONFLICT (asset_id) DO UPDATE SET
+    params = $2
 `
 
-func (q *Queries) UpsertLiquidityParams(ctx context.Context, params []byte) error {
-	_, err := q.db.ExecContext(ctx, upsertLiquidityParams, params)
+type UpsertLiquidityParamsParams struct {
+	AssetID string
+	Params  []byte
+}
+
+func (q *Queries) UpsertLiquidityParams(ctx context.Context, arg UpsertLiquidityParamsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertLiquidityParams, arg.AssetID, arg.Params)
 	return err
 }

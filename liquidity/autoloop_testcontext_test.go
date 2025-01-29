@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -188,10 +189,14 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		MinimumConfirmations: loop.DefaultSweepConfTarget,
 		Lnd:                  &testCtx.lnd.LndServices,
 		Clock:                testCtx.testClock,
-		PutLiquidityParams: func(_ context.Context, _ []byte) error {
+		PutLiquidityParams: func(_ context.Context, _ string,
+			_ []byte) error {
+
 			return nil
 		},
-		FetchLiquidityParams: func(context.Context) ([]byte, error) {
+		FetchLiquidityParams: func(context.Context) (
+			[]sqlc.LiquidityParam, error) {
+
 			return nil, nil
 		},
 	}
