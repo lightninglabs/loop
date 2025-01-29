@@ -7,6 +7,7 @@ import (
 
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 )
 
@@ -145,15 +146,15 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 func (m *Manager) Run(ctx context.Context) error {
 	// Initially we want to immediately try to connect to the server.
 	var (
-		waitTime     time.Duration
-		backoff      time.Duration
-		connAttempts int
+		waitTime time.Duration
+		backoff  time.Duration
+		attempts int
 	)
 
 	// Start the notification runloop.
 	for {
 		// Increase the wait time for the next iteration.
-		backoff = waitTime + time.Duration(connAttempts)*time.Second
+		backoff = waitTime + time.Duration(attempts)*time.Second
 		waitTime = 0
 		timer := time.NewTimer(backoff)
 
@@ -169,7 +170,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		// the FetchL402 method. As a client might not have outbound
 		// capacity yet, we'll retry until we get a valid response.
 		if !m.hasL402 {
-			_, err := m.cfg.CurrentToken()
+			token, err := m.cfg.CurrentToken()
 			if err != nil {
 				// We only log the error if it's not the case
 				// that we don't have a token yet to avoid
@@ -180,6 +181,17 @@ func (m *Manager) Run(ctx context.Context) error {
 				}
 				continue
 			}
+
+			// If the preimage is empty, we don't have a valid L402
+			// yet so we'll continue to retry with the incremental
+			// backoff.
+			emptyPreimage := lntypes.Preimage{}
+			if token.Preimage == emptyPreimage {
+				attempts++
+				continue
+			}
+
+			attempts = 0
 			m.hasL402 = true
 		}
 
@@ -203,12 +215,12 @@ func (m *Manager) Run(ctx context.Context) error {
 			// attempts to zero if we were really connected for a
 			// considerable amount of time (1 minute).
 			waitTime = time.Second * 10
-			connAttempts = 0
+			attempts = 0
 		} else {
 			// We either failed to connect or the stream
 			// disconnected immediately, so we just increase the
 			// backoff.
-			connAttempts++
+			attempts++
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -111,7 +112,9 @@ func TestManager_ReservationNotification(t *testing.T) {
 		Client: mockClient,
 		CurrentToken: func() (*l402.Token, error) {
 			// Simulate successful fetching of L402
-			return nil, nil
+			return &l402.Token{
+				Preimage: lntypes.Preimage{1, 2, 3},
+			}, nil
 		},
 	})
 
@@ -208,7 +211,10 @@ func TestManager_Backoff(t *testing.T) {
 	mgr := NewManager(&Config{
 		Client: mockClient,
 		CurrentToken: func() (*l402.Token, error) {
-			return &l402.Token{}, nil
+			// Simulate successful fetching of L402
+			return &l402.Token{
+				Preimage: lntypes.Preimage{1, 2, 3},
+			}, nil
 		},
 	})
 
@@ -233,7 +239,7 @@ func TestManager_Backoff(t *testing.T) {
 	//   - Attempt #3: ~3 seconds after that etc.
 	time.Sleep(5 * time.Second)
 
-	// Cancel the contedt to stop the manager.
+	// Cancel the context to stop the manager.
 	cancel()
 	wg.Wait()
 
@@ -297,7 +303,10 @@ func TestManager_MinAliveConnTime(t *testing.T) {
 		Client:           mockClient,
 		MinAliveConnTime: minAlive,
 		CurrentToken: func() (*l402.Token, error) {
-			return &l402.Token{}, nil
+			// Simulate successful fetching of L402
+			return &l402.Token{
+				Preimage: lntypes.Preimage{1, 2, 3},
+			}, nil
 		},
 	})
 
@@ -343,5 +352,80 @@ func TestManager_MinAliveConnTime(t *testing.T) {
 		mockClient.attemptTimes[1].Sub(mockClient.attemptTimes[0]),
 		float64(tolerance),
 		"Second attempt should occur ~2s after the first",
+	)
+}
+
+// TestManager_Backoff_Pending_Token verifies that the Manager backs off when
+// the token is pending.
+func TestManager_Backoff_Pending_Token(t *testing.T) {
+	t.Parallel()
+
+	// We'll tolerate a bit of jitter in the timing checks.
+	const tolerance = 300 * time.Millisecond
+
+	recvChan := make(chan *swapserverrpc.SubscribeNotificationsResponse)
+	recvErrChan := make(chan error)
+
+	mockStream := &mockSubscribeNotificationsClient{
+		recvChan:    recvChan,
+		recvErrChan: recvErrChan,
+	}
+
+	// Create a new mock client that will fail to subscribe.
+	mockClient := &mockNotificationsClient{
+		mockStream: mockStream,
+		// subscribeErr stays nil => would succeed on each call.
+	}
+
+	var tokenCalls []time.Time
+	// Manager with a successful CurrentToken so that it always tries
+	// to subscribe.
+	mgr := NewManager(&Config{
+		Client: mockClient,
+		CurrentToken: func() (*l402.Token, error) {
+			tokenCalls = append(tokenCalls, time.Now())
+			if len(tokenCalls) < 3 {
+				// Simulate a pending token.
+				return &l402.Token{}, nil
+			}
+
+			// Simulate successful fetching of L402
+			return &l402.Token{
+				Preimage: lntypes.Preimage{1, 2, 3},
+			}, nil
+		},
+	})
+
+	// Run the manager in a background goroutine.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// We ignore the returned error because the Manager returns
+		// nil on context cancel.
+		_ = mgr.Run(ctx)
+	}()
+
+	// Wait long enough to see at least 3 token calls, so we can see that
+	// we'll indeed backoff when the token is pending.
+	time.Sleep(5 * time.Second)
+
+	// Signal EOF so the subscription stops.
+	close(recvChan)
+
+	// Cancel the context to stop the manager.
+	cancel()
+	wg.Wait()
+
+	// Expect exactly 3 token calls.
+	require.Equal(t, 3, len(tokenCalls))
+
+	require.InDeltaf(
+		t, 3*time.Second, tokenCalls[2].Sub(tokenCalls[0]),
+		float64(tolerance),
+		"Expected to backoff for at ~3 seconds due to pending token",
 	)
 }
