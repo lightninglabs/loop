@@ -70,7 +70,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/looprpcLiquidityParameters"
+              "$ref": "#/definitions/looprpcGetLiquidityParamsResponse"
             }
           },
           "default": {
@@ -956,6 +956,18 @@
         }
       }
     },
+    "looprpcGetLiquidityParamsResponse": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/looprpcLiquidityParameters"
+          },
+          "description": "A map of asset ids to liquidity rules that describe the desired liquidity\nbalance."
+        }
+      }
+    },
     "looprpcHopHint": {
       "type": "object",
       "properties": {
@@ -1713,7 +1725,10 @@
       "properties": {
         "parameters": {
           "$ref": "#/definitions/looprpcLiquidityParameters",
-          "description": "Parameters is the desired new set of parameters for the liquidity management\nsubsystem. Note that the current set of parameters will be completely\noverwritten by the parameters provided (if they are valid), so the full set\nof parameters should be provided for each call."
+          "description": "Parameters is the desired new set of parameters for the liquidity management\nsubsystem for the given asset id .Note that the current set of parameters\nwill be completely overwritten by the parameters provided (if they are\nvalid), so the full set of parameters should be provided for each call."
+        },
+        "asset_id": {
+          "type": "string"
         }
       }
     },

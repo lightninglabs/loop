@@ -79,7 +79,7 @@ type SwapClientClient interface {
 	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	// is currently configured with. This may be nil if nothing is configured.
 	// [EXPERIMENTAL]: endpoint is subject to change.
-	GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error)
+	GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*GetLiquidityParamsResponse, error)
 	// loop: `setparams`
 	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
 	// manager. Note that the full set of parameters must be provided, because
@@ -298,8 +298,8 @@ func (c *swapClientClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts
 	return out, nil
 }
 
-func (c *swapClientClient) GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error) {
-	out := new(LiquidityParameters)
+func (c *swapClientClient) GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*GetLiquidityParamsResponse, error) {
+	out := new(GetLiquidityParamsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLiquidityParams", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -489,7 +489,7 @@ type SwapClientServer interface {
 	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	// is currently configured with. This may be nil if nothing is configured.
 	// [EXPERIMENTAL]: endpoint is subject to change.
-	GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error)
+	GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*GetLiquidityParamsResponse, error)
 	// loop: `setparams`
 	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
 	// manager. Note that the full set of parameters must be provided, because
@@ -592,7 +592,7 @@ func (UnimplementedSwapClientServer) FetchL402Token(context.Context, *FetchL402T
 func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
 }
-func (UnimplementedSwapClientServer) GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error) {
+func (UnimplementedSwapClientServer) GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*GetLiquidityParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLiquidityParams not implemented")
 }
 func (UnimplementedSwapClientServer) SetLiquidityParams(context.Context, *SetLiquidityParamsRequest) (*SetLiquidityParamsResponse, error) {
