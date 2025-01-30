@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -242,7 +243,7 @@ func (s *StoreMock) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 // bucket.
 //
 // NOTE: Part of the SwapStore interface.
-func (s *StoreMock) PutLiquidityParams(ctx context.Context,
+func (s *StoreMock) PutLiquidityParams(ctx context.Context, assetId string,
 	params []byte) error {
 
 	return nil
@@ -252,7 +253,9 @@ func (s *StoreMock) PutLiquidityParams(ctx context.Context,
 // the bucket.
 //
 // NOTE: Part of the SwapStore interface.
-func (s *StoreMock) FetchLiquidityParams(ctx context.Context) ([]byte, error) {
+func (s *StoreMock) FetchLiquidityParams(ctx context.Context) (
+	[]sqlc.LiquidityParam, error) {
+
 	return nil, nil
 }
 

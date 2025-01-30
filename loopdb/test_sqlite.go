@@ -1,5 +1,5 @@
-//go:build !test_db_postgres
-// +build !test_db_postgres
+//go:build test_db_postgres
+// +build test_db_postgres
 
 package loopdb
 
