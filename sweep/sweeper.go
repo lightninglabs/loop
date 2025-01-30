@@ -18,9 +18,21 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
+// FeeRateProvider is a generic provider of fee rate by confirmation target.
+type FeeRateProvider interface {
+	// EstimateFeeRate returns the fee rate in sat/kw for a transaction to
+	// be confirmed in the given number of blocks.
+	EstimateFeeRate(ctx context.Context, confTarget int32) (
+		chainfee.SatPerKWeight, error)
+}
+
 // Sweeper creates htlc sweep txes.
 type Sweeper struct {
 	Lnd *lndclient.LndServices
+
+	// FeeRateProvider if set will be used to estimate the fee rate for the
+	// sweep transaction.
+	FeeRateProvider FeeRateProvider
 }
 
 // CreateUnsignedTaprootKeySpendSweepTx creates a taproot htlc sweep tx using
@@ -200,8 +212,10 @@ func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 	destAddr btcutil.Address, sweepConfTarget int32, label string) (
 	btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit, error) {
 
-	// Get fee estimate from lnd.
-	feeRate, err := s.Lnd.WalletKit.EstimateFeeRate(ctx, sweepConfTarget)
+	// Get fee estimate from the fee rate provider.
+	feeRate, err := s.getFeeRateProvider().EstimateFeeRate(
+		ctx, sweepConfTarget,
+	)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("estimate fee: %v", err)
 	}
@@ -260,4 +274,15 @@ func AddOutputEstimate(weightEstimate *input.TxWeightEstimator,
 	}
 
 	return nil
+}
+
+// getFeeRateProvider returns the fee rate provider to use for the sweeper. If
+// the sweeper has a custom fee rate provider set, it will be used, otherwise
+// the underlying node's walletkit will be used.
+func (s *Sweeper) getFeeRateProvider() FeeRateProvider {
+	if s.FeeRateProvider != nil {
+		return s.FeeRateProvider
+	}
+
+	return s.Lnd.WalletKit
 }
