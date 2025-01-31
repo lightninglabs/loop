@@ -3208,9 +3208,11 @@ func testWithMixedBatch(t *testing.T, store testStore,
 	}
 
 	// Use mixed batches.
-	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		muSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepFetcher, WithMixedBatch())
+		batcherStore, sweepFetcher,
+	)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -3385,9 +3387,11 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 	}
 
 	// Use mixed batches.
-	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		muSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepFetcher, WithMixedBatch())
+		batcherStore, sweepFetcher,
+	)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
