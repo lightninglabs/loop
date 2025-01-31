@@ -1623,6 +1623,15 @@ message WithdrawDepositsRequest {
     The fee rate in sat/vbyte to use for the withdrawal transaction.
     */
     int64 sat_per_vbyte = 4;
+
+    /*
+    The amount in satoshis that should be withdrawn from the selected deposits.
+    If there is change, it will be sent back to the static address. The fees for
+    the transaction are taken from the change output. If the change is below
+    the dust limit, there won't be a change output and the dust goes towards
+    fees.
+    */
+    int64 amount = 5;
 }
 
 message WithdrawDepositsResponse {
