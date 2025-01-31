@@ -301,6 +301,248 @@ func (*ServerOpenReservationResponse) Descriptor() ([]byte, []int) {
 	return file_reservation_proto_rawDescGZIP(), []int{3}
 }
 
+// RequestReservationRequest is a request sent from the client to the server to
+// request a new reservation UTXO.
+type RequestReservationRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// value is the value of the reservation in satoshis.
+	Value uint64 `protobuf:"varint,1,opt,name=value,proto3" json:"value,omitempty"`
+	// expiry is the relative expiry of the reservation.
+	Expiry uint32 `protobuf:"varint,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// client_key is the public key of the client.
+	ClientKey     []byte `protobuf:"bytes,3,opt,name=client_key,json=clientKey,proto3" json:"client_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestReservationRequest) Reset() {
+	*x = RequestReservationRequest{}
+	mi := &file_reservation_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestReservationRequest) ProtoMessage() {}
+
+func (x *RequestReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_reservation_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestReservationRequest.ProtoReflect.Descriptor instead.
+func (*RequestReservationRequest) Descriptor() ([]byte, []int) {
+	return file_reservation_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RequestReservationRequest) GetValue() uint64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+func (x *RequestReservationRequest) GetExpiry() uint32 {
+	if x != nil {
+		return x.Expiry
+	}
+	return 0
+}
+
+func (x *RequestReservationRequest) GetClientKey() []byte {
+	if x != nil {
+		return x.ClientKey
+	}
+	return nil
+}
+
+// RequestReservationResponse is a response sent from the server to the client
+// to confirm a reservation request.
+type RequestReservationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// reservation_id is the id of the reservation.
+	ReservationId []byte `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	// server_key is the public key of the server.
+	ServerKey []byte `protobuf:"bytes,2,opt,name=server_key,json=serverKey,proto3" json:"server_key,omitempty"`
+	// invoice is the invoice for the reservation that the client should pay.
+	Invoice string `protobuf:"bytes,3,opt,name=invoice,proto3" json:"invoice,omitempty"`
+	// expiry is the absolute expiry of the reservation.
+	Expiry        uint32 `protobuf:"varint,4,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestReservationResponse) Reset() {
+	*x = RequestReservationResponse{}
+	mi := &file_reservation_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestReservationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestReservationResponse) ProtoMessage() {}
+
+func (x *RequestReservationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_reservation_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestReservationResponse.ProtoReflect.Descriptor instead.
+func (*RequestReservationResponse) Descriptor() ([]byte, []int) {
+	return file_reservation_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RequestReservationResponse) GetReservationId() []byte {
+	if x != nil {
+		return x.ReservationId
+	}
+	return nil
+}
+
+func (x *RequestReservationResponse) GetServerKey() []byte {
+	if x != nil {
+		return x.ServerKey
+	}
+	return nil
+}
+
+func (x *RequestReservationResponse) GetInvoice() string {
+	if x != nil {
+		return x.Invoice
+	}
+	return ""
+}
+
+func (x *RequestReservationResponse) GetExpiry() uint32 {
+	if x != nil {
+		return x.Expiry
+	}
+	return 0
+}
+
+// QuoteReservationRequest is a request sent from the client to the server to
+// request a quote for a reservation UTXO.
+type QuoteReservationRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// value is the value of the reservation in satoshis.
+	Value uint64 `protobuf:"varint,1,opt,name=value,proto3" json:"value,omitempty"`
+	// expiry is the relative expiry of the reservation.
+	Expiry        uint32 `protobuf:"varint,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QuoteReservationRequest) Reset() {
+	*x = QuoteReservationRequest{}
+	mi := &file_reservation_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QuoteReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuoteReservationRequest) ProtoMessage() {}
+
+func (x *QuoteReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_reservation_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QuoteReservationRequest.ProtoReflect.Descriptor instead.
+func (*QuoteReservationRequest) Descriptor() ([]byte, []int) {
+	return file_reservation_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *QuoteReservationRequest) GetValue() uint64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+func (x *QuoteReservationRequest) GetExpiry() uint32 {
+	if x != nil {
+		return x.Expiry
+	}
+	return 0
+}
+
+// QuoteReservationResponse is a response sent from the server to the client to
+// confirm a reservation quote request.
+type QuoteReservationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// prepay_cost is the cost of the prepay.
+	PrepayCost    uint64 `protobuf:"varint,1,opt,name=prepay_cost,json=prepayCost,proto3" json:"prepay_cost,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QuoteReservationResponse) Reset() {
+	*x = QuoteReservationResponse{}
+	mi := &file_reservation_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QuoteReservationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuoteReservationResponse) ProtoMessage() {}
+
+func (x *QuoteReservationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_reservation_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QuoteReservationResponse.ProtoReflect.Descriptor instead.
+func (*QuoteReservationResponse) Descriptor() ([]byte, []int) {
+	return file_reservation_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *QuoteReservationResponse) GetPrepayCost() uint64 {
+	if x != nil {
+		return x.PrepayCost
+	}
+	return 0
+}
+
 var File_reservation_proto protoreflect.FileDescriptor
 
 const file_reservation_proto_rawDesc = "" +
@@ -319,13 +561,32 @@ const file_reservation_proto_rawDesc = "" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x12\x1d\n" +
 	"\n" +
 	"client_key\x18\x02 \x01(\fR\tclientKey\"\x1f\n" +
-	"\x1dServerOpenReservationResponse*Q\n" +
+	"\x1dServerOpenReservationResponse\"h\n" +
+	"\x19RequestReservationRequest\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\x04R\x05value\x12\x16\n" +
+	"\x06expiry\x18\x02 \x01(\rR\x06expiry\x12\x1d\n" +
+	"\n" +
+	"client_key\x18\x03 \x01(\fR\tclientKey\"\x94\x01\n" +
+	"\x1aRequestReservationResponse\x12%\n" +
+	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x12\x1d\n" +
+	"\n" +
+	"server_key\x18\x02 \x01(\fR\tserverKey\x12\x18\n" +
+	"\ainvoice\x18\x03 \x01(\tR\ainvoice\x12\x16\n" +
+	"\x06expiry\x18\x04 \x01(\rR\x06expiry\"G\n" +
+	"\x17QuoteReservationRequest\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\x04R\x05value\x12\x16\n" +
+	"\x06expiry\x18\x02 \x01(\rR\x06expiry\";\n" +
+	"\x18QuoteReservationResponse\x12\x1f\n" +
+	"\vprepay_cost\x18\x01 \x01(\x04R\n" +
+	"prepayCost*Q\n" +
 	"\x1aReservationProtocolVersion\x12\x14\n" +
 	"\x10RESERVATION_NONE\x10\x00\x12\x1d\n" +
-	"\x19RESERVATION_SERVER_NOTIFY\x10\x012\xef\x01\n" +
+	"\x19RESERVATION_SERVER_NOTIFY\x10\x012\xa7\x03\n" +
 	"\x12ReservationService\x12w\n" +
 	"\x1dReservationNotificationStream\x12'.looprpc.ReservationNotificationRequest\x1a&.looprpc.ServerReservationNotification\"\x03\x88\x02\x010\x01\x12`\n" +
-	"\x0fOpenReservation\x12%.looprpc.ServerOpenReservationRequest\x1a&.looprpc.ServerOpenReservationResponseB-Z+github.com/lightninglabs/loop/swapserverrpcb\x06proto3"
+	"\x0fOpenReservation\x12%.looprpc.ServerOpenReservationRequest\x1a&.looprpc.ServerOpenReservationResponse\x12]\n" +
+	"\x12RequestReservation\x12\".looprpc.RequestReservationRequest\x1a#.looprpc.RequestReservationResponse\x12W\n" +
+	"\x10QuoteReservation\x12 .looprpc.QuoteReservationRequest\x1a!.looprpc.QuoteReservationResponseB-Z+github.com/lightninglabs/loop/swapserverrpcb\x06proto3"
 
 var (
 	file_reservation_proto_rawDescOnce sync.Once
@@ -340,23 +601,31 @@ func file_reservation_proto_rawDescGZIP() []byte {
 }
 
 var file_reservation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_reservation_proto_goTypes = []any{
 	(ReservationProtocolVersion)(0),        // 0: looprpc.ReservationProtocolVersion
 	(*ReservationNotificationRequest)(nil), // 1: looprpc.ReservationNotificationRequest
 	(*ServerReservationNotification)(nil),  // 2: looprpc.ServerReservationNotification
 	(*ServerOpenReservationRequest)(nil),   // 3: looprpc.ServerOpenReservationRequest
 	(*ServerOpenReservationResponse)(nil),  // 4: looprpc.ServerOpenReservationResponse
+	(*RequestReservationRequest)(nil),      // 5: looprpc.RequestReservationRequest
+	(*RequestReservationResponse)(nil),     // 6: looprpc.RequestReservationResponse
+	(*QuoteReservationRequest)(nil),        // 7: looprpc.QuoteReservationRequest
+	(*QuoteReservationResponse)(nil),       // 8: looprpc.QuoteReservationResponse
 }
 var file_reservation_proto_depIdxs = []int32{
 	0, // 0: looprpc.ReservationNotificationRequest.protocol_version:type_name -> looprpc.ReservationProtocolVersion
 	0, // 1: looprpc.ServerReservationNotification.protocol_version:type_name -> looprpc.ReservationProtocolVersion
 	1, // 2: looprpc.ReservationService.ReservationNotificationStream:input_type -> looprpc.ReservationNotificationRequest
 	3, // 3: looprpc.ReservationService.OpenReservation:input_type -> looprpc.ServerOpenReservationRequest
-	2, // 4: looprpc.ReservationService.ReservationNotificationStream:output_type -> looprpc.ServerReservationNotification
-	4, // 5: looprpc.ReservationService.OpenReservation:output_type -> looprpc.ServerOpenReservationResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	5, // 4: looprpc.ReservationService.RequestReservation:input_type -> looprpc.RequestReservationRequest
+	7, // 5: looprpc.ReservationService.QuoteReservation:input_type -> looprpc.QuoteReservationRequest
+	2, // 6: looprpc.ReservationService.ReservationNotificationStream:output_type -> looprpc.ServerReservationNotification
+	4, // 7: looprpc.ReservationService.OpenReservation:output_type -> looprpc.ServerOpenReservationResponse
+	6, // 8: looprpc.ReservationService.RequestReservation:output_type -> looprpc.RequestReservationResponse
+	8, // 9: looprpc.ReservationService.QuoteReservation:output_type -> looprpc.QuoteReservationResponse
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -373,7 +642,7 @@ func file_reservation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_reservation_proto_rawDesc), len(file_reservation_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
