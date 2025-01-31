@@ -556,6 +556,9 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	localTotal := btcutil.Amount(0)
 	for _, channel := range channels {
+		if channelIsCustom(channel) {
+			continue
+		}
 		localTotal += channel.LocalBalance
 	}
 
@@ -781,6 +784,10 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	channelPeers := make(map[uint64]route.Vertex)
 	peerChannels := make(map[route.Vertex]*balances)
 	for _, channel := range channels {
+		if channelIsCustom(channel) {
+			continue
+		}
+
 		channelPeers[channel.ChannelID] = channel.PubKeyBytes
 
 		bal, ok := peerChannels[channel.PubKeyBytes]
@@ -834,6 +841,14 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		balance := newBalances(channel)
 
 		channelID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+
+		if channelIsCustom(channel) {
+			resp.DisqualifiedChans[channelID] =
+				ReasonCustomChannelData
+
+			continue
+		}
+
 		rule, ok := m.params.ChannelRules[channelID]
 		if !ok {
 			continue
@@ -1424,6 +1439,10 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 	// Check each channel, since channels are already sorted we return the
 	// first channel that passes all checks.
 	for _, channel := range channels {
+		if channelIsCustom(channel) {
+			continue
+		}
+
 		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 
 		if !channel.Active {
@@ -1547,4 +1566,13 @@ func satPerKwToSatPerVByte(satPerKw chainfee.SatPerKWeight) int64 {
 // and returns the amount that the ppm represents.
 func ppmToSat(amount btcutil.Amount, ppm uint64) btcutil.Amount {
 	return btcutil.Amount(uint64(amount) * ppm / FeeBase)
+}
+
+// channelIsCustom returns true if the channel has custom channel data.
+// we'll want to ignore these channels for autoloop recommendations.
+func channelIsCustom(channel lndclient.ChannelInfo) bool {
+	// If the channel has custom channel data, the channel is a
+	// non-standard channel, such as an asset channel and we
+	// don't want to consider it for swaps.
+	return channel.CustomChannelData != nil
 }
