@@ -1287,9 +1287,19 @@ func TestEasyAutoloop(t *testing.T) {
 		Capacity:      100000,
 	}
 
+	easyChannelCustom := lndclient.ChannelInfo{
+		Active:            true,
+		ChannelID:         chanID1.ToUint64(),
+		PubKeyBytes:       peer1,
+		LocalBalance:      50000,
+		RemoteBalance:     0,
+		Capacity:          100000,
+		CustomChannelData: []byte("foo"),
+	}
+
 	var (
 		channels = []lndclient.ChannelInfo{
-			easyChannel1, easyChannel2,
+			easyChannel1, easyChannel2, easyChannelCustom,
 		}
 
 		params = Parameters{
@@ -1361,7 +1371,7 @@ func TestEasyAutoloop(t *testing.T) {
 	// new context and restart the autolooper.
 	easyChannel1.LocalBalance -= chan1Swap.Amount
 	channels = []lndclient.ChannelInfo{
-		easyChannel1, easyChannel2,
+		easyChannel1, easyChannel2, easyChannelCustom,
 	}
 
 	// Remove the custom dest address.
@@ -1419,7 +1429,7 @@ func TestEasyAutoloop(t *testing.T) {
 	// new context and restart the autolooper.
 	easyChannel2.LocalBalance -= btcutil.Amount(amt2)
 	channels = []lndclient.ChannelInfo{
-		easyChannel1, easyChannel2,
+		easyChannel1, easyChannel2, easyChannelCustom,
 	}
 
 	c = newAutoloopTestCtx(t, params, channels, testRestrictions)
@@ -1438,7 +1448,7 @@ func TestEasyAutoloop(t *testing.T) {
 	// Restore the local balance to a higher value that will trigger a swap.
 	easyChannel2.LocalBalance = btcutil.Amount(95000)
 	channels = []lndclient.ChannelInfo{
-		easyChannel1, easyChannel2,
+		easyChannel1, easyChannel2, easyChannelCustom,
 	}
 
 	// Override the feeppm with a lower one.

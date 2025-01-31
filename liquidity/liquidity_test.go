@@ -794,6 +794,29 @@ func TestSuggestSwaps(t *testing.T) {
 				},
 			},
 		},
+		{
+
+			name: "don't consider asset channel",
+			channels: []lndclient.ChannelInfo{
+				{
+					ChannelID:         chanID1.ToUint64(),
+					PubKeyBytes:       peer1,
+					LocalBalance:      10000,
+					RemoteBalance:     0,
+					Capacity:          10000,
+					CustomChannelData: []byte("foo"),
+				},
+			},
+			rules: map[lnwire.ShortChannelID]*SwapRule{
+				chanID1: chanRule,
+			},
+			suggestions: &Suggestions{
+				DisqualifiedChans: map[lnwire.ShortChannelID]Reason{ // nolint: lll
+					chanID1: ReasonCustomChannelData,
+				},
+				DisqualifiedPeers: noPeersDisqualified,
+			},
+		},
 	}
 
 	for _, testCase := range tests {
