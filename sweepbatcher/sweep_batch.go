@@ -172,16 +172,6 @@ type batchConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
-
-	// mixedBatch instructs sweepbatcher to create mixed batches with regard
-	// to cooperativeness. Such a batch can include sweeps signed both
-	// cooperatively and non-cooperatively. If cooperative signing fails for
-	// a sweep, transaction is updated to sign that sweep non-cooperatively
-	// and another round of cooperative signing runs on the remaining
-	// sweeps. The remaining sweeps are signed in non-cooperative (more
-	// expensive) way. If the whole procedure fails for whatever reason, the
-	// batch is signed non-cooperatively (the fallback).
-	mixedBatch bool
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -821,27 +811,23 @@ func (b *batch) publish(ctx context.Context) error {
 		b.publishErrorHandler(err, errMsg, b.log)
 	}
 
-	if b.cfg.mixedBatch {
-		fee, err, signSuccess = b.publishMixedBatch(ctx)
-		if err != nil {
-			logPublishError("mixed batch publish error", err)
-		}
-	} else {
-		fee, err, signSuccess = b.publishBatchCoop(ctx)
-		if err != nil {
-			logPublishError("co-op publish error", err)
-		}
-	}
-
-	if !signSuccess {
-		fee, err = b.publishBatch(ctx)
-		if err != nil {
-			logPublishError("non-coop publish error", err)
-		}
-	}
-
+	fee, err, signSuccess = b.publishMixedBatch(ctx)
 	if err != nil {
-		return nil
+		if signSuccess {
+			logPublishError("publish error", err)
+
+			// Publishing error is expected: "insufficient fee" and
+			// "output already spent". Don't return the error here
+			// not to break the main loop of the sweep batch.
+			return nil
+		} else {
+			logPublishError("signing error", err)
+
+			// Signing error is not expected, because we have
+			// non-cooperative method of signing which should
+			// always succeed.
+			return err
+		}
 	}
 
 	b.log.Infof("published, total sweeps: %v, fees: %v", len(b.sweeps), fee)
@@ -851,167 +837,6 @@ func (b *batch) publish(ctx context.Context) error {
 	}
 
 	return b.persist(ctx)
-}
-
-// publishBatch creates and publishes the batch transaction. It will consult the
-// RBFCache to determine the fee rate to use.
-func (b *batch) publishBatch(ctx context.Context) (btcutil.Amount, error) {
-	// Create the batch transaction.
-	batchTx := wire.NewMsgTx(2)
-	batchTx.LockTime = uint32(b.currentHeight)
-
-	var (
-		batchAmt  btcutil.Amount
-		prevOuts  = make([]*wire.TxOut, 0, len(b.sweeps))
-		signDescs = make(
-			[]*lndclient.SignDescriptor, 0, len(b.sweeps),
-		)
-		sweeps       = make([]sweep, 0, len(b.sweeps))
-		fee          btcutil.Amount
-		inputCounter int
-		addrOverride bool
-	)
-
-	var weightEstimate input.TxWeightEstimator
-
-	// Add all the sweeps to the batch transaction.
-	for _, sweep := range b.sweeps {
-		if sweep.isExternalAddr {
-			addrOverride = true
-		}
-
-		batchAmt += sweep.value
-		batchTx.AddTxIn(&wire.TxIn{
-			PreviousOutPoint: sweep.outpoint,
-			Sequence:         sweep.htlc.SuccessSequence(),
-		})
-
-		err := sweep.htlcSuccessEstimator(&weightEstimate)
-		if err != nil {
-			return 0, err
-		}
-
-		// Append this sweep to an array of sweeps. This is needed to
-		// keep the order of sweeps stored, as iterating the sweeps map
-		// does not guarantee same order.
-		sweeps = append(sweeps, sweep)
-
-		// Create and store the previous outpoint for this sweep.
-		prevOuts = append(prevOuts, &wire.TxOut{
-			Value:    int64(sweep.value),
-			PkScript: sweep.htlc.PkScript,
-		})
-
-		key, err := btcec.ParsePubKey(
-			sweep.htlcKeys.ReceiverScriptKey[:],
-		)
-		if err != nil {
-			return fee, err
-		}
-
-		// Create and store the sign descriptor for this sweep.
-		signDesc := lndclient.SignDescriptor{
-			WitnessScript: sweep.htlc.SuccessScript(),
-			Output:        prevOuts[len(prevOuts)-1],
-			HashType:      sweep.htlc.SigHash(),
-			InputIndex:    inputCounter,
-			KeyDesc: keychain.KeyDescriptor{
-				PubKey: key,
-			},
-		}
-
-		inputCounter++
-
-		if sweep.htlc.Version == swap.HtlcV3 {
-			signDesc.SignMethod = input.TaprootScriptSpendSignMethod
-		}
-
-		signDescs = append(signDescs, &signDesc)
-	}
-
-	var address btcutil.Address
-
-	if addrOverride {
-		// Sanity check, there should be exactly 1 sweep in this batch.
-		if len(sweeps) != 1 {
-			return 0, fmt.Errorf("external address sweep batched " +
-				"with other sweeps")
-		}
-
-		address = sweeps[0].destAddr
-	} else {
-		var err error
-		address, err = b.getBatchDestAddr(ctx)
-		if err != nil {
-			return fee, err
-		}
-	}
-
-	batchPkScript, err := txscript.PayToAddrScript(address)
-	if err != nil {
-		return fee, err
-	}
-
-	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
-	if err != nil {
-		return fee, err
-	}
-
-	weight := weightEstimate.Weight()
-	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
-
-	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee = clampBatchFee(feeForWeight, batchAmt)
-
-	// Add the batch transaction output, which excludes the fees paid to
-	// miners.
-	batchTx.AddTxOut(&wire.TxOut{
-		PkScript: batchPkScript,
-		Value:    int64(batchAmt - fee),
-	})
-
-	// Collect the signatures for our inputs.
-	rawSigs, err := b.signerClient.SignOutputRaw(
-		ctx, batchTx, signDescs, prevOuts,
-	)
-	if err != nil {
-		return fee, err
-	}
-
-	for i, sweep := range sweeps {
-		// Generate the success witness for the sweep.
-		witness, err := sweep.htlc.GenSuccessWitness(
-			rawSigs[i], sweep.preimage,
-		)
-		if err != nil {
-			return fee, err
-		}
-
-		// Add the success witness to our batch transaction's inputs.
-		batchTx.TxIn[i].Witness = witness
-	}
-
-	b.log.Infof("attempting to publish non-coop tx=%v with feerate=%v, "+
-		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, destAddr=%s",
-		batchTx.TxHash(), b.rbfCache.FeeRate, weight, feeForWeight, fee,
-		len(batchTx.TxIn), address)
-
-	b.debugLogTx("serialized non-coop sweep", batchTx)
-
-	err = b.wallet.PublishTransaction(
-		ctx, batchTx, b.cfg.txLabeler(b.id),
-	)
-	if err != nil {
-		return fee, err
-	}
-
-	// Store the batch transaction's txid and pkScript, for monitoring
-	// purposes.
-	txHash := batchTx.TxHash()
-	b.batchTxid = &txHash
-	b.batchPkScript = batchPkScript
-
-	return fee, nil
 }
 
 // createPsbt creates serialized PSBT and prevOuts map from unsignedTx and
@@ -1053,134 +878,6 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 	}
 
 	return psbtBuf.Bytes(), prevOuts, nil
-}
-
-// publishBatchCoop attempts to construct and publish a batch transaction that
-// collects all the required signatures interactively from the server. This
-// helps with collecting the funds immediately without revealing any information
-// related to the HTLC script.
-func (b *batch) publishBatchCoop(ctx context.Context) (btcutil.Amount,
-	error, bool) {
-
-	var (
-		batchAmt       = btcutil.Amount(0)
-		sweeps         = make([]sweep, 0, len(b.sweeps))
-		fee            = btcutil.Amount(0)
-		weightEstimate input.TxWeightEstimator
-		addrOverride   bool
-	)
-
-	// Sanity check, there should be at least 1 sweep in this batch.
-	if len(b.sweeps) == 0 {
-		return 0, fmt.Errorf("no sweeps in batch"), false
-	}
-
-	// Create the batch transaction.
-	batchTx := &wire.MsgTx{
-		Version:  2,
-		LockTime: uint32(b.currentHeight),
-	}
-
-	for _, sweep := range b.sweeps {
-		// Append this sweep to an array of sweeps. This is needed to
-		// keep the order of sweeps stored, as iterating the sweeps map
-		// does not guarantee same order.
-		sweeps = append(sweeps, sweep)
-	}
-
-	// Add all the sweeps to the batch transaction.
-	for _, sweep := range sweeps {
-		if sweep.isExternalAddr {
-			addrOverride = true
-		}
-
-		// Keep track of the total amount this batch is sweeping back.
-		batchAmt += sweep.value
-
-		// Add this sweep's input to the transaction.
-		batchTx.AddTxIn(&wire.TxIn{
-			PreviousOutPoint: sweep.outpoint,
-		})
-
-		weightEstimate.AddTaprootKeySpendInput(txscript.SigHashDefault)
-	}
-
-	var address btcutil.Address
-
-	if addrOverride {
-		// Sanity check, there should be exactly 1 sweep in this batch.
-		if len(sweeps) != 1 {
-			return 0, fmt.Errorf("external address sweep batched " +
-				"with other sweeps"), false
-		}
-
-		address = sweeps[0].destAddr
-	} else {
-		var err error
-		address, err = b.getBatchDestAddr(ctx)
-		if err != nil {
-			return fee, err, false
-		}
-	}
-
-	batchPkScript, err := txscript.PayToAddrScript(address)
-	if err != nil {
-		return fee, err, false
-	}
-
-	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
-	if err != nil {
-		return fee, err, false
-	}
-
-	weight := weightEstimate.Weight()
-	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
-
-	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee = clampBatchFee(feeForWeight, batchAmt)
-
-	// Add the batch transaction output, which excludes the fees paid to
-	// miners.
-	batchTx.AddTxOut(&wire.TxOut{
-		PkScript: batchPkScript,
-		Value:    int64(batchAmt - fee),
-	})
-
-	// Create PSBT and prevOuts.
-	psbtBytes, prevOuts, err := b.createPsbt(batchTx, sweeps)
-	if err != nil {
-		return fee, err, false
-	}
-
-	// Attempt to cooperatively sign the batch tx with the server.
-	err = b.coopSignBatchTx(
-		ctx, batchTx, sweeps, prevOuts, psbtBytes,
-	)
-	if err != nil {
-		return fee, err, false
-	}
-
-	b.log.Infof("attempting to publish coop tx=%v with feerate=%v, "+
-		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, destAddr=%s",
-		batchTx.TxHash(), b.rbfCache.FeeRate, weight, feeForWeight, fee,
-		len(batchTx.TxIn), address)
-
-	b.debugLogTx("serialized coop sweep", batchTx)
-
-	err = b.wallet.PublishTransaction(
-		ctx, batchTx, b.cfg.txLabeler(b.id),
-	)
-	if err != nil {
-		return fee, err, true
-	}
-
-	// Store the batch transaction's txid and pkScript, for monitoring
-	// purposes.
-	txHash := batchTx.TxHash()
-	b.batchTxid = &txHash
-	b.batchPkScript = batchPkScript
-
-	return fee, nil, true
 }
 
 // constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
@@ -1504,14 +1201,14 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		}
 	}
 	txHash := tx.TxHash()
-	b.log.Infof("attempting to publish mixed tx=%v with feerate=%v, "+
+	b.log.Infof("attempting to publish batch tx=%v with feerate=%v, "+
 		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, "+
 		"%d cooperative: (%s) and %d non-cooperative (%s), destAddr=%s",
 		txHash, b.rbfCache.FeeRate, weight, feeForWeight, fee,
 		len(tx.TxIn), coopInputs, strings.Join(coopHexs, ", "),
 		nonCoopInputs, strings.Join(nonCoopHexs, ", "), address)
 
-	b.debugLogTx("serialized mixed batch", tx)
+	b.debugLogTx("serialized batch", tx)
 
 	// Make sure tx weight matches the expected value.
 	realWeight := lntypes.WeightUnit(
@@ -1547,30 +1244,6 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 	}
 
 	b.log.Debugf("%s: %s", msg, hex.EncodeToString(buf.Bytes()))
-}
-
-// coopSignBatchTx collects the necessary signatures from the server in order
-// to cooperatively sweep the funds.
-func (b *batch) coopSignBatchTx(ctx context.Context, tx *wire.MsgTx,
-	sweeps []sweep, prevOuts map[wire.OutPoint]*wire.TxOut,
-	psbt []byte) error {
-
-	for i, sweep := range sweeps {
-		sweep := sweep
-
-		finalSig, err := b.musig2sign(
-			ctx, i, sweep, tx, prevOuts, psbt,
-		)
-		if err != nil {
-			return err
-		}
-
-		tx.TxIn[i].Witness = wire.TxWitness{
-			finalSig,
-		}
-	}
-
-	return nil
 }
 
 // musig2sign signs one sweep using musig2.
