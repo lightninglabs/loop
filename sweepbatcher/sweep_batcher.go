@@ -309,16 +309,6 @@ type Batcher struct {
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
 
-	// mixedBatch instructs sweepbatcher to create mixed batches with regard
-	// to cooperativeness. Such a batch can include sweeps signed both
-	// cooperatively and non-cooperatively. If cooperative signing fails for
-	// a sweep, transaction is updated to sign that sweep non-cooperatively
-	// and another round of cooperative signing runs on the remaining
-	// sweeps. The remaining sweeps are signed in non-cooperative (more
-	// expensive) way. If the whole procedure fails for whatever reason, the
-	// batch is signed non-cooperatively (the fallback).
-	mixedBatch bool
-
 	// publishErrorHandler is a function that handles transaction publishing
 	// error. By default, it logs all errors as warnings, but "insufficient
 	// fee" as Info.
@@ -358,16 +348,6 @@ type BatcherConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
-
-	// mixedBatch instructs sweepbatcher to create mixed batches with regard
-	// to cooperativeness. Such a batch can include sweeps signed both
-	// cooperatively and non-cooperatively. If cooperative signing fails for
-	// a sweep, transaction is updated to sign that sweep non-cooperatively
-	// and another round of cooperative signing runs on the remaining
-	// sweeps. The remaining sweeps are signed in non-cooperative (more
-	// expensive) way. If the whole procedure fails for whatever reason, the
-	// batch is signed non-cooperatively (the fallback).
-	mixedBatch bool
 
 	// publishErrorHandler is a function that handles transaction publishing
 	// error. By default, it logs all errors as warnings, but "insufficient
@@ -438,20 +418,6 @@ func WithCustomSignMuSig2(customMuSig2Signer SignMuSig2) BatcherOption {
 	}
 }
 
-// WithMixedBatch instructs sweepbatcher to create mixed batches with
-// regard to cooperativeness. Such a batch can include both sweeps signed
-// both cooperatively and non-cooperatively. If cooperative signing fails
-// for a sweep, transaction is updated to sign that sweep non-cooperatively
-// and another round of cooperative signing runs on the remaining sweeps.
-// The remaining sweeps are signed in non-cooperative (more expensive) way.
-// If the whole procedure fails for whatever reason, the batch is signed
-// non-cooperatively (the fallback).
-func WithMixedBatch() BatcherOption {
-	return func(cfg *BatcherConfig) {
-		cfg.mixedBatch = true
-	}
-}
-
 // WithPublishErrorHandler sets the callback used to handle publish errors.
 // It can be used to filter out noisy messages.
 func WithPublishErrorHandler(handler PublishErrorHandler) BatcherOption {
@@ -512,7 +478,6 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		customFeeRate:       cfg.customFeeRate,
 		txLabeler:           cfg.txLabeler,
 		customMuSig2Signer:  cfg.customMuSig2Signer,
-		mixedBatch:          cfg.mixedBatch,
 		publishErrorHandler: cfg.publishErrorHandler,
 	}
 }
@@ -1131,7 +1096,6 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
 		clock:              b.clock,
-		mixedBatch:         b.mixedBatch,
 	}
 }
 
