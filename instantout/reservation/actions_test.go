@@ -80,6 +80,26 @@ func (m *mockReservationClient) FetchL402(ctx context.Context,
 		args.Error(1)
 }
 
+func (m *mockReservationClient) QuoteReservation(ctx context.Context,
+	in *swapserverrpc.QuoteReservationRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.QuoteReservationResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.QuoteReservationResponse),
+		args.Error(1)
+}
+
+func (m *mockReservationClient) RequestReservation(ctx context.Context,
+	in *swapserverrpc.RequestReservationRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.RequestReservationResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.RequestReservationResponse),
+		args.Error(1)
+}
+
 type mockStore struct {
 	mock.Mock
 

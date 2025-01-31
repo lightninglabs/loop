@@ -19,6 +19,14 @@ service ReservationService {
     // OpenReservation requests a new reservation UTXO from the server.
     rpc OpenReservation (ServerOpenReservationRequest)
         returns (ServerOpenReservationResponse);
+
+    // RequestReservation requests a new reservation UTXO from the server.
+    rpc RequestReservation (RequestReservationRequest)
+        returns (RequestReservationResponse);
+
+    // QuoteReservation requests a quote for a reservation UTXO from the server.
+    rpc QuoteReservation (QuoteReservationRequest)
+        returns (QuoteReservationResponse);
 }
 
 // ReservationNotificationRequest is an empty request sent from the client to
@@ -62,6 +70,51 @@ message ServerOpenReservationRequest {
 message ServerOpenReservationResponse {
 }
 
+// RequestReservationRequest is a request sent from the client to the server to
+// request a new reservation UTXO.
+message RequestReservationRequest {
+    // value is the value of the reservation in satoshis.
+    uint64 value = 1;
+
+    // expiry is the relative expiry of the reservation.
+    uint32 expiry = 2;
+
+    // client_key is the public key of the client.
+    bytes client_key = 3;
+}
+
+// RequestReservationResponse is a response sent from the server to the client
+// to confirm a reservation request.
+message RequestReservationResponse {
+    // reservation_id is the id of the reservation.
+    bytes reservation_id = 1;
+
+    // server_key is the public key of the server.
+    bytes server_key = 2;
+
+    // invoice is the invoice for the reservation that the client should pay.
+    string invoice = 3;
+
+    // expiry is the absolute expiry of the reservation.
+    uint32 expiry = 4;
+}
+
+// QuoteReservationRequest is a request sent from the client to the server to
+// request a quote for a reservation UTXO.
+message QuoteReservationRequest {
+    // value is the value of the reservation in satoshis.
+    uint64 value = 1;
+
+    // expiry is the relative expiry of the reservation.
+    uint32 expiry = 2;
+}
+
+// QuoteReservationResponse is a response sent from the server to the client to
+// confirm a reservation quote request.
+message QuoteReservationResponse {
+    // prepay_cost is the cost of the prepay.
+    uint64 prepay_cost = 1;
+}
 // ReservationProtocolVersion is the version of the reservation protocol.
 enum ReservationProtocolVersion {
     // RESERVATION_NONE is the default value and means that the reservation

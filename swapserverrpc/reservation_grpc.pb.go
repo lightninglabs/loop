@@ -24,6 +24,10 @@ type ReservationServiceClient interface {
 	ReservationNotificationStream(ctx context.Context, in *ReservationNotificationRequest, opts ...grpc.CallOption) (ReservationService_ReservationNotificationStreamClient, error)
 	// OpenReservation requests a new reservation UTXO from the server.
 	OpenReservation(ctx context.Context, in *ServerOpenReservationRequest, opts ...grpc.CallOption) (*ServerOpenReservationResponse, error)
+	// RequestReservation requests a new reservation UTXO from the server.
+	RequestReservation(ctx context.Context, in *RequestReservationRequest, opts ...grpc.CallOption) (*RequestReservationResponse, error)
+	// QuoteReservation requests a quote for a reservation UTXO from the server.
+	QuoteReservation(ctx context.Context, in *QuoteReservationRequest, opts ...grpc.CallOption) (*QuoteReservationResponse, error)
 }
 
 type reservationServiceClient struct {
@@ -76,6 +80,24 @@ func (c *reservationServiceClient) OpenReservation(ctx context.Context, in *Serv
 	return out, nil
 }
 
+func (c *reservationServiceClient) RequestReservation(ctx context.Context, in *RequestReservationRequest, opts ...grpc.CallOption) (*RequestReservationResponse, error) {
+	out := new(RequestReservationResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.ReservationService/RequestReservation", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *reservationServiceClient) QuoteReservation(ctx context.Context, in *QuoteReservationRequest, opts ...grpc.CallOption) (*QuoteReservationResponse, error) {
+	out := new(QuoteReservationResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.ReservationService/QuoteReservation", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReservationServiceServer is the server API for ReservationService service.
 // All implementations must embed UnimplementedReservationServiceServer
 // for forward compatibility
@@ -86,6 +108,10 @@ type ReservationServiceServer interface {
 	ReservationNotificationStream(*ReservationNotificationRequest, ReservationService_ReservationNotificationStreamServer) error
 	// OpenReservation requests a new reservation UTXO from the server.
 	OpenReservation(context.Context, *ServerOpenReservationRequest) (*ServerOpenReservationResponse, error)
+	// RequestReservation requests a new reservation UTXO from the server.
+	RequestReservation(context.Context, *RequestReservationRequest) (*RequestReservationResponse, error)
+	// QuoteReservation requests a quote for a reservation UTXO from the server.
+	QuoteReservation(context.Context, *QuoteReservationRequest) (*QuoteReservationResponse, error)
 	mustEmbedUnimplementedReservationServiceServer()
 }
 
@@ -98,6 +124,12 @@ func (UnimplementedReservationServiceServer) ReservationNotificationStream(*Rese
 }
 func (UnimplementedReservationServiceServer) OpenReservation(context.Context, *ServerOpenReservationRequest) (*ServerOpenReservationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method OpenReservation not implemented")
+}
+func (UnimplementedReservationServiceServer) RequestReservation(context.Context, *RequestReservationRequest) (*RequestReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestReservation not implemented")
+}
+func (UnimplementedReservationServiceServer) QuoteReservation(context.Context, *QuoteReservationRequest) (*QuoteReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QuoteReservation not implemented")
 }
 func (UnimplementedReservationServiceServer) mustEmbedUnimplementedReservationServiceServer() {}
 
@@ -151,6 +183,42 @@ func _ReservationService_OpenReservation_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReservationService_RequestReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReservationServiceServer).RequestReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.ReservationService/RequestReservation",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReservationServiceServer).RequestReservation(ctx, req.(*RequestReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReservationService_QuoteReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuoteReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReservationServiceServer).QuoteReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.ReservationService/QuoteReservation",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReservationServiceServer).QuoteReservation(ctx, req.(*QuoteReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReservationService_ServiceDesc is the grpc.ServiceDesc for ReservationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -161,6 +229,14 @@ var ReservationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "OpenReservation",
 			Handler:    _ReservationService_OpenReservation_Handler,
+		},
+		{
+			MethodName: "RequestReservation",
+			Handler:    _ReservationService_RequestReservation_Handler,
+		},
+		{
+			MethodName: "QuoteReservation",
+			Handler:    _ReservationService_QuoteReservation_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
