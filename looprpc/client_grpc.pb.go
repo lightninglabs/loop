@@ -92,9 +92,16 @@ type SwapClientClient interface {
 	// Note that only loop out suggestions are currently supported.
 	// [EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(ctx context.Context, in *SuggestSwapsRequest, opts ...grpc.CallOption) (*SuggestSwapsResponse, error)
-	// loop: `listreservations`
+	// loop: `reservations list`
 	// ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
+	// loop:`reservation request`
+	// ReservationRequest requests a reservation from the server.
+	ReservationRequest(ctx context.Context, in *ReservationRequestRequest, opts ...grpc.CallOption) (*ReservationRequestResponse, error)
+	// loop:`reservation quote`
+	// ReservationQuote returns a quote for a reservation with the provided
+	// parameters.
+	ReservationQuote(ctx context.Context, in *ReservationQuoteRequest, opts ...grpc.CallOption) (*ReservationQuoteResponse, error)
 	// loop: `instantout`
 	// InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error)
@@ -334,6 +341,24 @@ func (c *swapClientClient) ListReservations(ctx context.Context, in *ListReserva
 	return out, nil
 }
 
+func (c *swapClientClient) ReservationRequest(ctx context.Context, in *ReservationRequestRequest, opts ...grpc.CallOption) (*ReservationRequestResponse, error) {
+	out := new(ReservationRequestResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ReservationRequest", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) ReservationQuote(ctx context.Context, in *ReservationQuoteRequest, opts ...grpc.CallOption) (*ReservationQuoteResponse, error) {
+	out := new(ReservationQuoteResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ReservationQuote", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error) {
 	out := new(InstantOutResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/InstantOut", in, out, opts...)
@@ -502,9 +527,16 @@ type SwapClientServer interface {
 	// Note that only loop out suggestions are currently supported.
 	// [EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error)
-	// loop: `listreservations`
+	// loop: `reservations list`
 	// ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
+	// loop:`reservation request`
+	// ReservationRequest requests a reservation from the server.
+	ReservationRequest(context.Context, *ReservationRequestRequest) (*ReservationRequestResponse, error)
+	// loop:`reservation quote`
+	// ReservationQuote returns a quote for a reservation with the provided
+	// parameters.
+	ReservationQuote(context.Context, *ReservationQuoteRequest) (*ReservationQuoteResponse, error)
 	// loop: `instantout`
 	// InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error)
@@ -603,6 +635,12 @@ func (UnimplementedSwapClientServer) SuggestSwaps(context.Context, *SuggestSwaps
 }
 func (UnimplementedSwapClientServer) ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReservations not implemented")
+}
+func (UnimplementedSwapClientServer) ReservationRequest(context.Context, *ReservationRequestRequest) (*ReservationRequestResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReservationRequest not implemented")
+}
+func (UnimplementedSwapClientServer) ReservationQuote(context.Context, *ReservationQuoteRequest) (*ReservationQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReservationQuote not implemented")
 }
 func (UnimplementedSwapClientServer) InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstantOut not implemented")
@@ -992,6 +1030,42 @@ func _SwapClient_ListReservations_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_ReservationRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReservationRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ReservationRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ReservationRequest",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ReservationRequest(ctx, req.(*ReservationRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_ReservationQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReservationQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ReservationQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ReservationQuote",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ReservationQuote(ctx, req.(*ReservationQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_InstantOut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InstantOutRequest)
 	if err := dec(in); err != nil {
@@ -1250,6 +1324,14 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReservations",
 			Handler:    _SwapClient_ListReservations_Handler,
+		},
+		{
+			MethodName: "ReservationRequest",
+			Handler:    _SwapClient_ReservationRequest_Handler,
+		},
+		{
+			MethodName: "ReservationQuote",
+			Handler:    _SwapClient_ReservationQuote_Handler,
 		},
 		{
 			MethodName: "InstantOut",
