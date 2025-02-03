@@ -31,8 +31,8 @@ var (
 	defaultExpiry = uint32(100)
 )
 
-func newValidInitReservationContext() *InitReservationContext {
-	return &InitReservationContext{
+func newValidInitReservationContext() *ServerRequestedInitContext {
+	return &ServerRequestedInitContext{
 		reservationID: ID{0x01},
 		serverPubkey:  defaultPubkey,
 		value:         defaultValue,
@@ -174,7 +174,7 @@ func TestInitReservationAction(t *testing.T) {
 			StateMachine: &fsm.StateMachine{},
 		}
 
-		event := reservationFSM.InitAction(ctxb, tc.eventCtx)
+		event := reservationFSM.InitFromServerRequestAction(ctxb, tc.eventCtx)
 		require.Equal(t, tc.expectedEvent, event)
 	}
 }
