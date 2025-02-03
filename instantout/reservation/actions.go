@@ -58,6 +58,7 @@ func (f *FSM) InitAction(ctx context.Context,
 		reservationRequest.expiry,
 		reservationRequest.heightHint,
 		keyRes.KeyLocator,
+		ProtocolVersionServerInitiated,
 	)
 	if err != nil {
 		return f.HandleError(err)

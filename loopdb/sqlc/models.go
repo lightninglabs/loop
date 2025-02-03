@@ -113,6 +113,7 @@ type Reservation struct {
 	TxHash             []byte
 	OutIndex           sql.NullInt32
 	ConfirmationHeight sql.NullInt32
+	ProtocolVersion    int32
 }
 
 type ReservationUpdate struct {

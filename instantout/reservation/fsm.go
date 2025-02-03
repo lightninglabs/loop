@@ -2,10 +2,27 @@ package reservation
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/swapserverrpc"
+)
+
+type ProtocolVersion uint32
+
+// String returns the string representation of the protocol version.
+func (v ProtocolVersion) String() string {
+	return fmt.Sprintf("ProtocolVersion(%d)", v)
+}
+
+const (
+	// CurrentProtocolVersion is the current protocol version.
+	CurrentProtocolVersion ProtocolVersion = ProtocolVersionServerInitiated
+
+	// ProtocolVersionServerInitiated is the protocol version where the
+	// server initiates the reservation.
+	ProtocolVersionServerInitiated ProtocolVersion = 0
 )
 
 const (
@@ -45,7 +62,8 @@ type FSM struct {
 // NewFSM creates a new reservation FSM.
 func NewFSM(cfg *Config) *FSM {
 	reservation := &Reservation{
-		State: fsm.EmptyState,
+		State:           fsm.EmptyState,
+		ProtocolVersion: CurrentProtocolVersion,
 	}
 
 	return NewFSMFromReservation(cfg, reservation)
@@ -59,10 +77,19 @@ func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
 		reservation: reservation,
 	}
 
+	var states fsm.States
+	switch reservation.ProtocolVersion {
+	case ProtocolVersionServerInitiated:
+		states = reservationFsm.GetServerInitiatedReservationStates()
+
+	default:
+		states = make(fsm.States)
+	}
+
 	reservationFsm.StateMachine = fsm.NewStateMachineWithState(
-		reservationFsm.GetReservationStates(), reservation.State,
-		defaultObserverSize,
+		states, reservation.State, defaultObserverSize,
 	)
+
 	reservationFsm.ActionEntryFunc = reservationFsm.updateReservation
 
 	return reservationFsm
@@ -133,9 +160,9 @@ var (
 	OnUnlocked = fsm.EventType("OnUnlocked")
 )
 
-// GetReservationStates returns the statemap that defines the reservation
-// state machine.
-func (f *FSM) GetReservationStates() fsm.States {
+// GetServerInitiatedReservationStates returns the statemap that defines the
+// reservation state machine, where the server initiates the reservation.
+func (f *FSM) GetServerInitiatedReservationStates() fsm.States {
 	return fsm.States{
 		fsm.EmptyState: fsm.State{
 			Transitions: fsm.Transitions{
@@ -234,22 +261,25 @@ func (r *FSM) updateReservation(ctx context.Context,
 
 func (r *FSM) Infof(format string, args ...interface{}) {
 	log.Infof(
-		"Reservation %x: "+format,
-		append([]interface{}{r.reservation.ID}, args...)...,
+		"Reservation %v %x: "+format,
+		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+			args...)...,
 	)
 }
 
 func (r *FSM) Debugf(format string, args ...interface{}) {
 	log.Debugf(
-		"Reservation %x: "+format,
-		append([]interface{}{r.reservation.ID}, args...)...,
+		"Reservation %v %x: "+format,
+		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+			args...)...,
 	)
 }
 
 func (r *FSM) Errorf(format string, args ...interface{}) {
 	log.Errorf(
-		"Reservation %x: "+format,
-		append([]interface{}{r.reservation.ID}, args...)...,
+		"Reservation %v %x: "+format,
+		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+			args...)...,
 	)
 }
 
