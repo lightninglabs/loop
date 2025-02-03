@@ -11,8 +11,20 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	reservationrpc "github.com/lightninglabs/loop/swapserverrpc"
 )
+
+var (
+	defaultWaitForStateTime = time.Second * 15
+)
+
+// FSMSendEventReq contains the information needed to send an event to the FSM.
+type FSMSendEventReq struct {
+	fsm      *FSM
+	event    fsm.EventType
+	eventCtx fsm.EventContext
+}
 
 // Manager manages the reservation state machines.
 type Manager struct {
@@ -24,6 +36,10 @@ type Manager struct {
 
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
+
+	currentHeight int32
+
+	reqChan chan *FSMSendEventReq
 }
 
 // finalStateObserver removes a reservation FSM from the active set once it
@@ -53,6 +69,7 @@ func NewManager(cfg *Config) *Manager {
 	return &Manager{
 		cfg:                cfg,
 		activeReservations: make(map[ID]*FSM),
+		reqChan:            make(chan *FSMSendEventReq),
 	}
 }
 
@@ -65,7 +82,7 @@ func (m *Manager) Run(ctx context.Context, height int32,
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	currentHeight := height
+	m.currentHeight = height
 
 	err := m.RecoverReservations(runCtx)
 	if err != nil {
@@ -87,7 +104,9 @@ func (m *Manager) Run(ctx context.Context, height int32,
 		select {
 		case height := <-newBlockChan:
 			log.Debugf("Received block %v", height)
-			currentHeight = height
+			m.Lock()
+			m.currentHeight = height
+			m.Unlock()
 
 		case reservationRes, ok := <-ntfnChan:
 			if !ok {
@@ -99,13 +118,26 @@ func (m *Manager) Run(ctx context.Context, height int32,
 
 			log.Debugf("Received reservation %x",
 				reservationRes.ReservationId)
-			_, err := m.newReservation(
-				runCtx, uint32(currentHeight), reservationRes,
+			_, err := m.newReservationFromNtfn(
+				runCtx, uint32(m.currentHeight), reservationRes,
 			)
 			if err != nil {
 				log.Errorf("Unable to create reservation %x: %v",
 					reservationRes.ReservationId, err)
 			}
+
+		case req := <-m.reqChan:
+			// We'll send the event in a goroutine to avoid blocking
+			// the main loop.
+			go func() {
+				err := req.fsm.SendEvent(
+					runCtx, req.event, req.eventCtx,
+				)
+				if err != nil {
+					log.Errorf("Error sending event: %v",
+						err)
+				}
+			}()
 
 		case err := <-newBlockErrChan:
 			return err
@@ -117,9 +149,11 @@ func (m *Manager) Run(ctx context.Context, height int32,
 	}
 }
 
-// newReservation creates a new reservation from the reservation request.
-func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
-	req *reservationrpc.ServerReservationNotification) (*FSM, error) {
+// newReservationFromNtfn creates a new reservation from the reservation
+// notification.
+func (m *Manager) newReservationFromNtfn(ctx context.Context,
+	currentHeight uint32, req *reservationrpc.ServerReservationNotification,
+) (*FSM, error) {
 
 	var reservationID ID
 	err := reservationID.FromByteSlice(
@@ -169,7 +203,7 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		fsm:     reservationFSM,
 	})
 
-	initContext := &InitReservationContext{
+	initContext := &ServerRequestedInitContext{
 		reservationID: reservationID,
 		serverPubkey:  serverKey,
 		value:         btcutil.Amount(req.Value),
@@ -209,6 +243,66 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	}
 
 	return reservationFSM, nil
+}
+
+// RequestReservationFromServer sends a request to the server to create a new
+// reservation.
+func (m *Manager) RequestReservationFromServer(ctx context.Context,
+	value btcutil.Amount, expiry uint32, maxPrepaymentAmt btcutil.Amount) (
+	*Reservation, error) {
+
+	m.Lock()
+	currentHeight := m.currentHeight
+	m.Unlock()
+	// Create a new reservation req.
+	req := &ClientRequestedInitContext{
+		value:            value,
+		relativeExpiry:   expiry,
+		heightHint:       uint32(currentHeight),
+		maxPrepaymentAmt: maxPrepaymentAmt,
+	}
+
+	reservationFSM := NewFSM(m.cfg, ProtocolVersionClientInitiated)
+	// Send the event to the main loop.
+	m.reqChan <- &FSMSendEventReq{
+		fsm:      reservationFSM,
+		event:    OnClientInitialized,
+		eventCtx: req,
+	}
+
+	// We'll now wait for the reservation to be in the state where we are
+	// sending the prepayment.
+	err := reservationFSM.DefaultObserver.WaitForState(
+		ctx, defaultWaitForStateTime, SendPrepaymentPayment,
+		fsm.WithAbortEarlyOnErrorOption(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now we can add the reservation to our active fsm.
+	m.Lock()
+	m.activeReservations[reservationFSM.reservation.ID] = reservationFSM
+	m.Unlock()
+
+	return reservationFSM.reservation, nil
+}
+
+// QuoteReservation quotes the server for a new reservation.
+func (m *Manager) QuoteReservation(ctx context.Context, value btcutil.Amount,
+	expiry uint32) (btcutil.Amount, error) {
+
+	quoteReq := &swapserverrpc.QuoteReservationRequest{
+		Value:  uint64(value),
+		Expiry: expiry,
+	}
+
+	req, err := m.cfg.ReservationClient.QuoteReservation(ctx, quoteReq)
+	if err != nil {
+		return 0, err
+	}
+
+	return btcutil.Amount(req.PrepayCost), nil
 }
 
 // RecoverReservations tries to recover all reservations that are still active
