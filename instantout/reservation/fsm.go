@@ -8,6 +8,17 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
+type ProtocolVersion uint32
+
+const (
+	// ProtocolVersionUndefined is the default protocol version.
+	ProtocolVersionUndefined ProtocolVersion = 0
+
+	// ProtocolVersionServerInitiated is the protocol version where the
+	// server initiates the reservation.
+	ProtocolVersionServerInitiated ProtocolVersion = 1
+)
+
 const (
 	// defaultObserverSize is the size of the fsm observer channel.
 	defaultObserverSize = 15
@@ -43,9 +54,10 @@ type FSM struct {
 }
 
 // NewFSM creates a new reservation FSM.
-func NewFSM(cfg *Config) *FSM {
+func NewFSM(cfg *Config, protocolVersion ProtocolVersion) *FSM {
 	reservation := &Reservation{
-		State: fsm.EmptyState,
+		State:           fsm.EmptyState,
+		ProtocolVersion: protocolVersion,
 	}
 
 	return NewFSMFromReservation(cfg, reservation)
@@ -54,15 +66,24 @@ func NewFSM(cfg *Config) *FSM {
 // NewFSMFromReservation creates a new reservation FSM from an existing
 // reservation recovered from the database.
 func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
+
 	reservationFsm := &FSM{
 		cfg:         cfg,
 		reservation: reservation,
 	}
 
+	var states fsm.States
+	switch reservation.ProtocolVersion {
+	case ProtocolVersionServerInitiated:
+		states = reservationFsm.GetServerInitiatedReservationStates()
+	default:
+		states = make(fsm.States)
+	}
+
 	reservationFsm.StateMachine = fsm.NewStateMachineWithState(
-		reservationFsm.GetReservationStates(), reservation.State,
-		defaultObserverSize,
+		states, reservation.State, defaultObserverSize,
 	)
+
 	reservationFsm.ActionEntryFunc = reservationFsm.updateReservation
 
 	return reservationFsm
@@ -133,9 +154,9 @@ var (
 	OnUnlocked = fsm.EventType("OnUnlocked")
 )
 
-// GetReservationStates returns the statemap that defines the reservation
-// state machine.
-func (f *FSM) GetReservationStates() fsm.States {
+// GetServerInitiatedReservationStates returns the statemap that defines the
+// reservation state machine, where the server initiates the reservation.
+func (f *FSM) GetServerInitiatedReservationStates() fsm.States {
 	return fsm.States{
 		fsm.EmptyState: fsm.State{
 			Transitions: fsm.Transitions{
