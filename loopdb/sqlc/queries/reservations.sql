@@ -7,7 +7,8 @@ INSERT INTO reservations (
     value,
     client_key_family,
     client_key_index,
-    initiation_height
+    initiation_height,
+    protocol_version
 ) VALUES (
     $1,
     $2,
@@ -16,7 +17,8 @@ INSERT INTO reservations (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 );
 
 -- name: UpdateReservation :exec
