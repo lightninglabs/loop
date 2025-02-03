@@ -33,6 +33,7 @@ func TestSqlStore(t *testing.T) {
 			Family: 1,
 			Index:  1,
 		},
+		ProtocolVersion: ProtocolVersionServerInitiated,
 	}
 
 	err := store.CreateReservation(ctxb, reservation)
