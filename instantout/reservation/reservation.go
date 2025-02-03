@@ -62,6 +62,9 @@ type Reservation struct {
 	// Outpoint is the outpoint of the reservation.
 	Outpoint *wire.OutPoint
 
+	// PrepayInvoice is the invoice that the client paid as a prepayment.
+	PrepayInvoice string
+
 	// InitiationHeight is the height at which the reservation was
 	// initiated.
 	InitiationHeight int32
