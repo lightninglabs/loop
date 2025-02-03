@@ -130,7 +130,7 @@
     },
     "/v1/instantout/reservations": {
       "get": {
-        "summary": "loop: `listreservations`\nListReservations returns a list of all reservations the server opened to us.",
+        "summary": "loop: `reservations list`\nListReservations returns a list of all reservations the server opened to us.",
         "operationId": "SwapClient_ListReservations",
         "responses": {
           "200": {
@@ -2620,6 +2620,24 @@
     "looprpcPublishSucceeded": {
       "type": "object",
       "description": "PublishSucceeded is returned by SweepHtlc if publishing was requested in\nSweepHtlcRequest and it succeeded."
+    },
+    "looprpcReservationQuoteResponse": {
+      "type": "object",
+      "properties": {
+        "prepay_amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The prepay fee that will be charged for the reservation."
+        }
+      }
+    },
+    "looprpcReservationRequestResponse": {
+      "type": "object",
+      "properties": {
+        "reservation": {
+          "$ref": "#/definitions/looprpcClientReservation"
+        }
+      }
     },
     "looprpcRouteHint": {
       "type": "object",
