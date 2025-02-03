@@ -146,7 +146,7 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	// Create the reservation state machine. We need to pass in the runCtx
 	// of the reservation manager so that the state machine will keep on
 	// running even if the grpc conte
-	reservationFSM := NewFSM(m.cfg)
+	reservationFSM := NewFSM(m.cfg, ProtocolVersionServerInitiated)
 
 	// Add the reservation to the active reservations map. Check the map while
 	// holding the lock as concurrent callers may both have completed the store

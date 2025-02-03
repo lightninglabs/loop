@@ -60,10 +60,10 @@ type FSM struct {
 }
 
 // NewFSM creates a new reservation FSM.
-func NewFSM(cfg *Config) *FSM {
+func NewFSM(cfg *Config, protocolVersion ProtocolVersion) *FSM {
 	reservation := &Reservation{
 		State:           fsm.EmptyState,
-		ProtocolVersion: CurrentProtocolVersion,
+		ProtocolVersion: protocolVersion,
 	}
 
 	return NewFSMFromReservation(cfg, reservation)
@@ -81,7 +81,6 @@ func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
 	switch reservation.ProtocolVersion {
 	case ProtocolVersionServerInitiated:
 		states = reservationFsm.GetServerInitiatedReservationStates()
-
 	default:
 		states = make(fsm.States)
 	}
