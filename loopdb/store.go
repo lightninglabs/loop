@@ -14,6 +14,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/coreos/bbolt"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -723,7 +725,7 @@ func (s *boltSwapStore) Close() error {
 //
 // NOTE: it's the caller's responsibility to encode the param. Atm, it's
 // encoding using the proto package's `Marshal` method.
-func (s *boltSwapStore) PutLiquidityParams(ctx context.Context,
+func (s *boltSwapStore) PutLiquidityParams(ctx context.Context, assetId string,
 	params []byte) error {
 
 	return s.db.Update(func(tx *bbolt.Tx) error {
@@ -741,10 +743,10 @@ func (s *boltSwapStore) PutLiquidityParams(ctx context.Context,
 //
 // NOTE: it's the caller's responsibility to decode the param. Atm, it's
 // decoding using the proto package's `Unmarshal` method.
-func (s *boltSwapStore) FetchLiquidityParams(ctx context.Context) ([]byte,
-	error) {
+func (s *boltSwapStore) FetchLiquidityParams(ctx context.Context) (
+	[]sqlc.LiquidityParam, error) {
 
-	var params []byte
+	var params []sqlc.LiquidityParam
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		// Read the root bucket.
@@ -753,7 +755,13 @@ func (s *boltSwapStore) FetchLiquidityParams(ctx context.Context) ([]byte,
 			return errors.New("liquidity bucket does not exist")
 		}
 
-		params = rootBucket.Get(liquidtyParamsKey)
+		paramBytes := rootBucket.Get(liquidtyParamsKey)
+		if paramBytes != nil {
+			params = append(params, sqlc.LiquidityParam{
+				AssetID: swap.DefaultBtcAssetID,
+				Params:  paramBytes,
+			})
+		}
 		return nil
 	})
 

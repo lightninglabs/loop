@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
@@ -268,10 +269,12 @@ func TestPersistParams(t *testing.T) {
 
 	ctxb := context.Background()
 
-	var paramsBytes []byte
+	var paramsBytes []sqlc.LiquidityParam
 
 	// Mock the read method to return empty data.
-	manager.cfg.FetchLiquidityParams = func(context.Context) ([]byte, error) {
+	manager.cfg.FetchLiquidityParams = func(context.Context) (
+		[]sqlc.LiquidityParam, error) {
+
 		return paramsBytes, nil
 	}
 
@@ -282,9 +285,14 @@ func TestPersistParams(t *testing.T) {
 
 	// Mock the write method to return no error.
 	manager.cfg.PutLiquidityParams = func(ctx context.Context,
-		data []byte) error {
+		assetId string, data []byte) error {
 
-		paramsBytes = data
+		paramsBytes = []sqlc.LiquidityParam{
+			{
+				AssetID: swap.DefaultBtcAssetID,
+				Params:  data,
+			},
+		}
 		return nil
 	}
 

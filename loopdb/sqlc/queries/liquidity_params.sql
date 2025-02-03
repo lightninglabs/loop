@@ -1,10 +1,10 @@
 -- name: UpsertLiquidityParams :exec
 INSERT INTO liquidity_params (
-    id, params
+    asset_id, params
 ) VALUES (
-    1, $1
-) ON CONFLICT (id) DO UPDATE SET
-    params = excluded.params;
+    $1, $2
+) ON CONFLICT (asset_id) DO UPDATE SET
+    params = $2;
 
--- name: FetchLiquidityParams :one
-SELECT params FROM liquidity_params WHERE id = 1;
+-- name: FetchLiquidityParams :many
+SELECT * FROM liquidity_params;

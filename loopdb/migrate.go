@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -184,7 +185,9 @@ func (m *MigratorManager) migrateLiquidityParams(ctx context.Context) error {
 	}
 
 	// Put the liquidity parameters in the toStore.
-	err = m.toStore.PutLiquidityParams(ctx, params)
+	err = m.toStore.PutLiquidityParams(
+		ctx, swap.DefaultBtcAssetID, params[0].Params,
+	)
 	if err != nil {
 		return err
 	}
@@ -295,11 +298,14 @@ func (m *MigratorManager) checkLiquidityParams(ctx context.Context) error {
 		return err
 	}
 
-	// Check that the liquidity parameters are the same.
-	if !bytes.Equal(fromParams, toParams) {
-		return NewMigrationError(
-			fmt.Errorf("from: %v, to: %v", fromParams, toParams),
-		)
+	for i, fromParam := range fromParams {
+		// Check that the liquidity parameters are the same.
+		if !bytes.Equal(fromParam.Params, toParams[i].Params) {
+			return NewMigrationError(
+				fmt.Errorf("from: %v, to: %v", fromParams,
+					toParams),
+			)
+		}
 	}
 
 	return nil

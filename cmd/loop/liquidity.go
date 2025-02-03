@@ -9,6 +9,7 @@ import (
 
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc/codes"
@@ -106,7 +107,7 @@ func setRule(ctx *cli.Context) error {
 	// We need to set the full set of current parameters every time we call
 	// SetParameters. To allow users to set only individual fields on the
 	// cli, we lookup our current params, then update individual values.
-	params, err := client.GetLiquidityParams(
+	paramsResponse, err := client.GetLiquidityParams(
 		context.Background(), &looprpc.GetLiquidityParamsRequest{},
 	)
 	if err != nil {
@@ -119,6 +120,12 @@ func setRule(ctx *cli.Context) error {
 		ruleSet     bool
 		otherRules  []*looprpc.LiquidityRule
 	)
+
+	// We're only interested in the btc rules for now.
+	params, ok := paramsResponse.Rules[swap.DefaultBtcAssetID]
+	if !ok {
+		return errors.New("no rules set for BTC")
+	}
 
 	// Run through our current set of rules and check whether we have a rule
 	// currently set for this channel or peer. We also track a slice
@@ -160,6 +167,7 @@ func setRule(ctx *cli.Context) error {
 			context.Background(),
 			&looprpc.SetLiquidityParamsRequest{
 				Parameters: params,
+				AssetId:    swap.DefaultBtcAssetID,
 			},
 		)
 		return err
@@ -216,6 +224,7 @@ func setRule(ctx *cli.Context) error {
 		context.Background(),
 		&looprpc.SetLiquidityParamsRequest{
 			Parameters: params,
+			AssetId:    swap.DefaultBtcAssetID,
 		},
 	)
 
@@ -364,11 +373,17 @@ func setParams(ctx *cli.Context) error {
 	// We need to set the full set of current parameters every time we call
 	// SetParameters. To allow users to set only individual fields on the
 	// cli, we lookup our current params, then update individual values.
-	params, err := client.GetLiquidityParams(
+	paramsResponse, err := client.GetLiquidityParams(
 		context.Background(), &looprpc.GetLiquidityParamsRequest{},
 	)
 	if err != nil {
 		return err
+	}
+
+	// We're only interested in the btc rules for now.
+	params, ok := paramsResponse.Rules[swap.DefaultBtcAssetID]
+	if !ok {
+		return errors.New("no rules set for BTC")
 	}
 
 	var flagSet, categoriesSet, feePercentSet bool
@@ -556,6 +571,7 @@ func setParams(ctx *cli.Context) error {
 	_, err = client.SetLiquidityParams(
 		context.Background(), &looprpc.SetLiquidityParamsRequest{
 			Parameters: params,
+			AssetId:    swap.DefaultBtcAssetID,
 		},
 	)
 

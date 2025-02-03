@@ -60,8 +60,8 @@ type InstantoutUpdate struct {
 }
 
 type LiquidityParam struct {
-	ID     int32
-	Params []byte
+	AssetID string
+	Params  []byte
 }
 
 type LoopinSwap struct {

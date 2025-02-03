@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/coreos/bbolt"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -486,14 +487,16 @@ func TestLiquidityParams(t *testing.T) {
 	require.Empty(t, params, "expect empty bytes")
 	require.Nil(t, params)
 
-	params = []byte("test")
+	insertParams := []byte("test")
 
 	// Test we can save the params.
-	err = store.PutLiquidityParams(ctxb, params)
+	err = store.PutLiquidityParams(
+		ctxb, swap.DefaultBtcAssetID, insertParams,
+	)
 	require.NoError(t, err, "failed to put params")
 
 	// Now fetch the db again should return the above saved bytes.
 	paramsRead, err := store.FetchLiquidityParams(ctxb)
 	require.NoError(t, err, "failed to fetch params")
-	require.Equal(t, params, paramsRead, "unexpected return value")
+	require.Equal(t, insertParams, paramsRead[0].Params, "unexpected return value")
 }

@@ -1224,8 +1224,8 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 
 // GetLiquidityParams gets our current liquidity manager's parameters.
 func (s *swapClientServer) GetLiquidityParams(_ context.Context,
-	_ *looprpc.GetLiquidityParamsRequest) (*looprpc.LiquidityParameters,
-	error) {
+	_ *looprpc.GetLiquidityParamsRequest) (
+	*looprpc.GetLiquidityParamsResponse, error) {
 
 	cfg := s.liquidityMgr.GetParameters()
 
@@ -1234,7 +1234,11 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 		return nil, err
 	}
 
-	return rpcCfg, nil
+	return &looprpc.GetLiquidityParamsResponse{
+		Rules: map[string]*looprpc.LiquidityParameters{
+			swap.DefaultBtcAssetID: rpcCfg,
+		},
+	}, nil
 }
 
 // SetLiquidityParams attempts to set our current liquidity manager's

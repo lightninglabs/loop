@@ -106,7 +106,7 @@ service SwapClient {
     [EXPERIMENTAL]: endpoint is subject to change.
     */
     rpc GetLiquidityParams (GetLiquidityParamsRequest)
-        returns (LiquidityParameters);
+        returns (GetLiquidityParamsResponse);
 
     /* loop: `setparams`
     SetLiquidityParams sets a new set of parameters for the daemon's liquidity
@@ -1050,6 +1050,14 @@ message GetInfoResponse {
 message GetLiquidityParamsRequest {
 }
 
+message GetLiquidityParamsResponse {
+    /*
+    A map of asset ids to liquidity rules that describe the desired liquidity
+    balance.
+    */
+    map<string, LiquidityParameters> rules = 1;
+}
+
 message LiquidityParameters {
     /*
     A set of liquidity rules that describe the desired liquidity balance.
@@ -1254,11 +1262,12 @@ message LiquidityRule {
 message SetLiquidityParamsRequest {
     /*
     Parameters is the desired new set of parameters for the liquidity management
-    subsystem. Note that the current set of parameters will be completely
-    overwritten by the parameters provided (if they are valid), so the full set
-    of parameters should be provided for each call.
+    subsystem for the given asset id .Note that the current set of parameters
+    will be completely overwritten by the parameters provided (if they are
+    valid), so the full set of parameters should be provided for each call.
     */
     LiquidityParameters parameters = 1;
+    string asset_id = 2;
 }
 
 message SetLiquidityParamsResponse {
