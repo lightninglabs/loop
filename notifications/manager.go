@@ -149,6 +149,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		waitTime time.Duration
 		backoff  time.Duration
 		attempts int
+		timer    = time.NewTimer(0)
 	)
 
 	// Start the notification runloop.
@@ -156,7 +157,9 @@ func (m *Manager) Run(ctx context.Context) error {
 		// Increase the wait time for the next iteration.
 		backoff = waitTime + time.Duration(attempts)*time.Second
 		waitTime = 0
-		timer := time.NewTimer(backoff)
+
+		// Reset the timer with the new backoff time.
+		timer.Reset(backoff)
 
 		// Return if the context has been canceled.
 		select {
@@ -179,6 +182,10 @@ func (m *Manager) Run(ctx context.Context) error {
 					log.Errorf("Error getting L402 from "+
 						"the store: %v", err)
 				}
+
+				// Use a default of 1 second wait time to avoid
+				// hogging the CPU.
+				waitTime = time.Second
 				continue
 			}
 
