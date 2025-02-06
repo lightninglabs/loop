@@ -59,7 +59,7 @@ func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
 	// Run the algorithm. Get batchId of possible batches, sorted from best
 	// to worst.
 	batchesIds, err := selectBatches(
-		batches, sweepFeeDetails, newBatchFeeDetails, b.mixedBatch,
+		batches, sweepFeeDetails, newBatchFeeDetails,
 	)
 	if err != nil {
 		return fmt.Errorf("batch selection algorithm failed for sweep "+
@@ -133,13 +133,10 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 	// Create feeDetails for sweep.
 	sweepFeeDetails := feeDetails{
 		FeeRate:        s.minFeeRate,
-		NonCoopHint:    s.nonCoopHint || s.coopFailed,
 		IsExternalAddr: s.isExternalAddr,
 
 		// Calculate sweep weight as a difference.
-		MixedWeight:   fd2.MixedWeight - fd1.MixedWeight,
-		CoopWeight:    fd2.CoopWeight - fd1.CoopWeight,
-		NonCoopWeight: fd2.NonCoopWeight - fd1.NonCoopWeight,
+		Weight: fd2.Weight - fd1.Weight,
 	}
 
 	return sweepFeeDetails, fd1, nil
@@ -156,14 +153,6 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 	if batch.rbfCache.FeeRate < chainfee.AbsoluteFeePerKwFloor {
 		return feeDetails{}, fmt.Errorf("feeRate is too low: %v",
 			batch.rbfCache.FeeRate)
-	}
-
-	// Find if the batch has at least one non-cooperative sweep.
-	hasNonCoop := false
-	for _, sweep := range batch.sweeps {
-		if sweep.nonCoopHint || sweep.coopFailed {
-			hasNonCoop = true
-		}
 	}
 
 	// Find some sweep of the batch. It is used if there is just one sweep.
@@ -186,21 +175,11 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 		destAddr = (*btcutil.AddressTaproot)(nil)
 	}
 
-	// Make three estimators: for mixed, coop and non-coop cases.
-	var mixedWeight, coopWeight, nonCoopWeight input.TxWeightEstimator
+	// Make a weight estimator.
+	var weight input.TxWeightEstimator
 
 	// Add output weight to the estimator.
-	err := sweeppkg.AddOutputEstimate(&mixedWeight, destAddr)
-	if err != nil {
-		return feeDetails{}, fmt.Errorf("sweep.AddOutputEstimate: %w",
-			err)
-	}
-	err = sweeppkg.AddOutputEstimate(&coopWeight, destAddr)
-	if err != nil {
-		return feeDetails{}, fmt.Errorf("sweep.AddOutputEstimate: %w",
-			err)
-	}
-	err = sweeppkg.AddOutputEstimate(&nonCoopWeight, destAddr)
+	err := sweeppkg.AddOutputEstimate(&weight, destAddr)
 	if err != nil {
 		return feeDetails{}, fmt.Errorf("sweep.AddOutputEstimate: %w",
 			err)
@@ -209,34 +188,23 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 	// Add inputs.
 	for _, sweep := range batch.sweeps {
 		if sweep.nonCoopHint || sweep.coopFailed {
-			err = sweep.htlcSuccessEstimator(&mixedWeight)
+			err = sweep.htlcSuccessEstimator(&weight)
 			if err != nil {
 				return feeDetails{}, fmt.Errorf(
 					"htlcSuccessEstimator failed: %w", err,
 				)
 			}
 		} else {
-			mixedWeight.AddTaprootKeySpendInput(
+			weight.AddTaprootKeySpendInput(
 				txscript.SigHashDefault,
 			)
-		}
-
-		coopWeight.AddTaprootKeySpendInput(txscript.SigHashDefault)
-
-		err = sweep.htlcSuccessEstimator(&nonCoopWeight)
-		if err != nil {
-			return feeDetails{}, fmt.Errorf("htlcSuccessEstimator "+
-				"failed: %w", err)
 		}
 	}
 
 	return feeDetails{
 		BatchId:        batch.id,
 		FeeRate:        batch.rbfCache.FeeRate,
-		MixedWeight:    mixedWeight.Weight(),
-		CoopWeight:     coopWeight.Weight(),
-		NonCoopWeight:  nonCoopWeight.Weight(),
-		NonCoopHint:    hasNonCoop,
+		Weight:         weight.Weight(),
 		IsExternalAddr: theSweep.isExternalAddr,
 	}, nil
 }
@@ -250,26 +218,13 @@ const newBatchSignal = -1
 type feeDetails struct {
 	BatchId        int32
 	FeeRate        chainfee.SatPerKWeight
-	MixedWeight    lntypes.WeightUnit
-	CoopWeight     lntypes.WeightUnit
-	NonCoopWeight  lntypes.WeightUnit
-	NonCoopHint    bool
+	Weight         lntypes.WeightUnit
 	IsExternalAddr bool
 }
 
 // fee returns fee of onchain transaction representing this instance.
-func (e feeDetails) fee(mixedBatch bool) btcutil.Amount {
-	var weight lntypes.WeightUnit
-	switch {
-	case mixedBatch:
-		weight = e.MixedWeight
-	case e.NonCoopHint:
-		weight = e.NonCoopWeight
-	default:
-		weight = e.CoopWeight
-	}
-
-	return e.FeeRate.FeeForWeight(weight)
+func (e feeDetails) fee() btcutil.Amount {
+	return e.FeeRate.FeeForWeight(e.Weight)
 }
 
 // combine returns new feeDetails, combining properties.
@@ -282,20 +237,15 @@ func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 
 	return feeDetails{
 		FeeRate:        feeRate,
-		MixedWeight:    e1.MixedWeight + e2.MixedWeight,
-		CoopWeight:     e1.CoopWeight + e2.CoopWeight,
-		NonCoopWeight:  e1.NonCoopWeight + e2.NonCoopWeight,
-		NonCoopHint:    e1.NonCoopHint || e2.NonCoopHint,
+		Weight:         e1.Weight + e2.Weight,
 		IsExternalAddr: e1.IsExternalAddr || e2.IsExternalAddr,
 	}
 }
 
 // selectBatches returns the list of id of batches sorted from best to worst.
 // Creation a new batch is encoded as newBatchSignal. For each batch its fee
-// rate and a set of weights are provided: weight in case of a mixed batch,
-// weight in case of cooperative spending and weight in case non-cooperative
-// spending. Also, a hint is provided to signal what spending path will be used
-// by the batch.
+// rate and a weight is provided. Also, a hint is provided to signal which
+// spending path will be used by the batch.
 //
 // The same data is also provided for the sweep for which we are selecting a
 // batch to add. In case of the sweep weights are weight deltas resulted from
@@ -308,10 +258,9 @@ func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 //
 // Each fee details has also IsExternalAddr flag. There is a rule that sweeps
 // having flag IsExternalAddr must go in individual batches. Cooperative
-// spending is only available if all the sweeps support cooperative spending
-// path of in a mixed batch.
-func selectBatches(batches []feeDetails, sweep, oneSweepBatch feeDetails,
-	mixedBatch bool) ([]int32, error) {
+// spending may only be available for some sweeps supporting it, not for all.
+func selectBatches(batches []feeDetails,
+	sweep, oneSweepBatch feeDetails) ([]int32, error) {
 
 	// If the sweep has IsExternalAddr flag, the sweep can't be added to
 	// a batch, so create new batch for it.
@@ -332,7 +281,7 @@ func selectBatches(batches []feeDetails, sweep, oneSweepBatch feeDetails,
 	// creation with this sweep only in it. The cost is its full fee.
 	alternatives = append(alternatives, alternative{
 		batchId: newBatchSignal,
-		cost:    oneSweepBatch.fee(mixedBatch),
+		cost:    oneSweepBatch.fee(),
 	})
 
 	// Try to add the sweep to every batch, calculate the costs and
@@ -348,7 +297,7 @@ func selectBatches(batches []feeDetails, sweep, oneSweepBatch feeDetails,
 		combinedBatch := batch.combine(sweep)
 
 		// The cost is the fee increase.
-		cost := combinedBatch.fee(mixedBatch) - batch.fee(mixedBatch)
+		cost := combinedBatch.fee() - batch.fee()
 
 		// The cost must be positive, because we added a sweep.
 		if cost <= 0 {
