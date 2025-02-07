@@ -20,7 +20,9 @@ INSERT INTO reservations (
     value,
     client_key_family,
     client_key_index,
-    initiation_height
+    initiation_height,
+    protocol_version,
+    prepay_invoice
 ) VALUES (
     $1,
     $2,
@@ -29,7 +31,9 @@ INSERT INTO reservations (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9,
+    $10
 )
 `
 
@@ -42,6 +46,8 @@ type CreateReservationParams struct {
 	ClientKeyFamily  int32
 	ClientKeyIndex   int32
 	InitiationHeight int32
+	ProtocolVersion  int32
+	PrepayInvoice    string
 }
 
 func (q *Queries) CreateReservation(ctx context.Context, arg CreateReservationParams) error {
@@ -54,13 +60,15 @@ func (q *Queries) CreateReservation(ctx context.Context, arg CreateReservationPa
 		arg.ClientKeyFamily,
 		arg.ClientKeyIndex,
 		arg.InitiationHeight,
+		arg.ProtocolVersion,
+		arg.PrepayInvoice,
 	)
 	return err
 }
 
 const getReservation = `-- name: GetReservation :one
 SELECT
-    id, reservation_id, client_pubkey, server_pubkey, expiry, value, client_key_family, client_key_index, initiation_height, tx_hash, out_index, confirmation_height
+    id, reservation_id, client_pubkey, server_pubkey, expiry, value, client_key_family, client_key_index, initiation_height, tx_hash, out_index, confirmation_height, protocol_version, prepay_invoice
 FROM
     reservations
 WHERE
@@ -83,6 +91,8 @@ func (q *Queries) GetReservation(ctx context.Context, reservationID []byte) (Res
 		&i.TxHash,
 		&i.OutIndex,
 		&i.ConfirmationHeight,
+		&i.ProtocolVersion,
+		&i.PrepayInvoice,
 	)
 	return i, err
 }
@@ -128,7 +138,7 @@ func (q *Queries) GetReservationUpdates(ctx context.Context, reservationID []byt
 
 const getReservations = `-- name: GetReservations :many
 SELECT
-    id, reservation_id, client_pubkey, server_pubkey, expiry, value, client_key_family, client_key_index, initiation_height, tx_hash, out_index, confirmation_height
+    id, reservation_id, client_pubkey, server_pubkey, expiry, value, client_key_family, client_key_index, initiation_height, tx_hash, out_index, confirmation_height, protocol_version, prepay_invoice
 FROM
     reservations
 ORDER BY
@@ -157,6 +167,8 @@ func (q *Queries) GetReservations(ctx context.Context) ([]Reservation, error) {
 			&i.TxHash,
 			&i.OutIndex,
 			&i.ConfirmationHeight,
+			&i.ProtocolVersion,
+			&i.PrepayInvoice,
 		); err != nil {
 			return nil, err
 		}

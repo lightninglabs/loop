@@ -83,6 +83,8 @@ func (r *SQLStore) CreateReservation(ctx context.Context,
 		ClientKeyFamily:  int32(reservation.KeyLocator.Family),
 		ClientKeyIndex:   int32(reservation.KeyLocator.Index),
 		InitiationHeight: reservation.InitiationHeight,
+		ProtocolVersion:  int32(reservation.ProtocolVersion),
+		PrepayInvoice:    reservation.PrepayInvoice,
 	}
 
 	updateArgs := sqlc.InsertReservationUpdateParams{
@@ -287,6 +289,8 @@ func sqlReservationToReservation(row sqlc.Reservation,
 		),
 		InitiationHeight: row.InitiationHeight,
 		State:            fsm.StateType(lastUpdate.UpdateState),
+		ProtocolVersion:  ProtocolVersion(row.ProtocolVersion),
+		PrepayInvoice:    row.PrepayInvoice,
 	}, nil
 }
 
