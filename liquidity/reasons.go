@@ -69,6 +69,10 @@ const (
 	// ReasonLoopInUnreachable indicates that the server does not have a
 	// path to the client, so cannot perform a loop in swap at this time.
 	ReasonLoopInUnreachable
+
+	// ReasonCustomChannelData indicates that the channel is not standard
+	// and should not be used for swaps.
+	ReasonCustomChannelData
 )
 
 // String returns a string representation of a reason.
