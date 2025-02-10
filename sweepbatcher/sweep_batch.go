@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -120,6 +121,9 @@ type sweep struct {
 	// but it failed. We try to spend a sweep cooperatively only once. This
 	// status is not persisted in the DB.
 	coopFailed bool
+
+	// cpfp is set, if the sweep should be handled in CPFP mode.
+	cpfp bool
 }
 
 // batchState is the state of the batch.
@@ -173,6 +177,14 @@ type batchConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// cpfpHelper provides methods used when a custom tx signer and CPFP
+	// are enabled.
+	cpfpHelper CpfpHelper
+
+	// chainParams are the chain parameters of the chain that is used by
+	// batches.
+	chainParams *chaincfg.Params
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -440,7 +452,9 @@ func (b *batch) setLog(logger btclog.Logger) {
 }
 
 // addSweep tries to add a sweep to the batch. If this is the first sweep being
-// added to the batch then it also sets the primary sweep ID.
+// added to the batch then it also sets the primary sweep ID. If CPFP mode is
+// enabled, the result depends on the outcome of cpfpHelper.Presign for a
+// non-empty batch. For an empty batch, the input needs to pass PresignSweep.
 func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	done, err := b.scheduleNextCall()
 	defer done()
@@ -543,6 +557,54 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 				b.cfg.maxTimeoutDistance)
 
 			return false, nil
+		}
+	}
+
+	// If CPFP mode is enabled, we should first presign the new version of
+	// batch transaction. Also ensure that all the sweeps in the batch use
+	// the same mode (CPFP or regular).
+	if sweep.cpfp {
+		// Ensure that all the sweeps in the batch use also CPFP mode.
+		for _, s := range b.sweeps {
+			if !s.cpfp {
+				b.log().Infof("failed to add sweep %x to the "+
+					"batch, because the batch has "+
+					"non-CPFP sweep %x", sweep.swapHash[:6],
+					s.swapHash[:6])
+
+				return false, nil
+			}
+		}
+
+		if len(b.sweeps) != 0 {
+			if err := b.presign(ctx, sweep); err != nil {
+				b.log().Infof("failed to add sweep %x to the "+
+					"batch, because failed to presign new "+
+					"version of batch tx: %v",
+					sweep.swapHash[:6], err)
+
+				return false, nil
+			}
+		} else {
+			if err := b.ensurePresigned(ctx, sweep); err != nil {
+				return false, fmt.Errorf("failed to check "+
+					"signing of input %x, this means that "+
+					"batcher.PresignSweep was not called "+
+					"prior to AddSweep for this input: %w",
+					sweep.swapHash[:6], err)
+			}
+		}
+	} else {
+		// Ensure that all the sweeps in the batch don't use CPFP.
+		for _, s := range b.sweeps {
+			if s.cpfp {
+				b.log().Infof("failed to add sweep %x to the "+
+					"batch, because the batch has "+
+					"CPFP sweep %x", sweep.swapHash[:6],
+					s.swapHash[:6])
+
+				return false, nil
+			}
 		}
 	}
 
@@ -842,6 +904,22 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 	return true
 }
 
+// isCPFP returns if the batch uses CPFP mode. Currently CPFP and non-CPFP
+// sweeps never appear in the same batch. Fails if the batch is empty.
+func (b *batch) isCPFP() (bool, error) {
+	if len(b.sweeps) == 0 {
+		return false, fmt.Errorf("the batch is empty")
+	}
+
+	for _, sweep := range b.sweeps {
+		if sweep.cpfp {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // publish creates and publishes the latest batch transaction to the network.
 func (b *batch) publish(ctx context.Context) error {
 	var (
@@ -867,7 +945,19 @@ func (b *batch) publish(ctx context.Context) error {
 		b.publishErrorHandler(err, errMsg, b.log())
 	}
 
-	fee, err, signSuccess = b.publishMixedBatch(ctx)
+	// Determine if we should use CPFP mode for the batch.
+	cpfp, err := b.isCPFP()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"CPFP mode: %w", b.id, err)
+	}
+
+	if cpfp {
+		fee, err, signSuccess = b.publishWithCPFP(ctx)
+	} else {
+		fee, err, signSuccess = b.publishMixedBatch(ctx)
+	}
+
 	if err != nil {
 		if signSuccess {
 			logPublishError("publish error", err)
@@ -1746,6 +1836,28 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 // handleConf handles a confirmation notification. This is the final step of the
 // batch. Here we signal to the batcher that this batch was completed.
 func (b *batch) handleConf(ctx context.Context) error {
+	// If the batch is in CPFP mode, cleanup cpfpHelper.
+	cpfp, err := b.isCPFP()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"CPFP mode: %w", b.id, err)
+	}
+
+	if cpfp {
+		b.log().Infof("Cleaning up CPFP store")
+
+		inputs := make([]wire.OutPoint, 0, len(b.sweeps))
+		for _, sweep := range b.sweeps {
+			inputs = append(inputs, sweep.outpoint)
+		}
+
+		err := b.cfg.cpfpHelper.CleanupTransactions(ctx, inputs)
+		if err != nil {
+			return fmt.Errorf("failed to clean up store for "+
+				"batch %d, inputs %v: %w", b.id, inputs, err)
+		}
+	}
+
 	b.log().Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
@@ -1788,7 +1900,20 @@ func (b *batch) persist(ctx context.Context) error {
 
 // getBatchDestAddr returns the batch's destination address. If the batch
 // has already generated an address then the same one will be returned.
+// The method must not be used in CPFP mode. Use getSweepsDestAddr instead.
 func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
+	// Determine if we should use CPFP mode for the batch.
+	cpfp, err := b.isCPFP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine if the batch %d "+
+			"uses CPFP mode: %w", b.id, err)
+	}
+
+	// Make sure that the method is not used for CPFP batches.
+	if cpfp {
+		return nil, fmt.Errorf("getBatchDestAddr used in CPFP mode")
+	}
+
 	var address btcutil.Address
 
 	// If a batch address is set, use that. Otherwise, generate a

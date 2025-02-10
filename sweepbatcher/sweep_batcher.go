@@ -153,6 +153,50 @@ type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 	swapHash lntypes.Hash, rootHash chainhash.Hash, sigHash [32]byte,
 ) ([]byte, error)
 
+// CpfpHelper provides methods used when a custom tx signer and CPFP are used.
+// In this mode sweepbatcher uses transactions provided by CPFP helper, which
+// may be pre-signed and non-RBF'able, in which case CPFP may be needed. CPFP
+// helper also provides transactions it previously produced by txid and affects
+// batch selection - it has method Presign called upon new batch creation and
+// adding to existing batch.
+type CpfpHelper interface {
+	// IsCpfpApplied returns if CPFP mode is enabled for a particular sweep.
+	// This method should always return the same value for the same sweep.
+	// Currently CPFP and non-CPFP sweeps never appear in the same batch.
+	IsCpfpApplied(ctx context.Context, input wire.OutPoint) (bool, error)
+
+	// Presign tries to presign a batch transaction. If the method returns
+	// nil, it is guaranteed that future calls to SignTx on this set of
+	// sweeps return valid signed transactions.
+	Presign(ctx context.Context, tx *wire.MsgTx,
+		inputAmt btcutil.Amount) error
+
+	// DestPkScript returns destination pkScript used in a presigned
+	// transaction sweeping the inputs. Returns an error, if such tx
+	// doesn't exist. If there are many such transactions, returns any
+	// of pkScript's.
+	DestPkScript(ctx context.Context,
+		inputs []wire.OutPoint) ([]byte, error)
+
+	// SignTx signs an unsigned transaction or returns a pre-signed tx.
+	// It must satisfy the following invariants:
+	//   - the set of inputs is the same, though the order may change;
+	//   - the output is the same, but its amount may be different;
+	//   - feerate is higher or equal to minRelayFee;
+	//   - LockTime may be decreased;
+	//   - transaction version must be the same;
+	//   - Sequence numbers in the inputs must be preserved.
+	SignTx(ctx context.Context, tx *wire.MsgTx, inputAmt btcutil.Amount,
+		minRelayFee chainfee.SatPerKWeight) (*wire.MsgTx, error)
+
+	// LoadTx returns any tx previously returned by SignTx.
+	LoadTx(ctx context.Context, txid chainhash.Hash) (*wire.MsgTx, error)
+
+	// CleanupTransactions removes all transactions related to any of the
+	// outpoints. Should be called after sweep batch tx is fully confirmed.
+	CleanupTransactions(ctx context.Context, inputs []wire.OutPoint) error
+}
+
 // VerifySchnorrSig is a function that can be used to verify a schnorr
 // signature.
 type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
@@ -329,6 +373,10 @@ type Batcher struct {
 	// error. By default, it logs all errors as warnings, but "insufficient
 	// fee" as Info.
 	publishErrorHandler PublishErrorHandler
+
+	// cpfpHelper provides methods used when a custom tx signer and CPFP
+	// are enabled.
+	cpfpHelper CpfpHelper
 }
 
 // BatcherConfig holds batcher configuration.
@@ -369,6 +417,10 @@ type BatcherConfig struct {
 	// error. By default, it logs all errors as warnings, but "insufficient
 	// fee" as Info.
 	publishErrorHandler PublishErrorHandler
+
+	// cpfpHelper provides methods used when a custom tx signer and CPFP
+	// are enabled.
+	cpfpHelper CpfpHelper
 }
 
 // BatcherOption configures batcher behaviour.
@@ -442,6 +494,20 @@ func WithPublishErrorHandler(handler PublishErrorHandler) BatcherOption {
 	}
 }
 
+// WithCpfpHelper instructs sweepbatcher to switch to mode in which it may use
+// CPFP for fee bumping. In this mode it uses transactions provided by CPFP
+// helper, which may be pre-signed and non-RBF'able, in which case CPFP may be
+// needed. CPFP helper also provides transactions it previously produced by txid
+// and affects batch selection - it has method Presign called upon new batch
+// creation and adding to existing batch. In CPFP mode method PresignSweep must
+// be called prior to AddSweep. If PresignSweep fails, AddSweep must not be
+// called.
+func WithCpfpHelper(cpfpHelper CpfpHelper) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.cpfpHelper = cpfpHelper
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -496,6 +562,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		txLabeler:           cfg.txLabeler,
 		customMuSig2Signer:  cfg.customMuSig2Signer,
 		publishErrorHandler: cfg.publishErrorHandler,
+		cpfpHelper:          cfg.cpfpHelper,
 	}
 }
 
@@ -564,8 +631,29 @@ func (b *Batcher) Run(ctx context.Context) error {
 	}
 }
 
+// PresignSweep creates and stores presigned 1:1 transactions for the sweep.
+// This method must be called prior to AddSweep if CPFP mode is enabled.
+func (b *Batcher) PresignSweep(ctx context.Context, sweepOutpoint wire.OutPoint,
+	sweepValue btcutil.Amount, destAddress btcutil.Address) error {
+
+	if b.cpfpHelper == nil {
+		return fmt.Errorf("cpfpHelper is not installed")
+	}
+
+	sweeps := []sweep{
+		{
+			outpoint: sweepOutpoint,
+			value:    sweepValue,
+		},
+	}
+
+	return presign(ctx, b.cpfpHelper, sweeps, destAddress)
+}
+
 // AddSweep adds a sweep request to the batcher for handling. This will either
-// place the sweep in an existing batch or create a new one.
+// place the sweep in an existing batch or create a new one. In CPFP mode call
+// PresignSweep prior to AddSweep. If PresignSweep fails, AddSweep must not be
+// called.
 func (b *Batcher) AddSweep(sweepReq *SweepRequest) error {
 	select {
 	case b.sweepReqs <- *sweepReq:
@@ -616,8 +704,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		return err
 	}
 
-	log().Infof("Batcher handling sweep %x, completed=%v",
-		sweep.swapHash[:6], completed)
+	log().Infof("Batcher handling sweep %x, cpfp=%v, completed=%v",
+		sweep.swapHash[:6], sweep.cpfp, completed)
 
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
@@ -703,7 +791,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	return b.spinUpNewBatch(ctx, sweep)
 }
 
-// spinUpNewBatch creates new batch, starts it and adds the sweep to it.
+// spinUpNewBatch creates new batch, starts it and adds the sweep to it. If CPFP
+// mode is enabled, the result also depends on outcome of cpfpHelper.Presign.
 func (b *Batcher) spinUpNewBatch(ctx context.Context, sweep *sweep) error {
 	// Spin up a fresh batch.
 	newBatch, err := b.spinUpBatch(ctx)
@@ -1099,6 +1188,16 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 			swapHash[:6], err)
 	}
 
+	// Determine if CPFP mode is used for this sweep.
+	var cpfp bool
+	if b.cpfpHelper != nil {
+		cpfp, err = b.cpfpHelper.IsCpfpApplied(ctx, outpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to determine CPFP "+
+				"status for sweep %x: %w", swapHash[:6], err)
+		}
+	}
+
 	// Find minimum fee rate for the sweep. Use customFeeRate if it is
 	// provided, otherwise use wallet's EstimateFeeRate.
 	var minFeeRate chainfee.SatPerKWeight
@@ -1142,6 +1241,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		destAddr:               s.DestAddr,
 		minFeeRate:             minFeeRate,
 		nonCoopHint:            s.NonCoopHint,
+		cpfp:                   cpfp,
 	}, nil
 }
 
@@ -1152,7 +1252,9 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		noBumping:          b.customFeeRate != nil,
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
+		cpfpHelper:         b.cpfpHelper,
 		clock:              b.clock,
+		chainParams:        b.chainParams,
 	}
 }
 

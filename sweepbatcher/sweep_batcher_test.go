@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
@@ -4065,6 +4067,1351 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	require.Equal(t, feeRateHigh, cachedFeeRate)
 }
 
+// mockCpfpHelper implements CpfpHelper interface and stores arguments passed
+// in its methods to validate correctness of function publishWithCPFP.
+type mockCpfpHelper struct {
+	// onlineOutpoints specifies which outpoints are capable of
+	// participating in presigning.
+	onlineOutpoints map[wire.OutPoint]bool
+
+	// presignedBatches is the collection of presigned batches.
+	presignedBatches []*wire.MsgTx
+
+	// mu should be hold by all the public methods of this type.
+	mu sync.Mutex
+
+	// cleanupCalled is a channel where an element is sent every time
+	// CleanupTransactions is called.
+	cleanupCalled chan struct{}
+}
+
+// newMockCpfpHelper returns new instance of mockCpfpHelper.
+func newMockCpfpHelper() *mockCpfpHelper {
+	return &mockCpfpHelper{
+		onlineOutpoints: make(map[wire.OutPoint]bool),
+		cleanupCalled:   make(chan struct{}),
+	}
+}
+
+// SetOutpointOnline changes the online status of an outpoint.
+func (h *mockCpfpHelper) SetOutpointOnline(op wire.OutPoint, online bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.onlineOutpoints[op] = online
+}
+
+// findOfflineInputs returns inputs of a tx which are offline.
+func (h *mockCpfpHelper) findOfflineInputs(tx *wire.MsgTx) []wire.OutPoint {
+	offline := make([]wire.OutPoint, 0, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		if !h.onlineOutpoints[txIn.PreviousOutPoint] {
+			offline = append(offline, txIn.PreviousOutPoint)
+		}
+	}
+
+	return offline
+}
+
+// sign signs the transaction.
+func (h *mockCpfpHelper) sign(tx *wire.MsgTx) {
+	// Sign all the inputs.
+	for i := range tx.TxIn {
+		tx.TxIn[i].Witness = wire.TxWitness{
+			make([]byte, 64),
+		}
+	}
+}
+
+// getTxFeerate returns fee rate of a transaction.
+func (h *mockCpfpHelper) getTxFeerate(tx *wire.MsgTx,
+	inputAmt btcutil.Amount) chainfee.SatPerKWeight {
+
+	// "Sign" tx's copy to assess the weight.
+	tx2 := tx.Copy()
+	h.sign(tx2)
+	weight := lntypes.WeightUnit(
+		blockchain.GetTransactionWeight(btcutil.NewTx(tx2)),
+	)
+	fee := btcutil.Amount(tx.TxOut[0].Value) - inputAmt
+
+	return chainfee.NewSatPerKWeight(fee, weight)
+}
+
+// IsCpfpApplied returns if the input was previously used in any call to the
+// SetOutpointOnline method.
+func (h *mockCpfpHelper) IsCpfpApplied(ctx context.Context,
+	input wire.OutPoint) (bool, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	_, has := h.onlineOutpoints[input]
+
+	return has, nil
+}
+
+// Presign tries to presign the transaction. It succeeds if all the inputs
+// are online. In case of success it adds the transaction to presignedBatches.
+func (h *mockCpfpHelper) Presign(ctx context.Context, tx *wire.MsgTx,
+	inputAmt btcutil.Amount) error {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if offline := h.findOfflineInputs(tx); len(offline) != 0 {
+		return fmt.Errorf("some inputs of tx are offline: %v", offline)
+	}
+
+	tx = tx.Copy()
+	h.sign(tx)
+	h.presignedBatches = append(h.presignedBatches, tx)
+
+	return nil
+}
+
+// DestPkScript returns destination pkScript used in 1:1 presigned tx.
+func (h *mockCpfpHelper) DestPkScript(ctx context.Context,
+	inputs []wire.OutPoint) ([]byte, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	inputsSet := make(map[wire.OutPoint]struct{}, len(inputs))
+	for _, input := range inputs {
+		inputsSet[input] = struct{}{}
+	}
+	if len(inputsSet) != len(inputs) {
+		return nil, fmt.Errorf("duplicate inputs")
+	}
+
+	inputsMatch := func(tx *wire.MsgTx) bool {
+		if len(tx.TxIn) != len(inputsSet) {
+			return false
+		}
+
+		for _, txIn := range tx.TxIn {
+			if _, has := inputsSet[txIn.PreviousOutPoint]; !has {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	for _, tx := range h.presignedBatches {
+		if inputsMatch(tx) {
+			return tx.TxOut[0].PkScript, nil
+		}
+	}
+
+	return nil, fmt.Errorf("tx sweeping inputs %v not found", inputs)
+}
+
+// SignTx tries to sign the transaction. If all the inputs are online, it signs
+// the exact transaction passed and adds it to presignedBatches. Otherwise it
+// looks for a transaction in presignedBatches satisfying the criteria.
+func (h *mockCpfpHelper) SignTx(ctx context.Context, tx *wire.MsgTx,
+	inputAmt btcutil.Amount,
+	minRelayFee chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// If all the inputs are online, sign this exact transaction.
+	if offline := h.findOfflineInputs(tx); len(offline) == 0 {
+		tx = tx.Copy()
+		h.sign(tx)
+
+		// Add to the collection.
+		h.presignedBatches = append(h.presignedBatches, tx)
+
+		return tx, nil
+	}
+
+	// Find feerate of input tx.
+	inputFeeRate := h.getTxFeerate(tx, inputAmt)
+
+	// Try to find a transaction in the collection satisfying all the
+	// criteria of CpfpHelper.SignTx. If there are many such transactions,
+	// select a transaction with feerate which is the closest to the feerate
+	// of the input tx.
+	var (
+		bestTx              *wire.MsgTx
+		bestFeerateDistance chainfee.SatPerKWeight
+	)
+	for _, candidate := range h.presignedBatches {
+		err := CheckSignedTx(tx, candidate, inputAmt, minRelayFee)
+		if err != nil {
+			continue
+		}
+
+		feeRate := h.getTxFeerate(candidate, inputAmt)
+		feeRateDistance := feeRate - inputFeeRate
+		if feeRateDistance < 0 {
+			feeRateDistance = -feeRateDistance
+		}
+
+		if bestTx == nil || feeRateDistance < bestFeerateDistance {
+			bestTx = candidate
+			bestFeerateDistance = feeRateDistance
+		}
+	}
+
+	if bestTx == nil {
+		return nil, fmt.Errorf("no such presigned tx found")
+	}
+
+	return bestTx.Copy(), nil
+}
+
+// LoadTx tries to load the transaction by txid. It scans presignedBatches.
+func (h *mockCpfpHelper) LoadTx(ctx context.Context,
+	txid chainhash.Hash) (*wire.MsgTx, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for _, tx := range h.presignedBatches {
+		if tx.TxHash() == txid {
+			return tx.Copy(), nil
+		}
+	}
+
+	return nil, fmt.Errorf("tx with ID %v not found", txid)
+}
+
+// CleanupTransactions removes all transactions related to any of the outpoints.
+func (h *mockCpfpHelper) CleanupTransactions(ctx context.Context,
+	inputs []wire.OutPoint) error {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	inputsSet := make(map[wire.OutPoint]struct{}, len(inputs))
+	for _, input := range inputs {
+		inputsSet[input] = struct{}{}
+	}
+	if len(inputsSet) != len(inputs) {
+		return fmt.Errorf("duplicate inputs")
+	}
+
+	var presignedBatches []*wire.MsgTx
+
+	// Filter out transactions spending any of the inputs passed.
+	for _, tx := range h.presignedBatches {
+		var match bool
+		for _, txIn := range tx.TxIn {
+			if _, has := inputsSet[txIn.PreviousOutPoint]; has {
+				match = true
+				break
+			}
+		}
+
+		if !match {
+			presignedBatches = append(presignedBatches, tx)
+		}
+	}
+
+	h.presignedBatches = presignedBatches
+
+	h.cleanupCalled <- struct{}{}
+
+	return nil
+}
+
+// dummySweepFetcherMock implements SweepFetcher by returning blank SweepInfo.
+// It is used in TestCPFP, because it doesn't use any fields from SweepInfo.
+type dummySweepFetcherMock struct {
+}
+
+// FetchSweep returns blank SweepInfo.
+func (f *dummySweepFetcherMock) FetchSweep(ctx context.Context,
+	hash lntypes.Hash) (*SweepInfo, error) {
+
+	return &SweepInfo{
+		// Set Timeout to prevent warning messages about timeout=0.
+		Timeout: 1000,
+	}, nil
+}
+
+// testCPFP_input1_offline_then_input2 tests CPFP mode for the following
+// scenario: first input is added, then goes offline, then feerate grows, one of
+// presigned transactions is published, feerate grows further, then CPFP is used
+// and then another online input is added and is assigned to another batch.
+func testCPFP_input1_offline_then_input2(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper))
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+
+	// This should fail, because the input is offline.
+	cpfpHelper.SetOutpointOnline(op1, false)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "offline")
+
+	// Enable the input and try again.
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+
+	// Increase fee rate and turn off the input, so it can't sign updated
+	// tx. The feerate is close to the feerate of one of presigned txs, so
+	// there is no CPFP.
+	setFeeRate(feeRateMedium)
+	cpfpHelper.SetOutpointOnline(op1, false)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 1)
+	require.Len(t, parent.TxOut, 1)
+	require.Equal(t, op1, parent.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(987034), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+
+	// Make sure the fee rate is feeRateMedium.
+	batch := getOnlyBatch(t, ctx, batcher)
+	var (
+		numSweeps     int
+		cachedFeeRate chainfee.SatPerKWeight
+	)
+	batch.testRunInEventLoop(ctx, func() {
+		numSweeps = len(batch.sweeps)
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, 1, numSweeps)
+	require.Equal(t, feeRateMedium, cachedFeeRate)
+
+	// Raise feerate and trigger new publishing. The parent tx should be the
+	// same plus a CPFP tx.
+	setFeeRate(feeRateHigh)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	parent2 := <-lnd.TxPublishChannel
+	child := <-lnd.TxPublishChannel
+	require.Equal(t, parent.TxHash(), parent2.TxHash())
+	require.Len(t, child.TxIn, 1)
+	require.Len(t, child.TxOut, 1)
+	parentOp := wire.OutPoint{
+		Hash:  parent2.TxHash(),
+		Index: 0,
+	}
+	require.Equal(t, parentOp, child.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(966600), child.TxOut[0].Value)
+	require.Equal(t, batchPkScript, child.TxOut[0].PkScript)
+
+	// Now add another input. It is online, but the first input is still
+	// offline, so another input should go to another batch.
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, destAddr)
+	require.NoError(t, err)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	batch2 := <-lnd.TxPublishChannel
+	require.Len(t, batch2.TxIn, 1)
+	require.Len(t, batch2.TxOut, 1)
+	require.Equal(t, op2, batch2.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(1984160), batch2.TxOut[0].Value)
+	require.Equal(t, batchPkScript, batch2.TxOut[0].PkScript)
+
+	// Now confirm the first batch. Make sure its presigned transactions
+	// were removed, but not the transactions of the second batch.
+	presignedSize1 := len(cpfpHelper.presignedBatches)
+
+	parent2hash := parent2.TxHash()
+	spendDetail := &chainntnfs.SpendDetail{
+		SpentOutPoint:     &sweepReq1.Outpoint,
+		SpendingTx:        parent2,
+		SpenderTxHash:     &parent2hash,
+		SpenderInputIndex: 0,
+		SpendingHeight:    601,
+	}
+	lnd.SpendChannel <- spendDetail
+	<-lnd.RegisterConfChannel
+	require.NoError(t, lnd.NotifyHeight(604))
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		Tx: parent2,
+	}
+
+	<-cpfpHelper.cleanupCalled
+
+	presignedSize2 := len(cpfpHelper.presignedBatches)
+	require.Greater(t, presignedSize2, 0)
+	require.Greater(t, presignedSize1, presignedSize2)
+
+	// Make sure we still have presigned transactions for the second batch.
+	cpfpHelper.SetOutpointOnline(op2, false)
+	_, err = cpfpHelper.SignTx(
+		ctx, batch2, 2_000_000, chainfee.FeePerKwFloor,
+	)
+	require.NoError(t, err)
+}
+
+// testCPFP_two_inputs_one_goes_offline tests CPFP mode for the following
+// scenario: two online inputs are added, then one of them goes offline, then
+// feerate grows and a presigned transaction is used.
+func testCPFP_two_inputs_one_goes_offline(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Add second sweep.
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 2)
+	require.Len(t, parent.TxOut, 1)
+	require.ElementsMatch(
+		t, []wire.OutPoint{op1, op2},
+		[]wire.OutPoint{
+			parent.TxIn[0].PreviousOutPoint,
+			parent.TxIn[1].PreviousOutPoint,
+		},
+	)
+	require.Equal(t, int64(2993740), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+
+	// Now turn off the second input, raise feerate and trigger new
+	// publishing. The feerate is close to one of the presigned feerates,
+	// so this should result in RBF.
+	cpfpHelper.SetOutpointOnline(op2, false)
+	setFeeRate(feeRateMedium)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	parent2 := <-lnd.TxPublishChannel
+	require.NotEqual(t, parent.TxHash(), parent2.TxHash())
+	require.Len(t, parent2.TxIn, 2)
+	require.Len(t, parent2.TxOut, 1)
+	require.ElementsMatch(
+		t, []wire.OutPoint{op1, op2},
+		[]wire.OutPoint{
+			parent.TxIn[0].PreviousOutPoint,
+			parent.TxIn[1].PreviousOutPoint,
+		},
+	)
+	require.Equal(t, int64(2979503), parent2.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent2.TxOut[0].PkScript)
+}
+
+// testCPFP_cpfp_previous_version tests CPFP mode for the following scenario:
+// one input is added, a transaction is published, then the input goes offline
+// and feerate grows, RBF is attempted, but broadcast fails, so the batcher
+// CPFPs previously published version.
+func testCPFP_cpfp_previous_version(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 1)
+	require.Len(t, parent.TxOut, 1)
+	require.Equal(t, op1, parent.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(996040), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+
+	// Now turn off the first input, raise feerate and trigger new
+	// publishing, which will fail.
+	var failedToPublishTx *wire.MsgTx
+	lnd.PublishHandler = func(ctx context.Context, tx *wire.MsgTx,
+		label string) error {
+
+		// We should fail the first publishing, which is a sweep,
+		// but we shouldn't fail CPFP publishing.
+		if strings.HasPrefix(label, cpfpLabelPrefix) {
+			return nil
+		}
+
+		failedToPublishTx = tx
+
+		return fmt.Errorf("test error")
+	}
+	cpfpHelper.SetOutpointOnline(op1, false)
+	setFeeRate(feeRateMedium)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	child := <-lnd.TxPublishChannel
+	require.NotEqual(t, parent.TxHash(), child.TxHash())
+	require.Len(t, child.TxIn, 1)
+	require.Len(t, child.TxOut, 1)
+	require.Equal(t, wire.OutPoint{
+		Hash:  parent.TxHash(),
+		Index: 0,
+	}, child.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(974950), child.TxOut[0].Value)
+
+	// Make sure the failed attempt used higher feerate than parent.
+	require.Equal(t, int64(987034), failedToPublishTx.TxOut[0].Value)
+}
+
+// testCPFP_no_cpfp_if_all_online tests CPFP mode for the following scenario:
+// one input is added, a transaction is published, then feerate grows, RBF is
+// attempted, but broadcast fails, but CPFP is not used, because all the inputs
+// are online (which is deduced by SignTx signing a tx with the same feerate as
+// requested).
+func testCPFP_no_cpfp_if_all_online(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 1)
+	require.Len(t, parent.TxOut, 1)
+	require.Equal(t, op1, parent.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(996040), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch.log(),
+	}
+	batch.setLog(testLogger)
+
+	// Now turn off the first input, raise feerate and trigger new
+	// publishing, which will fail.
+	lnd.PublishHandler = func(ctx context.Context, tx *wire.MsgTx,
+		label string) error {
+
+		return fmt.Errorf("test error")
+	}
+	setFeeRate(feeRateMedium)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Wait for batcher to log that CPFP is not needed.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(
+			c, testLogger.infoMessages, "CPFP is not needed",
+		)
+	}, test.Timeout, eventuallyCheckFrequency)
+}
+
+// testCPFP_first_publish_fails tests CPFP mode for the following scenario:
+// one input is added and goes offline, feerate grows a transaction is attempted
+// to be published, but fails, no CPFP is attempted. Then the input goes online
+// and is published being signed online.
+func testCPFP_first_publish_fails(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+	cpfpHelper.SetOutpointOnline(op1, false)
+
+	// Make sure that publish attempt fails.
+	lnd.PublishHandler = func(ctx context.Context, tx *wire.MsgTx,
+		label string) error {
+
+		return fmt.Errorf("test error")
+	}
+
+	// Add the sweep, triggering the publish attempt.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch.log(),
+	}
+	batch.setLog(testLogger)
+
+	// Trigger another publish attempt in case "CPFP is not needed" was
+	// logged before we installed the logger watcher.
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Wait for batcher to log that CPFP is not needed.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(
+			c, testLogger.infoMessages, "CPFP is not needed",
+		)
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Now turn on the first input, raise feerate and trigger new
+	// publishing, which should succeed.
+	lnd.PublishHandler = nil
+	setFeeRate(feeRateMedium)
+	cpfpHelper.SetOutpointOnline(op1, true)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(602))
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 1)
+	require.Len(t, parent.TxOut, 1)
+	require.Equal(t, op1, parent.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(988120), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+}
+
+// testCPFP_cpfp_publishing_fails tests CPFP mode for the following scenario:
+// one input is added, a transaction is published, then the input goes offline
+// and feerate grows, RBF is published and then CPFP is attempted to achieve
+// the exact desired fee rate, but fails to be published. After then another
+// block comes in and both the parent and the child are published and this
+// succeeds.
+func testCPFP_cpfp_publishing_fails(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	parent := <-lnd.TxPublishChannel
+	require.Len(t, parent.TxIn, 1)
+	require.Len(t, parent.TxOut, 1)
+	require.Equal(t, op1, parent.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(996040), parent.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent.TxOut[0].PkScript)
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch.log(),
+	}
+	batch.setLog(testLogger)
+
+	// Now turn off the first input, raise feerate and trigger new
+	// publishing, which will succeed. But then the CPFP will fail.
+	var failedToPublishTx *wire.MsgTx
+	lnd.PublishHandler = func(ctx context.Context, tx *wire.MsgTx,
+		label string) error {
+
+		// We should fail the CPFP only.
+		if strings.HasPrefix(label, cpfpLabelPrefix) {
+			failedToPublishTx = tx
+
+			return fmt.Errorf("test error")
+		}
+
+		return nil
+	}
+	cpfpHelper.SetOutpointOnline(op1, false)
+	setFeeRate(feeRateHigh)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Expect new version of the batch to be published. This is one
+	// of the presigned transactions.
+	parent2 := <-lnd.TxPublishChannel
+	require.NotEqual(t, parent.TxHash(), parent2.TxHash())
+	require.Len(t, parent2.TxIn, 1)
+	require.Len(t, parent2.TxOut, 1)
+	require.Equal(t, op1, parent2.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(987034), parent2.TxOut[0].Value)
+	require.Equal(t, batchPkScript, parent2.TxOut[0].PkScript)
+
+	// Wait for batcher to log that CPFP has failed.
+	require.Eventually(t, func() bool {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		for _, msg := range testLogger.infoMessages {
+			match := strings.Contains(
+				msg, "failed to publish child tx",
+			)
+			if match {
+				return true
+			}
+		}
+
+		return false
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure that the failed to publish tx is our expected CPFP
+	// spending parent2.
+	require.Len(t, failedToPublishTx.TxIn, 1)
+	require.Len(t, failedToPublishTx.TxOut, 1)
+	require.Equal(t, wire.OutPoint{
+		Hash:  parent2.TxHash(),
+		Index: 0,
+	}, failedToPublishTx.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(966600), failedToPublishTx.TxOut[0].Value)
+	require.Equal(t, batchPkScript, failedToPublishTx.TxOut[0].PkScript)
+
+	// Great, now les all published transactions pass and trigger another
+	// publishing.
+	lnd.PublishHandler = nil
+	require.NoError(t, lnd.NotifyHeight(602))
+
+	// Expect a parent and a child to be published.
+	parent2a := <-lnd.TxPublishChannel
+	require.Equal(t, parent2.TxHash(), parent2a.TxHash())
+
+	child := <-lnd.TxPublishChannel
+	require.Len(t, child.TxIn, 1)
+	require.Len(t, child.TxOut, 1)
+	require.Equal(t, wire.OutPoint{
+		Hash:  parent2a.TxHash(),
+		Index: 0,
+	}, child.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(966600), child.TxOut[0].Value)
+	require.Equal(t, batchPkScript, child.TxOut[0].PkScript)
+}
+
+// testCPFP_cpfp_and_regular_sweeps tests a combination of CPFP mode and regular
+// mode for the following scenario: one regular input is added, then a CPFP
+// input is added and it goes to another batch, because they shouldn't appear
+// in the same batch. Then another regular and another CPFP inputs are added and
+// go to the existing batches of their types.
+func testCPFP_cpfp_and_regular_sweeps(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	cpfpHelper := newMockCpfpHelper()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithCustomFeeRate(customFeeRate), WithCpfpHelper(cpfpHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	/////////////////////////////////////
+	// Create the first regular sweep. //
+	/////////////////////////////////////
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 1_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{1},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash1, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx1 := <-lnd.TxPublishChannel
+	require.Len(t, tx1.TxIn, 1)
+	require.Len(t, tx1.TxOut, 1)
+
+	//////////////////////////////////
+	// Create the first CPFP sweep. //
+	//////////////////////////////////
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 2_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash2, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx2 := <-lnd.TxPublishChannel
+	require.Len(t, tx2.TxIn, 1)
+	require.Len(t, tx2.TxOut, 1)
+	require.Equal(t, op2, tx2.TxIn[0].PreviousOutPoint)
+
+	//////////////////////////////////////
+	// Create the second regular sweep. //
+	//////////////////////////////////////
+	swapHash3 := lntypes.Hash{3, 3, 3}
+	op3 := wire.OutPoint{
+		Hash:  chainhash.Hash{3, 3},
+		Index: 3,
+	}
+	sweepReq3 := SweepRequest{
+		SwapHash: swapHash3,
+		Value:    4_000_000,
+		Outpoint: op3,
+		Notifier: &dummyNotifier,
+	}
+
+	swap3 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 4_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{3},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash3, swap3)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq3))
+
+	///////////////////////////////////
+	// Create the second CPFP sweep. //
+	///////////////////////////////////
+	swapHash4 := lntypes.Hash{4, 4, 4}
+	op4 := wire.OutPoint{
+		Hash:  chainhash.Hash{4, 4},
+		Index: 4,
+	}
+
+	swap4 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 3_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{4},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash4, swap4)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	sweepReq4 := SweepRequest{
+		SwapHash: swapHash4,
+		Value:    3_000_000,
+		Outpoint: op4,
+		Notifier: &dummyNotifier,
+	}
+	cpfpHelper.SetOutpointOnline(op4, true)
+	err = batcher.PresignSweep(ctx, op4, 4_000_000, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq4))
+
+	// Wait for the both batches to have two sweeps.
+	require.Eventually(t, func() bool {
+		// Make sure there are two batches.
+		batches := getBatches(ctx, batcher)
+		if len(batches) != 2 {
+			return false
+		}
+
+		// Make sure each batch has two sweeps.
+		for _, batch := range batches {
+			var numSweeps int
+			batch.testRunInEventLoop(ctx, func() {
+				numSweeps = len(batch.sweeps)
+			})
+			if numSweeps != 2 {
+				return false
+			}
+		}
+
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Mine a block to trigger both batches publishing.
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Wait for a transactions to be published.
+	tx3 := <-lnd.TxPublishChannel
+	require.Len(t, tx3.TxIn, 2)
+	require.Len(t, tx3.TxOut, 1)
+	require.Equal(t, int64(4993740), tx3.TxOut[0].Value)
+
+	tx4 := <-lnd.TxPublishChannel
+	require.Len(t, tx4.TxIn, 2)
+	require.Len(t, tx4.TxOut, 1)
+	require.Equal(t, int64(4993740), tx4.TxOut[0].Value)
+}
+
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
 // batch based on their timeout distance.
 func TestSweepBatcherBatchCreation(t *testing.T) {
@@ -4210,6 +5557,41 @@ func TestWithMixedBatchCoopFailedOnly(t *testing.T) {
 // least as high as the highest fee rate of sweeps.
 func TestFeeRateGrows(t *testing.T) {
 	runTests(t, testFeeRateGrows)
+}
+
+// TestCPFP tests CPFP mode. This test doesn't use loopdb.
+func TestCPFP(t *testing.T) {
+	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
+	logger.SetLevel(btclog.LevelTrace)
+	UseLogger(logger)
+
+	t.Run("input1_offline_then_input2", func(t *testing.T) {
+		testCPFP_input1_offline_then_input2(t, NewStoreMock())
+	})
+
+	t.Run("two_inputs_one_goes_offline", func(t *testing.T) {
+		testCPFP_two_inputs_one_goes_offline(t, NewStoreMock())
+	})
+
+	t.Run("cpfp_previous_version", func(t *testing.T) {
+		testCPFP_cpfp_previous_version(t, NewStoreMock())
+	})
+
+	t.Run("no_cpfp_if_all_online", func(t *testing.T) {
+		testCPFP_no_cpfp_if_all_online(t, NewStoreMock())
+	})
+
+	t.Run("first_publish_fails", func(t *testing.T) {
+		testCPFP_first_publish_fails(t, NewStoreMock())
+	})
+
+	t.Run("cpfp_publishing_fails", func(t *testing.T) {
+		testCPFP_cpfp_publishing_fails(t, NewStoreMock())
+	})
+
+	t.Run("cpfp_and_regular_sweeps", func(t *testing.T) {
+		runTests(t, testCPFP_cpfp_and_regular_sweeps)
+	})
 }
 
 // testBatcherStore is BatcherStore used in tests.
