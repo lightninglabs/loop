@@ -1094,9 +1094,9 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 
 // constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
 // It also returns absolute fee (from weight and clamped).
-func (b *batch) constructUnsignedTx(sweeps []sweep,
-	address btcutil.Address) (*wire.MsgTx, lntypes.WeightUnit,
-	btcutil.Amount, btcutil.Amount, error) {
+func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
+	currentHeight int32, feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
+	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
 
 	// Sanity check, there should be at least 1 sweep in this batch.
 	if len(sweeps) == 0 {
@@ -1106,7 +1106,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 	// Create the batch transaction.
 	batchTx := &wire.MsgTx{
 		Version:  2,
-		LockTime: uint32(b.currentHeight),
+		LockTime: uint32(currentHeight),
 	}
 
 	// Add transaction inputs and estimate its weight.
@@ -1158,7 +1158,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 
 	// Find weight and fee.
 	weight := weightEstimate.Weight()
-	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
+	feeForWeight := feeRate.FeeForWeight(weight)
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee := clampBatchFee(feeForWeight, batchAmt)
@@ -1243,8 +1243,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 
 		// Construct unsigned batch transaction.
 		var err error
-		tx, weight, feeForWeight, fee, err = b.constructUnsignedTx(
-			sweeps, address,
+		tx, weight, feeForWeight, fee, err = constructUnsignedTx(
+			sweeps, address, b.currentHeight, b.rbfCache.FeeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to construct tx: %w", err),
