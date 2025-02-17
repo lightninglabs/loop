@@ -34,6 +34,7 @@ package liquidity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -48,6 +49,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -218,6 +220,11 @@ type Config struct {
 	LoopOutTerms func(ctx context.Context,
 		initiator string) (*loop.LoopOutTerms, error)
 
+	// GetAssetPrice returns the price of an asset in satoshis.
+	GetAssetPrice func(ctx context.Context, assetId string,
+		peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
+		btcutil.Amount, error)
+
 	// Clock allows easy mocking of time in unit tests.
 	Clock clock.Clock
 
@@ -302,6 +309,15 @@ func (m *Manager) Run(ctx context.Context) error {
 
 				default:
 					log.Errorf("autoloop failed: %v", err)
+				}
+			}
+
+			for assetID := range m.params.AssetAutoloopParams {
+				err = m.easyAutoLoopAsset(ctx, assetID)
+				if err != nil {
+					log.Errorf("easy autoloop asset "+
+						"failed: id: %v, err: %v",
+						assetID, err)
 				}
 			}
 
@@ -509,6 +525,42 @@ func (m *Manager) easyAutoLoop(ctx context.Context) error {
 	return nil
 }
 
+// easyAutoLoopAsset is the main entry point for the easy auto loop functionality
+// for assets. This function will try to dispatch a swap in order to meet the
+// easy autoloop requirements for the given asset. For easyAutoloop to work
+// there needs to be an EasyAutoloopTarget defined in the parameters. Easy
+// autoloop also uses the configured max inflight swaps and budget rules defined
+// in the parameters.
+func (m *Manager) easyAutoLoopAsset(ctx context.Context, assetID string) error {
+	if !m.params.Autoloop {
+		return nil
+	}
+
+	assetParams, ok := m.params.AssetAutoloopParams[assetID]
+	if !ok {
+		return nil
+	}
+
+	if !assetParams.EnableEasyOut {
+		return nil
+	}
+
+	// First check if we should refresh our budget before calculating any
+	// swaps for autoloop.
+	m.refreshAutoloopBudget(ctx)
+
+	// Dispatch the best easy autoloop swap.
+	err := m.dispatchBestAssetEasyAutoloopSwap(
+		ctx, assetID,
+		assetParams.EasyAutoloopTargetAmount,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ForceAutoLoop force-ticks our auto-out ticker.
 func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	select {
@@ -641,7 +693,195 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	suggestion, err := builder.buildSwap(
 		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
-		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	var swp loop.OutRequest
+	if t, ok := suggestion.(*loopOutSwapSuggestion); ok {
+		swp = t.OutRequest
+	} else {
+		return fmt.Errorf("unexpected swap suggestion type: %T", t)
+	}
+
+	// Dispatch a sticky loop out.
+	go m.dispatchStickyLoopOut(
+		ctx, swp, defaultAmountBackoffRetry, defaultAmountBackoff,
+	)
+
+	return nil
+}
+
+// dispatchBestAssetEasyAutoloopSwap tries to dispatch a swap to bring the total
+// local balance back to the target for the given asset.
+func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
+	assetID string, localTarget uint64) error {
+
+	if assetID == "" && len(assetID) != 32 {
+		return fmt.Errorf("invalid asset id: %v", assetID)
+	}
+
+	// Retrieve existing swaps.
+	loopOut, err := m.cfg.ListLoopOut(ctx)
+	if err != nil {
+		return err
+	}
+
+	loopIn, err := m.cfg.ListLoopIn(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Get a summary of our existing swaps so that we can check our autoloop
+	// budget.
+	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
+
+	err = m.checkSummaryBudget(summary)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.checkSummaryInflight(summary)
+	if err != nil {
+		return err
+	}
+
+	// Get all channels in order to calculate current total local balance.
+	channels, err := m.cfg.Lnd.Client.ListChannels(ctx, false, false)
+	if err != nil {
+		return err
+	}
+
+	// If we are running a custom asset, we'll need to get a random asset
+	// peer pubkey in order to rfq the asset price.
+	var assetPeerPubkey []byte
+
+	localTotal := uint64(0)
+	for _, channel := range channels {
+		// We'll only interested in custom asset channels.
+		if !channelIsCustom(channel) {
+			continue
+		}
+
+		assetData := getCustomAssetData(channel, assetID)
+		if assetData == nil {
+			continue
+		}
+
+		// We'll overwrite the channel local balance to be
+		// the custom asset balance. This allows us to make
+		// use of existing logic.
+		channel.LocalBalance = btcutil.Amount(
+			assetData.LocalBalance,
+		)
+
+		assetPeerPubkey = channel.PubKeyBytes[:]
+
+		localTotal += assetData.LocalBalance
+
+		// We'll overwrite the channel local balance in order to
+		// reuse channel selection logic.
+		channel.LocalBalance = btcutil.Amount(localTotal)
+	}
+
+	// Since we're only autolooping-out we need to check if we are below
+	// the target, meaning that we already meet the requirements.
+	if localTotal <= localTarget {
+		log.Debugf("asset: %v... total local balance %v below target %v",
+			assetID[:8], localTotal, localTarget)
+		return nil
+	}
+
+	restrictions, err := m.cfg.Restrictions(
+		ctx, swap.TypeOut, getInitiator(m.params),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Calculate the assetAmount that we want to loop out. If it exceeds the max
+	// allowed clamp it to max.
+	assetAmount := localTotal - localTarget
+
+	// If we run a custom asset, we'll need to convert the asset amount
+	// we want to swap to the satoshi amount.
+	satAmount, err := m.cfg.GetAssetPrice(
+		ctx, assetID, assetPeerPubkey, assetAmount,
+		restrictions.Minimum,
+	)
+	if err != nil {
+		return err
+	}
+
+	if satAmount > restrictions.Maximum {
+		satAmount = restrictions.Maximum
+	}
+
+	// If the amount we want to loop out is less than the minimum we can't
+	// proceed with a swap, so we return early.
+	if satAmount < restrictions.Minimum {
+		log.Debugf("asset %v easy autoloop: swap amount is below"+
+			" minimum swap size, minimum=%v, need to swap %v",
+			assetID[:8], restrictions.Minimum, satAmount)
+		return nil
+	}
+
+	log.Debugf("asset %v easy autoloop: local_total=%v, target=%v, "+
+		"attempting to loop out %v assets, %v sats", assetID[:8],
+		localTotal, localTarget, assetAmount, satAmount)
+
+	// Start building that swap.
+	builder := newLoopOutBuilder(m.cfg)
+
+	channel := m.pickEasyAutoloopChannel(
+		channels, restrictions, loopOut, loopIn,
+	)
+	if channel == nil {
+		return fmt.Errorf("no eligible channel for easy autoloop")
+	}
+
+	log.Debugf("asset %v easy autoloop: picked channel %v with local"+
+		" balance %v", assetID[:8], channel.ChannelID,
+		channel.LocalBalance)
+
+	swapAmt, err := btcutil.NewAmount(
+		math.Min(channel.LocalBalance.ToBTC(), satAmount.ToBTC()),
+	)
+	if err != nil {
+		return err
+	}
+
+	// If no fee is set, override our current parameters in order to use the
+	// default percent limit of easy-autoloop.
+	easyParams := m.params
+
+	switch feeLimit := easyParams.FeeLimit.(type) {
+	case *FeePortion:
+		if feeLimit.PartsPerMillion == 0 {
+			easyParams.FeeLimit = &FeePortion{
+				PartsPerMillion: defaultFeePPM,
+			}
+		}
+	default:
+		easyParams.FeeLimit = &FeePortion{
+			PartsPerMillion: defaultFeePPM,
+		}
+	}
+
+	// Set the swap outgoing channel to the chosen channel.
+	outgoing := []lnwire.ShortChannelID{
+		lnwire.NewShortChanIDFromInt(channel.ChannelID),
+	}
+
+	assetSwap := &assetSwapInfo{
+		assetID:    assetID,
+		peerPubkey: channel.PubKeyBytes[:],
+	}
+
+	suggestion, err := builder.buildSwap(
+		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
+		withAssetSwapInfo(assetSwap),
 	)
 	if err != nil {
 		return err
@@ -1440,10 +1680,6 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 	// Check each channel, since channels are already sorted we return the
 	// first channel that passes all checks.
 	for _, channel := range channels {
-		if channelIsCustom(channel) {
-			continue
-		}
-
 		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 
 		if !channel.Active {
@@ -1466,7 +1702,12 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 			continue
 		}
 
-		if channel.LocalBalance < restrictions.Minimum {
+		if channel.LocalBalance < restrictions.Minimum &&
+			// If we use a custom channel, the local balance is
+			// denominated in the asset's unit, so we don't need to
+			// check the minimum.
+			!channelIsCustom(channel) {
+
 			log.Debugf("Channel %v cannot be used for easy "+
 				"autoloop: insufficient local balance %v,"+
 				"minimum is %v, skipping remaining channels",
@@ -1576,4 +1817,29 @@ func channelIsCustom(channel lndclient.ChannelInfo) bool {
 	// non-standard channel, such as an asset channel and we
 	// don't want to consider it for swaps.
 	return channel.CustomChannelData != nil
+}
+
+// getCustomAssetData returns the asset data for a custom channel.
+func getCustomAssetData(channel lndclient.ChannelInfo, assetID string,
+) *rfqmsg.JsonAssetChanInfo {
+
+	if channel.CustomChannelData == nil {
+		return nil
+	}
+
+	var assetData rfqmsg.JsonAssetChannel
+	err := json.Unmarshal(channel.CustomChannelData, &assetData)
+	if err != nil {
+		log.Errorf("Error unmarshalling custom channel %v data: %v",
+			channel.ChannelID, err)
+		return nil
+	}
+
+	for _, asset := range assetData.Assets {
+		if asset.AssetInfo.AssetGenesis.AssetID == assetID {
+			return &asset
+		}
+	}
+
+	return nil
 }
