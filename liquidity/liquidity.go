@@ -637,6 +637,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	suggestion, err := builder.buildSwap(
 		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
+		nil,
 	)
 	if err != nil {
 		return err

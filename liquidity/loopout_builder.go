@@ -2,6 +2,7 @@ package liquidity
 
 import (
 	"context"
+	"encoding/hex"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
@@ -84,6 +85,33 @@ func (b *loopOutBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 	return nil
 }
 
+type assetSwapInfo struct {
+	assetID    string
+	peerPubkey []byte
+}
+
+// buildSwapOpts contains the options for building a swap.
+type buildSwapOpts struct {
+	assetSwap *assetSwapInfo
+}
+
+// defaultBuildSwapOpts returns the default options for building a swap.
+func defaultBuildSwapOpts() *buildSwapOpts {
+	return &buildSwapOpts{}
+}
+
+// buildSwapOption is a functional option that can be passed to the buildSwap
+// method.
+type buildSwapOption func(*buildSwapOpts)
+
+// withAssetSwapInfo is an option to provide asset swap information to the
+// builder.
+func withAssetSwapInfo(assetSwapInfo *assetSwapInfo) buildSwapOption {
+	return func(o *buildSwapOpts) {
+		o.assetSwap = assetSwapInfo
+	}
+}
+
 // buildSwap creates a swap for the target peer/channels provided. The autoloop
 // boolean indicates whether this swap will actually be executed, because there
 // are some calls we can leave out if this swap is just for a dry run (ie, when
@@ -94,14 +122,42 @@ func (b *loopOutBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 // dry-run, and we do not add the autoloop label to the recommended swap.
 func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	channels []lnwire.ShortChannelID, amount btcutil.Amount,
-	params Parameters) (swapSuggestion, error) {
+	params Parameters, swapOpts ...buildSwapOption) (swapSuggestion,
+	error) {
+
+	var (
+		assetRfqRequest *loop.AssetRFQRequest
+		assetIDBytes    []byte
+		err             error
+	)
+
+	opts := defaultBuildSwapOpts()
+	for _, opt := range swapOpts {
+		opt(opts)
+	}
+
+	initiator := getInitiator(params)
+
+	if opts.assetSwap != nil {
+		assetSwap := opts.assetSwap
+		assetIDBytes, err = hex.DecodeString(assetSwap.assetID)
+		if err != nil {
+			return nil, err
+		}
+		assetRfqRequest = &loop.AssetRFQRequest{
+			AssetId:       assetIDBytes,
+			AssetEdgeNode: assetSwap.peerPubkey,
+		}
+		initiator += "-" + assetSwap.assetID
+	}
 
 	quote, err := b.cfg.LoopOutQuote(
 		ctx, &loop.LoopOutQuoteRequest{
 			Amount:                  amount,
 			SweepConfTarget:         params.SweepConfTarget,
 			SwapPublicationDeadline: b.cfg.Clock.Now(),
-			Initiator:               getInitiator(params),
+			Initiator:               initiator,
+			AssetRFQRequest:         assetRfqRequest,
 		},
 	)
 	if err != nil {
@@ -146,7 +202,13 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		MaxSwapFee:          quote.SwapFee,
 		MaxPrepayAmount:     quote.PrepayAmount,
 		SweepConfTarget:     params.SweepConfTarget,
-		Initiator:           getInitiator(params),
+		Initiator:           initiator,
+	}
+
+	if opts.assetSwap != nil {
+		request.AssetId = assetIDBytes
+		request.AssetPrepayRfqId = quote.LoopOutRfq.PrepayRfqId
+		request.AssetSwapRfqId = quote.LoopOutRfq.SwapRfqId
 	}
 
 	if params.Autoloop {
