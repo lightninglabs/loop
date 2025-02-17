@@ -103,7 +103,6 @@ type Client struct {
 	lndServices *lndclient.LndServices
 	sweeper     *sweep.Sweeper
 	executor    *executor
-	assetClient *assets.TapdClient
 
 	resumeReady chan struct{}
 	wg          sync.WaitGroup
@@ -196,6 +195,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		CreateExpiryTimer: func(d time.Duration) <-chan time.Time {
 			return time.NewTimer(d).C
 		},
+		AssetClient:     cfg.AssetClient,
 		LoopOutMaxParts: cfg.LoopOutMaxParts,
 	}
 
@@ -286,7 +286,6 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		errChan:      make(chan error),
 		clientConfig: *config,
 		lndServices:  cfg.Lnd,
-		assetClient:  cfg.AssetClient,
 		sweeper:      sweeper,
 		executor:     executor,
 		resumeReady:  make(chan struct{}),
@@ -471,7 +470,7 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 func (s *Client) resumeSwaps(ctx context.Context,
 	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.AssetClient)
 
 	for _, pend := range loopOutSwaps {
 		if pend.State().State.Type() != loopdb.StateTypePending {
@@ -528,7 +527,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 		// Verify that if we have an asset id set, we have a valid asset
 		// client to use.
-		if s.assetClient == nil {
+		if s.AssetClient == nil {
 			return nil, errors.New("asset client must be set " +
 				"when using an asset id")
 		}
@@ -563,7 +562,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	swapCfg := newSwapConfig(
-		s.lndServices, s.Store, s.Server, s.assetClient,
+		s.lndServices, s.Store, s.Server, s.AssetClient,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -745,7 +744,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.assetClient)
+	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.AssetClient)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)
@@ -964,7 +963,7 @@ func (s *Client) AbandonSwap(ctx context.Context,
 func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 	request *LoopOutQuoteRequest) (*LoopOutRfq, error) {
 
-	if s.assetClient == nil {
+	if s.AssetClient == nil {
 		return nil, errors.New("asset client must be set " +
 			"when trying to loop out with an asset")
 	}
@@ -978,7 +977,7 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 	}
 
 	// First we'll get the prepay rfq.
-	prepayRfq, err := s.assetClient.GetRfqForAsset(
+	prepayRfq, err := s.AssetClient.GetRfqForAsset(
 		ctx, quote.PrepayAmount, rfqReq.AssetId,
 		rfqReq.AssetEdgeNode, rfqReq.Expiry,
 		rfqReq.MaxLimitMultiplier,
@@ -999,7 +998,7 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 	invoiceAmt := request.Amount + quote.SwapFee -
 		quote.PrepayAmount
 
-	swapRfq, err := s.assetClient.GetRfqForAsset(
+	swapRfq, err := s.AssetClient.GetRfqForAsset(
 		ctx, invoiceAmt, rfqReq.AssetId,
 		rfqReq.AssetEdgeNode, rfqReq.Expiry,
 		rfqReq.MaxLimitMultiplier,
@@ -1016,7 +1015,7 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 	}
 
 	// We'll also want the asset name to verify for the client.
-	assetName, err := s.assetClient.GetAssetName(
+	assetName, err := s.AssetClient.GetAssetName(
 		ctx, rfqReq.AssetId,
 	)
 	if err != nil {
