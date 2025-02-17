@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetPaymentMaxAmount(t *testing.T) {
@@ -62,6 +64,44 @@ func TestGetPaymentMaxAmount(t *testing.T) {
 				t.Fatalf("expected %v, got %v",
 					test.expectedAmount, result)
 			}
+		}
+	}
+}
+
+func TestGetSatsFromAssetAmt(t *testing.T) {
+	tests := []struct {
+		assetAmt    uint64
+		assetRate   *rfqrpc.FixedPoint
+		expected    btcutil.Amount
+		expectError bool
+	}{
+		{
+			assetAmt:    1000,
+			assetRate:   &rfqrpc.FixedPoint{Coefficient: "100000", Scale: 0},
+			expected:    btcutil.Amount(1000000),
+			expectError: false,
+		},
+		{
+			assetAmt:    500000,
+			assetRate:   &rfqrpc.FixedPoint{Coefficient: "200000000", Scale: 0},
+			expected:    btcutil.Amount(250000),
+			expectError: false,
+		},
+		{
+			assetAmt:    0,
+			assetRate:   &rfqrpc.FixedPoint{Coefficient: "100000000", Scale: 0},
+			expected:    btcutil.Amount(0),
+			expectError: false,
+		},
+	}
+
+	for _, test := range tests {
+		result, err := getSatsFromAssetAmt(test.assetAmt, test.assetRate)
+		if test.expectError {
+			require.NotNil(t, err)
+		} else {
+			require.Nil(t, err)
+			require.Equal(t, test.expected, result)
 		}
 	}
 }
