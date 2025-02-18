@@ -350,6 +350,12 @@ var setParamsCommand = cli.Command{
 			Usage: "the target size of total local balance in " +
 				"satoshis, used by easy autoloop.",
 		},
+		cli.StringFlag{
+			Name: "asset_id",
+			Usage: "If set to a valid asset ID, the easyautoloop " +
+				"and localbalancesat flags will be set for the " +
+				"specified asset.",
+		},
 	},
 	Action: setParams,
 }
@@ -515,14 +521,39 @@ func setParams(ctx *cli.Context) error {
 		flagSet = true
 	}
 
+	// If we are setting easy autoloop parameters, we need to ensure that
+	// the asset ID is set, and that we have a valid entry in our params
+	// map.
+	if ctx.IsSet("asset_id") {
+		if params.EasyAssetParams == nil {
+			params.EasyAssetParams = make(
+				map[string]*looprpc.EasyAssetAutoloopParams,
+			)
+		}
+		if _, ok := params.EasyAssetParams[ctx.String("asset_id")]; !ok { //nolint:lll
+			params.EasyAssetParams[ctx.String("asset_id")] =
+				&looprpc.EasyAssetAutoloopParams{}
+		}
+	}
+
 	if ctx.IsSet("easyautoloop") {
-		params.EasyAutoloop = ctx.Bool("easyautoloop")
+		if ctx.IsSet("asset_id") {
+			params.EasyAssetParams[ctx.String("asset_id")].
+				Enabled = ctx.Bool("easyautoloop")
+		} else {
+			params.EasyAutoloop = ctx.Bool("easyautoloop")
+		}
 		flagSet = true
 	}
 
 	if ctx.IsSet("localbalancesat") {
-		params.EasyAutoloopLocalTargetSat =
-			ctx.Uint64("localbalancesat")
+		if ctx.IsSet("asset_id") {
+			params.EasyAssetParams[ctx.String("asset_id")].
+				LocalTargetAssetAmt = ctx.Uint64("localbalancesat") // nolint:lll
+		} else {
+			params.EasyAutoloopLocalTargetSat =
+				ctx.Uint64("localbalancesat")
+		}
 		flagSet = true
 	}
 
