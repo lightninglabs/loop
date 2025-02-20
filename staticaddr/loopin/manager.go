@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -20,7 +22,9 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -205,8 +209,8 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 			case request.respChan <- resp:
 
 			case <-ctx.Done():
-				// Noify subroutines that the main loop has been
-				// canceled.
+				// Notify subroutines that the main loop has
+				// been canceled.
 				close(m.exitChan)
 
 				return ctx.Err()
@@ -529,14 +533,30 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	req *loop.StaticAddressLoopInRequest) (*StaticAddressLoopIn, error) {
 
 	// Validate the loop-in request.
+	if len(req.DepositOutpoints) == 0 && req.SelectedAmount == 0 {
+		return nil, fmt.Errorf("no deposit outpoints provided and no " +
+			"amount selected")
+	}
+
+	var (
+		err               error
+		selectedOutpoints = req.DepositOutpoints
+	)
+	// If there's only an amount selected by the user, we need to find
+	// deposits that cover this amount.
 	if len(req.DepositOutpoints) == 0 {
-		return nil, fmt.Errorf("no deposit outpoints provided")
+		selectedOutpoints, err = m.selectDeposits(
+			ctx, req.SelectedAmount,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Retrieve all deposits referenced by the outpoints and ensure that
 	// they are in state Deposited.
 	deposits, active := m.cfg.DepositManager.AllStringOutpointsActiveDeposits( //nolint:lll
-		req.DepositOutpoints, deposit.Deposited,
+		selectedOutpoints, deposit.Deposited,
 	)
 	if !active {
 		return nil, fmt.Errorf("one or more deposits are not in "+
@@ -549,8 +569,17 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 	totalDepositAmount := tmp.TotalDepositAmount()
 
+	// If the selected amount would leave a dust change output or exceeds
+	// the total deposits value, we return an error.
+	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	if totalDepositAmount-req.SelectedAmount < dustLimit {
+		return nil, fmt.Errorf("selected amount %v leaves "+
+			"dust or exceeds total deposit value %v",
+			req.SelectedAmount, totalDepositAmount)
+	}
+
 	// Check that the label is valid.
-	err := labels.Validate(req.Label)
+	err = labels.Validate(req.Label)
 	if err != nil {
 		return nil, fmt.Errorf("invalid label: %w", err)
 	}
@@ -616,6 +645,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
+		SelectedAmount:        req.SelectedAmount,
 		DepositOutpoints:      req.DepositOutpoints,
 		Deposits:              deposits,
 		Label:                 req.Label,
@@ -633,6 +663,52 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	swap.InitiationHeight = m.currentHeight.Load()
 
 	return m.startLoopInFsm(ctx, swap)
+}
+
+// selectDeposits finds a set of deposits that are ready to be used for a
+// loop-in and cover a given amount. It returns the outpoints of the selected
+// deposits.
+func (m *Manager) selectDeposits(ctx context.Context,
+	amount btcutil.Amount) ([]string, error) {
+
+	// TODO(hieblmi): provide sql query to get all deposits in given state.
+	allDeposits, err := m.cfg.DepositManager.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deposits := make([]*deposit.Deposit, 0)
+	for _, d := range allDeposits {
+		if d.IsInState(deposit.Deposited) {
+			deposits = append(deposits, d)
+		}
+	}
+
+	// Sort deposits by confirmation block in descending order first to pick
+	// the oldest deposits, then sort by deposit amount in descending order.
+	sort.Slice(deposits, func(i, j int) bool {
+		if deposits[i].ConfirmationHeight !=
+			deposits[j].ConfirmationHeight {
+
+			return deposits[i].ConfirmationHeight >
+				deposits[j].ConfirmationHeight
+		}
+
+		return deposits[i].Value > deposits[j].Value
+	})
+
+	// Now select deposits from the front of the sorted slice until the sum
+	// satisfies the required amount.
+	selectedDeposits := make([]string, 0)
+	for _, d := range deposits {
+		amount -= d.Value
+		selectedDeposits = append(selectedDeposits, d.OutPoint.String())
+		if amount <= 0 {
+			return selectedDeposits, nil
+		}
+	}
+
+	return nil, fmt.Errorf("not enough deposits to cover amount")
 }
 
 // startLoopInFsm initiates a loop-in state machine based on the user-provided
