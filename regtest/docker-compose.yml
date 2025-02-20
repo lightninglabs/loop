@@ -30,7 +30,7 @@ services:
       - bitcoind:/home/bitcoin/.bitcoin
 
   lndserver:
-    image: lightninglabs/lnd:v0.17.0-beta
+    image: lightninglabs/lnd:v0.18.5-beta
     container_name: lndserver 
     restart: unless-stopped
     networks:
@@ -68,6 +68,7 @@ services:
           - loopserver
     volumes:
       - "lndserver:/root/.lnd"
+      - "loopserver:/root/loopserver"
     depends_on:
       - lndserver
     command:
@@ -82,8 +83,34 @@ services:
       - "--bitcoin.zmqpubrawblock=tcp://bitcoind:28332"
       - "--bitcoin.zmqpubrawtx=tcp://bitcoind:28333"
 
+  aperture:
+    build:
+      context: https://github.com/lightninglabs/aperture.git
+      dockerfile: Dockerfile
+      args:
+        checkout: v0.3.8-beta
+    container_name: aperture
+    restart: unless-stopped
+    depends_on:
+      - loopserver
+      - etcd
+    networks:
+      regtest:
+        aliases:
+          - aperture
+    volumes:
+      - "lndserver:/root/.lnd"
+      - "loopserver:/root/loopserver"
+      - "aperture:/root/.aperture"
+    ports:
+      - "11018:11018"
+    entrypoint: [ "/bin/aperture" ]
+    command:
+      - "--configfile=/root/.aperture/aperture.yaml"
+
+
   lndclient:
-    image: lightninglabs/lnd:v0.17.0-beta
+    image: lightninglabs/lnd:v0.18.5-beta
     container_name: lndclient 
     restart: unless-stopped
     networks:
@@ -124,17 +151,36 @@ services:
           - loopclient
     volumes:
       - "lndclient:/root/.lnd"
+      - "aperture:/root/.aperture"
+      - "loopclient:/root/.loop"
     depends_on:
-      - lndclient
+      - aperture
     command:
       - "loopd"
+      - "--experimental"
       - "--network=regtest"
       - "--debuglevel=debug"
-      - "--server.host=loopserver:11009"
-      - "--server.notls"
+      - "--server.host=aperture:11018"
+      - "--server.tlspath=/root/.loop/aperture-tls.cert"
       - "--lnd.host=lndclient:10009"
       - "--lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
       - "--lnd.tlspath=/root/.lnd/tls.cert"
+
+  etcd:
+    image: bitnami/etcd:3.3.12
+    platform: linux/amd64
+    container_name: etcd
+    hostname: etcd
+    networks:
+      regtest:
+        aliases:
+          - etcd
+    restart: unless-stopped
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
 
 networks:
   regtest:
@@ -143,3 +189,6 @@ volumes:
   bitcoind:
   lndserver:
   lndclient:
+  loopserver:
+  loopclient:
+  aperture:
