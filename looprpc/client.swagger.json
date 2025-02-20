@@ -211,7 +211,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "The amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis. In the loop-in case this can either be taken\nfrom the connected lnd wallet or coin-selected from static address deposits.\nThis is controlled by the select_deposits flag. If deposit_outpoints are\nspecified, the coins are taken out of that.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -257,7 +257,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. If the amt field is set as well the respective\npartial amount will be swapped. Cannot be used in conjunction with\nselect_deposits.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -297,6 +297,13 @@
             "required": false,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "select_deposits",
+            "description": "This field indicates whether the swap amount should be covered by our lnd\nwallet or by static address deposits. If set to true, the swap amount\nwill be selected from the static address deposits. This field cannot be used\nin conjunction with deposit_outpoints.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -404,7 +411,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "The amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis. In the loop-in case this can either be taken\nfrom the connected lnd wallet or coin-selected from static address deposits.\nThis is controlled by the select_deposits flag. If deposit_outpoints are\nspecified, the coins are taken out of that.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -450,7 +457,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. If the amt field is set as well the respective\npartial amount will be swapped. Cannot be used in conjunction with\nselect_deposits.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -490,6 +497,13 @@
             "required": false,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "select_deposits",
+            "description": "This field indicates whether the swap amount should be covered by our lnd\nwallet or by static address deposits. If set to true, the swap amount\nwill be selected from the static address deposits. This field cannot be used\nin conjunction with deposit_outpoints.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
