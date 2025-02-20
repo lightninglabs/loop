@@ -230,6 +230,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		HtlcTimeoutSweepAddress: loopIn.HtlcTimeoutSweepAddress.String(),
 		HtlcTxFeeRateSatKw:      int64(loopIn.HtlcTxFeeRate),
 		DepositOutpoints:        joinedOutpoints,
+		SelectedAmount:          int64(loopIn.SelectedAmount),
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
 	}
 
@@ -378,6 +379,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		LastHop:               row.LastHop,
 		QuotedSwapFee:         btcutil.Amount(row.QuotedSwapFeeSatoshis),
 		DepositOutpoints:      depositOutpoints,
+		SelectedAmount:        btcutil.Amount(row.SelectedAmount),
 		HtlcTxFeeRate: chainfee.SatPerKWeight(
 			row.HtlcTxFeeRateSatKw,
 		),
