@@ -34,6 +34,7 @@ type mockWalletKit struct {
 
 	feeEstimateLock sync.Mutex
 	feeEstimates    map[int32]chainfee.SatPerKWeight
+	minRelayFee     chainfee.SatPerKWeight
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
@@ -167,6 +168,24 @@ func (m *mockWalletKit) EstimateFeeRate(ctx context.Context,
 	}
 
 	return feeEstimate, nil
+}
+
+func (m *mockWalletKit) setMinRelayFee(fee chainfee.SatPerKWeight) {
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
+
+	m.minRelayFee = fee
+}
+
+// MinRelayFee returns the current minimum relay fee based on our chain backend
+// in sat/kw. It can be set with setMinRelayFee.
+func (m *mockWalletKit) MinRelayFee(
+	ctx context.Context) (chainfee.SatPerKWeight, error) {
+
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
+
+	return m.minRelayFee, nil
 }
 
 // ListSweeps returns a list of the sweep transaction ids known to our node.
