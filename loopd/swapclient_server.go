@@ -884,12 +884,15 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	infof("Loop in quote request received")
 
 	var (
-		numDeposits = uint32(len(req.DepositOutpoints))
-		err         error
+		selectedAmount     = btcutil.Amount(req.Amt)
+		totalDepositAmount btcutil.Amount
+		numDeposits        = len(req.DepositOutpoints)
+		err                error
 	)
 
 	htlcConfTarget, err := validateLoopInRequest(
-		req.ConfTarget, req.ExternalHtlc, numDeposits, req.Amt,
+		req.ConfTarget, req.ExternalHtlc, uint32(numDeposits),
+		int64(selectedAmount),
 	)
 	if err != nil {
 		return nil, err
@@ -897,8 +900,10 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	// Retrieve deposits to calculate their total value.
 	var depositList *looprpc.ListStaticAddressDepositsResponse
-	amount := btcutil.Amount(req.Amt)
-	if len(req.DepositOutpoints) > 0 {
+
+	// If deposits are selected, we need to retrieve them to calculate the
+	// total value which we request a quote for.
+	if numDeposits > 0 {
 		depositList, err = s.ListStaticAddressDeposits(
 			ctx, &looprpc.ListStaticAddressDepositsRequest{
 				Outpoints: req.DepositOutpoints,
@@ -913,20 +918,27 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 				"deposit outpoints")
 		}
 
-		// The requested amount should be 0 here if the request
-		// contained deposit outpoints.
-		if amount != 0 && len(depositList.FilteredDeposits) > 0 {
-			return nil, fmt.Errorf("amount should be 0 for " +
-				"deposit quotes")
+		if numDeposits != len(depositList.FilteredDeposits) {
+			return nil, fmt.Errorf("expected %d deposits, got %d",
+				numDeposits, len(depositList.FilteredDeposits))
 		}
 
 		// In case we quote for deposits we send the server both the
-		// total value and the number of deposits. This is so the server
-		// can probe the total amount and calculate the per input fee.
-		if amount == 0 && len(depositList.FilteredDeposits) > 0 {
-			for _, deposit := range depositList.FilteredDeposits {
-				amount += btcutil.Amount(deposit.Value)
-			}
+		// selected value and the number of deposits. This is so the
+		// server can probe the selected value and calculate the per
+		// input fee.
+		for _, deposit := range depositList.FilteredDeposits {
+			totalDepositAmount += btcutil.Amount(
+				deposit.Value,
+			)
+		}
+
+		selectedAmount, err = s.staticLoopInManager.SwapAmountFromSelectedAmount(
+			selectedAmount, totalDepositAmount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error calculating swap "+
+				"amount from selected amount: %v", err)
 		}
 	}
 
@@ -953,14 +965,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	}
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
-		Amount:         amount,
+		Amount:         selectedAmount,
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
 		LastHop:        lastHop,
 		RouteHints:     routeHints,
 		Private:        req.Private,
 		Initiator:      defaultLoopdInitiator,
-		NumDeposits:    numDeposits,
+		NumDeposits:    uint32(numDeposits),
 	})
 	if err != nil {
 		return nil, err
@@ -1859,6 +1871,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 	}
 
 	req := &loop.StaticAddressLoopInRequest{
+		SelectedAmount:        btcutil.Amount(in.Amount),
 		DepositOutpoints:      in.Outpoints,
 		MaxSwapFee:            btcutil.Amount(in.MaxSwapFeeSatoshis),
 		Label:                 in.Label,
