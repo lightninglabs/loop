@@ -20,7 +20,9 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -205,8 +207,8 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 			case request.respChan <- resp:
 
 			case <-ctx.Done():
-				// Noify subroutines that the main loop has been
-				// canceled.
+				// Notify subroutines that the main loop has
+				// been canceled.
 				close(m.exitChan)
 
 				return ctx.Err()
@@ -549,6 +551,15 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 	totalDepositAmount := tmp.TotalDepositAmount()
 
+	// If the selected amount would leave a dust change output or exceeds
+	// the total deposits value, we return an error.
+	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	if totalDepositAmount-req.SelectedAmount < dustLimit {
+		return nil, fmt.Errorf("selected amount %v leaves "+
+			"dust or exceeds total deposit value %v",
+			req.SelectedAmount, totalDepositAmount)
+	}
+
 	// Check that the label is valid.
 	err := labels.Validate(req.Label)
 	if err != nil {
@@ -616,6 +627,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
+		SelectedAmount:        req.SelectedAmount,
 		DepositOutpoints:      req.DepositOutpoints,
 		Deposits:              deposits,
 		Label:                 req.Label,
