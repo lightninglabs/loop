@@ -1975,6 +1975,16 @@ message StaticAddressLoopInRequest {
     side and the client can retry the swap with different parameters.
     */
     uint32 payment_timeout_seconds = 8;
+
+    /*
+    The swap amount the client is attempting to swap. This value can be used
+    in combination with the outpoints. If the outpoints are set the client
+    instructs the server to swap at most the amount of the sum of the outpoint
+    values, and the rest back to the static address. If the outpoints are not
+    set, the loop client will select deposits automatically to reach the amount.
+    Potential change will be sent back to the static address.
+    */
+    int64 amount = 9;
 }
 
 message StaticAddressLoopInResponse {
