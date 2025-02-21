@@ -113,7 +113,13 @@ func (m *mockWalletKit) NextAddr(context.Context, string, walletrpc.AddressType,
 }
 
 func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
-	_ string) error {
+	label string) error {
+
+	if m.lnd.PublishHandler != nil {
+		if err := m.lnd.PublishHandler(ctx, tx, label); err != nil {
+			return err
+		}
+	}
 
 	m.lnd.AddTx(tx)
 	m.lnd.TxPublishChannel <- tx

@@ -129,6 +129,11 @@ type SignOutputRawRequest struct {
 	SignDescriptors []*lndclient.SignDescriptor
 }
 
+// PublishHandler is optional transaction handler function called upon calling
+// the method PublishTransaction.
+type PublishHandler func(ctx context.Context, tx *wire.MsgTx,
+	label string) error
+
 // LndMockServices provides a full set of mocked lnd services.
 type LndMockServices struct {
 	lndclient.LndServices
@@ -173,6 +178,8 @@ type LndMockServices struct {
 	MissionControlState []lndclient.MissionControlEntry
 
 	WaitForFinished func()
+
+	PublishHandler PublishHandler
 
 	lock sync.Mutex
 }
