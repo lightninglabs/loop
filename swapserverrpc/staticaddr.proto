@@ -132,6 +132,8 @@ message ServerStaticAddressLoopInRequest {
     // swap payment. If the timeout is reached the swap will be aborted on the
     // server side and the client can retry the swap with different parameters.
     uint32 payment_timeout_seconds = 8;
+
+    uint64 amount = 9;
 }
 
 message ServerStaticAddressLoopInResponse {
