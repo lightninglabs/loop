@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -246,6 +247,25 @@ func (m *mockWalletKit) FundPsbt(_ context.Context,
 	return nil, 0, nil, nil
 }
 
+// finalScriptWitness is a sample signature suitable to put into PSBT.
+var finalScriptWitness = func() []byte {
+	const pver = 0
+	var buf bytes.Buffer
+
+	// Write the number of witness elements.
+	if err := wire.WriteVarInt(&buf, pver, 1); err != nil {
+		panic(err)
+	}
+
+	// Write a single witness element with a signature.
+	signature := make([]byte, 64)
+	if err := wire.WriteVarBytes(&buf, pver, signature); err != nil {
+		panic(err)
+	}
+
+	return buf.Bytes()
+}()
+
 // SignPsbt expects a partial transaction with all inputs and outputs
 // fully declared and tries to sign all unsigned inputs that have all
 // required fields (UTXO information, BIP32 derivation information,
@@ -258,9 +278,19 @@ func (m *mockWalletKit) FundPsbt(_ context.Context,
 // locking or input/output/fee value validation, PSBT finalization). Any
 // input that is incomplete will be skipped.
 func (m *mockWalletKit) SignPsbt(_ context.Context,
-	_ *psbt.Packet) (*psbt.Packet, error) {
+	packet *psbt.Packet) (*psbt.Packet, error) {
 
-	return nil, nil
+	inputs := make([]psbt.PInput, len(packet.Inputs))
+	copy(inputs, packet.Inputs)
+
+	for i := range inputs {
+		inputs[i].FinalScriptWitness = finalScriptWitness
+	}
+
+	signedPacket := *packet
+	signedPacket.Inputs = inputs
+
+	return &signedPacket, nil
 }
 
 // FinalizePsbt expects a partial transaction with all inputs and
