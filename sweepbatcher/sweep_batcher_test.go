@@ -950,7 +950,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for batch publishing to be skipped, because initialDelay has not
 	// ended.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		require.Contains(t, testLogger.debugMessages, stillWaitingMsg)
+		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock to the end of initialDelay.
@@ -1274,7 +1274,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 
 	// Wait for sweep to be added to the batch.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		require.Contains(t, testLogger2.infoMessages, "adding sweep %x")
+		assert.Contains(c, testLogger2.infoMessages, "adding sweep %x")
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock by publishDelay. Don't wait largeInitialDelay.
