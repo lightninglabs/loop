@@ -29,6 +29,7 @@ func NewMockLnd() *LndMockServices {
 	lightningClient := &mockLightningClient{}
 	walletKit := &mockWalletKit{
 		feeEstimates: make(map[int32]chainfee.SatPerKWeight),
+		minRelayFee:  chainfee.FeePerKwFloor,
 	}
 	chainNotifier := &mockChainNotifier{}
 	signer := &mockSigner{}
@@ -128,6 +129,11 @@ type SignOutputRawRequest struct {
 	SignDescriptors []*lndclient.SignDescriptor
 }
 
+// PublishHandler is optional transaction handler function called upon calling
+// the method PublishTransaction.
+type PublishHandler func(ctx context.Context, tx *wire.MsgTx,
+	label string) error
+
 // LndMockServices provides a full set of mocked lnd services.
 type LndMockServices struct {
 	lndclient.LndServices
@@ -172,6 +178,8 @@ type LndMockServices struct {
 	MissionControlState []lndclient.MissionControlEntry
 
 	WaitForFinished func()
+
+	PublishHandler PublishHandler
 
 	lock sync.Mutex
 }
@@ -277,4 +285,8 @@ func (s *LndMockServices) SetFeeEstimate(confTarget int32,
 	s.LndServices.WalletKit.(*mockWalletKit).setFeeEstimate(
 		confTarget, feeEstimate,
 	)
+}
+
+func (s *LndMockServices) SetMinRelayFee(feeEstimate chainfee.SatPerKWeight) {
+	s.LndServices.WalletKit.(*mockWalletKit).setMinRelayFee(feeEstimate)
 }
