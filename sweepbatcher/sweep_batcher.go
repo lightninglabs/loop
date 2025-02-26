@@ -225,6 +225,16 @@ var (
 	ErrBatcherShuttingDown = errors.New("batcher shutting down")
 )
 
+// testRequest is a function passed to an event loop and a channel used to
+// wait until the function is executed. This is used in unit tests only!
+type testRequest struct {
+	// handler is the function to an event loop.
+	handler func()
+
+	// quit is closed when the handler completes.
+	quit chan struct{}
+}
+
 // Batcher is a system that is responsible for accepting sweep requests and
 // placing them in appropriate batches. It will spin up new batches as needed.
 type Batcher struct {
@@ -233,6 +243,12 @@ type Batcher struct {
 
 	// sweepReqs is a channel where sweep requests are received.
 	sweepReqs chan SweepRequest
+
+	// testReqs is a channel where test requests are received.
+	// This is used only in unit tests! The reason to have this is to
+	// avoid data races in require.Eventually calls running in parallel
+	// to the event loop. See method testRunInEventLoop().
+	testReqs chan *testRequest
 
 	// errChan is a channel where errors are received.
 	errChan chan error
@@ -461,6 +477,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	return &Batcher{
 		batches:             make(map[int32]*batch),
 		sweepReqs:           make(chan SweepRequest),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		quit:                make(chan struct{}),
 		initDone:            make(chan struct{}),
@@ -528,6 +545,10 @@ func (b *Batcher) Run(ctx context.Context) error {
 				return err
 			}
 
+		case testReq := <-b.testReqs:
+			testReq.handler()
+			close(testReq.quit)
+
 		case err := <-b.errChan:
 			log.Warnf("Batcher received an error: %v.", err)
 			return err
@@ -548,6 +569,36 @@ func (b *Batcher) AddSweep(sweepReq *SweepRequest) error {
 
 	case <-b.quit:
 		return ErrBatcherShuttingDown
+	}
+}
+
+// testRunInEventLoop runs a function in the event loop blocking until
+// the function returns. For unit tests only!
+func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
+	// If the event loop is finished, run the function.
+	select {
+	case <-b.quit:
+		handler()
+
+		return
+	default:
+	}
+
+	quit := make(chan struct{})
+	req := &testRequest{
+		handler: handler,
+		quit:    quit,
+	}
+
+	select {
+	case b.testReqs <- req:
+	case <-ctx.Done():
+		return
+	}
+
+	select {
+	case <-quit:
+	case <-ctx.Done():
 	}
 }
 
