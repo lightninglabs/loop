@@ -1382,7 +1382,7 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 	batcherStore testBatcherStore) {
 
 	// Disable logging, because this test is very noisy.
-	oldLogger := log
+	oldLogger := log()
 	UseLogger(build.NewSubLogger("SWEEP", nil))
 	defer UseLogger(oldLogger)
 

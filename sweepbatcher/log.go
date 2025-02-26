@@ -2,15 +2,21 @@ package sweepbatcher
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/btcsuite/btclog"
 	"github.com/lightningnetwork/lnd/build"
 )
 
-// log is a logger that is initialized with no output filters. This
+// log_ is a logger that is initialized with no output filters. This
 // means the package will not perform any logging by default until the
 // caller requests it.
-var log btclog.Logger
+var log_ atomic.Pointer[btclog.Logger]
+
+// log returns active logger.
+func log() btclog.Logger {
+	return *log_.Load()
+}
 
 // The default amount of logging is none.
 func init() {
@@ -20,12 +26,32 @@ func init() {
 // batchPrefixLogger returns a logger that prefixes all log messages with
 // the ID.
 func batchPrefixLogger(batchID string) btclog.Logger {
-	return build.NewPrefixLog(fmt.Sprintf("[Batch %s]", batchID), log)
+	return build.NewPrefixLog(fmt.Sprintf("[Batch %s]", batchID), log())
 }
 
 // UseLogger uses a specified Logger to output package logging info.
 // This should be used in preference to SetLogWriter if the caller is also
 // using btclog.
 func UseLogger(logger btclog.Logger) {
-	log = logger
+	log_.Store(&logger)
+}
+
+// debugf logs a message with level DEBUG.
+func debugf(format string, params ...interface{}) {
+	log().Debugf(format, params...)
+}
+
+// infof logs a message with level INFO.
+func infof(format string, params ...interface{}) {
+	log().Infof(format, params...)
+}
+
+// warnf logs a message with level WARN.
+func warnf(format string, params ...interface{}) {
+	log().Warnf(format, params...)
+}
+
+// errorf logs a message with level ERROR.
+func errorf(format string, params ...interface{}) {
+	log().Errorf(format, params...)
 }

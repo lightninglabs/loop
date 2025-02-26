@@ -535,13 +535,15 @@ func (b *Batcher) Run(ctx context.Context) error {
 		case sweepReq := <-b.sweepReqs:
 			sweep, err := b.fetchSweep(runCtx, sweepReq)
 			if err != nil {
-				log.Warnf("fetchSweep failed: %v.", err)
+				warnf("fetchSweep failed: %v.", err)
+
 				return err
 			}
 
 			err = b.handleSweep(runCtx, sweep, sweepReq.Notifier)
 			if err != nil {
-				log.Warnf("handleSweep failed: %v.", err)
+				warnf("handleSweep failed: %v.", err)
+
 				return err
 			}
 
@@ -550,11 +552,13 @@ func (b *Batcher) Run(ctx context.Context) error {
 			close(testReq.quit)
 
 		case err := <-b.errChan:
-			log.Warnf("Batcher received an error: %v.", err)
+			warnf("Batcher received an error: %v.", err)
+
 			return err
 
 		case <-runCtx.Done():
-			log.Infof("Stopping Batcher: run context cancelled.")
+			infof("Stopping Batcher: run context cancelled.")
+
 			return runCtx.Err()
 		}
 	}
@@ -612,8 +616,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		return err
 	}
 
-	log.Infof("Batcher handling sweep %x, completed=%v", sweep.swapHash[:6],
-		completed)
+	infof("Batcher handling sweep %x, completed=%v",
+		sweep.swapHash[:6], completed)
 
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
@@ -624,8 +628,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		// on-chain confirmations to prevent issues caused by reorgs.
 		parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
 		if err != nil {
-			log.Errorf("unable to get parent batch for sweep %x: "+
-				"%v", sweep.swapHash[:6], err)
+			errorf("unable to get parent batch for sweep %x:"+
+				" %v", sweep.swapHash[:6], err)
 
 			return err
 		}
@@ -676,8 +680,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		return nil
 	}
 
-	log.Warnf("Greedy batch selection algorithm failed for sweep %x: %v. "+
-		"Falling back to old approach.", sweep.swapHash[:6], err)
+	warnf("Greedy batch selection algorithm failed for sweep %x: %v."+
+		" Falling back to old approach.", sweep.swapHash[:6], err)
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
@@ -782,13 +786,13 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	}
 
 	if len(dbSweeps) == 0 {
-		log.Infof("skipping restored batch %d as it has no sweeps",
+		infof("skipping restored batch %d as it has no sweeps",
 			batch.id)
 
 		// It is safe to drop this empty batch as it has no sweeps.
 		err := b.store.DropBatch(ctx, batch.id)
 		if err != nil {
-			log.Warnf("unable to drop empty batch %d: %v",
+			warnf("unable to drop empty batch %d: %v",
 				batch.id, err)
 		}
 
@@ -930,7 +934,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
-		log.Infof("Batcher monitoring spend for swap %x",
+		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
 
 		for {
@@ -1109,7 +1113,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		}
 	} else {
 		if s.ConfTarget == 0 {
-			log.Warnf("Fee estimation was requested for zero "+
+			warnf("Fee estimation was requested for zero "+
 				"confTarget for sweep %x.", swapHash[:6])
 		}
 		minFeeRate, err = b.wallet.EstimateFeeRate(ctx, s.ConfTarget)
