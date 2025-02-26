@@ -215,6 +215,12 @@ type batch struct {
 	// reorgChan is the channel over which reorg notifications are received.
 	reorgChan chan struct{}
 
+	// testReqs is a channel where test requests are received.
+	// This is used only in unit tests! The reason to have this is to
+	// avoid data races in require.Eventually calls running in parallel
+	// to the event loop. See method testRunInEventLoop().
+	testReqs chan *testRequest
+
 	// errChan is the channel over which errors are received.
 	errChan chan error
 
@@ -352,6 +358,7 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
 		callLeave:           make(chan struct{}),
@@ -396,6 +403,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
 		callLeave:           make(chan struct{}),
@@ -756,6 +764,10 @@ func (b *batch) Run(ctx context.Context) error {
 				return err
 			}
 
+		case testReq := <-b.testReqs:
+			testReq.handler()
+			close(testReq.quit)
+
 		case err := <-blockErrChan:
 			return err
 
@@ -765,6 +777,36 @@ func (b *batch) Run(ctx context.Context) error {
 		case <-runCtx.Done():
 			return runCtx.Err()
 		}
+	}
+}
+
+// testRunInEventLoop runs a function in the event loop blocking until
+// the function returns. For unit tests only!
+func (b *batch) testRunInEventLoop(ctx context.Context, handler func()) {
+	// If the event loop is finished, run the function.
+	select {
+	case <-b.stopping:
+		handler()
+
+		return
+	default:
+	}
+
+	quit := make(chan struct{})
+	req := &testRequest{
+		handler: handler,
+		quit:    quit,
+	}
+
+	select {
+	case b.testReqs <- req:
+	case <-ctx.Done():
+		return
+	}
+
+	select {
+	case <-quit:
+	case <-ctx.Done():
 	}
 }
 
