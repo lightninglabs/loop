@@ -811,18 +811,26 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 type wrappedLogger struct {
 	btclog.Logger
 
+	mu sync.Mutex
+
 	debugMessages []string
 	infoMessages  []string
 }
 
 // Debugf logs debug message.
 func (l *wrappedLogger) Debugf(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.debugMessages = append(l.debugMessages, format)
 	l.Logger.Debugf(format, params...)
 }
 
 // Infof logs info message.
 func (l *wrappedLogger) Infof(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.infoMessages = append(l.infoMessages, format)
 	l.Logger.Infof(format, params...)
 }
@@ -950,6 +958,9 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for batch publishing to be skipped, because initialDelay has not
 	// ended.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
 		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
 	}, test.Timeout, eventuallyCheckFrequency)
 
@@ -1274,6 +1285,9 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 
 	// Wait for sweep to be added to the batch.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger2.mu.Lock()
+		defer testLogger2.mu.Unlock()
+
 		assert.Contains(c, testLogger2.infoMessages, "adding sweep %x")
 	}, test.Timeout, eventuallyCheckFrequency)
 
@@ -2810,10 +2824,21 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 
 type sweepFetcherMock struct {
 	store map[lntypes.Hash]*SweepInfo
+	mu    sync.Mutex
+}
+
+func (f *sweepFetcherMock) setSweep(hash lntypes.Hash, info *SweepInfo) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.store[hash] = info
 }
 
 func (f *sweepFetcherMock) FetchSweep(ctx context.Context, hash lntypes.Hash) (
 	*SweepInfo, error) {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	return f.store[hash], nil
 }
@@ -3279,7 +3304,7 @@ func testWithMixedBatch(t *testing.T, store testStore,
 		if i == 0 {
 			sweepInfo.NonCoopHint = true
 		}
-		sweepFetcher.store[swapHash] = sweepInfo
+		sweepFetcher.setSweep(swapHash, sweepInfo)
 
 		// Create sweep request.
 		sweepReq := SweepRequest{
@@ -3433,7 +3458,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 		)
 		require.NoError(t, err)
 
-		sweepFetcher.store[swapHash] = &SweepInfo{
+		sweepFetcher.setSweep(swapHash, &SweepInfo{
 			Preimage:    preimages[i],
 			NonCoopHint: nonCoopHints[i],
 
@@ -3445,7 +3470,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 			HTLC:                   *htlc,
 			HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
 			DestAddr:               destAddr,
-		}
+		})
 
 		// Create sweep request.
 		sweepReq := SweepRequest{
@@ -4035,12 +4060,17 @@ type loopdbBatcherStore struct {
 	BatcherStore
 
 	sweepsSet map[lntypes.Hash]struct{}
+
+	mu sync.Mutex
 }
 
 // UpsertSweep inserts a sweep into the database, or updates an existing sweep
 // if it already exists. This wrapper was added to update sweepsSet.
 func (s *loopdbBatcherStore) UpsertSweep(ctx context.Context,
 	sweep *dbSweep) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	err := s.BatcherStore.UpsertSweep(ctx, sweep)
 	if err == nil {
@@ -4051,7 +4081,11 @@ func (s *loopdbBatcherStore) UpsertSweep(ctx context.Context,
 
 // AssertSweepStored asserts that a sweep is stored.
 func (s *loopdbBatcherStore) AssertSweepStored(id lntypes.Hash) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, has := s.sweepsSet[id]
+
 	return has
 }
 
