@@ -940,7 +940,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	}
 	require.NotNil(t, batch1)
 	testLogger := &wrappedLogger{Logger: batch1.log}
-	batch1.log = testLogger
+	batch1.setLog(testLogger)
 
 	// Advance the clock to publishDelay. It will trigger the publishDelay
 	// timer, but won't result in publishing, because of initialDelay.
@@ -1234,7 +1234,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	}
 	require.NotNil(t, batch2)
 	testLogger2 := &wrappedLogger{Logger: batch2.log}
-	batch2.log = testLogger2
+	batch2.setLog(testLogger2)
 
 	// Add another sweep which is urgent. It will go to the same batch
 	// to make sure minimum timeout is calculated properly.
