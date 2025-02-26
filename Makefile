@@ -95,13 +95,21 @@ clean:
 # TESTING
 # =======
 
-unit: 
+unit:
 	@$(call print, "Running unit tests.")
 	$(UNIT)
+
+unit-race:
+	@$(call print, "Running unit race tests.")
+	$(UNIT) -race
 
 unit-postgres:
 	@$(call print, "Running unit tests with postgres.")
 	$(UNIT) -tags=test_db_postgres
+
+unit-postgres-race:
+	@$(call print, "Running unit race tests with postgres.")
+	$(UNIT) -race -tags=test_db_postgres
 
 # =========
 # UTILITIES
