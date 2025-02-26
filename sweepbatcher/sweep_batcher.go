@@ -590,16 +590,18 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	sweep.notifier = notifier
 
-	// Check if the sweep is already in a batch. If that is the case, we
-	// provide the sweep to that batch and return.
+	// This is a check to see if a batch is completed. In that case we just
+	// lazily delete it.
 	for _, batch := range b.batches {
-		// This is a check to see if a batch is completed. In that case
-		// we just lazily delete it and continue our scan.
 		if batch.isComplete() {
 			delete(b.batches, batch.id)
 			continue
 		}
+	}
 
+	// Check if the sweep is already in a batch. If that is the case, we
+	// provide the sweep to that batch and return.
+	for _, batch := range b.batches {
 		if batch.sweepExists(sweep.swapHash) {
 			accepted, err := batch.addSweep(ctx, sweep)
 			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
