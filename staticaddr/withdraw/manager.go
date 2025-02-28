@@ -111,17 +111,25 @@ type Manager struct {
 	// finalizedWithdrawalTx are the finalized withdrawal transactions that
 	// are published to the network and re-published on block arrivals.
 	finalizedWithdrawalTxns map[chainhash.Hash]*wire.MsgTx
+
+	// withdrawalHandlerQuitChans is a map of quit channels for each
+	// withdrawal transaction. The quit channels are used to stop the
+	// withdrawal handler for a specific withdrawal transaction, e.g. if
+	// a new rbf'd transaction has to be monitored for confirmation in
+	// favor of the previous one.
+	withdrawalHandlerQuitChans map[chainhash.Hash]chan struct{}
 }
 
 // NewManager creates a new deposit withdrawal manager.
 func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
-		cfg:                      cfg,
-		initChan:                 make(chan struct{}),
-		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
-		exitChan:                 make(chan struct{}),
-		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
-		errChan:                  make(chan error),
+		cfg:                        cfg,
+		initChan:                   make(chan struct{}),
+		finalizedWithdrawalTxns:    make(map[chainhash.Hash]*wire.MsgTx),
+		exitChan:                   make(chan struct{}),
+		newWithdrawalRequestChan:   make(chan newWithdrawalRequest),
+		errChan:                    make(chan error),
+		withdrawalHandlerQuitChans: make(map[chainhash.Hash]chan struct{}),
 	}
 }
 
@@ -235,7 +243,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 			return err
 		}
 
-		err = m.publishFinalizedWithdrawalTx(ctx, tx)
+		_, err := m.publishFinalizedWithdrawalTx(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -278,8 +286,34 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		outpoints, deposit.Deposited,
 	)
 
+	// If not all passed outpoints are in state Deposited, we'll check if
+	// they are all in state Withdrawing. If they are the user is requesting
+	// a fee bump, if not we'll return an error as we only allow fee bumping
+	// deposits in state Withdrawing.
 	if !allActive {
-		return "", "", ErrWithdrawingInactiveDeposits
+		deposits, allActive = m.cfg.DepositManager.AllOutpointsActiveDeposits(
+			outpoints, deposit.Withdrawing,
+		)
+
+		if !allActive {
+			return "", "", ErrWithdrawingInactiveDeposits
+		}
+
+		// If a republishing of an existing withdrawal is requested we
+		// ensure that all deposits remain clustered in the context of
+		// the same withdrawal by checking if they have the same
+		// previous withdrawal tx hash.
+		// This ensures that the shape of the transaction stays the
+		// same.
+		hash := deposits[0].FinalizedWithdrawalTx.TxHash()
+		for i := 1; i < len(deposits); i++ {
+			if deposits[i].FinalizedWithdrawalTx.TxHash() != hash {
+				return "", "", fmt.Errorf("can't bump fee " +
+					"for deposits with different " +
+					"previous withdrawal tx hash")
+			}
+		}
+
 	}
 
 	var (
@@ -313,31 +347,13 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
-	// Attach the finalized withdrawal tx to the deposits. After a client
-	// restart we can use this address as an indicator to republish the
-	// withdrawal tx and continue the withdrawal.
-	// Deposits with the same withdrawal tx are part of the same withdrawal.
-	for _, d := range deposits {
-		d.Lock()
-		d.FinalizedWithdrawalTx = finalizedTx
-		d.Unlock()
-	}
-
-	// Transition the deposits to the withdrawing state. This updates each
-	// deposits withdrawal address. If a transition fails, we'll return an
-	// error and abort the withdrawal. An error in transition is likely due
-	// to an error in the state machine. The already transitioned deposits
-	// should be reset to the Deposit state after a restart.
-	err = m.cfg.DepositManager.TransitionDeposits(
-		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
-	)
+	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 	if err != nil {
 		return "", "", err
 	}
 
-	err = m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
-	if err != nil {
-		return "", "", err
+	if !published {
+		return "", "", nil
 	}
 
 	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
@@ -352,7 +368,50 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
+	// If a previous withdrawal existed across the selected deposits, and
+	// it isn't the same as the new withdrawal, we'll stop monitoring the
+	// previous withdrawal and remove it from the finalized withdrawals.
+	deposits[0].Lock()
+	prevTx := deposits[0].FinalizedWithdrawalTx
+	if prevTx != nil && prevTx.TxHash() != finalizedTx.TxHash() {
+		quitChan := m.withdrawalHandlerQuitChans[prevTx.TxHash()]
+		close(quitChan)
+		delete(m.withdrawalHandlerQuitChans, prevTx.TxHash())
+		delete(m.finalizedWithdrawalTxns, prevTx.TxHash())
+	}
+	deposits[0].Unlock()
+
+	// Attach the finalized withdrawal tx to the deposits. After a client
+	// restart we can use this address as an indicator to republish the
+	// withdrawal tx and continue the withdrawal.
+	// Deposits with the same withdrawal tx are part of the same withdrawal.
+	for _, d := range deposits {
+		d.Lock()
+		d.FinalizedWithdrawalTx = finalizedTx
+		d.Unlock()
+	}
+
 	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
+
+	// Transition the deposits to the withdrawing state. This updates each
+	// deposits withdrawal address. If a transition fails, we'll return an
+	// error and abort the withdrawal. An error in transition is likely due
+	// to an error in the state machine. The already transitioned deposits
+	// should be reset to the Deposit state after a restart.
+	err = m.cfg.DepositManager.TransitionDeposits(
+		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Update the deposits in the database.
+	for _, d := range deposits {
+		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
+		if err != nil {
+			return "", "", err
+		}
+	}
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
 }
@@ -449,27 +508,31 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 }
 
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
-	tx *wire.MsgTx) error {
+	tx *wire.MsgTx) (bool, error) {
 
 	if tx == nil {
-		return errors.New("can't publish, finalized withdrawal tx is " +
-			"nil")
+		return false, errors.New("can't publish, finalized " +
+			"withdrawal tx is nil")
 	}
 
 	txLabel := fmt.Sprintf("deposit-withdrawal-%v", tx.TxHash())
 
 	// Publish the withdrawal sweep transaction.
 	err := m.cfg.WalletKit.PublishTransaction(ctx, tx, txLabel)
-
 	if err != nil {
-		if !strings.Contains(err.Error(), "output already spent") {
-			log.Errorf("%v: %v", txLabel, err)
+		if !strings.Contains(err.Error(), "output already spent") &&
+			!strings.Contains(err.Error(), "insufficient fee") {
+
+			return false, err
+		} else {
+			return false, nil
 		}
+	} else {
+		log.Debugf("published deposit withdrawal with txid: %v",
+			tx.TxHash())
 	}
 
-	log.Debugf("published deposit withdrawal with txid: %v", tx.TxHash())
-
-	return nil
+	return true, nil
 }
 
 func (m *Manager) handleWithdrawal(ctx context.Context,
@@ -483,6 +546,13 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	// Create a new quit chan for this set of deposits under the same
+	// withdrawal tx hash. If a new withdrawal is requested the quit chan
+	// is closed in favor of a new one, to start monitoring the new
+	// withdrawal transaction.
+	m.withdrawalHandlerQuitChans[txHash] = make(chan struct{})
+	quitChan := m.withdrawalHandlerQuitChans[txHash]
 
 	go func() {
 		select {
@@ -500,6 +570,12 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// remove its finalized to stop republishing it on block
 			// arrivals.
 			delete(m.finalizedWithdrawalTxns, txHash)
+
+		case <-quitChan:
+			log.Debugf("Exiting withdrawal handler for tx %v",
+				txHash)
+
+			return
 
 		case err := <-errChan:
 			log.Errorf("Error waiting for confirmation: %v", err)
@@ -914,7 +990,7 @@ func (m *Manager) republishWithdrawals(ctx context.Context) error {
 			continue
 		}
 
-		err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
+		_, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 		if err != nil {
 			log.Errorf("Error republishing withdrawal: %v", err)
 
