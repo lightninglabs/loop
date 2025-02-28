@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type mockWalletKit struct {
 
 	feeEstimateLock sync.Mutex
 	feeEstimates    map[int32]chainfee.SatPerKWeight
+	minRelayFee     chainfee.SatPerKWeight
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
@@ -111,7 +113,13 @@ func (m *mockWalletKit) NextAddr(context.Context, string, walletrpc.AddressType,
 }
 
 func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
-	_ string) error {
+	label string) error {
+
+	if m.lnd.PublishHandler != nil {
+		if err := m.lnd.PublishHandler(ctx, tx, label); err != nil {
+			return err
+		}
+	}
 
 	m.lnd.AddTx(tx)
 	m.lnd.TxPublishChannel <- tx
@@ -167,6 +175,24 @@ func (m *mockWalletKit) EstimateFeeRate(ctx context.Context,
 	}
 
 	return feeEstimate, nil
+}
+
+func (m *mockWalletKit) setMinRelayFee(fee chainfee.SatPerKWeight) {
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
+
+	m.minRelayFee = fee
+}
+
+// MinRelayFee returns the current minimum relay fee based on our chain backend
+// in sat/kw. It can be set with setMinRelayFee.
+func (m *mockWalletKit) MinRelayFee(
+	ctx context.Context) (chainfee.SatPerKWeight, error) {
+
+	m.feeEstimateLock.Lock()
+	defer m.feeEstimateLock.Unlock()
+
+	return m.minRelayFee, nil
 }
 
 // ListSweeps returns a list of the sweep transaction ids known to our node.
@@ -227,6 +253,25 @@ func (m *mockWalletKit) FundPsbt(_ context.Context,
 	return nil, 0, nil, nil
 }
 
+// finalScriptWitness is a sample signature suitable to put into PSBT.
+var finalScriptWitness = func() []byte {
+	const pver = 0
+	var buf bytes.Buffer
+
+	// Write the number of witness elements.
+	if err := wire.WriteVarInt(&buf, pver, 1); err != nil {
+		panic(err)
+	}
+
+	// Write a single witness element with a signature.
+	signature := make([]byte, 64)
+	if err := wire.WriteVarBytes(&buf, pver, signature); err != nil {
+		panic(err)
+	}
+
+	return buf.Bytes()
+}()
+
 // SignPsbt expects a partial transaction with all inputs and outputs
 // fully declared and tries to sign all unsigned inputs that have all
 // required fields (UTXO information, BIP32 derivation information,
@@ -239,9 +284,19 @@ func (m *mockWalletKit) FundPsbt(_ context.Context,
 // locking or input/output/fee value validation, PSBT finalization). Any
 // input that is incomplete will be skipped.
 func (m *mockWalletKit) SignPsbt(_ context.Context,
-	_ *psbt.Packet) (*psbt.Packet, error) {
+	packet *psbt.Packet) (*psbt.Packet, error) {
 
-	return nil, nil
+	inputs := make([]psbt.PInput, len(packet.Inputs))
+	copy(inputs, packet.Inputs)
+
+	for i := range inputs {
+		inputs[i].FinalScriptWitness = finalScriptWitness
+	}
+
+	signedPacket := *packet
+	signedPacket.Inputs = inputs
+
+	return &signedPacket, nil
 }
 
 // FinalizePsbt expects a partial transaction with all inputs and

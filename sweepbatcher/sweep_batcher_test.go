@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lndclient"
@@ -109,18 +110,35 @@ func checkBatcherError(t *testing.T, err error) {
 	}
 }
 
+// getBatches returns batches in thread-safe way.
+func getBatches(ctx context.Context, batcher *Batcher) []*batch {
+	var batches []*batch
+	batcher.testRunInEventLoop(ctx, func() {
+		for _, batch := range batcher.batches {
+			batches = append(batches, batch)
+		}
+	})
+
+	return batches
+}
+
+// tryGetOnlyBatch returns a single batch if there is exactly one batch, or nil.
+func tryGetOnlyBatch(ctx context.Context, batcher *Batcher) *batch {
+	batches := getBatches(ctx, batcher)
+
+	if len(batches) == 1 {
+		return batches[0]
+	} else {
+		return nil
+	}
+}
+
 // getOnlyBatch makes sure the batcher has exactly one batch and returns it.
-func getOnlyBatch(batcher *Batcher) *batch {
-	if len(batcher.batches) != 1 {
-		panic(fmt.Sprintf("getOnlyBatch called on a batcher having "+
-			"%d batches", len(batcher.batches)))
-	}
+func getOnlyBatch(t *testing.T, ctx context.Context, batcher *Batcher) *batch {
+	batches := getBatches(ctx, batcher)
+	require.Len(t, batches, 1)
 
-	for _, batch := range batcher.batches {
-		return batch
-	}
-
-	panic("unreachable")
+	return batches[0]
 }
 
 // testSweepBatcherBatchCreation tests that sweep requests enter the expected
@@ -186,7 +204,7 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	// Once batcher receives sweep request it will eventually spin up a
 	// batch.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
@@ -236,7 +254,7 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	// Batcher should not create a second batch as timeout distance is small
 	// enough.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Create a third sweep request that has more timeout distance than
@@ -273,15 +291,15 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 
 	require.NoError(t, batcher.AddSweep(&sweepReq3))
 
-	// Batcher should create a second batch as timeout distance is greater
-	// than the threshold
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 2
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since the second batch got created we check that it registered its
 	// primary sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a second batch as timeout distance is greater
+	// than the threshold
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
@@ -289,17 +307,27 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps
 		// in it.
-		for _, batch := range batcher.batches {
-			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
-				if len(batch.sweeps) != 2 {
-					return false
-				}
+		batches := getBatches(ctx, batcher)
 
-			case sweepReq3.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
+		for _, batch := range batches {
+			var bad bool
+
+			batch.testRunInEventLoop(ctx, func() {
+				switch batch.primarySweepID {
+				case sweepReq1.SwapHash:
+					if len(batch.sweeps) != 2 {
+						bad = true
+					}
+
+				case sweepReq3.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
 				}
+			})
+
+			if bad {
+				return false
 			}
 		}
 
@@ -480,24 +508,26 @@ func testTxLabeler(t *testing.T, store testStore,
 	// Deliver sweep request to batcher.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
-	// Eventually request will be consumed and a new batch will spin up.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
 	<-lnd.RegisterSpendChannel
+
+	// Eventually request will be consumed and a new batch will spin up.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
 
 	// Find the batch and assign it to a local variable for easier access.
 	var theBatch *batch
-	for _, btch := range batcher.batches {
-		if btch.primarySweepID == sweepReq1.SwapHash {
-			theBatch = btch
-		}
+	for _, btch := range getBatches(ctx, batcher) {
+		btch.testRunInEventLoop(ctx, func() {
+			if btch.primarySweepID == sweepReq1.SwapHash {
+				theBatch = btch
+			}
+		})
 	}
 
 	// Now test the label.
@@ -632,14 +662,14 @@ func testPublishErrorHandler(t *testing.T, store testStore,
 	// Deliver sweep request to batcher.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
-	// Eventually request will be consumed and a new batch will spin up.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
 	<-lnd.RegisterSpendChannel
+
+	// Eventually request will be consumed and a new batch will spin up.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The first attempt to publish the batch tx is expected to fail.
 	require.ErrorIs(t, <-publishErrorChan, testPublishError)
@@ -710,26 +740,33 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// Deliver sweep request to batcher.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
-	// Eventually request will be consumed and a new batch will spin up.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
 	<-lnd.RegisterSpendChannel
 
+	// Eventually request will be consumed and a new batch will spin up.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
 	// Find the batch and assign it to a local variable for easier access.
 	batch := &batch{}
-	for _, btch := range batcher.batches {
-		if btch.primarySweepID == sweepReq1.SwapHash {
-			batch = btch
-		}
+	for _, btch := range getBatches(ctx, batcher) {
+		btch.testRunInEventLoop(ctx, func() {
+			if btch.primarySweepID == sweepReq1.SwapHash {
+				batch = btch
+			}
+		})
 	}
 
 	require.Eventually(t, func() bool {
 		// Batch should have the sweep stored.
-		return len(batch.sweeps) == 1
+		var numSweeps int
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+		})
+
+		return numSweeps == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The primary sweep id should be that of the first inserted sweep.
@@ -744,7 +781,12 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// After receiving a height notification the batch will step again,
 	// leading to a new spend monitoring.
 	require.Eventually(t, func() bool {
-		return batch.currentHeight == 601
+		var currentHeight int32
+		batch.testRunInEventLoop(ctx, func() {
+			currentHeight = batch.currentHeight
+		})
+
+		return currentHeight == 601
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
@@ -788,7 +830,12 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// The batch should eventually read the spend notification and progress
 	// its state to closed.
 	require.Eventually(t, func() bool {
-		return batch.state == Closed
+		var state batchState
+		batch.testRunInEventLoop(ctx, func() {
+			state = batch.state
+		})
+
+		return state == Closed
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	err = lnd.NotifyHeight(604)
@@ -802,7 +849,12 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// Eventually the batch receives the confirmation notification and
 	// confirms itself.
 	require.Eventually(t, func() bool {
-		return batch.isComplete()
+		var complete bool
+		batch.testRunInEventLoop(ctx, func() {
+			complete = batch.isComplete()
+		})
+
+		return complete
 	}, test.Timeout, eventuallyCheckFrequency)
 }
 
@@ -811,20 +863,38 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 type wrappedLogger struct {
 	btclog.Logger
 
+	mu sync.Mutex
+
 	debugMessages []string
 	infoMessages  []string
+	warnMessages  []string
 }
 
 // Debugf logs debug message.
 func (l *wrappedLogger) Debugf(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.debugMessages = append(l.debugMessages, format)
 	l.Logger.Debugf(format, params...)
 }
 
 // Infof logs info message.
 func (l *wrappedLogger) Infof(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.infoMessages = append(l.infoMessages, format)
 	l.Logger.Infof(format, params...)
+}
+
+// Warnf logs a warning message.
+func (l *wrappedLogger) Warnf(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.warnMessages = append(l.warnMessages, format)
+	l.Logger.Warnf(format, params...)
 }
 
 // testDelays tests that WithInitialDelay and WithPublishDelay work.
@@ -930,17 +1000,18 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 
 	// Eventually the batch is launched.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Replace the logger in the batch with wrappedLogger to watch messages.
-	var batch1 *batch
-	for _, batch := range batcher.batches {
-		batch1 = batch
-	}
-	require.NotNil(t, batch1)
-	testLogger := &wrappedLogger{Logger: batch1.log}
-	batch1.log = testLogger
+	batch1 := getOnlyBatch(t, ctx, batcher)
+	var testLogger *wrappedLogger
+	batch1.testRunInEventLoop(ctx, func() {
+		testLogger = &wrappedLogger{
+			Logger: batch1.log(),
+		}
+		batch1.setLog(testLogger)
+	})
 
 	// Advance the clock to publishDelay. It will trigger the publishDelay
 	// timer, but won't result in publishing, because of initialDelay.
@@ -950,7 +1021,10 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for batch publishing to be skipped, because initialDelay has not
 	// ended.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		require.Contains(t, testLogger.debugMessages, stillWaitingMsg)
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock to the end of initialDelay.
@@ -975,16 +1049,19 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 			return false
 		}
 
-		// Make sure there is exactly one active batch.
-		if len(batcher.batches) != 1 {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
 			return false
 		}
 
-		// Get the batch.
-		batch := getOnlyBatch(batcher)
+		// Make sure the batch has one sweep.
+		var numSweeps int
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+		})
 
 		// Make sure the batch has one sweep.
-		return len(batch.sweeps) == 1
+		return numSweeps == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Make sure we have stored the batch.
@@ -1020,25 +1097,6 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
 
-	// Wait for batch to load.
-	require.Eventually(t, func() bool {
-		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
-			return false
-		}
-
-		// Make sure there is exactly one active batch.
-		if len(batcher.batches) != 1 {
-			return false
-		}
-
-		// Get the batch.
-		batch := getOnlyBatch(batcher)
-
-		// Make sure the batch has one sweep.
-		return len(batch.sweeps) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Expect a timer to be set: 0 (instead of publishDelay), and
 	// RegisterSpend to be called. The order is not determined, so catch
 	// these actions from two separate goroutines.
@@ -1051,6 +1109,9 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
+
+		// Wait for tx to be published.
+		<-lnd.TxPublishChannel
 	}()
 
 	wg3.Add(1)
@@ -1065,6 +1126,28 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for RegisterSpend and for timer registration.
 	wg3.Wait()
 
+	// Wait for batch to load.
+	require.Eventually(t, func() bool {
+		// Make sure that the sweep was stored
+		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+			return false
+		}
+
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+
+		// Make sure the batch has one sweep.
+		var numSweeps int
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+		})
+
+		// Make sure the batch has one sweep.
+		return numSweeps == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
 	// Expect one timer: publishDelay (0).
 	wantDelays = []time.Duration{0}
 	require.Equal(t, wantDelays, delays)
@@ -1072,9 +1155,6 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Advance the clock.
 	now = now.Add(time.Millisecond)
 	testClock.SetTime(now)
-
-	// Wait for tx to be published.
-	<-lnd.TxPublishChannel
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(601)
@@ -1226,15 +1306,18 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	require.Equal(t, wantDelays, delays)
 
 	// Replace the logger in the batch with wrappedLogger to watch messages.
-	var batch2 *batch
-	for _, batch := range batcher.batches {
-		if batch.id != batch1.id {
-			batch2 = batch
-		}
+	var testLogger2 *wrappedLogger
+	for _, batch := range getBatches(ctx, batcher) {
+		batch.testRunInEventLoop(ctx, func() {
+			if batch.id != batch1.id {
+				testLogger2 = &wrappedLogger{
+					Logger: batch.log(),
+				}
+				batch.setLog(testLogger2)
+			}
+		})
 	}
-	require.NotNil(t, batch2)
-	testLogger2 := &wrappedLogger{Logger: batch2.log}
-	batch2.log = testLogger2
+	require.NotNil(t, testLogger2)
 
 	// Add another sweep which is urgent. It will go to the same batch
 	// to make sure minimum timeout is calculated properly.
@@ -1274,7 +1357,10 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 
 	// Wait for sweep to be added to the batch.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		require.Contains(t, testLogger2.infoMessages, "adding sweep %x")
+		testLogger2.mu.Lock()
+		defer testLogger2.mu.Unlock()
+
+		assert.Contains(c, testLogger2.infoMessages, "adding sweep %x")
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock by publishDelay. Don't wait largeInitialDelay.
@@ -1298,7 +1384,7 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 	batcherStore testBatcherStore) {
 
 	// Disable logging, because this test is very noisy.
-	oldLogger := log
+	oldLogger := log()
 	UseLogger(build.NewSubLogger("SWEEP", nil))
 	defer UseLogger(oldLogger)
 
@@ -1399,15 +1485,19 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 	// Eventually the batches are launched and all the sweeps are added.
 	require.Eventually(t, func() bool {
 		// Make sure all the batches have started.
-		if len(batcher.batches) != expectedBatches {
+		batches := getBatches(ctx, batcher)
+		if len(batches) != expectedBatches {
 			return false
 		}
 
 		// Make sure all the sweeps were added.
 		sweepsNum := 0
-		for _, batch := range batcher.batches {
-			sweepsNum += len(batch.sweeps)
+		for _, batch := range batches {
+			batch.testRunInEventLoop(ctx, func() {
+				sweepsNum += len(batch.sweeps)
+			})
 		}
+
 		return sweepsNum == swapsNum
 	}, test.Timeout, eventuallyCheckFrequency)
 
@@ -1588,20 +1678,27 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	// Batcher should create a batch for the sweeps.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Find the batch and store it in a local variable for easier access.
 	b := &batch{}
-	for _, btch := range batcher.batches {
-		if btch.primarySweepID == sweepReq1.SwapHash {
-			b = btch
-		}
+	for _, btch := range getBatches(ctx, batcher) {
+		btch.testRunInEventLoop(ctx, func() {
+			if btch.primarySweepID == sweepReq1.SwapHash {
+				b = btch
+			}
+		})
 	}
 
 	// Batcher should contain all sweeps.
 	require.Eventually(t, func() bool {
-		return len(b.sweeps) == 3
+		var numSweeps int
+		b.testRunInEventLoop(ctx, func() {
+			numSweeps = len(b.sweeps)
+		})
+
+		return numSweeps == 3
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Verify that the batch has a primary sweep id that matches the first
@@ -1650,19 +1747,24 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	// Eventually the batch reads the notification and proceeds to a closed
 	// state.
 	require.Eventually(t, func() bool {
-		return b.state == Closed
-	}, test.Timeout, eventuallyCheckFrequency)
+		var state batchState
+		b.testRunInEventLoop(ctx, func() {
+			state = b.state
+		})
 
-	// While handling the spend notification the batch should detect that
-	// some sweeps did not appear in the spending tx, therefore it redirects
-	// them back to the batcher and the batcher inserts them in a new batch.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 2
+		return state == Closed
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Since second batch was created we check that it registered for its
 	// primary sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// While handling the spend notification the batch should detect that
+	// some sweeps did not appear in the spending tx, therefore it redirects
+	// them back to the batcher and the batcher inserts them in a new batch.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// We mock the confirmation notification.
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
@@ -1678,26 +1780,35 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	// confirmation forever.
 	<-lnd.TxPublishChannel
 
+	// Re-add one of remaining sweeps to trigger removing the completed
+	// batch from the batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq3))
+
 	// Eventually the batch receives the confirmation notification,
 	// gracefully exits and the batcher deletes it.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Find the other batch, which includes the sweeps that did not appear
 	// in the spending tx.
-	b = &batch{}
-	for _, btch := range batcher.batches {
-		b = btch
-	}
+	b = getOnlyBatch(t, ctx, batcher)
 
 	// After all the sweeps enter, it should contain 2 sweeps.
 	require.Eventually(t, func() bool {
-		return len(b.sweeps) == 2
+		var numSweeps int
+		b.testRunInEventLoop(ctx, func() {
+			numSweeps = len(b.sweeps)
+		})
+		return numSweeps == 2
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The batch should be in an open state.
-	require.Equal(t, b.state, Open)
+	var state batchState
+	b.testRunInEventLoop(ctx, func() {
+		state = b.state
+	})
+	require.Equal(t, state, Open)
 }
 
 // testSweepBatcherNonWalletAddr tests that sweep requests that sweep to a non
@@ -1753,15 +1864,15 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// Deliver sweep request to batcher.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
-	// Once batcher receives sweep request it will eventually spin up a
-	// batch.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Once batcher receives sweep request it will eventually spin up a
+	// batch.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
@@ -1803,15 +1914,15 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 
 	require.NoError(t, batcher.AddSweep(&sweepReq2))
 
-	// Batcher should create a second batch as first batch is a non wallet
-	// addr batch.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 2
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a second batch as first batch is a non wallet
+	// addr batch.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for second batch to be published.
 	<-lnd.TxPublishChannel
@@ -1850,15 +1961,15 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 
 	require.NoError(t, batcher.AddSweep(&sweepReq3))
 
-	// Batcher should create a new batch as timeout distance is greater than
-	// the threshold
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 3
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a new batch as timeout distance is greater than
+	// the threshold
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 3
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published for 3rd batch.
 	<-lnd.TxPublishChannel
@@ -1866,22 +1977,31 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps
 		// in it.
-		for _, batch := range batcher.batches {
-			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
-				}
+		batches := getBatches(ctx, batcher)
+		for _, batch := range batches {
+			var bad bool
 
-			case sweepReq2.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
-				}
+			batch.testRunInEventLoop(ctx, func() {
+				switch batch.primarySweepID {
+				case sweepReq1.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
 
-			case sweepReq3.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
+				case sweepReq2.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
+
+				case sweepReq3.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
 				}
+			})
+
+			if bad {
+				return false
 			}
 		}
 
@@ -2103,15 +2223,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// Deliver sweep request to batcher.
 	require.NoError(t, batcher.AddSweep(&sweepReq1))
 
-	// Once batcher receives sweep request it will eventually spin up a
-	// batch.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Once batcher receives sweep request it will eventually spin up a
+	// batch.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
@@ -2124,7 +2244,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// Batcher should not create a second batch as timeout distance is small
 	// enough.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 1
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Publish a block to trigger batch 1 republishing.
@@ -2137,15 +2257,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 
 	require.NoError(t, batcher.AddSweep(&sweepReq3))
 
-	// Batcher should create a second batch as this sweep pays to a non
-	// wallet address.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 2
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a second batch as this sweep pays to a non
+	// wallet address.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx for the second batch to be published (1 sweep).
 	tx = <-lnd.TxPublishChannel
@@ -2153,15 +2273,15 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 
 	require.NoError(t, batcher.AddSweep(&sweepReq4))
 
-	// Batcher should create a third batch as timeout distance is greater
-	// than the threshold.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 3
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a third batch as timeout distance is greater
+	// than the threshold.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 3
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx for the third batch to be published (1 sweep).
 	tx = <-lnd.TxPublishChannel
@@ -2181,20 +2301,20 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// Batcher should not create a fourth batch as timeout distance is small
 	// enough for it to join the last batch.
 	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 3
+		return len(getBatches(ctx, batcher)) == 3
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	require.NoError(t, batcher.AddSweep(&sweepReq6))
 
-	// Batcher should create a fourth batch as this sweep pays to a non
-	// wallet address.
-	require.Eventually(t, func() bool {
-		return len(batcher.batches) == 4
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
+
+	// Batcher should create a fourth batch as this sweep pays to a non
+	// wallet address.
+	require.Eventually(t, func() bool {
+		return len(getBatches(ctx, batcher)) == 4
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx for the 4th batch to be published (1 sweep).
 	tx = <-lnd.TxPublishChannel
@@ -2203,27 +2323,35 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Verify that each batch has the correct number of sweeps in
 		// it.
-		for _, batch := range batcher.batches {
-			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
-				if len(batch.sweeps) != 2 {
-					return false
-				}
+		batches := getBatches(ctx, batcher)
+		for _, batch := range batches {
+			var bad bool
+			batch.testRunInEventLoop(ctx, func() {
+				switch batch.primarySweepID {
+				case sweepReq1.SwapHash:
+					if len(batch.sweeps) != 2 {
+						bad = true
+					}
 
-			case sweepReq3.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
-				}
+				case sweepReq3.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
 
-			case sweepReq4.SwapHash:
-				if len(batch.sweeps) != 2 {
-					return false
-				}
+				case sweepReq4.SwapHash:
+					if len(batch.sweeps) != 2 {
+						bad = true
+					}
 
-			case sweepReq6.SwapHash:
-				if len(batch.sweeps) != 1 {
-					return false
+				case sweepReq6.SwapHash:
+					if len(batch.sweeps) != 1 {
+						bad = true
+					}
 				}
+			})
+
+			if bad {
+				return false
 			}
 		}
 
@@ -2360,8 +2488,11 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		return batcherStore.AssertSweepStored(sweepReq.SwapHash) &&
-			len(batcher.batches) == 1
+		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+			return false
+		}
+
+		return len(getBatches(ctx, batcher)) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Make sure we have only one batch stored (as we dropped the dormant
@@ -2577,9 +2708,14 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		return batcherStore.AssertSweepStored(sweepReq1.SwapHash) &&
-			batcherStore.AssertSweepStored(sweepReq2.SwapHash) &&
-			len(batcher.batches) == 2
+		if !batcherStore.AssertSweepStored(sweepReq1.SwapHash) {
+			return false
+		}
+		if !batcherStore.AssertSweepStored(sweepReq2.SwapHash) {
+			return false
+		}
+
+		return len(getBatches(ctx, batcher)) == 2
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Change the second sweep so that it can be added to the first batch.
@@ -2608,7 +2744,8 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 
 	require.Eventually(t, func() bool {
 		// Make sure there are two batches.
-		batches := batcher.batches
+		batches := getBatches(ctx, batcher)
+
 		if len(batches) != 2 {
 			return false
 		}
@@ -2624,7 +2761,13 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		}
 
 		// Make sure the second batch has the second sweep.
-		sweep2, has := secondBatch.sweeps[sweepReq2.SwapHash]
+		var (
+			sweep2 sweep
+			has    bool
+		)
+		secondBatch.testRunInEventLoop(ctx, func() {
+			sweep2, has = secondBatch.sweeps[sweepReq2.SwapHash]
+		})
 		if !has {
 			return false
 		}
@@ -2635,8 +2778,15 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 
 	// Make sure each batch has one sweep. If the second sweep was added to
 	// both batches, the following check won't pass.
-	for _, batch := range batcher.batches {
-		require.Equal(t, 1, len(batch.sweeps))
+	batches := getBatches(ctx, batcher)
+	for _, batch := range batches {
+		var numSweeps int
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+		})
+
+		// Make sure the batch has one sweep.
+		require.Equal(t, 1, numSweeps)
 	}
 
 	// Publish a block to trigger batch 2 republishing.
@@ -2729,21 +2879,28 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 			return false
 		}
 
-		// Make sure there is exactly one active batch.
-		if len(batcher.batches) != 1 {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
 			return false
 		}
 
-		// Get the batch.
-		batch := getOnlyBatch(batcher)
+		// Make sure the batch has one sweep.
+		var (
+			numSweeps  int
+			confTarget int32
+		)
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+			confTarget = batch.cfg.batchConfTarget
+		})
 
 		// Make sure the batch has one sweep.
-		if len(batch.sweeps) != 1 {
+		if numSweeps != 1 {
 			return false
 		}
 
 		// Make sure the batch has proper batchConfTarget.
-		return batch.cfg.batchConfTarget == 123
+		return confTarget == 123
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Make sure we have stored the batch.
@@ -2772,6 +2929,12 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
 
+	// Expect registration for spend notification.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
 	// Wait for batch to load.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
@@ -2779,26 +2942,28 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 			return false
 		}
 
-		// Make sure there is exactly one active batch.
-		if len(batcher.batches) != 1 {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
 			return false
 		}
 
-		// Get the batch.
-		batch := getOnlyBatch(batcher)
+		// Make sure the batch has one sweep.
+		var numSweeps int
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+		})
 
 		// Make sure the batch has one sweep.
-		return len(batch.sweeps) == 1
+		return numSweeps == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Make sure batchConfTarget was preserved.
-	require.Equal(t, 123, int(getOnlyBatch(batcher).cfg.batchConfTarget))
-
-	// Expect registration for spend notification.
-	<-lnd.RegisterSpendChannel
-
-	// Wait for tx to be published.
-	<-lnd.TxPublishChannel
+	batch := getOnlyBatch(t, ctx, batcher)
+	var confTarget int32
+	batch.testRunInEventLoop(ctx, func() {
+		confTarget = batch.cfg.batchConfTarget
+	})
+	require.Equal(t, int32(123), confTarget)
 
 	// Now make the batcher quit by canceling the context.
 	cancel()
@@ -2810,10 +2975,21 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 
 type sweepFetcherMock struct {
 	store map[lntypes.Hash]*SweepInfo
+	mu    sync.Mutex
+}
+
+func (f *sweepFetcherMock) setSweep(hash lntypes.Hash, info *SweepInfo) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.store[hash] = info
 }
 
 func (f *sweepFetcherMock) FetchSweep(ctx context.Context, hash lntypes.Hash) (
 	*SweepInfo, error) {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	return f.store[hash], nil
 }
@@ -2932,21 +3108,27 @@ func testSweepFetcher(t *testing.T, store testStore,
 			return false
 		}
 
-		// Make sure there is exactly one active batch.
-		if len(batcher.batches) != 1 {
+		// Try to get the batch.
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
 			return false
 		}
 
-		// Get the batch.
-		batch := getOnlyBatch(batcher)
-
 		// Make sure the batch has one sweep.
-		if len(batch.sweeps) != 1 {
+		var (
+			numSweeps  int
+			confTarget int32
+		)
+		batch.testRunInEventLoop(ctx, func() {
+			numSweeps = len(batch.sweeps)
+			confTarget = batch.cfg.batchConfTarget
+		})
+		if numSweeps != 1 {
 			return false
 		}
 
 		// Make sure the batch has proper batchConfTarget.
-		return batch.cfg.batchConfTarget == 123
+		return confTarget == 123
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Get the published transaction and check the fee rate.
@@ -3279,7 +3461,7 @@ func testWithMixedBatch(t *testing.T, store testStore,
 		if i == 0 {
 			sweepInfo.NonCoopHint = true
 		}
-		sweepFetcher.store[swapHash] = sweepInfo
+		sweepFetcher.setSweep(swapHash, sweepInfo)
 
 		// Create sweep request.
 		sweepReq := SweepRequest{
@@ -3433,7 +3615,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 		)
 		require.NoError(t, err)
 
-		sweepFetcher.store[swapHash] = &SweepInfo{
+		sweepFetcher.setSweep(swapHash, &SweepInfo{
 			Preimage:    preimages[i],
 			NonCoopHint: nonCoopHints[i],
 
@@ -3445,7 +3627,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 			HTLC:                   *htlc,
 			HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
 			DestAddr:               destAddr,
-		}
+		})
 
 		// Create sweep request.
 		sweepReq := SweepRequest{
@@ -3794,9 +3976,17 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Make sure the fee rate is feeRateMedium.
-	batch := getOnlyBatch(batcher)
-	require.Len(t, batch.sweeps, 1)
-	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+	batch := getOnlyBatch(t, ctx, batcher)
+	var (
+		numSweeps     int
+		cachedFeeRate chainfee.SatPerKWeight
+	)
+	batch.testRunInEventLoop(ctx, func() {
+		numSweeps = len(batch.sweeps)
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, 1, numSweeps)
+	require.Equal(t, feeRateMedium, cachedFeeRate)
 
 	// Now decrease the fee of sweep1.
 	setFeeRate(swapHash1, feeRateLow)
@@ -3810,7 +4000,10 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Make sure the fee rate is still feeRateMedium.
-	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+	batch.testRunInEventLoop(ctx, func() {
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, feeRateMedium, cachedFeeRate)
 
 	// Add sweep2, with feeRateMedium.
 	swapHash2 := lntypes.Hash{2, 2, 2}
@@ -3856,8 +4049,12 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Make sure the fee rate is still feeRateMedium.
-	require.Len(t, batch.sweeps, 2)
-	require.Equal(t, feeRateMedium, batch.rbfCache.FeeRate)
+	batch.testRunInEventLoop(ctx, func() {
+		numSweeps = len(batch.sweeps)
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, 2, numSweeps)
+	require.Equal(t, feeRateMedium, cachedFeeRate)
 
 	// Now update fee rate of second sweep (which is not primary) to
 	// feeRateHigh. Fee rate of sweep 1 is still feeRateLow.
@@ -3873,7 +4070,1038 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Make sure the fee rate increased to feeRateHigh.
-	require.Equal(t, feeRateHigh, batch.rbfCache.FeeRate)
+	batch.testRunInEventLoop(ctx, func() {
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, feeRateHigh, cachedFeeRate)
+}
+
+// mockPresignedHelper implements PresignedHelper interface and stores arguments
+// passed in its methods to validate correctness of function publishPresigned.
+type mockPresignedHelper struct {
+	// onlineOutpoints specifies which outpoints are capable of
+	// participating in presigning.
+	onlineOutpoints map[wire.OutPoint]bool
+
+	// presignedBatches is the collection of presigned batches.
+	presignedBatches []*wire.MsgTx
+
+	// mu should be hold by all the public methods of this type.
+	mu sync.Mutex
+
+	// cleanupCalled is a channel where an element is sent every time
+	// CleanupTransactions is called.
+	cleanupCalled chan struct{}
+}
+
+// newMockPresignedHelper returns new instance of mockPresignedHelper.
+func newMockPresignedHelper() *mockPresignedHelper {
+	return &mockPresignedHelper{
+		onlineOutpoints: make(map[wire.OutPoint]bool),
+		cleanupCalled:   make(chan struct{}),
+	}
+}
+
+// SetOutpointOnline changes the online status of an outpoint.
+func (h *mockPresignedHelper) SetOutpointOnline(op wire.OutPoint, online bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.onlineOutpoints[op] = online
+}
+
+// offlineInputs returns inputs of a tx which are offline.
+func (h *mockPresignedHelper) offlineInputs(tx *wire.MsgTx) []wire.OutPoint {
+	offline := make([]wire.OutPoint, 0, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		if !h.onlineOutpoints[txIn.PreviousOutPoint] {
+			offline = append(offline, txIn.PreviousOutPoint)
+		}
+	}
+
+	return offline
+}
+
+// sign signs the transaction.
+func (h *mockPresignedHelper) sign(tx *wire.MsgTx) {
+	// Sign all the inputs.
+	for i := range tx.TxIn {
+		tx.TxIn[i].Witness = wire.TxWitness{
+			make([]byte, 64),
+		}
+	}
+}
+
+// getTxFeerate returns fee rate of a transaction.
+func (h *mockPresignedHelper) getTxFeerate(tx *wire.MsgTx,
+	inputAmt btcutil.Amount) chainfee.SatPerKWeight {
+
+	// "Sign" tx's copy to assess the weight.
+	tx2 := tx.Copy()
+	h.sign(tx2)
+	weight := lntypes.WeightUnit(
+		blockchain.GetTransactionWeight(btcutil.NewTx(tx2)),
+	)
+	fee := btcutil.Amount(tx.TxOut[0].Value) - inputAmt
+
+	return chainfee.NewSatPerKWeight(fee, weight)
+}
+
+// IsPresigned returns if the input was previously used in any call to the
+// SetOutpointOnline method.
+func (h *mockPresignedHelper) IsPresigned(ctx context.Context,
+	input wire.OutPoint) (bool, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	_, has := h.onlineOutpoints[input]
+
+	return has, nil
+}
+
+// Presign tries to presign the transaction. It succeeds if all the inputs
+// are online. In case of success it adds the transaction to presignedBatches.
+func (h *mockPresignedHelper) Presign(ctx context.Context, tx *wire.MsgTx,
+	inputAmt btcutil.Amount) error {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if offline := h.offlineInputs(tx); len(offline) != 0 {
+		return fmt.Errorf("some inputs of tx are offline: %v", offline)
+	}
+
+	tx = tx.Copy()
+	h.sign(tx)
+	h.presignedBatches = append(h.presignedBatches, tx)
+
+	return nil
+}
+
+// DestPkScript returns destination pkScript used in 1:1 presigned tx.
+func (h *mockPresignedHelper) DestPkScript(ctx context.Context,
+	inputs []wire.OutPoint) ([]byte, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	inputsSet := make(map[wire.OutPoint]struct{}, len(inputs))
+	for _, input := range inputs {
+		inputsSet[input] = struct{}{}
+	}
+	if len(inputsSet) != len(inputs) {
+		return nil, fmt.Errorf("duplicate inputs")
+	}
+
+	inputsMatch := func(tx *wire.MsgTx) bool {
+		if len(tx.TxIn) != len(inputsSet) {
+			return false
+		}
+
+		for _, txIn := range tx.TxIn {
+			if _, has := inputsSet[txIn.PreviousOutPoint]; !has {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	for _, tx := range h.presignedBatches {
+		if inputsMatch(tx) {
+			return tx.TxOut[0].PkScript, nil
+		}
+	}
+
+	return nil, fmt.Errorf("tx sweeping inputs %v not found", inputs)
+}
+
+// SignTx tries to sign the transaction. If all the inputs are online, it signs
+// the exact transaction passed and adds it to presignedBatches. Otherwise it
+// looks for a transaction in presignedBatches satisfying the criteria.
+func (h *mockPresignedHelper) SignTx(ctx context.Context, tx *wire.MsgTx,
+	inputAmt btcutil.Amount,
+	minRelayFee chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// If all the inputs are online, sign this exact transaction.
+	if offline := h.offlineInputs(tx); len(offline) == 0 {
+		tx = tx.Copy()
+		h.sign(tx)
+
+		// Add to the collection.
+		h.presignedBatches = append(h.presignedBatches, tx)
+
+		return tx, nil
+	}
+
+	// Find feerate of input tx.
+	inputFeeRate := h.getTxFeerate(tx, inputAmt)
+
+	// Try to find a transaction in the collection satisfying all the
+	// criteria of PresignedHelper.SignTx. If there are many such
+	// transactions, select a transaction with feerate which is the closest
+	// to the feerate of the input tx.
+	var (
+		bestTx              *wire.MsgTx
+		bestFeerateDistance chainfee.SatPerKWeight
+	)
+	for _, candidate := range h.presignedBatches {
+		err := CheckSignedTx(tx, candidate, inputAmt, minRelayFee)
+		if err != nil {
+			continue
+		}
+
+		feeRate := h.getTxFeerate(candidate, inputAmt)
+		feeRateDistance := feeRate - inputFeeRate
+		if feeRateDistance < 0 {
+			feeRateDistance = -feeRateDistance
+		}
+
+		if bestTx == nil || feeRateDistance < bestFeerateDistance {
+			bestTx = candidate
+			bestFeerateDistance = feeRateDistance
+		}
+	}
+
+	if bestTx == nil {
+		return nil, fmt.Errorf("no such presigned tx found")
+	}
+
+	return bestTx.Copy(), nil
+}
+
+// CleanupTransactions removes all transactions related to any of the outpoints.
+func (h *mockPresignedHelper) CleanupTransactions(ctx context.Context,
+	inputs []wire.OutPoint) error {
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	inputsSet := make(map[wire.OutPoint]struct{}, len(inputs))
+	for _, input := range inputs {
+		inputsSet[input] = struct{}{}
+	}
+	if len(inputsSet) != len(inputs) {
+		return fmt.Errorf("duplicate inputs")
+	}
+
+	var presignedBatches []*wire.MsgTx
+
+	// Filter out transactions spending any of the inputs passed.
+	for _, tx := range h.presignedBatches {
+		var match bool
+		for _, txIn := range tx.TxIn {
+			if _, has := inputsSet[txIn.PreviousOutPoint]; has {
+				match = true
+				break
+			}
+		}
+
+		if !match {
+			presignedBatches = append(presignedBatches, tx)
+		}
+	}
+
+	h.presignedBatches = presignedBatches
+
+	h.cleanupCalled <- struct{}{}
+
+	return nil
+}
+
+// sweepTimeout is swap timeout block height used in tests of presigned mode.
+const sweepTimeout = 1000
+
+// dummySweepFetcherMock implements SweepFetcher by returning blank SweepInfo.
+// It is used in TestPresigned, because it doesn't use any fields of SweepInfo.
+type dummySweepFetcherMock struct {
+}
+
+// FetchSweep returns blank SweepInfo.
+func (f *dummySweepFetcherMock) FetchSweep(ctx context.Context,
+	hash lntypes.Hash) (*SweepInfo, error) {
+
+	return &SweepInfo{
+		// Set Timeout to prevent warning messages about timeout=0.
+		Timeout: sweepTimeout,
+	}, nil
+}
+
+// testPresigned_input1_offline_then_input2 tests presigned mode for the
+// following scenario: first input is added, then goes offline, then feerate
+// grows, one of presigned transactions is published, and then another online
+// input is added and is assigned to another batch.
+func testPresigned_input1_offline_then_input2(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(31_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper))
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+
+	// This should fail, because the input is offline.
+	presignedHelper.SetOutpointOnline(op1, false)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, sweepTimeout, destAddr)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "offline")
+
+	// Enable the input and try again.
+	presignedHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+
+	// Increase fee rate and turn off the input, so it can't sign updated
+	// tx. The feerate is close to the feerate of one of presigned txs.
+	setFeeRate(feeRateMedium)
+	presignedHelper.SetOutpointOnline(op1, false)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 1)
+	require.Len(t, tx.TxOut, 1)
+	require.Equal(t, op1, tx.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(988619), tx.TxOut[0].Value)
+	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+
+	// Make sure the fee rate is feeRateMedium.
+	batch := getOnlyBatch(t, ctx, batcher)
+	var (
+		numSweeps     int
+		cachedFeeRate chainfee.SatPerKWeight
+	)
+	batch.testRunInEventLoop(ctx, func() {
+		numSweeps = len(batch.sweeps)
+		cachedFeeRate = batch.rbfCache.FeeRate
+	})
+	require.Equal(t, 1, numSweeps)
+	require.Equal(t, feeRateMedium, cachedFeeRate)
+
+	// Raise feerate and trigger new publishing. The tx should be the same.
+	setFeeRate(feeRateHigh)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	tx2 := <-lnd.TxPublishChannel
+	require.Equal(t, tx.TxHash(), tx2.TxHash())
+
+	// Now add another input. It is online, but the first input is still
+	// offline, so another input should go to another batch.
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	batch2 := <-lnd.TxPublishChannel
+	require.Len(t, batch2.TxIn, 1)
+	require.Len(t, batch2.TxOut, 1)
+	require.Equal(t, op2, batch2.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(1987724), batch2.TxOut[0].Value)
+	require.Equal(t, batchPkScript, batch2.TxOut[0].PkScript)
+
+	// Now confirm the first batch. Make sure its presigned transactions
+	// were removed, but not the transactions of the second batch.
+	presignedSize1 := len(presignedHelper.presignedBatches)
+
+	tx2hash := tx2.TxHash()
+	spendDetail := &chainntnfs.SpendDetail{
+		SpentOutPoint:     &sweepReq1.Outpoint,
+		SpendingTx:        tx2,
+		SpenderTxHash:     &tx2hash,
+		SpenderInputIndex: 0,
+		SpendingHeight:    601,
+	}
+	lnd.SpendChannel <- spendDetail
+	<-lnd.RegisterConfChannel
+	require.NoError(t, lnd.NotifyHeight(604))
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		Tx: tx2,
+	}
+
+	<-presignedHelper.cleanupCalled
+
+	presignedSize2 := len(presignedHelper.presignedBatches)
+	require.Greater(t, presignedSize2, 0)
+	require.Greater(t, presignedSize1, presignedSize2)
+
+	// Make sure we still have presigned transactions for the second batch.
+	presignedHelper.SetOutpointOnline(op2, false)
+	_, err = presignedHelper.SignTx(
+		ctx, batch2, 2_000_000, chainfee.FeePerKwFloor,
+	)
+	require.NoError(t, err)
+}
+
+// testPresigned_two_inputs_one_goes_offline tests presigned mode for the
+// following scenario: two online inputs are added, then one of them goes
+// offline, then feerate grows and a presigned transaction is used.
+func testPresigned_two_inputs_one_goes_offline(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Add second sweep.
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 2)
+	require.Len(t, tx.TxOut, 1)
+	require.ElementsMatch(
+		t, []wire.OutPoint{op1, op2},
+		[]wire.OutPoint{
+			tx.TxIn[0].PreviousOutPoint,
+			tx.TxIn[1].PreviousOutPoint,
+		},
+	)
+	require.Equal(t, int64(2993740), tx.TxOut[0].Value)
+	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+
+	// Now turn off the second input, raise feerate and trigger new
+	// publishing. The feerate is close to one of the presigned feerates,
+	// so this should result in RBF.
+	presignedHelper.SetOutpointOnline(op2, false)
+	setFeeRate(feeRateMedium)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	tx2 := <-lnd.TxPublishChannel
+	require.NotEqual(t, tx.TxHash(), tx2.TxHash())
+	require.Len(t, tx2.TxIn, 2)
+	require.Len(t, tx2.TxOut, 1)
+	require.ElementsMatch(
+		t, []wire.OutPoint{op1, op2},
+		[]wire.OutPoint{
+			tx.TxIn[0].PreviousOutPoint,
+			tx.TxIn[1].PreviousOutPoint,
+		},
+	)
+	require.Equal(t, int64(2982008), tx2.TxOut[0].Value)
+	require.Equal(t, batchPkScript, tx2.TxOut[0].PkScript)
+}
+
+// testPresigned_first_publish_fails tests presigned mode for the following
+// scenario: one input is added and goes offline, feerate grows a transaction is
+// attempted to be published, but fails. Then the input goes online and is
+// published being signed online.
+func testPresigned_first_publish_fails(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	presignedHelper.SetOutpointOnline(op1, false)
+
+	// Make sure that publish attempt fails.
+	lnd.PublishHandler = func(ctx context.Context, tx *wire.MsgTx,
+		label string) error {
+
+		return fmt.Errorf("test error")
+	}
+
+	// Add the sweep, triggering the publish attempt.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch.log(),
+	}
+	batch.setLog(testLogger)
+
+	// Trigger another publish attempt in case the publish error was logged
+	// before we installed the logger watcher.
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Wait for batcher to log the publish error. It is logged with
+	// publishErrorHandler, so the format is "%s: %v".
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(c, testLogger.warnMessages, "%s: %v")
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Now turn on the first input, raise feerate and trigger new
+	// publishing, which should succeed.
+	lnd.PublishHandler = nil
+	setFeeRate(feeRateMedium)
+	presignedHelper.SetOutpointOnline(op1, true)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, lnd.NotifyHeight(602))
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 1)
+	require.Len(t, tx.TxOut, 1)
+	require.Equal(t, op1, tx.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(988120), tx.TxOut[0].Value)
+	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+}
+
+// testPresigned_locktime tests presigned mode for the following scenario: one
+// input is added and goes offline, feerate grows, but this is constrainted by
+// locktime logic, so the published transaction has medium feerate (maximum
+// feerate among transactions without locktime protection). Then blocks are
+// mined and a transaction with a higher feerate is published.
+func testPresigned_locktime(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow  = chainfee.SatPerKWeight(10_000)
+		feeRateHigh = chainfee.SatPerKWeight(10_000_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op1, true)
+	err = batcher.PresignSweep(ctx, op1, 1_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	presignedHelper.SetOutpointOnline(op1, false)
+
+	setFeeRate(feeRateHigh)
+
+	// Add the sweep, triggering the publish attempt.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 1)
+	require.Len(t, tx.TxOut, 1)
+	require.Equal(t, op1, tx.TxIn[0].PreviousOutPoint)
+	require.Equal(t, int64(966016), tx.TxOut[0].Value)
+	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+
+	// Mine blocks to overcome the locktime constraint.
+	require.NoError(t, lnd.NotifyHeight(950))
+
+	tx2 := <-lnd.TxPublishChannel
+	require.Equal(t, int64(824649), tx2.TxOut[0].Value)
+}
+
+// testPresigned_presigned_and_regular_sweeps tests a combination of presigned
+// mode and regular mode for the following scenario: one regular input is added,
+// then a presigned input is added and it goes to another batch, because they
+// should not appear in the same batch. Then another regular and another
+// presigned inputs are added and go to the existing batches of their types.
+func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const (
+		feeRateLow    = chainfee.SatPerKWeight(10_000)
+		feeRateMedium = chainfee.SatPerKWeight(30_000)
+		feeRateHigh   = chainfee.SatPerKWeight(40_000)
+	)
+
+	currentFeeRate := feeRateLow
+	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
+		currentFeeRate = feeRate
+	}
+	customFeeRate := func(_ context.Context,
+		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+
+		return currentFeeRate, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	setFeeRate(feeRateLow)
+
+	/////////////////////////////////////
+	// Create the first regular sweep. //
+	/////////////////////////////////////
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    1_000_000,
+		Outpoint: op1,
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 1_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{1},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash1, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx1 := <-lnd.TxPublishChannel
+	require.Len(t, tx1.TxIn, 1)
+	require.Len(t, tx1.TxOut, 1)
+
+	///////////////////////////////////////
+	// Create the first presigned sweep. //
+	///////////////////////////////////////
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 2_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash2, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    2_000_000,
+		Outpoint: op2,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op2, true)
+	err = batcher.PresignSweep(ctx, op2, 2_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx2 := <-lnd.TxPublishChannel
+	require.Len(t, tx2.TxIn, 1)
+	require.Len(t, tx2.TxOut, 1)
+	require.Equal(t, op2, tx2.TxIn[0].PreviousOutPoint)
+
+	//////////////////////////////////////
+	// Create the second regular sweep. //
+	//////////////////////////////////////
+	swapHash3 := lntypes.Hash{3, 3, 3}
+	op3 := wire.OutPoint{
+		Hash:  chainhash.Hash{3, 3},
+		Index: 3,
+	}
+	sweepReq3 := SweepRequest{
+		SwapHash: swapHash3,
+		Value:    4_000_000,
+		Outpoint: op3,
+		Notifier: &dummyNotifier,
+	}
+
+	swap3 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 4_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{3},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash3, swap3)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq3))
+
+	////////////////////////////////////////
+	// Create the second presigned sweep. //
+	////////////////////////////////////////
+	swapHash4 := lntypes.Hash{4, 4, 4}
+	op4 := wire.OutPoint{
+		Hash:  chainhash.Hash{4, 4},
+		Index: 4,
+	}
+
+	swap4 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 3_000_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{4},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash4, swap4)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	sweepReq4 := SweepRequest{
+		SwapHash: swapHash4,
+		Value:    3_000_000,
+		Outpoint: op4,
+		Notifier: &dummyNotifier,
+	}
+	presignedHelper.SetOutpointOnline(op4, true)
+	err = batcher.PresignSweep(ctx, op4, 4_000_000, sweepTimeout, destAddr)
+	require.NoError(t, err)
+	require.NoError(t, batcher.AddSweep(&sweepReq4))
+
+	// Wait for the both batches to have two sweeps.
+	require.Eventually(t, func() bool {
+		// Make sure there are two batches.
+		batches := getBatches(ctx, batcher)
+		if len(batches) != 2 {
+			return false
+		}
+
+		// Make sure each batch has two sweeps.
+		for _, batch := range batches {
+			var numSweeps int
+			batch.testRunInEventLoop(ctx, func() {
+				numSweeps = len(batch.sweeps)
+			})
+			if numSweeps != 2 {
+				return false
+			}
+		}
+
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Mine a block to trigger both batches publishing.
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Wait for a transactions to be published.
+	tx3 := <-lnd.TxPublishChannel
+	require.Len(t, tx3.TxIn, 2)
+	require.Len(t, tx3.TxOut, 1)
+	require.Equal(t, int64(4993740), tx3.TxOut[0].Value)
+
+	tx4 := <-lnd.TxPublishChannel
+	require.Len(t, tx4.TxIn, 2)
+	require.Len(t, tx4.TxOut, 1)
+	require.Equal(t, int64(4993740), tx4.TxOut[0].Value)
 }
 
 // TestSweepBatcherBatchCreation tests that sweep requests enter the expected
@@ -4023,6 +5251,33 @@ func TestFeeRateGrows(t *testing.T) {
 	runTests(t, testFeeRateGrows)
 }
 
+// TestPresigned tests presigned mode. Most sub-tests doesn't use loopdb.
+func TestPresigned(t *testing.T) {
+	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
+	logger.SetLevel(btclog.LevelTrace)
+	UseLogger(logger)
+
+	t.Run("input1_offline_then_input2", func(t *testing.T) {
+		testPresigned_input1_offline_then_input2(t, NewStoreMock())
+	})
+
+	t.Run("two_inputs_one_goes_offline", func(t *testing.T) {
+		testPresigned_two_inputs_one_goes_offline(t, NewStoreMock())
+	})
+
+	t.Run("first_publish_fails", func(t *testing.T) {
+		testPresigned_first_publish_fails(t, NewStoreMock())
+	})
+
+	t.Run("locktime", func(t *testing.T) {
+		testPresigned_locktime(t, NewStoreMock())
+	})
+
+	t.Run("presigned_and_regular_sweeps", func(t *testing.T) {
+		runTests(t, testPresigned_presigned_and_regular_sweeps)
+	})
+}
+
 // testBatcherStore is BatcherStore used in tests.
 type testBatcherStore interface {
 	BatcherStore
@@ -4035,12 +5290,17 @@ type loopdbBatcherStore struct {
 	BatcherStore
 
 	sweepsSet map[lntypes.Hash]struct{}
+
+	mu sync.Mutex
 }
 
 // UpsertSweep inserts a sweep into the database, or updates an existing sweep
 // if it already exists. This wrapper was added to update sweepsSet.
 func (s *loopdbBatcherStore) UpsertSweep(ctx context.Context,
 	sweep *dbSweep) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	err := s.BatcherStore.UpsertSweep(ctx, sweep)
 	if err == nil {
@@ -4051,7 +5311,11 @@ func (s *loopdbBatcherStore) UpsertSweep(ctx context.Context,
 
 // AssertSweepStored asserts that a sweep is stored.
 func (s *loopdbBatcherStore) AssertSweepStored(id lntypes.Hash) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, has := s.sweepsSet[id]
+
 	return has
 }
 
