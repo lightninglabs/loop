@@ -76,16 +76,19 @@ message ServerWithdrawRequest {
 
     // The address that the client wants to sweep the static address deposits
     // to.
-    string client_withdrawal_addr = 3;
+    string client_sweep_addr = 3;
+
+    // The fee rate in sat/kw that the client wants to use for the sweep.
+    uint64 tx_fee_rate = 4;
 
     // The amount that the client wants to withdraw, in satoshis. This amount
     // can be a fraction of the total deposit amount.
-    int64 withdraw_amount = 4;
+    int64 withdraw_amount = 5;
 
     // The change amount will be sent back to the static address. The client
     // ensures that the change amount covers the transaction fee, and that the
     // change after fees is at least the dust limit.
-    int64 change_amount = 5;
+    int64 change_amount = 6;
 }
 
 message ServerWithdrawResponse {

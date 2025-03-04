@@ -410,11 +410,12 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 	// responsible for that.
 	resp, err := m.cfg.StaticAddressServerClient.ServerWithdrawDeposits(
 		ctx, &staticaddressrpc.ServerWithdrawRequest{
-			Outpoints:            toPrevoutInfo(outpoints),
-			ClientNonces:         clientNonces,
-			ClientWithdrawalAddr: withdrawalAddress.String(),
-			WithdrawAmount:       int64(withdrawAmount),
-			ChangeAmount:         int64(changeAmount),
+			Outpoints:       toPrevoutInfo(outpoints),
+			ClientNonces:    clientNonces,
+			ClientSweepAddr: withdrawalAddress.String(),
+			TxFeeRate:       uint64(withdrawalSweepFeeRate),
+			WithdrawAmount:  int64(withdrawAmount),
+			ChangeAmount:    int64(changeAmount),
 		},
 	)
 	if err != nil {
