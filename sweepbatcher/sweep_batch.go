@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
@@ -214,6 +215,12 @@ type batch struct {
 	// reorgChan is the channel over which reorg notifications are received.
 	reorgChan chan struct{}
 
+	// testReqs is a channel where test requests are received.
+	// This is used only in unit tests! The reason to have this is to
+	// avoid data races in require.Eventually calls running in parallel
+	// to the event loop. See method testRunInEventLoop().
+	testReqs chan *testRequest
+
 	// errChan is the channel over which errors are received.
 	errChan chan error
 
@@ -284,8 +291,8 @@ type batch struct {
 	// cfg is the configuration for this batch.
 	cfg *batchConfig
 
-	// log is the logger for this batch.
-	log btclog.Logger
+	// log_ is the logger for this batch.
+	log_ atomic.Pointer[btclog.Logger]
 
 	wg sync.WaitGroup
 }
@@ -351,6 +358,7 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
 		callLeave:           make(chan struct{}),
@@ -387,7 +395,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		}
 	}
 
-	return &batch{
+	b := &batch{
 		id:                  bk.id,
 		state:               bk.state,
 		primarySweepID:      bk.primaryID,
@@ -395,6 +403,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
 		callLeave:           make(chan struct{}),
@@ -412,9 +421,42 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		publishErrorHandler: bk.publishErrorHandler,
 		purger:              bk.purger,
 		store:               bk.store,
-		log:                 bk.log,
 		cfg:                 &cfg,
-	}, nil
+	}
+
+	b.setLog(bk.log)
+
+	return b, nil
+}
+
+// log returns current logger.
+func (b *batch) log() btclog.Logger {
+	return *b.log_.Load()
+}
+
+// setLog atomically replaces the logger.
+func (b *batch) setLog(logger btclog.Logger) {
+	b.log_.Store(&logger)
+}
+
+// Debugf logs a message with level DEBUG.
+func (b *batch) Debugf(format string, params ...interface{}) {
+	b.log().Debugf(format, params...)
+}
+
+// Infof logs a message with level INFO.
+func (b *batch) Infof(format string, params ...interface{}) {
+	b.log().Infof(format, params...)
+}
+
+// Warnf logs a message with level WARN.
+func (b *batch) Warnf(format string, params ...interface{}) {
+	b.log().Warnf(format, params...)
+}
+
+// Errorf logs a message with level ERROR.
+func (b *batch) Errorf(format string, params ...interface{}) {
+	b.log().Errorf(format, params...)
 }
 
 // addSweep tries to add a sweep to the batch. If this is the first sweep being
@@ -430,7 +472,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// If the provided sweep is nil, we can't proceed with any checks, so
 	// we just return early.
 	if sweep == nil {
-		b.log.Infof("the sweep is nil")
+		b.Infof("the sweep is nil")
 
 		return false, nil
 	}
@@ -473,7 +515,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// the batch, do not add another sweep to prevent the tx from becoming
 	// non-standard.
 	if len(b.sweeps) >= MaxSweepsPerBatch {
-		b.log.Infof("the batch has already too many sweeps (%d >= %d)",
+		b.Infof("the batch has already too many sweeps %d >= %d",
 			len(b.sweeps), MaxSweepsPerBatch)
 
 		return false, nil
@@ -483,7 +525,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// arrive here after the batch got closed because of a spend. In this
 	// case we cannot add the sweep to this batch.
 	if b.state != Open {
-		b.log.Infof("the batch state (%v) is not open", b.state)
+		b.Infof("the batch state (%v) is not open", b.state)
 
 		return false, nil
 	}
@@ -493,15 +535,15 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// we cannot add this sweep to the batch.
 	for _, s := range b.sweeps {
 		if s.isExternalAddr {
-			b.log.Infof("the batch already has a sweep (%x) with "+
+			b.Infof("the batch already has a sweep %x with "+
 				"an external address", s.swapHash[:6])
 
 			return false, nil
 		}
 
 		if sweep.isExternalAddr {
-			b.log.Infof("the batch is not empty and new sweep (%x)"+
-				" has an external address", sweep.swapHash[:6])
+			b.Infof("the batch is not empty and new sweep %x "+
+				"has an external address", sweep.swapHash[:6])
 
 			return false, nil
 		}
@@ -515,7 +557,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 			int32(math.Abs(float64(sweep.timeout - s.timeout)))
 
 		if timeoutDistance > b.cfg.maxTimeoutDistance {
-			b.log.Infof("too long timeout distance between the "+
+			b.Infof("too long timeout distance between the "+
 				"batch and sweep %x: %d > %d",
 				sweep.swapHash[:6], timeoutDistance,
 				b.cfg.maxTimeoutDistance)
@@ -544,7 +586,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	}
 
 	// Add the sweep to the batch's sweeps.
-	b.log.Infof("adding sweep %x", sweep.swapHash[:6])
+	b.Infof("adding sweep %x", sweep.swapHash[:6])
 	b.sweeps[sweep.swapHash] = *sweep
 
 	// Update FeeRate. Max(sweep.minFeeRate) for all the sweeps of
@@ -572,7 +614,7 @@ func (b *batch) sweepExists(hash lntypes.Hash) bool {
 
 // Wait waits for the batch to gracefully stop.
 func (b *batch) Wait() {
-	b.log.Infof("Stopping")
+	b.Infof("Stopping")
 	<-b.finished
 }
 
@@ -613,8 +655,7 @@ func (b *batch) Run(ctx context.Context) error {
 	// Set currentHeight here, because it may be needed in monitorSpend.
 	select {
 	case b.currentHeight = <-blockChan:
-		b.log.Debugf("initial height for the batch is %v",
-			b.currentHeight)
+		b.Debugf("initial height for the batch is %v", b.currentHeight)
 
 	case <-runCtx.Done():
 		return runCtx.Err()
@@ -652,7 +693,7 @@ func (b *batch) Run(ctx context.Context) error {
 	// completes.
 	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
-	b.log.Infof("started, primary %x, total sweeps %v",
+	b.Infof("started, primary %x, total sweeps %v",
 		b.primarySweepID[0:6], len(b.sweeps))
 
 	for {
@@ -662,7 +703,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 		// blockChan provides immediately the current tip.
 		case height := <-blockChan:
-			b.log.Debugf("received block %v", height)
+			b.Debugf("received block %v", height)
 
 			// Set the timer to publish the batch transaction after
 			// the configured delay.
@@ -670,7 +711,7 @@ func (b *batch) Run(ctx context.Context) error {
 			b.currentHeight = height
 
 		case <-initialDelayChan:
-			b.log.Debugf("initial delay of duration %v has ended",
+			b.Debugf("initial delay of duration %v has ended",
 				b.cfg.initialDelay)
 
 			// Set the timer to publish the batch transaction after
@@ -680,8 +721,8 @@ func (b *batch) Run(ctx context.Context) error {
 		case <-timerChan:
 			// Check that batch is still open.
 			if b.state != Open {
-				b.log.Debugf("Skipping publishing, because the"+
-					" batch is not open (%v).", b.state)
+				b.Debugf("Skipping publishing, because "+
+					"the batch is not open (%v).", b.state)
 				continue
 			}
 
@@ -695,7 +736,7 @@ func (b *batch) Run(ctx context.Context) error {
 			// initialDelayChan has just fired, this check passes.
 			now := clock.Now()
 			if skipBefore.After(now) {
-				b.log.Debugf(stillWaitingMsg, skipBefore, now)
+				b.Debugf(stillWaitingMsg, skipBefore, now)
 				continue
 			}
 
@@ -715,13 +756,17 @@ func (b *batch) Run(ctx context.Context) error {
 
 		case <-b.reorgChan:
 			b.state = Open
-			b.log.Warnf("reorg detected, batch is able to accept " +
-				"new sweeps")
+			b.Warnf("reorg detected, batch is able to " +
+				"accept new sweeps")
 
 			err := b.monitorSpend(ctx, b.sweeps[b.primarySweepID])
 			if err != nil {
 				return err
 			}
+
+		case testReq := <-b.testReqs:
+			testReq.handler()
+			close(testReq.quit)
 
 		case err := <-blockErrChan:
 			return err
@@ -732,6 +777,36 @@ func (b *batch) Run(ctx context.Context) error {
 		case <-runCtx.Done():
 			return runCtx.Err()
 		}
+	}
+}
+
+// testRunInEventLoop runs a function in the event loop blocking until
+// the function returns. For unit tests only!
+func (b *batch) testRunInEventLoop(ctx context.Context, handler func()) {
+	// If the event loop is finished, run the function.
+	select {
+	case <-b.stopping:
+		handler()
+
+		return
+	default:
+	}
+
+	quit := make(chan struct{})
+	req := &testRequest{
+		handler: handler,
+		quit:    quit,
+	}
+
+	select {
+	case b.testReqs <- req:
+	case <-ctx.Done():
+		return
+	}
+
+	select {
+	case <-quit:
+	case <-ctx.Done():
 	}
 }
 
@@ -755,8 +830,10 @@ func (b *batch) timeout() int32 {
 func (b *batch) isUrgent(skipBefore time.Time) bool {
 	timeout := b.timeout()
 	if timeout <= 0 {
-		b.log.Warnf("Method timeout() returned %v. Number of"+
-			" sweeps: %d. It may be an empty batch.",
+		// This may happen if the batch is empty or if SweepInfo.Timeout
+		// is not set, may be possible in tests or if there is a bug.
+		b.Warnf("Method timeout() returned %v. Number of "+
+			"sweeps: %d. It may be an empty batch.",
 			timeout, len(b.sweeps))
 		return false
 	}
@@ -779,7 +856,7 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 		return false
 	}
 
-	b.log.Debugf("cancelling waiting for urgent sweep (timeBank is %v, "+
+	b.Debugf("cancelling waiting for urgent sweep (timeBank is %v, "+
 		"remainingWaiting is %v)", timeBank, remainingWaiting)
 
 	// Signal to the caller to cancel initialDelay.
@@ -795,7 +872,7 @@ func (b *batch) publish(ctx context.Context) error {
 	)
 
 	if len(b.sweeps) == 0 {
-		b.log.Debugf("skipping publish: no sweeps in the batch")
+		b.Debugf("skipping publish: no sweeps in the batch")
 
 		return nil
 	}
@@ -808,7 +885,7 @@ func (b *batch) publish(ctx context.Context) error {
 
 	// logPublishError is a function which logs publish errors.
 	logPublishError := func(errMsg string, err error) {
-		b.publishErrorHandler(err, errMsg, b.log)
+		b.publishErrorHandler(err, errMsg, b.log())
 	}
 
 	fee, err, signSuccess = b.publishMixedBatch(ctx)
@@ -830,9 +907,9 @@ func (b *batch) publish(ctx context.Context) error {
 		}
 	}
 
-	b.log.Infof("published, total sweeps: %v, fees: %v", len(b.sweeps), fee)
+	b.Infof("published, total sweeps: %v, fees: %v", len(b.sweeps), fee)
 	for _, sweep := range b.sweeps {
-		b.log.Infof("published sweep %x, value: %v",
+		b.Infof("published sweep %x, value: %v",
 			sweep.swapHash[:6], sweep.value)
 	}
 
@@ -1026,7 +1103,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		coopInputs   int
 	)
 	for attempt := 1; ; attempt++ {
-		b.log.Infof("Attempt %d of collecting cooperative signatures.",
+		b.Infof("Attempt %d of collecting cooperative signatures.",
 			attempt)
 
 		// Construct unsigned batch transaction.
@@ -1062,7 +1139,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 				ctx, i, sweep, tx, prevOutsMap, psbtBytes,
 			)
 			if err != nil {
-				b.log.Infof("cooperative signing failed for "+
+				b.Infof("cooperative signing failed for "+
 					"sweep %x: %v", sweep.swapHash[:6], err)
 
 				// Set coopFailed flag for this sweep in all the
@@ -1201,7 +1278,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		}
 	}
 	txHash := tx.TxHash()
-	b.log.Infof("attempting to publish batch tx=%v with feerate=%v, "+
+	b.Infof("attempting to publish batch tx=%v with feerate=%v, "+
 		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, "+
 		"%d cooperative: (%s) and %d non-cooperative (%s), destAddr=%s",
 		txHash, b.rbfCache.FeeRate, weight, feeForWeight, fee,
@@ -1215,7 +1292,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
 	)
 	if realWeight != weight {
-		b.log.Warnf("actual weight of tx %v is %v, estimated as %d",
+		b.Warnf("actual weight of tx %v is %v, estimated as %d",
 			txHash, realWeight, weight)
 	}
 
@@ -1239,11 +1316,11 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 	// Serialize the transaction and convert to hex string.
 	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
 	if err := tx.Serialize(buf); err != nil {
-		b.log.Errorf("failed to serialize tx for debug log: %v", err)
+		b.Errorf("failed to serialize tx for debug log: %v", err)
 		return
 	}
 
-	b.log.Debugf("%s: %s", msg, hex.EncodeToString(buf.Bytes()))
+	b.Debugf("%s: %s", msg, hex.EncodeToString(buf.Bytes()))
 }
 
 // musig2sign signs one sweep using musig2.
@@ -1405,15 +1482,16 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 	if b.rbfCache.FeeRate == 0 {
 		// We set minFeeRate in each sweep, so fee rate is expected to
 		// be initiated here.
-		b.log.Warnf("rbfCache.FeeRate is 0, which must not happen.")
+		b.Warnf("rbfCache.FeeRate is 0, which must not happen.")
 
 		if b.cfg.batchConfTarget == 0 {
-			b.log.Warnf("updateRbfRate called with zero " +
+			b.Warnf("updateRbfRate called with zero " +
 				"batchConfTarget")
 		}
 
-		b.log.Infof("initializing rbf fee rate for conf target=%v",
+		b.Infof("initializing rbf fee rate for conf target=%v",
 			b.cfg.batchConfTarget)
+
 		rate, err := b.wallet.EstimateFeeRate(
 			ctx, b.cfg.batchConfTarget,
 		)
@@ -1453,6 +1531,7 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 	)
 	if err != nil {
 		cancel()
+
 		return err
 	}
 
@@ -1461,7 +1540,7 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 		defer cancel()
 		defer b.wg.Done()
 
-		b.log.Infof("monitoring spend for outpoint %s",
+		b.Infof("monitoring spend for outpoint %s",
 			primarySweep.outpoint.String())
 
 		for {
@@ -1584,7 +1663,7 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	if len(spendTx.TxOut) > 0 {
 		b.batchPkScript = spendTx.TxOut[0].PkScript
 	} else {
-		b.log.Warnf("transaction %v has no outputs", txHash)
+		b.Warnf("transaction %v has no outputs", txHash)
 	}
 
 	// As a previous version of the batch transaction may get confirmed,
@@ -1666,13 +1745,13 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 
 			err := b.purger(&sweep)
 			if err != nil {
-				b.log.Errorf("unable to purge sweep %x:  %v",
+				b.Errorf("unable to purge sweep %x: %v",
 					sweep.SwapHash[:6], err)
 			}
 		}
 	}()
 
-	b.log.Infof("spent, total sweeps: %v, purged sweeps: %v",
+	b.Infof("spent, total sweeps: %v, purged sweeps: %v",
 		len(notifyList), len(purgeList))
 
 	err := b.monitorConfirmations(ctx)
@@ -1690,7 +1769,7 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 // handleConf handles a confirmation notification. This is the final step of the
 // batch. Here we signal to the batcher that this batch was completed.
 func (b *batch) handleConf(ctx context.Context) error {
-	b.log.Infof("confirmed in txid %s", b.batchTxid)
+	b.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
 	return b.store.ConfirmBatch(ctx, b.id)
@@ -1769,7 +1848,7 @@ func (b *batch) insertAndAcquireID(ctx context.Context) (int32, error) {
 	}
 
 	b.id = id
-	b.log = batchPrefixLogger(fmt.Sprintf("%d", b.id))
+	b.setLog(batchPrefixLogger(fmt.Sprintf("%d", b.id)))
 
 	return id, nil
 }

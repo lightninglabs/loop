@@ -92,8 +92,8 @@ func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
 			return nil
 		}
 
-		log.Debugf("Batch selection algorithm returned batch id %d for"+
-			" sweep %x, but acceptance failed.", batchId,
+		debugf("Batch selection algorithm returned batch id %d "+
+			"for sweep %x, but acceptance failed.", batchId,
 			sweep.swapHash[:6])
 	}
 

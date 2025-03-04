@@ -225,6 +225,16 @@ var (
 	ErrBatcherShuttingDown = errors.New("batcher shutting down")
 )
 
+// testRequest is a function passed to an event loop and a channel used to
+// wait until the function is executed. This is used in unit tests only!
+type testRequest struct {
+	// handler is the function to an event loop.
+	handler func()
+
+	// quit is closed when the handler completes.
+	quit chan struct{}
+}
+
 // Batcher is a system that is responsible for accepting sweep requests and
 // placing them in appropriate batches. It will spin up new batches as needed.
 type Batcher struct {
@@ -233,6 +243,12 @@ type Batcher struct {
 
 	// sweepReqs is a channel where sweep requests are received.
 	sweepReqs chan SweepRequest
+
+	// testReqs is a channel where test requests are received.
+	// This is used only in unit tests! The reason to have this is to
+	// avoid data races in require.Eventually calls running in parallel
+	// to the event loop. See method testRunInEventLoop().
+	testReqs chan *testRequest
 
 	// errChan is a channel where errors are received.
 	errChan chan error
@@ -461,6 +477,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	return &Batcher{
 		batches:             make(map[int32]*batch),
 		sweepReqs:           make(chan SweepRequest),
+		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		quit:                make(chan struct{}),
 		initDone:            make(chan struct{}),
@@ -518,22 +535,30 @@ func (b *Batcher) Run(ctx context.Context) error {
 		case sweepReq := <-b.sweepReqs:
 			sweep, err := b.fetchSweep(runCtx, sweepReq)
 			if err != nil {
-				log.Warnf("fetchSweep failed: %v.", err)
+				warnf("fetchSweep failed: %v.", err)
+
 				return err
 			}
 
 			err = b.handleSweep(runCtx, sweep, sweepReq.Notifier)
 			if err != nil {
-				log.Warnf("handleSweep failed: %v.", err)
+				warnf("handleSweep failed: %v.", err)
+
 				return err
 			}
 
+		case testReq := <-b.testReqs:
+			testReq.handler()
+			close(testReq.quit)
+
 		case err := <-b.errChan:
-			log.Warnf("Batcher received an error: %v.", err)
+			warnf("Batcher received an error: %v.", err)
+
 			return err
 
 		case <-runCtx.Done():
-			log.Infof("Stopping Batcher: run context cancelled.")
+			infof("Stopping Batcher: run context cancelled.")
+
 			return runCtx.Err()
 		}
 	}
@@ -551,6 +576,36 @@ func (b *Batcher) AddSweep(sweepReq *SweepRequest) error {
 	}
 }
 
+// testRunInEventLoop runs a function in the event loop blocking until
+// the function returns. For unit tests only!
+func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
+	// If the event loop is finished, run the function.
+	select {
+	case <-b.quit:
+		handler()
+
+		return
+	default:
+	}
+
+	quit := make(chan struct{})
+	req := &testRequest{
+		handler: handler,
+		quit:    quit,
+	}
+
+	select {
+	case b.testReqs <- req:
+	case <-ctx.Done():
+		return
+	}
+
+	select {
+	case <-quit:
+	case <-ctx.Done():
+	}
+}
+
 // handleSweep handles a sweep request by either placing it in an existing
 // batch, or by spinning up a new batch for it.
 func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
@@ -561,8 +616,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		return err
 	}
 
-	log.Infof("Batcher handling sweep %x, completed=%v", sweep.swapHash[:6],
-		completed)
+	infof("Batcher handling sweep %x, completed=%v",
+		sweep.swapHash[:6], completed)
 
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
@@ -573,8 +628,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		// on-chain confirmations to prevent issues caused by reorgs.
 		parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
 		if err != nil {
-			log.Errorf("unable to get parent batch for sweep %x: "+
-				"%v", sweep.swapHash[:6], err)
+			errorf("unable to get parent batch for sweep %x:"+
+				" %v", sweep.swapHash[:6], err)
 
 			return err
 		}
@@ -590,16 +645,17 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	sweep.notifier = notifier
 
+	// This is a check to see if a batch is completed. In that case we just
+	// lazily delete it.
+	for _, batch := range b.batches {
+		if batch.isComplete() {
+			delete(b.batches, batch.id)
+		}
+	}
+
 	// Check if the sweep is already in a batch. If that is the case, we
 	// provide the sweep to that batch and return.
 	for _, batch := range b.batches {
-		// This is a check to see if a batch is completed. In that case
-		// we just lazily delete it and continue our scan.
-		if batch.isComplete() {
-			delete(b.batches, batch.id)
-			continue
-		}
-
 		if batch.sweepExists(sweep.swapHash) {
 			accepted, err := batch.addSweep(ctx, sweep)
 			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
@@ -624,8 +680,8 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		return nil
 	}
 
-	log.Warnf("Greedy batch selection algorithm failed for sweep %x: %v. "+
-		"Falling back to old approach.", sweep.swapHash[:6], err)
+	warnf("Greedy batch selection algorithm failed for sweep %x: %v."+
+		" Falling back to old approach.", sweep.swapHash[:6], err)
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
@@ -730,13 +786,13 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	}
 
 	if len(dbSweeps) == 0 {
-		log.Infof("skipping restored batch %d as it has no sweeps",
+		infof("skipping restored batch %d as it has no sweeps",
 			batch.id)
 
 		// It is safe to drop this empty batch as it has no sweeps.
 		err := b.store.DropBatch(ctx, batch.id)
 		if err != nil {
-			log.Warnf("unable to drop empty batch %d: %v",
+			warnf("unable to drop empty batch %d: %v",
 				batch.id, err)
 		}
 
@@ -878,7 +934,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
-		log.Infof("Batcher monitoring spend for swap %x",
+		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
 
 		for {
@@ -1057,7 +1113,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		}
 	} else {
 		if s.ConfTarget == 0 {
-			log.Warnf("Fee estimation was requested for zero "+
+			warnf("Fee estimation was requested for zero "+
 				"confTarget for sweep %x.", swapHash[:6])
 		}
 		minFeeRate, err = b.wallet.EstimateFeeRate(ctx, s.ConfTarget)
