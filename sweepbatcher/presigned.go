@@ -84,12 +84,12 @@ func (b *batch) presign(ctx context.Context, newSweep *sweep) error {
 	}
 
 	// Find the feerate needed to get into next block. Use conf_target=2,
-	nextBlockFeerate, err := b.wallet.EstimateFeeRate(ctx, 2)
+	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
 	if err != nil {
-		return fmt.Errorf("failed to get nextBlockFeerate: %w", err)
+		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
 
-	b.Infof("nextBlockFeerate is %v", nextBlockFeerate)
+	b.Infof("nextBlockFeeRate is %v", nextBlockFeeRate)
 
 	// Create the list of sweeps of the future batch.
 	sweeps := make([]sweep, 0, len(b.sweeps)+1)
@@ -106,7 +106,7 @@ func (b *batch) presign(ctx context.Context, newSweep *sweep) error {
 	}
 
 	return presign(
-		ctx, b.cfg.presignedHelper, destAddr, sweeps, nextBlockFeerate,
+		ctx, b.cfg.presignedHelper, destAddr, sweeps, nextBlockFeeRate,
 	)
 }
 
@@ -126,7 +126,7 @@ type presigner interface {
 // A feerate is considered high if it is at least 100 sat/vbyte AND is at least
 // 10x of the current next block feerate.
 func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
-	sweeps []sweep, nextBlockFeerate chainfee.SatPerKWeight) error {
+	sweeps []sweep, nextBlockFeeRate chainfee.SatPerKWeight) error {
 
 	if presigner == nil {
 		return fmt.Errorf("presigner is not installed")
@@ -136,8 +136,8 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		return fmt.Errorf("there are no sweeps")
 	}
 
-	if nextBlockFeerate == 0 {
-		return fmt.Errorf("nextBlockFeerate is not set")
+	if nextBlockFeeRate == 0 {
+		return fmt.Errorf("nextBlockFeeRate is not set")
 	}
 
 	// Keep track of the total amount this batch is sweeping back.
@@ -167,8 +167,8 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	highFeeRateLockTime := uint32(timeout - timeoutThreshold)
 
 	// Calculate which feerate to consider high. At least 100 sat/vbyte and
-	// at least 10x of current nextBlockFeerate.
-	highFeeRate := max(100*chainfee.FeePerKwFloor, 10*nextBlockFeerate)
+	// at least 10x of current nextBlockFeeRate.
+	highFeeRate := max(100*chainfee.FeePerKwFloor, 10*nextBlockFeeRate)
 
 	// Set LockTime to 0. It is not critical.
 	const currentHeight = 0

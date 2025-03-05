@@ -639,11 +639,11 @@ func (b *Batcher) PresignSweep(ctx context.Context, sweepOutpoint wire.OutPoint,
 	}
 
 	// Find the feerate needed to get into next block. Use conf_target=2,
-	nextBlockFeerate, err := b.wallet.EstimateFeeRate(ctx, 2)
+	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
 	if err != nil {
-		return fmt.Errorf("failed to get nextBlockFeerate: %w", err)
+		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
-	infof("nextBlockFeerate is %v", nextBlockFeerate)
+	infof("nextBlockFeeRate is %v", nextBlockFeeRate)
 
 	sweeps := []sweep{
 		{
@@ -654,7 +654,7 @@ func (b *Batcher) PresignSweep(ctx context.Context, sweepOutpoint wire.OutPoint,
 	}
 
 	return presign(
-		ctx, b.presignedHelper, destAddress, sweeps, nextBlockFeerate,
+		ctx, b.presignedHelper, destAddress, sweeps, nextBlockFeeRate,
 	)
 }
 

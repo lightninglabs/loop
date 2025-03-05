@@ -60,7 +60,7 @@ func TestPresign(t *testing.T) {
 		presigner        presigner
 		sweeps           []sweep
 		destAddr         btcutil.Address
-		nextBlockFeerate chainfee.SatPerKWeight
+		nextBlockFeeRate chainfee.SatPerKWeight
 		wantErr          string
 		wantOutputs      []btcutil.Amount
 		wantLockTimes    []uint32
@@ -75,7 +75,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantErr:          "presigner is not installed",
 		},
 
@@ -83,7 +83,7 @@ func TestPresign(t *testing.T) {
 			name:             "error: no sweeps",
 			presigner:        &mockPresigner{},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantErr:          "there are no sweeps",
 		},
 
@@ -97,12 +97,12 @@ func TestPresign(t *testing.T) {
 					timeout:  1000,
 				},
 			},
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantErr:          "unsupported address type <nil>",
 		},
 
 		{
-			name:      "error: zero nextBlockFeerate",
+			name:      "error: zero nextBlockFeeRate",
 			presigner: &mockPresigner{},
 			sweeps: []sweep{
 				{
@@ -117,7 +117,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr: destAddr,
-			wantErr:  "nextBlockFeerate is not set",
+			wantErr:  "nextBlockFeeRate is not set",
 		},
 
 		{
@@ -134,7 +134,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantErr:          "timeout is invalid: 0",
 		},
 
@@ -154,7 +154,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999842, 2999811, 2999773, 2999728, 2999674,
 				2999609, 2999530, 2999436, 2999324, 2999189,
@@ -190,7 +190,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: 50 * chainfee.FeePerKwFloor,
+			nextBlockFeeRate: 50 * chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999842, 2999811, 2999773, 2999728, 2999674,
 				2999609, 2999530, 2999436, 2999324, 2999189,
@@ -225,7 +225,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2842, 2811, 2773, 2728, 2674, 2609, 2530, 2436,
 				2400,
@@ -253,7 +253,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			destAddr:         destAddr,
-			nextBlockFeerate: chainfee.FeePerKwFloor,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			wantErr:          "for feeRate 363 sat/kw",
 		},
 	}
@@ -263,7 +263,7 @@ func TestPresign(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := presign(
 				ctx, tc.presigner, tc.destAddr, tc.sweeps,
-				tc.nextBlockFeerate,
+				tc.nextBlockFeeRate,
 			)
 			if tc.wantErr != "" {
 				require.Error(t, err)
