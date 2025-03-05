@@ -4152,14 +4152,15 @@ func (h *mockPresignedHelper) DestPkScript(ctx context.Context,
 // the exact transaction passed and adds it to presignedBatches. Otherwise it
 // looks for a transaction in presignedBatches satisfying the criteria.
 func (h *mockPresignedHelper) SignTx(ctx context.Context, tx *wire.MsgTx,
-	inputAmt btcutil.Amount,
-	minRelayFee, feeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+	inputAmt btcutil.Amount, minRelayFee, feeRate chainfee.SatPerKWeight,
+	presignedOnly bool) (*wire.MsgTx, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// If all the inputs are online, sign this exact transaction.
-	if offline := h.offlineInputs(tx); len(offline) == 0 {
+	// If all the inputs are online and presignedOnly is not set, sign
+	// this exact transaction.
+	if offline := h.offlineInputs(tx); len(offline) == 0 && !presignedOnly {
 		tx = tx.Copy()
 		h.sign(tx)
 
@@ -4298,9 +4299,9 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 		WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper))
 
+	batcherErrChan := make(chan error)
 	go func() {
-		err := batcher.Run(ctx)
-		checkBatcherError(t, err)
+		batcherErrChan <- batcher.Run(ctx)
 	}()
 
 	setFeeRate(feeRateLow)
@@ -4317,6 +4318,25 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 		Outpoint: op1,
 		Notifier: &dummyNotifier,
 	}
+
+	// Make sure that the batcher crashes if AddSweep is called before
+	// PresignSweep even if the input is online.
+	presignedHelper.SetOutpointOnline(op1, true)
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	err = <-batcherErrChan
+	require.Error(t, err)
+	require.ErrorContains(t, err, "PresignSweep was not called")
+
+	// Start the batcher again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &dummySweepFetcherMock{},
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper))
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
 
 	// This should fail, because the input is offline.
 	presignedHelper.SetOutpointOnline(op1, false)
@@ -4429,9 +4449,10 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 
 	// Make sure we still have presigned transactions for the second batch.
 	presignedHelper.SetOutpointOnline(op2, false)
+	const presignedOnly = true
 	_, err = presignedHelper.SignTx(
 		ctx, batch2, 2_000_000, chainfee.FeePerKwFloor,
-		chainfee.FeePerKwFloor,
+		chainfee.FeePerKwFloor, presignedOnly,
 	)
 	require.NoError(t, err)
 }

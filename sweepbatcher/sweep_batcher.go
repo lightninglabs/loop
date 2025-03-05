@@ -189,10 +189,11 @@ type PresignedHelper interface {
 	//   - transaction version must be the same;
 	//   - Sequence numbers in the inputs must be preserved.
 	// When choosing a presigned transaction, a transaction with fee rate
-	// closer to the fee rate passed is selected.
+	// closer to the fee rate passed is selected. If presignedOnly is set,
+	// it doesn't try to sign the transaction and only loads a presigned tx.
 	SignTx(ctx context.Context, tx *wire.MsgTx, inputAmt btcutil.Amount,
-		minRelayFee, feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
-		error)
+		minRelayFee, feeRate chainfee.SatPerKWeight,
+		presignedOnly bool) (*wire.MsgTx, error)
 
 	// CleanupTransactions removes all transactions related to any of the
 	// outpoints. Should be called after sweep batch tx is fully confirmed.

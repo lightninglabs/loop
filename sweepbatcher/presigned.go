@@ -51,10 +51,11 @@ func (b *batch) ensurePresigned(ctx context.Context, newSweep *sweep) error {
 			"for feeRate %v: %w", feeRate, err)
 	}
 
-	// Try to presign this transaction.
+	// Check of a presigned transaction exists.
 	batchAmt := newSweep.value
+	const presignedOnly = true
 	signedTx, err := b.cfg.presignedHelper.SignTx(
-		ctx, tx, batchAmt, feeRate, feeRate,
+		ctx, tx, batchAmt, feeRate, feeRate, presignedOnly,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to sign unsigned tx %v "+
@@ -271,8 +272,9 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Get a signed transaction. It may be either new transaction or a
 	// pre-signed one.
+	const presignedOnly = false
 	signedTx, err := b.cfg.presignedHelper.SignTx(
-		ctx, tx, batchAmt, minRelayFee, feeRate,
+		ctx, tx, batchAmt, minRelayFee, feeRate, presignedOnly,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to sign tx: %w", err),
