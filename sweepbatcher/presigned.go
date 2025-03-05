@@ -84,8 +84,16 @@ func (b *batch) presign(ctx context.Context, newSweep *sweep) error {
 			"non-empty batch")
 	}
 
-	// Find the feerate needed to get into next block. Use conf_target=2,
-	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
+	// priorityConfTarget defines the confirmation target for quick
+	// inclusion in a block. A value of 2, rather than 1, is used to prevent
+	// overestimation caused by temporary anomalies, such as periods without
+	// blocks.
+	const priorityConfTarget = 2
+
+	// Find the feerate needed to get into next block.
+	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(
+		ctx, priorityConfTarget,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
@@ -147,7 +155,7 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		batchAmt += sweep.value
 	}
 
-	// Find when at least one sweep expires.
+	// Find the sweep with the earliest expiry.
 	timeout := sweeps[0].timeout
 	for _, sweep := range sweeps[1:] {
 		timeout = min(timeout, sweep.timeout)
