@@ -587,8 +587,8 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		// Ensure that all the sweeps in the batch use presigned mode.
 		for _, s := range b.sweeps {
 			if !s.presigned {
-				b.log().Infof("failed to add sweep %x to the "+
-					"batch, because the batch has "+
+				b.Infof("failed to add presigned sweep %x to "+
+					"the batch, because the batch has "+
 					"non-presigned sweep %x",
 					sweep.swapHash[:6], s.swapHash[:6])
 
@@ -598,7 +598,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 
 		if len(b.sweeps) != 0 {
 			if err := b.presign(ctx, sweep); err != nil {
-				b.log().Infof("failed to add sweep %x to the "+
+				b.Infof("failed to add sweep %x to the "+
 					"batch, because failed to presign new "+
 					"version of batch tx: %v",
 					sweep.swapHash[:6], err)
@@ -618,9 +618,9 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		// Ensure that all the sweeps in the batch don't use presigned.
 		for _, s := range b.sweeps {
 			if s.presigned {
-				b.log().Infof("failed to add sweep %x to the "+
-					"batch, because the batch has "+
-					"presigned sweep %x",
+				b.Infof("failed to add a non-presigned sweep "+
+					"%x to the batch, because the batch "+
+					"has presigned sweep %x",
 					sweep.swapHash[:6], s.swapHash[:6])
 
 				return false, nil
@@ -927,19 +927,35 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 
 // isPresigned returns if the batch uses presigned mode. Currently presigned and
 // non-presigned sweeps never appear in the same batch. Fails if the batch is
-// empty.
+// empty or contains both presigned and regular sweeps.
 func (b *batch) isPresigned() (bool, error) {
-	if len(b.sweeps) == 0 {
-		return false, fmt.Errorf("the batch is empty")
-	}
+	var (
+		hasPresigned bool
+		hasRegular   bool
+	)
 
 	for _, sweep := range b.sweeps {
 		if sweep.presigned {
-			return true, nil
+			hasPresigned = true
+		} else {
+			hasRegular = true
 		}
 	}
 
-	return false, nil
+	switch {
+	case hasPresigned && !hasRegular:
+		return true, nil
+
+	case !hasPresigned && hasRegular:
+		return false, nil
+
+	case hasPresigned && hasRegular:
+		return false, fmt.Errorf("the batch has both presigned and " +
+			"non-presigned sweeps")
+
+	default:
+		return false, fmt.Errorf("the batch is empty")
+	}
 }
 
 // publish creates and publishes the latest batch transaction to the network.

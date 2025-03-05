@@ -89,7 +89,7 @@ func (b *batch) presign(ctx context.Context, newSweep *sweep) error {
 		return fmt.Errorf("failed to get nextBlockFeerate: %w", err)
 	}
 
-	b.log().Infof("nextBlockFeerate is %v", nextBlockFeerate)
+	b.Infof("nextBlockFeerate is %v", nextBlockFeerate)
 
 	// Create the list of sweeps of the future batch.
 	sweeps := make([]sweep, 0, len(b.sweeps)+1)
@@ -294,7 +294,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
 	)
 	if realWeight != weight {
-		b.log().Warnf("actual weight of tx %v is %v, estimated as %d",
+		b.Warnf("actual weight of tx %v is %v, estimated as %d",
 			txHash, realWeight, weight)
 	}
 
@@ -304,10 +304,10 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	fee = batchAmt - output
 	signedFeeRate := chainfee.NewSatPerKWeight(fee, realWeight)
 
-	b.log().Infof("attempting to publish custom signed tx=%v, "+
-		"desiredFeerate=%v, signedFeeRate=%v, weight=%v, fee=%v, "+
-		"sweeps=%d, destAddr=%s", txHash, feeRate, signedFeeRate,
-		weight, fee, len(tx.TxIn), address)
+	numSweeps := len(tx.TxIn)
+	b.Infof("attempting to publish custom signed tx=%v, desiredFeerate=%v,"+
+		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, destAddr=%s",
+		txHash, feeRate, signedFeeRate, weight, fee, numSweeps, address)
 	b.debugLogTx("serialized batch", tx)
 
 	// Publish the transaction.

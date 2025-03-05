@@ -643,7 +643,7 @@ func (b *Batcher) PresignSweep(ctx context.Context, sweepOutpoint wire.OutPoint,
 	if err != nil {
 		return fmt.Errorf("failed to get nextBlockFeerate: %w", err)
 	}
-	log().Infof("nextBlockFeerate is %v", nextBlockFeerate)
+	infof("nextBlockFeerate is %v", nextBlockFeerate)
 
 	sweeps := []sweep{
 		{
