@@ -114,6 +114,20 @@ type Parameters struct {
 	// EasyAutoloopTarget is the target amount of liquidity that we want to
 	// maintain in our channels.
 	EasyAutoloopTarget btcutil.Amount
+
+	// AssetAutoloopParams maps an asset id hex encoded string to its
+	// easy autoloop parameters.
+	AssetAutoloopParams map[string]AssetParams
+}
+
+type AssetParams struct {
+	// EnableEasyOut is a boolean that indicates whether we should use the
+	// easy autoloop feature for this asset.
+	EnableEasyOut bool
+
+	// EasyAutoloopTargetAmount is the target amount of liquidity that we
+	// want to maintain in our channels.
+	EasyAutoloopTargetAmount uint64
 }
 
 // String returns the string representation of our parameters.
@@ -413,6 +427,14 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		addrType = walletrpc.AddressType_TAPROOT_PUBKEY
 	}
 
+	easyAssetMap := make(map[string]AssetParams)
+	for asset, params := range req.EasyAssetParams {
+		easyAssetMap[asset] = AssetParams{
+			EnableEasyOut:            params.Enabled,
+			EasyAutoloopTargetAmount: params.LocalTargetAssetAmt,
+		}
+	}
+
 	params := &Parameters{
 		FeeLimit:        feeLimit,
 		SweepConfTarget: req.SweepConfTarget,
@@ -437,9 +459,10 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 			Minimum: btcutil.Amount(req.MinSwapAmount),
 			Maximum: btcutil.Amount(req.MaxSwapAmount),
 		},
-		HtlcConfTarget:     req.HtlcConfTarget,
-		EasyAutoloop:       req.EasyAutoloop,
-		EasyAutoloopTarget: btcutil.Amount(req.EasyAutoloopLocalTargetSat),
+		HtlcConfTarget:      req.HtlcConfTarget,
+		EasyAutoloop:        req.EasyAutoloop,
+		EasyAutoloopTarget:  btcutil.Amount(req.EasyAutoloopLocalTargetSat),
+		AssetAutoloopParams: easyAssetMap,
 	}
 
 	if req.AutoloopBudgetRefreshPeriodSec != 0 {
@@ -528,6 +551,17 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		addrType = clientrpc.AddressType_ADDRESS_TYPE_UNKNOWN
 	}
 
+	easyAssetMap := make(map[string]*clientrpc.EasyAssetAutoloopParams, len(
+		cfg.AssetAutoloopParams,
+	))
+
+	for asset, params := range cfg.AssetAutoloopParams {
+		easyAssetMap[asset] = &clientrpc.EasyAssetAutoloopParams{
+			Enabled:             params.EnableEasyOut,
+			LocalTargetAssetAmt: params.EasyAutoloopTargetAmount,
+		}
+	}
+
 	rpcCfg := &clientrpc.LiquidityParameters{
 		SweepConfTarget:   cfg.SweepConfTarget,
 		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
@@ -555,6 +589,7 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		EasyAutoloopLocalTargetSat: uint64(cfg.EasyAutoloopTarget),
 		Account:                    cfg.Account,
 		AccountAddrType:            addrType,
+		EasyAssetParams:            easyAssetMap,
 	}
 
 	switch f := cfg.FeeLimit.(type) {
