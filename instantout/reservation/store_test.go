@@ -85,7 +85,7 @@ func TestSqlStore(t *testing.T) {
 
 	reservations, err := store.ListReservations(ctxb)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(reservations))
+	require.Len(t, reservations, 2)
 }
 
 // getRandomReservationID generates a random reservation ID.

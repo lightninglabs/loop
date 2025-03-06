@@ -187,7 +187,6 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			gotSweepFeeDetails, gotNewBatchFeeDetails, err :=
 				estimateSweepFeeIncrement(tc.sweep)
@@ -402,7 +401,6 @@ func TestEstimateBatchWeight(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			gotBatchFeeDetails, err := estimateBatchWeight(tc.batch)
 			require.NoError(t, err)
@@ -730,7 +728,6 @@ func TestSelectBatches(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			gotBestBatchesIds, err := selectBatches(
 				tc.batches, tc.sweep, tc.oneSweepBatch,

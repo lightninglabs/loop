@@ -2,7 +2,6 @@ package loopd
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 
@@ -125,8 +124,6 @@ func TestValidateConfTarget(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
 			target, err := validateConfTarget(
 				test.confTarget, defaultConf,
@@ -476,8 +473,6 @@ func TestValidateLoopOutRequest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -501,7 +496,7 @@ func TestValidateLoopOutRequest(t *testing.T) {
 				ctx, lnd.Client, &test.chain, req,
 				test.destAddr, test.maxParts,
 			)
-			require.True(t, errors.Is(err, test.err))
+			require.ErrorIs(t, err, test.err)
 			require.Equal(t, test.expectedTarget, conf)
 		})
 	}
@@ -590,7 +585,6 @@ func TestHasBandwidth(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			res, shards := hasBandwidth(test.channels, test.amt,

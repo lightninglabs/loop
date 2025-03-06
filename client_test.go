@@ -175,8 +175,6 @@ func TestLoopOutResume(t *testing.T) {
 	}
 
 	for _, version := range storedVersion {
-		version := version
-
 		t.Run(version.String(), func(t *testing.T) {
 			t.Run("not expired", func(t *testing.T) {
 				testLoopOutResume(
@@ -443,8 +441,6 @@ func TestWrapGrpcError(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			err := wrapGrpcError("", testCase.original)
 			require.Error(t, err, "test only expects errors")

@@ -634,9 +634,7 @@ func testPreimagePush(t *testing.T) {
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
-		require.Equal(
-			t, status.State, loopdb.StatePreimageRevealed,
-		)
+		require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
 		preimage := <-server.preimagePush
 		require.Equal(t, swap.Preimage, preimage)
@@ -682,9 +680,7 @@ func testPreimagePush(t *testing.T) {
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
-		require.Equal(
-			t, status.State, loopdb.StatePreimageRevealed,
-		)
+		require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 	}
 
 	// We expect the sweep tx to have been published.
@@ -753,9 +749,7 @@ func testPreimagePush(t *testing.T) {
 
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status := <-statusChan
-	require.Equal(
-		t, status.State, loopdb.StateSuccess,
-	)
+	require.Equal(t, loopdb.StateSuccess, status.State)
 
 	require.NoError(t, <-errChan)
 }
@@ -1059,9 +1053,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		loopdb.StatePreimageRevealed,
 	)
 	status := <-statusChan
-	require.Equal(
-		t, status.State, loopdb.StatePreimageRevealed,
-	)
+	require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
 	preimage := <-server.preimagePush
 	require.Equal(t, swap.Preimage, preimage)

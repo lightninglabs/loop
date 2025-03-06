@@ -76,8 +76,6 @@ func TestExampleFSM(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			ctxb := context.Background()
 			respondChan := make(chan string, 1)
@@ -192,8 +190,6 @@ func TestExampleFSMFlow(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			exampleContext, cachedObserver := getTestContext()
 			ctxb := context.Background()
@@ -268,8 +264,6 @@ func TestObserverAsyncWait(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			service := &mockService{
 				respondChan: make(chan bool),

@@ -131,7 +131,6 @@ func TestInitReservationAction(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		ctxb := context.Background()
 		mockLnd := test.NewMockLnd()
 		mockReservationClient := new(mockReservationClient)
@@ -232,7 +231,6 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			chainNotifier := new(MockChainNotifier)
 			ctxb := context.Background()
@@ -340,7 +338,6 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) { // Create a mock ChainNotifier and Reservation
 			chainNotifier := new(MockChainNotifier)
 			ctxb := context.Background()
@@ -418,7 +415,6 @@ func TestHandleSubcriptions(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			chainNotifier := new(MockChainNotifier)
 

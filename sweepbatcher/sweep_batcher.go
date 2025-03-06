@@ -875,8 +875,6 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 
 	batches := make([]*batch, 0, len(dbBatches))
 	for _, bch := range dbBatches {
-		bch := bch
-
 		batch := batch{}
 		batch.id = bch.ID
 

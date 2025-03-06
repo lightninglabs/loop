@@ -421,7 +421,7 @@ func TestManager_Backoff_Pending_Token(t *testing.T) {
 	wg.Wait()
 
 	// Expect exactly 3 token calls.
-	require.Equal(t, 3, len(tokenCalls))
+	require.Len(t, tokenCalls, 3)
 
 	require.InDeltaf(
 		t, 3*time.Second, tokenCalls[2].Sub(tokenCalls[0]),

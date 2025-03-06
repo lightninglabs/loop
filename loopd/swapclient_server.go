@@ -575,8 +575,6 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 	// persisted to disk. The swaps field is a map, that's why we need an
 	// additional index.
 	for _, swp := range s.swaps {
-		swp := swp
-
 		// Filter the swap based on the provided filter.
 		if !filterSwap(&swp, req.ListSwapFilter) {
 			continue

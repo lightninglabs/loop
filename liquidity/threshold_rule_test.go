@@ -83,8 +83,6 @@ func TestValidateThreshold(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -162,8 +160,6 @@ func TestCalculateAmount(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -245,8 +241,6 @@ func TestSuggestSwap(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
 			swap := test.rule.swapAmount(
 				test.channel, test.outRestrictions,

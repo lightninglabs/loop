@@ -446,9 +446,6 @@ func (m *Manager) autoloop(ctx context.Context) error {
 			continue
 		}
 
-		// Create a copy of our range var so that we can reference it.
-		swap := swap
-
 		// Check if the parameter for custom address is defined for loop
 		// outs.
 		if m.params.DestAddr != nil {
@@ -472,7 +469,6 @@ func (m *Manager) autoloop(ctx context.Context) error {
 			continue
 		}
 
-		in := in
 		loopIn, err := m.cfg.LoopIn(ctx, &in)
 		if err != nil {
 			return err
@@ -910,8 +906,6 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	}
 
 	for _, swap := range suggestions {
-		swap := swap
-
 		// If we do not have enough funds available, or we hit our
 		// in flight limit, we record this value for the rest of the
 		// swaps.
