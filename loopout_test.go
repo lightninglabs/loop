@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
@@ -258,9 +258,9 @@ func testCustomSweepConfTarget(t *testing.T) {
 	defer test.Guard(t)()
 
 	// Setup logger for sweepbatcher.
-	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
+	logger := btclog.NewSLogger(btclog.NewDefaultHandler(os.Stdout))
 	logger.SetLevel(btclog.LevelTrace)
-	sweepbatcher.UseLogger(logger)
+	sweepbatcher.UseLogger(logger.SubSystem("SWEEP"))
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)

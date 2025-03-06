@@ -190,7 +190,7 @@ func (m *mockWalletKit) ListSweepsVerbose(ctx context.Context, _ int32) (
 // used in a previous BumpFee call, then a transaction replacing the
 // previous is broadcast, resulting in a replace-by-fee (RBF) scenario.
 func (m *mockWalletKit) BumpFee(context.Context, wire.OutPoint,
-	chainfee.SatPerKWeight) error {
+	chainfee.SatPerKWeight, ...lndclient.BumpFeeOption) error {
 
 	return nil
 }

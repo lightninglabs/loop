@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightningnetwork/lnd/build"
 )
 
@@ -26,7 +26,7 @@ func init() {
 // batchPrefixLogger returns a logger that prefixes all log messages with
 // the ID.
 func batchPrefixLogger(batchID string) btclog.Logger {
-	return build.NewPrefixLog(fmt.Sprintf("[Batch %s]", batchID), log())
+	return log().WithPrefix(fmt.Sprintf("[Batch %s]", batchID))
 }
 
 // UseLogger uses a specified Logger to output package logging info.
