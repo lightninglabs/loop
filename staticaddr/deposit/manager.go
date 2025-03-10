@@ -84,9 +84,6 @@ type Manager struct {
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
-	// initiationHeight stores the currently best known block height.
-	initiationHeight uint32
-
 	// deposits contains all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
 	// also serves as basis for reconciliation of newly detected deposits by
@@ -111,9 +108,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 }
 
 // Run runs the address manager.
-func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
-	m.initiationHeight = currentHeight
-
+func (m *Manager) Run(ctx context.Context) error {
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
 	if err != nil {
 		return err

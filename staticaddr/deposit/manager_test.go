@@ -219,10 +219,7 @@ func TestManager(t *testing.T) {
 
 	// Start the deposit manager.
 	go func() {
-		err := testContext.manager.Run(
-			ctx, uint32(testContext.mockLnd.Height),
-		)
-		require.NoError(t, err)
+		require.NoError(t, testContext.manager.Run(ctx))
 	}()
 
 	// Ensure that the manager has been initialized.

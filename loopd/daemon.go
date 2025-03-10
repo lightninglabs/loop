@@ -861,16 +861,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			// Lnd's GetInfo call supplies us with the current block
-			// height.
-			info, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
-
 			infof("Starting static address deposit manager...")
-			err = depositManager.Run(d.mainCtx, info.BlockHeight)
+			err = depositManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
