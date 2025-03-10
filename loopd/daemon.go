@@ -169,11 +169,11 @@ func (d *Daemon) Start() error {
 	// anything goes wrong now, we need to cleanly shut down again.
 	startErr := d.startWebServers()
 	if startErr != nil {
-		log.Errorf("Error while starting daemon: %v", err)
+		errorf("Error while starting daemon: %v", err)
 		d.Stop()
 		stopErr := <-d.ErrChan
 		if stopErr != nil {
-			log.Errorf("Error while stopping daemon: %v", stopErr)
+			errorf("Error while stopping daemon: %v", stopErr)
 		}
 		return startErr
 	}
@@ -253,7 +253,7 @@ func (d *Daemon) startWebServers() error {
 	d.registerDebugServer()
 
 	// Next, start the gRPC server listening for HTTP/2 connections.
-	log.Infof("Starting gRPC listener")
+	infof("Starting gRPC listener")
 	serverTLSCfg, restClientCreds, err := getTLSConfig(d.cfg)
 	if err != nil {
 		return fmt.Errorf("could not create gRPC server options: %v",
@@ -322,7 +322,7 @@ func (d *Daemon) startWebServers() error {
 
 	// A nil listener indicates REST is disabled.
 	if d.restListener != nil {
-		log.Infof("Starting REST proxy listener")
+		infof("Starting REST proxy listener")
 
 		d.restServer = &http.Server{
 			Handler:           restHandler,
@@ -333,7 +333,7 @@ func (d *Daemon) startWebServers() error {
 		go func() {
 			defer d.wg.Done()
 
-			log.Infof("REST proxy listening on %s",
+			infof("REST proxy listening on %s",
 				d.restListener.Addr())
 			err := d.restServer.Serve(d.restListener)
 			// ErrServerClosed is always returned when the proxy is
@@ -347,7 +347,7 @@ func (d *Daemon) startWebServers() error {
 			}
 		}()
 	} else {
-		log.Infof("REST proxy disabled")
+		infof("REST proxy disabled")
 	}
 
 	// Start the grpc server.
@@ -355,7 +355,7 @@ func (d *Daemon) startWebServers() error {
 	go func() {
 		defer d.wg.Done()
 
-		log.Infof("RPC server listening on %s", d.grpcListener.Addr())
+		infof("RPC server listening on %s", d.grpcListener.Addr())
 		err = d.grpcServer.Serve(d.grpcListener)
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			// Notify the main error handler goroutine that
@@ -378,7 +378,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		loopdb.EnableExperimentalProtocol()
 	}
 
-	log.Infof("Protocol version: %v", loopdb.CurrentProtocolVersion())
+	infof("Protocol version: %v", loopdb.CurrentProtocolVersion())
 
 	// If no swap server is specified, use the default addresses for mainnet
 	// and testnet.
@@ -404,18 +404,18 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
 
-	log.Infof("Swap server address: %v", d.cfg.Server.Host)
+	infof("Swap server address: %v", d.cfg.Server.Host)
 
 	// Check if we need to migrate the database.
 	if needSqlMigration(d.cfg) {
-		log.Infof("Boltdb found, running migration")
+		infof("Boltdb found, running migration")
 
 		err := migrateBoltdb(d.mainCtx, d.cfg)
 		if err != nil {
 			return fmt.Errorf("unable to migrate boltdb: %v", err)
 		}
 
-		log.Infof("Successfully migrated boltdb")
+		infof("Successfully migrated boltdb")
 	}
 
 	// Now that we know where the database will live, we'll go ahead and
@@ -436,7 +436,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapDb,
 	)
 	if err != nil {
-		log.Errorf("Cost migration failed: %v", err)
+		errorf("Cost migration failed: %v", err)
 
 		return err
 	}
@@ -460,7 +460,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				d.lnd.NodePubkey)
 		}
 
-		log.Infof("Using asset client with version %v", getInfo.Version)
+		infof("Using asset client with version %v", getInfo.Version)
 	}
 
 	// Create an instance of the loop client library.
@@ -507,7 +507,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	cleanupMacaroonStore := func() {
 		err := db.Close()
 		if err != nil {
-			log.Errorf("Error closing macaroon store: %v", err)
+			errorf("Error closing macaroon store: %v", err)
 		}
 	}
 
@@ -555,11 +555,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	go func() {
 		defer d.wg.Done()
 
-		log.Info("Starting notification manager")
+		infof("Starting notification manager")
 		err := notificationManager.Run(d.mainCtx)
 		if err != nil {
 			d.internalErrChan <- err
-			log.Errorf("Notification manager stopped: %v", err)
+			errorf("Notification manager stopped: %v", err)
 		}
 	}()
 
@@ -711,7 +711,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		// started yet, so if we clean that up now, nothing else needs
 		// to be shut down at this point.
 		if err := d.macaroonService.Stop(); err != nil {
-			log.Errorf("Error shutting down macaroon service: %v",
+			errorf("Error shutting down macaroon service: %v",
 				err)
 		}
 		cleanupMacaroonStore()
@@ -728,7 +728,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	go func() {
 		defer d.wg.Done()
 
-		log.Infof("Starting swap client")
+		infof("Starting swap client")
 		err := d.impl.Run(d.mainCtx, d.statusChan)
 		if err != nil {
 			// Notify the main error handler goroutine that
@@ -737,7 +737,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			// channel is sufficiently buffered.
 			d.internalErrChan <- err
 		}
-		log.Infof("Swap client stopped")
+		infof("Swap client stopped")
 	}()
 
 	// Start a goroutine that broadcasts swap updates to clients.
@@ -745,7 +745,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	go func() {
 		defer d.wg.Done()
 
-		log.Infof("Waiting for updates")
+		infof("Waiting for updates")
 		d.processStatusUpdates(d.mainCtx)
 	}()
 
@@ -753,13 +753,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	go func() {
 		defer d.wg.Done()
 
-		log.Info("Starting liquidity manager")
+		infof("Starting liquidity manager")
 		err := d.liquidityMgr.Run(d.mainCtx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			d.internalErrChan <- err
 		}
 
-		log.Info("Liquidity manager stopped")
+		infof("Liquidity manager stopped")
 	}()
 
 	// Start the reservation manager.
@@ -777,8 +777,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				return
 			}
 
-			log.Info("Starting reservation manager")
-			defer log.Info("Reservation manager stopped")
+			infof("Starting reservation manager")
+			defer infof("Reservation manager stopped")
 
 			err = d.reservationManager.Run(
 				d.mainCtx, int32(getInfo.BlockHeight), initChan,
@@ -815,8 +815,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				return
 			}
 
-			log.Info("Starting instantout manager")
-			defer log.Info("Instantout manager stopped")
+			infof("Starting instantout manager")
+			defer infof("Instantout manager stopped")
 
 			err = d.instantOutManager.Run(
 				d.mainCtx, initChan, int32(getInfo.BlockHeight),
@@ -846,12 +846,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			log.Info("Starting static address manager...")
+			infof("Starting static address manager...")
 			err = staticAddressManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			log.Info("Static address manager stopped")
+			infof("Static address manager stopped")
 		}()
 	}
 
@@ -869,12 +869,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				return
 			}
 
-			log.Info("Starting static address deposit manager...")
+			infof("Starting static address deposit manager...")
 			err = depositManager.Run(d.mainCtx, info.BlockHeight)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			log.Info("Static address deposit manager stopped")
+			infof("Static address deposit manager stopped")
 		}()
 		depositManager.WaitInitComplete()
 	}
@@ -893,13 +893,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				return
 			}
 
-			log.Info("Starting static address deposit withdrawal " +
+			infof("Starting static address deposit withdrawal " +
 				"manager...")
 			err = withdrawalManager.Run(d.mainCtx, info.BlockHeight)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			log.Info("Static address deposit withdrawal manager " +
+			infof("Static address deposit withdrawal manager " +
 				"stopped")
 		}()
 		withdrawalManager.WaitInitComplete()
@@ -920,14 +920,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				return
 			}
 
-			log.Info("Starting static address loop-in manager...")
+			infof("Starting static address loop-in manager...")
 			err = staticLoopInManager.Run(
 				d.mainCtx, info.BlockHeight,
 			)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			log.Info("Starting static address loop-in manager " +
+			infof("Starting static address loop-in manager " +
 				"stopped")
 		}()
 		staticLoopInManager.WaitInitComplete()
@@ -948,7 +948,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		// signal the caller that we're done.
 		select {
 		case runtimeErr = <-d.internalErrChan:
-			log.Errorf("Runtime error in daemon, shutting down: "+
+			errorf("Runtime error in daemon, shutting down: "+
 				"%v", runtimeErr)
 
 		case <-d.quit:
@@ -958,7 +958,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		// otherwise a caller might exit the process too early.
 		d.stop()
 		cleanupMacaroonStore()
-		log.Info("Daemon exited")
+		infof("Daemon exited")
 
 		// The caller expects exactly one message. So we send the error
 		// even if it's nil because we cleanly shut down.
@@ -987,17 +987,17 @@ func (d *Daemon) stop() {
 
 	// As there is no swap activity anymore, we can forcefully shut down the
 	// gRPC and HTTP servers now.
-	log.Infof("Stopping gRPC server")
+	infof("Stopping gRPC server")
 	if d.grpcServer != nil {
 		d.grpcServer.Stop()
 	}
-	log.Infof("Stopping REST server")
+	infof("Stopping REST server")
 	if d.restServer != nil {
 		// Don't return the error here, we first want to give everything
 		// else a chance to shut down cleanly.
 		err := d.restServer.Close()
 		if err != nil {
-			log.Errorf("Error stopping REST server: %v", err)
+			errorf("Error stopping REST server: %v", err)
 		}
 	}
 	if d.restCtxCancel != nil {
@@ -1007,7 +1007,7 @@ func (d *Daemon) stop() {
 	if d.macaroonService != nil {
 		err := d.macaroonService.Stop()
 		if err != nil {
-			log.Errorf("Error stopping macaroon service: %v", err)
+			errorf("Error stopping macaroon service: %v", err)
 		}
 	}
 

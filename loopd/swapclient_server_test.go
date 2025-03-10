@@ -491,7 +491,8 @@ func TestValidateLoopOutRequest(t *testing.T) {
 			logger := btclog.NewSLogger(
 				btclog.NewDefaultHandler(os.Stdout),
 			)
-			log = logger.SubSystem(Subsystem)
+			setLogger(logger.SubSystem(Subsystem))
+
 			conf, err := validateLoopOutRequest(
 				ctx, lnd.Client, &test.chain, req,
 				test.destAddr, test.maxParts,
