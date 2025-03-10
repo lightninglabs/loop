@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"go.etcd.io/bbolt"
 )
 
 // LoopInContract contains the data that is serialized to persistent storage for
