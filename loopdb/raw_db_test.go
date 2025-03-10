@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // DumpDB dumps go code describing the contents of the database to stdout. This

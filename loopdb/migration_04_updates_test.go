@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/bbolt"
 	"github.com/stretchr/testify/require"
+	"go.etcd.io/bbolt"
 )
 
 // TestMigrationUpdates asserts that the swap updates migration is carried out

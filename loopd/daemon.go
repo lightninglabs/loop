@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/coreos/bbolt"
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -33,6 +32,7 @@ import (
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
+	"go.etcd.io/bbolt"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/macaroon-bakery.v2/bakery"

@@ -13,8 +13,8 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/coreos/bbolt"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"go.etcd.io/bbolt"
 )
 
 var (

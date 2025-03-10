@@ -9,7 +9,6 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c // indirect
 	github.com/btcsuite/btcwallet v0.16.10-0.20241127094224-93c858b2ad63
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.4
-	github.com/coreos/bbolt v1.3.3
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/fortytw2/leaktest v1.3.0
@@ -35,6 +34,7 @@ require (
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli v1.22.9
+	go.etcd.io/bbolt v1.3.11
 	golang.org/x/net v0.36.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.34.2
@@ -164,7 +164,6 @@ require (
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
-	go.etcd.io/bbolt v1.3.11 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.12 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.12 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.12 // indirect
