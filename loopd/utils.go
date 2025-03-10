@@ -57,12 +57,12 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 	}
 
 	if cfg.MaxL402Cost == defaultCost && cfg.MaxLSATCost != 0 {
-		log.Warnf("Option maxlsatcost is deprecated and will be " +
+		warnf("Option maxlsatcost is deprecated and will be " +
 			"removed. Switch to maxl402cost.")
 		clientConfig.MaxL402Cost = btcutil.Amount(cfg.MaxLSATCost)
 	}
 	if cfg.MaxL402Fee == defaultFee && cfg.MaxLSATFee != 0 {
-		log.Warnf("Option maxlsatfee is deprecated and will be " +
+		warnf("Option maxlsatfee is deprecated and will be " +
 			"removed. Switch to maxl402fee.")
 		clientConfig.MaxL402Fee = btcutil.Amount(cfg.MaxLSATFee)
 	}
@@ -87,7 +87,7 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	)
 	switch cfg.DatabaseBackend {
 	case DatabaseBackendSqlite:
-		log.Infof("Opening sqlite3 database at: %v",
+		infof("Opening sqlite3 database at: %v",
 			cfg.Sqlite.DatabaseFileName)
 
 		db, err = loopdb.NewSqliteStore(cfg.Sqlite, chainParams)
@@ -97,7 +97,7 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 		baseDb = *db.(*loopdb.SqliteSwapStore).BaseDB
 
 	case DatabaseBackendPostgres:
-		log.Infof("Opening postgres database at: %v",
+		infof("Opening postgres database at: %v",
 			cfg.Postgres.DSN(true))
 
 		db, err = loopdb.NewPostgresStore(cfg.Postgres, chainParams)
