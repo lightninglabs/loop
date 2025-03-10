@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const p2wkhAddr = "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
+
 // TestAutoLoopDisabled tests the case where we need to perform a swap, but
 // autoloop is not enabled.
 func TestAutoLoopDisabled(t *testing.T) {
@@ -335,7 +337,6 @@ func TestAutoloopAddress(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
 	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
@@ -1260,7 +1261,6 @@ func TestEasyAutoloop(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
 	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
