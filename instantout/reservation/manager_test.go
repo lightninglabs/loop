@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"encoding/hex"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -72,13 +73,14 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// We'll now expect a spend registration.
-	spendReg := <-testContext.mockLnd.RegisterSpendChannel
-	require.Equal(t, spendReg.PkScript, pkScript)
+	var spendReg atomic.Pointer[test.SpendRegistration]
+	spendReg.Store(<-testContext.mockLnd.RegisterSpendChannel)
+	require.Equal(t, spendReg.Load().PkScript, pkScript)
 
 	go func() {
 		// We'll expect a second spend registration.
-		spendReg = <-testContext.mockLnd.RegisterSpendChannel
-		require.Equal(t, spendReg.PkScript, pkScript)
+		spendReg.Store(<-testContext.mockLnd.RegisterSpendChannel)
+		require.Equal(t, spendReg.Load().PkScript, pkScript)
 	}()
 
 	// We'll now try to lock the reservation.
@@ -90,7 +92,7 @@ func TestManager(t *testing.T) {
 	require.Error(t, err)
 
 	testContext.mockLnd.SpendChannel <- &chainntnfs.SpendDetail{
-		SpentOutPoint: spendReg.Outpoint,
+		SpentOutPoint: spendReg.Load().Outpoint,
 	}
 
 	// We'll now expect the reservation to be expired.
