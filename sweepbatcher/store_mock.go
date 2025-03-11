@@ -35,7 +35,6 @@ func (s *StoreMock) FetchUnconfirmedSweepBatches(ctx context.Context) (
 
 	result := []*dbBatch{}
 	for _, batch := range s.batches {
-		batch := batch
 		if batch.State != "confirmed" {
 			result = append(result, &batch)
 		}
@@ -106,7 +105,6 @@ func (s *StoreMock) FetchBatchSweeps(ctx context.Context,
 
 	result := []*dbSweep{}
 	for _, sweep := range s.sweeps {
-		sweep := sweep
 		if sweep.BatchID == id {
 			result = append(result, &sweep)
 		}

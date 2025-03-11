@@ -1,7 +1,7 @@
 package withdraw
 
 import (
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 )
 
 // log is a logger that is initialized with no output filters. This means the

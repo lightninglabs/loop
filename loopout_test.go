@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
@@ -258,9 +258,9 @@ func testCustomSweepConfTarget(t *testing.T) {
 	defer test.Guard(t)()
 
 	// Setup logger for sweepbatcher.
-	logger := btclog.NewBackend(os.Stdout).Logger("SWEEP")
+	logger := btclog.NewSLogger(btclog.NewDefaultHandler(os.Stdout))
 	logger.SetLevel(btclog.LevelTrace)
-	sweepbatcher.UseLogger(logger)
+	sweepbatcher.UseLogger(logger.SubSystem("SWEEP"))
 
 	lnd := test.NewMockLnd()
 	ctx := test.NewContext(t, lnd)
@@ -634,9 +634,7 @@ func testPreimagePush(t *testing.T) {
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
-		require.Equal(
-			t, status.State, loopdb.StatePreimageRevealed,
-		)
+		require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
 		preimage := <-server.preimagePush
 		require.Equal(t, swap.Preimage, preimage)
@@ -682,9 +680,7 @@ func testPreimagePush(t *testing.T) {
 			loopdb.StatePreimageRevealed,
 		)
 		status := <-statusChan
-		require.Equal(
-			t, status.State, loopdb.StatePreimageRevealed,
-		)
+		require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 	}
 
 	// We expect the sweep tx to have been published.
@@ -753,9 +749,7 @@ func testPreimagePush(t *testing.T) {
 
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status := <-statusChan
-	require.Equal(
-		t, status.State, loopdb.StateSuccess,
-	)
+	require.Equal(t, loopdb.StateSuccess, status.State)
 
 	require.NoError(t, <-errChan)
 }
@@ -1059,9 +1053,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		loopdb.StatePreimageRevealed,
 	)
 	status := <-statusChan
-	require.Equal(
-		t, status.State, loopdb.StatePreimageRevealed,
-	)
+	require.Equal(t, loopdb.StatePreimageRevealed, status.State)
 
 	preimage := <-server.preimagePush
 	require.Equal(t, swap.Preimage, preimage)

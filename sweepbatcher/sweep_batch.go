@@ -20,7 +20,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -1704,7 +1704,6 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	)
 
 	for _, sweep := range notifyList {
-		sweep := sweep
 		// Save the sweep as completed.
 		err := b.persistSweep(ctx, sweep, true)
 		if err != nil {
@@ -1741,8 +1740,6 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		// Iterate over the purge list and feed the sweeps back to the
 		// batcher.
 		for _, sweep := range purgeList {
-			sweep := sweep
-
 			err := b.purger(&sweep)
 			if err != nil {
 				b.Errorf("unable to purge sweep %x: %v",

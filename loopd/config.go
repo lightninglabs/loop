@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -43,8 +44,6 @@ var (
 		LoopDirBase, DefaultNetwork, defaultSqliteDatabaseFileName,
 	)
 
-	defaultMaxLogFiles                          = 3
-	defaultMaxLogFileSize                       = 10
 	defaultLoopOutMaxParts                      = uint32(5)
 	defaultTotalPaymentTimeout                  = time.Minute * 60
 	defaultMaxPaymentRetries                    = 3
@@ -172,8 +171,10 @@ type Config struct {
 	MacaroonPath string `long:"macaroonpath" description:"Path to write the macaroon for loop's RPC and REST services if it doesn't exist."`
 
 	LogDir         string `long:"logdir" description:"Directory to log output."`
-	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)."`
-	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB."`
+	MaxLogFiles    int    `long:"maxlogfiles" hidden:"true" description:"DEPRECATED! Use logging.file.max-files instead. Maximum logfiles to keep (0 for no rotation)"`
+	MaxLogFileSize int    `long:"maxlogfilesize" hidden:"true" description:"DEPRECATED! Use logging.file.max-file-size instead. Maximum logfile size in MB"`
+
+	Logging *build.LogConfig `group:"logging" namespace:"logging"`
 
 	DebugLevel  string `long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 	MaxLSATCost uint32 `long:"maxlsatcost" hidden:"true"`
@@ -226,8 +227,8 @@ func DefaultConfig() Config {
 			DatabaseFileName: defaultSqliteDatabasePath,
 		},
 		LogDir:                               defaultLogDir,
-		MaxLogFiles:                          defaultMaxLogFiles,
-		MaxLogFileSize:                       defaultMaxLogFileSize,
+		MaxLogFiles:                          build.DefaultMaxLogFiles,
+		MaxLogFileSize:                       build.DefaultMaxLogFileSize,
 		DebugLevel:                           defaultLogLevel,
 		TLSCertPath:                          DefaultTLSCertPath,
 		TLSKeyPath:                           DefaultTLSKeyPath,
@@ -247,6 +248,7 @@ func DefaultConfig() Config {
 			MacaroonPath: DefaultLndMacaroonPath,
 			RPCTimeout:   DefaultLndRPCTimeout,
 		},
+		Logging: build.DefaultLogConfig(),
 	}
 }
 
@@ -390,6 +392,16 @@ func Validate(cfg *Config) error {
 
 	if cfg.MigrationRPCBatchSize <= 0 {
 		return fmt.Errorf("migrationrpcbatchsize must be greater than 0")
+	}
+
+	// Initialize the log manager with the actual logging configuration. We
+	// need to support the deprecated max log files and max log file size
+	// options for now.
+	if cfg.MaxLogFiles != build.DefaultMaxLogFiles {
+		cfg.Logging.File.MaxLogFiles = cfg.MaxLogFiles
+	}
+	if cfg.MaxLogFileSize != build.DefaultMaxLogFileSize {
+		cfg.Logging.File.MaxLogFileSize = cfg.MaxLogFileSize
 	}
 
 	return nil

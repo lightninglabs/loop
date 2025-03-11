@@ -792,8 +792,6 @@ func (s *grpcSwapServerClient) MultiMuSig2SignSweep(ctx context.Context,
 	prevOutInfo := make([]*swapserverrpc.PrevoutInfo, 0, len(prevoutMap))
 	for prevOut, txOut := range prevoutMap {
 		txOut := *txOut
-		prevOut := prevOut
-
 		prevOutInfo = append(prevOutInfo,
 			&swapserverrpc.PrevoutInfo{
 				TxidBytes:   prevOut.Hash[:],

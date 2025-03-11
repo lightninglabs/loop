@@ -171,11 +171,7 @@ func TestLoopInTimeout(t *testing.T) {
 	}
 
 	for _, next := range []bool{false, true} {
-		next := next
-
 		for _, testCase := range testCases {
-			testCase := testCase
-
 			name := testCase.name
 			if next {
 				name += " experimental protocol"
@@ -384,10 +380,7 @@ func TestLoopInResume(t *testing.T) {
 
 	for _, next := range []bool{false, true} {
 		for _, version := range storedVersion {
-			version := version
 			for _, testCase := range testCases {
-				testCase := testCase
-
 				name := fmt.Sprintf(
 					"%v %v", testCase, version.String(),
 				)

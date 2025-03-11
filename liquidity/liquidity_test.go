@@ -563,8 +563,6 @@ func TestRestrictedSuggestions(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			// Create a manager config which will return the test
 			// case's set of existing swaps.
@@ -638,8 +636,6 @@ func TestSweepFeeLimit(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
@@ -820,8 +816,6 @@ func TestSuggestSwaps(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
@@ -919,8 +913,6 @@ func TestFeeLimits(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 			cfg.LoopOutQuote = func(context.Context,
@@ -1085,8 +1077,6 @@ func TestFeeBudget(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
@@ -1293,8 +1283,6 @@ func TestInFlightLimit(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
@@ -1462,8 +1450,6 @@ func TestSizeRestrictions(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
@@ -1605,8 +1591,6 @@ func TestFeePercentage(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
@@ -1771,8 +1755,6 @@ func TestBudgetWithLoopin(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
 

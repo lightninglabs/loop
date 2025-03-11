@@ -167,8 +167,6 @@ func (db *BaseDB) BatchCreateLoopOut(ctx context.Context,
 	writeOpts := NewSqlWriteOpts()
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
-			swap := swap
-
 			insertArgs := loopToInsertArgs(
 				swapHash, &swap.SwapContract,
 			)
@@ -293,8 +291,6 @@ func (db *BaseDB) BatchCreateLoopIn(ctx context.Context,
 	writeOpts := NewSqlWriteOpts()
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
-			swap := swap
-
 			insertArgs := loopToInsertArgs(
 				swapHash, &swap.SwapContract,
 			)

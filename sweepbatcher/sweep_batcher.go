@@ -13,7 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
@@ -875,8 +875,6 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 
 	batches := make([]*batch, 0, len(dbBatches))
 	for _, bch := range dbBatches {
-		bch := bch
-
 		batch := batch{}
 		batch.id = bch.ID
 

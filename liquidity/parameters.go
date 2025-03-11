@@ -582,7 +582,6 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 	}
 
 	for peer, rule := range cfg.PeerRules {
-		peer := peer
 		rpcRule := newRPCRule(0, peer[:], rule)
 		rpcCfg.Rules = append(rpcCfg.Rules, rpcRule)
 	}

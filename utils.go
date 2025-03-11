@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightningnetwork/lnd/channeldb/models"
+	"github.com/lightningnetwork/lnd/graph/db/models"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -386,8 +386,6 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 	hopHintChans := make(map[wire.OutPoint]struct{})
 	hopHints := make([][]zpay32.HopHint, 0, numMaxHophints)
 	for _, channel := range openChannels {
-		channel := channel
-
 		enoughHopHints := sufficientHints(
 			len(hopHints), numMaxHophints, hopHintFactor, amtMSat,
 			totalHintBandwidth,

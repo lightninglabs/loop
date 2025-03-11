@@ -22,9 +22,9 @@ func terms(ctx *cli.Context) error {
 	}
 	defer cleanup()
 
-	printAmountRange := func(min, max int64) {
+	printAmountRange := func(minAmt, maxAmt int64) {
 		fmt.Printf("Amount: %d - %d\n",
-			btcutil.Amount(min), btcutil.Amount(max),
+			btcutil.Amount(minAmt), btcutil.Amount(maxAmt),
 		)
 	}
 

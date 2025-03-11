@@ -598,7 +598,6 @@ func withdrawalValue(prevOuts map[wire.OutPoint]*wire.TxOut) btcutil.Amount {
 func toNonces(nonces [][]byte) ([][musig2.PubNonceSize]byte, error) {
 	res := make([][musig2.PubNonceSize]byte, 0, len(nonces))
 	for _, n := range nonces {
-		n := n
 		nonce, err := byteSliceTo66ByteSlice(n)
 		if err != nil {
 			return nil, err

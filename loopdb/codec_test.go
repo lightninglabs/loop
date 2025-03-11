@@ -86,8 +86,6 @@ func TestKeyLocatorMarshalUnMarshal(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		buf, err := MarshalKeyLocator(test.keyLoc)
 		require.NoError(t, err)
 

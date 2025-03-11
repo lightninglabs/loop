@@ -463,7 +463,6 @@ func pubkeyTo33ByteSlice(pubkey *btcec.PublicKey) [33]byte {
 func toNonces(nonces [][]byte) ([][66]byte, error) {
 	res := make([][66]byte, 0, len(nonces))
 	for _, n := range nonces {
-		n := n
 		nonce, err := byteSliceTo66ByteSlice(n)
 		if err != nil {
 			return nil, err
