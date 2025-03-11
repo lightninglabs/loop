@@ -593,12 +593,14 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return err
 	}
 
+	usableChannels := make([]lndclient.ChannelInfo, 0, len(channels))
 	localTotal := btcutil.Amount(0)
 	for _, channel := range channels {
 		if channelIsCustom(channel) {
 			continue
 		}
 		localTotal += channel.LocalBalance
+		usableChannels = append(usableChannels, channel)
 	}
 
 	// Since we're only autolooping-out we need to check if we are below
@@ -640,7 +642,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	builder := newLoopOutBuilder(m.cfg)
 
 	channel := m.pickEasyAutoloopChannel(
-		channels, restrictions, loopOut, loopIn,
+		usableChannels, restrictions, loopOut, loopIn,
 	)
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
