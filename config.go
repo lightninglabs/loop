@@ -5,6 +5,7 @@ import (
 
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"google.golang.org/grpc"
 )
@@ -15,6 +16,7 @@ type clientConfig struct {
 	Server            swapServerClient
 	Conn              *grpc.ClientConn
 	Store             loopdb.SwapStore
+	AssetClient       *assets.TapdClient
 	L402Store         l402.Store
 	CreateExpiryTimer func(expiry time.Duration) <-chan time.Time
 	LoopOutMaxParts   uint32

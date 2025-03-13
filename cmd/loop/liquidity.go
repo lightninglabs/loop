@@ -350,6 +350,23 @@ var setParamsCommand = cli.Command{
 			Usage: "the target size of total local balance in " +
 				"satoshis, used by easy autoloop.",
 		},
+		cli.BoolFlag{
+			Name: "asset_easyautoloop",
+			Usage: "set to true to enable asset easy autoloop, which " +
+				"will automatically dispatch asset swaps in order " +
+				"to meet the target local balance.",
+		},
+		cli.StringFlag{
+			Name: "asset_id",
+			Usage: "If set to a valid asset ID, the easyautoloop " +
+				"and localbalancesat flags will be set for the " +
+				"specified asset.",
+		},
+		cli.Uint64Flag{
+			Name: "asset_localbalance",
+			Usage: "the target size of total local balance in " +
+				"asset units, used by asset easy autoloop.",
+		},
 	},
 	Action: setParams,
 }
@@ -515,14 +532,48 @@ func setParams(ctx *cli.Context) error {
 		flagSet = true
 	}
 
+	// If we are setting easy autoloop parameters, we need to ensure that
+	// the asset ID is set, and that we have a valid entry in our params
+	// map.
+	if ctx.IsSet("asset_id") {
+		if params.EasyAssetParams == nil {
+			params.EasyAssetParams = make(
+				map[string]*looprpc.EasyAssetAutoloopParams,
+			)
+		}
+		if _, ok := params.EasyAssetParams[ctx.String("asset_id")]; !ok { //nolint:lll
+			params.EasyAssetParams[ctx.String("asset_id")] =
+				&looprpc.EasyAssetAutoloopParams{}
+		}
+	}
+
 	if ctx.IsSet("easyautoloop") {
 		params.EasyAutoloop = ctx.Bool("easyautoloop")
 		flagSet = true
 	}
 
 	if ctx.IsSet("localbalancesat") {
-		params.EasyAutoloopLocalTargetSat =
-			ctx.Uint64("localbalancesat")
+		params.EasyAutoloopLocalTargetSat = ctx.Uint64("localbalancesat")
+		flagSet = true
+	}
+
+	if ctx.IsSet("asset_easyautoloop") {
+		if !ctx.IsSet("asset_id") {
+			return fmt.Errorf("asset_id must be set to use " +
+				"asset_easyautoloop")
+		}
+		params.EasyAssetParams[ctx.String("asset_id")].
+			Enabled = ctx.Bool("asset_easyautoloop")
+		flagSet = true
+	}
+
+	if ctx.IsSet("asset_localbalance") {
+		if !ctx.IsSet("asset_id") {
+			return fmt.Errorf("asset_id must be set to use " +
+				"asset_localbalance")
+		}
+		params.EasyAssetParams[ctx.String("asset_id")].
+			LocalTargetAssetAmt = ctx.Uint64("asset_localbalance")
 		flagSet = true
 	}
 
