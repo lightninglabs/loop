@@ -68,9 +68,14 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 
 	// Calculate the swap invoice amount. The server needs to pay us the
-	// sum of all deposits minus the fees that the server charges for the
-	// swap.
-	swapInvoiceAmt := f.loopIn.TotalDepositAmount() - f.loopIn.QuotedSwapFee
+	// swap amount minus the fees that the server charges for the swap. The
+	// swap amount is either the total value of the selected deposits, or
+	// the selected amount if a specific amount was requested.
+	swapAmount := f.loopIn.TotalDepositAmount()
+	if f.loopIn.SelectedAmount > 0 {
+		swapAmount = f.loopIn.SelectedAmount
+	}
+	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage

@@ -458,6 +458,13 @@ var staticAddressLoopInCommand = cli.Command{
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
+		cli.IntFlag{
+			Name: "amount",
+			Usage: "the number of satoshis that should be " +
+				"swapped from the selected deposits. If there" +
+				"is change it is sent back to the static " +
+				"address.",
+		},
 		lastHopFlag,
 		labelFlag,
 		routeHintsFlag,
@@ -552,6 +559,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	quoteReq := &looprpc.QuoteRequest{
+		Amt:              ctx.Int64("amount"),
 		LoopInRouteHints: hints,
 		LoopInLastHop:    lastHop,
 		Private:          ctx.Bool(privateFlag.Name),
@@ -563,15 +571,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(quote)
-
-	// populate the quote request with the sum of selected deposits and
-	// prompt the user for acceptance.
-	quoteReq.Amt, err = sumDeposits(
-		depositOutpoints, depositList.FilteredDeposits,
-	)
-	if err != nil {
-		return err
-	}
 
 	if !(ctx.Bool("force") || ctx.Bool("f")) {
 		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
@@ -585,6 +584,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	req := &looprpc.StaticAddressLoopInRequest{
+		Amount:                quoteReq.Amt,
 		Outpoints:             depositOutpoints,
 		MaxSwapFeeSatoshis:    int64(limits.maxSwapFee),
 		LastHop:               lastHop,
@@ -615,26 +615,6 @@ func containsDuplicates(outpoints []string) bool {
 	}
 
 	return false
-}
-
-func sumDeposits(outpoints []string, deposits []*looprpc.Deposit) (int64,
-	error) {
-
-	var sum int64
-	depositMap := make(map[string]*looprpc.Deposit)
-	for _, deposit := range deposits {
-		depositMap[deposit.Outpoint] = deposit
-	}
-
-	for _, outpoint := range outpoints {
-		if _, ok := depositMap[outpoint]; !ok {
-			return 0, fmt.Errorf("deposit %v not found", outpoint)
-		}
-
-		sum += depositMap[outpoint].Value
-	}
-
-	return sum, nil
 }
 
 func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
