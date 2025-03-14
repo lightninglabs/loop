@@ -132,7 +132,7 @@ func (s *executor) run(mainCtx context.Context,
 		defer s.wg.Done()
 
 		err := s.batcher.Run(mainCtx)
-		if err != nil {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case batcherErrChan <- err:
 			case <-mainCtx.Done():
@@ -229,10 +229,10 @@ func (s *executor) run(mainCtx context.Context,
 			}
 
 		case err := <-blockErrorChan:
-			return fmt.Errorf("block error: %v", err)
+			return fmt.Errorf("block error: %w", err)
 
 		case err := <-batcherErrChan:
-			return fmt.Errorf("batcher error: %v", err)
+			return fmt.Errorf("batcher error: %w", err)
 
 		case <-mainCtx.Done():
 			return mainCtx.Err()

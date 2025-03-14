@@ -126,8 +126,38 @@ func (db *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 			return err
 		}
 
+		// If the loop is an asset loop out, we'll also insert the
+		// asset details.
+		if swap.AssetSwapInfo != nil {
+			assetInfo := swap.AssetSwapInfo
+			err = tx.InsertLoopOutAsset(
+				ctx, sqlc.InsertLoopOutAssetParams{
+					SwapHash:    hash[:],
+					AssetID:     assetInfo.AssetId,
+					SwapRfqID:   assetInfo.SwapRfqId,
+					PrepayRfqID: assetInfo.PrepayRfqId,
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
+}
+
+// UpdateLoopOutAssetInfo updates the offchain send amounts of the prepay and
+// swap payment for an asset loop out swap.
+func (db *BaseDB) UpdateLoopOutAssetInfo(ctx context.Context, hash lntypes.Hash,
+	asset *LoopOutAssetSwap) error {
+
+	return db.UpdateLoopOutAssetOffchainPayments(
+		ctx, sqlc.UpdateLoopOutAssetOffchainPaymentsParams{
+			SwapHash:           hash[:],
+			AssetAmtPaidSwap:   int64(asset.SwapPaidAmt),
+			AssetAmtPaidPrepay: int64(asset.PrepayPaidAmt),
+		})
 }
 
 // BatchCreateLoopOut adds multiple initiated swaps to the store.
@@ -543,7 +573,8 @@ func swapToHtlcKeysInsertArgs(hash lntypes.Hash,
 // ConvertLoopOutRow converts a database row containing a loop out swap to a
 // LoopOut struct.
 func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
-	updates []sqlc.SwapUpdate) (*LoopOut, error) {
+	updates []sqlc.SwapUpdate) (*LoopOut,
+	error) {
 
 	htlcKeys, err := fetchHtlcKeys(
 		row.SenderScriptPubkey, row.ReceiverScriptPubkey,
@@ -599,6 +630,20 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 		Loop: Loop{
 			Hash: swapHash,
 		},
+	}
+
+	if row.AssetID != nil {
+		loopOut.Contract.AssetSwapInfo = &LoopOutAssetSwap{
+			AssetId:     row.AssetID,
+			SwapRfqId:   row.SwapRfqID,
+			PrepayRfqId: row.PrepayRfqID,
+			SwapPaidAmt: uint64(
+				unmarshalSqlInt64(row.AssetAmtPaidSwap),
+			),
+			PrepayPaidAmt: uint64(
+				unmarshalSqlInt64(row.AssetAmtPaidPrepay),
+			),
+		}
 	}
 
 	if row.OutgoingChanSet != "" {
@@ -802,4 +847,12 @@ func blobTo33ByteSlice(blob []byte) ([33]byte, error) {
 	copy(key[:], blob)
 
 	return key, nil
+}
+
+func unmarshalSqlInt64(data sql.NullInt64) int64 {
+	if !data.Valid {
+		return 0
+	}
+
+	return data.Int64
 }

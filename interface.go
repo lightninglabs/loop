@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -98,6 +99,18 @@ type OutRequest struct {
 	// the configured maximum payment timeout) the total time spent may be
 	// a multiple of this value.
 	PaymentTimeout time.Duration
+
+	// AssetId is an optional asset id that can be used to specify the asset
+	// that will be used to pay for the swap. If this is set, a connection
+	// to a tapd server is required to pay for the asset.
+	AssetId []byte
+
+	// AssetPrepayRfqId is the rfq id that is used to pay the prepay
+	// invoice.
+	AssetPrepayRfqId []byte
+
+	// AssetSwapRfqId is the rfq id that is used to pay the swap invoice.
+	AssetSwapRfqId []byte
 }
 
 // Out contains the full details of a loop out request. This includes things
@@ -145,6 +158,25 @@ type LoopOutQuoteRequest struct {
 	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
 	// appended to the user agent string.
 	Initiator string
+
+	// AssetRFQRequest is the optional RFQ request that can be used to quote
+	// for asset rfqs using the asset client
+	AssetRFQRequest *AssetRFQRequest
+}
+
+type AssetRFQRequest struct {
+	// AssetId is the asset that we'll quote for.
+	AssetId []byte
+
+	// AssetEdgeNode is the pubkey of the peer that we'll quote for.
+	AssetEdgeNode []byte
+
+	// Expiry is the unix timestamp when the rfq will expire.
+	Expiry int64
+
+	// MaxLimitMultiplier is the multiplier that we'll use to calculate the
+	// max limit we'll quote for.
+	MaxLimitMultiplier float64
 }
 
 // LoopOutTerms are the server terms on which it executes swaps.
@@ -181,6 +213,38 @@ type LoopOutQuote struct {
 	// SwapPaymentDest is the node pubkey where to swap payment needs to be
 	// sent to.
 	SwapPaymentDest [33]byte
+
+	// LoopOutRfq is the RFQ that can be used in the actual loop out to
+	// commit to an asset exchange rate.
+	LoopOutRfq *LoopOutRfq
+}
+
+// LoopOutRfq contains the details of an asset request for quote for a loop out
+// swap.
+type LoopOutRfq struct {
+	// PrepayRfqId is the ID of the prepay RFQ.
+	PrepayRfqId []byte
+
+	// MaxPrepayAssetAmt is the maximum amount of the asset that will be
+	// used to pay for the prepay invoice.
+	MaxPrepayAssetAmt uint64
+
+	// PrepayAssetRate is the rate at which the asset is exchanged for
+	// bitcoin.
+	PrepayAssetRate *rfqmath.BigIntFixedPoint
+
+	// SwapRfqId is the ID of the swap RFQ.
+	SwapRfqId []byte
+
+	// MaxSwapAssetAmt is the maximum amount of the asset that will be used
+	// to pay for the swap invoice.
+	MaxSwapAssetAmt uint64
+
+	// SwapAssetRate is the rate at which the asset is exchanged for bitcoin.
+	SwapAssetRate *rfqmath.BigIntFixedPoint
+
+	// AssetName is the human readable name of the asset.
+	AssetName string
 }
 
 // LoopInRequest contains the required parameters for the swap.
@@ -232,6 +296,48 @@ type LoopInRequest struct {
 	// RouteHints are optional route hints to reach the destination through
 	// private channels.
 	RouteHints [][]zpay32.HopHint
+}
+
+// StaticAddressLoopInRequest contains the required parameters for the swap.
+type StaticAddressLoopInRequest struct {
+	// DepositOutpoints contain the outpoints in format txid:idx of the
+	// static address deposits that are being looped in. The sum of output
+	// values constitute the swap amount.
+	DepositOutpoints []string
+
+	// MaxSwapFee is the maximum we are willing to pay the server for the
+	// swap. This value is not disclosed in the swap initiation call, but if
+	// the server asks for a higher fee, we abort the swap. Typically, this
+	// value is taken from the response of the LoopInQuote call. It
+	// includes the pre-pay amount.
+	MaxSwapFee btcutil.Amount
+
+	// LastHop optionally specifies the last hop to use for the loop in
+	// payment.
+	LastHop *route.Vertex
+
+	// Label contains an optional text label for the swap.
+	Label string
+
+	// Initiator is an optional string that identifies what software
+	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
+	// appended to the user agent string.
+	Initiator string
+
+	// Private indicates whether the destination node should be considered
+	// private. In which case, loop will generate hophints to assist with
+	// probing and payment.
+	Private bool
+
+	// RouteHints are optional route hints to reach the destination through
+	// private channels.
+	RouteHints [][]zpay32.HopHint
+
+	// PaymentTimeoutSeconds allows the user to specify an upper limit for
+	// the amount of time the server is allowed to fulfill the off-chain
+	// swap payment. If the timeout is reached the swap will be aborted and
+	// the client can retry the swap if desired with different parameters.
+	PaymentTimeoutSeconds uint32
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.
@@ -288,6 +394,12 @@ type LoopInQuoteRequest struct {
 	// initiated the swap (loop CLI, autolooper, LiT UI and so on) and is
 	// appended to the user agent string.
 	Initiator string
+
+	// The number of static address deposits the client wants to quote for.
+	// If the number of deposits exceeds one the server will apply a
+	// per-input service fee. This is to cover for the increased on-chain
+	// fee the server has to pay when the sweeping transaction is broadcast.
+	NumDeposits uint32
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost
@@ -382,6 +494,9 @@ type SwapInfo struct {
 	// channels that may be used to loop out. On a loop in this field
 	// is nil.
 	OutgoingChanSet loopdb.ChannelSet
+
+	// AssetSwapInfo contains the asset information for the swap.
+	AssetSwapInfo *loopdb.LoopOutAssetSwap
 }
 
 // LastUpdate returns the last update time of the swap.

@@ -9,6 +9,58 @@ import (
 	"time"
 )
 
+type AssetOutSwap struct {
+	SwapHash     []byte
+	RawProofFile []byte
+}
+
+type AssetSwap struct {
+	ID                      int32
+	SwapHash                []byte
+	SwapPreimage            []byte
+	AssetID                 []byte
+	Amt                     int64
+	SenderPubkey            []byte
+	ReceiverPubkey          []byte
+	CsvExpiry               int32
+	ServerKeyFamily         int64
+	ServerKeyIndex          int64
+	InitiationHeight        int32
+	CreatedTime             time.Time
+	HtlcConfirmationHeight  int32
+	HtlcTxid                []byte
+	HtlcVout                int32
+	SweepTxid               []byte
+	SweepConfirmationHeight int32
+	SweepPkscript           []byte
+}
+
+type AssetSwapsUpdate struct {
+	ID              int32
+	SwapHash        []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
+type Deposit struct {
+	ID                    int32
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
+}
+
+type DepositUpdate struct {
+	ID              int32
+	DepositID       []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type HtlcKey struct {
 	SwapHash               []byte
 	SenderScriptPubkey     []byte
@@ -67,6 +119,15 @@ type LoopoutSwap struct {
 	PaymentTimeout      int32
 }
 
+type LoopoutSwapsAssetInfo struct {
+	SwapHash           []byte
+	AssetID            []byte
+	SwapRfqID          []byte
+	PrepayRfqID        []byte
+	AssetAmtPaidSwap   int64
+	AssetAmtPaidPrepay int64
+}
+
 type MigrationTracker struct {
 	MigrationID string
 	MigrationTs sql.NullTime
@@ -90,6 +151,38 @@ type Reservation struct {
 type ReservationUpdate struct {
 	ID              int32
 	ReservationID   []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
+type StaticAddress struct {
+	ID               int32
+	ClientPubkey     []byte
+	ServerPubkey     []byte
+	Expiry           int32
+	ClientKeyFamily  int32
+	ClientKeyIndex   int32
+	Pkscript         []byte
+	ProtocolVersion  int32
+	InitiationHeight int32
+}
+
+type StaticAddressSwap struct {
+	ID                      int32
+	SwapHash                []byte
+	SwapInvoice             string
+	LastHop                 []byte
+	PaymentTimeoutSeconds   int32
+	QuotedSwapFeeSatoshis   int64
+	DepositOutpoints        string
+	HtlcTxFeeRateSatKw      int64
+	HtlcTimeoutSweepTxID    sql.NullString
+	HtlcTimeoutSweepAddress string
+}
+
+type StaticAddressSwapUpdate struct {
+	ID              int32
+	SwapHash        []byte
 	UpdateState     string
 	UpdateTimestamp time.Time
 }

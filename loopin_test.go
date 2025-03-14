@@ -47,7 +47,7 @@ func testLoopInSuccess(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
 	expectedLastHop := &route.Vertex{0x02}
 
@@ -200,7 +200,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
 	req := testLoopInRequest
 	if externalValue != 0 {
@@ -414,7 +414,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	ctxb := context.Background()
 
 	ctx := newLoopInTestContext(t)
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
 	// Create sender and receiver keys.
 	_, senderPubKey := test.CreateKey(1)
@@ -769,7 +769,7 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 	*swapConfig, error, *loopInSwap) {
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server)
+	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
 	req := &testLoopInRequest
 
