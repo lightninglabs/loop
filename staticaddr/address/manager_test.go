@@ -154,6 +154,9 @@ type ManagerTestContext struct {
 // NewAddressManagerTestContext creates a new test context for the static
 // address manager.
 func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
+	ctxb, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	mockLnd := test.NewMockLnd()
 	lndContext := test.NewContext(t, mockLnd)
 
@@ -183,7 +186,10 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 		FetchL402:     func(context.Context) error { return nil },
 	}
 
-	manager := NewManager(cfg)
+	getInfo, err := mockLnd.Client.GetInfo(ctxb)
+	require.NoError(t, err)
+
+	manager := NewManager(cfg, int32(getInfo.BlockHeight))
 
 	return &ManagerTestContext{
 		manager:                 manager,

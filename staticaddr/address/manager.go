@@ -57,10 +57,13 @@ type Manager struct {
 }
 
 // NewManager creates a new address manager.
-func NewManager(cfg *ManagerConfig) *Manager {
-	return &Manager{
+func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
+	m := &Manager{
 		cfg: cfg,
 	}
+	m.currentHeight.Store(currentHeight)
+
+	return m
 }
 
 // Run runs the address manager.
@@ -110,11 +113,6 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
 	}
 	m.Unlock()
-
-	// Ensure that we have that we have a sane current block height.
-	if m.currentHeight.Load() == 0 {
-		return nil, fmt.Errorf("current block height is unknown")
-	}
 
 	// We are fetching a new L402 token from the server. There is one static
 	// address per L402 token allowed.

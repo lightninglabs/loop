@@ -446,6 +446,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		chainParams,
 	)
 
+	// We need to know the current block height to properly initialize
+	// managers.
+	getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+	if err != nil {
+		return fmt.Errorf("failed to get current block height: %w", err)
+	}
+	blockHeight := getInfo.BlockHeight
+
 	// If we're running an asset client, we'll log something here.
 	if d.assetClient != nil {
 		getInfo, err := d.assetClient.GetInfo(
@@ -580,7 +588,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ChainParams:   d.lnd.ChainParams,
 		ChainNotifier: d.lnd.ChainNotifier,
 	}
-	staticAddressManager = address.NewManager(addrCfg)
+	staticAddressManager = address.NewManager(addrCfg, int32(blockHeight))
 
 	// Static address deposit manager setup.
 	depositStore := deposit.NewSqlStore(baseDb)
@@ -606,7 +614,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ChainNotifier:             d.lnd.ChainNotifier,
 		Signer:                    d.lnd.Signer,
 	}
-	withdrawalManager = withdraw.NewManager(withdrawalCfg)
+	withdrawalManager = withdraw.NewManager(withdrawalCfg, blockHeight)
 
 	// Static address loop-in manager setup.
 	staticAddressLoopInStore := loopin.NewSqlStore(
@@ -631,7 +639,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ValidateLoopInContract:               loop.ValidateLoopInContract,
 		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
 		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
-	})
+	}, blockHeight)
 
 	var (
 		reservationManager *reservation.Manager
@@ -674,7 +682,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 
 		instantOutManager = instantout.NewInstantOutManager(
-			instantOutConfig,
+			instantOutConfig, int32(blockHeight),
 		)
 	}
 
@@ -769,19 +777,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			// We need to know the current block height to properly
-			// initialize the reservation manager.
-			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
-
 			infof("Starting reservation manager")
 			defer infof("Reservation manager stopped")
 
-			err = d.reservationManager.Run(
-				d.mainCtx, int32(getInfo.BlockHeight), initChan,
+			err := d.reservationManager.Run(
+				d.mainCtx, int32(blockHeight), initChan,
 			)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
@@ -809,18 +809,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
-
 			infof("Starting instantout manager")
 			defer infof("Instantout manager stopped")
 
-			err = d.instantOutManager.Run(
-				d.mainCtx, initChan, int32(getInfo.BlockHeight),
-			)
+			err := d.instantOutManager.Run(d.mainCtx, initChan)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
@@ -847,7 +839,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer d.wg.Done()
 
 			infof("Starting static address manager...")
-			err = staticAddressManager.Run(d.mainCtx)
+			err := staticAddressManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
@@ -862,7 +854,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer d.wg.Done()
 
 			infof("Starting static address deposit manager...")
-			err = depositManager.Run(d.mainCtx)
+			err := depositManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
@@ -877,17 +869,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			// Lnd's GetInfo call supplies us with the current block
-			// height.
-			info, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
-
 			infof("Starting static address deposit withdrawal " +
 				"manager...")
-			err = withdrawalManager.Run(d.mainCtx, info.BlockHeight)
+			err := withdrawalManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
@@ -903,19 +887,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		go func() {
 			defer d.wg.Done()
 
-			// Lnd's GetInfo call supplies us with the current block
-			// height.
-			info, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-
-				return
-			}
-
 			infof("Starting static address loop-in manager...")
-			err = staticLoopInManager.Run(
-				d.mainCtx, info.BlockHeight,
-			)
+			err := staticLoopInManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}

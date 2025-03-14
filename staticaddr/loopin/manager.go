@@ -139,8 +139,8 @@ type Manager struct {
 }
 
 // NewManager creates a new deposit withdrawal manager.
-func NewManager(cfg *Config) *Manager {
-	return &Manager{
+func NewManager(cfg *Config, currentHeight uint32) *Manager {
+	m := &Manager{
 		cfg:           cfg,
 		initChan:      make(chan struct{}),
 		newLoopInChan: make(chan *newSwapRequest),
@@ -148,12 +148,13 @@ func NewManager(cfg *Config) *Manager {
 		errChan:       make(chan error),
 		activeLoopIns: make(map[lntypes.Hash]*FSM),
 	}
+	m.currentHeight.Store(currentHeight)
+
+	return m
 }
 
 // Run runs the static address loop-in manager.
-func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
-	m.currentHeight.Store(currentHeight)
-
+func (m *Manager) Run(ctx context.Context) error {
 	registerBlockNtfn := m.cfg.ChainNotifier.RegisterBlockEpochNtfn
 	newBlockChan, newBlockErrChan, err := registerBlockNtfn(ctx)
 	if err != nil {
