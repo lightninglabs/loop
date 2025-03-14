@@ -112,7 +112,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	in *looprpc.LoopOutRequest) (
 	*looprpc.SwapResponse, error) {
 
-	log.Infof("Loop out request received")
+	infof("Loop out request received")
 
 	// Note that LoopOutRequest.PaymentTimeout is unsigned and therefore
 	// cannot be negative.
@@ -257,7 +257,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 	info, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
-		log.Errorf("LoopOut: %v", err)
+		errorf("LoopOut: %v", err)
 		return nil, err
 	}
 
@@ -461,7 +461,7 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	server looprpc.SwapClient_MonitorServer) error {
 
-	log.Infof("Monitor request received")
+	infof("Monitor request received")
 
 	send := func(info loop.SwapInfo) error {
 		rpcSwap, err := s.marshallSwap(server.Context(), &info)
@@ -732,11 +732,11 @@ func (s *swapClientServer) AbandonSwap(ctx context.Context,
 func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	_ *looprpc.TermsRequest) (*looprpc.OutTermsResponse, error) {
 
-	log.Infof("Loop out terms request received")
+	infof("Loop out terms request received")
 
 	terms, err := s.impl.LoopOutTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
-		log.Errorf("Terms request: %v", err)
+		errorf("Terms request: %v", err)
 		return nil, err
 	}
 
@@ -822,11 +822,11 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 	_ *looprpc.TermsRequest) (*looprpc.InTermsResponse, error) {
 
-	log.Infof("Loop in terms request received")
+	infof("Loop in terms request received")
 
 	terms, err := s.impl.LoopInTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
-		log.Errorf("Terms request: %v", err)
+		errorf("Terms request: %v", err)
 		return nil, err
 	}
 
@@ -840,7 +840,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.InQuoteResponse, error) {
 
-	log.Infof("Loop in quote request received")
+	infof("Loop in quote request received")
 
 	var (
 		numDeposits = uint32(len(req.DepositOutpoints))
@@ -981,7 +981,7 @@ func unmarshallHopHint(rpcHint *swapserverrpc.HopHint) (zpay32.HopHint, error) {
 func (s *swapClientServer) Probe(ctx context.Context,
 	req *looprpc.ProbeRequest) (*looprpc.ProbeResponse, error) {
 
-	log.Infof("Probe request received")
+	infof("Probe request received")
 
 	var lastHop *route.Vertex
 	if req.LastHop != nil {
@@ -1013,7 +1013,7 @@ func (s *swapClientServer) Probe(ctx context.Context,
 func (s *swapClientServer) LoopIn(ctx context.Context,
 	in *looprpc.LoopInRequest) (*looprpc.SwapResponse, error) {
 
-	log.Infof("Loop in request received")
+	infof("Loop in request received")
 
 	htlcConfTarget, err := validateLoopInRequest(
 		in.HtlcConfTarget, in.ExternalHtlc, 0, in.Amt,
@@ -1052,7 +1052,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	}
 	swapInfo, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
-		log.Errorf("Loop in: %v", err)
+		errorf("Loop in: %v", err)
 		return nil, err
 	}
 
@@ -1079,7 +1079,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 	_ *looprpc.TokensRequest) (*looprpc.TokensResponse, error) {
 
-	log.Infof("Get L402 tokens request received")
+	infof("Get L402 tokens request received")
 
 	tokens, err := s.impl.L402Store.AllTokens()
 	if err != nil {
@@ -1128,7 +1128,7 @@ func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	req *looprpc.TokensRequest) (*looprpc.TokensResponse, error) {
 
-	log.Warnf("Received deprecated call GetLsatTokens. Please update the " +
+	warnf("Received deprecated call GetLsatTokens. Please update the " +
 		"client software. Calling GetL402Tokens now.")
 
 	return s.GetL402Tokens(ctx, req)
@@ -1754,7 +1754,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 	in *looprpc.StaticAddressLoopInRequest) (
 	*looprpc.StaticAddressLoopInResponse, error) {
 
-	log.Infof("Static loop-in request received")
+	infof("Static loop-in request received")
 
 	routeHints, err := unmarshallRouteHints(in.RouteHints)
 	if err != nil {
@@ -2187,52 +2187,52 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	maxParts int) (bool, int) {
 
-	log.Tracef("Checking if %v sats can be routed with %v parts over "+
+	tracef("Checking if %v sats can be routed with %v parts over "+
 		"channel set of length %v", amt, maxParts, len(channels))
 
 	localBalances := make([]btcutil.Amount, len(channels))
 	var totalBandwidth btcutil.Amount
 	for i, channel := range channels {
-		log.Tracef("Channel %v: local=%v remote=%v", channel.ChannelID,
+		tracef("Channel %v: local=%v remote=%v", channel.ChannelID,
 			channel.LocalBalance, channel.RemoteBalance)
 
 		localBalances[i] = channel.LocalBalance
 		totalBandwidth += channel.LocalBalance
 	}
 
-	log.Tracef("Total bandwidth: %v", totalBandwidth)
+	tracef("Total bandwidth: %v", totalBandwidth)
 	if totalBandwidth < amt {
 		return false, 0
 	}
 
 	logLocalBalances := func(shard int) {
-		log.Tracef("Local balances for %v shards:", shard)
+		tracef("Local balances for %v shards:", shard)
 		for i, balance := range localBalances {
-			log.Tracef("Channel %v: localBalances[%v]=%v",
+			tracef("Channel %v: localBalances[%v]=%v",
 				channels[i].ChannelID, i, balance)
 		}
 	}
 
 	split := amt
 	for shard := 0; shard <= maxParts; {
-		log.Tracef("Trying to split %v sats into %v parts", amt, shard)
+		tracef("Trying to split %v sats into %v parts", amt, shard)
 
 		paid := false
 		for i := 0; i < len(localBalances); i++ {
 			// TODO(hieblmi): Consider channel reserves because the
 			//      channel can't send its full local balance.
 			if localBalances[i] >= split {
-				log.Tracef("len(shards)=%v: Local channel "+
+				tracef("len(shards)=%v: Local channel "+
 					"balance %v can pay %v sats",
 					shard, localBalances[i], split)
 
 				localBalances[i] -= split
-				log.Tracef("len(shards)=%v: Subtracted "+
+				tracef("len(shards)=%v: Subtracted "+
 					"%v sats from localBalance[%v]=%v",
 					shard, split, i, localBalances[i])
 
 				amt -= split
-				log.Tracef("len(shards)=%v: Remaining total "+
+				tracef("len(shards)=%v: Remaining total "+
 					"amount amt=%v", shard, amt)
 
 				paid = true
@@ -2245,26 +2245,26 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 		logLocalBalances(shard)
 
 		if amt == 0 {
-			log.Tracef("Payment is routable with %v part(s)", shard)
+			tracef("Payment is routable with %v part(s)", shard)
 
 			return true, shard
 		}
 
 		if !paid {
-			log.Tracef("len(shards)=%v: No channel could pay %v "+
+			tracef("len(shards)=%v: No channel could pay %v "+
 				"sats, halving payment to %v and trying again",
 				split/2)
 
 			split /= 2
 		} else {
-			log.Tracef("len(shards)=%v: Payment was made, trying "+
+			tracef("len(shards)=%v: Payment was made, trying "+
 				"to pay remaining sats %v", shard, amt)
 
 			split = amt
 		}
 	}
 
-	log.Tracef("Payment is not routable, remaining amount that can't be "+
+	tracef("Payment is not routable, remaining amount that can't be "+
 		"sent: %v sats", amt)
 
 	logLocalBalances(maxParts)

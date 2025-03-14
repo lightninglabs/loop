@@ -222,7 +222,7 @@ func Run(rpcCfg RPCConfig) error {
 	}
 
 	// Print the version before executing either primary directive.
-	log.Infof("Version: %v", loop.Version())
+	infof("Version: %v", loop.Version())
 
 	lisCfg := NewListenerConfig(&config, rpcCfg)
 
@@ -235,7 +235,7 @@ func Run(rpcCfg RPCConfig) error {
 
 		select {
 		case <-interceptor.ShutdownChannel():
-			log.Infof("Received SIGINT (Ctrl+C).")
+			infof("Received SIGINT (Ctrl+C).")
 			daemon.Stop()
 
 			// The above stop will return immediately. But we'll be

@@ -1,6 +1,8 @@
 package loopd
 
 import (
+	"sync/atomic"
+
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
@@ -22,18 +24,50 @@ import (
 const Subsystem = "LOOPD"
 
 var (
-	log         btclog.Logger
+	log_        atomic.Pointer[btclog.Logger]
 	interceptor signal.Interceptor
 )
+
+// log returns active logger.
+func log() btclog.Logger {
+	return *log_.Load()
+}
+
+// setLogger uses a specified Logger to output package logging info.
+func setLogger(logger btclog.Logger) {
+	log_.Store(&logger)
+}
+
+// tracef logs a message with level TRACE.
+func tracef(format string, params ...interface{}) {
+	log().Tracef(format, params...)
+}
+
+// infof logs a message with level INFO.
+func infof(format string, params ...interface{}) {
+	log().Infof(format, params...)
+}
+
+// warnf logs a message with level WARN.
+func warnf(format string, params ...interface{}) {
+	log().Warnf(format, params...)
+}
+
+// errorf logs a message with level ERROR.
+func errorf(format string, params ...interface{}) {
+	log().Errorf(format, params...)
+}
 
 // SetupLoggers initializes all package-global logger variables.
 func SetupLoggers(root *build.SubLoggerManager, intercept signal.Interceptor) {
 	genLogger := genSubLogger(root, intercept)
 
-	log = build.NewSubLogger(Subsystem, genLogger)
+	logger := build.NewSubLogger(Subsystem, genLogger)
+	setLogger(logger)
+
 	interceptor = intercept
 
-	lnd.SetSubLogger(root, Subsystem, log)
+	lnd.SetSubLogger(root, Subsystem, logger)
 	lnd.AddSubLogger(root, "LOOP", intercept, loop.UseLogger)
 	lnd.AddSubLogger(root, "SWEEP", intercept, sweepbatcher.UseLogger)
 	lnd.AddSubLogger(root, "LNDC", intercept, lndclient.UseLogger)

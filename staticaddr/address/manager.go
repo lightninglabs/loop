@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -52,14 +53,17 @@ type Manager struct {
 
 	sync.Mutex
 
-	currentHeight int32
+	currentHeight atomic.Int32
 }
 
 // NewManager creates a new address manager.
-func NewManager(cfg *ManagerConfig) *Manager {
-	return &Manager{
+func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
+	m := &Manager{
 		cfg: cfg,
 	}
+	m.currentHeight.Store(currentHeight)
+
+	return m
 }
 
 // Run runs the address manager.
@@ -74,7 +78,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	for {
 		select {
 		case currentHeight := <-newBlockChan:
-			m.currentHeight = currentHeight
+			m.currentHeight.Store(currentHeight)
 
 		case err = <-newBlockErrChan:
 			return err
@@ -109,11 +113,6 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
 	}
 	m.Unlock()
-
-	// Ensure that we have that we have a sane current block height.
-	if m.currentHeight == 0 {
-		return nil, fmt.Errorf("current block height is unknown")
-	}
 
 	// We are fetching a new L402 token from the server. There is one static
 	// address per L402 token allowed.
@@ -176,7 +175,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		ProtocolVersion: version.AddressProtocolVersion(
 			protocolVersion,
 		),
-		InitiationHeight: m.currentHeight,
+		InitiationHeight: m.currentHeight.Load(),
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {

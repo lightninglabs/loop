@@ -873,7 +873,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		}
 
 		if err := s.swapKit.server.ReportRoutingResult(
-			ctx, s.swapInfo().SwapHash, s.swapInvoicePaymentAddr,
+			ctx, s.hash, s.swapInvoicePaymentAddr,
 			reportType, paymentSuccess, int32(attempts),
 			dt.Milliseconds(),
 		); err != nil {

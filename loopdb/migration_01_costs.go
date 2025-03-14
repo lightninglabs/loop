@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // noMigrationAvailable is the fall back migration in case there is no migration

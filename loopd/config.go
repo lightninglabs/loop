@@ -423,7 +423,7 @@ func getTLSConfig(cfg *Config) (*tls.Config, *credentials.TransportCredentials,
 	// If the certificate expired or it was outdated, delete it and the TLS
 	// key and generate a new pair.
 	if time.Now().After(parsedCert.NotAfter) {
-		log.Info("TLS certificate is expired or outdated, " +
+		infof("TLS certificate is expired or outdated, " +
 			"removing old file then generating a new one")
 
 		err := os.Remove(cfg.TLSCertPath)
@@ -464,7 +464,7 @@ func loadCertWithCreate(cfg *Config) (tls.Certificate, *x509.Certificate,
 	if !lnrpc.FileExists(cfg.TLSCertPath) &&
 		!lnrpc.FileExists(cfg.TLSKeyPath) {
 
-		log.Infof("Generating TLS certificates...")
+		infof("Generating TLS certificates...")
 		certBytes, keyBytes, err := cert.GenCertPair(
 			defaultSelfSignedOrganization, cfg.TLSExtraIPs,
 			cfg.TLSExtraDomains, cfg.TLSDisableAutofill,
@@ -481,7 +481,7 @@ func loadCertWithCreate(cfg *Config) (tls.Certificate, *x509.Certificate,
 			return tls.Certificate{}, nil, err
 		}
 
-		log.Infof("Done generating TLS certificates")
+		infof("Done generating TLS certificates")
 	}
 
 	return cert.LoadCert(cfg.TLSCertPath, cfg.TLSKeyPath)

@@ -41,18 +41,17 @@ type Manager struct {
 }
 
 // NewInstantOutManager creates a new instantout manager.
-func NewInstantOutManager(cfg *Config) *Manager {
+func NewInstantOutManager(cfg *Config, height int32) *Manager {
 	return &Manager{
 		cfg:               cfg,
 		activeInstantOuts: make(map[lntypes.Hash]*FSM),
 		blockEpochChan:    make(chan int32),
+		currentHeight:     height,
 	}
 }
 
 // Run runs the instantout manager.
-func (m *Manager) Run(ctx context.Context, initChan chan struct{},
-	height int32) error {
-
+func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	log.Debugf("Starting instantout manager")
 	defer func() {
 		log.Debugf("Stopping instantout manager")
@@ -62,7 +61,6 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{},
 	defer cancel()
 
 	m.runCtx = runCtx
-	m.currentHeight = height
 
 	err := m.recoverInstantOuts(runCtx)
 	if err != nil {
