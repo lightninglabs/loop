@@ -7,6 +7,7 @@ import (
 
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc"
 )
 
@@ -20,6 +21,17 @@ const (
 	// NotificationTypeReservation is the notification type for reservation
 	// notifications.
 	NotificationTypeReservation
+
+	// NotificationTypeStaticLoopInSweepRequest is the notification type for
+	// static loop in sweep requests.
+	NotificationTypeStaticLoopInSweepRequest
+)
+
+const (
+	// defaultMinAliveConnTime is the default minimum time that the
+	// connection to the server needs to be alive before we consider it a
+	// successful connection.
+	defaultMinAliveConnTime = time.Minute
 )
 
 // Client is the interface that the notification manager needs to implement in
@@ -41,6 +53,10 @@ type Config struct {
 	// CurrentToken returns the token that is currently contained in the
 	// store or an l402.ErrNoToken error if there is none.
 	CurrentToken func() (*l402.Token, error)
+
+	// MinAliveConnTime is the minimum time that the connection to the
+	// server needs to be alive before we consider it a successful.
+	MinAliveConnTime time.Duration
 }
 
 // Manager is a manager for notifications that the swap server sends to the
@@ -56,6 +72,11 @@ type Manager struct {
 
 // NewManager creates a new notification manager.
 func NewManager(cfg *Config) *Manager {
+	// Set the default minimum alive connection time if it's not set.
+	if cfg.MinAliveConnTime == 0 {
+		cfg.MinAliveConnTime = defaultMinAliveConnTime
+	}
+
 	return &Manager{
 		cfg:         cfg,
 		subscribers: make(map[NotificationType][]subscriber),
@@ -79,10 +100,39 @@ func (m *Manager) SubscribeReservations(ctx context.Context,
 
 	m.addSubscriber(NotificationTypeReservation, sub)
 
-	// Start a goroutine to remove the subscriber when the context is canceled
+	// Start a goroutine to remove the subscriber when the context is
+	// canceled.
 	go func() {
 		<-ctx.Done()
 		m.removeSubscriber(NotificationTypeReservation, sub)
+		close(notifChan)
+	}()
+
+	return notifChan
+}
+
+// SubscribeStaticLoopInSweepRequests subscribes to the static loop in sweep
+// requests.
+func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
+) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	notifChan := make(
+		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 1,
+	)
+	sub := subscriber{
+		subCtx:   ctx,
+		recvChan: notifChan,
+	}
+
+	m.addSubscriber(NotificationTypeStaticLoopInSweepRequest, sub)
+
+	// Start a goroutine to remove the subscriber when the context is
+	// canceled.
+	go func() {
+		<-ctx.Done()
+		m.removeSubscriber(
+			NotificationTypeStaticLoopInSweepRequest, sub,
+		)
 		close(notifChan)
 	}()
 
@@ -95,13 +145,21 @@ func (m *Manager) SubscribeReservations(ctx context.Context,
 // close the readyChan to signal that the manager is ready.
 func (m *Manager) Run(ctx context.Context) error {
 	// Initially we want to immediately try to connect to the server.
-	waitTime := time.Duration(0)
+	var (
+		waitTime time.Duration
+		backoff  time.Duration
+		attempts int
+		timer    = time.NewTimer(0)
+	)
 
 	// Start the notification runloop.
 	for {
-		timer := time.NewTimer(waitTime)
 		// Increase the wait time for the next iteration.
-		waitTime += time.Second * 1
+		backoff = waitTime + time.Duration(attempts)*time.Second
+		waitTime = 0
+
+		// Reset the timer with the new backoff time.
+		timer.Reset(backoff)
 
 		// Return if the context has been canceled.
 		select {
@@ -112,37 +170,70 @@ func (m *Manager) Run(ctx context.Context) error {
 		}
 
 		// In order to create a valid l402 we first are going to call
-		// the FetchL402 method. As a client might not have outbound capacity
-		// yet, we'll retry until we get a valid response.
+		// the FetchL402 method. As a client might not have outbound
+		// capacity yet, we'll retry until we get a valid response.
 		if !m.hasL402 {
-			_, err := m.cfg.CurrentToken()
+			token, err := m.cfg.CurrentToken()
 			if err != nil {
-				// We only log the error if it's not the case that we
-				// don't have a token yet to avoid spamming the logs.
+				// We only log the error if it's not the case
+				// that we don't have a token yet to avoid
+				// spamming the logs.
 				if err != l402.ErrNoToken {
-					log.Errorf("Error getting L402 from store: %v", err)
+					log.Errorf("Error getting L402 from "+
+						"the store: %v", err)
 				}
+
+				// Use a default of 1 second wait time to avoid
+				// hogging the CPU.
+				waitTime = time.Second
 				continue
 			}
+
+			// If the preimage is empty, we don't have a valid L402
+			// yet so we'll continue to retry with the incremental
+			// backoff.
+			emptyPreimage := lntypes.Preimage{}
+			if token.Preimage == emptyPreimage {
+				attempts++
+				continue
+			}
+
+			attempts = 0
 			m.hasL402 = true
 		}
 
-		connectedFunc := func() {
-			// Reset the wait time to 10 seconds.
-			waitTime = time.Second * 10
-		}
-
-		err := m.subscribeNotifications(ctx, connectedFunc)
+		connectAttempted := time.Now()
+		err := m.subscribeNotifications(ctx)
 		if err != nil {
-			log.Errorf("Error subscribing to notifications: %v", err)
+			log.Errorf("Error subscribing to notifications: %v",
+				err)
+		}
+		connectionAliveTime := time.Since(connectAttempted)
+
+		// Note that we may be able to connet to the stream but not
+		// able to use it if the client is unable to pay for their
+		// L402. In this case the subscription will fail on the first
+		// read immediately after connecting. We'll therefore only
+		// consider the connection successful if we were able to use
+		// the stream for at least the minimum alive connection time
+		// (which defaults to 1 minute).
+		if connectionAliveTime > m.cfg.MinAliveConnTime {
+			// Reset the backoff to 10 seconds and the connect
+			// attempts to zero if we were really connected for a
+			// considerable amount of time (1 minute).
+			waitTime = time.Second * 10
+			attempts = 0
+		} else {
+			// We either failed to connect or the stream
+			// disconnected immediately, so we just increase the
+			// backoff.
+			attempts++
 		}
 	}
 }
 
 // subscribeNotifications subscribes to the notifications from the server.
-func (m *Manager) subscribeNotifications(ctx context.Context,
-	connectedFunc func()) error {
-
+func (m *Manager) subscribeNotifications(ctx context.Context) error {
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -153,14 +244,12 @@ func (m *Manager) subscribeNotifications(ctx context.Context,
 		return err
 	}
 
-	// Signal that we're connected to the server.
-	connectedFunc()
 	log.Debugf("Successfully subscribed to server notifications")
 
 	for {
 		notification, err := notifStream.Recv()
 		if err == nil && notification != nil {
-			log.Debugf("Received notification: %v", notification)
+			log.Tracef("Received notification: %v", notification)
 			m.handleNotification(notification)
 			continue
 		}
@@ -173,13 +262,13 @@ func (m *Manager) subscribeNotifications(ctx context.Context,
 
 // handleNotification handles an incoming notification from the server,
 // forwarding it to the appropriate subscribers.
-func (m *Manager) handleNotification(notification *swapserverrpc.
+func (m *Manager) handleNotification(ntfn *swapserverrpc.
 	SubscribeNotificationsResponse) {
 
-	switch notification.Notification.(type) {
-	case *swapserverrpc.SubscribeNotificationsResponse_ReservationNotification:
+	switch ntfn.Notification.(type) {
+	case *swapserverrpc.SubscribeNotificationsResponse_ReservationNotification: // nolint: lll
 		// We'll forward the reservation notification to all subscribers.
-		reservationNtfn := notification.GetReservationNotification()
+		reservationNtfn := ntfn.GetReservationNotification()
 		m.Lock()
 		defer m.Unlock()
 
@@ -189,10 +278,23 @@ func (m *Manager) handleNotification(notification *swapserverrpc.
 
 			recvChan <- reservationNtfn
 		}
+	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInSweep: // nolint: lll
+		// We'll forward the static loop in sweep request to all
+		// subscribers.
+		staticLoopInSweepRequestNtfn := ntfn.GetStaticLoopInSweep()
+		m.Lock()
+		defer m.Unlock()
+
+		for _, sub := range m.subscribers[NotificationTypeStaticLoopInSweepRequest] { // nolint: lll
+			recvChan := sub.recvChan.(chan *swapserverrpc.
+				ServerStaticLoopInSweepNotification)
+
+			recvChan <- staticLoopInSweepRequestNtfn
+		}
 
 	default:
 		log.Warnf("Received unknown notification type: %v",
-			notification)
+			ntfn)
 	}
 }
 

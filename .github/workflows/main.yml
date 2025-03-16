@@ -20,7 +20,7 @@ env:
 
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
-  GO_VERSION: 1.21.10
+  GO_VERSION: 1.24.0
 
 jobs:
   ########################
@@ -75,7 +75,7 @@ jobs:
           fetch-depth: 0
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: /home/runner/work/go
           key: lnd-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
@@ -107,7 +107,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: /home/runner/work/go
           key: lnd-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}

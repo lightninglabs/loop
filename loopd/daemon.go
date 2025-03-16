@@ -16,14 +16,20 @@ import (
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -78,6 +84,7 @@ type Daemon struct {
 	internalErrChan chan error
 
 	lnd           *lndclient.GrpcLndServices
+	assetClient   *assets.TapdClient
 	clientCleanup func()
 
 	wg       sync.WaitGroup
@@ -132,6 +139,14 @@ func (d *Daemon) Start() error {
 	d.lnd, err = d.listenerCfg.getLnd(network, d.cfg.Lnd)
 	if err != nil {
 		return err
+	}
+
+	// Initialize the assets client.
+	if d.cfg.Tapd.Activate {
+		d.assetClient, err = assets.NewTapdClient(d.cfg.Tapd)
+		if err != nil {
+			return err
+		}
 	}
 
 	// With lnd connected, initialize everything else, such as the swap
@@ -234,6 +249,8 @@ func (d *Daemon) startWebServers() error {
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
+	loop_looprpc.RegisterAssetsClientServer(d.grpcServer, d.assetsServer)
+
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
 
@@ -317,7 +334,7 @@ func (d *Daemon) startWebServers() error {
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
-
+			defer log.Info("REST proxy stopped")
 			log.Infof("REST proxy listening on %s",
 				d.restListener.Addr())
 			err := d.restServer.Serve(d.restListener)
@@ -339,7 +356,7 @@ func (d *Daemon) startWebServers() error {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-
+		defer log.Info("RPC server stopped")
 		log.Infof("RPC server listening on %s", d.grpcListener.Addr())
 		err = d.grpcServer.Serve(d.grpcListener)
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
@@ -415,7 +432,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
-	// Run the costs migration.
+	// Run the cost migration.
 	err = loop.MigrateLoopOutCosts(
 		d.mainCtx, d.lnd.LndServices, d.cfg.MigrationRPCBatchSize,
 		swapDb,
@@ -431,9 +448,26 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		chainParams,
 	)
 
+	// If we're running an asset client, we'll log something here.
+	if d.assetClient != nil {
+		getInfo, err := d.assetClient.GetInfo(
+			d.mainCtx, &taprpc.GetInfoRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to get asset client info: %v", err)
+		}
+		if getInfo.LndIdentityPubkey != d.lnd.NodePubkey.String() {
+			return fmt.Errorf("asset client pubkey %v does not match "+
+				"lnd pubkey %v", getInfo.LndIdentityPubkey,
+				d.lnd.NodePubkey)
+		}
+
+		log.Infof("Using asset client with version %v", getInfo.Version)
+	}
+
 	// Create an instance of the loop client library.
 	swapClient, clientCleanup, err := getClient(
-		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices,
+		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices, d.assetClient,
 	)
 	if err != nil {
 		return err
@@ -447,6 +481,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Create an instantout server client.
 	instantOutClient := loop_swaprpc.NewInstantSwapServerClient(
+		swapClient.Conn,
+	)
+
+	// Create a static address server client.
+	staticAddressClient := loop_swaprpc.NewStaticAddressServerClient(
+		swapClient.Conn,
+	)
+
+	// Create a assets server client.
+	assetsClient := loop_swaprpc.NewAssetsSwapServerClient(
 		swapClient.Conn,
 	)
 
@@ -527,8 +571,80 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}()
 
 	var (
+		staticAddressManager *address.Manager
+		depositManager       *deposit.Manager
+		withdrawalManager    *withdraw.Manager
+		staticLoopInManager  *loopin.Manager
+	)
+
+	// Static address manager setup.
+	staticAddressStore := address.NewSqlStore(baseDb)
+	addrCfg := &address.ManagerConfig{
+		AddressClient: staticAddressClient,
+		FetchL402:     swapClient.Server.FetchL402,
+		Store:         staticAddressStore,
+		WalletKit:     d.lnd.WalletKit,
+		ChainParams:   d.lnd.ChainParams,
+		ChainNotifier: d.lnd.ChainNotifier,
+	}
+	staticAddressManager = address.NewManager(addrCfg)
+
+	// Static address deposit manager setup.
+	depositStore := deposit.NewSqlStore(baseDb)
+	depoCfg := &deposit.ManagerConfig{
+		AddressClient:  staticAddressClient,
+		AddressManager: staticAddressManager,
+		SwapClient:     swapClient,
+		Store:          depositStore,
+		WalletKit:      d.lnd.WalletKit,
+		ChainParams:    d.lnd.ChainParams,
+		ChainNotifier:  d.lnd.ChainNotifier,
+		Signer:         d.lnd.Signer,
+	}
+	depositManager = deposit.NewManager(depoCfg)
+
+	// Static address deposit withdrawal manager setup.
+	withdrawalCfg := &withdraw.ManagerConfig{
+		StaticAddressServerClient: staticAddressClient,
+		AddressManager:            staticAddressManager,
+		DepositManager:            depositManager,
+		WalletKit:                 d.lnd.WalletKit,
+		ChainParams:               d.lnd.ChainParams,
+		ChainNotifier:             d.lnd.ChainNotifier,
+		Signer:                    d.lnd.Signer,
+	}
+	withdrawalManager = withdraw.NewManager(withdrawalCfg)
+
+	// Static address loop-in manager setup.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
+	staticLoopInManager = loopin.NewManager(&loopin.Config{
+		Server:                               staticAddressClient,
+		QuoteGetter:                          swapClient.Server,
+		LndClient:                            d.lnd.Client,
+		InvoicesClient:                       d.lnd.Invoices,
+		NodePubkey:                           d.lnd.NodePubkey,
+		AddressManager:                       staticAddressManager,
+		DepositManager:                       depositManager,
+		Store:                                staticAddressLoopInStore,
+		WalletKit:                            d.lnd.WalletKit,
+		ChainNotifier:                        d.lnd.ChainNotifier,
+		NotificationManager:                  notificationManager,
+		ChainParams:                          d.lnd.ChainParams,
+		Signer:                               d.lnd.Signer,
+		ValidateLoopInContract:               loop.ValidateLoopInContract,
+		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
+	})
+
+	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
+		assetManager       *assets.AssetsSwapManager
+		assetClientServer  *assets.AssetsClientServer
 	)
 
 	// Create the reservation and instantout managers.
@@ -569,21 +685,49 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig,
 		)
+
+		tapdClient, err := assets.NewTapdClient(
+			d.cfg.TapdConfig,
+		)
+		if err != nil {
+			return err
+		}
+		assetsStore := assets.NewPostgresStore(baseDb)
+		assetsConfig := &assets.Config{
+			ServerClient:         assetsClient,
+			Store:                assetsStore,
+			AssetClient:          tapdClient,
+			LndClient:            d.lnd.Client,
+			Router:               d.lnd.Router,
+			ChainNotifier:        d.lnd.ChainNotifier,
+			Signer:               d.lnd.Signer,
+			Wallet:               d.lnd.WalletKit,
+			ExchangeRateProvider: assets.NewFixedExchangeRateProvider(),
+		}
+		assetManager = assets.NewAssetSwapServer(assetsConfig)
+		assetClientServer = assets.NewAssetsServer(assetManager)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
-		config:             d.cfg,
-		network:            lndclient.Network(d.cfg.Network),
-		impl:               swapClient,
-		liquidityMgr:       getLiquidityManager(swapClient),
-		lnd:                &d.lnd.LndServices,
-		swaps:              make(map[lntypes.Hash]loop.SwapInfo),
-		subscribers:        make(map[int]chan<- interface{}),
-		statusChan:         make(chan loop.SwapInfo),
-		mainCtx:            d.mainCtx,
-		reservationManager: reservationManager,
-		instantOutManager:  instantOutManager,
+		config:               d.cfg,
+		network:              lndclient.Network(d.cfg.Network),
+		impl:                 swapClient,
+		liquidityMgr:         getLiquidityManager(swapClient),
+		lnd:                  &d.lnd.LndServices,
+		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
+		subscribers:          make(map[int]chan<- interface{}),
+		statusChan:           make(chan loop.SwapInfo),
+		mainCtx:              d.mainCtx,
+		reservationManager:   reservationManager,
+		instantOutManager:    instantOutManager,
+		staticAddressManager: staticAddressManager,
+		depositManager:       depositManager,
+		withdrawalManager:    withdrawalManager,
+		staticLoopInManager:  staticLoopInManager,
+		assetClient:          d.assetClient,
+		assetManager:         assetManager,
+		assetsServer:         assetClientServer,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -689,6 +833,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			cancel()
 		}
 	}
+	getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
+	if err != nil {
+		return err
+	}
 
 	// Start the instant out manager.
 	if d.instantOutManager != nil {
@@ -696,12 +844,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
-
-			getInfo, err := d.lnd.Client.GetInfo(d.mainCtx)
-			if err != nil {
-				d.internalErrChan <- err
-				return
-			}
 
 			log.Info("Starting instantout manager")
 			defer log.Info("Instantout manager stopped")
@@ -726,6 +868,113 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
+	}
+
+	// Start the static address manager.
+	if staticAddressManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			log.Info("Starting static address manager...")
+			err = staticAddressManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address manager stopped")
+		}()
+	}
+
+	// Start the static address deposit manager.
+	if depositManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit manager...")
+			err = depositManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit manager stopped")
+		}()
+		depositManager.WaitInitComplete()
+	}
+
+	// Start the static address deposit withdrawal manager.
+	if withdrawalManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+				return
+			}
+
+			log.Info("Starting static address deposit withdrawal " +
+				"manager...")
+			err = withdrawalManager.Run(d.mainCtx, info.BlockHeight)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Static address deposit withdrawal manager " +
+				"stopped")
+		}()
+		withdrawalManager.WaitInitComplete()
+	}
+
+	// Start the static address loop-in manager.
+	if staticLoopInManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			// Lnd's GetInfo call supplies us with the current block
+			// height.
+			info, err := d.lnd.Client.GetInfo(d.mainCtx)
+			if err != nil {
+				d.internalErrChan <- err
+
+				return
+			}
+
+			log.Info("Starting static address loop-in manager...")
+			err = staticLoopInManager.Run(
+				d.mainCtx, info.BlockHeight,
+			)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			log.Info("Starting static address loop-in manager " +
+				"stopped")
+		}()
+		staticLoopInManager.WaitInitComplete()
+	}
+
+	// Start the asset manager.
+	if d.assetManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			log.Infof("Starting asset manager")
+			defer log.Infof("Asset manager stopped")
+			err := d.assetManager.Run(d.mainCtx, int32(getInfo.BlockHeight))
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		}()
 	}
 
 	// Last, start our internal error handler. This will return exactly one
@@ -773,6 +1022,9 @@ func (d *Daemon) Stop() {
 
 // stop does the actual shutdown and blocks until all goroutines have exit.
 func (d *Daemon) stop() {
+	// Sleep a second in order to fix a blocking issue when having a
+	// startup error.
+	<-time.After(time.Second)
 	// First of all, we can cancel the main context that all event handlers
 	// are using. This should stop all swap activity and all event handlers
 	// should exit.
@@ -790,6 +1042,7 @@ func (d *Daemon) stop() {
 	if d.restServer != nil {
 		// Don't return the error here, we first want to give everything
 		// else a chance to shut down cleanly.
+
 		err := d.restServer.Close()
 		if err != nil {
 			log.Errorf("Error stopping REST server: %v", err)

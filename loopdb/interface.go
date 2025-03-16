@@ -30,6 +30,11 @@ type SwapStore interface {
 	UpdateLoopOut(ctx context.Context, hash lntypes.Hash, time time.Time,
 		state SwapStateData) error
 
+	// UpdateLoopOutAssetInfo updates the asset information for a loop out
+	// swap.
+	UpdateLoopOutAssetInfo(ctx context.Context, hash lntypes.Hash,
+		asset *LoopOutAssetSwap) error
+
 	// FetchLoopInSwaps returns all swaps currently in the store.
 	FetchLoopInSwaps(ctx context.Context) ([]*LoopIn, error)
 

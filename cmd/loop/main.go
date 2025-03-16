@@ -76,6 +76,15 @@ var (
 		Name:  "verbose, v",
 		Usage: "show expanded details",
 	}
+
+	commands = []cli.Command{
+		loopOutCommand, loopInCommand, termsCommand,
+		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
+		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
+		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
+		getInfoCommand, abandonSwapCommand, reservationsCommands,
+		instantOutCommand, listInstantOutsCommand, assetsCommands,
+	}
 )
 
 const (
@@ -86,6 +95,34 @@ const (
 	// prints out as,
 	//      Estimated on-chain fee:                      7262 sat
 	satAmtFmt = "%-36s %12d sat\n"
+
+	// assetAmtFormat formats a value into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Amount:", amt, "USD")
+	// prints out as,
+	//      Amount:                                    50 USD
+	assetAmtFmt = "%-36s %12d %s\n"
+
+	// rateFmt formats an exchange rate into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Exchange rate:", rate, "USD")
+	// prints out as,
+	//      Exchange rate:                            0.0002 USD/SAT
+	rateFmt = "%-36s %12.4f %s/SAT\n"
+
+	// bpsFmt formats a basis point value into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Service fee:", fee)
+	// prints out as,
+	//      Service fee:                                    20 bps
+	bpsFmt = "%-36s %12d bps\n"
+
+	// assetFmt formats an asset into a one line string, intended to
+	// prettify the terminal output. For Instance,
+	// 	fmt.Printf(f, "Receive asset onchain:", assetName, assetAmt)
+	// prints out as,
+	//      Receive asset onchain:                       0.0001 USD
+	assetFmt = "%-36s %12d %s\n"
 
 	// blkFmt formats the number of blocks into a one line string, intended
 	// to prettify the terminal output. For Instance,
@@ -142,14 +179,7 @@ func main() {
 		tlsCertFlag,
 		macaroonPathFlag,
 	}
-	app.Commands = []cli.Command{
-		loopOutCommand, loopInCommand, termsCommand,
-		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
-		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
-		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
-		getInfoCommand, abandonSwapCommand, reservationsCommands,
-		instantOutCommand, listInstantOutsCommand,
-	}
+	app.Commands = commands
 
 	err := app.Run(os.Args)
 	if err != nil {
@@ -277,6 +307,12 @@ func displayInDetails(req *looprpc.QuoteRequest,
 			"included.\nSufficient fees will need to be paid " +
 			"when constructing the transaction in the external " +
 			"wallet.\n\n")
+	}
+
+	if req.DepositOutpoints != nil {
+		fmt.Printf("On-chain fees for static address loop-ins are not " +
+			"included.\nThey were already paid when the deposits " +
+			"were created.\n\n")
 	}
 
 	printQuoteInResp(req, resp, verbose)

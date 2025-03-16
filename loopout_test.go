@@ -181,7 +181,7 @@ func testLateHtlcPublish(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&lnd.LndServices, store, server)
+	cfg := newSwapConfig(&lnd.LndServices, store, server, nil)
 
 	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
 
@@ -282,7 +282,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, loopdb.NewStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -522,7 +522,7 @@ func testPreimagePush(t *testing.T) {
 	)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, loopdb.NewStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -786,7 +786,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 	testReq.Expiry = lnd.Height + 20
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, loopdb.NewStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -940,7 +940,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	)
 
 	cfg := newSwapConfig(
-		&lnd.LndServices, loopdb.NewStoreMock(t), server,
+		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
 	)
 
 	initResult, err := newLoopOutSwap(

@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+service AssetsSwapServer {
+    // QuoteAssetLoopOut requests a quote for an asset loop out swap from the
+    // server.
+    rpc QuoteAssetLoopOut (QuoteAssetLoopOutRequest)
+        returns (QuoteAssetLoopOutResponse);
+
+    // ListAvailableAssets returns the list of assets that the server supports.
+    rpc ListAvailableAssets (ListAvailableAssetsRequest)
+        returns (ListAvailableAssetsResponse);
+
+    // RequestAssetLoopOut requests an asset loop out swap from the server.
+    rpc RequestAssetLoopOut (RequestAssetLoopOutRequest)
+        returns (RequestAssetLoopOutResponse);
+
+    // PollAssetLoopOutProof requests the server to poll for the proof of the
+    // asset loop out swap.
+    rpc PollAssetLoopOutProof (PollAssetLoopOutProofRequest)
+        returns (PollAssetLoopOutProofResponse);
+
+    // RequestAssetBuy requests an asset buy swap from the server. This
+    // requires an already confirmed asset output on chain.
+    rpc RequestAssetBuy (RequestAssetBuyRequest)
+        returns (RequestAssetBuyResponse);
+
+    // RequestMusig2Sweep requests a musig2 sweep from the server.
+    rpc RequestMusig2Sweep (RequestMusig2SweepRequest)
+        returns (RequestMusig2SweepResponse);
+}
+
+message QuoteAssetLoopOutRequest {
+    // amount is the amount of the asset to loop out.
+    uint64 amount = 1;
+
+    // asset is the asset to loop out.
+    bytes asset = 2;
+}
+
+message QuoteAssetLoopOutResponse {
+    // fixed_prepay_amt is the fixed prepay amount of the swap.
+    uint64 fixed_prepay_amt = 1;
+
+    // swap_fee_rate is the fee rate that is added to the swap invoice.
+    double swap_fee_rate = 2;
+
+    // current_sats_per_asset_unit is the sats per asset unit of the swap.
+    uint64 current_sats_per_asset_unit = 3;
+}
+
+message ListAvailableAssetsRequest {
+}
+
+message ListAvailableAssetsResponse {
+    // assets is the list of assets that the server supports.
+    repeated AssetInfo assets = 1;
+}
+
+message AssetInfo {
+    bytes asset_id = 1;
+    uint64 current_sats_per_asset_unit = 2;
+}
+
+message RequestAssetLoopOutRequest {
+    // amount is the amount of the asset to loop out.
+    uint64 amount = 1;
+
+    // receiver_key is the public key of the receiver.
+    bytes receiver_key = 2;
+
+    // requested_asset is the asset to loop out.
+    bytes requested_asset = 3;
+}
+
+message RequestAssetLoopOutResponse {
+    // swap_hash is the main identifier of the swap.
+    bytes swap_hash = 1;
+
+    // prepay_invoice is the invoice to pay to start the swap. On accepted
+    // the server will publish the htlc output.
+    string prepay_invoice = 2;
+
+    // expiry is the expiry of the htlc output.
+    int64 expiry = 3;
+
+    // sender_pubkey is the public key of the sender.
+    bytes sender_pubkey = 4;
+}
+
+message PollAssetLoopOutProofRequest {
+    // swap_hash is the main identifier of the swap.
+    bytes swap_hash = 1;
+}
+
+message PollAssetLoopOutProofResponse {
+    // raw_proof_file is the raw proof file of the swap.
+    bytes raw_proof_file = 1;
+}
+
+message RequestAssetBuyRequest {
+    // swap_hash is the main identifier of the swap.
+    bytes swap_hash = 1;
+}
+
+message RequestAssetBuyResponse {
+    // swap_invoice is the invoice to pay to receive the preimage to claim the
+    // asset.
+    string swap_invoice = 1;
+}
+
+message RequestMusig2SweepRequest {
+    // swap_hash is the main identifier of the swap.
+    bytes swap_hash = 1;
+    // digest is that the client wants the server to sign.
+    bytes digest = 2;
+    // receiver_nonce is the nonce of the receiver.
+    bytes receiver_nonce = 3;
+    // roothash is the roothash we tweak the musig2 pubkey with.
+    bytes roothash = 4;
+}
+
+message RequestMusig2SweepResponse {
+    // sender_nonce is the nonce of the sender.
+    bytes sender_nonce = 1;
+    // sender_sig is the signature of the sender.
+    bytes sender_sig = 2;
+}

@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+import "swapserverrpc/common.proto";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/looprpc";
+
+service AssetsClient {
+    rpc SwapOut (SwapOutRequest) returns (SwapOutResponse);
+    rpc ListAssetSwaps (ListAssetSwapsRequest) returns (ListAssetSwapsResponse);
+    rpc ClientListAvailableAssets (ClientListAvailableAssetsRequest)
+        returns (ClientListAvailableAssetsResponse);
+    rpc ClientGetAssetSwapOutQuote (ClientGetAssetSwapOutQuoteRequest)
+        returns (ClientGetAssetSwapOutQuoteResponse);
+}
+
+message SwapOutRequest {
+    uint64 amt = 1;
+    bytes asset = 2;
+}
+
+message SwapOutResponse {
+    AssetSwapStatus swap_status = 1;
+}
+
+message ListAssetSwapsRequest {
+}
+
+message ListAssetSwapsResponse {
+    repeated AssetSwapStatus swap_status = 1;
+}
+
+message AssetSwapStatus {
+    bytes swap_hash = 1;
+    string swap_status = 2;
+}
+
+message ClientListAvailableAssetsRequest {
+}
+
+message ClientListAvailableAssetsResponse {
+    repeated Asset available_assets = 1;
+}
+
+message Asset {
+    bytes asset_id = 1;
+    string name = 2;
+    uint64 sats_per_unit = 3;
+}
+
+message ClientGetAssetSwapOutQuoteRequest {
+    uint64 amt = 1;
+    bytes asset = 2;
+}
+
+message ClientGetAssetSwapOutQuoteResponse {
+    double swap_fee = 1;
+    uint64 prepay_amt = 2;
+    uint64 sats_per_unit = 3;
+}
