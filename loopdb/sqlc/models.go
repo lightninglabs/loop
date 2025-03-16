@@ -9,6 +9,39 @@ import (
 	"time"
 )
 
+type AssetOutSwap struct {
+	SwapHash     []byte
+	RawProofFile []byte
+}
+
+type AssetSwap struct {
+	ID                      int32
+	SwapHash                []byte
+	SwapPreimage            []byte
+	AssetID                 []byte
+	Amt                     int64
+	SenderPubkey            []byte
+	ReceiverPubkey          []byte
+	CsvExpiry               int32
+	ServerKeyFamily         int64
+	ServerKeyIndex          int64
+	InitiationHeight        int32
+	CreatedTime             time.Time
+	HtlcConfirmationHeight  int32
+	HtlcTxid                []byte
+	HtlcVout                int32
+	SweepTxid               []byte
+	SweepConfirmationHeight int32
+	SweepPkscript           []byte
+}
+
+type AssetSwapsUpdate struct {
+	ID              int32
+	SwapHash        []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type Deposit struct {
 	ID                    int32
 	DepositID             []byte
