@@ -201,6 +201,8 @@ type Config struct {
 	Tapd *assets.TapdConfig `group:"tapd" namespace:"tapd"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`
+
+	TapdConfig *assets.TapdConfig `group:"tapd" namespace:"tapd"`
 }
 
 const (

@@ -98,6 +98,8 @@ type swapClientServer struct {
 	withdrawalManager    *withdraw.Manager
 	staticLoopInManager  *loopin.Manager
 	assetClient          *assets.TapdClient
+	assetManager         *assets.AssetsSwapManager
+	assetsServer         *assets.AssetsClientServer
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
 	statusChan           chan loop.SwapInfo
