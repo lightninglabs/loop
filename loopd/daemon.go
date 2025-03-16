@@ -248,6 +248,8 @@ func (d *Daemon) startWebServers() error {
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
 
+	loop_looprpc.RegisterAssetsClientServer(d.grpcServer, d.assetsServer)
+
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
 
@@ -494,6 +496,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient.Conn,
 	)
 
+	// Create a assets server client.
+	assetsClient := loop_swaprpc.NewAssetsSwapServerClient(
+		swapClient.Conn,
+	)
+
 	// Both the client RPC server and the swap server client should stop
 	// on main context cancel. So we create it early and pass it down.
 	d.mainCtx, d.mainCtxCancel = context.WithCancel(context.Background())
@@ -643,6 +650,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
+		assetManager       *assets.AssetsSwapManager
+		assetClientServer  *assets.AssetsClientServer
 	)
 
 	// Create the reservation and instantout managers.
@@ -683,6 +692,27 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		instantOutManager = instantout.NewInstantOutManager(
 			instantOutConfig, int32(blockHeight),
 		)
+
+		tapdClient, err := assets.NewTapdClient(
+			d.cfg.Tapd,
+		)
+		if err != nil {
+			return err
+		}
+		assetsStore := assets.NewPostgresStore(baseDb)
+		assetsConfig := &assets.Config{
+			ServerClient:         assetsClient,
+			Store:                assetsStore,
+			AssetClient:          tapdClient,
+			LndClient:            d.lnd.Client,
+			Router:               d.lnd.Router,
+			ChainNotifier:        d.lnd.ChainNotifier,
+			Signer:               d.lnd.Signer,
+			Wallet:               d.lnd.WalletKit,
+			ExchangeRateProvider: assets.NewFixedExchangeRateProvider(),
+		}
+		assetManager = assets.NewAssetSwapServer(assetsConfig)
+		assetClientServer = assets.NewAssetsServer(assetManager)
 	}
 
 	// Now finally fully initialize the swap client RPC server instance.
@@ -703,6 +733,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		withdrawalManager:    withdrawalManager,
 		staticLoopInManager:  staticLoopInManager,
 		assetClient:          d.assetClient,
+		assetManager:         assetManager,
+		assetsServer:         assetClientServer,
 	}
 
 	// Retrieve all currently existing swaps from the database.
@@ -897,6 +929,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager.WaitInitComplete()
 	}
 
+	// Start the asset manager.
+	if d.assetManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			infof("Starting asset manager")
+			defer infof("Asset manager stopped")
+			err := d.assetManager.Run(d.mainCtx, int32(getInfo.BlockHeight))
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		}()
+	}
+
 	// Last, start our internal error handler. This will return exactly one
 	// error or nil on the main error channel to inform the caller that
 	// something went wrong or that shutdown is complete. We don't add to
@@ -942,6 +988,9 @@ func (d *Daemon) Stop() {
 
 // stop does the actual shutdown and blocks until all goroutines have exit.
 func (d *Daemon) stop() {
+	// Sleep a second in order to fix a blocking issue when having a
+	// startup error.
+	<-time.After(time.Second)
 	// First of all, we can cancel the main context that all event handlers
 	// are using. This should stop all swap activity and all event handlers
 	// should exit.
@@ -959,6 +1008,7 @@ func (d *Daemon) stop() {
 	if d.restServer != nil {
 		// Don't return the error here, we first want to give everything
 		// else a chance to shut down cleanly.
+
 		err := d.restServer.Close()
 		if err != nil {
 			errorf("Error stopping REST server: %v", err)
