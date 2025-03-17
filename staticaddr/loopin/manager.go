@@ -360,7 +360,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		// We'll clean up the session if we don't get to signing.
 		defer func() {
 			err = m.cfg.Signer.MuSig2Cleanup(
-				ctx, musig2Session.SessionID,
+				context.WithoutCancel(ctx),
+				musig2Session.SessionID,
 			)
 			if err != nil {
 				log.Errorf("Error cleaning up musig2 session: "+

@@ -418,7 +418,9 @@ func (f *FSM) cleanUpSessions(ctx context.Context,
 	sessions []*input.MuSig2SessionInfo) {
 
 	for _, s := range sessions {
-		err := f.cfg.Signer.MuSig2Cleanup(ctx, s.SessionID)
+		err := f.cfg.Signer.MuSig2Cleanup(
+			context.WithoutCancel(ctx), s.SessionID,
+		)
 		if err != nil {
 			f.Warnf("unable to cleanup musig2 session: %v", err)
 		}
