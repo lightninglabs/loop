@@ -35,7 +35,7 @@ func (s testSweeper) GetSweepFeeDetails(ctx context.Context,
 		return 0, 0, 0, fmt.Errorf("zero sweepConfTarget")
 
 	case sweepConfTarget == 1:
-		feeRate = 30000
+		return 0, 0, 0, fmt.Errorf("sweepConfTarget is 1")
 
 	case sweepConfTarget == 2:
 		feeRate = 25000
@@ -213,8 +213,8 @@ func TestLoopOutSweepFeerateProvider(t *testing.T) {
 			height:          800_999,
 			amount:          1_000_000,
 			protocolVersion: loopdb.ProtocolVersionMuSig2,
-			wantConfTarget:  1,
-			wantFeeRate:     33000,
+			wantConfTarget:  2,
+			wantFeeRate:     27500,
 		},
 		{
 			name:            "expired",
@@ -222,8 +222,8 @@ func TestLoopOutSweepFeerateProvider(t *testing.T) {
 			height:          801_000,
 			amount:          1_000_000,
 			protocolVersion: loopdb.ProtocolVersionMuSig2,
-			wantConfTarget:  1,
-			wantFeeRate:     33000,
+			wantConfTarget:  2,
+			wantFeeRate:     27500,
 		},
 	}
 

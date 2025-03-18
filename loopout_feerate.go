@@ -136,14 +136,14 @@ func (p *loopOutSweepFeerateProvider) GetConfTargetAndFeeRate(
 	// opens for the client to sweep.
 	blocksUntilExpiry := contract.CltvExpiry - height
 
-	// Find confTarget. If the sweep has expired, use confTarget=1, because
-	// confTarget must be positive.
+	// Find confTarget. If the sweep has expired, use confTarget=2, because
+	// fee estimator fails if confTarget < 2.
 	confTarget := blocksUntilExpiry
-	if confTarget <= 0 {
+	if confTarget < 2 {
 		log.Infof("Swap %x has expired (blocksUntilExpiry=%d), using "+
-			"confTarget=1 for it.", swapHash[:6], blocksUntilExpiry)
+			"confTarget=2 for it.", swapHash[:6], blocksUntilExpiry)
 
-		confTarget = 1
+		confTarget = 2
 	}
 
 	feeFactor := float64(1.0)
