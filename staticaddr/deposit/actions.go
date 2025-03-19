@@ -147,12 +147,9 @@ func (f *FSM) SweptExpiredDepositAction(ctx context.Context,
 	case <-ctx.Done():
 		return fsm.OnError
 
-	default:
-		f.finalizedDepositChan <- f.deposit.OutPoint
-		ctx.Done()
+	case f.finalizedDepositChan <- f.deposit.OutPoint:
+		return fsm.NoOp
 	}
-
-	return fsm.NoOp
 }
 
 // FinalizeDepositAction is the final action after a withdrawal. It signals to
@@ -164,9 +161,7 @@ func (f *FSM) FinalizeDepositAction(ctx context.Context,
 	case <-ctx.Done():
 		return fsm.OnError
 
-	default:
-		f.finalizedDepositChan <- f.deposit.OutPoint
+	case f.finalizedDepositChan <- f.deposit.OutPoint:
+		return fsm.NoOp
 	}
-
-	return fsm.NoOp
 }
