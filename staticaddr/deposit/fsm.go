@@ -297,6 +297,9 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		Withdrawing: fsm.State{
 			Transitions: fsm.Transitions{
 				OnWithdrawn: Withdrawn,
+				// OnWithdrawInitiated is sent if a fee bump was
+				// requested and the withdrawal was republished.
+				OnWithdrawInitiated: Withdrawing,
 				// Upon recovery, we go back to the Deposited
 				// state. The deposit by then has a withdrawal
 				// address stamped to it which will cause it to
@@ -358,7 +361,8 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		Withdrawn: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry: Expired,
+				OnExpiry:    Expired,
+				OnWithdrawn: Withdrawn,
 			},
 			Action: f.FinalizeDepositAction,
 		},
