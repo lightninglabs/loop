@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // migrateUpdates migrates the swap updates to add an additional level of

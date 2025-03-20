@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // migrateLastHop migrates the database to v03, replacing the never used loop in

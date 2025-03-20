@@ -66,7 +66,7 @@ func needSqlMigration(cfg *Config) bool {
 	// any deleted files occasionally (reboot, etc).
 	sqliteDBPath := filepath.Join(cfg.DataDir, "loop_sqlite.db")
 	if lnrpc.FileExists(sqliteDBPath) {
-		log.Infof("Found sqlite db at %v, skipping migration",
+		infof("Found sqlite db at %v, skipping migration",
 			sqliteDBPath)
 
 		return false

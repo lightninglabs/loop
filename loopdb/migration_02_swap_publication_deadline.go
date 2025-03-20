@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // migrateSwapPublicationDeadline migrates the database to v02, by adding the

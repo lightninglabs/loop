@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
@@ -106,7 +107,7 @@ type Manager struct {
 	errChan chan error
 
 	// initiationHeight stores the currently best known block height.
-	initiationHeight uint32
+	initiationHeight atomic.Uint32
 
 	// finalizedWithdrawalTx are the finalized withdrawal transactions that
 	// are published to the network and re-published on block arrivals.
@@ -114,8 +115,8 @@ type Manager struct {
 }
 
 // NewManager creates a new deposit withdrawal manager.
-func NewManager(cfg *ManagerConfig) *Manager {
-	return &Manager{
+func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
+	m := &Manager{
 		cfg:                      cfg,
 		initChan:                 make(chan struct{}),
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
@@ -123,12 +124,13 @@ func NewManager(cfg *ManagerConfig) *Manager {
 		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
 		errChan:                  make(chan error),
 	}
+	m.initiationHeight.Store(currentHeight)
+
+	return m
 }
 
 // Run runs the deposit withdrawal manager.
-func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
-	m.initiationHeight = currentHeight
-
+func (m *Manager) Run(ctx context.Context) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
@@ -479,7 +481,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 	confChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 		ctx, &txHash, withdrawalPkScript, MinConfs,
-		int32(m.initiationHeight),
+		int32(m.initiationHeight.Load()),
 	)
 	if err != nil {
 		return err
