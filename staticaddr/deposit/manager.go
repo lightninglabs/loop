@@ -136,19 +136,31 @@ func (m *Manager) Run(ctx context.Context, currentHeight uint32) error {
 		select {
 		case height := <-newBlockChan:
 			// Inform all active deposits about a new block arrival.
+			m.mu.Lock()
+			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
 			for _, fsm := range m.activeDeposits {
+				activeDeposits = append(activeDeposits, fsm)
+			}
+			m.mu.Unlock()
+
+			for _, fsm := range activeDeposits {
 				select {
 				case fsm.blockNtfnChan <- uint32(height):
+
+				case <-fsm.quitChan:
+					continue
 
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
+
 		case outpoint := <-m.finalizedDepositChan:
-			// If deposits notify us about their finalization, we
-			// update the manager's internal state and flush the
-			// finalized deposit from memory.
+			// If deposits notify us about their finalization, flush
+			// the finalized deposit from memory.
+			m.mu.Lock()
 			delete(m.activeDeposits, outpoint)
+			m.mu.Unlock()
 
 		case err = <-newBlockErrChan:
 			return err
@@ -197,7 +209,9 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 			}
 		}()
 
+		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
+		m.mu.Unlock()
 	}
 
 	return nil
