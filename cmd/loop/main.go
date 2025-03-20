@@ -51,26 +51,30 @@ var (
 	defaultInitiator = "loop-cli"
 
 	loopDirFlag = cli.StringFlag{
-		Name:  "loopdir",
-		Value: loopd.LoopDirBase,
-		Usage: "path to loop's base directory",
+		Name:   "loopdir",
+		Value:  loopd.LoopDirBase,
+		Usage:  "path to loop's base directory",
+		EnvVar: envVarLoopDir,
 	}
 	networkFlag = cli.StringFlag{
 		Name: "network, n",
 		Usage: "the network loop is running on e.g. mainnet, " +
 			"testnet, etc.",
-		Value: loopd.DefaultNetwork,
+		Value:  loopd.DefaultNetwork,
+		EnvVar: envVarNetwork,
 	}
 
 	tlsCertFlag = cli.StringFlag{
-		Name:  "tlscertpath",
-		Usage: "path to loop's TLS certificate",
-		Value: loopd.DefaultTLSCertPath,
+		Name:   "tlscertpath",
+		Usage:  "path to loop's TLS certificate",
+		Value:  loopd.DefaultTLSCertPath,
+		EnvVar: envVarTLSCertPath,
 	}
 	macaroonPathFlag = cli.StringFlag{
-		Name:  "macaroonpath",
-		Usage: "path to macaroon file",
-		Value: loopd.DefaultMacaroonPath,
+		Name:   "macaroonpath",
+		Usage:  "path to macaroon file",
+		Value:  loopd.DefaultMacaroonPath,
+		EnvVar: envVarMacaroonPath,
 	}
 	verboseFlag = cli.BoolFlag{
 		Name:  "verbose, v",
@@ -116,6 +120,13 @@ const (
 	// prints out as,
 	//      Conf target:                                    9 block
 	blkFmt = "%-36s %12d block\n"
+
+	// Environment variables names that can be used to set the global flags.
+	envVarRPCServer    = "LOOPCLI_RPCSERVER"
+	envVarNetwork      = "LOOPCLI_NETWORK"
+	envVarLoopDir      = "LOOPCLI_LOOPDIR"
+	envVarTLSCertPath  = "LOOPCLI_TLSCERTPATH"
+	envVarMacaroonPath = "LOOPCLI_MACAROONPATH"
 )
 
 func printJSON(resp interface{}) {
@@ -156,9 +167,10 @@ func main() {
 	app.Usage = "control plane for your loopd"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "rpcserver",
-			Value: "localhost:11010",
-			Usage: "loopd daemon address host:port",
+			Name:   "rpcserver",
+			Value:  "localhost:11010",
+			Usage:  "loopd daemon address host:port",
+			EnvVar: envVarRPCServer,
 		},
 		networkFlag,
 		loopDirFlag,
