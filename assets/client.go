@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightninglabs/taproot-assets/tapcfg"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
@@ -182,6 +183,75 @@ func (c *TapdClient) GetAssetName(ctx context.Context,
 	c.assetNameCache[assetIdStr] = assetName
 
 	return assetName, nil
+}
+
+// GetAssetPrice returns the price of an asset in satoshis. NOTE: this currently
+// uses the rfq process for the asset price. A future implementation should
+// use a price oracle to not spam a peer.
+func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
+	peerPubkey []byte, assetAmt uint64, paymentMaxAmt btcutil.Amount) (
+	btcutil.Amount, error) {
+
+	// We'll allow a short rfq expiry as we'll only use this rfq to
+	// gauge a price.
+	rfqExpiry := time.Now().Add(time.Minute).Unix()
+
+	msatAmt := lnwire.NewMSatFromSatoshis(paymentMaxAmt)
+
+	// First we'll rfq a random peer for the asset.
+	rfq, err := c.RfqClient.AddAssetSellOrder(
+		ctx, &rfqrpc.AddAssetSellOrderRequest{
+			AssetSpecifier: &rfqrpc.AssetSpecifier{
+				Id: &rfqrpc.AssetSpecifier_AssetIdStr{
+					AssetIdStr: assetID,
+				},
+			},
+			PaymentMaxAmt:  uint64(msatAmt),
+			Expiry:         uint64(rfqExpiry),
+			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
+			PeerPubKey:     peerPubkey,
+		})
+	if err != nil {
+		return 0, err
+	}
+	if rfq == nil {
+		return 0, fmt.Errorf("no RFQ response")
+	}
+
+	if rfq.GetInvalidQuote() != nil {
+		return 0, fmt.Errorf("peer %v sent an invalid quote response %v for "+
+			"asset %v", peerPubkey, rfq.GetInvalidQuote(), assetID)
+	}
+
+	if rfq.GetRejectedQuote() != nil {
+		return 0, fmt.Errorf("peer %v rejected the quote request for "+
+			"asset %v, %v", peerPubkey, assetID, rfq.GetRejectedQuote())
+	}
+
+	acceptedRes := rfq.GetAcceptedQuote()
+	if acceptedRes == nil {
+		return 0, fmt.Errorf("no accepted quote")
+	}
+
+	// We'll use the accepted quote to calculate the price.
+	return getSatsFromAssetAmt(assetAmt, acceptedRes.BidAssetRate)
+}
+
+// getSatsFromAssetAmt returns the amount in satoshis for the given asset amount
+// and asset rate.
+func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
+	btcutil.Amount, error) {
+
+	rateFP, err := rfqrpc.UnmarshalFixedPoint(assetRate)
+	if err != nil {
+		return 0, fmt.Errorf("cannot unmarshal asset rate: %w", err)
+	}
+
+	assetUnits := rfqmath.NewBigIntFixedPoint(assetAmt, 0)
+
+	msatAmt := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
+
+	return msatAmt.ToSatoshis(), nil
 }
 
 // getPaymentMaxAmount returns the milisat amount we are willing to pay for the

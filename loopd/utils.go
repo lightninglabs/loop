@@ -151,6 +151,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		LoopInTerms:          client.LoopInTerms,
 		LoopOutTerms:         client.LoopOutTerms,
+		GetAssetPrice:        client.AssetClient.GetAssetPrice,
 		MinimumConfirmations: minConfTarget,
 		PutLiquidityParams:   client.Store.PutLiquidityParams,
 		FetchLiquidityParams: client.Store.FetchLiquidityParams,
