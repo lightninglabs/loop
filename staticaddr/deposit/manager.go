@@ -131,19 +131,31 @@ func (m *Manager) Run(ctx context.Context) error {
 		select {
 		case height := <-newBlockChan:
 			// Inform all active deposits about a new block arrival.
+			m.mu.Lock()
+			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
 			for _, fsm := range m.activeDeposits {
+				activeDeposits = append(activeDeposits, fsm)
+			}
+			m.mu.Unlock()
+
+			for _, fsm := range activeDeposits {
 				select {
 				case fsm.blockNtfnChan <- uint32(height):
+
+				case <-fsm.quitChan:
+					continue
 
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
+
 		case outpoint := <-m.finalizedDepositChan:
-			// If deposits notify us about their finalization, we
-			// update the manager's internal state and flush the
-			// finalized deposit from memory.
+			// If deposits notify us about their finalization, flush
+			// the finalized deposit from memory.
+			m.mu.Lock()
 			delete(m.activeDeposits, outpoint)
+			m.mu.Unlock()
 
 		case err = <-newBlockErrChan:
 			return err
@@ -192,7 +204,9 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 			}
 		}()
 
+		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
+		m.mu.Unlock()
 	}
 
 	return nil
@@ -488,9 +502,9 @@ func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
 // TransitionDeposits allows a caller to transition a set of deposits to a new
 // state.
 // Caveat: The action triggered by the state transitions should not compute
-// heavy things or call external endpoints that can block for a long time.
-// Deposits will be released if a transition takes longer than
-// DefaultTransitionTimeout which is set to 5 seconds.
+// heavy things or call external endpoints that can block for a long time as
+// this function blocks until the expectedFinalState is reached. The default
+// timeout for the transition is set to DefaultTransitionTimeout.
 func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	event fsm.EventType, expectedFinalState fsm.StateType) error {
 
@@ -500,9 +514,9 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	stateMachines, _ := m.toActiveDeposits(&outpoints)
+	m.mu.Unlock()
+
 	if stateMachines == nil {
 		return fmt.Errorf("deposits not found in active deposits")
 	}

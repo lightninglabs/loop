@@ -141,6 +141,11 @@ type FSM struct {
 
 	blockNtfnChan chan uint32
 
+	// quitChan stops after the FSM stops consuming blockNtfnChan.
+	quitChan chan struct{}
+
+	// finalizedDepositChan is used to signal that the deposit has been
+	// finalized and the FSM can be removed from the manager's memory.
 	finalizedDepositChan chan wire.OutPoint
 }
 
@@ -167,6 +172,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		params:               params,
 		address:              address,
 		blockNtfnChan:        make(chan uint32),
+		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
 
@@ -191,10 +197,12 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 
 	depoFsm.ActionEntryFunc = depoFsm.updateDeposit
 
-	go func() {
+	go func(fsm *FSM) {
+		defer close(fsm.quitChan)
+
 		for {
 			select {
-			case currentHeight := <-depoFsm.blockNtfnChan:
+			case currentHeight := <-fsm.blockNtfnChan:
 				depoFsm.handleBlockNotification(
 					ctx, currentHeight,
 				)
@@ -203,7 +211,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 				return
 			}
 		}
-	}()
+	}(depoFsm)
 
 	return depoFsm, nil
 }
