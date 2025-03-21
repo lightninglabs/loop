@@ -378,11 +378,6 @@ func (f *FSM) updateDeposit(ctx context.Context,
 		return
 	}
 
-	f.Debugf("NextState: %v, PreviousState: %v, Event: %v",
-		notification.NextState, notification.PreviousState,
-		notification.Event,
-	)
-
 	type checkStateFunc func(state fsm.StateType) bool
 	type setStateFunc func(state fsm.StateType)
 	checkFunc := checkStateFunc(f.deposit.IsInState)
@@ -396,6 +391,11 @@ func (f *FSM) updateDeposit(ctx context.Context,
 	if isUpdateSkipped(notification, checkFunc) {
 		return
 	}
+
+	f.Debugf("NextState: %v, PreviousState: %v, Event: %v",
+		notification.NextState, notification.PreviousState,
+		notification.Event,
+	)
 
 	err := f.cfg.Store.UpdateDeposit(ctx, f.deposit)
 	if err != nil {
