@@ -1,6 +1,7 @@
 module github.com/lightninglabs/loop/looprpc
 
-go 1.22.3
+go 1.23.6
+
 toolchain go1.23.7
 
 require (
