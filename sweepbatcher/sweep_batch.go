@@ -649,7 +649,7 @@ func (b *batch) Run(ctx context.Context) error {
 	blockChan, blockErrChan, err :=
 		b.chainNotifier.RegisterBlockEpochNtfn(runCtx)
 	if err != nil {
-		return err
+		return fmt.Errorf("block registration error: %w", err)
 	}
 
 	// Set currentHeight here, because it may be needed in monitorSpend.
@@ -658,7 +658,8 @@ func (b *batch) Run(ctx context.Context) error {
 		b.Debugf("initial height for the batch is %v", b.currentHeight)
 
 	case <-runCtx.Done():
-		return runCtx.Err()
+		return fmt.Errorf("context expired while waiting for current "+
+			"height: %w", runCtx.Err())
 	}
 
 	// If a primary sweep exists we immediately start monitoring for its
@@ -667,7 +668,7 @@ func (b *batch) Run(ctx context.Context) error {
 		sweep := b.sweeps[b.primarySweepID]
 		err := b.monitorSpend(runCtx, sweep)
 		if err != nil {
-			return err
+			return fmt.Errorf("monitorSpend error: %w", err)
 		}
 	}
 
@@ -742,17 +743,21 @@ func (b *batch) Run(ctx context.Context) error {
 
 			err := b.publish(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("publish error: %w", err)
 			}
 
 		case spend := <-b.spendChan:
 			err := b.handleSpend(runCtx, spend.SpendingTx)
 			if err != nil {
-				return err
+				return fmt.Errorf("handleSpend error: %w", err)
 			}
 
 		case <-b.confChan:
-			return b.handleConf(runCtx)
+			if err := b.handleConf(runCtx); err != nil {
+				return fmt.Errorf("handleConf error: %w", err)
+			}
+
+			return nil
 
 		case <-b.reorgChan:
 			b.state = Open
@@ -761,7 +766,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 			err := b.monitorSpend(ctx, b.sweeps[b.primarySweepID])
 			if err != nil {
-				return err
+				return fmt.Errorf("monitorSpend error: %w", err)
 			}
 
 		case testReq := <-b.testReqs:
@@ -769,13 +774,14 @@ func (b *batch) Run(ctx context.Context) error {
 			close(testReq.quit)
 
 		case err := <-blockErrChan:
-			return err
+			return fmt.Errorf("blocks monitoring error: %w", err)
 
 		case err := <-b.errChan:
-			return err
+			return fmt.Errorf("error with the batch: %w", err)
 
 		case <-runCtx.Done():
-			return runCtx.Err()
+			return fmt.Errorf("batch context expired: %w",
+				runCtx.Err())
 		}
 	}
 }
@@ -1555,7 +1561,10 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 				return
 
 			case err := <-spendErr:
-				b.writeToErrChan(err)
+				b.writeToErrChan(
+					fmt.Errorf("spend error: %w", err),
+				)
+
 				return
 
 			case <-ctx.Done():
@@ -1595,10 +1604,13 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 
 				case <-ctx.Done():
 				}
+
 				return
 
 			case err := <-errChan:
-				b.writeToErrChan(err)
+				b.writeToErrChan(fmt.Errorf("confirmations "+
+					"monitoring error: %w", err))
+
 				return
 
 			case <-reorgChan:

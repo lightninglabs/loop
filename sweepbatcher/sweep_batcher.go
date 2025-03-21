@@ -770,7 +770,9 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 
 		err := batch.Run(ctx)
 		if err != nil {
-			_ = b.writeToErrChan(ctx, err)
+			b.writeToErrChan(
+				ctx, fmt.Errorf("new batch failed: %w", err),
+			)
 		}
 	}()
 
@@ -856,7 +858,9 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 		err := newBatch.Run(ctx)
 		if err != nil {
-			_ = b.writeToErrChan(ctx, err)
+			b.writeToErrChan(
+				ctx, fmt.Errorf("db batch failed: %w", err),
+			)
 		}
 	}()
 
@@ -973,7 +977,10 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 				case <-ctx.Done():
 				}
 
-				_ = b.writeToErrChan(ctx, err)
+				b.writeToErrChan(
+					ctx, fmt.Errorf("spend error: %w", err),
+				)
+
 				return
 
 			case <-notifier.QuitChan:
@@ -988,13 +995,10 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	return nil
 }
 
-func (b *Batcher) writeToErrChan(ctx context.Context, err error) error {
+func (b *Batcher) writeToErrChan(ctx context.Context, err error) {
 	select {
 	case b.errChan <- err:
-		return nil
-
 	case <-ctx.Done():
-		return ctx.Err()
 	}
 }
 
