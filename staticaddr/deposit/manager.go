@@ -507,9 +507,9 @@ func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
 // TransitionDeposits allows a caller to transition a set of deposits to a new
 // state.
 // Caveat: The action triggered by the state transitions should not compute
-// heavy things or call external endpoints that can block for a long time.
-// Deposits will be released if a transition takes longer than
-// DefaultTransitionTimeout which is set to 5 seconds.
+// heavy things or call external endpoints that can block for a long time as
+// this function blocks until the expectedFinalState is reached. The default
+// timeout for the transition is set to DefaultTransitionTimeout.
 func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	event fsm.EventType, expectedFinalState fsm.StateType) error {
 
@@ -519,9 +519,9 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	stateMachines, _ := m.toActiveDeposits(&outpoints)
+	m.mu.Unlock()
+
 	if stateMachines == nil {
 		return fmt.Errorf("deposits not found in active deposits")
 	}
