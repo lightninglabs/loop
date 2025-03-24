@@ -45,7 +45,7 @@ func run() error {
 
 	case "reservation":
 		reservationFSM := &reservation.FSM{}
-		err = writeMermaidFile(fp, reservationFSM.GetReservationStates())
+		err = writeMermaidFile(fp, reservationFSM.GetServerInitiatedReservationStates())
 		if err != nil {
 			return err
 		}

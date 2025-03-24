@@ -657,6 +657,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			ChainNotifier:       d.lnd.ChainNotifier,
 			ReservationClient:   reservationClient,
 			NotificationManager: notificationManager,
+			LightningClient:     d.lnd.Client,
+			RouterClient:        d.lnd.Router,
 		}
 
 		reservationManager = reservation.NewManager(

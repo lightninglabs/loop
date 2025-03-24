@@ -37,7 +37,7 @@ func TestManager(t *testing.T) {
 	<-initChan
 
 	// Create a new reservation.
-	reservationFSM, err := testContext.manager.newReservation(
+	reservationFSM, err := testContext.manager.newReservationFromNtfn(
 		ctxb, uint32(testContext.mockLnd.Height),
 		&swapserverrpc.ServerReservationNotification{
 			ReservationId: defaultReservationId[:],
