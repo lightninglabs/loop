@@ -594,12 +594,14 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return err
 	}
 
+	usableChannels := make([]lndclient.ChannelInfo, 0, len(channels))
 	localTotal := btcutil.Amount(0)
 	for _, channel := range channels {
 		if channelIsCustom(channel) {
 			continue
 		}
 		localTotal += channel.LocalBalance
+		usableChannels = append(usableChannels, channel)
 	}
 
 	// Since we're only autolooping-out we need to check if we are below
