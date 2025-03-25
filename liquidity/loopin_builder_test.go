@@ -184,7 +184,7 @@ func TestLoopinBuildSwap(t *testing.T) {
 		swap, err := builder.buildSwap(
 			context.Background(), peer1, []lnwire.ShortChannelID{
 				chan1,
-			}, swapAmt, params,
+			}, swapAmt, params, nil,
 		)
 		assert.Equal(t, testCase.expectedSwap, swap)
 		assert.Equal(t, testCase.expectedErr, err)

@@ -62,7 +62,8 @@ type swapBuilder interface {
 	// is just for a dry run.
 	buildSwap(ctx context.Context, peer route.Vertex,
 		channels []lnwire.ShortChannelID, amount btcutil.Amount,
-		params Parameters) (swapSuggestion, error)
+		params Parameters, swapOpts ...buildSwapOption) (swapSuggestion,
+		error)
 }
 
 // swapSuggestion is an interface implemented by suggested swaps for our

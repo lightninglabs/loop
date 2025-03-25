@@ -1207,6 +1207,29 @@ message LiquidityParameters {
     The address type of the account specified in the account field.
     */
     AddressType account_addr_type = 24;
+
+    /*
+    A map of asset parameters to use for swaps. The key is the asset id and the
+    value is the parameters to use for swaps in that asset.
+    */
+    map<string, EasyAssetAutoloopParams> easy_asset_params = 25;
+}
+
+message EasyAssetAutoloopParams {
+    /*
+    Set to true to enable easy autoloop for this asset. If set the client will
+    automatically dispatch swaps in order to meet the configured local balance
+    target size. Currently only loop out is supported, meaning that easy
+    autoloop can only reduce the funds that are held as balance in channels.
+    */
+    bool enabled = 1;
+
+    /*
+    The local balance target size, expressed in the asset's base units. This is
+    used by easy autoloop to determine how much liquidity should be maintained
+    in channels.
+    */
+    uint64 local_target_asset_amt = 2;
 }
 
 enum LiquidityRuleType {

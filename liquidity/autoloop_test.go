@@ -1,6 +1,9 @@
 package liquidity
 
 import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -11,11 +14,14 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
+
+const p2wkhAddr = "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
 
 // TestAutoLoopDisabled tests the case where we need to perform a swap, but
 // autoloop is not enabled.
@@ -335,7 +341,6 @@ func TestAutoloopAddress(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
 	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
@@ -1260,7 +1265,6 @@ func TestEasyAutoloop(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
 	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
@@ -1519,4 +1523,357 @@ func existingInFromRequest(in *loop.LoopInRequest, initTime time.Time,
 			ExternalHtlc:   in.ExternalHtlc,
 		},
 	}
+}
+
+// TestEasyAssetAutoloop tests that the easy asset autoloop logic works as
+// expected. This involves testing that channels are correctly selected and
+// that the balance target is successfully met.
+func TestEasyAssetAutoloop(t *testing.T) {
+	defer test.Guard(t)
+
+	// Common variables for asset tests.
+	assetId := [32]byte{0x01}
+	assetStr := hex.EncodeToString(assetId[:])
+	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	require.NoError(t, err)
+
+	// Sub-test 1: Single asset channel.
+	t.Run("single asset channel", func(t *testing.T) {
+		// Prepare a channel with asset custom data.
+		customChanData := rfqmsg.JsonAssetChannel{
+			Assets: []rfqmsg.JsonAssetChanInfo{
+				{
+					AssetInfo: rfqmsg.JsonAssetUtxo{
+						AssetGenesis: rfqmsg.JsonAssetGenesis{
+							AssetID: assetStr,
+						},
+					},
+					LocalBalance:  950000,
+					RemoteBalance: 0,
+					Capacity:      100000,
+				},
+			},
+		}
+		customChanDataBytes, err := json.Marshal(customChanData)
+		require.NoError(t, err)
+
+		assetChan := lndclient.ChannelInfo{
+			Active:            true,
+			ChannelID:         chanID1.ToUint64(),
+			PubKeyBytes:       peer1,
+			LocalBalance:      95000,
+			RemoteBalance:     0,
+			Capacity:          100000,
+			CustomChannelData: customChanDataBytes,
+		}
+
+		channels := []lndclient.ChannelInfo{assetChan}
+		params := Parameters{
+			Autoloop:                  true,
+			DestAddr:                  addr,
+			AutoFeeBudget:             36000,
+			AutoFeeRefreshPeriod:      time.Hour * 3,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
+			HtlcConfTarget:            defaultHtlcConfTarget,
+			FeeLimit:                  defaultFeePortion(),
+			AssetAutoloopParams: map[string]AssetParams{
+				assetStr: {
+					EnableEasyOut:          true,
+					LocalTargetAssetAmount: 75000,
+				},
+			},
+		}
+
+		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+		// For testing, simply return asset units 1:1 to satoshis.
+		assetPriceFunc := func(ctx context.Context, assetId string,
+			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
+			btcutil.Amount, error) {
+
+			return btcutil.Amount(assetAmt), nil
+		}
+		c.manager.cfg.GetAssetPrice = assetPriceFunc
+		c.start()
+
+		// In this scenario we expect a swap of maxAmt (here chosen as 50000)
+		// on our single asset channel.
+		maxAmt := 50000
+		chanSwap := &loop.OutRequest{
+			Amount:          btcutil.Amount(maxAmt),
+			DestAddr:        addr,
+			OutgoingChanSet: loopdb.ChannelSet{assetChan.ChannelID},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+		quotesOut := []quoteRequestResp{
+			{
+				request: &loop.LoopOutQuoteRequest{
+					Amount: btcutil.Amount(maxAmt),
+					AssetRFQRequest: &loop.AssetRFQRequest{
+						AssetId:       assetId[:],
+						AssetEdgeNode: []byte("edge"),
+					},
+				},
+				quote: &loop.LoopOutQuote{
+					SwapFee:      1,
+					PrepayAmount: 1,
+					MinerFee:     1,
+					LoopOutRfq: &loop.LoopOutRfq{
+						PrepayRfqId: []byte("prepay"),
+						SwapRfqId:   []byte("swap"),
+					},
+				},
+			},
+		}
+		expectedOut := []loopOutRequestResp{
+			{
+				request: chanSwap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+		step := &easyAutoloopStep{
+			minAmt:      1,
+			maxAmt:      btcutil.Amount(maxAmt),
+			quotesOut:   quotesOut,
+			expectedOut: expectedOut,
+		}
+		c.easyautoloop(step, false)
+		c.stop()
+	})
+
+	// Sub-test 2: Two asset channels.
+	t.Run("two asset channels", func(t *testing.T) {
+		// Reuse the same custom channel data for both channels.
+		customChanData := rfqmsg.JsonAssetChannel{
+			Assets: []rfqmsg.JsonAssetChanInfo{
+				{
+					AssetInfo: rfqmsg.JsonAssetUtxo{
+						AssetGenesis: rfqmsg.JsonAssetGenesis{
+							AssetID: assetStr,
+						},
+					},
+					LocalBalance:  950000,
+					RemoteBalance: 0,
+					Capacity:      100000,
+				},
+			},
+		}
+		customChanDataBytes1, err := json.Marshal(customChanData)
+		require.NoError(t, err)
+
+		customChanData.Assets[0].LocalBalance = 1050000
+		customChanDataBytes2, err := json.Marshal(customChanData)
+		require.NoError(t, err)
+
+		// Create two asset channels with different local balances.
+		assetChan1 := lndclient.ChannelInfo{
+			Active:            true,
+			ChannelID:         chanID1.ToUint64(),
+			PubKeyBytes:       peer1,
+			CustomChannelData: customChanDataBytes1,
+		}
+		assetChan2 := lndclient.ChannelInfo{
+			Active:            true,
+			ChannelID:         chanID2.ToUint64(), // different channel ID
+			PubKeyBytes:       peer2,
+			CustomChannelData: customChanDataBytes2,
+		}
+
+		channels := []lndclient.ChannelInfo{assetChan1, assetChan2}
+		params := Parameters{
+			Autoloop:                  true,
+			DestAddr:                  addr,
+			AutoFeeBudget:             36000,
+			AutoFeeRefreshPeriod:      time.Hour * 3,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
+			HtlcConfTarget:            defaultHtlcConfTarget,
+			FeeLimit:                  defaultFeePortion(),
+			AssetAutoloopParams: map[string]AssetParams{
+				assetStr: {
+					EnableEasyOut:          true,
+					LocalTargetAssetAmount: 75000,
+				},
+			},
+		}
+
+		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+		assetPriceFunc := func(ctx context.Context, assetId string,
+			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
+			btcutil.Amount, error) {
+
+			return btcutil.Amount(assetAmt), nil
+		}
+		c.manager.cfg.GetAssetPrice = assetPriceFunc
+		c.start()
+
+		// Expect a swap on the channel with the higher local balance (assetChan2).
+		maxAmt := 40000
+		chanSwap := &loop.OutRequest{
+			Amount:          btcutil.Amount(maxAmt),
+			DestAddr:        addr,
+			OutgoingChanSet: loopdb.ChannelSet{assetChan2.ChannelID},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+		quotesOut := []quoteRequestResp{
+			{
+				request: &loop.LoopOutQuoteRequest{
+					Amount: btcutil.Amount(maxAmt),
+					AssetRFQRequest: &loop.AssetRFQRequest{
+						AssetId:       assetId[:],
+						AssetEdgeNode: []byte("edge"),
+					},
+				},
+				quote: &loop.LoopOutQuote{
+					SwapFee:      1,
+					PrepayAmount: 1,
+					MinerFee:     1,
+					LoopOutRfq: &loop.LoopOutRfq{
+						PrepayRfqId: []byte("prepay"),
+						SwapRfqId:   []byte("swap"),
+					},
+				},
+			},
+		}
+		expectedOut := []loopOutRequestResp{
+			{
+				request: chanSwap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+		step := &easyAutoloopStep{
+			minAmt:      1,
+			maxAmt:      btcutil.Amount(maxAmt),
+			quotesOut:   quotesOut,
+			expectedOut: expectedOut,
+		}
+		c.easyautoloop(step, false)
+		c.stop()
+	})
+
+	// Sub-test 3: Mixed asset and non-asset channels.
+	t.Run("non asset and normal channel", func(t *testing.T) {
+		// Create an asset channel with custom asset data.
+		customChanData := rfqmsg.JsonAssetChannel{
+			Assets: []rfqmsg.JsonAssetChanInfo{
+				{
+					AssetInfo: rfqmsg.JsonAssetUtxo{
+						AssetGenesis: rfqmsg.JsonAssetGenesis{
+							AssetID: assetStr,
+						},
+					},
+					LocalBalance:  950000,
+					RemoteBalance: 0,
+					Capacity:      100000,
+				},
+			},
+		}
+		customChanDataBytes, err := json.Marshal(customChanData)
+		require.NoError(t, err)
+		assetChan := lndclient.ChannelInfo{
+			Active:            true,
+			ChannelID:         chanID1.ToUint64(),
+			PubKeyBytes:       peer1,
+			LocalBalance:      95000,
+			RemoteBalance:     0,
+			Capacity:          100000,
+			CustomChannelData: customChanDataBytes,
+		}
+
+		// Create a normal channel (no custom channel data).
+		normalChan := lndclient.ChannelInfo{
+			Active:        true,
+			ChannelID:     chanID2.ToUint64(),
+			PubKeyBytes:   peer1,
+			LocalBalance:  100000,
+			RemoteBalance: 0,
+			Capacity:      100000,
+		}
+
+		channels := []lndclient.ChannelInfo{assetChan, normalChan}
+		params := Parameters{
+			Autoloop:                  true,
+			DestAddr:                  addr,
+			AutoFeeBudget:             36000,
+			AutoFeeRefreshPeriod:      time.Hour * 3,
+			AutoloopBudgetLastRefresh: testBudgetStart,
+			MaxAutoInFlight:           2,
+			FailureBackOff:            time.Hour,
+			SweepConfTarget:           10,
+			HtlcConfTarget:            defaultHtlcConfTarget,
+			FeeLimit:                  defaultFeePortion(),
+			AssetAutoloopParams: map[string]AssetParams{
+				assetStr: {
+					EnableEasyOut:          true,
+					LocalTargetAssetAmount: 75000,
+				},
+			},
+		}
+
+		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
+		assetPriceFunc := func(ctx context.Context, assetId string,
+			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
+			btcutil.Amount, error) {
+
+			return btcutil.Amount(assetAmt), nil
+		}
+		c.manager.cfg.GetAssetPrice = assetPriceFunc
+		c.start()
+
+		maxAmtAsset := 50000
+
+		assetSwap := &loop.OutRequest{
+			Amount:          btcutil.Amount(maxAmtAsset),
+			DestAddr:        addr,
+			OutgoingChanSet: loopdb.ChannelSet{assetChan.ChannelID},
+			Label:           labels.AutoloopLabel(swap.TypeOut),
+			Initiator:       autoloopSwapInitiator,
+		}
+		quotesOut := []quoteRequestResp{
+			{
+				request: &loop.LoopOutQuoteRequest{
+					Amount: btcutil.Amount(maxAmtAsset),
+					AssetRFQRequest: &loop.AssetRFQRequest{
+						AssetId:       assetId[:],
+						AssetEdgeNode: []byte("edge"),
+					},
+				},
+				quote: &loop.LoopOutQuote{
+					SwapFee:      1,
+					PrepayAmount: 1,
+					MinerFee:     1,
+					LoopOutRfq: &loop.LoopOutRfq{
+						PrepayRfqId: []byte("prepay"),
+						SwapRfqId:   []byte("swap"),
+					},
+				},
+			},
+		}
+		expectedOut := []loopOutRequestResp{
+			{
+				request: assetSwap,
+				response: &loop.LoopOutSwapInfo{
+					SwapHash: lntypes.Hash{1},
+				},
+			},
+		}
+		step := &easyAutoloopStep{
+			minAmt:      1,
+			maxAmt:      50000,
+			quotesOut:   quotesOut,
+			expectedOut: expectedOut,
+		}
+		c.easyautoloop(step, false)
+		c.stop()
+	})
 }

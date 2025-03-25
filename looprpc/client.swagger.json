@@ -884,6 +884,20 @@
         }
       }
     },
+    "looprpcEasyAssetAutoloopParams": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Set to true to enable easy autoloop for this asset. If set the client will\nautomatically dispatch swaps in order to meet the configured local balance\ntarget size. Currently only loop out is supported, meaning that easy\nautoloop can only reduce the funds that are held as balance in channels."
+        },
+        "local_target_asset_amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The local balance target size, expressed in the asset's base units. This is\nused by easy autoloop to determine how much liquidity should be maintained\nin channels."
+        }
+      }
+    },
     "looprpcFailureReason": {
       "type": "string",
       "enum": [
@@ -1255,6 +1269,13 @@
         "account_addr_type": {
           "$ref": "#/definitions/looprpcAddressType",
           "description": "The address type of the account specified in the account field."
+        },
+        "easy_asset_params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/looprpcEasyAssetAutoloopParams"
+          },
+          "description": "A map of asset parameters to use for swaps. The key is the asset id and the\nvalue is the parameters to use for swaps in that asset."
         }
       }
     },
