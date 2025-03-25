@@ -35,7 +35,7 @@ func (q *Queries) DropBatch(ctx context.Context, id int32) error {
 
 const getBatchSweeps = `-- name: GetBatchSweeps :many
 SELECT
-        id, swap_hash, batch_id, outpoint_txid, outpoint_index, amt, completed
+        id, swap_hash, batch_id, outpoint, amt, completed
 FROM
         sweeps
 WHERE
@@ -57,8 +57,7 @@ func (q *Queries) GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, e
 			&i.ID,
 			&i.SwapHash,
 			&i.BatchID,
-			&i.OutpointTxid,
-			&i.OutpointIndex,
+			&i.Outpoint,
 			&i.Amt,
 			&i.Completed,
 		); err != nil {
@@ -101,11 +100,11 @@ FROM
 JOIN
         sweeps ON sweep_batches.id = sweeps.batch_id
 WHERE
-        sweeps.swap_hash = $1
+        sweeps.outpoint = $1
 `
 
-func (q *Queries) GetParentBatch(ctx context.Context, swapHash []byte) (SweepBatch, error) {
-	row := q.db.QueryRowContext(ctx, getParentBatch, swapHash)
+func (q *Queries) GetParentBatch(ctx context.Context, outpoint string) (SweepBatch, error) {
+	row := q.db.QueryRowContext(ctx, getParentBatch, outpoint)
 	var i SweepBatch
 	err := row.Scan(
 		&i.ID,
@@ -125,11 +124,11 @@ SELECT
 FROM
     (SELECT false AS false_value) AS f
 LEFT JOIN
-    sweeps s ON s.swap_hash = $1
+    sweeps s ON s.outpoint = $1
 `
 
-func (q *Queries) GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error) {
-	row := q.db.QueryRowContext(ctx, getSweepStatus, swapHash)
+func (q *Queries) GetSweepStatus(ctx context.Context, outpoint string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, getSweepStatus, outpoint)
 	var completed bool
 	err := row.Scan(&completed)
 	return completed, err
@@ -251,8 +250,7 @@ const upsertSweep = `-- name: UpsertSweep :exec
 INSERT INTO sweeps (
         swap_hash,
         batch_id,
-        outpoint_txid,
-        outpoint_index,
+        outpoint,
         amt,
         completed
 ) VALUES (
@@ -260,31 +258,25 @@ INSERT INTO sweeps (
         $2,
         $3,
         $4,
-        $5,
-        $6
-) ON CONFLICT (swap_hash) DO UPDATE SET
+        $5
+) ON CONFLICT (outpoint) DO UPDATE SET
         batch_id = $2,
-        outpoint_txid = $3,
-        outpoint_index = $4,
-        amt = $5,
-        completed = $6
+        completed = $5
 `
 
 type UpsertSweepParams struct {
-	SwapHash      []byte
-	BatchID       int32
-	OutpointTxid  []byte
-	OutpointIndex int32
-	Amt           int64
-	Completed     bool
+	SwapHash  []byte
+	BatchID   int32
+	Outpoint  string
+	Amt       int64
+	Completed bool
 }
 
 func (q *Queries) UpsertSweep(ctx context.Context, arg UpsertSweepParams) error {
 	_, err := q.db.ExecContext(ctx, upsertSweep,
 		arg.SwapHash,
 		arg.BatchID,
-		arg.OutpointTxid,
-		arg.OutpointIndex,
+		arg.Outpoint,
 		arg.Amt,
 		arg.Completed,
 	)

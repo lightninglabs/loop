@@ -79,11 +79,12 @@ type BatcherStore interface {
 	UpsertSweep(ctx context.Context, sweep *dbSweep) error
 
 	// GetSweepStatus returns the completed status of the sweep.
-	GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (bool, error)
+	GetSweepStatus(ctx context.Context,
+		outpoint wire.OutPoint) (bool, error)
 
 	// GetParentBatch returns the parent batch of a (completed) sweep.
-	GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (*dbBatch,
-		error)
+	GetParentBatch(ctx context.Context,
+		outpoint wire.OutPoint) (*dbBatch, error)
 
 	// TotalSweptAmount returns the total amount swept by a (confirmed)
 	// batch.
@@ -135,8 +136,10 @@ type SweepInfo struct {
 
 // SweepFetcher is used to get details of a sweep.
 type SweepFetcher interface {
-	// FetchSweep returns details of the sweep with the given hash.
-	FetchSweep(ctx context.Context, hash lntypes.Hash) (*SweepInfo, error)
+	// FetchSweep returns details of the sweep with the given hash or
+	// outpoint. The outpoint is used if hash is not unique.
+	FetchSweep(ctx context.Context, hash lntypes.Hash,
+		outpoint wire.OutPoint) (*SweepInfo, error)
 }
 
 // MuSig2SignSweep is a function that can be used to sign a sweep transaction
@@ -611,7 +614,7 @@ func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
 func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	notifier *SpendNotifier) error {
 
-	completed, err := b.store.GetSweepStatus(ctx, sweep.swapHash)
+	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
 	if err != nil {
 		return err
 	}
@@ -626,7 +629,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 		// Verify that the parent batch is confirmed. Note that a batch
 		// is only considered confirmed after it has received three
 		// on-chain confirmations to prevent issues caused by reorgs.
-		parentBatch, err := b.store.GetParentBatch(ctx, sweep.swapHash)
+		parentBatch, err := b.store.GetParentBatch(ctx, sweep.outpoint)
 		if err != nil {
 			errorf("unable to get parent batch for sweep %x:"+
 				" %v", sweep.swapHash[:6], err)
@@ -656,7 +659,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// Check if the sweep is already in a batch. If that is the case, we
 	// provide the sweep to that batch and return.
 	for _, batch := range b.batches {
-		if batch.sweepExists(sweep.swapHash) {
+		if batch.sweepExists(sweep.outpoint) {
 			accepted, err := batch.addSweep(ctx, sweep)
 			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 				return err
@@ -803,7 +806,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 
 	primarySweep := dbSweeps[0]
 
-	sweeps := make(map[lntypes.Hash]sweep)
+	sweeps := make(map[wire.OutPoint]sweep)
 
 	// Collect feeRate from sweeps and stored batch.
 	feeRate := batch.rbfCache.FeeRate
@@ -814,7 +817,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 			return err
 		}
 
-		sweeps[sweep.swapHash] = *sweep
+		sweeps[sweep.outpoint] = *sweep
 
 		// Set minFeeRate to max(sweep.minFeeRate) for all sweeps.
 		if feeRate < sweep.minFeeRate {
@@ -834,7 +837,7 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	batchKit.batchTxid = batch.batchTxid
 	batchKit.batchPkScript = batch.batchPkScript
 	batchKit.state = batch.state
-	batchKit.primaryID = primarySweep.SwapHash
+	batchKit.primaryID = primarySweep.Outpoint
 	batchKit.sweeps = sweeps
 	batchKit.rbfCache = rbfCache
 	batchKit.log = logger
@@ -1031,9 +1034,10 @@ type SwapStoreWrapper struct {
 }
 
 // FetchSweep returns details of the sweep with the given hash.
+// In LoopOut case, swap hashes are unique.
 // Implements SweepFetcher interface.
 func (f *SwapStoreWrapper) FetchSweep(ctx context.Context,
-	swapHash lntypes.Hash) (*SweepInfo, error) {
+	swapHash lntypes.Hash, _ wire.OutPoint) (*SweepInfo, error) {
 
 	swap, err := f.swapStore.FetchLoopOutSwap(ctx, swapHash)
 	if err != nil {
@@ -1094,7 +1098,7 @@ func (b *Batcher) fetchSweep(ctx context.Context,
 func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 	outpoint wire.OutPoint, value btcutil.Amount) (*sweep, error) {
 
-	s, err := b.sweepStore.FetchSweep(ctx, swapHash)
+	s, err := b.sweepStore.FetchSweep(ctx, swapHash, outpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch sweep data for %x: %w",
 			swapHash[:6], err)

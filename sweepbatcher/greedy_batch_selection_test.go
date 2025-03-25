@@ -5,6 +5,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -206,8 +208,14 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 // for batches.
 func TestEstimateBatchWeight(t *testing.T) {
 	// Useful variables reused in test cases.
-	swapHash1 := lntypes.Hash{1, 1, 1}
-	swapHash2 := lntypes.Hash{2, 2, 2}
+	outpoint1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1, 1},
+		Index: 1,
+	}
+	outpoint2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2, 2},
+		Index: 2,
+	}
 	se2 := testHtlcV2SuccessEstimator
 	se3 := testHtlcV3SuccessEstimator
 	trAddr := (*btcutil.AddressTaproot)(nil)
@@ -224,8 +232,8 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 					},
 				},
@@ -244,11 +252,11 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 					},
-					swapHash2: {
+					outpoint2: {
 						htlcSuccessEstimator: se3,
 					},
 				},
@@ -267,11 +275,11 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se2,
 					},
-					swapHash2: {
+					outpoint2: {
 						htlcSuccessEstimator: se3,
 					},
 				},
@@ -290,12 +298,12 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se2,
 						nonCoopHint:          true,
 					},
-					swapHash2: {
+					outpoint2: {
 						htlcSuccessEstimator: se3,
 						nonCoopHint:          true,
 					},
@@ -315,8 +323,8 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: highFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 					},
 				},
@@ -335,11 +343,11 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 					},
-					swapHash2: {
+					outpoint2: {
 						htlcSuccessEstimator: se3,
 						nonCoopHint:          true,
 					},
@@ -359,11 +367,11 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 					},
-					swapHash2: {
+					outpoint2: {
 						htlcSuccessEstimator: se3,
 						coopFailed:           true,
 					},
@@ -383,8 +391,8 @@ func TestEstimateBatchWeight(t *testing.T) {
 				rbfCache: rbfCache{
 					FeeRate: lowFeeRate,
 				},
-				sweeps: map[lntypes.Hash]sweep{
-					swapHash1: {
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
 						htlcSuccessEstimator: se3,
 						isExternalAddr:       true,
 						destAddr:             trAddr,

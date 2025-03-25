@@ -32,7 +32,7 @@ type Querier interface {
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
 	GetMigration(ctx context.Context, migrationID string) (MigrationTracker, error)
-	GetParentBatch(ctx context.Context, swapHash []byte) (SweepBatch, error)
+	GetParentBatch(ctx context.Context, outpoint string) (SweepBatch, error)
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)
 	GetReservations(ctx context.Context) ([]Reservation, error)
@@ -40,7 +40,7 @@ type Querier interface {
 	GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byte) (GetStaticAddressLoopInSwapRow, error)
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context, dollar_1 sql.NullString) ([]GetStaticAddressLoopInSwapsByStatesRow, error)
 	GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUpdate, error)
-	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
+	GetSweepStatus(ctx context.Context, outpoint string) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
