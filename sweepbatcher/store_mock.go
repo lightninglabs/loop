@@ -7,13 +7,13 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/btcsuite/btcd/wire"
 )
 
 // StoreMock implements a mock client swap store.
 type StoreMock struct {
 	batches map[int32]dbBatch
-	sweeps  map[lntypes.Hash]dbSweep
+	sweeps  map[wire.OutPoint]dbSweep
 	mu      sync.Mutex
 }
 
@@ -21,7 +21,7 @@ type StoreMock struct {
 func NewStoreMock() *StoreMock {
 	return &StoreMock{
 		batches: make(map[int32]dbBatch),
-		sweeps:  make(map[lntypes.Hash]dbSweep),
+		sweeps:  make(map[wire.OutPoint]dbSweep),
 	}
 }
 
@@ -122,19 +122,19 @@ func (s *StoreMock) UpsertSweep(ctx context.Context, sweep *dbSweep) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.sweeps[sweep.SwapHash] = *sweep
+	s.sweeps[sweep.Outpoint] = *sweep
 
 	return nil
 }
 
 // GetSweepStatus returns the status of a sweep.
 func (s *StoreMock) GetSweepStatus(ctx context.Context,
-	swapHash lntypes.Hash) (bool, error) {
+	outpoint wire.OutPoint) (bool, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sweep, ok := s.sweeps[swapHash]
+	sweep, ok := s.sweeps[outpoint]
 	if !ok {
 		return false, nil
 	}
@@ -148,23 +148,23 @@ func (s *StoreMock) Close() error {
 }
 
 // AssertSweepStored asserts that a sweep is stored.
-func (s *StoreMock) AssertSweepStored(id lntypes.Hash) bool {
+func (s *StoreMock) AssertSweepStored(outpoint wire.OutPoint) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, ok := s.sweeps[id]
+	_, ok := s.sweeps[outpoint]
 	return ok
 }
 
 // GetParentBatch returns the parent batch of a swap.
-func (s *StoreMock) GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
-	*dbBatch, error) {
+func (s *StoreMock) GetParentBatch(ctx context.Context,
+	outpoint wire.OutPoint) (*dbBatch, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, sweep := range s.sweeps {
-		if sweep.SwapHash == swapHash {
+		if sweep.Outpoint == outpoint {
 			batch, ok := s.batches[sweep.BatchID]
 			if !ok {
 				return nil, errors.New("batch not found")
