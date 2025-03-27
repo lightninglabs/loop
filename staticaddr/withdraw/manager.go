@@ -16,6 +16,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -564,11 +565,17 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 	// Publish the withdrawal sweep transaction.
 	err := m.cfg.WalletKit.PublishTransaction(ctx, tx, txLabel)
 	if err != nil {
-		if !strings.Contains(err.Error(), "output already spent") &&
-			!strings.Contains(err.Error(), "insufficient fee") {
+		if !strings.Contains(err.Error(), chain.ErrSameNonWitnessData.Error()) &&
+			!strings.Contains(err.Error(), "output already spent") &&
+			!strings.Contains(err.Error(), chain.ErrInsufficientFee.Error()) {
 
 			return false, err
 		} else {
+			if strings.Contains(err.Error(), "output already spent") {
+				log.Warnf("output already spent, tx %v, %v",
+					tx.TxHash(), err)
+			}
+
 			return false, nil
 		}
 	} else {
