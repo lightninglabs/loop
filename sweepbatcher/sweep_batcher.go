@@ -165,6 +165,21 @@ type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
 type FeeRateProvider func(ctx context.Context,
 	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
 
+// InitialDelayProvider returns the duration after which a newly created batch
+// is first published. It allows to customize the duration based on total value
+// of the batch. There is a trade-off between better grouping and getting funds
+// faster. If the function returns an error, no delay is used and the error is
+// logged as a warning.
+type InitialDelayProvider func(ctx context.Context, numSweeps int,
+	value btcutil.Amount) (time.Duration, error)
+
+// zeroInitialDelay returns no delay for any sweeps.
+func zeroInitialDelay(_ context.Context, _ int,
+	_ btcutil.Amount) (time.Duration, error) {
+
+	return 0, nil
+}
+
 // PublishErrorHandler is a function that handles transaction publishing error.
 type PublishErrorHandler func(err error, errMsg string, log btclog.Logger)
 
@@ -299,13 +314,13 @@ type Batcher struct {
 	// clock provides methods to work with time and timers.
 	clock clock.Clock
 
-	// initialDelay is the delay of first batch publishing after creation.
-	// It only affects newly created batches, not batches loaded from DB,
-	// so publishing does happen in case of a daemon restart (especially
-	// important in case of a crashloop). If a sweep is about to expire
-	// (time until timeout is less that 2x initialDelay), then waiting is
-	// skipped.
-	initialDelay time.Duration
+	// initialDelayProvider provides the delay of first batch publishing
+	// after creation. It only affects newly created batches, not batches
+	// loaded from DB, so publishing does happen in case of a daemon restart
+	// (especially important in case of a crashloop). If a sweep is about to
+	// expire (time until timeout is less that 2x initialDelay), then
+	// waiting is skipped.
+	initialDelayProvider InitialDelayProvider
 
 	// publishDelay is the delay of batch publishing that is applied in the
 	// beginning, after the appearance of a new block in the network or
@@ -339,13 +354,13 @@ type BatcherConfig struct {
 	// clock provides methods to work with time and timers.
 	clock clock.Clock
 
-	// initialDelay is the delay of first batch publishing after creation.
-	// It only affects newly created batches, not batches loaded from DB,
-	// so publishing does happen in case of a daemon restart (especially
-	// important in case of a crashloop). If a sweep is about to expire
-	// (time until timeout is less that 2x initialDelay), then waiting is
-	// skipped.
-	initialDelay time.Duration
+	// initialDelayProvider provides the delay of first batch publishing
+	// after creation. It only affects newly created batches, not batches
+	// loaded from DB, so publishing does happen in case of a daemon restart
+	// (especially important in case of a crashloop). If a sweep is about to
+	// expire (time until timeout is less that 2x initialDelay), then
+	// waiting is skipped.
+	initialDelayProvider InitialDelayProvider
 
 	// publishDelay is the delay of batch publishing that is applied in the
 	// beginning, after the appearance of a new block in the network or
@@ -390,9 +405,9 @@ func WithClock(clock clock.Clock) BatcherOption {
 // better grouping. Defaults to 0s (no initial delay). If a sweep is about
 // to expire (time until timeout is less that 2x initialDelay), then waiting
 // is skipped.
-func WithInitialDelay(initialDelay time.Duration) BatcherOption {
+func WithInitialDelay(provider InitialDelayProvider) BatcherOption {
 	return func(cfg *BatcherConfig) {
-		cfg.initialDelay = initialDelay
+		cfg.initialDelayProvider = provider
 	}
 }
 
@@ -478,27 +493,27 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	}
 
 	return &Batcher{
-		batches:             make(map[int32]*batch),
-		sweepReqs:           make(chan SweepRequest),
-		testReqs:            make(chan *testRequest),
-		errChan:             make(chan error, 1),
-		quit:                make(chan struct{}),
-		initDone:            make(chan struct{}),
-		wallet:              wallet,
-		chainNotifier:       chainNotifier,
-		signerClient:        signerClient,
-		musig2ServerSign:    musig2ServerSigner,
-		VerifySchnorrSig:    verifySchnorrSig,
-		chainParams:         chainparams,
-		store:               store,
-		sweepStore:          sweepStore,
-		clock:               cfg.clock,
-		initialDelay:        cfg.initialDelay,
-		publishDelay:        cfg.publishDelay,
-		customFeeRate:       cfg.customFeeRate,
-		txLabeler:           cfg.txLabeler,
-		customMuSig2Signer:  cfg.customMuSig2Signer,
-		publishErrorHandler: cfg.publishErrorHandler,
+		batches:              make(map[int32]*batch),
+		sweepReqs:            make(chan SweepRequest),
+		testReqs:             make(chan *testRequest),
+		errChan:              make(chan error, 1),
+		quit:                 make(chan struct{}),
+		initDone:             make(chan struct{}),
+		wallet:               wallet,
+		chainNotifier:        chainNotifier,
+		signerClient:         signerClient,
+		musig2ServerSign:     musig2ServerSigner,
+		VerifySchnorrSig:     verifySchnorrSig,
+		chainParams:          chainparams,
+		store:                store,
+		sweepStore:           sweepStore,
+		clock:                cfg.clock,
+		initialDelayProvider: cfg.initialDelayProvider,
+		publishDelay:         cfg.publishDelay,
+		customFeeRate:        cfg.customFeeRate,
+		txLabeler:            cfg.txLabeler,
+		customMuSig2Signer:   cfg.customMuSig2Signer,
+		publishErrorHandler:  cfg.publishErrorHandler,
 	}
 }
 
@@ -749,11 +764,10 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 		cfg.batchPublishDelay = b.publishDelay
 	}
 
-	if b.initialDelay < 0 {
-		return nil, fmt.Errorf("negative initialDelay: %v",
-			b.initialDelay)
+	cfg.initialDelayProvider = b.initialDelayProvider
+	if cfg.initialDelayProvider == nil {
+		cfg.initialDelayProvider = zeroInitialDelay
 	}
-	cfg.initialDelay = b.initialDelay
 
 	batchKit := b.newBatchKit()
 
@@ -847,6 +861,8 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	// Note that initialDelay and batchPublishDelay are 0 for batches
 	// recovered from DB so publishing happen in case of a daemon restart
 	// (especially important in case of a crashloop).
+	cfg.initialDelayProvider = zeroInitialDelay
+
 	newBatch, err := NewBatchFromDB(cfg, batchKit)
 	if err != nil {
 		return fmt.Errorf("failed in NewBatchFromDB: %w", err)

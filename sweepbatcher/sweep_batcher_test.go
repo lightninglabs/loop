@@ -920,6 +920,12 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		publishDelay = 3 * time.Second
 	)
 
+	initialDelayProvider := func(_ context.Context, _ int,
+		_ btcutil.Amount) (time.Duration, error) {
+
+		return initialDelay, nil
+	}
+
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -935,7 +941,8 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(initialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 
@@ -1010,7 +1017,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	wg2.Wait()
 
 	// Expect timer for initialDelay and publishDelay to be registered.
-	wantDelays := []time.Duration{initialDelay, publishDelay}
+	wantDelays := []time.Duration{publishDelay, initialDelay}
 	require.Equal(t, wantDelays, delays)
 
 	// Eventually the batch is launched.
@@ -1090,7 +1097,8 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	batcher = NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(initialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
@@ -1187,10 +1195,17 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// for an urgent sweep.
 	const largeInitialDelay = 6 * time.Hour
 
+	largeInitialDelayProvider := func(_ context.Context, _ int,
+		_ btcutil.Amount) (time.Duration, error) {
+
+		return largeInitialDelay, nil
+	}
+
 	batcher = NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(largeInitialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(largeInitialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
@@ -1302,7 +1317,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	wg5.Wait()
 
 	// Expect two timers: largeInitialDelay, publishDelay.
-	wantDelays = []time.Duration{largeInitialDelay, publishDelay}
+	wantDelays = []time.Duration{publishDelay, largeInitialDelay}
 	require.Equal(t, wantDelays, delays)
 
 	// Replace the logger in the batch with wrappedLogger to watch messages.
@@ -1362,6 +1377,228 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock by publishDelay. Don't wait largeInitialDelay.
+	now = now.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Wait for tx to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 2)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
+// testCustomDelays tests per-sweep customization in WithInitialDelay.
+func testCustomDelays(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	// Set initial delay and publish delay.
+	const (
+		initialDelay1 = 100 * time.Second
+		initialDelay2 = 4 * time.Second
+		publishDelay  = 3 * time.Second
+	)
+
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	swapHash2 := lntypes.Hash{2, 2, 2}
+
+	const (
+		swapSize1 = 111
+		swapSize2 = 222
+	)
+
+	// initialDelay returns initialDelay depending of batch size (sats).
+	initialDelayProvider := func(_ context.Context, numSweeps int,
+		value btcutil.Amount) (time.Duration, error) {
+
+		if value <= swapSize1 {
+			// Verify the number of sweeps.
+			if numSweeps != 1 {
+				return 0, fmt.Errorf("got unexpected number "+
+					"of sweeps: %d, want %d", numSweeps, 1)
+			}
+
+			return initialDelay1, nil
+		} else {
+			// Verify the number of sweeps.
+			if numSweeps != 2 {
+				return 0, fmt.Errorf("got unexpected number "+
+					"of sweeps: %d, want %d", numSweeps, 2)
+			}
+
+			return initialDelay2, nil
+		}
+	}
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	startTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
+	now := startTime
+	tickSignal := make(chan time.Duration)
+	testClock := clock.NewTestClockWithTickSignal(startTime, tickSignal)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
+		WithPublishDelay(publishDelay), WithClock(testClock),
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Value:    swapSize1,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1, 1},
+			Index: 1,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+	err = store.CreateLoopOut(ctx, swapHash1, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Expect two timers to be set: initialDelay and publishDelay,
+	// and RegisterSpend to be called. The order is not determined,
+	// so catch these actions from two separate goroutines.
+	var wg2 sync.WaitGroup
+
+	wg2.Add(1)
+	go func() {
+		defer wg2.Done()
+
+		// Since a batch was created we check that it registered for its
+		// primary sweep's spend.
+		<-lnd.RegisterSpendChannel
+	}()
+
+	wg2.Add(1)
+	var delays []time.Duration
+	go func() {
+		defer wg2.Done()
+
+		// Expect two timers: initialDelay and publishDelay.
+		delays = append(delays, <-tickSignal)
+		delays = append(delays, <-tickSignal)
+	}()
+
+	// Wait for RegisterSpend and for timer registrations.
+	wg2.Wait()
+
+	// Expect timer for initialDelay1 and publishDelay to be registered.
+	wantDelays := []time.Duration{publishDelay, initialDelay1}
+	require.Equal(t, wantDelays, delays)
+
+	// Eventually the batch is launched.
+	require.Eventually(t, func() bool {
+		return batcher.numBatches(ctx) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Now add swap 2, which has lower initialDelay.
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Value:    swapSize2,
+		Outpoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2, 2},
+			Index: 2,
+		},
+		Notifier: &dummyNotifier,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+	err = store.CreateLoopOut(ctx, swapHash2, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Expect timer for initialDelay2 to be registered, because
+	// initialDelay2 is lower than initialDelay1, meaning that swap2
+	// has higher priority than swap1.
+	require.Equal(t, initialDelay2, <-tickSignal)
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch1 := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch1.log(),
+	}
+	batch1.setLog(testLogger)
+
+	// Wait for publishDelay.
+	now = now.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Wait for batch publishing to be skipped, because initialDelay2
+	// has not ended.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Wait for initialDelay2.
+	now = now.Add(initialDelay2 - publishDelay)
+	testClock.SetTime(now)
+
+	// It should subscribe for publishDelay now.
+	require.Equal(t, publishDelay, <-tickSignal)
+
+	// Wait for publishDelay.
 	now = now.Add(publishDelay)
 	testClock.SetTime(now)
 
@@ -4047,6 +4284,11 @@ func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 // TestDelays tests that WithInitialDelay and WithPublishDelay work.
 func TestDelays(t *testing.T) {
 	runTests(t, testDelays)
+}
+
+// TestCustomDelays tests per-sweep customization in WithInitialDelay.
+func TestCustomDelays(t *testing.T) {
+	runTests(t, testCustomDelays)
 }
 
 // TestMaxSweepsPerBatch tests the limit on max number of sweeps per batch.

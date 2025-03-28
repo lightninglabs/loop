@@ -151,11 +151,13 @@ type batchConfig struct {
 	// clock provides methods to work with time and timers.
 	clock clock.Clock
 
-	// initialDelay is the delay of first batch publishing after creation.
-	// It only affects newly created batches, not batches loaded from DB,
-	// so publishing does happen in case of a daemon restart (especially
-	// important in case of a crashloop).
-	initialDelay time.Duration
+	// initialDelayProvider provides the delay of first batch publishing
+	// after creation. It only affects newly created batches, not batches
+	// loaded from DB, so publishing does happen in case of a daemon restart
+	// (especially important in case of a crashloop). If a sweep is about to
+	// expire (time until timeout is less that 2x initialDelay), then
+	// waiting is skipped.
+	initialDelayProvider InitialDelayProvider
 
 	// batchPublishDelay is the delay between receiving a new block or
 	// initial delay completion and publishing the batch transaction.
@@ -650,6 +652,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 	// Cache clock variable.
 	clock := b.cfg.clock
+	startTime := clock.Now()
 
 	blockChan, blockErrChan, err :=
 		b.chainNotifier.RegisterBlockEpochNtfn(runCtx)
@@ -679,17 +682,15 @@ func (b *batch) Run(ctx context.Context) error {
 
 	// skipBefore is the time before which we skip batch publishing.
 	// This is needed to facilitate better grouping of sweeps.
+	// The value is set only if the batch has at least one sweep.
 	// For batches loaded from DB initialDelay should be 0.
-	skipBefore := clock.Now().Add(b.cfg.initialDelay)
+	var skipBefore *time.Time
 
 	// initialDelayChan is a timer which fires upon initial delay end.
 	// If initialDelay is set to 0, it will not trigger to avoid setting up
 	// timerChan twice, which could lead to double publishing if
 	// batchPublishDelay is also 0.
 	var initialDelayChan <-chan time.Time
-	if b.cfg.initialDelay > 0 {
-		initialDelayChan = clock.TickAfter(b.cfg.initialDelay)
-	}
 
 	// We use a timer in order to not publish new transactions at the same
 	// time as the block epoch notification. This is done to prevent
@@ -703,6 +704,45 @@ func (b *batch) Run(ctx context.Context) error {
 		b.primarySweepID, len(b.sweeps))
 
 	for {
+		// If the batch is not empty, find earliest initialDelay.
+		var totalSweptAmt btcutil.Amount
+		for _, sweep := range b.sweeps {
+			totalSweptAmt += sweep.value
+		}
+
+		skipBeforeUpdated := false
+		if totalSweptAmt != 0 {
+			initialDelay, err := b.cfg.initialDelayProvider(
+				ctx, len(b.sweeps), totalSweptAmt,
+			)
+			if err != nil {
+				b.Warnf("InitialDelayProvider failed: %v. We "+
+					"publish this batch without a delay.",
+					err)
+				initialDelay = 0
+			}
+			if initialDelay < 0 {
+				b.Warnf("Negative delay: %v. We publish this "+
+					"batch without a delay.", initialDelay)
+				initialDelay = 0
+			}
+			delayStop := startTime.Add(initialDelay)
+			if skipBefore == nil || delayStop.Before(*skipBefore) {
+				skipBefore = &delayStop
+				skipBeforeUpdated = true
+			}
+		}
+
+		// Create new timer only if the value of skipBefore was updated.
+		// Don't create the timer if the delay is <= 0 to avoid double
+		// publishing if batchPublishDelay is also 0.
+		if skipBeforeUpdated {
+			delay := skipBefore.Sub(clock.Now())
+			if delay > 0 {
+				initialDelayChan = clock.TickAfter(delay)
+			}
+		}
+
 		select {
 		case <-b.callEnter:
 			<-b.callLeave
@@ -718,7 +758,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 		case <-initialDelayChan:
 			b.Debugf("initial delay of duration %v has ended",
-				b.cfg.initialDelay)
+				clock.Now().Sub(startTime))
 
 			// Set the timer to publish the batch transaction after
 			// the configured delay.
@@ -732,9 +772,15 @@ func (b *batch) Run(ctx context.Context) error {
 				continue
 			}
 
+			if skipBefore == nil {
+				b.Debugf("Skipping publishing, because " +
+					"the batch is empty.")
+				continue
+			}
+
 			// If the batch became urgent, skipBefore is set to now.
-			if b.isUrgent(skipBefore) {
-				skipBefore = clock.Now()
+			if b.isUrgent(*skipBefore) {
+				*skipBefore = clock.Now()
 			}
 
 			// Check that the initial delay has ended. We have also
@@ -742,7 +788,7 @@ func (b *batch) Run(ctx context.Context) error {
 			// initialDelayChan has just fired, this check passes.
 			now := clock.Now()
 			if skipBefore.After(now) {
-				b.Debugf(stillWaitingMsg, skipBefore, now)
+				b.Debugf(stillWaitingMsg, *skipBefore, now)
 				continue
 			}
 
