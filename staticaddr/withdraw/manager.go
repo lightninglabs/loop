@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -15,6 +16,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -26,10 +28,21 @@ import (
 )
 
 var (
-	// ErrWithdrawingInactiveDeposits is returned when the user tries to
-	// withdraw inactive deposits.
-	ErrWithdrawingInactiveDeposits = errors.New("deposits to be " +
-		"withdrawn are unknown or inactive")
+	// ErrWithdrawingMixedDeposits is returned when a withdrawal is
+	// requested for deposits in different states.
+	ErrWithdrawingMixedDeposits = errors.New("need to withdraw deposits " +
+		"having the same state, either all deposited or all " +
+		"withdrawing")
+
+	// ErrDiffPreviousWithdrawalTx signals that the user selected new
+	// deposits that have different previous withdrawal transactions.
+	ErrDiffPreviousWithdrawalTx = errors.New("can't bump fee for " +
+		"deposits with different previous withdrawal tx hash")
+
+	// ErrMissingPreviousWithdrawn is returned when the user tries to bump
+	// the fee for a subset of previously selected deposits to withdraw.
+	ErrMissingPreviousWithdrawn = errors.New("can't bump fee for subset " +
+		"of clustered deposits")
 
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered withdrawn.
@@ -91,6 +104,9 @@ type newWithdrawalResponse struct {
 // Manager manages the withdrawal state machines.
 type Manager struct {
 	cfg *ManagerConfig
+
+	// mu protects access to finalizedWithdrawalTxns.
+	mu sync.Mutex
 
 	// initChan signals the daemon that the withdrawal manager has completed
 	// its initialization.
@@ -237,19 +253,19 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 			return err
 		}
 
-		err = m.publishFinalizedWithdrawalTx(ctx, tx)
+		_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
 		if err != nil {
 			return err
 		}
 
-		err = m.handleWithdrawal(
-			ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
-		)
+		err = m.handleWithdrawal(ctx, deposits, tx.TxHash())
 		if err != nil {
 			return err
 		}
 
+		m.mu.Lock()
 		m.finalizedWithdrawalTxns[tx.TxHash()] = tx
+		m.mu.Unlock()
 	}
 
 	return nil
@@ -274,14 +290,65 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 			"withdraw, unconfirmed deposits can't be withdrawn")
 	}
 
+	var (
+		deposits       []*deposit.Deposit
+		allDeposited   bool
+		allWithdrawing bool
+	)
+
 	// Ensure that the deposits are in a state in which they can be
 	// withdrawn.
-	deposits, allActive := m.cfg.DepositManager.AllOutpointsActiveDeposits(
+	deposits, allDeposited = m.cfg.DepositManager.AllOutpointsActiveDeposits(
 		outpoints, deposit.Deposited,
 	)
 
-	if !allActive {
-		return "", "", ErrWithdrawingInactiveDeposits
+	// If not all passed outpoints are in state Deposited, we'll check if
+	// they are all in state Withdrawing. If they are, then the user is
+	// requesting a fee bump, if not we'll return an error as we only allow
+	// fee bumping deposits in state Withdrawing.
+	if !allDeposited {
+		deposits, allWithdrawing = m.cfg.DepositManager.AllOutpointsActiveDeposits(
+			outpoints, deposit.Withdrawing,
+		)
+
+		if !allWithdrawing {
+			return "", "", ErrWithdrawingMixedDeposits
+		}
+
+		// If republishing of an existing withdrawal is requested we
+		// ensure that all deposits remain clustered in the context of
+		// the same withdrawal tx. We do this by checking that they have
+		// the same previous withdrawal tx hash. This ensures that the
+		// shape of the transaction stays the same.
+		hash := deposits[0].FinalizedWithdrawalTx.TxHash()
+		for i := 1; i < len(deposits); i++ {
+			if deposits[i].FinalizedWithdrawalTx.TxHash() != hash {
+				return "", "", ErrDiffPreviousWithdrawalTx
+			}
+		}
+
+		// We also avoid that the user selects a subset of previously
+		// clustered deposits for a fee bump. This would result in a
+		// different transaction shape.
+		allDeposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
+			deposit.Withdrawing,
+		)
+		if err != nil {
+			return "", "", err
+		}
+
+		allDepositsWithHash := make(map[chainhash.Hash][]*deposit.Deposit)
+		for _, d := range allDeposits {
+			if d.FinalizedWithdrawalTx.TxHash() == hash {
+				allDepositsWithHash[hash] = append(
+					allDepositsWithHash[hash], d,
+				)
+			}
+		}
+
+		if len(allDepositsWithHash[hash]) != len(deposits) {
+			return "", "", ErrMissingPreviousWithdrawn
+		}
 	}
 
 	var (
@@ -315,6 +382,39 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
+	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
+	if err != nil {
+		return "", "", err
+	}
+
+	if !published {
+		return "", "", nil
+	}
+
+	// Start a goroutine that listens for the spent of the first deposit
+	// input of the withdrawal tx. Each fee bump creates a new spent
+	// notifier, so we can be sure to catch the confirmation of previous
+	// withdrawal tx versions.
+	err = m.handleWithdrawal(ctx, deposits, finalizedTx.TxHash())
+	if err != nil {
+		return "", "", err
+	}
+
+	// If a previous withdrawal existed across the selected deposits, and
+	// it isn't the same as the new withdrawal, we remove it from the
+	// finalized withdrawals to stop republishing it, but we keep the
+	// previous goroutine in handleWithdrawal running to monitor the
+	// potential confirmation of the previous withdrawal.
+	deposits[0].Lock()
+	prevTx := deposits[0].FinalizedWithdrawalTx
+	deposits[0].Unlock()
+
+	if prevTx != nil && prevTx.TxHash() != finalizedTx.TxHash() {
+		m.mu.Lock()
+		delete(m.finalizedWithdrawalTxns, prevTx.TxHash())
+		m.mu.Unlock()
+	}
+
 	// Attach the finalized withdrawal tx to the deposits. After a client
 	// restart we can use this address as an indicator to republish the
 	// withdrawal tx and continue the withdrawal.
@@ -325,11 +425,19 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		d.Unlock()
 	}
 
+	// Add the new withdrawal tx to the finalized withdrawals to republish
+	// it on block arrivals.
+	m.mu.Lock()
+	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
+	m.mu.Unlock()
+
 	// Transition the deposits to the withdrawing state. This updates each
 	// deposits withdrawal address. If a transition fails, we'll return an
 	// error and abort the withdrawal. An error in transition is likely due
 	// to an error in the state machine. The already transitioned deposits
 	// should be reset to the Deposit state after a restart.
+	// If the user fee bumped a withdrawal this results in a NOOP
+	// transition.
 	err = m.cfg.DepositManager.TransitionDeposits(
 		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
 	)
@@ -337,24 +445,13 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
-	err = m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
-	if err != nil {
-		return "", "", err
+	// Update the deposits in the database.
+	for _, d := range deposits {
+		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
+		if err != nil {
+			return "", "", err
+		}
 	}
-
-	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
-	if err != nil {
-		return "", "", err
-	}
-
-	err = m.handleWithdrawal(
-		ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
-	)
-	if err != nil {
-		return "", "", err
-	}
-
-	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
 }
@@ -452,44 +549,72 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 }
 
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
-	tx *wire.MsgTx) error {
+	tx *wire.MsgTx) (bool, error) {
 
 	if tx == nil {
-		return errors.New("can't publish, finalized withdrawal tx is " +
-			"nil")
+		return false, errors.New("can't publish, finalized " +
+			"withdrawal tx is nil")
 	}
 
 	txLabel := fmt.Sprintf("deposit-withdrawal-%v", tx.TxHash())
 
 	// Publish the withdrawal sweep transaction.
 	err := m.cfg.WalletKit.PublishTransaction(ctx, tx, txLabel)
-
 	if err != nil {
-		if !strings.Contains(err.Error(), "output already spent") {
-			log.Errorf("%v: %v", txLabel, err)
+		if !strings.Contains(err.Error(), chain.ErrSameNonWitnessData.Error()) &&
+			!strings.Contains(err.Error(), "output already spent") &&
+			!strings.Contains(err.Error(), chain.ErrInsufficientFee.Error()) {
+
+			return false, err
+		} else {
+			if strings.Contains(err.Error(), "output already spent") {
+				log.Warnf("output already spent, tx %v, %v",
+					tx.TxHash(), err)
+			}
+
+			return false, nil
 		}
+	} else {
+		log.Debugf("published deposit withdrawal with txid: %v",
+			tx.TxHash())
 	}
 
-	log.Debugf("published deposit withdrawal with txid: %v", tx.TxHash())
-
-	return nil
+	return true, nil
 }
 
+// handleWithdrawal starts a goroutine that listens for the spent of the first
+// input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
-	deposits []*deposit.Deposit, txHash chainhash.Hash,
-	withdrawalPkScript []byte) error {
+	deposits []*deposit.Deposit, txHash chainhash.Hash) error {
 
-	confChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		ctx, &txHash, withdrawalPkScript, MinConfs,
-		int32(m.initiationHeight.Load()),
+	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+	if err != nil {
+		log.Errorf("error retrieving taproot address %w", err)
+
+		return fmt.Errorf("withdrawal failed")
+	}
+
+	address, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(staticAddress.TaprootKey),
+		m.cfg.ChainParams,
 	)
 	if err != nil {
 		return err
 	}
 
+	script, err := txscript.PayToAddrScript(address)
+	if err != nil {
+		return err
+	}
+
+	d := deposits[0]
+	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
+		ctx, &d.OutPoint, script, int32(d.ConfirmationHeight),
+	)
+
 	go func() {
 		select {
-		case <-confChan:
+		case <-spentChan:
 			err = m.cfg.DepositManager.TransitionDeposits(
 				ctx, deposits, deposit.OnWithdrawn,
 				deposit.Withdrawn,
@@ -499,10 +624,11 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 					err)
 			}
 
-			// Remove the withdrawal from the active withdrawals and
-			// remove its finalized to stop republishing it on block
-			// arrivals.
+			// Remove the withdrawal tx from the active withdrawals
+			// to stop republishing it on block arrivals.
+			m.mu.Lock()
 			delete(m.finalizedWithdrawalTxns, txHash)
+			m.mu.Unlock()
 
 		case err := <-errChan:
 			log.Errorf("Error waiting for confirmation: %v", err)
@@ -910,13 +1036,20 @@ func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
 }
 
 func (m *Manager) republishWithdrawals(ctx context.Context) error {
-	for _, finalizedTx := range m.finalizedWithdrawalTxns {
+	m.mu.Lock()
+	txns := make([]*wire.MsgTx, 0, len(m.finalizedWithdrawalTxns))
+	for _, tx := range m.finalizedWithdrawalTxns {
+		txns = append(txns, tx)
+	}
+	m.mu.Unlock()
+
+	for _, finalizedTx := range txns {
 		if finalizedTx == nil {
 			log.Warnf("Finalized withdrawal tx is nil")
 			continue
 		}
 
-		err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
+		_, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 		if err != nil {
 			log.Errorf("Error republishing withdrawal: %v", err)
 
