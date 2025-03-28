@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -120,6 +121,9 @@ type sweep struct {
 	// but it failed. We try to spend a sweep cooperatively only once. This
 	// status is not persisted in the DB.
 	coopFailed bool
+
+	// presigned is set, if the sweep should be handled in presigned mode.
+	presigned bool
 }
 
 // batchState is the state of the batch.
@@ -173,6 +177,14 @@ type batchConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// presignedHelper provides methods used when presigned batches are
+	// enabled.
+	presignedHelper PresignedHelper
+
+	// chainParams are the chain parameters of the chain that is used by
+	// batches.
+	chainParams *chaincfg.Params
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -460,7 +472,9 @@ func (b *batch) Errorf(format string, params ...interface{}) {
 }
 
 // addSweep tries to add a sweep to the batch. If this is the first sweep being
-// added to the batch then it also sets the primary sweep ID.
+// added to the batch then it also sets the primary sweep ID. If presigned mode
+// is enabled, the result depends on the outcome of presignedHelper.Presign for
+// a non-empty batch. For an empty batch, the input needs to pass PresignSweep.
 func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	done, err := b.scheduleNextCall()
 	defer done()
@@ -563,6 +577,54 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 				b.cfg.maxTimeoutDistance)
 
 			return false, nil
+		}
+	}
+
+	// If presigned mode is enabled, we should first presign the new version
+	// of batch transaction. Also ensure that all the sweeps in the batch
+	// use the same mode (presigned or regular).
+	if sweep.presigned {
+		// Ensure that all the sweeps in the batch use presigned mode.
+		for _, s := range b.sweeps {
+			if !s.presigned {
+				b.Infof("failed to add presigned sweep %x to "+
+					"the batch, because the batch has "+
+					"non-presigned sweep %x",
+					sweep.swapHash[:6], s.swapHash[:6])
+
+				return false, nil
+			}
+		}
+
+		if len(b.sweeps) != 0 {
+			if err := b.presign(ctx, sweep); err != nil {
+				b.Infof("failed to add sweep %x to the "+
+					"batch, because failed to presign new "+
+					"version of batch tx: %v",
+					sweep.swapHash[:6], err)
+
+				return false, nil
+			}
+		} else {
+			if err := b.ensurePresigned(ctx, sweep); err != nil {
+				return false, fmt.Errorf("failed to check "+
+					"signing of input %x, this means that "+
+					"batcher.PresignSweep was not called "+
+					"prior to AddSweep for this input: %w",
+					sweep.swapHash[:6], err)
+			}
+		}
+	} else {
+		// Ensure that all the sweeps in the batch don't use presigned.
+		for _, s := range b.sweeps {
+			if s.presigned {
+				b.Infof("failed to add a non-presigned sweep "+
+					"%x to the batch, because the batch "+
+					"has presigned sweep %x",
+					sweep.swapHash[:6], s.swapHash[:6])
+
+				return false, nil
+			}
 		}
 	}
 
@@ -869,6 +931,39 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 	return true
 }
 
+// isPresigned returns if the batch uses presigned mode. Currently presigned and
+// non-presigned sweeps never appear in the same batch. Fails if the batch is
+// empty or contains both presigned and regular sweeps.
+func (b *batch) isPresigned() (bool, error) {
+	var (
+		hasPresigned bool
+		hasRegular   bool
+	)
+
+	for _, sweep := range b.sweeps {
+		if sweep.presigned {
+			hasPresigned = true
+		} else {
+			hasRegular = true
+		}
+	}
+
+	switch {
+	case hasPresigned && !hasRegular:
+		return true, nil
+
+	case !hasPresigned && hasRegular:
+		return false, nil
+
+	case hasPresigned && hasRegular:
+		return false, fmt.Errorf("the batch has both presigned and " +
+			"non-presigned sweeps")
+
+	default:
+		return false, fmt.Errorf("the batch is empty")
+	}
+}
+
 // publish creates and publishes the latest batch transaction to the network.
 func (b *batch) publish(ctx context.Context) error {
 	var (
@@ -894,7 +989,19 @@ func (b *batch) publish(ctx context.Context) error {
 		b.publishErrorHandler(err, errMsg, b.log())
 	}
 
-	fee, err, signSuccess = b.publishMixedBatch(ctx)
+	// Determine if we should use presigned mode for the batch.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"presigned mode: %w", b.id, err)
+	}
+
+	if presigned {
+		fee, err, signSuccess = b.publishPresigned(ctx)
+	} else {
+		fee, err, signSuccess = b.publishMixedBatch(ctx)
+	}
+
 	if err != nil {
 		if signSuccess {
 			logPublishError("publish error", err)
@@ -965,9 +1072,9 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 
 // constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
 // It also returns absolute fee (from weight and clamped).
-func (b *batch) constructUnsignedTx(sweeps []sweep,
-	address btcutil.Address) (*wire.MsgTx, lntypes.WeightUnit,
-	btcutil.Amount, btcutil.Amount, error) {
+func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
+	currentHeight int32, feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
+	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
 
 	// Sanity check, there should be at least 1 sweep in this batch.
 	if len(sweeps) == 0 {
@@ -977,7 +1084,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 	// Create the batch transaction.
 	batchTx := &wire.MsgTx{
 		Version:  2,
-		LockTime: uint32(b.currentHeight),
+		LockTime: uint32(currentHeight),
 	}
 
 	// Add transaction inputs and estimate its weight.
@@ -1029,7 +1136,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 
 	// Find weight and fee.
 	weight := weightEstimate.Weight()
-	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
+	feeForWeight := feeRate.FeeForWeight(weight)
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee := clampBatchFee(feeForWeight, batchAmt)
@@ -1114,8 +1221,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 
 		// Construct unsigned batch transaction.
 		var err error
-		tx, weight, feeForWeight, fee, err = b.constructUnsignedTx(
-			sweeps, address,
+		tx, weight, feeForWeight, fee, err = constructUnsignedTx(
+			sweeps, address, b.currentHeight, b.rbfCache.FeeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -1778,6 +1885,28 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 // handleConf handles a confirmation notification. This is the final step of the
 // batch. Here we signal to the batcher that this batch was completed.
 func (b *batch) handleConf(ctx context.Context) error {
+	// If the batch is in presigned mode, cleanup presignedHelper.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"presigned mode: %w", b.id, err)
+	}
+
+	if presigned {
+		b.Infof("Cleaning up presigned store")
+
+		inputs := make([]wire.OutPoint, 0, len(b.sweeps))
+		for _, sweep := range b.sweeps {
+			inputs = append(inputs, sweep.outpoint)
+		}
+
+		err := b.cfg.presignedHelper.CleanupTransactions(ctx, inputs)
+		if err != nil {
+			return fmt.Errorf("failed to clean up store for "+
+				"batch %d, inputs %v: %w", b.id, inputs, err)
+		}
+	}
+
 	b.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
@@ -1820,7 +1949,21 @@ func (b *batch) persist(ctx context.Context) error {
 
 // getBatchDestAddr returns the batch's destination address. If the batch
 // has already generated an address then the same one will be returned.
+// The method must not be used in presigned mode. Use getSweepsDestAddr instead.
 func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
+	// Determine if we should use presigned mode for the batch.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine if the batch %d "+
+			"uses presigned mode: %w", b.id, err)
+	}
+
+	// Make sure that the method is not used for presigned batches.
+	if presigned {
+		return nil, fmt.Errorf("getBatchDestAddr used in presigned " +
+			"mode")
+	}
+
 	var address btcutil.Address
 
 	// If a batch address is set, use that. Otherwise, generate a
