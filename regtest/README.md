@@ -145,6 +145,152 @@ $ ./regtest.sh mine 1
 2021-03-19T17:19:21Z LOOP_IN SUCCESS 0.005 BTC - P2WSH: bcrt1q4p0pead4tfepm683fff8fl8g3kpx8spjztuquu2sctfzed9rufls2z0g2f (cost: server 71, onchain 7650, offchain 0)
 ```
 
+# Static Address Loop In
+
+Static Address Loop In is a new loop-in mode that, like Loop In, allows you to 
+swap your on-chain balance for off-chain (channel) balance, but in contrast to 
+the legacy loop-in, you can receive the off-chain balance instantly (after funds
+were deposited to a static address).
+To do so a two-step process is required, the setup and the swap phase.
+
+To setup a static address and deposit funds to it, do the following:
+
+```shell
+./regtest.sh loop static new                                                                             ✔  11:59:12 
+
+WARNING: Be aware that loosing your l402.token file in .loop under your home directory will take your ability to spend funds sent to the static address via loop-ins or withdrawals. You will have to wait until the deposit expires and your loop client sweeps the funds back to your lnd wallet. The deposit expiry could be months in the future.
+
+CONTINUE WITH NEW ADDRESS? (y/n): y
+Received a new static loop-in address from the server: bcrt1pzgdmxftg3t6wghl2t72ewqyf3jvy2t85ud6pqsagx0zm9mj8f3aq23v3t4
+```
+A static address has been created. You can send funds to it across different
+transactions. Each transaction output to this address is considered a deposit
+that can be used individually or in combination with other deposits to be 
+swapped for an off-chain payment. Let's create a few deposits and confirm them:
+```shell
+./regtest.sh lndclient sendcoins --addr bcrt1pzgdmxftg3t6wghl2t72ewqyf3jvy2t85ud6pqsagx0zm9mj8f3aq23v3t4 --amt 250000 --min_confs 0 -f
+{
+    "txid": "86ccc85449957c3472a259e447a9180aff49848f0b957a85c24819a5f432eda7"
+}
+./regtest.sh lndclient sendcoins --addr bcrt1pzgdmxftg3t6wghl2t72ewqyf3jvy2t85ud6pqsagx0zm9mj8f3aq23v3t4 --amt 250000 --min_confs 0 -f
+{
+    "txid": "09d72c89b2346dc068bb57621463e53637f3c0cca3ba8ebb7fcb2773d7f32ae3"
+}
+./regtest.sh lndclient sendcoins --addr bcrt1pzgdmxftg3t6wghl2t72ewqyf3jvy2t85ud6pqsagx0zm9mj8f3aq23v3t4 --amt 250000 --min_confs 0 -f
+{
+    "txid": "5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f"
+}
+
+./regtest.sh mine 6
+```
+The loop client logs should show the deposits being confirmed:
+```shell
+[DBG] SADDR: Received deposit: 5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0
+[DBG] SADDR: Deposit 5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0: NextState: Deposited, PreviousState: , Event: OnStart
+[DBG] SADDR: Received deposit: 86ccc85449957c3472a259e447a9180aff49848f0b957a85c24819a5f432eda7:1
+[DBG] SADDR: Deposit 86ccc85449957c3472a259e447a9180aff49848f0b957a85c24819a5f432eda7:1: NextState: Deposited, PreviousState: , Event: OnStart
+[DBG] SADDR: Received deposit: 09d72c89b2346dc068bb57621463e53637f3c0cca3ba8ebb7fcb2773d7f32ae3:1
+[DBG] SADDR: Deposit 09d72c89b2346dc068bb57621463e53637f3c0cca3ba8ebb7fcb2773d7f32ae3:1: NextState: Deposited, PreviousState: , Event: OnStart
+```
+Let's list the deposits in the loop client:
+```shell
+./regtest.sh loop static listdeposits --filter deposited                                              ✔  12:03:37 
+{
+    "filtered_deposits":  [
+        {
+            "id":  "5afc81a72464881e66aa6a5d7476b75cae26ea4c74c70424e4a68e63b9708e0c",
+            "state":  "DEPOSITED",
+            "outpoint":  "5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0",
+            "value":  "250000",
+            "confirmation_height":  "126",
+            "blocks_until_expiry":  "715"
+        },
+        {
+            "id":  "0bf419bb047922afc186021fc186970b0b71db83444b39b0dcad4550014e0ba3",
+            "state":  "DEPOSITED",
+            "outpoint":  "86ccc85449957c3472a259e447a9180aff49848f0b957a85c24819a5f432eda7:1",
+            "value":  "250000",
+            "confirmation_height":  "126",
+            "blocks_until_expiry":  "715"
+        },
+        {
+            "id":  "ea969e2ca53b608d4cf9ca8def249d77ee1db444bd3384ae1150ea03bb03dbbd",
+            "state":  "DEPOSITED",
+            "outpoint":  "09d72c89b2346dc068bb57621463e53637f3c0cca3ba8ebb7fcb2773d7f32ae3:1",
+            "value":  "250000",
+            "confirmation_height":  "126",
+            "blocks_until_expiry":  "715"
+        }
+    ]
+}
+```
+These deposits can now be instantly swapped. Let's use the first one:
+```shell
+./regtest.sh loop static in --utxo 5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0
+On-chain fees for static address loop-ins are not included.
+They were already paid when the deposits were created.
+
+Previously deposited on-chain:             250000 sat
+Receive off-chain:                         249614 sat
+Estimated total fee:                          386 sat
+
+CONTINUE SWAP? (y/n): y
+{
+    "swap_hash":  "43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e",
+    "state":  "SignHtlcTx",
+    "amount":  "250000",
+    "htlc_cltv":  431,
+    "quoted_swap_fee_satoshis":  "386",
+    "max_swap_fee_satoshis":  "386",
+    "initiation_height":  131,
+    "protocol_version":  "V0",
+    "label":  "",
+    "initiator":  "loop-cli",
+    "payment_timeout_seconds":  60
+}
+```
+We see in the client log that the swap instantly succeeds:
+```shell
+[INF] LOOPD: Loop in quote request received
+[INF] LOOPD: Static loop-in request received
+[INF] SADDR: StaticAddr loop-in 0000000000000000000000000000000000000000000000000000000000000000: Current: InitHtlcTx
+[DBG] SADDR: Deposit 5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0: NextState: LoopingIn, PreviousState: Deposited, Event: OnLoopInInitiated
+[INF] SADDR: StaticAddr loop-in 43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e: Current: SignHtlcTx
+[INF] SADDR: StaticAddr loop-in 43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e: Current: MonitorInvoiceAndHtlcTx
+[DBG] SADDR: StaticAddr loop-in 43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e: received off-chain payment update Settled
+[INF] SADDR: StaticAddr loop-in 43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e: Current: PaymentReceived
+[DBG] SADDR: Deposit 5405e5cae38f9e4e193f7b5442dd005273e2e1fab8687c42a505c1a333e8884f:0: NextState: LoopedIn, PreviousState: LoopingIn, Event: OnLoopedIn
+[INF] SADDR: StaticAddr loop-in 43ed16958d5a5bf0e6cb9a36eefb1493f39741238f06d6c7b5365c1c5c22d29e: Current: Succeeded
+```
+We can combine the remaining two deposits in another instant swap by specifying
+the `--all` flag:
+```shell
+./regtest.sh loop static in --all                                                                     ✔  12:07:28 
+On-chain fees for static address loop-ins are not included.
+They were already paid when the deposits were created.
+
+Previously deposited on-chain:             500000 sat
+Receive off-chain:                         499302 sat
+Estimated total fee:                          698 sat
+
+CONTINUE SWAP? (y/n): y
+{
+    "swap_hash":  "950a4c0017831dc9934e93faacde1819ed5801d1c7abf6b555dc36908a3b3ca8",
+    "state":  "SignHtlcTx",
+    "amount":  "500000",
+    "htlc_cltv":  431,
+    "quoted_swap_fee_satoshis":  "698",
+    "max_swap_fee_satoshis":  "698",
+    "initiation_height":  131,
+    "protocol_version":  "V0",
+    "label":  "",
+    "initiator":  "loop-cli",
+    "payment_timeout_seconds":  60
+}
+```
+For more information on the static address loop-in feature, see the 
+https://docs.lightning.engineering/lightning-network-tools/loop/static-loop-in-addresses
+
 # Using the Loop server in an existing setup
 
 This `docker-compose` is only meant as a demo and quick start help. You can of
