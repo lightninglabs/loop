@@ -8,6 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -108,8 +109,8 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 		rbfCache: rbfCache{
 			FeeRate: s.minFeeRate,
 		},
-		sweeps: map[lntypes.Hash]sweep{
-			s.swapHash: *s,
+		sweeps: map[wire.OutPoint]sweep{
+			s.outpoint: *s,
 		},
 	}
 
@@ -120,9 +121,13 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 	}
 
 	// Add the same sweep again to measure weight increments.
-	swapHash2 := s.swapHash
-	swapHash2[0]++
-	batch.sweeps[swapHash2] = *s
+	outpoint2 := s.outpoint
+	outpoint2.Hash[0]++
+	if _, has := batch.sweeps[outpoint2]; has {
+		return feeDetails{}, feeDetails{}, fmt.Errorf("dummy outpoint "+
+			"%s is present in the batch", outpoint2)
+	}
+	batch.sweeps[outpoint2] = *s
 
 	// Estimate weight of a batch with two sweeps.
 	fd2, err := estimateBatchWeight(batch)

@@ -29,11 +29,11 @@ type Querier interface {
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 
 	// GetSweepStatus returns true if the sweep has been completed.
-	GetSweepStatus(ctx context.Context, swapHash []byte) (bool, error)
+	GetSweepStatus(ctx context.Context, outpoint string) (bool, error)
 
 	// GetParentBatch fetches the parent batch of a completed sweep.
-	GetParentBatch(ctx context.Context, swapHash []byte) (sqlc.SweepBatch,
-		error)
+	GetParentBatch(ctx context.Context,
+		outpoint string) (sqlc.SweepBatch, error)
 
 	// GetUnconfirmedBatches fetches all the batches from the
 	// database that are not in a confirmed state.
@@ -185,10 +185,10 @@ func (s *SQLStore) TotalSweptAmount(ctx context.Context, id int32) (
 }
 
 // GetParentBatch fetches the parent batch of a completed sweep.
-func (s *SQLStore) GetParentBatch(ctx context.Context, swapHash lntypes.Hash) (
+func (s *SQLStore) GetParentBatch(ctx context.Context, outpoint wire.OutPoint) (
 	*dbBatch, error) {
 
-	batch, err := s.baseDb.GetParentBatch(ctx, swapHash[:])
+	batch, err := s.baseDb.GetParentBatch(ctx, outpoint.String())
 	if err != nil {
 		return nil, err
 	}
@@ -203,10 +203,10 @@ func (s *SQLStore) UpsertSweep(ctx context.Context, sweep *dbSweep) error {
 }
 
 // GetSweepStatus returns true if the sweep has been completed.
-func (s *SQLStore) GetSweepStatus(ctx context.Context, swapHash lntypes.Hash) (
+func (s *SQLStore) GetSweepStatus(ctx context.Context, outpoint wire.OutPoint) (
 	bool, error) {
 
-	return s.baseDb.GetSweepStatus(ctx, swapHash[:])
+	return s.baseDb.GetSweepStatus(ctx, outpoint.String())
 }
 
 type dbBatch struct {
@@ -355,15 +355,12 @@ func (s *SQLStore) convertSweepRow(row sqlc.Sweep) (dbSweep, error) {
 
 	sweep.SwapHash = swapHash
 
-	hash, err := chainhash.NewHash(row.OutpointTxid)
+	outpoint, err := wire.NewOutPointFromString(row.Outpoint)
 	if err != nil {
 		return sweep, err
 	}
 
-	sweep.Outpoint = wire.OutPoint{
-		Hash:  *hash,
-		Index: uint32(row.OutpointIndex),
-	}
+	sweep.Outpoint = *outpoint
 
 	return sweep, nil
 }
@@ -371,11 +368,10 @@ func (s *SQLStore) convertSweepRow(row sqlc.Sweep) (dbSweep, error) {
 // sweepToUpsertArgs converts a Sweep struct to the arguments needed to insert.
 func sweepToUpsertArgs(sweep dbSweep) sqlc.UpsertSweepParams {
 	return sqlc.UpsertSweepParams{
-		SwapHash:      sweep.SwapHash[:],
-		BatchID:       sweep.BatchID,
-		OutpointTxid:  sweep.Outpoint.Hash[:],
-		OutpointIndex: int32(sweep.Outpoint.Index),
-		Amt:           int64(sweep.Amount),
-		Completed:     sweep.Completed,
+		SwapHash:  sweep.SwapHash[:],
+		BatchID:   sweep.BatchID,
+		Outpoint:  sweep.Outpoint.String(),
+		Amt:       int64(sweep.Amount),
+		Completed: sweep.Completed,
 	}
 }
