@@ -675,6 +675,9 @@ enum FailureReason {
 message ListSwapsRequest {
     // Optional filter to only return swaps that match the filter.
     ListSwapsFilter list_swap_filter = 1;
+
+    // Set a maximum number of swaps to return in the response.
+    uint64 max_swaps = 2;
 }
 
 message ListSwapsFilter {
@@ -704,6 +707,9 @@ message ListSwapsFilter {
 
     // If specified, only returns asset swaps.
     bool asset_swap_only = 6;
+
+    // If specified, returns swaps initiated after this Unix (ns) timestamp.
+    int64 start_timestamp_ns = 7;
 }
 
 message ListSwapsResponse {
@@ -711,6 +717,9 @@ message ListSwapsResponse {
     The list of all currently known swaps and their status.
     */
     repeated SwapStatus swaps = 1;
+
+    // Timestamp to use for paging start_timestamp_ns.
+    int64 next_start_time = 2;
 }
 
 message SwapInfoRequest {

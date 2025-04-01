@@ -2,11 +2,13 @@ package loopd
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -563,8 +565,11 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 	req *looprpc.ListSwapsRequest) (*looprpc.ListSwapsResponse, error) {
 
 	var (
-		rpcSwaps = []*looprpc.SwapStatus{}
-		idx      = 0
+		rpcSwaps      = []*looprpc.SwapStatus{}
+		swapInfos     = []*loop.SwapInfo{}
+		maxSwaps      = int(req.MaxSwaps)
+		nextStartTime = int64(0)
+		canPage       = false
 	)
 
 	s.swapsLock.Lock()
@@ -580,14 +585,43 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 			continue
 		}
 
-		rpcSwap, err := s.marshallSwap(ctx, &swp)
+		swapInfos = append(swapInfos, &swp)
+	}
+
+	// Sort the swaps by initiation time in ascending order (oldest first).
+	slices.SortFunc(swapInfos, func(a, b *loop.SwapInfo) int {
+		return cmp.Compare(
+			a.InitiationTime.UnixNano(),
+			b.InitiationTime.UnixNano(),
+		)
+	})
+
+	// Apply the maxSwaps limit if specified.
+	if maxSwaps > 0 && len(swapInfos) > maxSwaps {
+		canPage = true
+		swapInfos = swapInfos[:maxSwaps]
+	}
+
+	// Marshal the filtered and limited swaps.
+	for _, swp := range swapInfos {
+		rpcSwap, err := s.marshallSwap(ctx, swp)
 		if err != nil {
 			return nil, err
 		}
 		rpcSwaps = append(rpcSwaps, rpcSwap)
-		idx++
 	}
-	return &looprpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+
+	// Set the next start time for pagination if needed.
+	if canPage && len(rpcSwaps) > 0 {
+		// Use the initiation time of the last swap plus 1 nanosecond.
+		nextStartTime = rpcSwaps[len(rpcSwaps)-1].InitiationTime + 1
+	}
+
+	response := looprpc.ListSwapsResponse{
+		Swaps:         rpcSwaps,
+		NextStartTime: nextStartTime,
+	}
+	return &response, nil
 }
 
 // filterSwap filters the given swap based on the provided filter.
@@ -614,6 +648,13 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 
 	// If the pending only filter is set, we only return pending swaps.
 	if filter.PendingOnly && !swapInfo.State.IsPending() {
+		return false
+	}
+
+	// If timestamp filters are set, only return swaps within the specified time range.
+	if filter.StartTimestampNs > 0 &&
+		swapInfo.InitiationTime.UnixNano() < filter.StartTimestampNs {
+
 		return false
 	}
 
