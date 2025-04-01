@@ -675,6 +675,12 @@ enum FailureReason {
 message ListSwapsRequest {
     // Optional filter to only return swaps that match the filter.
     ListSwapsFilter list_swap_filter = 1;
+
+    // Allow specifying an starting index when returning filtered swaps.
+    uint32 index_offset = 2;
+
+    // Set a maximum number of swaps to return in the response.
+    uint32 max_swaps = 3;
 }
 
 message ListSwapsFilter {
@@ -711,6 +717,16 @@ message ListSwapsResponse {
     The list of all currently known swaps and their status.
     */
     repeated SwapStatus swaps = 1;
+
+    // The last returned swap index returned.
+    uint32 last_index_offset = 2;
+
+    /*
+    The total number of swaps found after filtering, but before any pagination
+    takes place. The caller can use this field as they iterate over all swaps
+    using pagination.
+    */
+    uint32 total_filtered_swaps = 4;
 }
 
 message SwapInfoRequest {
