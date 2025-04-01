@@ -74,17 +74,28 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 	trAddr := (*btcutil.AddressTaproot)(nil)
 	p2pkhAddr := (*btcutil.AddressPubKeyHash)(nil)
 
+	outpoint1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1, 1},
+		Index: 1,
+	}
+	outpoint2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2, 2},
+		Index: 2,
+	}
+
 	cases := []struct {
 		name                   string
-		sweep                  *sweep
+		sweeps                 []*sweep
 		wantSweepFeeDetails    feeDetails
 		wantNewBatchFeeDetails feeDetails
 	}{
 		{
 			name: "regular",
-			sweep: &sweep{
-				minFeeRate:           lowFeeRate,
-				htlcSuccessEstimator: se3,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate: lowFeeRate,
@@ -98,9 +109,11 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 
 		{
 			name: "high fee rate",
-			sweep: &sweep{
-				minFeeRate:           highFeeRate,
-				htlcSuccessEstimator: se3,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           highFeeRate,
+					htlcSuccessEstimator: se3,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate: highFeeRate,
@@ -114,11 +127,13 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 
 		{
 			name: "isExternalAddr taproot",
-			sweep: &sweep{
-				minFeeRate:           lowFeeRate,
-				htlcSuccessEstimator: se3,
-				isExternalAddr:       true,
-				destAddr:             trAddr,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+					isExternalAddr:       true,
+					destAddr:             trAddr,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:        lowFeeRate,
@@ -134,11 +149,13 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 
 		{
 			name: "isExternalAddr P2PKH",
-			sweep: &sweep{
-				minFeeRate:           lowFeeRate,
-				htlcSuccessEstimator: se3,
-				isExternalAddr:       true,
-				destAddr:             p2pkhAddr,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+					isExternalAddr:       true,
+					destAddr:             p2pkhAddr,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate:        lowFeeRate,
@@ -155,10 +172,12 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 
 		{
 			name: "non-coop",
-			sweep: &sweep{
-				minFeeRate:           lowFeeRate,
-				htlcSuccessEstimator: se3,
-				nonCoopHint:          true,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+					nonCoopHint:          true,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate: lowFeeRate,
@@ -172,10 +191,12 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 
 		{
 			name: "coop-failed",
-			sweep: &sweep{
-				minFeeRate:           lowFeeRate,
-				htlcSuccessEstimator: se3,
-				coopFailed:           true,
+			sweeps: []*sweep{
+				{
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+					coopFailed:           true,
+				},
 			},
 			wantSweepFeeDetails: feeDetails{
 				FeeRate: lowFeeRate,
@@ -186,12 +207,36 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 				Weight:  nonCoopNewBatchWeight,
 			},
 		},
+
+		{
+			name: "two sweeps",
+			sweeps: []*sweep{
+				{
+					outpoint:             outpoint1,
+					minFeeRate:           lowFeeRate,
+					htlcSuccessEstimator: se3,
+				},
+				{
+					outpoint:             outpoint2,
+					minFeeRate:           highFeeRate,
+					htlcSuccessEstimator: se3,
+				},
+			},
+			wantSweepFeeDetails: feeDetails{
+				FeeRate: highFeeRate,
+				Weight:  coopInputWeight * 2,
+			},
+			wantNewBatchFeeDetails: feeDetails{
+				FeeRate: highFeeRate,
+				Weight:  coopNewBatchWeight + coopInputWeight,
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			gotSweepFeeDetails, gotNewBatchFeeDetails, err :=
-				estimateSweepFeeIncrement(tc.sweep)
+				estimateSweepFeeIncrement(tc.sweeps)
 			require.NoError(t, err)
 			require.Equal(
 				t, tc.wantSweepFeeDetails, gotSweepFeeDetails,
