@@ -918,6 +918,7 @@ type wrappedLogger struct {
 
 	debugMessages []string
 	infoMessages  []string
+	warnMessages  []string
 }
 
 // Debugf logs debug message.
@@ -936,6 +937,15 @@ func (l *wrappedLogger) Infof(format string, params ...interface{}) {
 
 	l.infoMessages = append(l.infoMessages, format)
 	l.Logger.Infof(format, params...)
+}
+
+// Warnf logs a warning message.
+func (l *wrappedLogger) Warnf(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.warnMessages = append(l.warnMessages, format)
+	l.Logger.Warnf(format, params...)
 }
 
 // testDelays tests that WithInitialDelay and WithPublishDelay work.
