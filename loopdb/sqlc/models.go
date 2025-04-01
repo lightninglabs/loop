@@ -180,13 +180,12 @@ type SwapUpdate struct {
 }
 
 type Sweep struct {
-	ID            int32
-	SwapHash      []byte
-	BatchID       int32
-	OutpointTxid  []byte
-	OutpointIndex int32
-	Amt           int64
-	Completed     bool
+	ID        int32
+	SwapHash  []byte
+	BatchID   int32
+	Outpoint  string
+	Amt       int64
+	Completed bool
 }
 
 type SweepBatch struct {
@@ -197,4 +196,14 @@ type SweepBatch struct {
 	LastRbfHeight      sql.NullInt32
 	LastRbfSatPerKw    sql.NullInt32
 	MaxTimeoutDistance int32
+}
+
+type SweepsOld struct {
+	ID            int32
+	SwapHash      []byte
+	BatchID       int32
+	OutpointTxid  []byte
+	OutpointIndex int32
+	Amt           int64
+	Completed     bool
 }

@@ -64,6 +64,21 @@ type PostgresStore struct {
 	*BaseDB
 }
 
+// In migration of sweeps table from outpoint_txid and outpoint_index to
+// outpoint we need to reverse the order of bytes in outpoint_txid and to
+// convert it to hex. This is done differently in sqlite and postgres.
+//
+// Changes from sqlite to postgres:
+//   - substr(blob, ...) -> get_byte(blob, index)
+//   - group_concat -> string_agg
+//   - 1-based indexing (32+1-i) -> 0-based (32 - i)
+//   - to_hex() + lpad(..., 2, '0') ensures each byte is two-digit hex
+const (
+	txidSqlite   = "group_concat(hex(substr(outpoint_txid,32+1-i,1)),'')"
+	txidPostgres = "string_agg(lpad(to_hex(get_byte(outpoint_txid, " +
+		"32 - i)), 2, '0'), '')"
+)
+
 // NewPostgresStore creates a new store that is backed by a Postgres database
 // backend.
 func NewPostgresStore(cfg *PostgresConfig,
@@ -93,6 +108,7 @@ func NewPostgresStore(cfg *PostgresConfig,
 		postgresFS := newReplacerFS(sqlSchemas, map[string]string{
 			"BLOB":                "BYTEA",
 			"INTEGER PRIMARY KEY": "SERIAL PRIMARY KEY",
+			txidSqlite:            txidPostgres,
 		})
 
 		err = applyMigrations(

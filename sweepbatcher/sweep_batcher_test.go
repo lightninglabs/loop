@@ -163,9 +163,9 @@ func (b *batch) snapshot(ctx context.Context) *batch {
 	var snapshot *batch
 	b.testRunInEventLoop(ctx, func() {
 		// Deep copy sweeps.
-		sweeps := make(map[lntypes.Hash]sweep, len(b.sweeps))
-		for h, s := range b.sweeps {
-			sweeps[h] = s
+		sweeps := make(map[wire.OutPoint]sweep, len(b.sweeps))
+		for o, s := range b.sweeps {
+			sweeps[o] = s
 		}
 
 		// Deep copy cfg.
@@ -360,12 +360,12 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
+			case sweepReq1.Outpoint:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq3.SwapHash:
+			case sweepReq3.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -376,9 +376,9 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.SwapHash))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
 }
 
 // testFeeBumping tests that sweep is RBFed with slightly higher fee rate after
@@ -565,7 +565,7 @@ func testTxLabeler(t *testing.T, store testStore,
 	var wantLabel string
 	for _, btch := range getBatches(ctx, batcher) {
 		btch := btch.snapshot(ctx)
-		if btch.primarySweepID == sweepReq1.SwapHash {
+		if btch.primarySweepID == sweepReq1.Outpoint {
 			wantLabel = fmt.Sprintf(
 				"BatchOutSweepSuccess -- %d", btch.id,
 			)
@@ -794,7 +794,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	batch := &batch{}
 	for _, btch := range getBatches(ctx, batcher) {
 		btch.testRunInEventLoop(ctx, func() {
-			if btch.primarySweepID == sweepReq1.SwapHash {
+			if btch.primarySweepID == sweepReq1.Outpoint {
 				batch = btch
 			}
 		})
@@ -806,7 +806,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The primary sweep id should be that of the first inserted sweep.
-	require.Equal(t, batch.primarySweepID, sweepReq1.SwapHash)
+	require.Equal(t, batch.primarySweepID, sweepReq1.Outpoint)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
@@ -1057,7 +1057,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -1135,7 +1135,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for batch to load.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -1243,7 +1243,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		Value:    111,
 		Outpoint: wire.OutPoint{
 			Hash:  chainhash.Hash{2, 2},
-			Index: 1,
+			Index: 2,
 		},
 		Notifier: &dummyNotifier,
 	}
@@ -1323,8 +1323,8 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		SwapHash: lntypes.Hash{3, 3, 3},
 		Value:    111,
 		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 1,
+			Hash:  chainhash.Hash{3, 3},
+			Index: 3,
 		},
 		Notifier: &dummyNotifier,
 	}
@@ -1440,14 +1440,16 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 		preimage := lntypes.Preimage{2, byte(i % 256), byte(i / 256)}
 		swapHash := preimage.Hash()
 
+		outpoint := wire.OutPoint{
+			Hash:  chainhash.Hash{byte(i + 1)},
+			Index: uint32(i + 1),
+		}
+
 		// Create a sweep request.
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
 			Value:    111,
-			Outpoint: wire.OutPoint{
-				Hash:  chainhash.Hash{1, 1},
-				Index: 1,
-			},
+			Outpoint: outpoint,
 			Notifier: &dummyNotifier,
 		}
 
@@ -1681,7 +1683,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	b := &batch{}
 	for _, btch := range getBatches(ctx, batcher) {
 		btch.testRunInEventLoop(ctx, func() {
-			if btch.primarySweepID == sweepReq1.SwapHash {
+			if btch.primarySweepID == sweepReq1.Outpoint {
 				b = btch
 			}
 		})
@@ -1694,7 +1696,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	// Verify that the batch has a primary sweep id that matches the first
 	// inserted sweep, sweep1.
-	require.Equal(t, b.primarySweepID, sweepReq1.SwapHash)
+	require.Equal(t, b.primarySweepID, sweepReq1.Outpoint)
 
 	// Create the spending tx. In order to simulate an older version of the
 	// batch transaction being confirmed, we only insert the primary sweep's
@@ -1962,17 +1964,17 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
+			case sweepReq1.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq2.SwapHash:
+			case sweepReq2.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq3.SwapHash:
+			case sweepReq3.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -1983,9 +1985,9 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.SwapHash))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
 }
 
 // testSweepBatcherComposite tests that sweep requests that sweep to both wallet
@@ -2301,22 +2303,22 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.SwapHash:
+			case sweepReq1.Outpoint:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq3.SwapHash:
+			case sweepReq3.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq4.SwapHash:
+			case sweepReq4.Outpoint:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq6.SwapHash:
+			case sweepReq6.Outpoint:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -2327,12 +2329,12 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq4.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq5.SwapHash))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq6.SwapHash))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq4.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq5.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(sweepReq6.Outpoint))
 }
 
 // makeTestTx creates a test transaction with a single output of the given
@@ -2456,7 +2458,7 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -2676,10 +2678,10 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		if !batcherStore.AssertSweepStored(sweepReq1.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq1.Outpoint) {
 			return false
 		}
-		if !batcherStore.AssertSweepStored(sweepReq2.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq2.Outpoint) {
 			return false
 		}
 
@@ -2730,7 +2732,7 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		snapshot := secondBatch.snapshot(ctx)
 
 		// Make sure the second batch has the second sweep.
-		sweep2, has := snapshot.sweeps[sweepReq2.SwapHash]
+		sweep2, has := snapshot.sweeps[sweepReq2.Outpoint]
 		if !has {
 			return false
 		}
@@ -2833,7 +2835,7 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -2889,7 +2891,7 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// Wait for batch to load.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.SwapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -2915,24 +2917,24 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 }
 
 type sweepFetcherMock struct {
-	store map[lntypes.Hash]*SweepInfo
+	store map[wire.OutPoint]*SweepInfo
 	mu    sync.Mutex
 }
 
-func (f *sweepFetcherMock) setSweep(hash lntypes.Hash, info *SweepInfo) {
+func (f *sweepFetcherMock) setSweep(outpoint wire.OutPoint, info *SweepInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.store[hash] = info
+	f.store[outpoint] = info
 }
 
-func (f *sweepFetcherMock) FetchSweep(ctx context.Context, hash lntypes.Hash) (
-	*SweepInfo, error) {
+func (f *sweepFetcherMock) FetchSweep(ctx context.Context, _ lntypes.Hash,
+	outpoint wire.OutPoint) (*SweepInfo, error) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.store[hash], nil
+	return f.store[outpoint], nil
 }
 
 // testSweepFetcher tests providing custom sweep fetcher to Batcher.
@@ -2986,12 +2988,6 @@ func testSweepFetcher(t *testing.T, store testStore,
 		DestAddr:               destAddr,
 	}
 
-	sweepFetcher := &sweepFetcherMock{
-		store: map[lntypes.Hash]*SweepInfo{
-			swapHash: sweepInfo,
-		},
-	}
-
 	// Create a sweep request.
 	sweepReq := SweepRequest{
 		SwapHash: swapHash,
@@ -3001,6 +2997,12 @@ func testSweepFetcher(t *testing.T, store testStore,
 			Index: 1,
 		},
 		Notifier: &dummyNotifier,
+	}
+
+	sweepFetcher := &sweepFetcherMock{
+		store: map[wire.OutPoint]*SweepInfo{
+			sweepReq.Outpoint: sweepInfo,
+		},
 	}
 
 	// Create a swap in the DB. It is needed to satisfy SQL constraints in
@@ -3045,7 +3047,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(swapHash) {
+		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
 			return false
 		}
 
@@ -3286,7 +3288,7 @@ func testWithMixedBatch(t *testing.T, store testStore,
 
 	// Use sweepFetcher to provide NonCoopHint for swapHash1.
 	sweepFetcher := &sweepFetcherMock{
-		store: map[lntypes.Hash]*SweepInfo{},
+		store: map[wire.OutPoint]*SweepInfo{},
 	}
 
 	// Create 3 sweeps:
@@ -3350,6 +3352,11 @@ func testWithMixedBatch(t *testing.T, store testStore,
 
 	// Create 3 swaps and 3 sweeps.
 	for i, swapHash := range swapHashes {
+		outpoint := wire.OutPoint{
+			Hash:  chainhash.Hash{byte(i + 1)},
+			Index: uint32(i + 1),
+		}
+
 		// Publish a block to trigger republishing.
 		err = lnd.NotifyHeight(601 + int32(i))
 		require.NoError(t, err)
@@ -3395,16 +3402,13 @@ func testWithMixedBatch(t *testing.T, store testStore,
 		if i == 0 {
 			sweepInfo.NonCoopHint = true
 		}
-		sweepFetcher.setSweep(swapHash, sweepInfo)
+		sweepFetcher.setSweep(outpoint, sweepInfo)
 
 		// Create sweep request.
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
 			Value:    1_000_000,
-			Outpoint: wire.OutPoint{
-				Hash:  chainhash.Hash{1, 1},
-				Index: 1,
-			},
+			Outpoint: outpoint,
 			Notifier: &dummyNotifier,
 		}
 		require.NoError(t, batcher.AddSweep(&sweepReq))
@@ -3492,7 +3496,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 
 	// Use sweepFetcher to provide NonCoopHint for swapHash1.
 	sweepFetcher := &sweepFetcherMock{
-		store: map[lntypes.Hash]*SweepInfo{},
+		store: map[wire.OutPoint]*SweepInfo{},
 	}
 
 	// Swap hashes must match the preimages, for non-cooperative spending
@@ -3523,6 +3527,11 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 
 	// Create swaps and sweeps.
 	for i, swapHash := range swapHashes {
+		outpoint := wire.OutPoint{
+			Hash:  chainhash.Hash{byte(i + 1)},
+			Index: uint32(i + 1),
+		}
+
 		// Put a swap into store to satisfy SQL constraints.
 		swap := &loopdb.LoopOutContract{
 			SwapContract: loopdb.SwapContract{
@@ -3549,7 +3558,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 		)
 		require.NoError(t, err)
 
-		sweepFetcher.setSweep(swapHash, &SweepInfo{
+		sweepFetcher.setSweep(outpoint, &SweepInfo{
 			Preimage:    preimages[i],
 			NonCoopHint: nonCoopHints[i],
 
@@ -3567,10 +3576,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
 			Value:    1_000_000,
-			Outpoint: wire.OutPoint{
-				Hash:  chainhash.Hash{1, 1},
-				Index: 1,
-			},
+			Outpoint: outpoint,
 			Notifier: &dummyNotifier,
 		}
 		require.NoError(t, batcher.AddSweep(&sweepReq))
@@ -4148,13 +4154,13 @@ type testBatcherStore interface {
 	BatcherStore
 
 	// AssertSweepStored asserts that a sweep is stored.
-	AssertSweepStored(id lntypes.Hash) bool
+	AssertSweepStored(outpoint wire.OutPoint) bool
 }
 
 type loopdbBatcherStore struct {
 	BatcherStore
 
-	sweepsSet map[lntypes.Hash]struct{}
+	sweepsSet map[wire.OutPoint]struct{}
 
 	mu sync.Mutex
 }
@@ -4169,17 +4175,17 @@ func (s *loopdbBatcherStore) UpsertSweep(ctx context.Context,
 
 	err := s.BatcherStore.UpsertSweep(ctx, sweep)
 	if err == nil {
-		s.sweepsSet[sweep.SwapHash] = struct{}{}
+		s.sweepsSet[sweep.Outpoint] = struct{}{}
 	}
 	return err
 }
 
 // AssertSweepStored asserts that a sweep is stored.
-func (s *loopdbBatcherStore) AssertSweepStored(id lntypes.Hash) bool {
+func (s *loopdbBatcherStore) AssertSweepStored(outpoint wire.OutPoint) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, has := s.sweepsSet[id]
+	_, has := s.sweepsSet[outpoint]
 
 	return has
 }
@@ -4255,7 +4261,7 @@ func runTests(t *testing.T, testFn func(t *testing.T, store testStore,
 		testStore := newLoopdbStore(t, sqlDB)
 		testBatcherStore := &loopdbBatcherStore{
 			BatcherStore: batcherStore,
-			sweepsSet:    make(map[lntypes.Hash]struct{}),
+			sweepsSet:    make(map[wire.OutPoint]struct{}),
 		}
 		testFn(t, testStore, testBatcherStore)
 	})

@@ -60,6 +60,7 @@ var (
 // sweep stores any data related to sweeping a specific outpoint.
 type sweep struct {
 	// swapHash is the hash of the swap that the sweep belongs to.
+	// Multiple sweeps may belong to the same swap.
 	swapHash lntypes.Hash
 
 	// outpoint is the outpoint being swept.
@@ -188,6 +189,9 @@ type rbfCache struct {
 	SkipNextBump bool
 }
 
+// zeroSweepID is default value for sweep.primarySweepID and batchKit.primaryID.
+var zeroSweepID wire.OutPoint
+
 // batch is a collection of sweeps that are published together.
 type batch struct {
 	// id is the primary identifier of this batch.
@@ -196,11 +200,11 @@ type batch struct {
 	// state is the current state of the batch.
 	state batchState
 
-	// primarySweepID is the swap hash of the primary sweep in the batch.
-	primarySweepID lntypes.Hash
+	// primarySweepID is the outpoint of the primary sweep in the batch.
+	primarySweepID wire.OutPoint
 
 	// sweeps store the sweeps that this batch currently contains.
-	sweeps map[lntypes.Hash]sweep
+	sweeps map[wire.OutPoint]sweep
 
 	// currentHeight is the current block height.
 	currentHeight int32
@@ -310,8 +314,8 @@ type batchKit struct {
 	batchTxid           *chainhash.Hash
 	batchPkScript       []byte
 	state               batchState
-	primaryID           lntypes.Hash
-	sweeps              map[lntypes.Hash]sweep
+	primaryID           wire.OutPoint
+	sweeps              map[wire.OutPoint]sweep
 	rbfCache            rbfCache
 	returnChan          chan SweepRequest
 	wallet              lndclient.WalletKitClient
@@ -354,7 +358,7 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		// never been persisted, so it needs to be assigned a new ID.
 		id:                  -1,
 		state:               Open,
-		sweeps:              make(map[lntypes.Hash]sweep),
+		sweeps:              make(map[wire.OutPoint]sweep),
 		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		reorgChan:           make(chan struct{}, 1),
@@ -389,7 +393,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 
 	// Assign batchConfTarget to primary sweep's confTarget.
 	for _, sweep := range bk.sweeps {
-		if sweep.swapHash == bk.primaryID {
+		if sweep.outpoint == bk.primaryID {
 			cfg.batchConfTarget = sweep.confTarget
 			break
 		}
@@ -479,7 +483,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 
 	// Before we run through the acceptance checks, let's just see if this
 	// sweep is already in our batch. In that case, just update the sweep.
-	oldSweep, ok := b.sweeps[sweep.swapHash]
+	oldSweep, ok := b.sweeps[sweep.outpoint]
 	if ok {
 		// Preserve coopFailed value not to forget about cooperative
 		// spending failure in this sweep.
@@ -490,11 +494,11 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 		// to sweep again, a new sweep notifier will be created by the
 		// swap. By re-assigning to the batch's sweep we make sure that
 		// everything, including the notifier, is up to date.
-		b.sweeps[sweep.swapHash] = tmp
+		b.sweeps[sweep.outpoint] = tmp
 
 		// If this is the primary sweep, we also need to update the
 		// batch's confirmation target and fee rate.
-		if b.primarySweepID == sweep.swapHash {
+		if b.primarySweepID == sweep.outpoint {
 			b.cfg.batchConfTarget = sweep.confTarget
 			b.rbfCache.SkipNextBump = true
 		}
@@ -571,8 +575,8 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 
 	// If this is the first sweep being added to the batch, make it the
 	// primary sweep.
-	if b.primarySweepID == lntypes.ZeroHash {
-		b.primarySweepID = sweep.swapHash
+	if b.primarySweepID == zeroSweepID {
+		b.primarySweepID = sweep.outpoint
 		b.cfg.batchConfTarget = sweep.confTarget
 		b.rbfCache.FeeRate = sweep.minFeeRate
 		b.rbfCache.SkipNextBump = true
@@ -587,7 +591,7 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 
 	// Add the sweep to the batch's sweeps.
 	b.Infof("adding sweep %x", sweep.swapHash[:6])
-	b.sweeps[sweep.swapHash] = *sweep
+	b.sweeps[sweep.outpoint] = *sweep
 
 	// Update FeeRate. Max(sweep.minFeeRate) for all the sweeps of
 	// the batch is the basis for fee bumps.
@@ -599,15 +603,16 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	return true, b.persistSweep(ctx, *sweep, false)
 }
 
-// sweepExists returns true if the batch contains the sweep with the given hash.
-func (b *batch) sweepExists(hash lntypes.Hash) bool {
+// sweepExists returns true if the batch contains the sweep with the given
+// outpoint.
+func (b *batch) sweepExists(outpoint wire.OutPoint) bool {
 	done, err := b.scheduleNextCall()
 	defer done()
 	if err != nil {
 		return false
 	}
 
-	_, ok := b.sweeps[hash]
+	_, ok := b.sweeps[outpoint]
 
 	return ok
 }
@@ -664,7 +669,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 	// If a primary sweep exists we immediately start monitoring for its
 	// spend.
-	if b.primarySweepID != lntypes.ZeroHash {
+	if b.primarySweepID != zeroSweepID {
 		sweep := b.sweeps[b.primarySweepID]
 		err := b.monitorSpend(runCtx, sweep)
 		if err != nil {
@@ -694,8 +699,8 @@ func (b *batch) Run(ctx context.Context) error {
 	// completes.
 	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
-	b.Infof("started, primary %x, total sweeps %v",
-		b.primarySweepID[0:6], len(b.sweeps))
+	b.Infof("started, primary %s, total sweeps %d",
+		b.primarySweepID, len(b.sweeps))
 
 	for {
 		select {
@@ -1152,7 +1157,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 				// places we store the sweep.
 				sweep.coopFailed = true
 				sweeps[i] = sweep
-				b.sweeps[sweep.swapHash] = sweep
+				b.sweeps[sweep.outpoint] = sweep
 
 				// Update newCoopFailures to know if we need
 				// another attempt of cooperative signing.
@@ -1700,7 +1705,7 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		// batch and feed it back to the batcher.
 		if !found {
 			newSweep := sweep
-			delete(b.sweeps, sweep.swapHash)
+			delete(b.sweeps, sweep.outpoint)
 			purgeList = append(purgeList, SweepRequest{
 				SwapHash: newSweep.swapHash,
 				Outpoint: newSweep.outpoint,

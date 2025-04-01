@@ -47,8 +47,7 @@ WHERE
 INSERT INTO sweeps (
         swap_hash,
         batch_id,
-        outpoint_txid,
-        outpoint_index,
+        outpoint,
         amt,
         completed
 ) VALUES (
@@ -56,14 +55,10 @@ INSERT INTO sweeps (
         $2,
         $3,
         $4,
-        $5,
-        $6
-) ON CONFLICT (swap_hash) DO UPDATE SET
+        $5
+) ON CONFLICT (outpoint) DO UPDATE SET
         batch_id = $2,
-        outpoint_txid = $3,
-        outpoint_index = $4,
-        amt = $5,
-        completed = $6;
+        completed = $5;
 
 -- name: GetParentBatch :one
 SELECT
@@ -73,7 +68,7 @@ FROM
 JOIN
         sweeps ON sweep_batches.id = sweeps.batch_id
 WHERE
-        sweeps.swap_hash = $1;
+        sweeps.outpoint = $1;
 
 -- name: GetBatchSweptAmount :one
 SELECT
@@ -101,4 +96,4 @@ SELECT
 FROM
     (SELECT false AS false_value) AS f
 LEFT JOIN
-    sweeps s ON s.swap_hash = $1;
+    sweeps s ON s.outpoint = $1;
