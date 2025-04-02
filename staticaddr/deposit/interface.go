@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -25,6 +26,10 @@ type Store interface {
 
 	// GetDeposit retrieves a deposit with depositID from the database.
 	GetDeposit(ctx context.Context, depositID ID) (*Deposit, error)
+
+	// DepositForOutpoint retrieves the deposit with the given outpoint.
+	DepositForOutpoint(ctx context.Context, txHash chainhash.Hash,
+		idx uint32) (*Deposit, error)
 
 	// AllDeposits retrieves all deposits from the store.
 	AllDeposits(ctx context.Context) ([]*Deposit, error)
