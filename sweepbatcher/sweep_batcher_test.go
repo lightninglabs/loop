@@ -211,14 +211,26 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		checkBatcherError(t, err)
 	}()
 
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	op3 := wire.OutPoint{
+		Hash:  chainhash.Hash{3, 3},
+		Index: 3,
+	}
+
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -262,11 +274,10 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	// our configured threshold.
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    222,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value:    222,
+			Outpoint: op2,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -309,11 +320,10 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	// the default.
 	sweepReq3 := SweepRequest{
 		SwapHash: lntypes.Hash{3, 3, 3},
-		Value:    333,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3, 3},
-			Index: 3,
-		},
+		Inputs: []Input{{
+			Value:    333,
+			Outpoint: op3,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -360,12 +370,12 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.Outpoint:
+			case op1:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq3.Outpoint:
+			case op3:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -376,9 +386,9 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(op1))
+	require.True(t, batcherStore.AssertSweepStored(op2))
+	require.True(t, batcherStore.AssertSweepStored(op3))
 }
 
 // testFeeBumping tests that sweep is RBFed with slightly higher fee rate after
@@ -419,11 +429,13 @@ func testFeeBumping(t *testing.T, store testStore,
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    1_000_000,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value: 1_000_000,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -519,13 +531,16 @@ func testTxLabeler(t *testing.T, store testStore,
 	}()
 
 	// Create a sweep request.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -565,7 +580,7 @@ func testTxLabeler(t *testing.T, store testStore,
 	var wantLabel string
 	for _, btch := range getBatches(ctx, batcher) {
 		btch := btch.snapshot(ctx)
-		if btch.primarySweepID == sweepReq1.Outpoint {
+		if btch.primarySweepID == op1 {
 			wantLabel = fmt.Sprintf(
 				"BatchOutSweepSuccess -- %d", btch.id,
 			)
@@ -675,11 +690,13 @@ func testPublishErrorHandler(t *testing.T, store testStore,
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value: 111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -751,13 +768,16 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	}()
 
 	// Create a sweep request.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -794,7 +814,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	batch := &batch{}
 	for _, btch := range getBatches(ctx, batcher) {
 		btch.testRunInEventLoop(ctx, func() {
-			if btch.primarySweepID == sweepReq1.Outpoint {
+			if btch.primarySweepID == op1 {
 				batch = btch
 			}
 		})
@@ -806,7 +826,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The primary sweep id should be that of the first inserted sweep.
-	require.Equal(t, batch.primarySweepID, sweepReq1.Outpoint)
+	require.Equal(t, batch.primarySweepID, op1)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
@@ -833,7 +853,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		// outpoint we insert that outpoint here.
 		TxIn: []*wire.TxIn{
 			{
-				PreviousOutPoint: sweepReq1.Outpoint,
+				PreviousOutPoint: op1,
 			},
 		},
 		TxOut: []*wire.TxOut{
@@ -847,7 +867,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// Mock the spend notification that spends the swap.
 	spendDetail := &chainntnfs.SpendDetail{
-		SpentOutPoint:     &sweepReq1.Outpoint,
+		SpentOutPoint:     &op1,
 		SpendingTx:        spendingTx,
 		SpenderTxHash:     &spendingTxHash,
 		SpenderInputIndex: 0,
@@ -892,6 +912,7 @@ type wrappedLogger struct {
 
 	debugMessages []string
 	infoMessages  []string
+	warnMessages  []string
 }
 
 // Debugf logs debug message.
@@ -912,6 +933,15 @@ func (l *wrappedLogger) Infof(format string, params ...interface{}) {
 	l.Logger.Infof(format, params...)
 }
 
+// Warnf logs a warning message.
+func (l *wrappedLogger) Warnf(format string, params ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.warnMessages = append(l.warnMessages, format)
+	l.Logger.Warnf(format, params...)
+}
+
 // testDelays tests that WithInitialDelay and WithPublishDelay work.
 func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Set initial delay and publish delay.
@@ -919,6 +949,12 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		initialDelay = 4 * time.Second
 		publishDelay = 3 * time.Second
 	)
+
+	initialDelayProvider := func(_ context.Context, _ int,
+		_ btcutil.Amount) (time.Duration, error) {
+
+		return initialDelay, nil
+	}
 
 	defer test.Guard(t)()
 
@@ -935,7 +971,8 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(initialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 
@@ -952,13 +989,16 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	<-batcher.initDone
 
 	// Create a sweep request.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1010,7 +1050,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	wg2.Wait()
 
 	// Expect timer for initialDelay and publishDelay to be registered.
-	wantDelays := []time.Duration{initialDelay, publishDelay}
+	wantDelays := []time.Duration{publishDelay, initialDelay}
 	require.Equal(t, wantDelays, delays)
 
 	// Eventually the batch is launched.
@@ -1057,7 +1097,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op1) {
 			return false
 		}
 
@@ -1090,7 +1130,8 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	batcher = NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(initialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
@@ -1135,7 +1176,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Wait for batch to load.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op1) {
 			return false
 		}
 
@@ -1187,10 +1228,17 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// for an urgent sweep.
 	const largeInitialDelay = 6 * time.Hour
 
+	largeInitialDelayProvider := func(_ context.Context, _ int,
+		_ btcutil.Amount) (time.Duration, error) {
+
+		return largeInitialDelay, nil
+	}
+
 	batcher = NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepStore, WithInitialDelay(largeInitialDelay),
+		batcherStore, sweepStore,
+		WithInitialDelay(largeInitialDelayProvider),
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
@@ -1240,11 +1288,13 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// Create a sweep request which is not urgent, but close to.
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value: 111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{2, 2},
+				Index: 2,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1302,7 +1352,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	wg5.Wait()
 
 	// Expect two timers: largeInitialDelay, publishDelay.
-	wantDelays = []time.Duration{largeInitialDelay, publishDelay}
+	wantDelays = []time.Duration{publishDelay, largeInitialDelay}
 	require.Equal(t, wantDelays, delays)
 
 	// Replace the logger in the batch with wrappedLogger to watch messages.
@@ -1321,11 +1371,13 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// to make sure minimum timeout is calculated properly.
 	sweepReq3 := SweepRequest{
 		SwapHash: lntypes.Hash{3, 3, 3},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3, 3},
-			Index: 3,
-		},
+		Inputs: []Input{{
+			Value: 111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{3, 3},
+				Index: 3,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 	swap3 := &loopdb.LoopOutContract{
@@ -1358,10 +1410,238 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		testLogger2.mu.Lock()
 		defer testLogger2.mu.Unlock()
 
-		assert.Contains(c, testLogger2.infoMessages, "adding sweep %x")
+		assert.Contains(
+			c, testLogger2.infoMessages, "adding sweep %v, swap %x",
+		)
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Advance the clock by publishDelay. Don't wait largeInitialDelay.
+	now = now.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Wait for tx to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 2)
+
+	// Now make the batcher quit by canceling the context.
+	cancel()
+	wg.Wait()
+
+	// Make sure the batcher exited without an error.
+	checkBatcherError(t, runErr)
+}
+
+// testCustomDelays tests per-sweep customization in WithInitialDelay.
+func testCustomDelays(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	// Set initial delay and publish delay.
+	const (
+		initialDelay1 = 100 * time.Second
+		initialDelay2 = 4 * time.Second
+		publishDelay  = 3 * time.Second
+	)
+
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	swapHash2 := lntypes.Hash{2, 2, 2}
+
+	const (
+		swapSize1 = 111
+		swapSize2 = 222
+	)
+
+	// initialDelay returns initialDelay depending of batch size (sats).
+	initialDelayProvider := func(_ context.Context, numSweeps int,
+		value btcutil.Amount) (time.Duration, error) {
+
+		if value <= swapSize1 {
+			// Verify the number of sweeps.
+			if numSweeps != 1 {
+				return 0, fmt.Errorf("got unexpected number "+
+					"of sweeps: %d, want %d", numSweeps, 1)
+			}
+
+			return initialDelay1, nil
+		} else {
+			// Verify the number of sweeps.
+			if numSweeps != 2 {
+				return 0, fmt.Errorf("got unexpected number "+
+					"of sweeps: %d, want %d", numSweeps, 2)
+			}
+
+			return initialDelay2, nil
+		}
+	}
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	startTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
+	now := startTime
+	tickSignal := make(chan time.Duration)
+	testClock := clock.NewTestClockWithTickSignal(startTime, tickSignal)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
+		WithPublishDelay(publishDelay), WithClock(testClock),
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Inputs: []Input{{
+			Value: swapSize1,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+	err = store.CreateLoopOut(ctx, swapHash1, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq1))
+
+	// Expect two timers to be set: initialDelay and publishDelay,
+	// and RegisterSpend to be called. The order is not determined,
+	// so catch these actions from two separate goroutines.
+	var wg2 sync.WaitGroup
+
+	wg2.Add(1)
+	go func() {
+		defer wg2.Done()
+
+		// Since a batch was created we check that it registered for its
+		// primary sweep's spend.
+		<-lnd.RegisterSpendChannel
+	}()
+
+	wg2.Add(1)
+	var delays []time.Duration
+	go func() {
+		defer wg2.Done()
+
+		// Expect two timers: initialDelay and publishDelay.
+		delays = append(delays, <-tickSignal)
+		delays = append(delays, <-tickSignal)
+	}()
+
+	// Wait for RegisterSpend and for timer registrations.
+	wg2.Wait()
+
+	// Expect timer for initialDelay1 and publishDelay to be registered.
+	wantDelays := []time.Duration{publishDelay, initialDelay1}
+	require.Equal(t, wantDelays, delays)
+
+	// Eventually the batch is launched.
+	require.Eventually(t, func() bool {
+		return batcher.numBatches(ctx) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Now add swap 2, which has lower initialDelay.
+	sweepReq2 := SweepRequest{
+		SwapHash: swapHash2,
+		Inputs: []Input{{
+			Value: swapSize2,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{2, 2},
+				Index: 2,
+			},
+		}},
+		Notifier: &dummyNotifier,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+	err = store.CreateLoopOut(ctx, swapHash2, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(&sweepReq2))
+
+	// Expect timer for initialDelay2 to be registered, because
+	// initialDelay2 is lower than initialDelay1, meaning that swap2
+	// has higher priority than swap1.
+	require.Equal(t, initialDelay2, <-tickSignal)
+
+	// Replace the logger in the batch with wrappedLogger to watch messages.
+	batch1 := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch1.log(),
+	}
+	batch1.setLog(testLogger)
+
+	// Wait for publishDelay.
+	now = now.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Wait for batch publishing to be skipped, because initialDelay2
+	// has not ended.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Wait for initialDelay2.
+	now = now.Add(initialDelay2 - publishDelay)
+	testClock.SetTime(now)
+
+	// It should subscribe for publishDelay now.
+	require.Equal(t, publishDelay, <-tickSignal)
+
+	// Wait for publishDelay.
 	now = now.Add(publishDelay)
 	testClock.SetTime(now)
 
@@ -1448,8 +1728,10 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 		// Create a sweep request.
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
-			Value:    111,
-			Outpoint: outpoint,
+			Inputs: []Input{{
+				Value:    111,
+				Outpoint: outpoint,
+			}},
 			Notifier: &dummyNotifier,
 		}
 
@@ -1560,13 +1842,17 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	// Create some sweep requests with timeouts not too far away, in order
 	// to enter the same batch.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	value1 := btcutil.Amount(111)
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    value1,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1588,11 +1874,13 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    222,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value: 222,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{2, 2},
+				Index: 2,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1617,11 +1905,13 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	sweepReq3 := SweepRequest{
 		SwapHash: lntypes.Hash{3, 3, 3},
-		Value:    333,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3, 3},
-			Index: 3,
-		},
+		Inputs: []Input{{
+			Value: 333,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{3, 3},
+				Index: 3,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1683,7 +1973,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	b := &batch{}
 	for _, btch := range getBatches(ctx, batcher) {
 		btch.testRunInEventLoop(ctx, func() {
-			if btch.primarySweepID == sweepReq1.Outpoint {
+			if btch.primarySweepID == op1 {
 				b = btch
 			}
 		})
@@ -1696,7 +1986,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	// Verify that the batch has a primary sweep id that matches the first
 	// inserted sweep, sweep1.
-	require.Equal(t, b.primarySweepID, sweepReq1.Outpoint)
+	require.Equal(t, b.primarySweepID, op1)
 
 	// Create the spending tx. In order to simulate an older version of the
 	// batch transaction being confirmed, we only insert the primary sweep's
@@ -1707,12 +1997,12 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		Version: 1,
 		TxIn: []*wire.TxIn{
 			{
-				PreviousOutPoint: sweepReq1.Outpoint,
+				PreviousOutPoint: op1,
 			},
 		},
 		TxOut: []*wire.TxOut{
 			{
-				Value: int64(sweepReq1.Value.ToUnit(
+				Value: int64(value1.ToUnit(
 					btcutil.AmountSatoshi,
 				)),
 				PkScript: []byte{3, 2, 1},
@@ -1723,7 +2013,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	spendingTxHash := spendingTx.TxHash()
 
 	spendDetail := &chainntnfs.SpendDetail{
-		SpentOutPoint:     &sweepReq1.Outpoint,
+		SpentOutPoint:     &op1,
 		SpendingTx:        spendingTx,
 		SpenderTxHash:     &spendingTxHash,
 		SpenderInputIndex: 0,
@@ -1794,6 +2084,88 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	require.Equal(t, b1.state, Open)
 }
 
+// testSweepBatcherGroup tests adding a group of UTXOs with the same swap hash
+// to the batcher.
+func testSweepBatcherGroup(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	swapHash := lntypes.Hash{1, 1, 1}
+
+	outpoint1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	outpoint2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      111,
+			AmountRequested: 111,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Create sweep request with a group of two UTXOs.
+	sweepReq := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Inputs: []Input{
+			{
+				Outpoint: outpoint1,
+				Value:    111,
+			},
+			{
+				Outpoint: outpoint2,
+				Value:    222,
+			},
+		},
+		Notifier: &dummyNotifier,
+	}
+	require.NoError(t, batcher.AddSweep(&sweepReq))
+
+	// After inserting the primary (first) sweep, a spend monitor should be
+	// registered.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 2)
+	require.ElementsMatch(
+		t, []wire.OutPoint{outpoint1, outpoint2},
+		[]wire.OutPoint{
+			tx.TxIn[0].PreviousOutPoint,
+			tx.TxIn[1].PreviousOutPoint,
+		},
+	)
+}
+
 // testSweepBatcherNonWalletAddr tests that sweep requests that sweep to a non
 // wallet address enter individual batches.
 func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
@@ -1816,14 +2188,26 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 		checkBatcherError(t, err)
 	}()
 
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	op3 := wire.OutPoint{
+		Hash:  chainhash.Hash{3, 3},
+		Index: 3,
+	}
+
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1867,11 +2251,10 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// our configured threshold.
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    222,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value:    222,
+			Outpoint: op2,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1914,11 +2297,10 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	// the default.
 	sweepReq3 := SweepRequest{
 		SwapHash: lntypes.Hash{3, 3, 3},
-		Value:    333,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3, 3},
-			Index: 3,
-		},
+		Inputs: []Input{{
+			Value:    333,
+			Outpoint: op3,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -1964,17 +2346,17 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.Outpoint:
+			case op1:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq2.Outpoint:
+			case op2:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq3.Outpoint:
+			case op3:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -1985,9 +2367,9 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(op1))
+	require.True(t, batcherStore.AssertSweepStored(op2))
+	require.True(t, batcherStore.AssertSweepStored(op3))
 }
 
 // testSweepBatcherComposite tests that sweep requests that sweep to both wallet
@@ -2012,14 +2394,38 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		checkBatcherError(t, err)
 	}()
 
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	op3 := wire.OutPoint{
+		Hash:  chainhash.Hash{3, 3},
+		Index: 3,
+	}
+	op4 := wire.OutPoint{
+		Hash:  chainhash.Hash{4, 4},
+		Index: 4,
+	}
+	op5 := wire.OutPoint{
+		Hash:  chainhash.Hash{5, 5},
+		Index: 5,
+	}
+	op6 := wire.OutPoint{
+		Hash:  chainhash.Hash{6, 6},
+		Index: 6,
+	}
+
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2043,11 +2449,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// our configured threshold.
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    222,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value:    222,
+			Outpoint: op2,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2074,11 +2479,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// default max, but is not spending to a wallet address.
 	sweepReq3 := SweepRequest{
 		SwapHash: lntypes.Hash{3, 3, 3},
-		Value:    333,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3, 3},
-			Index: 3,
-		},
+		Inputs: []Input{{
+			Value:    333,
+			Outpoint: op3,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2106,11 +2510,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// for the first batch, so it will cause it to create a new batch.
 	sweepReq4 := SweepRequest{
 		SwapHash: lntypes.Hash{4, 4, 4},
-		Value:    444,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{4, 4},
-			Index: 4,
-		},
+		Inputs: []Input{{
+			Value:    444,
+			Outpoint: op4,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2137,11 +2540,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// for the first batch, but a valid timeout for the new batch.
 	sweepReq5 := SweepRequest{
 		SwapHash: lntypes.Hash{5, 5, 5},
-		Value:    555,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{5, 5},
-			Index: 5,
-		},
+		Inputs: []Input{{
+			Value:    555,
+			Outpoint: op5,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2168,11 +2570,10 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	// batch, but is paying to a non-wallet address.
 	sweepReq6 := SweepRequest{
 		SwapHash: lntypes.Hash{6, 6, 6},
-		Value:    666,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{6, 6},
-			Index: 6,
-		},
+		Inputs: []Input{{
+			Value:    666,
+			Outpoint: op6,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2303,22 +2704,22 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		for _, batch := range batches {
 			batch := batch.snapshot(ctx)
 			switch batch.primarySweepID {
-			case sweepReq1.Outpoint:
+			case op1:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq3.Outpoint:
+			case op3:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
 
-			case sweepReq4.Outpoint:
+			case op4:
 				if len(batch.sweeps) != 2 {
 					return false
 				}
 
-			case sweepReq6.Outpoint:
+			case op5:
 				if len(batch.sweeps) != 1 {
 					return false
 				}
@@ -2329,12 +2730,12 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Check that all sweeps were stored.
-	require.True(t, batcherStore.AssertSweepStored(sweepReq1.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq2.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq3.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq4.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq5.Outpoint))
-	require.True(t, batcherStore.AssertSweepStored(sweepReq6.Outpoint))
+	require.True(t, batcherStore.AssertSweepStored(op1))
+	require.True(t, batcherStore.AssertSweepStored(op2))
+	require.True(t, batcherStore.AssertSweepStored(op3))
+	require.True(t, batcherStore.AssertSweepStored(op4))
+	require.True(t, batcherStore.AssertSweepStored(op5))
+	require.True(t, batcherStore.AssertSweepStored(op6))
 }
 
 // makeTestTx creates a test transaction with a single output of the given
@@ -2416,14 +2817,18 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
 
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+
 	// Create a sweep request.
 	sweepReq := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2458,7 +2863,7 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op) {
 			return false
 		}
 
@@ -2598,13 +3003,16 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 
 	// Create two sweep requests with CltvExpiry distant from each other
 	// to go assigned to separate batches.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op1,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2625,13 +3033,16 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		},
 	}
 
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
 	sweepReq2 := SweepRequest{
 		SwapHash: lntypes.Hash{2, 2, 2},
-		Value:    222,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 2,
-		},
+		Inputs: []Input{{
+			Value:    222,
+			Outpoint: op2,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2678,10 +3089,10 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored and we have exactly one
 		// active batch.
-		if !batcherStore.AssertSweepStored(sweepReq1.Outpoint) {
+		if !batcherStore.AssertSweepStored(op1) {
 			return false
 		}
-		if !batcherStore.AssertSweepStored(sweepReq2.Outpoint) {
+		if !batcherStore.AssertSweepStored(op2) {
 			return false
 		}
 
@@ -2732,7 +3143,7 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		snapshot := secondBatch.snapshot(ctx)
 
 		// Make sure the second batch has the second sweep.
-		sweep2, has := snapshot.sweeps[sweepReq2.Outpoint]
+		sweep2, has := snapshot.sweeps[op2]
 		if !has {
 			return false
 		}
@@ -2794,13 +3205,16 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	<-batcher.initDone
 
 	// Create a sweep request.
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    111,
+			Outpoint: op,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -2835,7 +3249,7 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op) {
 			return false
 		}
 
@@ -2891,7 +3305,7 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	// Wait for batch to load.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op) {
 			return false
 		}
 
@@ -2989,19 +3403,22 @@ func testSweepFetcher(t *testing.T, store testStore,
 	}
 
 	// Create a sweep request.
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
 	sweepReq := SweepRequest{
 		SwapHash: swapHash,
-		Value:    amt,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value:    amt,
+			Outpoint: op,
+		}},
 		Notifier: &dummyNotifier,
 	}
 
 	sweepFetcher := &sweepFetcherMock{
 		store: map[wire.OutPoint]*SweepInfo{
-			sweepReq.Outpoint: sweepInfo,
+			op: sweepInfo,
 		},
 	}
 
@@ -3047,7 +3464,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	// batch.
 	require.Eventually(t, func() bool {
 		// Make sure that the sweep was stored
-		if !batcherStore.AssertSweepStored(sweepReq.Outpoint) {
+		if !batcherStore.AssertSweepStored(op) {
 			return false
 		}
 
@@ -3147,11 +3564,13 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 			// Create a sweep request.
 			sweepReq := SweepRequest{
 				SwapHash: lntypes.Hash{i, i, i},
-				Value:    111,
-				Outpoint: wire.OutPoint{
-					Hash:  chainhash.Hash{i, i},
-					Index: 1,
-				},
+				Inputs: []Input{{
+					Value: 111,
+					Outpoint: wire.OutPoint{
+						Hash:  chainhash.Hash{i, i},
+						Index: 1,
+					},
+				}},
 				Notifier: &dummyNotifier,
 			}
 
@@ -3224,11 +3643,13 @@ func testCustomSignMuSig2(t *testing.T, store testStore,
 	// Create a sweep request.
 	sweepReq := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
-		Value:    111,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value: 111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -3407,8 +3828,10 @@ func testWithMixedBatch(t *testing.T, store testStore,
 		// Create sweep request.
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
-			Value:    1_000_000,
-			Outpoint: outpoint,
+			Inputs: []Input{{
+				Value:    1_000_000,
+				Outpoint: outpoint,
+			}},
 			Notifier: &dummyNotifier,
 		}
 		require.NoError(t, batcher.AddSweep(&sweepReq))
@@ -3575,8 +3998,10 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 		// Create sweep request.
 		sweepReq := SweepRequest{
 			SwapHash: swapHash,
-			Value:    1_000_000,
-			Outpoint: outpoint,
+			Inputs: []Input{{
+				Value:    1_000_000,
+				Outpoint: outpoint,
+			}},
 			Notifier: &dummyNotifier,
 		}
 		require.NoError(t, batcher.AddSweep(&sweepReq))
@@ -3877,11 +4302,13 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	setFeeRate(swapHash1, feeRateMedium)
 	sweepReq1 := SweepRequest{
 		SwapHash: swapHash1,
-		Value:    1_000_000,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1, 1},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value: 1_000_000,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -3941,11 +4368,13 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	setFeeRate(swapHash2, feeRateMedium)
 	sweepReq2 := SweepRequest{
 		SwapHash: swapHash2,
-		Value:    1_000_000,
-		Outpoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2, 2},
-			Index: 1,
-		},
+		Inputs: []Input{{
+			Value: 1_000_000,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{2, 2},
+				Index: 1,
+			},
+		}},
 		Notifier: &dummyNotifier,
 	}
 
@@ -4049,6 +4478,11 @@ func TestDelays(t *testing.T) {
 	runTests(t, testDelays)
 }
 
+// TestCustomDelays tests per-sweep customization in WithInitialDelay.
+func TestCustomDelays(t *testing.T) {
+	runTests(t, testCustomDelays)
+}
+
 // TestMaxSweepsPerBatch tests the limit on max number of sweeps per batch.
 func TestMaxSweepsPerBatch(t *testing.T) {
 	runTests(t, testMaxSweepsPerBatch)
@@ -4058,6 +4492,12 @@ func TestMaxSweepsPerBatch(t *testing.T) {
 // gets confirmed the sweep leftovers are sent back to the batcher.
 func TestSweepBatcherSweepReentry(t *testing.T) {
 	runTests(t, testSweepBatcherSweepReentry)
+}
+
+// TestSweepBatcherGroup tests adding a group of UTXOs with the same swap hash
+// to the batcher.
+func TestSweepBatcherGroup(t *testing.T) {
+	runTests(t, testSweepBatcherGroup)
 }
 
 // TestSweepBatcherNonWalletAddr tests that sweep requests that sweep to a non

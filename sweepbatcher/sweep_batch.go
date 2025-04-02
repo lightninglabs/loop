@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -121,6 +122,9 @@ type sweep struct {
 	// but it failed. We try to spend a sweep cooperatively only once. This
 	// status is not persisted in the DB.
 	coopFailed bool
+
+	// presigned is set, if the sweep should be handled in presigned mode.
+	presigned bool
 }
 
 // batchState is the state of the batch.
@@ -151,11 +155,13 @@ type batchConfig struct {
 	// clock provides methods to work with time and timers.
 	clock clock.Clock
 
-	// initialDelay is the delay of first batch publishing after creation.
-	// It only affects newly created batches, not batches loaded from DB,
-	// so publishing does happen in case of a daemon restart (especially
-	// important in case of a crashloop).
-	initialDelay time.Duration
+	// initialDelayProvider provides the delay of first batch publishing
+	// after creation. It only affects newly created batches, not batches
+	// loaded from DB, so publishing does happen in case of a daemon restart
+	// (especially important in case of a crashloop). If a sweep is about to
+	// expire (time until timeout is less that 2x initialDelay), then
+	// waiting is skipped.
+	initialDelayProvider InitialDelayProvider
 
 	// batchPublishDelay is the delay between receiving a new block or
 	// initial delay completion and publishing the batch transaction.
@@ -174,6 +180,14 @@ type batchConfig struct {
 	// Note that musig2SignSweep must be nil in this case, however signer
 	// client must still be provided, as it is used for non-coop spendings.
 	customMuSig2Signer SignMuSig2
+
+	// presignedHelper provides methods used when presigned batches are
+	// enabled.
+	presignedHelper PresignedHelper
+
+	// chainParams are the chain parameters of the chain that is used by
+	// batches.
+	chainParams *chaincfg.Params
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -463,55 +477,22 @@ func (b *batch) Errorf(format string, params ...interface{}) {
 	b.log().Errorf(format, params...)
 }
 
-// addSweep tries to add a sweep to the batch. If this is the first sweep being
-// added to the batch then it also sets the primary sweep ID.
-func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
-	done, err := b.scheduleNextCall()
-	defer done()
-
-	if err != nil {
-		return false, err
-	}
-
+// checkSweepToAdd checks if a sweep can be added or updated in the batch. The
+// caller must lock the event loop using scheduleNextCall. The function returns
+// if the sweep already exists in the batch. If presigned mode is enabled, the
+// result depends on the outcome of the method presignedHelper.Presign for a
+// non-empty batch. For an empty batch, the input needs to pass
+// PresignSweepsGroup.
+func (b *batch) checkSweepToAdd(_ context.Context, sweep *sweep) (bool, error) {
 	// If the provided sweep is nil, we can't proceed with any checks, so
 	// we just return early.
 	if sweep == nil {
-		b.Infof("the sweep is nil")
-
-		return false, nil
+		return false, fmt.Errorf("the sweep is nil")
 	}
 
 	// Before we run through the acceptance checks, let's just see if this
 	// sweep is already in our batch. In that case, just update the sweep.
-	oldSweep, ok := b.sweeps[sweep.outpoint]
-	if ok {
-		// Preserve coopFailed value not to forget about cooperative
-		// spending failure in this sweep.
-		tmp := *sweep
-		tmp.coopFailed = oldSweep.coopFailed
-
-		// If the sweep was resumed from storage, and the swap requested
-		// to sweep again, a new sweep notifier will be created by the
-		// swap. By re-assigning to the batch's sweep we make sure that
-		// everything, including the notifier, is up to date.
-		b.sweeps[sweep.outpoint] = tmp
-
-		// If this is the primary sweep, we also need to update the
-		// batch's confirmation target and fee rate.
-		if b.primarySweepID == sweep.outpoint {
-			b.cfg.batchConfTarget = sweep.confTarget
-			b.rbfCache.SkipNextBump = true
-		}
-
-		// Update batch's fee rate to be greater than or equal to
-		// minFeeRate of the sweep. Make sure batch's fee rate does not
-		// decrease (otherwise it won't pass RBF rules and won't be
-		// broadcasted) and that it is not lower that minFeeRate of
-		// other sweeps (so it is applied).
-		if b.rbfCache.FeeRate < sweep.minFeeRate {
-			b.rbfCache.FeeRate = sweep.minFeeRate
-		}
-
+	if _, ok := b.sweeps[sweep.outpoint]; ok {
 		return true, nil
 	}
 
@@ -519,19 +500,16 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// the batch, do not add another sweep to prevent the tx from becoming
 	// non-standard.
 	if len(b.sweeps) >= MaxSweepsPerBatch {
-		b.Infof("the batch has already too many sweeps %d >= %d",
-			len(b.sweeps), MaxSweepsPerBatch)
-
-		return false, nil
+		return false, fmt.Errorf("the batch has already too many "+
+			"sweeps %d >= %d", len(b.sweeps), MaxSweepsPerBatch)
 	}
 
 	// Since all the actions of the batch happen sequentially, we could
 	// arrive here after the batch got closed because of a spend. In this
 	// case we cannot add the sweep to this batch.
 	if b.state != Open {
-		b.Infof("the batch state (%v) is not open", b.state)
-
-		return false, nil
+		return false, fmt.Errorf("the batch state (%v) is not open",
+			b.state)
 	}
 
 	// If this batch contains a single sweep that spends to a non-wallet
@@ -539,17 +517,15 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// we cannot add this sweep to the batch.
 	for _, s := range b.sweeps {
 		if s.isExternalAddr {
-			b.Infof("the batch already has a sweep %x with "+
-				"an external address", s.swapHash[:6])
-
-			return false, nil
+			return false, fmt.Errorf("the batch already has a "+
+				"sweep %x with an external address",
+				s.swapHash[:6])
 		}
 
 		if sweep.isExternalAddr {
-			b.Infof("the batch is not empty and new sweep %x "+
-				"has an external address", sweep.swapHash[:6])
-
-			return false, nil
+			return false, fmt.Errorf("the batch is not empty and "+
+				"new sweep %x has an external address",
+				sweep.swapHash[:6])
 		}
 	}
 
@@ -561,46 +537,239 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 			int32(math.Abs(float64(sweep.timeout - s.timeout)))
 
 		if timeoutDistance > b.cfg.maxTimeoutDistance {
-			b.Infof("too long timeout distance between the "+
-				"batch and sweep %x: %d > %d",
+			return false, fmt.Errorf("too long timeout distance "+
+				"between the batch and sweep %x: %d > %d",
 				sweep.swapHash[:6], timeoutDistance,
 				b.cfg.maxTimeoutDistance)
+		}
+	}
+
+	// Everything is ok, the sweep can be added to the batch.
+	return false, nil
+}
+
+// addSweeps tries to add sweeps to the batch. If this is the first sweep being
+// added to the batch then it also sets the primary sweep ID. It returns if the
+// sweeps were accepted to the batch.
+func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
+	done, err := b.scheduleNextCall()
+	defer done()
+	if err != nil {
+		return false, err
+	}
+
+	// This must be a bug, so log a warning.
+	if len(sweeps) == 0 {
+		b.Warnf("An attempt to add zero sweeps.")
+
+		return false, nil
+	}
+
+	// Track how many new and existing sweeps are among the sweeps.
+	var numExisting, numNew int
+	for _, s := range sweeps {
+		existing, err := b.checkSweepToAdd(ctx, s)
+		if err != nil {
+			b.Infof("Failed to add sweep %v to batch %d: %v",
+				s.outpoint, b.id, err)
 
 			return false, nil
+		}
+		if existing {
+			numExisting++
+		} else {
+			numNew++
+		}
+	}
+
+	// Make sure the whole group is either new or existing. If this is not
+	// the case, this might be a bug, so print a warning.
+	if numExisting > 0 && numNew > 0 {
+		b.Warnf("There are %d existing and %d new sweeps among the "+
+			"group. They must not be mixed.", numExisting, numNew)
+
+		return false, nil
+	}
+
+	// Make sure all the sweeps spend different outpoints.
+	outpointsSet := make(map[wire.OutPoint]struct{}, len(sweeps))
+	for _, s := range sweeps {
+		if _, has := outpointsSet[s.outpoint]; has {
+			b.Warnf("Multiple sweeps spend outpoint %v", s.outpoint)
+
+			return false, nil
+		}
+		outpointsSet[s.outpoint] = struct{}{}
+	}
+
+	// Track if there is a presigned and a regular sweep.
+	var hasPresigned, hasRegular bool
+	for _, s := range sweeps {
+		if s.presigned {
+			hasPresigned = true
+		} else {
+			hasRegular = true
+		}
+	}
+	if hasPresigned && hasRegular {
+		b.Warnf("There are presigned and regular sweeps in the group")
+
+		return false, nil
+	}
+
+	// If presigned mode is enabled, we should first presign the new version
+	// of batch transaction. Also ensure that all the sweeps in the batch
+	// use the same mode (presigned or regular).
+	if hasPresigned {
+		// Ensure that all the sweeps in the batch use presigned mode.
+		for _, s := range b.sweeps {
+			if !s.presigned {
+				b.Warnf("Failed to add presigned sweep %x to "+
+					"the batch, because the batch has "+
+					"non-presigned sweep %x",
+					sweeps[0].swapHash[:6], s.swapHash[:6])
+
+				return false, nil
+			}
+		}
+
+		switch {
+		// We don't need to run checks if existing sweeps are updated.
+		case numExisting == len(sweeps):
+
+		// If new sweeps are added to the batch, we need to presign new
+		// version of batch transaction.
+		case len(b.sweeps) != 0:
+			if err := b.presign(ctx, sweeps); err != nil {
+				b.Warnf("Failed to add sweep %x to the batch, "+
+					"because failed to presign new version"+
+					" of batch tx: %v",
+					sweeps[0].swapHash[:6], err)
+
+				return false, nil
+			}
+
+		// If this is new batch being formed, make sure we already have
+		// a presigned transaction.
+		default:
+			if err := b.ensurePresigned(ctx, sweeps); err != nil {
+				b.Warnf("Failed to check signing of input %x,"+
+					" this means that PresignSweepsGroup "+
+					"was not called prior to AddSweep for"+
+					" this input: %w",
+					sweeps[0].swapHash[:6], err)
+
+				return false, nil
+			}
+		}
+	} else {
+		// Ensure that all the sweeps in the batch don't use presigned.
+		for _, s := range b.sweeps {
+			if s.presigned {
+				b.Warnf("failed to add a non-presigned sweep "+
+					"%x to the batch, because the batch "+
+					"has presigned sweep %x",
+					sweeps[0].swapHash[:6], s.swapHash[:6])
+
+				return false, nil
+			}
 		}
 	}
 
 	// Past this point we know that a new incoming sweep passes the
 	// acceptance criteria and is now ready to be added to this batch.
 
-	// If this is the first sweep being added to the batch, make it the
-	// primary sweep.
-	if b.primarySweepID == zeroSweepID {
-		b.primarySweepID = sweep.outpoint
-		b.cfg.batchConfTarget = sweep.confTarget
-		b.rbfCache.FeeRate = sweep.minFeeRate
-		b.rbfCache.SkipNextBump = true
+	// For an existing group, update the sweeps in the batch.
+	if numExisting == len(sweeps) {
+		for _, s := range sweeps {
+			oldSweep, ok := b.sweeps[s.outpoint]
+			if !ok {
+				return false, fmt.Errorf("sweep %v not found "+
+					"in batch %d", s.outpoint, b.id)
+			}
 
-		// We also need to start the spend monitor for this new primary
-		// sweep.
-		err := b.monitorSpend(ctx, *sweep)
-		if err != nil {
-			return false, err
+			// Preserve coopFailed value not to forget about
+			// cooperative spending failure in this sweep.
+			tmp := *s
+			tmp.coopFailed = oldSweep.coopFailed
+
+			// If the sweep was resumed from storage, and the swap
+			// requested to sweep again, a new sweep notifier will
+			// be created by the swap. By re-assigning to the
+			// batch's sweep we make sure that everything, including
+			// the notifier, is up to date.
+			b.sweeps[s.outpoint] = tmp
+
+			// If this is the primary sweep, we also need to update
+			// the batch's confirmation target and fee rate.
+			if b.primarySweepID == s.outpoint {
+				b.cfg.batchConfTarget = s.confTarget
+				b.rbfCache.SkipNextBump = true
+			}
+
+			// Update batch's fee rate to be greater than or equal
+			// to minFeeRate of the sweep. Make sure batch's fee
+			// rate does not decrease (otherwise it won't pass RBF
+			// rules and won't be broadcasted) and that it is not
+			// lower that minFeeRate of other sweeps (so it is
+			// applied).
+			if b.rbfCache.FeeRate < s.minFeeRate {
+				b.rbfCache.FeeRate = s.minFeeRate
+			}
+		}
+
+		return true, nil
+	} else if numNew != len(sweeps) {
+		// Sanity check: all the sweeps must be either existing or new.
+		// We have checked this above, let's check here as well.
+		return false, fmt.Errorf("bug in numExisting and numNew logic:"+
+			" numExisting=%d, numNew=%d, len(sweeps)=%d, "+
+			"len(b.sweeps)=%d", numExisting, numNew, len(sweeps),
+			len(b.sweeps))
+	}
+
+	// Here is the code to add new sweeps to a batch.
+	for _, s := range sweeps {
+		// If this is the first sweep being added to the batch, make it
+		// the primary sweep.
+		if b.primarySweepID == zeroSweepID {
+			b.primarySweepID = s.outpoint
+			b.cfg.batchConfTarget = s.confTarget
+			b.rbfCache.FeeRate = s.minFeeRate
+			b.rbfCache.SkipNextBump = true
+
+			// We also need to start the spend monitor for this new
+			// primary sweep.
+			err := b.monitorSpend(ctx, *s)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		// Make sure the sweep is not present in the batch. If it is
+		// present, this is a bug, return an error to stop here.
+		if _, has := b.sweeps[s.outpoint]; has {
+			return false, fmt.Errorf("sweep %v is already present "+
+				"in batch %d", s.outpoint, b.id)
+		}
+
+		// Add the sweep to the batch's sweeps.
+		b.Infof("adding sweep %v, swap %x", s.outpoint, s.swapHash[:6])
+		b.sweeps[s.outpoint] = *s
+
+		// Update FeeRate. Max(s.minFeeRate) for all the sweeps of
+		// the batch is the basis for fee bumps.
+		if b.rbfCache.FeeRate < s.minFeeRate {
+			b.rbfCache.FeeRate = s.minFeeRate
+			b.rbfCache.SkipNextBump = true
+		}
+
+		if err := b.persistSweep(ctx, *s, false); err != nil {
+			return true, err
 		}
 	}
 
-	// Add the sweep to the batch's sweeps.
-	b.Infof("adding sweep %x", sweep.swapHash[:6])
-	b.sweeps[sweep.outpoint] = *sweep
-
-	// Update FeeRate. Max(sweep.minFeeRate) for all the sweeps of
-	// the batch is the basis for fee bumps.
-	if b.rbfCache.FeeRate < sweep.minFeeRate {
-		b.rbfCache.FeeRate = sweep.minFeeRate
-		b.rbfCache.SkipNextBump = true
-	}
-
-	return true, b.persistSweep(ctx, *sweep, false)
+	return true, nil
 }
 
 // sweepExists returns true if the batch contains the sweep with the given
@@ -650,6 +819,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 	// Cache clock variable.
 	clock := b.cfg.clock
+	startTime := clock.Now()
 
 	blockChan, blockErrChan, err :=
 		b.chainNotifier.RegisterBlockEpochNtfn(runCtx)
@@ -679,17 +849,15 @@ func (b *batch) Run(ctx context.Context) error {
 
 	// skipBefore is the time before which we skip batch publishing.
 	// This is needed to facilitate better grouping of sweeps.
+	// The value is set only if the batch has at least one sweep.
 	// For batches loaded from DB initialDelay should be 0.
-	skipBefore := clock.Now().Add(b.cfg.initialDelay)
+	var skipBefore *time.Time
 
 	// initialDelayChan is a timer which fires upon initial delay end.
 	// If initialDelay is set to 0, it will not trigger to avoid setting up
 	// timerChan twice, which could lead to double publishing if
 	// batchPublishDelay is also 0.
 	var initialDelayChan <-chan time.Time
-	if b.cfg.initialDelay > 0 {
-		initialDelayChan = clock.TickAfter(b.cfg.initialDelay)
-	}
 
 	// We use a timer in order to not publish new transactions at the same
 	// time as the block epoch notification. This is done to prevent
@@ -703,6 +871,42 @@ func (b *batch) Run(ctx context.Context) error {
 		b.primarySweepID, len(b.sweeps))
 
 	for {
+		// If the batch if not empty, find earliest initialDelay.
+		var totalSweptAmt btcutil.Amount
+		for _, sweep := range b.sweeps {
+			totalSweptAmt += sweep.value
+		}
+
+		skipBeforeUpdated := false
+		if totalSweptAmt != 0 {
+			initialDelay, err := b.cfg.initialDelayProvider(
+				ctx, len(b.sweeps), totalSweptAmt,
+			)
+			if err != nil {
+				b.Warnf("initialDelayProvider failed: %v", err)
+				initialDelay = 0
+			}
+			if initialDelay < 0 {
+				b.Warnf("negative delay: %v", initialDelay)
+				initialDelay = 0
+			}
+			delayStop := startTime.Add(initialDelay)
+			if skipBefore == nil || delayStop.Before(*skipBefore) {
+				skipBefore = &delayStop
+				skipBeforeUpdated = true
+			}
+		}
+
+		// Create new timer only if the value of skipBefore was updated.
+		// Don't create the timer if the delay is <= 0 to avoid double
+		// publishing if batchPublishDelay is also 0.
+		if skipBeforeUpdated {
+			delay := skipBefore.Sub(clock.Now())
+			if delay > 0 {
+				initialDelayChan = clock.TickAfter(delay)
+			}
+		}
+
 		select {
 		case <-b.callEnter:
 			<-b.callLeave
@@ -718,7 +922,7 @@ func (b *batch) Run(ctx context.Context) error {
 
 		case <-initialDelayChan:
 			b.Debugf("initial delay of duration %v has ended",
-				b.cfg.initialDelay)
+				clock.Now().Sub(startTime))
 
 			// Set the timer to publish the batch transaction after
 			// the configured delay.
@@ -732,9 +936,15 @@ func (b *batch) Run(ctx context.Context) error {
 				continue
 			}
 
+			if skipBefore == nil {
+				b.Debugf("Skipping publishing, because " +
+					"the batch is empty.")
+				continue
+			}
+
 			// If the batch became urgent, skipBefore is set to now.
-			if b.isUrgent(skipBefore) {
-				skipBefore = clock.Now()
+			if b.isUrgent(*skipBefore) {
+				*skipBefore = clock.Now()
 			}
 
 			// Check that the initial delay has ended. We have also
@@ -742,7 +952,7 @@ func (b *batch) Run(ctx context.Context) error {
 			// initialDelayChan has just fired, this check passes.
 			now := clock.Now()
 			if skipBefore.After(now) {
-				b.Debugf(stillWaitingMsg, skipBefore, now)
+				b.Debugf(stillWaitingMsg, *skipBefore, now)
 				continue
 			}
 
@@ -874,6 +1084,39 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 	return true
 }
 
+// isPresigned returns if the batch uses presigned mode. Currently presigned and
+// non-presigned sweeps never appear in the same batch. Fails if the batch is
+// empty or contains both presigned and regular sweeps.
+func (b *batch) isPresigned() (bool, error) {
+	var (
+		hasPresigned bool
+		hasRegular   bool
+	)
+
+	for _, sweep := range b.sweeps {
+		if sweep.presigned {
+			hasPresigned = true
+		} else {
+			hasRegular = true
+		}
+	}
+
+	switch {
+	case hasPresigned && !hasRegular:
+		return true, nil
+
+	case !hasPresigned && hasRegular:
+		return false, nil
+
+	case hasPresigned && hasRegular:
+		return false, fmt.Errorf("the batch has both presigned and " +
+			"non-presigned sweeps")
+
+	default:
+		return false, fmt.Errorf("the batch is empty")
+	}
+}
+
 // publish creates and publishes the latest batch transaction to the network.
 func (b *batch) publish(ctx context.Context) error {
 	var (
@@ -899,7 +1142,19 @@ func (b *batch) publish(ctx context.Context) error {
 		b.publishErrorHandler(err, errMsg, b.log())
 	}
 
-	fee, err, signSuccess = b.publishMixedBatch(ctx)
+	// Determine if we should use presigned mode for the batch.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"presigned mode: %w", b.id, err)
+	}
+
+	if presigned {
+		fee, err, signSuccess = b.publishPresigned(ctx)
+	} else {
+		fee, err, signSuccess = b.publishMixedBatch(ctx)
+	}
+
 	if err != nil {
 		if signSuccess {
 			logPublishError("publish error", err)
@@ -970,9 +1225,9 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 
 // constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
 // It also returns absolute fee (from weight and clamped).
-func (b *batch) constructUnsignedTx(sweeps []sweep,
-	address btcutil.Address) (*wire.MsgTx, lntypes.WeightUnit,
-	btcutil.Amount, btcutil.Amount, error) {
+func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
+	currentHeight int32, feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
+	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
 
 	// Sanity check, there should be at least 1 sweep in this batch.
 	if len(sweeps) == 0 {
@@ -982,7 +1237,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 	// Create the batch transaction.
 	batchTx := &wire.MsgTx{
 		Version:  2,
-		LockTime: uint32(b.currentHeight),
+		LockTime: uint32(currentHeight),
 	}
 
 	// Add transaction inputs and estimate its weight.
@@ -1034,7 +1289,7 @@ func (b *batch) constructUnsignedTx(sweeps []sweep,
 
 	// Find weight and fee.
 	weight := weightEstimate.Weight()
-	feeForWeight := b.rbfCache.FeeRate.FeeForWeight(weight)
+	feeForWeight := feeRate.FeeForWeight(weight)
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee := clampBatchFee(feeForWeight, batchAmt)
@@ -1119,8 +1374,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 
 		// Construct unsigned batch transaction.
 		var err error
-		tx, weight, feeForWeight, fee, err = b.constructUnsignedTx(
-			sweeps, address,
+		tx, weight, feeForWeight, fee, err = constructUnsignedTx(
+			sweeps, address, b.currentHeight, b.rbfCache.FeeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -1708,8 +1963,12 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 			delete(b.sweeps, sweep.outpoint)
 			purgeList = append(purgeList, SweepRequest{
 				SwapHash: newSweep.swapHash,
-				Outpoint: newSweep.outpoint,
-				Value:    newSweep.value,
+				Inputs: []Input{
+					{
+						Outpoint: newSweep.outpoint,
+						Value:    newSweep.value,
+					},
+				},
 				Notifier: newSweep.notifier,
 			})
 		}
@@ -1783,6 +2042,28 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 // handleConf handles a confirmation notification. This is the final step of the
 // batch. Here we signal to the batcher that this batch was completed.
 func (b *batch) handleConf(ctx context.Context) error {
+	// If the batch is in presigned mode, cleanup presignedHelper.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return fmt.Errorf("failed to determine if the batch %d uses "+
+			"presigned mode: %w", b.id, err)
+	}
+
+	if presigned {
+		b.Infof("Cleaning up presigned store")
+
+		inputs := make([]wire.OutPoint, 0, len(b.sweeps))
+		for _, sweep := range b.sweeps {
+			inputs = append(inputs, sweep.outpoint)
+		}
+
+		err := b.cfg.presignedHelper.CleanupTransactions(ctx, inputs)
+		if err != nil {
+			return fmt.Errorf("failed to clean up store for "+
+				"batch %d, inputs %v: %w", b.id, inputs, err)
+		}
+	}
+
 	b.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
@@ -1825,7 +2106,21 @@ func (b *batch) persist(ctx context.Context) error {
 
 // getBatchDestAddr returns the batch's destination address. If the batch
 // has already generated an address then the same one will be returned.
+// The method must not be used in presigned mode. Use getSweepsDestAddr instead.
 func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
+	// Determine if we should use presigned mode for the batch.
+	presigned, err := b.isPresigned()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine if the batch %d "+
+			"uses presigned mode: %w", b.id, err)
+	}
+
+	// Make sure that the method is not used for presigned batches.
+	if presigned {
+		return nil, fmt.Errorf("getBatchDestAddr used in presigned " +
+			"mode")
+	}
+
 	var address btcutil.Address
 
 	// If a batch address is set, use that. Otherwise, generate a
