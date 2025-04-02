@@ -48,6 +48,11 @@ type DepositManager interface {
 	// invalid.
 	TransitionDeposits(ctx context.Context, deposits []*deposit.Deposit,
 		event fsm.EventType, expectedFinalState fsm.StateType) error
+
+	// DepositsForOutpoints returns all deposits that behind the given
+	// outpoints.
+	DepositsForOutpoints(ctx context.Context, outpoints []string) (
+		[]*deposit.Deposit, error)
 }
 
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
