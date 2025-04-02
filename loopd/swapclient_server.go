@@ -1758,13 +1758,18 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			return nil, fmt.Errorf("error decoding swap invoice: "+
 				"%v", err)
 		}
+
+		swapAmount := swp.TotalDepositAmount()
+		if swp.SelectedAmount > 0 {
+			swapAmount = swp.SelectedAmount
+		}
 		swap := &looprpc.StaticAddressLoopInSwap{
 			SwapHash:         swp.SwapHash[:],
 			DepositOutpoints: swp.DepositOutpoints,
 			State: toClientStaticAddressLoopInState(
 				swp.GetState(),
 			),
-			SwapAmountSatoshis: int64(swp.TotalDepositAmount()),
+			SwapAmountSatoshis: int64(swapAmount),
 			PaymentRequestAmountSatoshis: int64(
 				swapPayReq.MilliSat.ToSatoshis(),
 			),
