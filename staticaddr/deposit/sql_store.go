@@ -149,6 +149,44 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 	return deposit, nil
 }
 
+// DepositForOutpoint retrieves the deposit with the given outpoint from the
+// database.
+func (s *SqlStore) DepositForOutpoint(ctx context.Context,
+	txHash chainhash.Hash, idx uint32) (*Deposit, error) {
+
+	var deposit *Deposit
+	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlReadOpts(),
+		func(q *sqlc.Queries) error {
+			params := sqlc.DepositForOutpointParams{
+				TxHash:   txHash[:],
+				OutIndex: int32(idx),
+			}
+			row, err := q.DepositForOutpoint(ctx, params)
+			if err != nil {
+				return err
+			}
+
+			latestUpdate, err := q.GetLatestDepositUpdate(
+				ctx, row.DepositID,
+			)
+			if err != nil {
+				return err
+			}
+
+			deposit, err = s.toDeposit(row, latestUpdate)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	return deposit, nil
+}
+
 // AllDeposits retrieves all known deposits to our static address.
 func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	var allDeposits []*Deposit
