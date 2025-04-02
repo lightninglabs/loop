@@ -1925,14 +1925,17 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			}
 		}
 
+		swapAmount := swp.TotalDepositAmount()
 		state := toClientStaticAddressLoopInState(swp.GetState())
-		swapAmount := int64(swp.TotalDepositAmount())
 		payReqAmount := int64(swapPayReq.MilliSat.ToSatoshis())
+		if swp.SelectedAmount > 0 {
+			swapAmount = swp.SelectedAmount
+		}
 		swap := &looprpc.StaticAddressLoopInSwap{
 			SwapHash:                     swp.SwapHash[:],
 			DepositOutpoints:             swp.DepositOutpoints,
 			State:                        state,
-			SwapAmountSatoshis:           swapAmount,
+			SwapAmountSatoshis:           int64(swapAmount),
 			PaymentRequestAmountSatoshis: payReqAmount,
 			Deposits:                     protoDeposits,
 		}
@@ -1945,9 +1948,9 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 	}, nil
 }
 
-// GetStaticAddressSummary returns a summary static address related information.
-// Amongst deposits and withdrawals and their total values it also includes a
-// list of detailed deposit information filtered by their state.
+// GetStaticAddressSummary returns a summary of static address-related
+// information. Amongst deposits and withdrawals and their total values, it also
+// includes a list of detailed deposit information filtered by their state.
 func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	_ *looprpc.StaticAddressSummaryRequest) (
 	*looprpc.StaticAddressSummaryResponse, error) {
