@@ -18,6 +18,7 @@ type Querier interface {
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
+	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)

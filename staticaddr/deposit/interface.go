@@ -26,6 +26,10 @@ type Store interface {
 	// GetDeposit retrieves a deposit with depositID from the database.
 	GetDeposit(ctx context.Context, depositID ID) (*Deposit, error)
 
+	// DepositForOutpoint retrieves the deposit with the given outpoint.
+	DepositForOutpoint(ctx context.Context, outpoint string) (*Deposit,
+		error)
+
 	// AllDeposits retrieves all deposits from the store.
 	AllDeposits(ctx context.Context) ([]*Deposit, error)
 }

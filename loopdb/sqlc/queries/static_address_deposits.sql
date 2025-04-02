@@ -49,6 +49,16 @@ FROM
 WHERE
     deposit_id = $1;
 
+-- name: DepositForOutpoint :one
+SELECT
+    *
+FROM
+    deposits
+WHERE
+    tx_hash = $1
+AND
+    out_index = $2;
+
 -- name: AllDeposits :many
 SELECT
     *
