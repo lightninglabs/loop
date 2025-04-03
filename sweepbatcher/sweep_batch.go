@@ -465,55 +465,19 @@ func (b *batch) Errorf(format string, params ...interface{}) {
 	b.log().Errorf(format, params...)
 }
 
-// addSweep tries to add a sweep to the batch. If this is the first sweep being
-// added to the batch then it also sets the primary sweep ID.
-func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
-	done, err := b.scheduleNextCall()
-	defer done()
-
-	if err != nil {
-		return false, err
-	}
-
+// checkSweepToAdd checks if a sweep can be added or updated in the batch. The
+// caller must lock the event loop using scheduleNextCall. The function returns
+// if the sweep already exists in the batch.
+func (b *batch) checkSweepToAdd(_ context.Context, sweep *sweep) (bool, error) {
 	// If the provided sweep is nil, we can't proceed with any checks, so
 	// we just return early.
 	if sweep == nil {
-		b.Infof("the sweep is nil")
-
-		return false, nil
+		return false, fmt.Errorf("the sweep is nil")
 	}
 
 	// Before we run through the acceptance checks, let's just see if this
 	// sweep is already in our batch. In that case, just update the sweep.
-	oldSweep, ok := b.sweeps[sweep.outpoint]
-	if ok {
-		// Preserve coopFailed value not to forget about cooperative
-		// spending failure in this sweep.
-		tmp := *sweep
-		tmp.coopFailed = oldSweep.coopFailed
-
-		// If the sweep was resumed from storage, and the swap requested
-		// to sweep again, a new sweep notifier will be created by the
-		// swap. By re-assigning to the batch's sweep we make sure that
-		// everything, including the notifier, is up to date.
-		b.sweeps[sweep.outpoint] = tmp
-
-		// If this is the primary sweep, we also need to update the
-		// batch's confirmation target and fee rate.
-		if b.primarySweepID == sweep.outpoint {
-			b.cfg.batchConfTarget = sweep.confTarget
-			b.rbfCache.SkipNextBump = true
-		}
-
-		// Update batch's fee rate to be greater than or equal to
-		// minFeeRate of the sweep. Make sure batch's fee rate does not
-		// decrease (otherwise it won't pass RBF rules and won't be
-		// broadcasted) and that it is not lower that minFeeRate of
-		// other sweeps (so it is applied).
-		if b.rbfCache.FeeRate < sweep.minFeeRate {
-			b.rbfCache.FeeRate = sweep.minFeeRate
-		}
-
+	if _, ok := b.sweeps[sweep.outpoint]; ok {
 		return true, nil
 	}
 
@@ -521,19 +485,16 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// the batch, do not add another sweep to prevent the tx from becoming
 	// non-standard.
 	if len(b.sweeps) >= MaxSweepsPerBatch {
-		b.Infof("the batch has already too many sweeps %d >= %d",
-			len(b.sweeps), MaxSweepsPerBatch)
-
-		return false, nil
+		return false, fmt.Errorf("the batch has already too many "+
+			"sweeps %d >= %d", len(b.sweeps), MaxSweepsPerBatch)
 	}
 
 	// Since all the actions of the batch happen sequentially, we could
 	// arrive here after the batch got closed because of a spend. In this
 	// case we cannot add the sweep to this batch.
 	if b.state != Open {
-		b.Infof("the batch state (%v) is not open", b.state)
-
-		return false, nil
+		return false, fmt.Errorf("the batch state (%v) is not open",
+			b.state)
 	}
 
 	// If this batch contains a single sweep that spends to a non-wallet
@@ -541,17 +502,15 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 	// we cannot add this sweep to the batch.
 	for _, s := range b.sweeps {
 		if s.isExternalAddr {
-			b.Infof("the batch already has a sweep %x with "+
-				"an external address", s.swapHash[:6])
-
-			return false, nil
+			return false, fmt.Errorf("the batch already has a "+
+				"sweep %x with an external address",
+				s.swapHash[:6])
 		}
 
 		if sweep.isExternalAddr {
-			b.Infof("the batch is not empty and new sweep %x "+
-				"has an external address", sweep.swapHash[:6])
-
-			return false, nil
+			return false, fmt.Errorf("the batch is not empty and "+
+				"new sweep %x has an external address",
+				sweep.swapHash[:6])
 		}
 	}
 
@@ -563,46 +522,165 @@ func (b *batch) addSweep(ctx context.Context, sweep *sweep) (bool, error) {
 			int32(math.Abs(float64(sweep.timeout - s.timeout)))
 
 		if timeoutDistance > b.cfg.maxTimeoutDistance {
-			b.Infof("too long timeout distance between the "+
-				"batch and sweep %x: %d > %d",
+			return false, fmt.Errorf("too long timeout distance "+
+				"between the batch and sweep %x: %d > %d",
 				sweep.swapHash[:6], timeoutDistance,
 				b.cfg.maxTimeoutDistance)
+		}
+	}
+
+	// Everything is ok, the sweep can be added to the batch.
+	return false, nil
+}
+
+// addSweeps tries to add sweeps to the batch. If this is the first sweep being
+// added to the batch then it also sets the primary sweep ID. It returns if the
+// sweeps were accepted to the batch.
+func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
+	done, err := b.scheduleNextCall()
+	defer done()
+	if err != nil {
+		return false, err
+	}
+
+	// This must be a bug, so log a warning.
+	if len(sweeps) == 0 {
+		b.Warnf("An attempt to add zero sweeps.")
+
+		return false, nil
+	}
+
+	// Track how many new and existing sweeps are among the sweeps.
+	var numExisting, numNew int
+	for _, s := range sweeps {
+		existing, err := b.checkSweepToAdd(ctx, s)
+		if err != nil {
+			b.Infof("Failed to add sweep %v to batch %d: %v",
+				s.outpoint, b.id, err)
 
 			return false, nil
 		}
+		if existing {
+			numExisting++
+		} else {
+			numNew++
+		}
+	}
+
+	// Make sure the whole group is either new or existing. If this is not
+	// the case, this might be a bug, so print a warning.
+	if numExisting > 0 && numNew > 0 {
+		b.Warnf("There are %d existing and %d new sweeps among the "+
+			"group. They must not be mixed.", numExisting, numNew)
+
+		return false, nil
+	}
+
+	// Make sure all the sweeps spend different outpoints.
+	outpointsSet := make(map[wire.OutPoint]struct{}, len(sweeps))
+	for _, s := range sweeps {
+		if _, has := outpointsSet[s.outpoint]; has {
+			b.Warnf("Multiple sweeps spend outpoint %v", s.outpoint)
+
+			return false, nil
+		}
+		outpointsSet[s.outpoint] = struct{}{}
 	}
 
 	// Past this point we know that a new incoming sweep passes the
 	// acceptance criteria and is now ready to be added to this batch.
 
-	// If this is the first sweep being added to the batch, make it the
-	// primary sweep.
-	if b.primarySweepID == zeroSweepID {
-		b.primarySweepID = sweep.outpoint
-		b.cfg.batchConfTarget = sweep.confTarget
-		b.rbfCache.FeeRate = sweep.minFeeRate
-		b.rbfCache.SkipNextBump = true
+	// For an existing group, update the sweeps in the batch.
+	if numExisting == len(sweeps) {
+		for _, s := range sweeps {
+			oldSweep, ok := b.sweeps[s.outpoint]
+			if !ok {
+				return false, fmt.Errorf("sweep %v not found "+
+					"in batch %d", s.outpoint, b.id)
+			}
 
-		// We also need to start the spend monitor for this new primary
-		// sweep.
-		err := b.monitorSpend(ctx, *sweep)
-		if err != nil {
-			return false, err
+			// Preserve coopFailed value not to forget about
+			// cooperative spending failure in this sweep.
+			tmp := *s
+			tmp.coopFailed = oldSweep.coopFailed
+
+			// If the sweep was resumed from storage, and the swap
+			// requested to sweep again, a new sweep notifier will
+			// be created by the swap. By re-assigning to the
+			// batch's sweep we make sure that everything, including
+			// the notifier, is up to date.
+			b.sweeps[s.outpoint] = tmp
+
+			// If this is the primary sweep, we also need to update
+			// the batch's confirmation target and fee rate.
+			if b.primarySweepID == s.outpoint {
+				b.cfg.batchConfTarget = s.confTarget
+				b.rbfCache.SkipNextBump = true
+			}
+
+			// Update batch's fee rate to be greater than or equal
+			// to minFeeRate of the sweep. Make sure batch's fee
+			// rate does not decrease (otherwise it won't pass RBF
+			// rules and won't be broadcasted) and that it is not
+			// lower that minFeeRate of other sweeps (so it is
+			// applied).
+			if b.rbfCache.FeeRate < s.minFeeRate {
+				b.rbfCache.FeeRate = s.minFeeRate
+			}
+		}
+
+		return true, nil
+	} else if numNew != len(sweeps) {
+		// Sanity check: all the sweeps must be either existing or new.
+		// We have checked this above, let's check here as well.
+		return false, fmt.Errorf("bug in numExisting and numNew logic:"+
+			" numExisting=%d, numNew=%d, len(sweeps)=%d, "+
+			"len(b.sweeps)=%d", numExisting, numNew, len(sweeps),
+			len(b.sweeps))
+	}
+
+	// Here is the code to add new sweeps to a batch.
+	for _, s := range sweeps {
+		// If this is the first sweep being added to the batch, make it
+		// the primary sweep.
+		if b.primarySweepID == zeroSweepID {
+			b.primarySweepID = s.outpoint
+			b.cfg.batchConfTarget = s.confTarget
+			b.rbfCache.FeeRate = s.minFeeRate
+			b.rbfCache.SkipNextBump = true
+
+			// We also need to start the spend monitor for this new
+			// primary sweep.
+			err := b.monitorSpend(ctx, *s)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		// Make sure the sweep is not present in the batch. If it is
+		// present, this is a bug, return an error to stop here.
+		if _, has := b.sweeps[s.outpoint]; has {
+			return false, fmt.Errorf("sweep %v is already present "+
+				"in batch %d", s.outpoint, b.id)
+		}
+
+		// Add the sweep to the batch's sweeps.
+		b.Infof("adding sweep %v, swap %x", s.outpoint, s.swapHash[:6])
+		b.sweeps[s.outpoint] = *s
+
+		// Update FeeRate. Max(s.minFeeRate) for all the sweeps of
+		// the batch is the basis for fee bumps.
+		if b.rbfCache.FeeRate < s.minFeeRate {
+			b.rbfCache.FeeRate = s.minFeeRate
+			b.rbfCache.SkipNextBump = true
+		}
+
+		if err := b.persistSweep(ctx, *s, false); err != nil {
+			return true, err
 		}
 	}
 
-	// Add the sweep to the batch's sweeps.
-	b.Infof("adding sweep %x", sweep.swapHash[:6])
-	b.sweeps[sweep.outpoint] = *sweep
-
-	// Update FeeRate. Max(sweep.minFeeRate) for all the sweeps of
-	// the batch is the basis for fee bumps.
-	if b.rbfCache.FeeRate < sweep.minFeeRate {
-		b.rbfCache.FeeRate = sweep.minFeeRate
-		b.rbfCache.SkipNextBump = true
-	}
-
-	return true, b.persistSweep(ctx, *sweep, false)
+	return true, nil
 }
 
 // sweepExists returns true if the batch contains the sweep with the given
@@ -1754,8 +1832,12 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 			delete(b.sweeps, sweep.outpoint)
 			purgeList = append(purgeList, SweepRequest{
 				SwapHash: newSweep.swapHash,
-				Outpoint: newSweep.outpoint,
-				Value:    newSweep.value,
+				Inputs: []Input{
+					{
+						Outpoint: newSweep.outpoint,
+						Value:    newSweep.value,
+					},
+				},
 				Notifier: newSweep.notifier,
 			})
 		}

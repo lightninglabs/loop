@@ -15,28 +15,34 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
-// greedyAddSweep selects a batch for the sweep using the greedy algorithm,
-// which minimizes costs, and adds the sweep to the batch. To accomplish this,
-// it first collects fee details about the sweep being added, about a potential
-// new batch composed of this sweep only, and about all existing batches. It
+// greedyAddSweeps selects a batch for the sweeps using the greedy algorithm,
+// which minimizes costs, and adds the sweeps to the batch. To accomplish this,
+// it first collects fee details about the sweeps being added, about a potential
+// new batch composed of these sweeps only, and about all existing batches. It
 // skips batches with at least MaxSweepsPerBatch swaps to keep tx standard. Then
 // it passes the data to selectBatches() function, which emulates adding the
-// sweep to each batch and creating new batch for the sweep, and calculates the
+// sweep to each batch and creating new batch for the sweeps, and calculates the
 // costs of each alternative. Based on the estimates of selectBatches(), this
-// method adds the sweep to the batch that results in the least overall fee
-// increase, or creates new batch for it. If the sweep is not accepted by an
+// method adds the sweeps to the batch that results in the least overall fee
+// increase, or creates new batch for it. If the sweeps are not accepted by an
 // existing batch (may happen because of too distant timeouts), next batch is
 // tried in the list returned by selectBatches(). If adding fails or new batch
 // creation fails, this method returns an error. If this method fails for any
 // reason, the caller falls back to the simple algorithm (method handleSweep).
-func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
+func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
+	if len(sweeps) == 0 {
+		return fmt.Errorf("trying to greedy add an empty sweeps group")
+	}
+
+	swap := sweeps[0].swapHash
+
 	// Collect weight and fee rate info about the sweep and new batch.
 	sweepFeeDetails, newBatchFeeDetails, err := estimateSweepFeeIncrement(
-		sweep,
+		sweeps,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to estimate tx weight for "+
-			"sweep %x: %w", sweep.swapHash[:6], err)
+			"sweep %x: %w", swap[:6], err)
 	}
 
 	// Collect weight and fee rate info about existing batches.
@@ -64,30 +70,30 @@ func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
 	)
 	if err != nil {
 		return fmt.Errorf("batch selection algorithm failed for sweep "+
-			"%x: %w", sweep.swapHash[:6], err)
+			"%x: %w", swap[:6], err)
 	}
 
 	// Try batches, starting with the best.
 	for _, batchId := range batchesIds {
 		// If the best option is to start new batch, do it.
 		if batchId == newBatchSignal {
-			return b.spinUpNewBatch(ctx, sweep)
+			return b.spinUpNewBatch(ctx, sweeps)
 		}
 
-		// Locate the batch to add the sweep to.
+		// Locate the batch to add the sweeps to.
 		bestBatch, has := b.batches[batchId]
 		if !has {
 			return fmt.Errorf("batch selection algorithm returned "+
 				"batch id %d which doesn't exist, for sweep %x",
-				batchId, sweep.swapHash[:6])
+				batchId, swap[:6])
 		}
 
-		// Add the sweep to the batch.
-		accepted, err := bestBatch.addSweep(ctx, sweep)
+		// Add the sweeps to the batch.
+		accepted, err := bestBatch.addSweeps(ctx, sweeps)
 		if err != nil {
 			return fmt.Errorf("batch selection algorithm returned "+
 				"batch id %d for sweep %x, but adding failed: "+
-				"%w", batchId, sweep.swapHash[:6], err)
+				"%w", batchId, swap[:6], err)
 		}
 		if accepted {
 			return nil
@@ -95,23 +101,34 @@ func (b *Batcher) greedyAddSweep(ctx context.Context, sweep *sweep) error {
 
 		debugf("Batch selection algorithm returned batch id %d "+
 			"for sweep %x, but acceptance failed.", batchId,
-			sweep.swapHash[:6])
+			swap[:6])
 	}
 
-	return fmt.Errorf("no batch accepted sweep %x", sweep.swapHash[:6])
+	return fmt.Errorf("no batch accepted sweep group %x", swap[:6])
 }
 
-// estimateSweepFeeIncrement returns fee details for adding the sweep to a batch
-// and for creating new batch with this sweep only.
-func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
-	// Create a fake batch with this sweep.
+// estimateSweepFeeIncrement returns fee details for adding the sweeps to
+// a batch and for creating new batch with these sweeps only.
+func estimateSweepFeeIncrement(
+	sweeps []*sweep) (feeDetails, feeDetails, error) {
+
+	if len(sweeps) == 0 {
+		return feeDetails{}, feeDetails{}, fmt.Errorf("estimating an " +
+			"empty group of sweeps")
+	}
+
+	// Create a fake batch with the sweeps.
 	batch := &batch{
 		rbfCache: rbfCache{
-			FeeRate: s.minFeeRate,
+			FeeRate: sweeps[0].minFeeRate,
 		},
-		sweeps: map[wire.OutPoint]sweep{
-			s.outpoint: *s,
-		},
+		sweeps: make(map[wire.OutPoint]sweep, len(sweeps)),
+	}
+	for _, s := range sweeps {
+		batch.sweeps[s.outpoint] = *s
+		batch.rbfCache.FeeRate = max(
+			batch.rbfCache.FeeRate, s.minFeeRate,
+		)
 	}
 
 	// Estimate new batch.
@@ -120,14 +137,17 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 		return feeDetails{}, feeDetails{}, err
 	}
 
-	// Add the same sweep again to measure weight increments.
-	outpoint2 := s.outpoint
-	outpoint2.Hash[0]++
-	if _, has := batch.sweeps[outpoint2]; has {
-		return feeDetails{}, feeDetails{}, fmt.Errorf("dummy outpoint "+
-			"%s is present in the batch", outpoint2)
+	// Add the same sweeps again with different outpoints to measure weight
+	// increments.
+	for _, s := range sweeps {
+		dummy := s.outpoint
+		dummy.Hash[0]++
+		if _, has := batch.sweeps[dummy]; has {
+			return feeDetails{}, feeDetails{}, fmt.Errorf("dummy "+
+				"outpoint %s is present in the batch", dummy)
+		}
+		batch.sweeps[dummy] = *s
 	}
-	batch.sweeps[outpoint2] = *s
 
 	// Estimate weight of a batch with two sweeps.
 	fd2, err := estimateBatchWeight(batch)
@@ -137,8 +157,8 @@ func estimateSweepFeeIncrement(s *sweep) (feeDetails, feeDetails, error) {
 
 	// Create feeDetails for sweep.
 	sweepFeeDetails := feeDetails{
-		FeeRate:        s.minFeeRate,
-		IsExternalAddr: s.isExternalAddr,
+		FeeRate:        batch.rbfCache.FeeRate,
+		IsExternalAddr: sweeps[0].isExternalAddr,
 
 		// Calculate sweep weight as a difference.
 		Weight: fd2.Weight - fd1.Weight,
@@ -252,10 +272,10 @@ func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 // rate and a weight is provided. Also, a hint is provided to signal which
 // spending path will be used by the batch.
 //
-// The same data is also provided for the sweep for which we are selecting a
-// batch to add. In case of the sweep weights are weight deltas resulted from
-// adding the sweep. Finally, the same data is provided for new batch having
-// this sweep only.
+// The same data is also provided for the sweep (or sweeps) for which we are
+// selecting a batch to add. In case of the sweep weights are weight deltas
+// resulted from adding the sweep. Finally, the same data is provided for new
+// batch having this sweep(s) only.
 //
 // The algorithm compares costs of adding the sweep to each existing batch, and
 // costs of new batch creation for this sweep and returns BatchId of the winning
@@ -265,11 +285,11 @@ func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 // having flag IsExternalAddr must go in individual batches. Cooperative
 // spending may only be available for some sweeps supporting it, not for all.
 func selectBatches(batches []feeDetails,
-	sweep, oneSweepBatch feeDetails) ([]int32, error) {
+	added, newBatch feeDetails) ([]int32, error) {
 
 	// If the sweep has IsExternalAddr flag, the sweep can't be added to
 	// a batch, so create new batch for it.
-	if sweep.IsExternalAddr {
+	if added.IsExternalAddr {
 		return []int32{newBatchSignal}, nil
 	}
 
@@ -286,7 +306,7 @@ func selectBatches(batches []feeDetails,
 	// creation with this sweep only in it. The cost is its full fee.
 	alternatives = append(alternatives, alternative{
 		batchId: newBatchSignal,
-		cost:    oneSweepBatch.fee(),
+		cost:    newBatch.fee(),
 	})
 
 	// Try to add the sweep to every batch, calculate the costs and
@@ -299,7 +319,7 @@ func selectBatches(batches []feeDetails,
 		}
 
 		// Add the sweep to the batch virtually.
-		combinedBatch := batch.combine(sweep)
+		combinedBatch := batch.combine(added)
 
 		// The cost is the fee increase.
 		cost := combinedBatch.fee() - batch.fee()

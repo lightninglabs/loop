@@ -1159,8 +1159,12 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 
 	sweepReq := sweepbatcher.SweepRequest{
 		SwapHash: s.hash,
-		Outpoint: htlcOutpoint,
-		Value:    htlcValue,
+		Inputs: []sweepbatcher.Input{
+			{
+				Outpoint: htlcOutpoint,
+				Value:    htlcValue,
+			},
+		},
 		Notifier: &notifier,
 	}
 

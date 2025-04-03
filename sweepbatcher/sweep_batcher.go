@@ -199,16 +199,23 @@ func defaultPublishErrorLogger(err error, errMsg string, log btclog.Logger) {
 	log.Warnf("%s: %v", errMsg, err)
 }
 
-// SweepRequest is a request to sweep a specific outpoint.
-type SweepRequest struct {
-	// SwapHash is the hash of the swap that is being swept.
-	SwapHash lntypes.Hash
-
+// Input specifies an UTXO with amount that is added to the batcher.
+type Input struct {
 	// Outpoint is the outpoint that is being swept.
 	Outpoint wire.OutPoint
 
 	// Value is the value of the outpoint that is being swept.
 	Value btcutil.Amount
+}
+
+// SweepRequest is a request to sweep an outpoint or a group of outpoints.
+type SweepRequest struct {
+	// SwapHash is the hash of the swap that is being swept.
+	SwapHash lntypes.Hash
+
+	// Inputs specifies the inputs in the same request. All the inputs
+	// belong to the same swap and are added to the same batch.
+	Inputs []Input
 
 	// Notifier is a notifier that is used to notify the requester of this
 	// sweep that the sweep was successful.
@@ -551,16 +558,16 @@ func (b *Batcher) Run(ctx context.Context) error {
 	for {
 		select {
 		case sweepReq := <-b.sweepReqs:
-			sweep, err := b.fetchSweep(runCtx, sweepReq)
+			sweeps, err := b.fetchSweeps(runCtx, sweepReq)
 			if err != nil {
-				warnf("fetchSweep failed: %v.", err)
+				warnf("fetchSweeps failed: %v.", err)
 
 				return err
 			}
 
-			err = b.handleSweep(runCtx, sweep, sweepReq.Notifier)
+			err = b.handleSweeps(runCtx, sweeps, sweepReq.Notifier)
 			if err != nil {
-				warnf("handleSweep failed: %v.", err)
+				warnf("handleSweeps failed: %v.", err)
 
 				return err
 			}
@@ -624,10 +631,18 @@ func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
 	}
 }
 
-// handleSweep handles a sweep request by either placing it in an existing
-// batch, or by spinning up a new batch for it.
-func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
+// handleSweeps handles a sweep request by either placing the group of sweeps in
+// an existing batch, or by spinning up a new batch for it.
+func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	notifier *SpendNotifier) error {
+
+	if len(sweeps) == 0 {
+		return fmt.Errorf("trying to add an empty group of sweeps")
+	}
+
+	// Since the whole group is added to the same batch and belongs to
+	// the same transaction, we use sweeps[0] below where we need any sweep.
+	sweep := sweeps[0]
 
 	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
 	if err != nil {
@@ -675,7 +690,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	// provide the sweep to that batch and return.
 	for _, batch := range b.batches {
 		if batch.sweepExists(sweep.outpoint) {
-			accepted, err := batch.addSweep(ctx, sweep)
+			accepted, err := batch.addSweeps(ctx, sweeps)
 			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 				return err
 			}
@@ -692,7 +707,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 	}
 
 	// Try to run the greedy algorithm of batch selection to minimize costs.
-	err = b.greedyAddSweep(ctx, sweep)
+	err = b.greedyAddSweeps(ctx, sweeps)
 	if err == nil {
 		// The greedy algorithm succeeded.
 		return nil
@@ -703,7 +718,7 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
-		accepted, err := batch.addSweep(ctx, sweep)
+		accepted, err := batch.addSweeps(ctx, sweeps)
 		if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 			return err
 		}
@@ -717,28 +732,28 @@ func (b *Batcher) handleSweep(ctx context.Context, sweep *sweep,
 
 	// If no batch is capable of accepting the sweep, we spin up a fresh
 	// batch and hand the sweep over to it.
-	return b.spinUpNewBatch(ctx, sweep)
+	return b.spinUpNewBatch(ctx, sweeps)
 }
 
-// spinUpNewBatch creates new batch, starts it and adds the sweep to it.
-func (b *Batcher) spinUpNewBatch(ctx context.Context, sweep *sweep) error {
+// spinUpNewBatch creates new batch, starts it and adds the sweeps to it.
+func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
 	// Spin up a fresh batch.
 	newBatch, err := b.spinUpBatch(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Add the sweep to the fresh batch.
-	accepted, err := newBatch.addSweep(ctx, sweep)
+	// Add the sweeps to the fresh batch.
+	accepted, err := newBatch.addSweeps(ctx, sweeps)
 	if err != nil {
 		return err
 	}
 
-	// If the sweep wasn't accepted by the fresh batch something is wrong,
+	// If the sweeps weren't accepted by the fresh batch something is wrong,
 	// we should return the error.
 	if !accepted {
 		return fmt.Errorf("sweep %x was not accepted by new batch %d",
-			sweep.swapHash[:6], newBatch.id)
+			sweeps[0].swapHash[:6], newBatch.id)
 	}
 
 	return nil
@@ -1101,12 +1116,24 @@ func NewSweepFetcherFromSwapStore(swapStore LoopOutFetcher,
 	}, nil
 }
 
-// fetchSweep fetches the sweep related information from the database.
-func (b *Batcher) fetchSweep(ctx context.Context,
-	sweepReq SweepRequest) (*sweep, error) {
+// fetchSweeps fetches the sweep related information from the database.
+func (b *Batcher) fetchSweeps(ctx context.Context,
+	sweepReq SweepRequest) ([]*sweep, error) {
 
-	return b.loadSweep(ctx, sweepReq.SwapHash, sweepReq.Outpoint,
-		sweepReq.Value)
+	sweeps := make([]*sweep, len(sweepReq.Inputs))
+	for i, utxo := range sweepReq.Inputs {
+		s, err := b.loadSweep(
+			ctx, sweepReq.SwapHash, utxo.Outpoint,
+			utxo.Value,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load "+
+				"sweep %v: %w", utxo.Outpoint, err)
+		}
+		sweeps[i] = s
+	}
+
+	return sweeps, nil
 }
 
 // loadSweep loads inputs of sweep from the database and from FeeRateProvider
