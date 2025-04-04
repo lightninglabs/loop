@@ -48,10 +48,9 @@ WITH RECURSIVE seq(i) AS (
   SELECT i + 1 FROM seq WHERE i < 32
 )
 INSERT INTO sweeps2 (
-    id, swap_hash, batch_id, outpoint, amt, completed
+    swap_hash, batch_id, outpoint, amt, completed
 )
 SELECT
-    id,
     swap_hash,
     batch_id,
     (
@@ -60,7 +59,8 @@ SELECT
     ) || ':' || CAST(outpoint_index AS TEXT),
     amt,
     completed
-FROM sweeps;
+FROM sweeps
+ORDER BY id ASC;
 
 -- Rename tables.
 ALTER TABLE sweeps RENAME TO sweeps_old;
