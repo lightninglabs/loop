@@ -45,11 +45,23 @@ const (
 var AgentName = defaultAgentName
 
 // Version returns the application version as a properly formed string per the
-// semantic versioning 2.0.0 spec (http://semver.org/) and the commit it was
-// built on.
+// semantic versioning 2.0.0 spec (http://semver.org/).
 func Version() string {
 	// Append commit hash of current build to version.
+	return semanticVersion()
+}
+
+// RichVersion returns the application version as a properly formed string
+// per the semantic versioning 2.0.0 spec (http://semver.org/) and the commit
+// it was built on.
+func RichVersion() string {
+	// Append commit hash of current build to version.
 	return fmt.Sprintf("%s commit=%s", semanticVersion(), Commit)
+}
+
+// CommitHash returns the commit hash of the current build.
+func CommitHash() string {
+	return Commit
 }
 
 // UserAgent returns the full user agent string that identifies the software

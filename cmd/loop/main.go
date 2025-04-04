@@ -162,7 +162,7 @@ func fatal(err error) {
 func main() {
 	app := cli.NewApp()
 
-	app.Version = loop.Version()
+	app.Version = loop.RichVersion()
 	app.Name = "loop"
 	app.Usage = "control plane for your loopd"
 	app.Flags = []cli.Flag{
