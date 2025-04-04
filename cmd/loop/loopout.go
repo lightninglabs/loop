@@ -131,7 +131,7 @@ func loopOut(ctx *cli.Context) error {
 	switch {
 	case ctx.IsSet("amt"):
 		amtStr = ctx.String("amt")
-	case ctx.NArg() > 0:
+	case ctx.NArg() == 1 || ctx.NArg() == 2:
 		amtStr = args[0]
 		args = args.Tail()
 	default:

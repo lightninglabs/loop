@@ -95,7 +95,7 @@ func loopIn(ctx *cli.Context) error {
 	switch {
 	case ctx.IsSet("amt"):
 		amtStr = ctx.String("amt")
-	case ctx.NArg() > 0:
+	case ctx.NArg() == 1:
 		amtStr = args[0]
 	default:
 		// Show command help if no arguments and flags were provided.
