@@ -176,7 +176,7 @@ func Run(rpcCfg RPCConfig) error {
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	if config.ShowVersion {
-		fmt.Println(appName, "version", loop.Version())
+		fmt.Println(appName, "version", loop.RichVersion())
 		os.Exit(0)
 	}
 
@@ -222,7 +222,7 @@ func Run(rpcCfg RPCConfig) error {
 	}
 
 	// Print the version before executing either primary directive.
-	infof("Version: %v", loop.Version())
+	infof("Version: %v", loop.RichVersion())
 
 	lisCfg := NewListenerConfig(&config, rpcCfg)
 

@@ -967,6 +967,10 @@
         "loop_in_stats": {
           "$ref": "#/definitions/looprpcLoopStats",
           "description": "Statistics about loop ins."
+        },
+        "commit_hash": {
+          "type": "string",
+          "description": "The git commit hash of the loopd binary."
         }
       }
     },

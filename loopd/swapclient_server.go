@@ -1210,6 +1210,7 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 
 	return &looprpc.GetInfoResponse{
 		Version:      loop.Version(),
+		CommitHash:   loop.CommitHash(),
 		Network:      s.config.Network,
 		RpcListen:    s.config.RPCListen,
 		RestListen:   s.config.RESTListen,

@@ -1045,6 +1045,11 @@ message GetInfoResponse {
     Statistics about loop ins.
      */
     LoopStats loop_in_stats = 8;
+
+    /*
+    The git commit hash of the loopd binary.
+     */
+    string commit_hash = 9;
 }
 
 message GetLiquidityParamsRequest {
