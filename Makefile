@@ -15,7 +15,7 @@ GOBUILD := GO111MODULE=on go build -v
 GOINSTALL := GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
 
-COMMIT := $(shell git describe --abbrev=40 --dirty)
+COMMIT := $(shell git describe --abbrev=40 --dirty | sed -E 's/.*-g([0-9a-f]{40})(-dirty)?/\1\2/')
 LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT)"
 DEV_TAGS = dev
 
