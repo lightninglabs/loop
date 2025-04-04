@@ -20,7 +20,9 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -206,8 +208,8 @@ func (m *Manager) Run(ctx context.Context) error {
 			case request.respChan <- resp:
 
 			case <-ctx.Done():
-				// Noify subroutines that the main loop has been
-				// canceled.
+				// Notify subroutines that the main loop has
+				// been canceled.
 				close(m.exitChan)
 
 				return ctx.Err()
@@ -272,6 +274,14 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
+	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
+		ctx, loopIn.DepositOutpoints,
+	)
+	if err != nil {
+		return err
+	}
+	loopIn.Deposits = deposits
+
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
@@ -295,6 +305,33 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	if len(sweepTx.TxIn) != len(req.PrevoutInfo) {
 		return fmt.Errorf("expected %v inputs, got %v",
 			len(req.PrevoutInfo), len(sweepTx.TxIn))
+	}
+
+	// If the user selected an amount we'll check that the server sends us
+	// the correct change amount back to our static address.
+	if loopIn.SelectedAmount > 0 {
+		var foundChange bool
+		totalDepositAmount := loopIn.TotalDepositAmount()
+		changeAmt := totalDepositAmount - loopIn.SelectedAmount
+		changePkScript := loopIn.AddressParams.PkScript
+
+		for _, out := range sweepTx.TxOut {
+			if out.Value == int64(changeAmt) &&
+				bytes.Equal(out.PkScript, changePkScript) {
+
+				foundChange = true
+				break
+			}
+		}
+
+		if !foundChange {
+			return fmt.Errorf("expected change output to our "+
+				"static address, total_deposit_amount=%v, "+
+				"selected_amount=%v, "+
+				"expected_change_amount=%v ",
+				totalDepositAmount, loopIn.SelectedAmount,
+				changeAmt)
+		}
 	}
 
 	// Check if all the deposits requested are part of the loop-in and
@@ -531,14 +568,20 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	req *loop.StaticAddressLoopInRequest) (*StaticAddressLoopIn, error) {
 
 	// Validate the loop-in request.
-	if len(req.DepositOutpoints) == 0 {
-		return nil, fmt.Errorf("no deposit outpoints provided")
+	if len(req.DepositOutpoints) == 0 && req.SelectedAmount == 0 {
+		return nil, fmt.Errorf("no deposit outpoints provided and no " +
+			"amount selected")
 	}
+
+	var (
+		err               error
+		selectedOutpoints = req.DepositOutpoints
+	)
 
 	// Retrieve all deposits referenced by the outpoints and ensure that
 	// they are in state Deposited.
 	deposits, active := m.cfg.DepositManager.AllStringOutpointsActiveDeposits( //nolint:lll
-		req.DepositOutpoints, deposit.Deposited,
+		selectedOutpoints, deposit.Deposited,
 	)
 	if !active {
 		return nil, fmt.Errorf("one or more deposits are not in "+
@@ -551,8 +594,33 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 	totalDepositAmount := tmp.TotalDepositAmount()
 
+	// If the selected amount would leave a dust change output or exceeds
+	// the total deposits value, we return an error.
+	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	remainingAmount := totalDepositAmount - req.SelectedAmount
+	switch {
+	case remainingAmount < 0:
+		return nil, fmt.Errorf("selected amount %v exceeds "+
+			"total deposit value %v", req.SelectedAmount,
+			totalDepositAmount)
+
+	case remainingAmount > 0 && remainingAmount < dustLimit:
+		return nil, fmt.Errorf("selected amount %v leaves "+
+			"dust change %v", req.SelectedAmount,
+			totalDepositAmount)
+
+	default:
+		// If the remaining amount is 0 or equal or greater than the
+		// dust limit, we can proceed with the swap.
+	}
+
+	swapAmount := totalDepositAmount
+	if req.SelectedAmount > 0 {
+		swapAmount = req.SelectedAmount
+	}
+
 	// Check that the label is valid.
-	err := labels.Validate(req.Label)
+	err = labels.Validate(req.Label)
 	if err != nil {
 		return nil, fmt.Errorf("invalid label: %w", err)
 	}
@@ -576,7 +644,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		// Because the Private flag is set, we'll generate our own set
 		// of hop hints.
 		req.RouteHints, err = loop.SelectHopHints(
-			ctx, m.cfg.LndClient, totalDepositAmount,
+			ctx, m.cfg.LndClient, swapAmount,
 			loop.DefaultMaxHopHints, includeNodes,
 		)
 		if err != nil {
@@ -593,11 +661,11 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	// directly anyway and there they have the option to add specific route
 	// hints.
 	// The quote call will also request a probe from the server to ensure
-	// feasibility of a loop-in for the totalDepositAmount.
+	// feasibility of a loop-in for the selected.
 	numDeposits := uint32(len(deposits))
 	quote, err := m.cfg.QuoteGetter.GetLoopInQuote(
-		ctx, totalDepositAmount, m.cfg.NodePubkey, req.LastHop,
-		req.RouteHints, req.Initiator, numDeposits,
+		ctx, swapAmount, m.cfg.NodePubkey, req.LastHop, req.RouteHints,
+		req.Initiator, numDeposits,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get loop in quote: %w", err)
@@ -618,6 +686,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
+		SelectedAmount:        req.SelectedAmount,
 		DepositOutpoints:      req.DepositOutpoints,
 		Deposits:              deposits,
 		Label:                 req.Label,

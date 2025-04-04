@@ -578,3 +578,28 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 
 	return fsms, deposits
 }
+
+// DepositsForOutpoints returns all deposits that are behind the given
+// outpoints.
+func (m *Manager) DepositsForOutpoints(ctx context.Context,
+	outpoints []string) ([]*Deposit, error) {
+
+	deposits := make([]*Deposit, 0, len(outpoints))
+	for _, o := range outpoints {
+		op, err := wire.NewOutPointFromString(o)
+		if err != nil {
+			return nil, err
+		}
+
+		deposit, err := m.cfg.Store.DepositForOutpoint(
+			ctx, op.Hash, op.Index,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, deposit)
+	}
+
+	return deposits, nil
+}
