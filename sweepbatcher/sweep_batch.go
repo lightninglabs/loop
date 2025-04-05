@@ -1707,13 +1707,20 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 
 // monitorConfirmations monitors the batch transaction for confirmations.
 func (b *batch) monitorConfirmations(ctx context.Context) error {
+	// Find initiationHeight.
+	primarySweep, ok := b.sweeps[b.primarySweepID]
+	if !ok {
+		return fmt.Errorf("can't find primarySweep")
+	}
+
 	reorgChan := make(chan struct{})
 
 	confCtx, cancel := context.WithCancel(ctx)
 
 	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
 		confCtx, b.batchTxid, b.batchPkScript, batchConfHeight,
-		b.currentHeight, lndclient.WithReOrgChan(reorgChan),
+		primarySweep.initiationHeight,
+		lndclient.WithReOrgChan(reorgChan),
 	)
 	if err != nil {
 		cancel()

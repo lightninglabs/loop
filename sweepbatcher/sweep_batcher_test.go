@@ -781,12 +781,15 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		Notifier: &dummyNotifier,
 	}
 
+	const initiationHeight = 550
+
 	swap1 := &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
-			CltvExpiry:      111,
-			AmountRequested: 111,
-			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-			HtlcKeys:        htlcKeys,
+			CltvExpiry:       111,
+			AmountRequested:  111,
+			ProtocolVersion:  loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:         htlcKeys,
+			InitiationHeight: initiationHeight,
 		},
 
 		DestAddr:        destAddr,
@@ -871,14 +874,17 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		SpendingTx:        spendingTx,
 		SpenderTxHash:     &spendingTxHash,
 		SpenderInputIndex: 0,
-		SpendingHeight:    601,
 	}
 
 	// We notify the spend.
 	lnd.SpendChannel <- spendDetail
 
 	// After receiving the spend, the batch is now monitoring for confs.
-	<-lnd.RegisterConfChannel
+	confReg := <-lnd.RegisterConfChannel
+
+	// Make sure the confirmation has proper height hint. It should pass
+	// the swap initiation height, not the current height.
+	require.Equal(t, int32(initiationHeight), confReg.HeightHint)
 
 	// The batch should eventually read the spend notification and progress
 	// its state to closed.
