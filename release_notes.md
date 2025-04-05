@@ -15,7 +15,10 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-
+* [Enhance](https://github.com/lightninglabs/loop/pull/912) the
+  `loop listswaps` command by adding two new flags to enable
+  pagination of the response. Use `--index_offset` to set the
+  start swap index, and `--max_swaps` to limit total swap outputs.
 #### Breaking Changes
 
 #### Bug Fixes

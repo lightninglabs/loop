@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -11,8 +12,11 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -592,6 +596,184 @@ func TestHasBandwidth(t *testing.T) {
 				test.maxParts)
 			require.Equal(t, test.expectedRes, res)
 			require.Equal(t, test.expectedShards, shards)
+		})
+	}
+}
+
+// TestListSwapsFilterAndPagination tests the filtering and
+// paging of the ListSwaps command.
+func TestListSwapsFilterAndPagination(t *testing.T) {
+	// Create a set of test swaps of various types which contain the minimal
+	// viable amount of info to successfully be run through marshallSwap.
+	swapIn1 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{1},
+		SwapType:         swap.Type(swap.TypeIn),
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	swapOut1 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{2},
+		SwapType:         swap.Type(swap.TypeOut),
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	swapOut2 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{3},
+		SwapType:         swap.Type(swap.TypeOut),
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	tests := []struct {
+		name string
+		// Define the mock swaps that will be stored in the mock client.
+		mockSwaps                  []loop.SwapInfo
+		req                        *looprpc.ListSwapsRequest
+		expectedReturnedSwapCount  int
+		expectedLastIdx            uint32
+		expectedFilteredTotalCount uint32
+	}{
+		{
+			name:                       "fetch all swaps no pagination",
+			mockSwaps:                  []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req:                        &looprpc.ListSwapsRequest{},
+			expectedReturnedSwapCount:  3,
+			expectedLastIdx:            2,
+			expectedFilteredTotalCount: 3,
+		},
+		{
+			name:      "fetch swaps-ins no pagination",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType: looprpc.ListSwapsFilter_LOOP_IN},
+			},
+			expectedReturnedSwapCount:  1,
+			expectedLastIdx:            0,
+			expectedFilteredTotalCount: 1,
+		},
+		{
+			name:      "fetch swaps-outs no pagination",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType: looprpc.ListSwapsFilter_LOOP_OUT,
+				},
+			},
+			expectedReturnedSwapCount:  2,
+			expectedLastIdx:            1,
+			expectedFilteredTotalCount: 2,
+		},
+		{
+			name:      "fetch swaps-outs increment start_index",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType: looprpc.ListSwapsFilter_LOOP_OUT,
+				},
+				IndexOffset: 1,
+			},
+			expectedReturnedSwapCount:  1,
+			expectedLastIdx:            1,
+			expectedFilteredTotalCount: 2,
+		},
+		{
+			name:      "fetch all swaps set swap limit",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				MaxSwaps: 2,
+			},
+			expectedReturnedSwapCount:  2,
+			expectedLastIdx:            1,
+			expectedFilteredTotalCount: 3,
+		},
+		{
+			name:      "fetch all swaps set swap limit set start index",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				IndexOffset: 1,
+				MaxSwaps:    1,
+			},
+			expectedReturnedSwapCount:  1,
+			expectedLastIdx:            1,
+			expectedFilteredTotalCount: 3,
+		},
+		{
+			name:      "fetch all swaps set start index out of bounds",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				IndexOffset: 5,
+			},
+			expectedReturnedSwapCount:  0,
+			expectedLastIdx:            0,
+			expectedFilteredTotalCount: 3,
+		},
+		{
+			name:      "fetch all swaps set limit to 0",
+			mockSwaps: []loop.SwapInfo{swapIn1, swapOut1, swapOut2},
+			req: &looprpc.ListSwapsRequest{
+				MaxSwaps: 0,
+			},
+			expectedReturnedSwapCount:  3,
+			expectedLastIdx:            2,
+			expectedFilteredTotalCount: 3,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create the swap client server with our mock client.
+			server := &swapClientServer{
+				swaps: make(map[lntypes.Hash]loop.SwapInfo),
+			}
+
+			// Populate the server's swap cache with our mock swaps.
+			for _, swap := range test.mockSwaps {
+				server.swaps[swap.SwapHash] = swap
+			}
+
+			// Call the ListSwaps method.
+			resp, err := server.ListSwaps(context.Background(), test.req)
+			require.NoError(t, err)
+
+			require.Equal(
+				t,
+				test.expectedReturnedSwapCount,
+				len(resp.Swaps),
+				"incorrect returned count")
+
+			require.Equal(
+				t,
+				test.expectedLastIdx,
+				resp.LastIndexOffset,
+				"incorrect last index",
+			)
+
+			require.Equal(
+				t,
+				test.expectedFilteredTotalCount,
+				resp.TotalFilteredSwaps,
+				"incorrect total",
+			)
 		})
 	}
 }

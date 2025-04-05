@@ -564,7 +564,9 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 
 	var (
 		rpcSwaps = []*looprpc.SwapStatus{}
-		idx      = 0
+		idx      = uint32(0)
+		lastIdx  = uint32(0)
+		maxSwaps = int(req.MaxSwaps)
 	)
 
 	s.swapsLock.Lock()
@@ -580,14 +582,29 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 			continue
 		}
 
-		rpcSwap, err := s.marshallSwap(ctx, &swp)
-		if err != nil {
-			return nil, err
+		// Check if this swap is within our pagination window.
+		if idx >= req.IndexOffset {
+			// If maxSwaps is 0, we return all swaps.
+			// Otherwise, check if we've reached our limit.
+			if maxSwaps == 0 || len(rpcSwaps) < maxSwaps {
+				rpcSwap, err := s.marshallSwap(ctx, &swp)
+				if err != nil {
+					return nil, err
+				}
+				rpcSwaps = append(rpcSwaps, rpcSwap)
+				lastIdx = idx
+			}
+
 		}
-		rpcSwaps = append(rpcSwaps, rpcSwap)
 		idx++
 	}
-	return &looprpc.ListSwapsResponse{Swaps: rpcSwaps}, nil
+
+	response := looprpc.ListSwapsResponse{
+		Swaps:              rpcSwaps,
+		LastIndexOffset:    lastIdx,
+		TotalFilteredSwaps: idx,
+	}
+	return &response, nil
 }
 
 // filterSwap filters the given swap based on the provided filter.

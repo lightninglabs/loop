@@ -625,6 +625,22 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "index_offset",
+            "description": "Allow specifying an starting index when returning filtered swaps.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "name": "max_swaps",
+            "description": "Set a maximum number of swaps to return in the response.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -1415,6 +1431,16 @@
             "$ref": "#/definitions/looprpcSwapStatus"
           },
           "description": "The list of all currently known swaps and their status."
+        },
+        "last_index_offset": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The last returned swap index returned."
+        },
+        "total_filtered_swaps": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total number of swaps found after filtering, but before any pagination\ntakes place. The caller can use this field as they iterate over all swaps\nusing pagination."
         }
       }
     },

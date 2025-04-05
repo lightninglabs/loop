@@ -35,6 +35,14 @@ var listSwapsCommand = cli.Command{
 		labelFlag,
 		channelFlag,
 		lastHopFlag,
+		cli.Uint64Flag{
+			Name:  "max_swaps",
+			Usage: "Max number of swaps to return after filtering",
+		},
+		cli.Uint64Flag{
+			Name:  "index_offset",
+			Usage: "index to start listing filtered swaps from",
+		},
 	},
 }
 
@@ -102,6 +110,8 @@ func listSwaps(ctx *cli.Context) error {
 	resp, err := client.ListSwaps(
 		context.Background(), &looprpc.ListSwapsRequest{
 			ListSwapFilter: filter,
+			IndexOffset:    uint32(ctx.Uint("index_offset")),
+			MaxSwaps:       uint32(ctx.Uint("max_swaps")),
 		},
 	)
 	if err != nil {
