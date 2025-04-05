@@ -46,7 +46,7 @@ var setLiquidityRuleCommand = cli.Command{
 	Name:        "setrule",
 	Usage:       "set liquidity manager rule for a channel/peer",
 	Description: "Update or remove the liquidity rule for a channel/peer.",
-	ArgsUsage:   "{shortchanid |  peerpubkey}",
+	ArgsUsage:   "{shortchanid | peerpubkey}",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name: "type",
