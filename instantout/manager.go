@@ -218,9 +218,9 @@ type Quote struct {
 
 // GetInstantOutQuote returns a quote for an instant out.
 func (m *Manager) GetInstantOutQuote(ctx context.Context,
-	amt btcutil.Amount, numReservations int) (Quote, error) {
+	amt btcutil.Amount, reservationIDs [][]byte) (Quote, error) {
 
-	if numReservations <= 0 {
+	if len(reservationIDs) == 0 {
 		return Quote{}, fmt.Errorf("no reservations selected")
 	}
 
@@ -231,7 +231,8 @@ func (m *Manager) GetInstantOutQuote(ctx context.Context,
 	// Get the service fee.
 	quoteRes, err := m.cfg.InstantOutClient.GetInstantOutQuote(
 		ctx, &swapserverrpc.GetInstantOutQuoteRequest{
-			Amount: uint64(amt),
+			Amount:         uint64(amt),
+			ReservationIds: reservationIDs,
 		},
 	)
 	if err != nil {
@@ -247,7 +248,7 @@ func (m *Manager) GetInstantOutQuote(ctx context.Context,
 
 	// The on chain chainFee is the chainFee rate times the estimated
 	// sweepless sweep transaction size.
-	chainFee := feeRate.FeeForWeight(sweeplessSweepWeight(numReservations))
+	chainFee := feeRate.FeeForWeight(sweeplessSweepWeight(len(reservationIDs)))
 
 	return Quote{
 		ServiceFee: btcutil.Amount(quoteRes.SwapFee),
