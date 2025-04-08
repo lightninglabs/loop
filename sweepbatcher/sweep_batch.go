@@ -2099,16 +2099,19 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		"purged swaps: %v, purged groups: %v", confirmedSweeps,
 		purgedSweeps, purgedSwaps, len(purgeList))
 
-	err = b.monitorConfirmations(ctx)
-	if err != nil {
-		return err
-	}
-
 	// We are no longer able to accept new sweeps, so we mark the batch as
 	// closed and persist on storage.
 	b.state = Closed
 
-	return b.persist(ctx)
+	if err = b.persist(ctx); err != nil {
+		return fmt.Errorf("saving batch failed: %w", err)
+	}
+
+	if err = b.monitorConfirmations(ctx); err != nil {
+		return fmt.Errorf("monitorConfirmations failed: %w", err)
+	}
+
+	return nil
 }
 
 // handleConf handles a confirmation notification. This is the final step of the
