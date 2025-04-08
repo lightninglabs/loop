@@ -212,5 +212,5 @@ func (s *StoreMock) TotalSweptAmount(ctx context.Context, batchID int32) (
 		}
 	}
 
-	return 0, nil
+	return total, nil
 }
