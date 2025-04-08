@@ -1128,11 +1128,12 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
 
 	spendCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// Then we get the total amount that was swept by the batch.
 	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatchID)
 	if err != nil {
+		cancel()
+
 		return err
 	}
 
@@ -1141,11 +1142,14 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		sweep.initiationHeight,
 	)
 	if err != nil {
+		cancel()
+
 		return err
 	}
 
 	b.wg.Add(1)
 	go func() {
+		defer cancel()
 		defer b.wg.Done()
 		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
