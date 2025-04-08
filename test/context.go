@@ -61,7 +61,7 @@ func (ctx *Context) NotifySpend(tx *wire.MsgTx, inputIndex uint32) {
 		SpenderInputIndex: inputIndex,
 	}:
 	case <-time.After(Timeout):
-		ctx.T.Fatalf("htlc spend not consumed")
+		ctx.T.Fatalf("spend not consumed")
 	}
 }
 
@@ -74,7 +74,7 @@ func (ctx *Context) NotifyConf(tx *wire.MsgTx) {
 		Tx: tx,
 	}:
 	case <-time.After(Timeout):
-		ctx.T.Fatalf("htlc spend not consumed")
+		ctx.T.Fatalf("confirmation not consumed")
 	}
 }
 
@@ -86,7 +86,7 @@ func (ctx *Context) AssertRegisterSpendNtfn(script []byte) {
 	case spendIntent := <-ctx.Lnd.RegisterSpendChannel:
 		require.Equal(
 			ctx.T, script, spendIntent.PkScript,
-			"server not listening for published htlc script",
+			"server not listening for published script",
 		)
 
 	case <-time.After(Timeout):
@@ -134,7 +134,7 @@ func (ctx *Context) AssertRegisterConf(expectTxHash bool, confs int32) *ConfRegi
 		require.Equal(ctx.T, confs, confIntent.NumConfs)
 
 	case <-time.After(Timeout):
-		ctx.T.Fatalf("htlc confirmed not subscribed to")
+		ctx.T.Fatalf("tx confirmed not subscribed to")
 	}
 
 	return confIntent
@@ -249,7 +249,7 @@ func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
 		}
 	}
 
-	ctx.T.Fatal("htlc not present in tx")
+	ctx.T.Fatal("the output not present in tx")
 	return 0
 }
 
