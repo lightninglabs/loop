@@ -259,7 +259,7 @@ func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
 	}
 
 	if row.Confirmed {
-		batch.State = batchOpen
+		batch.State = batchConfirmed
 	}
 
 	if row.BatchTxID.Valid {
