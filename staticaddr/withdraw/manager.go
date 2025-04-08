@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
@@ -502,8 +503,18 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 	error) {
 
 	// Create a musig2 session for each deposit.
-	withdrawalSessions, clientNonces, err := m.createMusig2Sessions(
-		ctx, deposits,
+	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	withdrawalSessions, clientNonces, err := staticutil.CreateMusig2Sessions(
+		ctx, m.cfg.Signer, deposits, addrParams, staticAddress,
 	)
 	if err != nil {
 		return nil, err
@@ -1024,61 +1035,6 @@ func toPrevoutInfo(outpoints []wire.OutPoint) []*staticaddressrpc.PrevoutInfo {
 	}
 
 	return result
-}
-
-// createMusig2Sessions creates a musig2 session for a number of deposits.
-func (m *Manager) createMusig2Sessions(ctx context.Context,
-	deposits []*deposit.Deposit) ([]*input.MuSig2SessionInfo, [][]byte,
-	error) {
-
-	musig2Sessions := make([]*input.MuSig2SessionInfo, len(deposits))
-	clientNonces := make([][]byte, len(deposits))
-
-	// Create the sessions and nonces from the deposits.
-	for i := 0; i < len(deposits); i++ {
-		session, err := m.createMusig2Session(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		musig2Sessions[i] = session
-		clientNonces[i] = session.PublicNonce[:]
-	}
-
-	return musig2Sessions, clientNonces, nil
-}
-
-// Musig2CreateSession creates a musig2 session for the deposit.
-func (m *Manager) createMusig2Session(ctx context.Context) (
-	*input.MuSig2SessionInfo, error) {
-
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	signers := [][]byte{
-		addressParams.ClientPubkey.SerializeCompressed(),
-		addressParams.ServerPubkey.SerializeCompressed(),
-	}
-
-	address, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	expiryLeaf := address.TimeoutLeaf
-
-	rootHash := expiryLeaf.TapHash()
-
-	return m.cfg.Signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &addressParams.KeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
-	)
 }
 
 func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
