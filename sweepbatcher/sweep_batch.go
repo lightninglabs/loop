@@ -1822,29 +1822,22 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 		b.Infof("monitoring spend for outpoint %s",
 			primarySweep.outpoint.String())
 
-		for {
+		select {
+		case spend := <-spendChan:
 			select {
-			case spend := <-spendChan:
-				select {
-				case b.spendChan <- spend:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-spendErr:
-				b.writeToSpendErrChan(ctx, err)
-
-				b.writeToErrChan(
-					fmt.Errorf("spend error: %w", err),
-				)
-
-				return
+			case b.spendChan <- spend:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-spendErr:
+			b.writeToSpendErrChan(ctx, err)
+
+			b.writeToErrChan(
+				fmt.Errorf("spend error: %w", err),
+			)
+
+		case <-ctx.Done():
 		}
 	}()
 
@@ -1878,39 +1871,31 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		defer cancel()
 		defer b.wg.Done()
 
-		for {
+		select {
+		case conf := <-confChan:
 			select {
-			case conf := <-confChan:
-				select {
-				case b.confChan <- conf:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-errChan:
-				b.writeToErrChan(fmt.Errorf("confirmations "+
-					"monitoring error: %w", err))
-
-				return
-
-			case <-reorgChan:
-				// A re-org has been detected. We set the batch
-				// state back to open since our batch
-				// transaction is no longer present in any
-				// block. We can accept more sweeps and try to
-				// publish new transactions, at this point we
-				// need to monitor again for a new spend.
-				select {
-				case b.reorgChan <- struct{}{}:
-				case <-ctx.Done():
-				}
-				return
+			case b.confChan <- conf:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-errChan:
+			b.writeToErrChan(fmt.Errorf("confirmations "+
+				"monitoring error: %w", err))
+
+		case <-reorgChan:
+			// A re-org has been detected. We set the batch
+			// state back to open since our batch
+			// transaction is no longer present in any
+			// block. We can accept more sweeps and try to
+			// publish new transactions, at this point we
+			// need to monitor again for a new spend.
+			select {
+			case b.reorgChan <- struct{}{}:
+			case <-ctx.Done():
+			}
+
+		case <-ctx.Done():
 		}
 	}()
 

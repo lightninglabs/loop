@@ -1154,74 +1154,70 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
 
-		for {
+		select {
+		case spend := <-spendChan:
+			spendTx := spend.SpendingTx
+			// Calculate the fee portion that each sweep should pay
+			// for the batch.
+			feePortionPerSweep, roundingDifference :=
+				getFeePortionForSweep(
+					spendTx, len(spendTx.TxIn),
+					totalSwept,
+				)
+
+			onChainFeePortion := getFeePortionPaidBySweep(
+				spendTx, feePortionPerSweep,
+				roundingDifference, sweep,
+			)
+
+			// Notify the requester of the spend with the spend
+			// details, including the fee portion for this
+			// particular sweep.
+			spendDetail := &SpendDetail{
+				Tx:                spendTx,
+				OnChainFeePortion: onChainFeePortion,
+			}
+
 			select {
-			case spend := <-spendChan:
-				spendTx := spend.SpendingTx
-				// Calculate the fee portion that each sweep
-				// should pay for the batch.
-				feePortionPerSweep, roundingDifference :=
-					getFeePortionForSweep(
-						spendTx, len(spendTx.TxIn),
-						totalSwept,
-					)
-
-				onChainFeePortion := getFeePortionPaidBySweep(
-					spendTx, feePortionPerSweep,
-					roundingDifference, sweep,
-				)
-
-				// Notify the requester of the spend
-				// with the spend details, including the fee
-				// portion for this particular sweep.
-				spendDetail := &SpendDetail{
-					Tx:                spendTx,
-					OnChainFeePortion: onChainFeePortion,
-				}
-
-				select {
-				// Try to write the update to the notification
-				// channel.
-				case notifier.SpendChan <- spendDetail:
-
-				// If a quit signal was provided by the swap,
-				// continue.
-				case <-notifier.QuitChan:
-
-				// If the context was canceled, stop.
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-spendErr:
-				select {
-				// Try to write the error to the notification
-				// channel.
-				case notifier.SpendErrChan <- err:
-
-				// If a quit signal was provided by the swap,
-				// continue.
-				case <-notifier.QuitChan:
-
-				// If the context was canceled, stop.
-				case <-ctx.Done():
-				}
-
-				b.writeToErrChan(
-					ctx, fmt.Errorf("spend error: %w", err),
-				)
-
-				return
+			// Try to write the update to the notification channel.
+			case notifier.SpendChan <- spendDetail:
 
 			// If a quit signal was provided by the swap, continue.
 			case <-notifier.QuitChan:
-				return
 
 			// If the context was canceled, stop.
 			case <-ctx.Done():
-				return
 			}
+
+			return
+
+		case err := <-spendErr:
+			select {
+			// Try to write the error to the notification
+			// channel.
+			case notifier.SpendErrChan <- err:
+
+			// If a quit signal was provided by the swap,
+			// continue.
+			case <-notifier.QuitChan:
+
+			// If the context was canceled, stop.
+			case <-ctx.Done():
+			}
+
+			b.writeToErrChan(
+				ctx, fmt.Errorf("spend error: %w", err),
+			)
+
+			return
+
+		// If a quit signal was provided by the swap, continue.
+		case <-notifier.QuitChan:
+			return
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+			return
 		}
 	}()
 
