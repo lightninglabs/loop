@@ -135,7 +135,9 @@ const (
 	Open batchState = 0
 
 	// Closed is the state in which the batch is no longer able to accept
-	// new sweeps.
+	// new sweeps. NOTE: this state exists only in-memory. In the database
+	// it is stored as Open and converted to Closed after a spend
+	// notification arrives (quickly after start of Batch.Run).
 	Closed batchState = 1
 
 	// Confirmed is the state in which the batch transaction has reached the
@@ -870,8 +872,8 @@ func (b *batch) Run(ctx context.Context) error {
 	// completes.
 	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
-	b.Infof("started, primary %s, total sweeps %d",
-		b.primarySweepID, len(b.sweeps))
+	b.Infof("started, primary %s, total sweeps %d, state: %d",
+		b.primarySweepID, len(b.sweeps), b.state)
 
 	for {
 		// If the batch is not empty, find earliest initialDelay.
@@ -2179,7 +2181,7 @@ func (b *batch) persist(ctx context.Context) error {
 	bch := &dbBatch{}
 
 	bch.ID = b.id
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 
 	if b.batchTxid != nil {
 		bch.BatchTxid = *b.batchTxid
@@ -2238,7 +2240,7 @@ func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
 
 func (b *batch) insertAndAcquireID(ctx context.Context) (int32, error) {
 	bch := &dbBatch{}
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 	bch.MaxTimeoutDistance = b.cfg.maxTimeoutDistance
 
 	id, err := b.store.InsertSweepBatch(ctx, bch)
@@ -2338,19 +2340,4 @@ func clampBatchFee(fee btcutil.Amount,
 	}
 
 	return fee
-}
-
-func stateEnumToString(state batchState) string {
-	switch state {
-	case Open:
-		return batchOpen
-
-	case Closed:
-		return batchClosed
-
-	case Confirmed:
-		return batchConfirmed
-	}
-
-	return ""
 }

@@ -31,18 +31,6 @@ const (
 	// of sweeps that can appear in the same batch.
 	defaultMaxTimeoutDistance = 288
 
-	// batchOpen is the string representation of the state of a batch that
-	// is open.
-	batchOpen = "open"
-
-	// batchClosed is the string representation of the state of a batch
-	// that is closed.
-	batchClosed = "closed"
-
-	// batchConfirmed is the string representation of the state of a batch
-	// that is confirmed.
-	batchConfirmed = "confirmed"
-
 	// defaultMainnetPublishDelay is the default publish delay that is used
 	// for mainnet.
 	defaultMainnetPublishDelay = 5 * time.Second
@@ -760,7 +748,7 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 				"sweep %x: %w", sweep.swapHash[:6], err)
 		}
 
-		if parentBatch.State == batchConfirmed {
+		if parentBatch.Confirmed {
 			fullyConfirmed = true
 		}
 	}
@@ -844,7 +832,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	if completed && *notifier != (SpendNotifier{}) {
 		// The parent batch is indeed confirmed, meaning it is complete
 		// and we won't be able to attach this sweep to it.
-		if parentBatch.State == batchConfirmed {
+		if parentBatch.Confirmed {
 			return b.monitorSpendAndNotify(
 				ctx, sweep, parentBatch.ID, notifier,
 			)
@@ -1093,15 +1081,18 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 		batch := batch{}
 		batch.id = bch.ID
 
-		switch bch.State {
-		case batchOpen:
-			batch.state = Open
-
-		case batchClosed:
-			batch.state = Closed
-
-		case batchConfirmed:
+		if bch.Confirmed {
 			batch.state = Confirmed
+		} else {
+			// We don't store Closed state separately in DB.
+			// If the batch is closed (included into a block, but
+			// not fully confirmed), it is now considered Open
+			// again. It will receive a spending notification as
+			// soon as it starts, so it is not an issue. If a sweep
+			// manages to be added during this time, it will be
+			// detected as missing when analyzing the spend
+			// notification and will be added to new batch.
+			batch.state = Open
 		}
 
 		batch.batchTxid = &bch.BatchTxid
