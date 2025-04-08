@@ -1176,7 +1176,15 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 				}
 
 				select {
+				// Try to write the update to the notification
+				// channel.
 				case notifier.SpendChan <- spendDetail:
+
+				// If a quit signal was provided by the swap,
+				// continue.
+				case <-notifier.QuitChan:
+
+				// If the context was canceled, stop.
 				case <-ctx.Done():
 				}
 
@@ -1184,7 +1192,15 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 
 			case err := <-spendErr:
 				select {
+				// Try to write the error to the notification
+				// channel.
 				case notifier.SpendErrChan <- err:
+
+				// If a quit signal was provided by the swap,
+				// continue.
+				case <-notifier.QuitChan:
+
+				// If the context was canceled, stop.
 				case <-ctx.Done():
 				}
 
@@ -1194,9 +1210,11 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 
 				return
 
+			// If a quit signal was provided by the swap, continue.
 			case <-notifier.QuitChan:
 				return
 
+			// If the context was canceled, stop.
 			case <-ctx.Done():
 				return
 			}
