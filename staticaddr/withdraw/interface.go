@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // Store is the database interface that is used to store and retrieve
@@ -44,4 +45,12 @@ type DepositManager interface {
 		event fsm.EventType, expectedFinalState fsm.StateType) error
 
 	UpdateDeposit(ctx context.Context, d *deposit.Deposit) error
+}
+
+// Estimator is an interface that allows us to estimate the fee rate in sat/kw.
+type Estimator interface {
+	// EstimateFeeRate estimates the fee rate in sat/kw for a transaction to
+	// be confirmed in the given number of blocks.
+	EstimateFeeRate(ctx context.Context, target int32) (
+		chainfee.SatPerKWeight, error)
 }
