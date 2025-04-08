@@ -307,13 +307,13 @@ type SpendDetail struct {
 // that the sweep was successful.
 type SpendNotifier struct {
 	// SpendChan is a channel where the spend details are received.
-	SpendChan chan *SpendDetail
+	SpendChan chan<- *SpendDetail
 
 	// SpendErrChan is a channel where spend errors are received.
-	SpendErrChan chan error
+	SpendErrChan chan<- error
 
 	// QuitChan is a channel that can be closed to stop the notifier.
-	QuitChan chan bool
+	QuitChan <-chan bool
 }
 
 var (
