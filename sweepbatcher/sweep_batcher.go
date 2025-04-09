@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -299,6 +300,14 @@ type SpendNotifier struct {
 
 	// SpendErrChan is a channel where spend errors are received.
 	SpendErrChan chan<- error
+
+	// ConfChan is a channel where the confirmation details are received.
+	// This channel is optional.
+	ConfChan chan<- *chainntnfs.TxConfirmation
+
+	// ConfErrChan is a channel where confirmation errors are received.
+	// This channel is optional.
+	ConfErrChan chan<- error
 
 	// QuitChan is a channel that can be closed to stop the notifier.
 	QuitChan <-chan bool
@@ -1114,7 +1123,9 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 }
 
 // monitorSpendAndNotify monitors the spend of a specific outpoint and writes
-// the response back to the response channel.
+// the response back to the response channel. It is called if the batch is fully
+// confirmed and we just need to deliver the data back to the caller though
+// SpendNotifier.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
 
@@ -1172,6 +1183,15 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 			select {
 			// Try to write the update to the notification channel.
 			case notifier.SpendChan <- spendDetail:
+				err := b.monitorConfAndNotify(
+					ctx, sweep, notifier, spendTx,
+				)
+				if err != nil {
+					b.writeToErrChan(
+						ctx, fmt.Errorf("monitor conf "+
+							"failed: %w", err),
+					)
+				}
 
 			// If a quit signal was provided by the swap, continue.
 			case <-notifier.QuitChan:
@@ -1209,6 +1229,78 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		// If the context was canceled, stop.
 		case <-ctx.Done():
 			return
+		}
+	}()
+
+	return nil
+}
+
+// monitorConfAndNotify monitors the confirmation of a specific transaction and
+// writes the response back to the response channel. It is called if the batch
+// is fully confirmed and we just need to deliver the data back to the caller
+// though SpendNotifier.
+func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
+	notifier *SpendNotifier, spendTx *wire.MsgTx) error {
+
+	// If confirmation notifications were not requested, stop.
+	if notifier.ConfChan == nil && notifier.ConfErrChan == nil {
+		return nil
+	}
+
+	batchTxid := spendTx.TxHash()
+
+	if len(spendTx.TxOut) != 1 {
+		return fmt.Errorf("unexpected number of outputs in batch: %d, "+
+			"want %d", len(spendTx.TxOut), 1)
+	}
+	batchPkScript := spendTx.TxOut[0].PkScript
+
+	reorgChan := make(chan struct{})
+
+	confCtx, cancel := context.WithCancel(ctx)
+
+	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
+		confCtx, &batchTxid, batchPkScript, batchConfHeight,
+		sweep.initiationHeight, lndclient.WithReOrgChan(reorgChan),
+	)
+	if err != nil {
+		cancel()
+		return err
+	}
+
+	b.wg.Add(1)
+	go func() {
+		defer cancel()
+		defer b.wg.Done()
+
+		select {
+		case conf := <-confChan:
+			if notifier.ConfChan != nil {
+				select {
+				case notifier.ConfChan <- conf:
+				case <-notifier.QuitChan:
+				case <-ctx.Done():
+				}
+			}
+
+		case err := <-errChan:
+			if notifier.ConfErrChan != nil {
+				select {
+				case notifier.ConfErrChan <- err:
+				case <-notifier.QuitChan:
+				case <-ctx.Done():
+				}
+			}
+
+			b.writeToErrChan(ctx, fmt.Errorf("confirmations "+
+				"monitoring error: %w", err))
+
+		case <-reorgChan:
+			// A re-org has been detected, but the batch is fully
+			// confirmed and this is unexpected. Crash the batcher.
+			b.writeToErrChan(ctx, fmt.Errorf("unexpected reorg"))
+
+		case <-ctx.Done():
 		}
 	}()
 
