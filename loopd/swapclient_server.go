@@ -32,6 +32,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/openchannel"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -97,6 +98,7 @@ type swapClientServer struct {
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
 	staticLoopInManager  *loopin.Manager
+	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
@@ -1839,6 +1841,22 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		PaymentTimeoutSeconds: loopIn.PaymentTimeoutSeconds,
 		QuotedSwapFeeSatoshis: int64(loopIn.QuotedSwapFee),
 	}, nil
+}
+
+// StaticOpenChannel initiates a open channel request using static address
+// deposits.
+func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
+	req *looprpc.OpenChannelRequest) (*looprpc.StaticOpenChannelResponse,
+	error) {
+
+	infof("Static open channel request received")
+
+	_, _, err := s.openChannelManager.DeliverOpenChannelRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.StaticOpenChannelResponse{}, nil
 }
 
 type filterFunc func(deposits *deposit.Deposit) bool

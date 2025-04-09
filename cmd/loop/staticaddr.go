@@ -34,6 +34,7 @@ var staticAddressCommands = cli.Command{
 		withdrawalCommand,
 		summaryCommand,
 		staticAddressLoopInCommand,
+		openChannelCommand,
 	},
 }
 

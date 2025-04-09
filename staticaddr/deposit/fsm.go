@@ -35,6 +35,7 @@ var (
 		fsm.OnError:           {},
 		OnWithdrawInitiated:   {},
 		OnWithdrawn:           {},
+		OnOpeningChannel:      {},
 	}
 )
 
@@ -50,6 +51,10 @@ var (
 
 	// Withdrawn signals that the withdrawal transaction has been confirmed.
 	Withdrawn = fsm.StateType("Withdrawn")
+
+	// OpeningChannel signals that the open channel transaction has been
+	// broadcast.
+	OpeningChannel = fsm.StateType("OpeningChannel")
 
 	// LoopingIn signals that the deposit is locked for a loop in swap.
 	LoopingIn = fsm.StateType("LoopingIn")
@@ -92,6 +97,14 @@ var (
 
 	// OnWithdrawn is sent to the fsm when a withdrawal has been confirmed.
 	OnWithdrawn = fsm.EventType("OnWithdrawn")
+
+	// OnOpeningChannel is sent to the fsm when a channel open has been
+	// initiated.
+	OnOpeningChannel = fsm.EventType("OnOpeningChannel")
+
+	// OnChannelOpened is sent to the fsm when a channel open has been
+	// published.
+	OnChannelOpened = fsm.EventType("OnChannelOpened")
 
 	// OnLoopInInitiated is sent to the fsm when a loop in has been
 	// initiated.
@@ -253,6 +266,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnExpiry:            PublishExpirySweep,
 				OnWithdrawInitiated: Withdrawing,
 				OnLoopInInitiated:   LoopingIn,
+				OnOpeningChannel:    OpeningChannel,
 				// We encounter OnSweepingHtlcTimeout if the
 				// server published the htlc tx without paying
 				// us. We then need to monitor for the timeout
@@ -365,6 +379,12 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnWithdrawn: Withdrawn,
 			},
 			Action: f.FinalizeDepositAction,
+		},
+		OpeningChannel: fsm.State{
+			Transitions: fsm.Transitions{
+				fsm.OnError: Deposited,
+			},
+			Action: fsm.NoOpAction,
 		},
 	}
 }

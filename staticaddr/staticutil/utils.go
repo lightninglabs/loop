@@ -65,6 +65,34 @@ func CreateMusig2Sessions(ctx context.Context,
 	return musig2Sessions, clientNonces, nil
 }
 
+// CreateMusig2SessionsPerDeposit creates a musig2 session for a number of deposits.
+func CreateMusig2SessionsPerDeposit(ctx context.Context,
+	signer lndclient.SignerClient, deposits []*deposit.Deposit,
+	addrParams *address.Parameters,
+	staticAddress *script.StaticAddress) (map[string]*input.MuSig2SessionInfo,
+	map[string][]byte, map[string]int, error) {
+
+	sessions := make(map[string]*input.MuSig2SessionInfo)
+	nonces := make(map[string][]byte)
+	depositToIdx := make(map[string]int)
+
+	// Create the musig2 sessions for the sweepless sweep tx.
+	for i, deposit := range deposits {
+		session, err := createMusig2Session(
+			ctx, signer, addrParams, staticAddress,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		sessions[deposit.String()] = session
+		nonces[deposit.String()] = session.PublicNonce[:]
+		depositToIdx[deposit.String()] = i
+	}
+
+	return sessions, nonces, depositToIdx, nil
+}
+
 // createMusig2Session creates a musig2 session for the deposit.
 func createMusig2Session(ctx context.Context,
 	signer lndclient.SignerClient, addrParams *address.Parameters,
