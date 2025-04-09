@@ -887,9 +887,11 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// Deliver sweep request to batcher.
 	spendChan := make(chan *SpendDetail, 1)
+	confErrChan := make(chan error)
 	notifier = &SpendNotifier{
 		SpendChan:    spendChan,
 		SpendErrChan: make(chan error, 1),
+		ConfErrChan:  confErrChan,
 		QuitChan:     make(chan bool, 1),
 	}
 	sweepReq1.Notifier = notifier
@@ -968,6 +970,10 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// Emulate a confirmation error.
 	confReg.ErrChan <- testError
 
+	// Make sure the notifier gets the confirmation error.
+	confErr := <-confErrChan
+	require.ErrorIs(t, confErr, testError)
+
 	// Wait for the batcher to crash because of the confirmation error.
 	runErr = <-runErrChan
 	require.ErrorIs(t, runErr, testError)
@@ -986,9 +992,11 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// Deliver sweep request to batcher.
 	spendChan = make(chan *SpendDetail, 1)
+	confChan := make(chan *ConfDetail)
 	notifier = &SpendNotifier{
 		SpendChan:    spendChan,
 		SpendErrChan: make(chan error, 1),
+		ConfChan:     confChan,
 		QuitChan:     make(chan bool, 1),
 	}
 	sweepReq1.Notifier = notifier
@@ -1043,8 +1051,15 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// We mock the tx confirmation notification.
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
-		Tx: spendingTx,
+		BlockHeight: 604,
+		Tx:          spendingTx,
 	}
+
+	// Make sure the notifier gets a confirmation notification.
+	conf := <-confChan
+	require.Equal(t, uint32(604), conf.BlockHeight)
+	require.Equal(t, spendingTx.TxHash(), conf.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), conf.OnChainFeePortion)
 
 	// Eventually the batch receives the confirmation notification and
 	// confirms itself.
@@ -1060,9 +1075,11 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// Now emulate adding the sweep again after it was fully confirmed.
 	// This triggers another code path (monitorSpendAndNotify).
 	spendChan = make(chan *SpendDetail, 1)
+	confChan = make(chan *ConfDetail)
 	notifier = &SpendNotifier{
 		SpendChan:    spendChan,
 		SpendErrChan: make(chan error, 1),
+		ConfChan:     confChan,
 		QuitChan:     make(chan bool, 1),
 	}
 	sweepReq1.Notifier = notifier
@@ -1078,6 +1095,19 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	spending = <-spendChan
 	require.Equal(t, spendingTxHash, spending.Tx.TxHash())
 	require.Equal(t, btcutil.Amount(fee), spending.OnChainFeePortion)
+
+	// We mock the tx confirmation notification.
+	<-lnd.RegisterConfChannel
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		BlockHeight: 604,
+		Tx:          spendingTx,
+	}
+
+	// Make sure the notifier gets a confirmation notification.
+	conf = <-confChan
+	require.Equal(t, uint32(604), conf.BlockHeight)
+	require.Equal(t, spendingTx.TxHash(), conf.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), conf.OnChainFeePortion)
 
 	// Now check what happens in case of a spending error.
 	spendErrChan = make(chan error, 1)
@@ -1101,6 +1131,43 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	require.ErrorIs(t, notifierErr, testError)
 
 	// Wait for the batcher to crash because of the spending error.
+	runErr = <-runErrChan
+	require.ErrorIs(t, runErr, testError)
+
+	// Now launch the batcher again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	// Now check what happens in case of a confirmation error.
+	confErrChan = make(chan error, 1)
+	notifier = &SpendNotifier{
+		SpendChan:    make(chan *SpendDetail, 1),
+		SpendErrChan: make(chan error, 1),
+		ConfErrChan:  confErrChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Expect a spending registration.
+	<-lnd.RegisterSpendChannel
+
+	// We notify the spend.
+	lnd.SpendChannel <- spendDetail
+
+	// We mock the tx confirmation error notification.
+	confReg = <-lnd.RegisterConfChannel
+	confReg.ErrChan <- testError
+
+	// Make sure the notifier gets the confirmation error.
+	confErr = <-confErrChan
+	require.ErrorIs(t, confErr, testError)
+
+	// Wait for the batcher to crash because of the confirmation error.
 	runErr = <-runErrChan
 	require.ErrorIs(t, runErr, testError)
 }
