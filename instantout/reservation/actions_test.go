@@ -31,8 +31,8 @@ var (
 	defaultExpiry = uint32(100)
 )
 
-func newValidInitReservationContext() *InitReservationContext {
-	return &InitReservationContext{
+func newValidInitReservationContext() *ServerRequestedInitContext {
+	return &ServerRequestedInitContext{
 		reservationID: ID{0x01},
 		serverPubkey:  defaultPubkey,
 		value:         defaultValue,
@@ -77,6 +77,26 @@ func (m *mockReservationClient) FetchL402(ctx context.Context,
 	args := m.Called(ctx, in, opts)
 
 	return args.Get(0).(*swapserverrpc.FetchL402Response),
+		args.Error(1)
+}
+
+func (m *mockReservationClient) QuoteReservation(ctx context.Context,
+	in *swapserverrpc.QuoteReservationRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.QuoteReservationResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.QuoteReservationResponse),
+		args.Error(1)
+}
+
+func (m *mockReservationClient) RequestReservation(ctx context.Context,
+	in *swapserverrpc.RequestReservationRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.RequestReservationResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.RequestReservationResponse),
 		args.Error(1)
 }
 
@@ -154,7 +174,7 @@ func TestInitReservationAction(t *testing.T) {
 			StateMachine: &fsm.StateMachine{},
 		}
 
-		event := reservationFSM.InitAction(ctxb, tc.eventCtx)
+		event := reservationFSM.InitFromServerRequestAction(ctxb, tc.eventCtx)
 		require.Equal(t, tc.expectedEvent, event)
 	}
 }

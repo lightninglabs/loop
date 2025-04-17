@@ -8,6 +8,18 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 )
 
+type ProtocolVersion uint32
+
+const (
+	// ProtocolVersionServerInitiated is the protocol version where the
+	// server initiates the reservation.
+	ProtocolVersionServerInitiated ProtocolVersion = 1
+
+	// ProtocolVersionClientInitiated is the protocol version where the
+	// client initiates the reservation.
+	ProtocolVersionClientInitiated ProtocolVersion = 2
+)
+
 const (
 	// defaultObserverSize is the size of the fsm observer channel.
 	defaultObserverSize = 15
@@ -28,6 +40,12 @@ type Config struct {
 	// swap server.
 	ReservationClient swapserverrpc.ReservationServiceClient
 
+	// LightningClient is the lnd client used to handle invoices decoding.
+	LightningClient lndclient.LightningClient
+
+	// RouterClient is used to send the offchain payments.
+	RouterClient lndclient.RouterClient
+
 	// NotificationManager is the manager that handles the notification
 	// subscriptions.
 	NotificationManager NotificationManager
@@ -43,9 +61,10 @@ type FSM struct {
 }
 
 // NewFSM creates a new reservation FSM.
-func NewFSM(cfg *Config) *FSM {
+func NewFSM(cfg *Config, protocolVersion ProtocolVersion) *FSM {
 	reservation := &Reservation{
-		State: fsm.EmptyState,
+		State:           fsm.EmptyState,
+		ProtocolVersion: protocolVersion,
 	}
 
 	return NewFSMFromReservation(cfg, reservation)
@@ -59,10 +78,22 @@ func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
 		reservation: reservation,
 	}
 
+	var states fsm.States
+	switch reservation.ProtocolVersion {
+	case ProtocolVersionServerInitiated:
+		states = reservationFsm.GetServerInitiatedReservationStates()
+
+	case ProtocolVersionClientInitiated:
+		states = reservationFsm.GetClientInitiatedReservationStates()
+
+	default:
+		states = make(fsm.States)
+	}
+
 	reservationFsm.StateMachine = fsm.NewStateMachineWithState(
-		reservationFsm.GetReservationStates(), reservation.State,
-		defaultObserverSize,
+		states, reservation.State, defaultObserverSize,
 	)
+
 	reservationFsm.ActionEntryFunc = reservationFsm.updateReservation
 
 	return reservationFsm
@@ -72,6 +103,10 @@ func NewFSMFromReservation(cfg *Config, reservation *Reservation) *FSM {
 var (
 	// Init is the initial state of the reservation.
 	Init = fsm.StateType("Init")
+
+	// SendPrepaymentPayment is the state where the client sends the payment to the
+	// server.
+	SendPrepaymentPayment = fsm.StateType("SendPayment")
 
 	// WaitForConfirmation is the state where we wait for the reservation
 	// tx to be confirmed.
@@ -99,6 +134,10 @@ var (
 	// OnServerRequest is the event that is triggered when the server
 	// requests a new reservation.
 	OnServerRequest = fsm.EventType("OnServerRequest")
+
+	// OnClientInitialized is the event that is triggered when the client
+	// has initialized the reservation.
+	OnClientInitialized = fsm.EventType("OnClientInitialized")
 
 	// OnBroadcast is the event that is triggered when the reservation tx
 	// has been broadcast.
@@ -133,9 +172,83 @@ var (
 	OnUnlocked = fsm.EventType("OnUnlocked")
 )
 
-// GetReservationStates returns the statemap that defines the reservation
-// state machine.
-func (f *FSM) GetReservationStates() fsm.States {
+// GetClientInitiatedReservationStates returns the statemap that defines the
+// reservation state machine, where the client initiates the reservation.
+func (f *FSM) GetClientInitiatedReservationStates() fsm.States {
+	return fsm.States{
+		fsm.EmptyState: fsm.State{
+			Transitions: fsm.Transitions{
+				OnClientInitialized: Init,
+			},
+			Action: nil,
+		},
+		Init: fsm.State{
+			Transitions: fsm.Transitions{
+				OnClientInitialized: SendPrepaymentPayment,
+				OnRecover:           Failed,
+				fsm.OnError:         Failed,
+			},
+			Action: f.InitFromClientRequestAction,
+		},
+		SendPrepaymentPayment: fsm.State{
+			Transitions: fsm.Transitions{
+				OnBroadcast: WaitForConfirmation,
+				OnRecover:   SendPrepaymentPayment,
+				fsm.OnError: Failed,
+			},
+			Action: f.SendPrepayment,
+		},
+		WaitForConfirmation: fsm.State{
+			Transitions: fsm.Transitions{
+				OnRecover:   WaitForConfirmation,
+				OnConfirmed: Confirmed,
+				OnTimedOut:  TimedOut,
+			},
+			Action: f.SubscribeToConfirmationAction,
+		},
+		Confirmed: fsm.State{
+			Transitions: fsm.Transitions{
+				OnSpent:     Spent,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Confirmed,
+				OnLocked:    Locked,
+				fsm.OnError: Confirmed,
+			},
+			Action: f.AsyncWaitForExpiredOrSweptAction,
+		},
+		Locked: fsm.State{
+			Transitions: fsm.Transitions{
+				OnUnlocked:  Confirmed,
+				OnTimedOut:  TimedOut,
+				OnRecover:   Locked,
+				OnSpent:     Spent,
+				fsm.OnError: Locked,
+			},
+			Action: f.AsyncWaitForExpiredOrSweptAction,
+		},
+		TimedOut: fsm.State{
+			Transitions: fsm.Transitions{
+				OnTimedOut: TimedOut,
+			},
+			Action: fsm.NoOpAction,
+		},
+
+		Spent: fsm.State{
+			Transitions: fsm.Transitions{
+				OnSpent: Spent,
+			},
+			Action: fsm.NoOpAction,
+		},
+
+		Failed: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+	}
+}
+
+// GetServerInitiatedReservationStates returns the statemap that defines the
+// reservation state machine, where the server initiates the reservation.
+func (f *FSM) GetServerInitiatedReservationStates() fsm.States {
 	return fsm.States{
 		fsm.EmptyState: fsm.State{
 			Transitions: fsm.Transitions{
@@ -149,7 +262,7 @@ func (f *FSM) GetReservationStates() fsm.States {
 				OnRecover:   Failed,
 				fsm.OnError: Failed,
 			},
-			Action: f.InitAction,
+			Action: f.InitFromServerRequestAction,
 		},
 		WaitForConfirmation: fsm.State{
 			Transitions: fsm.Transitions{

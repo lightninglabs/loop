@@ -1721,6 +1721,24 @@
     "looprpcProbeResponse": {
       "type": "object"
     },
+    "looprpcReservationQuoteResponse": {
+      "type": "object",
+      "properties": {
+        "prepay_amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The prepay fee that will be charged for the reservation."
+        }
+      }
+    },
+    "looprpcReservationRequestResponse": {
+      "type": "object",
+      "properties": {
+        "reservation": {
+          "$ref": "#/definitions/looprpcClientReservation"
+        }
+      }
+    },
     "looprpcRouteHint": {
       "type": "object",
       "properties": {

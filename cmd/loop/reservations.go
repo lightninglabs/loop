@@ -2,13 +2,26 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli"
 )
 
-var reservationsCommands = cli.Command{
+var (
+	reservationAmountFlag = cli.Uint64Flag{
+		Name:  "amt",
+		Usage: "the amount in satoshis for the reservation",
+	}
+	reservationExpiryFlag = cli.UintFlag{
+		Name: "expiry",
+		Usage: "the relative block height at which the reservation" +
+			" expires",
+	}
+)
 
+var reservationsCommands = cli.Command{
 	Name:      "reservations",
 	ShortName: "r",
 	Usage:     "manage reservations",
@@ -20,6 +33,7 @@ var reservationsCommands = cli.Command{
 	`,
 	Subcommands: []cli.Command{
 		listReservationsCommand,
+		newReservationCommand,
 	},
 }
 
@@ -34,7 +48,76 @@ var (
 	`,
 		Action: listReservations,
 	}
+
+	newReservationCommand = cli.Command{
+		Name:      "new",
+		ShortName: "n",
+		Usage:     "create a new reservation",
+		Description: `
+		Create a new reservation with the given value and expiry.
+	`,
+		Action: newReservation,
+		Flags: []cli.Flag{
+			reservationAmountFlag,
+			reservationExpiryFlag,
+		},
+	}
 )
+
+func newReservation(ctx *cli.Context) error {
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	ctxt, cancel := context.WithTimeout(
+		context.Background(), defaultRpcTimeout,
+	)
+	defer cancel()
+
+	if !ctx.IsSet(reservationAmountFlag.Name) {
+		return errors.New("amt flag missing")
+	}
+
+	if !ctx.IsSet(reservationExpiryFlag.Name) {
+		return errors.New("expiry flag missing")
+	}
+
+	quoteReq, err := client.ReservationQuote(
+		ctxt, &looprpc.ReservationQuoteRequest{
+			Amt:    ctx.Uint64(reservationAmountFlag.Name),
+			Expiry: uint32(ctx.Uint(reservationExpiryFlag.Name)),
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(satAmtFmt, "Reservation Cost: ", quoteReq.PrepayAmt)
+
+	fmt.Printf("CONTINUE RESERVATION? (y/n): ")
+
+	var answer string
+	fmt.Scanln(&answer)
+	if answer == "n" {
+		return nil
+	}
+
+	reservationRes, err := client.ReservationRequest(
+		ctxt, &looprpc.ReservationRequestRequest{
+			Amt:          ctx.Uint64(reservationAmountFlag.Name),
+			Expiry:       uint32(ctx.Uint(reservationExpiryFlag.Name)),
+			MaxPrepayAmt: quoteReq.PrepayAmt,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(reservationRes)
+	return nil
+}
 
 func listReservations(ctx *cli.Context) error {
 	client, cleanup, err := getClient(ctx)

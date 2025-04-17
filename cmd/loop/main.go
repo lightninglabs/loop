@@ -38,6 +38,8 @@ var (
 
 	defaultSwapWaitTime = 30 * time.Minute
 
+	defaultRpcTimeout = 30 * time.Second
+
 	// maxMsgRecvSize is the largest message our client will receive. We
 	// set this to 200MiB atm.
 	maxMsgRecvSize = grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 200)

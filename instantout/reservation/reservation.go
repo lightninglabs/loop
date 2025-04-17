@@ -37,6 +37,10 @@ type Reservation struct {
 	// ID is the unique identifier of the reservation.
 	ID ID
 
+	// ProtocolVersion is the version of the protocol used for the
+	// reservation.
+	ProtocolVersion ProtocolVersion
+
 	// State is the current state of the reservation.
 	State fsm.StateType
 
@@ -58,6 +62,9 @@ type Reservation struct {
 	// Outpoint is the outpoint of the reservation.
 	Outpoint *wire.OutPoint
 
+	// PrepayInvoice is the invoice that the client paid as a prepayment.
+	PrepayInvoice string
+
 	// InitiationHeight is the height at which the reservation was
 	// initiated.
 	InitiationHeight int32
@@ -69,8 +76,8 @@ type Reservation struct {
 
 func NewReservation(id ID, serverPubkey, clientPubkey *btcec.PublicKey,
 	value btcutil.Amount, expiry, heightHint uint32,
-	keyLocator keychain.KeyLocator) (*Reservation,
-	error) {
+	keyLocator keychain.KeyLocator, protocolVersion ProtocolVersion) (
+	*Reservation, error) {
 
 	if id == [32]byte{} {
 		return nil, errors.New("id is empty")
@@ -103,6 +110,7 @@ func NewReservation(id ID, serverPubkey, clientPubkey *btcec.PublicKey,
 		KeyLocator:       keyLocator,
 		Expiry:           expiry,
 		InitiationHeight: int32(heightHint),
+		ProtocolVersion:  protocolVersion,
 	}, nil
 }
 
