@@ -18,7 +18,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/swapserverrpc"
 	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -245,7 +244,7 @@ func (m *Manager) notifyNotFinished(ctx context.Context, swapHash lntypes.Hash,
 // It first checks if the requested loop-in is finished as expected and if
 // yes will send signature to the server for the provided psbt.
 func (m *Manager) handleLoopInSweepReq(ctx context.Context,
-	req *swapserverrpc.ServerStaticLoopInSweepNotification) error {
+	req *looprpc.ServerStaticLoopInSweepNotification) error {
 
 	// First we'll check if the loop-ins are known to us and in
 	// the expected state.
@@ -711,7 +710,7 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 
 // mapDepositsToIndices maps the deposit outpoints to their respective indices
 // in the sweep transaction.
-func mapDepositsToIndices(req *swapserverrpc.ServerStaticLoopInSweepNotification, //nolint:lll
+func mapDepositsToIndices(req *looprpc.ServerStaticLoopInSweepNotification, //nolint:lll
 	loopIn *StaticAddressLoopIn, sweepTx *wire.MsgTx) (map[string]int,
 	error) {
 
