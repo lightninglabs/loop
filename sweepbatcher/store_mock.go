@@ -15,6 +15,7 @@ type StoreMock struct {
 	batches map[int32]dbBatch
 	sweeps  map[wire.OutPoint]dbSweep
 	mu      sync.Mutex
+	sweepID int32
 }
 
 // NewStoreMock instantiates a new mock store.
@@ -122,7 +123,18 @@ func (s *StoreMock) UpsertSweep(ctx context.Context, sweep *dbSweep) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.sweeps[sweep.Outpoint] = *sweep
+	sweepCopy := *sweep
+
+	if old, exists := s.sweeps[sweep.Outpoint]; exists {
+		// Preserve existing sweep ID.
+		sweepCopy.ID = old.ID
+	} else {
+		// Assign fresh sweep ID.
+		sweepCopy.ID = s.sweepID
+		s.sweepID++
+	}
+
+	s.sweeps[sweep.Outpoint] = sweepCopy
 
 	return nil
 }
