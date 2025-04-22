@@ -35,6 +35,15 @@ var listSwapsCommand = cli.Command{
 		labelFlag,
 		channelFlag,
 		lastHopFlag,
+		cli.Uint64Flag{
+			Name:  "max_swaps",
+			Usage: "Max number of swaps to return after filtering",
+		},
+		cli.Int64Flag{
+			Name: "start_time_ns",
+			Usage: "Unix timestamp in nanoseconds to select swaps initiated " +
+				"after this time",
+		},
 	},
 }
 
@@ -99,9 +108,19 @@ func listSwaps(ctx *cli.Context) error {
 		filter.Label = ctx.String(labelFlag.Name)
 	}
 
+	// Parse start timestamp if set.
+	if ctx.IsSet("start_time_ns") {
+		startTimestamp, err := strconv.ParseInt(ctx.String("start_time_ns"), 10, 64)
+		if err != nil {
+			return fmt.Errorf("error parsing start timestamp: %w", err)
+		}
+		filter.StartTimestampNs = startTimestamp
+	}
+
 	resp, err := client.ListSwaps(
 		context.Background(), &looprpc.ListSwapsRequest{
 			ListSwapFilter: filter,
+			MaxSwaps:       ctx.Uint64("max_swaps"),
 		},
 	)
 	if err != nil {

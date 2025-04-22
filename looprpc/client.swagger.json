@@ -625,6 +625,22 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "list_swap_filter.start_timestamp_ns",
+            "description": "If specified, returns swaps initiated after this Unix (ns) timestamp.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "max_swaps",
+            "description": "Set a maximum number of swaps to return in the response.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
           }
         ],
         "tags": [
@@ -1403,6 +1419,11 @@
         "asset_swap_only": {
           "type": "boolean",
           "description": "If specified, only returns asset swaps."
+        },
+        "start_timestamp_ns": {
+          "type": "string",
+          "format": "int64",
+          "description": "If specified, returns swaps initiated after this Unix (ns) timestamp."
         }
       }
     },
@@ -1415,6 +1436,11 @@
             "$ref": "#/definitions/looprpcSwapStatus"
           },
           "description": "The list of all currently known swaps and their status."
+        },
+        "next_start_time": {
+          "type": "string",
+          "format": "int64",
+          "description": "Timestamp of the last swap returned."
         }
       }
     },

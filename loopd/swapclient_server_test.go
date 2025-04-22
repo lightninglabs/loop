@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -11,8 +12,11 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -592,6 +596,298 @@ func TestHasBandwidth(t *testing.T) {
 				test.maxParts)
 			require.Equal(t, test.expectedRes, res)
 			require.Equal(t, test.expectedShards, shards)
+		})
+	}
+}
+
+// TestListSwapsFilterAndPagination tests the filtering and
+// paging of the ListSwaps command.
+func TestListSwapsFilterAndPagination(t *testing.T) {
+	unixTime := time.Unix(0, 0)
+	firstSwapStartTime := unixTime.Add(10 * time.Minute)
+	secondSwapStartTime := unixTime.Add(20 * time.Minute)
+	thirdSwapStartTime := unixTime.Add(30 * time.Minute)
+
+	// Create a set of test swaps of various types which contain the minimal
+	// viable amount of info to successfully be run through marshallSwap.
+	swapInOrder0 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		SwapContract: loopdb.SwapContract{
+			InitiationTime: firstSwapStartTime,
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{1},
+		SwapType:         swap.TypeIn,
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	swapOutOrder1 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		SwapContract: loopdb.SwapContract{
+			InitiationTime: secondSwapStartTime,
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{2},
+		SwapType:         swap.TypeOut,
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	swapOutOrder2 := loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+			Cost:  loopdb.SwapCost{},
+		},
+		SwapContract: loopdb.SwapContract{
+			InitiationTime: thirdSwapStartTime,
+		},
+		LastUpdate:       time.Now(),
+		SwapHash:         lntypes.Hash{3},
+		SwapType:         swap.TypeOut,
+		HtlcAddressP2WSH: testnetAddr,
+		HtlcAddressP2TR:  testnetAddr,
+	}
+
+	mockSwaps := []loop.SwapInfo{swapInOrder0, swapOutOrder1, swapOutOrder2}
+
+	tests := []struct {
+		name string
+		// Define the mock swaps that will be stored in the mock client.
+		mockSwaps []loop.SwapInfo
+		req       *looprpc.ListSwapsRequest
+		// These hashes must be in the correct return order as the response.
+		expectedReturnedSwaps []lntypes.Hash
+		expectedNextStartTime int64
+	}{
+		{
+			name:      "fetch with defaults",
+			mockSwaps: mockSwaps,
+			req:       &looprpc.ListSwapsRequest{},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with swaptype=loopin filter",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType: looprpc.ListSwapsFilter_LOOP_IN},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with swaptype=loopout filter",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType: looprpc.ListSwapsFilter_LOOP_OUT,
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with limit",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				MaxSwaps: 2,
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+			},
+			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+		},
+		{
+			name:      "fetch with limit set to default",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				MaxSwaps: 0,
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with time filter #1",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: unixTime.Add(25 * time.Minute).UnixNano(),
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with time filter #2",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: unixTime.Add(5 * time.Minute).UnixNano(),
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with swaptype=loopout filter, time filter, limit set",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					SwapType:         looprpc.ListSwapsFilter_LOOP_OUT,
+					StartTimestampNs: unixTime.Add(15 * time.Minute).UnixNano(),
+				},
+				MaxSwaps: 1,
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder1.SwapHash,
+			},
+			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+		},
+		{
+			name:      "fetch with time filter, limit set",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: unixTime.UnixNano(),
+				},
+				MaxSwaps: 2,
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+			},
+			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+		},
+		{
+			name:      "fetch with time filter, limit set 2",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: unixTime.UnixNano(),
+				},
+				MaxSwaps: 3,
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapInOrder0.SwapHash,
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with time filter edge case 1",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: secondSwapStartTime.UnixNano(),
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with time filter edge case 2",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: secondSwapStartTime.UnixNano() + 1,
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+		{
+			name:      "fetch with time filter edge case 3",
+			mockSwaps: mockSwaps,
+			req: &looprpc.ListSwapsRequest{
+				ListSwapFilter: &looprpc.ListSwapsFilter{
+					StartTimestampNs: secondSwapStartTime.UnixNano() - 1,
+				},
+			},
+			expectedReturnedSwaps: []lntypes.Hash{
+				swapOutOrder1.SwapHash,
+				swapOutOrder2.SwapHash,
+			},
+			expectedNextStartTime: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create the swap client server with our mock client.
+			server := &swapClientServer{
+				swaps: make(map[lntypes.Hash]loop.SwapInfo),
+			}
+
+			// Populate the server's swap cache with our mock swaps.
+			for _, swap := range test.mockSwaps {
+				server.swaps[swap.SwapHash] = swap
+			}
+
+			// Call the ListSwaps method.
+			resp, err := server.ListSwaps(context.Background(), test.req)
+			require.NoError(t, err)
+
+			require.Len(
+				t,
+				resp.Swaps,
+				len(test.expectedReturnedSwaps),
+				"incorrect returned count",
+			)
+
+			// Check order of returned swaps is exactly as expected.
+			for idx, aswap := range resp.Swaps {
+				newhash, err := lntypes.MakeHash(aswap.GetIdBytes())
+				require.NoError(t, err)
+				require.Equal(
+					t,
+					test.expectedReturnedSwaps[idx],
+					newhash,
+					"iteration order mismatch",
+				)
+			}
+
+			require.Equal(
+				t,
+				test.expectedNextStartTime,
+				resp.NextStartTime,
+				"incorrect next start time",
+			)
 		})
 	}
 }
