@@ -1813,8 +1813,8 @@ func channelIsCustom(channel lndclient.ChannelInfo) bool {
 }
 
 // getCustomAssetData returns the asset data for a custom channel.
-func getCustomAssetData(channel lndclient.ChannelInfo, assetID string,
-) *rfqmsg.JsonAssetChanInfo {
+func getCustomAssetData(channel lndclient.ChannelInfo,
+	assetID string) *rfqmsg.JsonAssetChannel {
 
 	if channel.CustomChannelData == nil {
 		return nil
@@ -1828,9 +1828,9 @@ func getCustomAssetData(channel lndclient.ChannelInfo, assetID string,
 		return nil
 	}
 
-	for _, asset := range assetData.Assets {
-		if asset.AssetInfo.AssetGenesis.AssetID == assetID {
-			return &asset
+	for _, asset := range assetData.FundingAssets {
+		if asset.AssetGenesis.AssetID == assetID {
+			return &assetData
 		}
 	}
 
