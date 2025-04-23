@@ -76,7 +76,7 @@ rpc:
 
 rpc-check: rpc
 	@$(call print, "Verifying protos.")
-	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
+	if test -n "$$(git status --porcelain)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
 
 rpc-js-compile:
 	@$(call print, "Compiling JSON/WASM stubs.")
