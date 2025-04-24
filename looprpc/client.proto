@@ -1678,9 +1678,9 @@ message WithdrawDepositsResponse {
     string withdrawal_tx_hash = 1;
 
     /*
-    The pkscript of the withdrawal transaction.
+    The destination address of the withdrawal transaction.
     */
-    string pk_script = 2;
+    string address = 2;
 }
 
 message OutPoint {

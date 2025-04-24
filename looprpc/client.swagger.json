@@ -2132,9 +2132,9 @@
           "type": "string",
           "description": "The transaction hash of the withdrawal transaction."
         },
-        "pk_script": {
+        "address": {
           "type": "string",
-          "description": "The pkscript of the withdrawal transaction."
+          "description": "The destination address of the withdrawal transaction."
         }
       }
     },
