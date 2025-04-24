@@ -15,12 +15,6 @@ This file tracks release notes for the loop client.
 ## Next release
 
 #### New Features
-* [Enhance](https://github.com/lightninglabs/loop/pull/912) the
-  `loop listswaps` command by improving the ability to filter the 
-  response.  Use `--start_timestamp_ns` to return only swaps after
-  that timestamp. Use `--max_swaps` to limit total swap outputs.
-  Paging is enabled using the `next_start_time` field in the response.
-
 
 #### Breaking Changes
 
