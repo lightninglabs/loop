@@ -19,7 +19,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
@@ -117,7 +117,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		version.CurrentRPCProtocolVersion(),
 	)
 
-	loopInReq := &looprpc.ServerStaticAddressLoopInRequest{
+	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
 		SwapHash:              f.loopIn.SwapHash[:],
 		DepositOutpoints:      f.loopIn.DepositOutpoints,
 		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
@@ -144,7 +144,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// attempt.
 	pushEmptySigs := func() {
 		_, err = f.cfg.Server.PushStaticAddressHtlcSigs(
-			ctx, &looprpc.PushStaticAddressHtlcSigsRequest{
+			ctx, &swapserverrpc.PushStaticAddressHtlcSigsRequest{
 				SwapHash: f.loopIn.SwapHash[:],
 			},
 		)
@@ -382,17 +382,17 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	}
 
 	// Push htlc tx sigs to server.
-	pushHtlcReq := &looprpc.PushStaticAddressHtlcSigsRequest{
+	pushHtlcReq := &swapserverrpc.PushStaticAddressHtlcSigsRequest{
 		SwapHash: f.loopIn.SwapHash[:],
-		StandardHtlcInfo: &looprpc.ClientHtlcSigningInfo{
+		StandardHtlcInfo: &swapserverrpc.ClientHtlcSigningInfo{
 			Nonces: clientHtlcNonces,
 			Sigs:   htlcSigs,
 		},
-		HighFeeHtlcInfo: &looprpc.ClientHtlcSigningInfo{
+		HighFeeHtlcInfo: &swapserverrpc.ClientHtlcSigningInfo{
 			Nonces: highFeeNonces,
 			Sigs:   htlcSigsHighFee,
 		},
-		ExtremeFeeHtlcInfo: &looprpc.ClientHtlcSigningInfo{
+		ExtremeFeeHtlcInfo: &swapserverrpc.ClientHtlcSigningInfo{
 			Nonces: extremelyHighNonces,
 			Sigs:   htlcSigsExtremelyHighFee,
 		},

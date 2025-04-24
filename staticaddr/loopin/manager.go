@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
-	looprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
@@ -34,7 +33,7 @@ const (
 type Config struct {
 	// Server is the client that is used to communicate with the static
 	// address server.
-	Server looprpc.StaticAddressServerClient
+	Server swapserverrpc.StaticAddressServerClient
 
 	// AddressManager gives the withdrawal manager access to static address
 	// parameters.
@@ -232,7 +231,7 @@ func (m *Manager) notifyNotFinished(ctx context.Context, swapHash lntypes.Hash,
 	txId chainhash.Hash) error {
 
 	_, err := m.cfg.Server.PushStaticAddressSweeplessSigs(
-		ctx, &looprpc.PushStaticAddressSweeplessSigsRequest{
+		ctx, &swapserverrpc.PushStaticAddressSweeplessSigsRequest{
 			SwapHash:     swapHash[:],
 			Txid:         txId[:],
 			ErrorMessage: SwapNotFinishedMsg,
@@ -332,7 +331,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 
 	// We'll now sign for every deposit that is part of the loop-in.
 	responseMap := make(
-		map[string]*looprpc.ClientSweeplessSigningInfo,
+		map[string]*swapserverrpc.ClientSweeplessSigningInfo,
 		len(req.DepositToNonces),
 	)
 
@@ -394,16 +393,17 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			return err
 		}
 
-		responseMap[depositOutpoint] = &looprpc.ClientSweeplessSigningInfo{ //nolint:lll
+		signingInfo := &swapserverrpc.ClientSweeplessSigningInfo{
 			Nonce: musig2Session.PublicNonce[:],
 			Sig:   sig,
 		}
+		responseMap[depositOutpoint] = signingInfo
 	}
 
 	txHash := sweepTx.TxHash()
 
 	_, err = m.cfg.Server.PushStaticAddressSweeplessSigs(
-		ctx, &looprpc.PushStaticAddressSweeplessSigsRequest{
+		ctx, &swapserverrpc.PushStaticAddressSweeplessSigsRequest{
 			SwapHash:    loopIn.SwapHash[:],
 			Txid:        txHash[:],
 			SigningInfo: responseMap,
