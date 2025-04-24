@@ -83,9 +83,9 @@ type newWithdrawalRequest struct {
 // newWithdrawalResponse is used to return withdrawal info and error to the
 // server.
 type newWithdrawalResponse struct {
-	txHash             string
-	withdrawalPkScript string
-	err                error
+	txHash            string
+	withdrawalAddress string
+	err               error
 }
 
 // Manager manages the withdrawal state machines.
@@ -147,10 +147,6 @@ func (m *Manager) Run(ctx context.Context) error {
 	// initialization.
 	close(m.initChan)
 
-	var (
-		txHash   string
-		pkScript string
-	)
 	for {
 		select {
 		case <-newBlockChan:
@@ -161,7 +157,7 @@ func (m *Manager) Run(ctx context.Context) error {
 			}
 
 		case req := <-m.newWithdrawalRequestChan:
-			txHash, pkScript, err = m.WithdrawDeposits(
+			txHash, withdrawalAddress, err := m.WithdrawDeposits(
 				ctx, req.outpoints, req.destAddr,
 				req.satPerVbyte, req.amount,
 			)
@@ -173,9 +169,9 @@ func (m *Manager) Run(ctx context.Context) error {
 			// We forward the initialized loop-in and error to
 			// DeliverLoopInRequest.
 			resp := &newWithdrawalResponse{
-				txHash:             txHash,
-				withdrawalPkScript: pkScript,
-				err:                err,
+				txHash:            txHash,
+				withdrawalAddress: withdrawalAddress,
+				err:               err,
 			}
 			select {
 			case req.respChan <- resp:
@@ -956,7 +952,7 @@ func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
 	// Wait for the response from the manager run loop.
 	select {
 	case resp := <-request.respChan:
-		return resp.txHash, resp.withdrawalPkScript, resp.err
+		return resp.txHash, resp.withdrawalAddress, resp.err
 
 	case <-m.exitChan:
 		return "", "", fmt.Errorf("withdrawal manager has been " +

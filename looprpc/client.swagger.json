@@ -1440,7 +1440,7 @@
         "next_start_time": {
           "type": "string",
           "format": "int64",
-          "description": "Timestamp of the last swap returned."
+          "description": "Timestamp to use for paging start_timestamp_ns."
         }
       }
     },
@@ -2132,9 +2132,9 @@
           "type": "string",
           "description": "The transaction hash of the withdrawal transaction."
         },
-        "pk_script": {
+        "address": {
           "type": "string",
-          "description": "The pkscript of the withdrawal transaction."
+          "description": "The destination address of the withdrawal transaction."
         }
       }
     },

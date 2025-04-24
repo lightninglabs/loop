@@ -6,7 +6,7 @@ toolchain go1.23.7
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3
-	github.com/lightninglabs/loop/swapserverrpc v1.0.11
+	github.com/lightninglabs/loop/swapserverrpc v1.0.13
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.34.2
 )

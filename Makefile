@@ -76,7 +76,7 @@ rpc:
 
 rpc-check: rpc
 	@$(call print, "Verifying protos.")
-	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
+	if test -n "$$(git status --porcelain)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
 
 rpc-js-compile:
 	@$(call print, "Compiling JSON/WASM stubs.")
@@ -135,8 +135,11 @@ mod-tidy:
 
 mod-check:
 	@$(call print, "Checking modules.")
-	$(GOMOD) tidy
-	if test -n "$$(git status | grep -e "go.mod\|go.sum")"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
+	GOPROXY=direct $(GOMOD) tidy
+	cd swapserverrpc/ && GOPROXY=direct $(GOMOD) tidy
+	cd looprpc/ && GOPROXY=direct $(GOMOD) tidy
+	cd tools/ && GOPROXY=direct $(GOMOD) tidy
+	if test -n "$$(git status --porcelain)"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
 sqlc:
 	@$(call print, "Generating sql models and queries in Go")

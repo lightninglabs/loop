@@ -21,9 +21,8 @@ require (
 	github.com/lightninglabs/aperture v0.3.8-beta
 	github.com/lightninglabs/lndclient v0.19.0-2
 	github.com/lightninglabs/loop/looprpc v1.0.0
-	github.com/lightninglabs/loop/swapserverrpc v1.0.11
-	// TODO(guggero): Update this to a commit in master.
-	github.com/lightninglabs/taproot-assets v0.5.2-0.20250306114727-f0691d155619
+	github.com/lightninglabs/loop/swapserverrpc v1.0.13
+	github.com/lightninglabs/taproot-assets v0.5.2-0.20250311211321-3793cf066af7
 	github.com/lightningnetwork/lnd v0.18.0-beta.rc4.0.20250304192711-9feb761b4ec4
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
