@@ -1541,18 +1541,16 @@ func TestEasyAssetAutoloop(t *testing.T) {
 	t.Run("single asset channel", func(t *testing.T) {
 		// Prepare a channel with asset custom data.
 		customChanData := rfqmsg.JsonAssetChannel{
-			Assets: []rfqmsg.JsonAssetChanInfo{
+			FundingAssets: []rfqmsg.JsonAssetUtxo{
 				{
-					AssetInfo: rfqmsg.JsonAssetUtxo{
-						AssetGenesis: rfqmsg.JsonAssetGenesis{
-							AssetID: assetStr,
-						},
+					AssetGenesis: rfqmsg.JsonAssetGenesis{
+						AssetID: assetStr,
 					},
-					LocalBalance:  950000,
-					RemoteBalance: 0,
-					Capacity:      100000,
 				},
 			},
+			LocalBalance:  950000,
+			RemoteBalance: 0,
+			Capacity:      100000,
 		}
 		customChanDataBytes, err := json.Marshal(customChanData)
 		require.NoError(t, err)
@@ -1650,23 +1648,21 @@ func TestEasyAssetAutoloop(t *testing.T) {
 	t.Run("two asset channels", func(t *testing.T) {
 		// Reuse the same custom channel data for both channels.
 		customChanData := rfqmsg.JsonAssetChannel{
-			Assets: []rfqmsg.JsonAssetChanInfo{
+			FundingAssets: []rfqmsg.JsonAssetUtxo{
 				{
-					AssetInfo: rfqmsg.JsonAssetUtxo{
-						AssetGenesis: rfqmsg.JsonAssetGenesis{
-							AssetID: assetStr,
-						},
+					AssetGenesis: rfqmsg.JsonAssetGenesis{
+						AssetID: assetStr,
 					},
-					LocalBalance:  950000,
-					RemoteBalance: 0,
-					Capacity:      100000,
 				},
 			},
+			LocalBalance:  950000,
+			RemoteBalance: 0,
+			Capacity:      100000,
 		}
 		customChanDataBytes1, err := json.Marshal(customChanData)
 		require.NoError(t, err)
 
-		customChanData.Assets[0].LocalBalance = 1050000
+		customChanData.LocalBalance = 1050000
 		customChanDataBytes2, err := json.Marshal(customChanData)
 		require.NoError(t, err)
 
@@ -1765,18 +1761,16 @@ func TestEasyAssetAutoloop(t *testing.T) {
 	t.Run("non asset and normal channel", func(t *testing.T) {
 		// Create an asset channel with custom asset data.
 		customChanData := rfqmsg.JsonAssetChannel{
-			Assets: []rfqmsg.JsonAssetChanInfo{
+			FundingAssets: []rfqmsg.JsonAssetUtxo{
 				{
-					AssetInfo: rfqmsg.JsonAssetUtxo{
-						AssetGenesis: rfqmsg.JsonAssetGenesis{
-							AssetID: assetStr,
-						},
+					AssetGenesis: rfqmsg.JsonAssetGenesis{
+						AssetID: assetStr,
 					},
-					LocalBalance:  950000,
-					RemoteBalance: 0,
-					Capacity:      100000,
 				},
 			},
+			LocalBalance:  950000,
+			RemoteBalance: 0,
+			Capacity:      100000,
 		}
 		customChanDataBytes, err := json.Marshal(customChanData)
 		require.NoError(t, err)

@@ -231,8 +231,8 @@ func (h *mockLightningClient) GetChanInfo(ctx context.Context,
 }
 
 // ListChannels retrieves all channels of the backing lnd node.
-func (h *mockLightningClient) ListChannels(ctx context.Context, _, _ bool) (
-	[]lndclient.ChannelInfo, error) {
+func (h *mockLightningClient) ListChannels(ctx context.Context, _, _ bool,
+	_ ...lndclient.ListChannelsOption) ([]lndclient.ChannelInfo, error) {
 
 	return h.lnd.Channels, nil
 }
