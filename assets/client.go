@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/tapcfg"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
@@ -242,7 +243,7 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 	btcutil.Amount, error) {
 
-	rateFP, err := rfqrpc.UnmarshalFixedPoint(assetRate)
+	rateFP, err := rpcutils.UnmarshalRfqFixedPoint(assetRate)
 	if err != nil {
 		return 0, fmt.Errorf("cannot unmarshal asset rate: %w", err)
 	}

@@ -20,7 +20,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
-	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
@@ -982,7 +982,7 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 		return nil, err
 	}
 
-	prepayAssetRate, err := rfqrpc.UnmarshalFixedPoint(
+	prepayAssetRate, err := rpcutils.UnmarshalRfqFixedPoint(
 		prepayRfq.BidAssetRate,
 	)
 	if err != nil {
@@ -1003,7 +1003,7 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 		return nil, err
 	}
 
-	swapAssetRate, err := rfqrpc.UnmarshalFixedPoint(
+	swapAssetRate, err := rpcutils.UnmarshalRfqFixedPoint(
 		swapRfq.BidAssetRate,
 	)
 	if err != nil {
