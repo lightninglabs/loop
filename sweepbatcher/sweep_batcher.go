@@ -192,7 +192,8 @@ type PresignedHelper interface {
 		loadOnly bool) (*wire.MsgTx, error)
 
 	// CleanupTransactions removes all transactions related to any of the
-	// outpoints. Should be called after sweep batch tx is fully confirmed.
+	// outpoints. Should be called after sweep batch tx is reorg-safely
+	// confirmed.
 	CleanupTransactions(ctx context.Context, inputs []wire.OutPoint) error
 }
 
@@ -274,7 +275,7 @@ type addSweepsRequest struct {
 	notifier *SpendNotifier
 
 	// completed is set if the sweep is spent and the spending transaction
-	// is confirmed.
+	// is reorg-safely confirmed.
 	completed bool
 
 	// parentBatch is the parent batch of this sweep. It is loaded ony if
@@ -296,7 +297,7 @@ type SpendDetail struct {
 }
 
 // ConfDetail is a notification that is send to the user of sweepbatcher when
-// a batch is fully confirmed, i.e. gets batchConfHeight confirmations.
+// a batch is reorg-safely confirmed, i.e. gets batchConfHeight confirmations.
 type ConfDetail struct {
 	// TxConfirmation has data about the confirmation of the transaction.
 	*chainntnfs.TxConfirmation
@@ -808,8 +809,8 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 	}
 
 	// If this is a presigned mode, make sure PresignSweepsGroup was called.
-	// We skip the check for fully confirmed sweeps, because their presigned
-	// transactions were already cleaned up from the store.
+	// We skip the check for reorg-safely confirmed sweeps, because their
+	// presigned transactions were already cleaned up from the store.
 	if sweep.presigned && !fullyConfirmed {
 		err := ensurePresigned(
 			ctx, sweeps, b.presignedHelper, b.chainParams,
@@ -822,8 +823,8 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 	}
 
 	infof("Batcher adding sweep group of %d sweeps with primarySweep %x, "+
-		"presigned=%v, completed=%v", len(sweeps), sweep.swapHash[:6],
-		sweep.presigned, completed)
+		"presigned=%v, fully_confirmed=%v", len(sweeps),
+		sweep.swapHash[:6], sweep.presigned, completed)
 
 	req := &addSweepsRequest{
 		sweeps:      sweeps,
@@ -883,14 +884,10 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
-	if completed && *notifier != (SpendNotifier{}) {
-		// The parent batch is indeed confirmed, meaning it is complete
-		// and we won't be able to attach this sweep to it.
-		if parentBatch.Confirmed {
-			return b.monitorSpendAndNotify(
-				ctx, sweep, parentBatch.ID, notifier,
-			)
-		}
+	if completed && parentBatch.Confirmed {
+		return b.monitorSpendAndNotify(
+			ctx, sweep, parentBatch.ID, notifier,
+		)
 	}
 
 	sweep.notifier = notifier
@@ -1158,11 +1155,11 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 		} else {
 			// We don't store Closed state separately in DB.
 			// If the batch is closed (included into a block, but
-			// not fully confirmed), it is now considered Open
-			// again. It will receive a spending notification as
-			// soon as it starts, so it is not an issue. If a sweep
-			// manages to be added during this time, it will be
-			// detected as missing when analyzing the spend
+			// not reorg-safely confirmed), it is now considered
+			// Open again. It will receive a spending notification
+			// as soon as it starts, so it is not an issue. If a
+			// sweep manages to be added during this time, it will
+			// be detected as missing when analyzing the spend
 			// notification and will be added to new batch.
 			batch.state = Open
 		}
@@ -1191,6 +1188,11 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // SpendNotifier.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
+
+	// If the caller has not provided a notifier, stop.
+	if notifier == nil || *notifier == (SpendNotifier{}) {
+		return nil
+	}
 
 	spendCtx, cancel := context.WithCancel(ctx)
 
@@ -1301,8 +1303,8 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 
 // monitorConfAndNotify monitors the confirmation of a specific transaction and
 // writes the response back to the response channel. It is called if the batch
-// is fully confirmed and we just need to deliver the data back to the caller
-// though SpendNotifier.
+// is reorg-safely confirmed and we just need to deliver the data back to the
+// caller though SpendNotifier.
 func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 	notifier *SpendNotifier, spendTx *wire.MsgTx,
 	onChainFeePortion btcutil.Amount) error {

@@ -2457,21 +2457,14 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		return b.state == Closed
 	}, test.Timeout, eventuallyCheckFrequency)
 
-	// Since second batch was created we check that it registered for its
-	// primary sweep's spend.
-	<-lnd.RegisterSpendChannel
-
-	// While handling the spend notification the batch should detect that
-	// some sweeps did not appear in the spending tx, therefore it redirects
-	// them back to the batcher and the batcher inserts them in a new batch.
-	require.Eventually(t, func() bool {
-		return batcher.numBatches(ctx) == 2
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// We mock the confirmation notification.
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
 		Tx: spendingTx,
 	}
+
+	// Since second batch was created we check that it registered for its
+	// primary sweep's spend.
+	<-lnd.RegisterSpendChannel
 
 	// Wait for tx to be published.
 	// Here is a race condition, which is unlikely to cause a crash: if we

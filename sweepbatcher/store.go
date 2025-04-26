@@ -201,7 +201,7 @@ type dbBatch struct {
 	// ID is the unique identifier of the batch.
 	ID int32
 
-	// Confirmed is set when the batch is fully confirmed.
+	// Confirmed is set when the batch is reorg-safely confirmed.
 	Confirmed bool
 
 	// BatchTxid is the txid of the batch transaction.
@@ -236,7 +236,7 @@ type dbSweep struct {
 	// Amount is the amount of the sweep.
 	Amount btcutil.Amount
 
-	// Completed indicates whether this sweep is completed.
+	// Completed indicates whether this sweep is fully-confirmed.
 	Completed bool
 }
 

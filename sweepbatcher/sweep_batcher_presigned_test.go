@@ -1360,7 +1360,12 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 
 	require.LessOrEqual(t, numConfirmedSwaps, numSwaps)
 
-	const sweepsPerSwap = 2
+	const (
+		sweepsPerSwap = 2
+		feeRate       = chainfee.SatPerKWeight(10_000)
+		swapAmount    = 3_000_001
+	)
+	sweepAmounts := []btcutil.Amount{1_000_001, 2_000_000}
 
 	lnd := test.NewMockLnd()
 
@@ -1370,7 +1375,7 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	customFeeRate := func(_ context.Context,
 		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
 
-		return chainfee.SatPerKWeight(10_000), nil
+		return feeRate, nil
 	}
 
 	presignedHelper := newMockPresignedHelper()
@@ -1388,12 +1393,17 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		checkBatcherError(t, err)
 	}()
 
+	swapHashes := make([]lntypes.Hash, numSwaps)
+	groups := make([][]Input, numSwaps)
 	txs := make([]*wire.MsgTx, numSwaps)
 	allOps := make([]wire.OutPoint, 0, numSwaps*sweepsPerSwap)
+	spendChans := make([]<-chan *SpendDetail, numSwaps)
+	confChans := make([]<-chan *ConfDetail, numSwaps)
 
 	for i := range numSwaps {
 		// Create a swap of sweepsPerSwap sweeps.
 		swapHash := lntypes.Hash{byte(i + 1)}
+		swapHashes[i] = swapHash
 		ops := make([]wire.OutPoint, sweepsPerSwap)
 		group := make([]Input, sweepsPerSwap)
 		for j := range sweepsPerSwap {
@@ -1405,15 +1415,16 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 
 			group[j] = Input{
 				Outpoint: ops[j],
-				Value:    btcutil.Amount(1_000_000 * (j + 1)),
+				Value:    sweepAmounts[j],
 			}
 		}
+		groups[i] = group
 
 		// Create a swap in DB.
 		swap := &loopdb.LoopOutContract{
 			SwapContract: loopdb.SwapContract{
 				CltvExpiry:      111,
-				AmountRequested: 3_000_000,
+				AmountRequested: swapAmount,
 				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
 				HtlcKeys:        htlcKeys,
 
@@ -1440,11 +1451,24 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		)
 		require.NoError(t, err)
 
+		// Create a spending notification channel.
+		spendChan := make(chan *SpendDetail, 1)
+		spendChans[i] = spendChan
+		confChan := make(chan *ConfDetail, 1)
+		confChans[i] = confChan
+		notifier := &SpendNotifier{
+			SpendChan:    spendChan,
+			SpendErrChan: make(chan error, 1),
+			ConfChan:     confChan,
+			ConfErrChan:  make(chan error, 1),
+			QuitChan:     make(chan bool, 1),
+		}
+
 		// Add the sweep, triggering the publish attempt.
 		require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
 			SwapHash: swapHash,
 			Inputs:   group,
-			Notifier: &dummyNotifier,
+			Notifier: notifier,
 		}))
 
 		// For the first group it should register for the sweep's spend
@@ -1543,6 +1567,13 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		SpendingHeight:    int32(601 + numSwaps + 1),
 	}
 	lnd.SpendChannel <- spendDetail
+
+	// Make sure that notifiers of confirmed sweeps received notifications.
+	for i := range numConfirmedSwaps {
+		spend := <-spendChans[i]
+		require.Equal(t, txHash, spend.Tx.TxHash())
+	}
+
 	<-lnd.RegisterConfChannel
 	require.NoError(t, lnd.NotifyHeight(
 		int32(601+numSwaps+1+batchConfHeight),
@@ -1554,18 +1585,65 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	// CleanupTransactions is called here.
 	<-presignedHelper.cleanupCalled
 
-	// If all the swaps were confirmed, stop.
-	if numConfirmedSwaps == numSwaps {
-		return
+	// Increasing block height caused the second batch to re-publish.
+	if online && numConfirmedSwaps < numSwaps {
+		<-lnd.TxPublishChannel
 	}
 
-	if !online {
+	// Make sure that notifiers of confirmed sweeps received notifications.
+	for i := range numConfirmedSwaps {
+		conf := <-confChans[i]
+		require.Equal(t, txHash, conf.Tx.TxHash())
+	}
+
+	if !online && numConfirmedSwaps != numSwaps {
 		// If the sweeps are offline, the missing sweeps in the
 		// confirmed transaction should be re-added to the batcher as
 		// new batch. The groups are added incrementally, so we need
 		// to wait until the batch reaches the expected size.
 		<-lnd.RegisterSpendChannel
 		<-lnd.TxPublishChannel
+	}
+
+	// Now make sure that a correct spend and conf contification is sent if
+	// AddSweep is called after confirming the sweeps.
+	for i := range numConfirmedSwaps {
+		// Create a spending notification channel.
+		spendChan := make(chan *SpendDetail, 1)
+		confChan := make(chan *ConfDetail)
+		notifier := &SpendNotifier{
+			SpendChan:    spendChan,
+			SpendErrChan: make(chan error, 1),
+			ConfChan:     confChan,
+			ConfErrChan:  make(chan error, 1),
+			QuitChan:     make(chan bool, 1),
+		}
+
+		// Add the sweep, triggering the publish attempt.
+		require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
+			SwapHash: swapHashes[i],
+			Inputs:   groups[i],
+			Notifier: notifier,
+		}))
+
+		spendReg := <-lnd.RegisterSpendChannel
+		spendReg.SpendChannel <- spendDetail
+
+		spend := <-spendChan
+		require.Equal(t, txHash, spend.Tx.TxHash())
+
+		<-lnd.RegisterConfChannel
+		lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+			Tx: tx,
+		}
+
+		conf := <-confChan
+		require.Equal(t, tx.TxHash(), conf.Tx.TxHash())
+	}
+
+	// If all the swaps were confirmed, stop.
+	if numConfirmedSwaps == numSwaps {
+		return
 	}
 
 	// Wait to new batch to appear and to have the expected size.
@@ -1675,11 +1753,13 @@ func TestPresigned(t *testing.T) {
 		testPurging(3, 1, false)
 		testPurging(3, 2, false)
 		testPurging(5, 2, false)
+		testPurging(5, 3, false)
 
 		// Test cases in which the sweeps are online.
 		testPurging(2, 1, true)
 		testPurging(3, 1, true)
 		testPurging(3, 2, true)
 		testPurging(5, 2, true)
+		testPurging(5, 3, true)
 	})
 }
