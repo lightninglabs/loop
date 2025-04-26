@@ -273,7 +273,7 @@ type addSweepsRequest struct {
 	notifier *SpendNotifier
 
 	// completed is set if the sweep is spent and the spending transaction
-	// is confirmed.
+	// is fully confirmed.
 	completed bool
 
 	// parentBatch is the parent batch of this sweep. It is loaded ony if
@@ -777,8 +777,8 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 	}
 
 	infof("Batcher adding sweep group of %d sweeps with primarySweep %x, "+
-		"presigned=%v, completed=%v", len(sweeps), sweep.swapHash[:6],
-		sweep.presigned, completed)
+		"presigned=%v, fully_confirmed=%v", len(sweeps),
+		sweep.swapHash[:6], sweep.presigned, completed)
 
 	req := &addSweepsRequest{
 		sweeps:      sweeps,
@@ -838,14 +838,10 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
-	if completed && *notifier != (SpendNotifier{}) {
-		// The parent batch is indeed confirmed, meaning it is complete
-		// and we won't be able to attach this sweep to it.
-		if parentBatch.Confirmed {
-			return b.monitorSpendAndNotify(
-				ctx, sweep, parentBatch.ID, notifier,
-			)
-		}
+	if completed && parentBatch.Confirmed {
+		return b.monitorSpendAndNotify(
+			ctx, sweep, parentBatch.ID, notifier,
+		)
 	}
 
 	sweep.notifier = notifier
@@ -1128,6 +1124,11 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // SpendNotifier.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
+
+	// If the caller has not provided a notifier, stop.
+	if notifier == nil || *notifier == (SpendNotifier{}) {
+		return nil
+	}
 
 	spendCtx, cancel := context.WithCancel(ctx)
 

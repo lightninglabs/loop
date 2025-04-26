@@ -248,7 +248,7 @@ type dbSweep struct {
 	// Amount is the amount of the sweep.
 	Amount btcutil.Amount
 
-	// Completed indicates whether this sweep is completed.
+	// Completed indicates whether this sweep is fully-confirmed.
 	Completed bool
 }
 
