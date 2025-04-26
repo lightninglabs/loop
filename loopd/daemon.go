@@ -18,7 +18,6 @@ import (
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
-	"github.com/lightninglabs/loop/loopd/perms"
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/notifications"
@@ -502,7 +501,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Add our debug permissions to our main set of required permissions
 	// if compiled in.
 	for endpoint, perm := range debugRequiredPermissions {
-		perms.RequiredPermissions[endpoint] = perm
+		loop_looprpc.RequiredPermissions[endpoint] = perm
 	}
 
 	rks, db, err := lndclient.NewBoltMacaroonStore(
@@ -530,7 +529,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				Checkers: []macaroons.Checker{
 					macaroons.IPLockChecker,
 				},
-				RequiredPerms: perms.RequiredPermissions,
+				RequiredPerms: loop_looprpc.RequiredPermissions,
 				DBPassword:    macDbDefaultPw,
 				LndClient:     &d.lnd.LndServices,
 				EphemeralKey:  lndclient.SharedKeyNUMS,
