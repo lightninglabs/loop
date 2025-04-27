@@ -1927,12 +1927,12 @@ func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
 }
 
 // getFeePortionPaidBySweep returns the fee portion that the sweep should pay
-// for the batch transaction. If the sweep is the first sweep in the batch, it
+// for the batch transaction. If the sweep is the primary sweep in the batch, it
 // pays the rounding difference.
-func getFeePortionPaidBySweep(spendTx *wire.MsgTx, feePortionPerSweep,
-	roundingDiff btcutil.Amount, sweep *sweep) btcutil.Amount {
+func getFeePortionPaidBySweep(feePortionPerSweep, roundingDiff btcutil.Amount,
+	primary bool) btcutil.Amount {
 
-	if bytes.Equal(spendTx.TxIn[0].SignatureScript, sweep.htlc.SigScript) {
+	if primary {
 		return feePortionPerSweep + roundingDiff
 	}
 
@@ -1983,22 +1983,42 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		spendTx, len(notifyList), totalSweptAmt,
 	)
 
+	// Calculate fees per swaps. Only the first sweep in a swap has a
+	// notifier, so we calculate total fee per swap and send it to a sweep
+	// having that swap and a notifier.
+	swap2fee := make(map[lntypes.Hash]btcutil.Amount)
+	for _, sweep := range notifyList {
+		primary := sweep.outpoint == b.primarySweepID
+
+		swap2fee[sweep.swapHash] += getFeePortionPaidBySweep(
+			feePortionPaidPerSweep, roundingDifference, primary,
+		)
+	}
+
+	// Now send notifications to notifiers.
 	for _, sweep := range notifyList {
 		// If the sweep's notifier is empty then this means that a swap
-		// is not waiting to read an update from it, so we can skip
-		// the notification part.
+		// is not waiting to read an update from it or this is not the
+		// first sweep in a swap, so we can skip the notification part.
 		if sweep.notifier == nil ||
 			*sweep.notifier == (SpendNotifier{}) {
 
 			continue
 		}
 
+		// Make sure there is only one sweep with a notifier per swap
+		// hash, otherwise our fee calculation is incorrect.
+		fee, has := swap2fee[sweep.swapHash]
+		if !has {
+			return fmt.Errorf("no fee for swap %v; maybe "+
+				"multiple sweeps with a notifier per swap?",
+				sweep.swapHash)
+		}
+		delete(swap2fee, sweep.swapHash)
+
 		spendDetail := SpendDetail{
-			Tx: spendTx,
-			OnChainFeePortion: getFeePortionPaidBySweep(
-				spendTx, feePortionPaidPerSweep,
-				roundingDifference, &sweep,
-			),
+			Tx:                spendTx,
+			OnChainFeePortion: fee,
 		}
 
 		// Dispatch the sweep notifier, we don't care about the outcome
@@ -2193,6 +2213,18 @@ func (b *batch) handleConf(ctx context.Context,
 		spendTx, len(b.sweeps), totalSweptAmt,
 	)
 
+	// Calculate fees per swaps. Only the first sweep in a swap has a
+	// notifier, so we calculate total fee per swap and send it to a sweep
+	// having that swap and a notifier.
+	swap2fee := make(map[lntypes.Hash]btcutil.Amount)
+	for _, sweep := range b.sweeps {
+		primary := sweep.outpoint == b.primarySweepID
+
+		swap2fee[sweep.swapHash] += getFeePortionPaidBySweep(
+			feePortionPaidPerSweep, roundingDifference, primary,
+		)
+	}
+
 	// Send the confirmation to all the notifiers.
 	for _, s := range b.sweeps {
 		// If the sweep's notifier is empty then this means that
@@ -2202,12 +2234,19 @@ func (b *batch) handleConf(ctx context.Context,
 			continue
 		}
 
+		// Make sure there is only one sweep with a notifier per swap
+		// hash, otherwise our fee calculation is incorrect.
+		fee, has := swap2fee[s.swapHash]
+		if !has {
+			return fmt.Errorf("no fee for swap %v; maybe "+
+				"multiple sweeps with a notifier per swap?",
+				s.swapHash)
+		}
+		delete(swap2fee, s.swapHash)
+
 		confDetail := &ConfDetail{
-			TxConfirmation: conf,
-			OnChainFeePortion: getFeePortionPaidBySweep(
-				spendTx, feePortionPaidPerSweep,
-				roundingDifference, &s,
-			),
+			TxConfirmation:    conf,
+			OnChainFeePortion: fee,
 		}
 
 		// Notify the caller in a goroutine to avoid possible dead-lock.
