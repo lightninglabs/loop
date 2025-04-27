@@ -1568,10 +1568,31 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	}
 	lnd.SpendChannel <- spendDetail
 
+	// Calculate the expected on-chain fee of the swap.
+	wantFee := make([]btcutil.Amount, numConfirmedSwaps)
+	for i := range numConfirmedSwaps {
+		batchAmount := swapAmount * btcutil.Amount(numConfirmedSwaps)
+		txFee := batchAmount - btcutil.Amount(tx.TxOut[0].Value)
+		numConfirmedSweeps := numConfirmedSwaps * sweepsPerSwap
+		feePerSweep := txFee / btcutil.Amount(numConfirmedSweeps)
+		roundingDiff := txFee - feePerSweep*btcutil.Amount(
+			numConfirmedSweeps,
+		)
+		swapFee := feePerSweep * 2
+
+		// Add rounding difference to the first swap.
+		if i == 0 {
+			swapFee += roundingDiff
+		}
+
+		wantFee[i] = swapFee
+	}
+
 	// Make sure that notifiers of confirmed sweeps received notifications.
 	for i := range numConfirmedSwaps {
 		spend := <-spendChans[i]
 		require.Equal(t, txHash, spend.Tx.TxHash())
+		require.Equal(t, wantFee[i], spend.OnChainFeePortion)
 	}
 
 	<-lnd.RegisterConfChannel
@@ -1631,6 +1652,7 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 
 		spend := <-spendChan
 		require.Equal(t, txHash, spend.Tx.TxHash())
+		require.Equal(t, wantFee[i], spend.OnChainFeePortion)
 
 		<-lnd.RegisterConfChannel
 		lnd.ConfChannel <- &chainntnfs.TxConfirmation{

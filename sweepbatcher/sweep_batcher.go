@@ -840,7 +840,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// Instead we directly detect and return the spend here.
 	if completed && parentBatch.Confirmed {
 		return b.monitorSpendAndNotify(
-			ctx, sweep, parentBatch.ID, notifier,
+			ctx, sweeps, parentBatch.ID, notifier,
 		)
 	}
 
@@ -1122,7 +1122,7 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // the response back to the response channel. It is called if the batch is fully
 // confirmed and we just need to deliver the data back to the caller though
 // SpendNotifier.
-func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
+func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
 
 	// If the caller has not provided a notifier, stop.
@@ -1139,6 +1139,17 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 
 		return err
 	}
+
+	// Find the primarySweepID.
+	dbSweeps, err := b.store.FetchBatchSweeps(ctx, parentBatchID)
+	if err != nil {
+		cancel()
+
+		return err
+	}
+	primarySweepID := dbSweeps[0].Outpoint
+
+	sweep := sweeps[0]
 
 	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
 		spendCtx, &sweep.outpoint, sweep.htlc.PkScript,
@@ -1160,6 +1171,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		select {
 		case spend := <-spendChan:
 			spendTx := spend.SpendingTx
+
 			// Calculate the fee portion that each sweep should pay
 			// for the batch.
 			feePortionPerSweep, roundingDifference :=
@@ -1168,17 +1180,23 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 					totalSwept,
 				)
 
-			onChainFeePortion := getFeePortionPaidBySweep(
-				spendTx, feePortionPerSweep,
-				roundingDifference, sweep,
-			)
+			// Sum onchain fee across all the sweeps of the swap.
+			var fee btcutil.Amount
+			for _, s := range sweeps {
+				isFirst := s.outpoint == primarySweepID
+
+				fee += getFeePortionPaidBySweep(
+					feePortionPerSweep, roundingDifference,
+					isFirst,
+				)
+			}
 
 			// Notify the requester of the spend with the spend
 			// details, including the fee portion for this
 			// particular sweep.
 			spendDetail := &SpendDetail{
 				Tx:                spendTx,
-				OnChainFeePortion: onChainFeePortion,
+				OnChainFeePortion: fee,
 			}
 
 			select {
