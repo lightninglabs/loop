@@ -1227,6 +1227,14 @@ message LiquidityParameters {
     value is the parameters to use for swaps in that asset.
     */
     map<string, EasyAssetAutoloopParams> easy_asset_params = 25;
+
+    /*
+     * Set to true to enable fast swap publication. If set, the server will
+     * publish the HTLC immediately after receiving the swap request. This
+     * setting has direct implications on the swap fees, as fast swaps may
+     * not be able to be batched with other swaps.
+     */
+    bool fast_swap_publication = 26;
 }
 
 message EasyAssetAutoloopParams {
