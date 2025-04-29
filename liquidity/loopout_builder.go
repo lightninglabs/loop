@@ -3,6 +3,7 @@ package liquidity
 import (
 	"context"
 	"encoding/hex"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
@@ -12,6 +13,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+)
+
+const (
+	// defaultSwapWaitTime is the default time we set as the deadline by
+	// which we expect the swap to be published.
+	defaultSwapPublicationWaitTime = 30 * time.Minute
 )
 
 // Compile-time assertion that loopOutBuilder satisfies the swapBuilder
@@ -151,11 +158,18 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		initiator += "-" + assetSwap.assetID
 	}
 
+	var swapPublicationDeadline time.Time
+	if !params.FastSwapPublication {
+		swapPublicationDeadline = b.cfg.Clock.Now().Add(
+			defaultSwapPublicationWaitTime,
+		)
+	}
+
 	quote, err := b.cfg.LoopOutQuote(
 		ctx, &loop.LoopOutQuoteRequest{
 			Amount:                  amount,
 			SweepConfTarget:         params.SweepConfTarget,
-			SwapPublicationDeadline: b.cfg.Clock.Now(),
+			SwapPublicationDeadline: swapPublicationDeadline,
 			Initiator:               initiator,
 			AssetRFQRequest:         assetRfqRequest,
 		},
@@ -193,16 +207,17 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	// swap fee, prepay amount and miner fee from the quote because we have
 	// already validated them.
 	request := loop.OutRequest{
-		Amount:              amount,
-		IsExternalAddr:      false,
-		OutgoingChanSet:     chanSet,
-		MaxPrepayRoutingFee: prepayMaxFee,
-		MaxSwapRoutingFee:   routeMaxFee,
-		MaxMinerFee:         minerFee,
-		MaxSwapFee:          quote.SwapFee,
-		MaxPrepayAmount:     quote.PrepayAmount,
-		SweepConfTarget:     params.SweepConfTarget,
-		Initiator:           initiator,
+		Amount:                  amount,
+		IsExternalAddr:          false,
+		OutgoingChanSet:         chanSet,
+		MaxPrepayRoutingFee:     prepayMaxFee,
+		MaxSwapRoutingFee:       routeMaxFee,
+		MaxMinerFee:             minerFee,
+		MaxSwapFee:              quote.SwapFee,
+		MaxPrepayAmount:         quote.PrepayAmount,
+		SweepConfTarget:         params.SweepConfTarget,
+		Initiator:               initiator,
+		SwapPublicationDeadline: swapPublicationDeadline,
 	}
 
 	if opts.assetSwap != nil {

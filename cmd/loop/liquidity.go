@@ -367,6 +367,16 @@ var setParamsCommand = cli.Command{
 			Usage: "the target size of total local balance in " +
 				"asset units, used by asset easy autoloop.",
 		},
+		cli.BoolFlag{
+			Name: "fast",
+			Usage: "if set new swaps are expected to be " +
+				"published immediately, paying a potentially " +
+				"higher fee. If not set the swap server " +
+				"might choose to wait up to 30 minutes " +
+				"before publishing swap HTLCs on-chain, to " +
+				"save on chain fees. Not setting this flag " +
+				"therefore might result in a lower swap fees",
+		},
 	},
 	Action: setParams,
 }
@@ -575,6 +585,10 @@ func setParams(ctx *cli.Context) error {
 		params.EasyAssetParams[ctx.String("asset_id")].
 			LocalTargetAssetAmt = ctx.Uint64("asset_localbalance")
 		flagSet = true
+	}
+
+	if ctx.IsSet("fast") {
+		params.FastSwapPublication = true
 	}
 
 	if !flagSet {

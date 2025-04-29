@@ -31,6 +31,7 @@ var (
 		SweepConfTarget:           defaultConfTarget,
 		HtlcConfTarget:            defaultHtlcConfTarget,
 		FeeLimit:                  defaultFeePortion(),
+		FastSwapPublication:       true,
 	}
 )
 
@@ -118,6 +119,11 @@ type Parameters struct {
 	// AssetAutoloopParams maps an asset id hex encoded string to its
 	// easy autoloop parameters.
 	AssetAutoloopParams map[string]AssetParams
+
+	// FastSwapPublication controls publication deadline for new loop out
+	// swaps. If set to true, the deadline is set to immediate publication.
+	// If set to false, the deadline is set to 30 minutes.
+	FastSwapPublication bool
 }
 
 // AssetParams define the asset specific autoloop parameters.
@@ -460,10 +466,13 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 			Minimum: btcutil.Amount(req.MinSwapAmount),
 			Maximum: btcutil.Amount(req.MaxSwapAmount),
 		},
-		HtlcConfTarget:      req.HtlcConfTarget,
-		EasyAutoloop:        req.EasyAutoloop,
-		EasyAutoloopTarget:  btcutil.Amount(req.EasyAutoloopLocalTargetSat),
+		HtlcConfTarget: req.HtlcConfTarget,
+		EasyAutoloop:   req.EasyAutoloop,
+		EasyAutoloopTarget: btcutil.Amount(
+			req.EasyAutoloopLocalTargetSat,
+		),
 		AssetAutoloopParams: easyAssetParams,
+		FastSwapPublication: req.FastSwapPublication,
 	}
 
 	if req.AutoloopBudgetRefreshPeriodSec != 0 {
@@ -592,6 +601,7 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		Account:                    cfg.Account,
 		AccountAddrType:            addrType,
 		EasyAssetParams:            easyAssetMap,
+		FastSwapPublication:        cfg.FastSwapPublication,
 	}
 
 	switch f := cfg.FeeLimit.(type) {
