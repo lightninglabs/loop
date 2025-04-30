@@ -319,7 +319,6 @@ type batchKit struct {
 	primaryID           wire.OutPoint
 	sweeps              map[wire.OutPoint]sweep
 	rbfCache            rbfCache
-	returnChan          chan SweepRequest
 	wallet              lndclient.WalletKitClient
 	chainNotifier       lndclient.ChainNotifierClient
 	signerClient        lndclient.SignerClient

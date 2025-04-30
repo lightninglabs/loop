@@ -1207,7 +1207,6 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 // newBatchKit creates new batch kit.
 func (b *Batcher) newBatchKit() batchKit {
 	return batchKit{
-		returnChan:          b.sweepReqs,
 		wallet:              b.wallet,
 		chainNotifier:       b.chainNotifier,
 		signerClient:        b.signerClient,
