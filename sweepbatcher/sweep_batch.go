@@ -1887,7 +1887,13 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 
 		// Dispatch the sweep notifier, we don't care about the outcome
 		// of this action so we don't wait for it.
-		go sweep.notifySweepSpend(ctx, &spendDetail)
+		go func() {
+			// Make sure this context doesn't expire so we
+			// successfully notify the caller.
+			ctx := context.WithoutCancel(ctx)
+
+			sweep.notifySweepSpend(ctx, &spendDetail)
+		}()
 	}
 
 	// Proceed with purging the sweeps. This will feed the sweeps that
