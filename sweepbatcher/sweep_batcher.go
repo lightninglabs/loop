@@ -222,6 +222,18 @@ type SweepRequest struct {
 	Notifier *SpendNotifier
 }
 
+// addSweepsRequest is a request to sweep an outpoint or a group of outpoints
+// that is used internally by the batcher (between AddSweep and handleSweeps).
+type addSweepsRequest struct {
+	// sweeps is the list of sweeps already loaded from DB and fee rate
+	// source.
+	sweeps []*sweep
+
+	// Notifier is a notifier that is used to notify the requester of this
+	// sweep that the sweep was successful.
+	notifier *SpendNotifier
+}
+
 type SpendDetail struct {
 	// Tx is the transaction that spent the outpoint.
 	Tx *wire.MsgTx
@@ -266,8 +278,8 @@ type Batcher struct {
 	// batches is a map of batch IDs to the currently active batches.
 	batches map[int32]*batch
 
-	// sweepReqs is a channel where sweep requests are received.
-	sweepReqs chan SweepRequest
+	// addSweepsChan is a channel where sweep requests are received.
+	addSweepsChan chan *addSweepsRequest
 
 	// testReqs is a channel where test requests are received.
 	// This is used only in unit tests! The reason to have this is to
@@ -501,7 +513,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 
 	return &Batcher{
 		batches:              make(map[int32]*batch),
-		sweepReqs:            make(chan SweepRequest),
+		addSweepsChan:        make(chan *addSweepsRequest),
 		testReqs:             make(chan *testRequest),
 		errChan:              make(chan error, 1),
 		quit:                 make(chan struct{}),
@@ -557,15 +569,8 @@ func (b *Batcher) Run(ctx context.Context) error {
 
 	for {
 		select {
-		case sweepReq := <-b.sweepReqs:
-			sweeps, err := b.fetchSweeps(runCtx, sweepReq)
-			if err != nil {
-				warnf("fetchSweeps failed: %v.", err)
-
-				return err
-			}
-
-			err = b.handleSweeps(runCtx, sweeps, sweepReq.Notifier)
+		case req := <-b.addSweepsChan:
+			err = b.handleSweeps(runCtx, req.sweeps, req.notifier)
 			if err != nil {
 				warnf("handleSweeps failed: %v.", err)
 
@@ -589,11 +594,32 @@ func (b *Batcher) Run(ctx context.Context) error {
 	}
 }
 
-// AddSweep adds a sweep request to the batcher for handling. This will either
-// place the sweep in an existing batch or create a new one.
-func (b *Batcher) AddSweep(sweepReq *SweepRequest) error {
+// AddSweep loads information about sweeps from the store and fee rate source,
+// and adds them to the batcher for handling. This will either place the sweep
+// in an existing batch or create a new one. The method can be called multiple
+// times, but the sweeps (including the order of them) must be the same. If
+// notifier is provided, the batcher sends back sweeping results through it.
+func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
+	// If the batcher is shutting down, quit now.
 	select {
-	case b.sweepReqs <- *sweepReq:
+	case <-b.quit:
+		return ErrBatcherShuttingDown
+
+	default:
+	}
+
+	sweeps, err := b.fetchSweeps(ctx, *sweepReq)
+	if err != nil {
+		return fmt.Errorf("fetchSweeps failed: %w", err)
+	}
+
+	req := &addSweepsRequest{
+		sweeps:   sweeps,
+		notifier: sweepReq.Notifier,
+	}
+
+	select {
+	case b.addSweepsChan <- req:
 		return nil
 
 	case <-b.quit:

@@ -306,7 +306,7 @@ type batch struct {
 // Purger is a function that takes a sweep request and feeds it back to the
 // batcher main entry point. The name is inspired by its purpose, which is to
 // purge the batch from sweeps that didn't make it to the confirmed tx.
-type Purger func(sweepReq *SweepRequest) error
+type Purger func(ctx context.Context, sweepReq *SweepRequest) error
 
 // batchKit is a kit of dependencies that are used to initialize a batch. This
 // struct is only used as a wrapper for the arguments that are required to
@@ -1895,10 +1895,14 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	// for re-entry. This batch doesn't care for the outcome of this
 	// operation so we don't wait for it.
 	go func() {
+		// Make sure this context doesn't expire so we successfully
+		// add the sweeps to the batcher.
+		ctx := context.WithoutCancel(ctx)
+
 		// Iterate over the purge list and feed the sweeps back to the
 		// batcher.
 		for _, sweep := range purgeList {
-			err := b.purger(&sweep)
+			err := b.purger(ctx, &sweep)
 			if err != nil {
 				b.Errorf("unable to purge sweep %x: %v",
 					sweep.SwapHash[:6], err)

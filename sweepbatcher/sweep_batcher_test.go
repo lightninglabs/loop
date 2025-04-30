@@ -252,14 +252,14 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
 	<-lnd.RegisterSpendChannel
 
 	// Insert the same swap twice, this should be a noop.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Once batcher receives sweep request it will eventually spin up a
 	// batch.
@@ -301,7 +301,7 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(601)
@@ -347,7 +347,7 @@ func testSweepBatcherBatchCreation(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Since the second batch got created we check that it registered its
 	// primary sweep's spend.
@@ -457,7 +457,7 @@ func testFeeBumping(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -562,7 +562,7 @@ func testTxLabeler(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
@@ -718,7 +718,7 @@ func testPublishErrorHandler(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
@@ -802,7 +802,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
@@ -1016,7 +1016,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// Expect two timers to be set: initialDelay and publishDelay,
 	// and RegisterSpend to be called. The order is not determined,
@@ -1318,7 +1318,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Expect the sweep to be added to new batch. Expect two timers:
 	// largeInitialDelay and publishDelay. RegisterSpend is called in
@@ -1399,7 +1399,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Wait for sweep to be added to the batch.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -1532,7 +1532,7 @@ func testCustomDelays(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Expect two timers to be set: initialDelay and publishDelay,
 	// and RegisterSpend to be called. The order is not determined,
@@ -1603,7 +1603,7 @@ func testCustomDelays(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Expect timer for initialDelay2 to be registered, because
 	// initialDelay2 is lower than initialDelay1, meaning that swap2
@@ -1752,7 +1752,7 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 		store.AssertLoopOutStored()
 
 		// Deliver sweep request to batcher.
-		require.NoError(t, batcher.AddSweep(&sweepReq))
+		require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 		// If this is new batch, expect a spend registration.
 		if i%MaxSweepsPerBatch == 0 {
@@ -1931,7 +1931,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Feed the sweeps to the batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// After inserting the primary (first) sweep, a spend monitor should be
 	// registered.
@@ -1941,7 +1941,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Add the second sweep.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Add next block to trigger batch publishing.
 	err = lnd.NotifyHeight(601)
@@ -1951,7 +1951,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Add the third sweep.
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Add next block to trigger batch publishing.
 	err = lnd.NotifyHeight(602)
@@ -2058,7 +2058,7 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 
 	// Re-add one of remaining sweeps to trigger removing the completed
 	// batch from the batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Eventually the batch receives the confirmation notification,
 	// gracefully exits and the batcher deletes it.
@@ -2144,7 +2144,7 @@ func testSweepBatcherGroup(t *testing.T, store testStore,
 		},
 		Notifier: &dummyNotifier,
 	}
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// After inserting the primary (first) sweep, a spend monitor should be
 	// registered.
@@ -2225,7 +2225,7 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2241,7 +2241,7 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Insert the same swap twice, this should be a noop.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Create a second sweep request that has a timeout distance less than
 	// our configured threshold.
@@ -2274,7 +2274,7 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2320,7 +2320,7 @@ func testSweepBatcherNonWalletAddr(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2594,7 +2594,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2610,9 +2610,9 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	<-lnd.TxPublishChannel
 
 	// Insert the same swap twice, this should be a noop.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Batcher should not create a second batch as timeout distance is small
 	// enough.
@@ -2628,7 +2628,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	tx := <-lnd.TxPublishChannel
 	require.Len(t, tx.TxIn, 2)
 
-	require.NoError(t, batcher.AddSweep(&sweepReq3))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq3))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2644,7 +2644,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	tx = <-lnd.TxPublishChannel
 	require.Len(t, tx.TxIn, 1)
 
-	require.NoError(t, batcher.AddSweep(&sweepReq4))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq4))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2660,7 +2660,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 	tx = <-lnd.TxPublishChannel
 	require.Len(t, tx.TxIn, 1)
 
-	require.NoError(t, batcher.AddSweep(&sweepReq5))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq5))
 
 	// Publish a block to trigger batch 3 republishing.
 	err = lnd.NotifyHeight(601)
@@ -2677,7 +2677,7 @@ func testSweepBatcherComposite(t *testing.T, store testStore,
 		return batcher.numBatches(ctx) == 3
 	}, test.Timeout, eventuallyCheckFrequency)
 
-	require.NoError(t, batcher.AddSweep(&sweepReq6))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq6))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -2845,7 +2845,7 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -3063,7 +3063,7 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 	store.putLoopOutSwap(sweepReq2.SwapHash, loopOut2)
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since two batches were created we check that it registered for its
 	// primary sweep's spend.
@@ -3074,7 +3074,7 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 
 	// Deliver the second sweep. It will go to a separate batch,
 	// since CltvExpiry values are distant enough.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 	<-lnd.RegisterSpendChannel
 
 	// Wait for tx to be published.
@@ -3117,7 +3117,7 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 
 	// Re-add the second sweep. It is expected to stay in second batch,
 	// not added to both batches.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	require.Eventually(t, func() bool {
 		// Make sure there are two batches.
@@ -3232,7 +3232,7 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -3450,7 +3450,7 @@ func testSweepFetcher(t *testing.T, store testStore,
 	<-batcher.initDone
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -3571,8 +3571,11 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 			}
 
 			// Deliver sweep request to batcher.
-			err := batcher.AddSweep(&sweepReq)
-			if err == ErrBatcherShuttingDown {
+			err := batcher.AddSweep(ctx, &sweepReq)
+			if errors.Is(err, ErrBatcherShuttingDown) {
+				break
+			}
+			if errors.Is(err, context.Canceled) {
 				break
 			}
 			require.NoError(t, err)
@@ -3667,7 +3670,7 @@ func testCustomSignMuSig2(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -3830,7 +3833,7 @@ func testWithMixedBatch(t *testing.T, store testStore,
 			}},
 			Notifier: &dummyNotifier,
 		}
-		require.NoError(t, batcher.AddSweep(&sweepReq))
+		require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 		if i == 0 {
 			// Since a batch was created we check that it registered
@@ -4000,7 +4003,7 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 			}},
 			Notifier: &dummyNotifier,
 		}
-		require.NoError(t, batcher.AddSweep(&sweepReq))
+		require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
 
 		if i == 0 {
 			// Since a batch was created we check that it registered
@@ -4329,7 +4332,7 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -4346,7 +4349,7 @@ func testFeeRateGrows(t *testing.T, store testStore,
 
 	// Now decrease the fee of sweep1.
 	setFeeRate(swapHash1, feeRateLow)
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(601)
@@ -4395,7 +4398,7 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	store.AssertLoopOutStored()
 
 	// Deliver sweep request to batcher.
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(602)
@@ -4412,8 +4415,8 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	// Now update fee rate of second sweep (which is not primary) to
 	// feeRateHigh. Fee rate of sweep 1 is still feeRateLow.
 	setFeeRate(swapHash2, feeRateHigh)
-	require.NoError(t, batcher.AddSweep(&sweepReq1))
-	require.NoError(t, batcher.AddSweep(&sweepReq2))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(603)
