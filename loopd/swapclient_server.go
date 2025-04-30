@@ -1446,7 +1446,7 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 	*looprpc.InstantOutQuoteResponse, error) {
 
 	quote, err := s.instantOutManager.GetInstantOutQuote(
-		ctx, btcutil.Amount(req.Amt), int(req.NumReservations),
+		ctx, btcutil.Amount(req.Amt), req.ReservationIds,
 	)
 	if err != nil {
 		return nil, err

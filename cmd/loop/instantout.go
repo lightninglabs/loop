@@ -157,8 +157,8 @@ func instantOut(ctx *cli.Context) error {
 	// fee-rates.
 	quote, err := client.InstantOutQuote(
 		context.Background(), &looprpc.InstantOutQuoteRequest{
-			Amt:             selectedAmt,
-			NumReservations: int32(len(selectedReservations)),
+			Amt:            selectedAmt,
+			ReservationIds: selectedReservations,
 		},
 	)
 	if err != nil {

@@ -141,6 +141,9 @@ message CancelInstantSwapResponse {
 message GetInstantOutQuoteRequest {
     // The amount to swap in satoshis.
     uint64 amount = 1;
+
+    // The reservation ids that will be used for the swap.
+    repeated bytes reservation_ids = 2;
 }
 
 message GetInstantOutQuoteResponse {

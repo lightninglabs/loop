@@ -1532,9 +1532,15 @@ message InstantOutQuoteRequest {
     uint64 amt = 1;
 
     /*
+    Deprecated: use 'reservation_ids' instead.
     The amount of reservations to use for the swap.
     */
-    int32 num_reservations = 2;
+    int32 num_reservations = 2 [deprecated = true];
+
+    /*
+    The reservations to use for the swap.
+    */
+    repeated bytes reservation_ids = 3;
 }
 
 message InstantOutQuoteResponse {
