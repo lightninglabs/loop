@@ -117,7 +117,8 @@ func TestAutoLoopEnabled(t *testing.T) {
 				chanID1: chanRule,
 				chanID2: chanRule,
 			},
-			HtlcConfTarget: defaultHtlcConfTarget,
+			HtlcConfTarget:      defaultHtlcConfTarget,
+			FastSwapPublication: true,
 		}
 	)
 
@@ -376,7 +377,8 @@ func TestAutoloopAddress(t *testing.T) {
 				chanID1: chanRule,
 				chanID2: chanRule,
 			},
-			HtlcConfTarget: defaultHtlcConfTarget,
+			HtlcConfTarget:      defaultHtlcConfTarget,
+			FastSwapPublication: true,
 		}
 	)
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
@@ -546,7 +548,8 @@ func TestCompositeRules(t *testing.T) {
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer2: chanRule,
 			},
-			HtlcConfTarget: defaultHtlcConfTarget,
+			HtlcConfTarget:      defaultHtlcConfTarget,
+			FastSwapPublication: true,
 		}
 	)
 
@@ -923,8 +926,9 @@ func TestAutoloopBothTypes(t *testing.T) {
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer2: inRule,
 			},
-			HtlcConfTarget:  htlcConfTarget,
-			SweepConfTarget: loop.DefaultSweepConfTarget,
+			HtlcConfTarget:      htlcConfTarget,
+			SweepConfTarget:     loop.DefaultSweepConfTarget,
+			FastSwapPublication: false,
 		}
 	)
 	c := newAutoloopTestCtx(t, params, channels, testRestrictions)
@@ -939,9 +943,11 @@ func TestAutoloopBothTypes(t *testing.T) {
 		}
 
 		loopOutQuoteReq = &loop.LoopOutQuoteRequest{
-			Amount:                  loopOutAmt,
-			SweepConfTarget:         params.SweepConfTarget,
-			SwapPublicationDeadline: testTime,
+			Amount:          loopOutAmt,
+			SweepConfTarget: params.SweepConfTarget,
+			SwapPublicationDeadline: c.testClock.Now().Add(
+				defaultSwapPublicationWaitTime,
+			),
 		}
 
 		prepayMaxFee, routeMaxFee,
@@ -962,6 +968,9 @@ func TestAutoloopBothTypes(t *testing.T) {
 			},
 			Label:     labels.AutoloopLabel(swap.TypeOut),
 			Initiator: autoloopSwapInitiator,
+			SwapPublicationDeadline: c.testClock.Now().Add(
+				defaultSwapPublicationWaitTime,
+			),
 		}
 
 		loopinQuote = &loop.LoopInQuote{
@@ -1069,7 +1078,8 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 				chanID1: chanRule,
 				chanID2: chanRule,
 			},
-			HtlcConfTarget: defaultHtlcConfTarget,
+			HtlcConfTarget:      defaultHtlcConfTarget,
+			FastSwapPublication: true,
 		}
 	)
 
@@ -1320,6 +1330,7 @@ func TestEasyAutoloop(t *testing.T) {
 			EasyAutoloop:              true,
 			EasyAutoloopTarget:        75000,
 			FeeLimit:                  defaultFeePortion(),
+			FastSwapPublication:       true,
 		}
 	)
 

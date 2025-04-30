@@ -1296,6 +1296,10 @@
             "$ref": "#/definitions/looprpcEasyAssetAutoloopParams"
           },
           "description": "A map of asset parameters to use for swaps. The key is the asset id and the\nvalue is the parameters to use for swaps in that asset."
+        },
+        "fast_swap_publication": {
+          "type": "boolean",
+          "description": "Set to true to enable fast swap publication. If set, the server will\npublish the HTLC immediately after receiving the swap request. This\nsetting has direct implications on the swap fees, as fast swaps may\nnot be able to be batched with other swaps."
         }
       }
     },
