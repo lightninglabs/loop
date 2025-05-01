@@ -296,6 +296,44 @@ func TestConstructUnsignedTx(t *testing.T) {
 			wantErr: "sweep.htlcSuccessEstimator failed: " +
 				"weight estimator test failure",
 		},
+
+		{
+			name: "fix fee rounding",
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+				},
+				{
+					outpoint: op2,
+					value:    2_000_000,
+				},
+			},
+			address:       destAddr,
+			currentHeight: 800_000,
+			feeRate:       253,
+			wantTx: &wire.MsgTx{
+				Version:  2,
+				LockTime: 800_000,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op1,
+					},
+					{
+						PreviousOutPoint: op2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999841,
+						PkScript: batchPkScript,
+					},
+				},
+			},
+			wantWeight:       626,
+			wantFeeForWeight: 159,
+			wantFee:          159,
+		},
 	}
 
 	for _, tc := range cases {

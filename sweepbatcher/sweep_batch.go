@@ -1160,6 +1160,13 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	weight := weightEstimate.Weight()
 	feeForWeight := feeRate.FeeForWeight(weight)
 
+	// Fee can be rounded towards zero, leading to actual feeRate being
+	// slightly lower than the requested value. Increase the fee if this is
+	// the case.
+	if chainfee.NewSatPerKWeight(feeForWeight, weight) < feeRate {
+		feeForWeight++
+	}
+
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
 	fee := clampBatchFee(feeForWeight, batchAmt)
 
