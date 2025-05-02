@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -355,5 +356,5 @@ func unmarshalFixedPoint(fp *looprpc.FixedPoint) (*rfqmath.BigIntFixedPoint,
 		Scale:       fp.Scale,
 	}
 
-	return rfqrpc.UnmarshalFixedPoint(rfqrpcFP)
+	return rpcutils.UnmarshalRfqFixedPoint(rfqrpcFP)
 }
