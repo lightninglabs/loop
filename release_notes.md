@@ -18,11 +18,6 @@ This file tracks release notes for the loop client.
 
 #### Breaking Changes
 
-* Autoloop now defaults to a slow publication deadline (30 minutes after
-  initiation) to reduce fees. To revert to the previous behavior, users can run
-  `loop setparams --fast`, which causes swap HTLCs to be published immediately
-  after initiation.
-
 #### Bug Fixes
 
 #### Maintenance
