@@ -1515,6 +1515,13 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 			swapHash[:6], err)
 	}
 
+	// Make sure that PkScript of the coin is filled. Otherwise
+	// RegisterSpendNtfn fails.
+	if len(s.HTLC.PkScript) == 0 {
+		return nil, fmt.Errorf("sweep data for %x doesn't have "+
+			"HTLC.PkScript set", swapHash[:6])
+	}
+
 	// Find minimum fee rate for the sweep. Use customFeeRate if it is
 	// provided, otherwise use wallet's EstimateFeeRate.
 	var minFeeRate chainfee.SatPerKWeight
