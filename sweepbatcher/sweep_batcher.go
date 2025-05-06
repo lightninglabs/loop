@@ -203,8 +203,8 @@ type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
 
 // FeeRateProvider is a function that returns min fee rate of a batch sweeping
 // the UTXO of the swap.
-type FeeRateProvider func(ctx context.Context,
-	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
+type FeeRateProvider func(ctx context.Context, swapHash lntypes.Hash,
+	utxo wire.OutPoint) (chainfee.SatPerKWeight, error)
 
 // InitialDelayProvider returns the duration after which a newly created batch
 // is first published. It allows to customize the duration based on total value
@@ -1519,7 +1519,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 	// provided, otherwise use wallet's EstimateFeeRate.
 	var minFeeRate chainfee.SatPerKWeight
 	if b.customFeeRate != nil {
-		minFeeRate, err = b.customFeeRate(ctx, swapHash)
+		minFeeRate, err = b.customFeeRate(ctx, swapHash, outpoint)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch min fee rate "+
 				"for %x: %w", swapHash[:6], err)

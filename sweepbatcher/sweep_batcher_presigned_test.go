@@ -254,8 +254,8 @@ func testPresigned_forgotten_presign(t *testing.T,
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return chainfee.SatPerKWeight(10_000), nil
 	}
@@ -330,8 +330,8 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
 		currentFeeRate = feeRate
 	}
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return currentFeeRate, nil
 	}
@@ -511,8 +511,8 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
 		currentFeeRate = feeRate
 	}
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return currentFeeRate, nil
 	}
@@ -647,8 +647,8 @@ func testPresigned_first_publish_fails(t *testing.T,
 	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
 		currentFeeRate = feeRate
 	}
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return currentFeeRate, nil
 	}
@@ -770,8 +770,8 @@ func testPresigned_locktime(t *testing.T,
 	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
 		currentFeeRate = feeRate
 	}
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return currentFeeRate, nil
 	}
@@ -854,8 +854,8 @@ func testPresigned_presigned_group(t *testing.T,
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return chainfee.SatPerKWeight(10_000), nil
 	}
@@ -1091,8 +1091,8 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	setFeeRate := func(feeRate chainfee.SatPerKWeight) {
 		currentFeeRate = feeRate
 	}
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return currentFeeRate, nil
 	}
@@ -1372,8 +1372,8 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	customFeeRate := func(_ context.Context,
-		_ lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		return feeRate, nil
 	}

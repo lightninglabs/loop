@@ -408,8 +408,8 @@ func testFeeBumping(t *testing.T, store testStore,
 	// Disable fee bumping, if requested.
 	var opts []BatcherOption
 	if noFeeBumping {
-		customFeeRate := func(ctx context.Context,
-			swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+		customFeeRate := func(_ context.Context, _ lntypes.Hash,
+			_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 			// Always provide the same value, no bumping.
 			return test.DefaultMockFee, nil
@@ -3844,8 +3844,8 @@ func testSweepFetcher(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	customFeeRate := func(ctx context.Context,
-		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		// Always provide the same value, no bumping.
 		return feeRate, nil
@@ -4691,8 +4691,8 @@ func testFeeRateGrows(t *testing.T, store testStore,
 		swap2feeRate[swapHash] = rate
 	}
 
-	customFeeRate := func(ctx context.Context,
-		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, swapHash lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		swap2feeRateMu.Lock()
 		defer swap2feeRateMu.Unlock()
