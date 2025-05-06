@@ -1354,7 +1354,7 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 // to another online batch. In offline case they must are added to a new batch
 // having valid presigned transactions.
 func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
-	store testStore, batcherStore testBatcherStore, online bool) {
+	batcherStore testBatcherStore, online bool) {
 
 	defer test.Guard(t)()
 
@@ -1420,33 +1420,13 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		}
 		groups[i] = group
 
-		// Create a swap in DB.
-		swap := &loopdb.LoopOutContract{
-			SwapContract: loopdb.SwapContract{
-				CltvExpiry:      111,
-				AmountRequested: swapAmount,
-				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-				HtlcKeys:        htlcKeys,
-
-				// Make preimage unique to pass SQL constraints.
-				Preimage: lntypes.Preimage{byte(i + 1)},
-			},
-
-			DestAddr:        destAddr,
-			SwapInvoice:     swapInvoice,
-			SweepConfTarget: 111,
-		}
-		err := store.CreateLoopOut(ctx, swapHash, swap)
-		require.NoError(t, err)
-		store.AssertLoopOutStored()
-
 		// Enable all the sweeps.
 		for _, op := range ops {
 			presignedHelper.SetOutpointOnline(op, true)
 		}
 
 		// An attempt to presign must succeed.
-		err = batcher.PresignSweepsGroup(
+		err := batcher.PresignSweepsGroup(
 			ctx, group, sweepTimeout, destAddr,
 		)
 		require.NoError(t, err)
@@ -1506,31 +1486,11 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 			},
 		}
 
-		// Create a swap in DB.
-		swap := &loopdb.LoopOutContract{
-			SwapContract: loopdb.SwapContract{
-				CltvExpiry:      111,
-				AmountRequested: amount,
-				ProtocolVersion: loopdb.ProtocolVersionMuSig2,
-				HtlcKeys:        htlcKeys,
-
-				// Make preimage unique to pass SQL constraints.
-				Preimage: lntypes.Preimage{1, 2, 3},
-			},
-
-			DestAddr:        destAddr,
-			SwapInvoice:     swapInvoice,
-			SweepConfTarget: 111,
-		}
-		err := store.CreateLoopOut(ctx, swapHash, swap)
-		require.NoError(t, err)
-		store.AssertLoopOutStored()
-
 		// Enable the sweep.
 		presignedHelper.SetOutpointOnline(opx, true)
 
 		// An attempt to presign must succeed.
-		err = batcher.PresignSweepsGroup(
+		err := batcher.PresignSweepsGroup(
 			ctx, group, sweepTimeout, destAddr,
 		)
 		require.NoError(t, err)
@@ -1759,14 +1719,10 @@ func TestPresigned(t *testing.T) {
 			}
 
 			t.Run(name, func(t *testing.T) {
-				runTests(t, func(t *testing.T, store testStore,
-					batcherStore testBatcherStore) {
-
-					testPresigned_purging(
-						t, numSwaps, numConfirmedSwaps,
-						store, batcherStore, online,
-					)
-				})
+				testPresigned_purging(
+					t, numSwaps, numConfirmedSwaps,
+					NewStoreMock(), online,
+				)
 			})
 		}
 
