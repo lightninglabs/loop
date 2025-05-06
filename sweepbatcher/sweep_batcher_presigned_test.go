@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -232,13 +233,18 @@ func (h *mockPresignedHelper) FetchSweep(_ context.Context,
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	_, has := h.onlineOutpoints[utxo]
+	// Find IsPresigned.
+	_, isPresigned := h.onlineOutpoints[utxo]
 
 	return &SweepInfo{
 		// Set Timeout to prevent warning messages about timeout=0.
 		Timeout: sweepTimeout,
 
-		IsPresigned: has,
+		IsPresigned: isPresigned,
+
+		HTLC: swap.Htlc{
+			PkScript: []byte{10, 11, 12},
+		},
 	}, nil
 }
 
