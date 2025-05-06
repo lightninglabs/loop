@@ -1285,6 +1285,10 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		return nil, 0, 0, 0, fmt.Errorf("txscript.PayToAddrScript "+
 			"failed: %w", err)
 	}
+	if len(batchPkScript) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("txscript.PayToAddrScript " +
+			"returned an empty pkScript")
+	}
 
 	// Add the output to weight estimates.
 	err = sweeppkg.AddOutputEstimate(&weightEstimate, address)
