@@ -407,9 +407,16 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		}
 	}
 
+	// Determine the current minimum relay fee based on our chain backend.
+	minRelayFee, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
+			false
+	}
+
 	// Cache current height and desired feerate of the batch.
 	currentHeight := b.currentHeight
-	feeRate := b.rbfCache.FeeRate
+	feeRate := max(b.rbfCache.FeeRate, minRelayFee)
 
 	// Append this sweep to an array of sweeps. This is needed to keep the
 	// order of sweeps stored, as iterating the sweeps map does not
@@ -445,13 +452,6 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	batchAmt := btcutil.Amount(0)
 	for _, sweep := range sweeps {
 		batchAmt += sweep.value
-	}
-
-	// Determine the current minimum relay fee based on our chain backend.
-	minRelayFee, err := b.wallet.MinRelayFee(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
-			false
 	}
 
 	// Get a pre-signed transaction.
@@ -507,6 +507,9 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// purposes.
 	b.batchTxid = &txHash
 	b.batchPkScript = tx.TxOut[0].PkScript
+
+	// Update cached FeeRate not to broadcast a tx with lower feeRate.
+	b.rbfCache.FeeRate = max(b.rbfCache.FeeRate, signedFeeRate)
 
 	return fee, nil, true
 }

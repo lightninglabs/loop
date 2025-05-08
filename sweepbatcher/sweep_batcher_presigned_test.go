@@ -159,6 +159,11 @@ func (h *mockPresignedHelper) SignTx(ctx context.Context,
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if feeRate < minRelayFee {
+		return nil, fmt.Errorf("feeRate (%v) is below minRelayFee (%v)",
+			feeRate, minRelayFee)
+	}
+
 	// If all the inputs are online and loadOnly is not set, sign this exact
 	// transaction.
 	if offline := h.offlineInputs(tx); len(offline) == 0 && !loadOnly {
@@ -490,6 +495,118 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 		chainfee.FeePerKwFloor, loadOnly,
 	)
 	require.NoError(t, err)
+}
+
+// testPresigned_min_relay_fee tests that online and presigned transactions
+// comply with min_relay_fee.
+func testPresigned_min_relay_fee(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const inputAmt = 1_000_000
+
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.FeePerKwFloor, nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, presignedHelper,
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper))
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Set high min_relay_fee.
+	lnd.SetMinRelayFee(400)
+
+	// Create the first sweep.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: swapHash1,
+		Inputs: []Input{{
+			Value:    inputAmt,
+			Outpoint: op1,
+		}},
+		Notifier: &dummyNotifier,
+	}
+
+	// Enable the input and presign.
+	presignedHelper.SetOutpointOnline(op1, true)
+	err := batcher.PresignSweepsGroup(
+		ctx, []Input{{Outpoint: op1, Value: inputAmt}},
+		sweepTimeout, destAddr,
+	)
+	require.NoError(t, err)
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	gotFeeRate := presignedHelper.getTxFeerate(tx, inputAmt)
+	require.Equal(t, chainfee.SatPerKWeight(402), gotFeeRate)
+
+	// Now decrease min_relay_fee and make sure fee rate doesn't decrease.
+	// The only difference of tx2 is a higher lock_time.
+	lnd.SetMinRelayFee(300)
+	require.NoError(t, lnd.NotifyHeight(601))
+	tx2 := <-lnd.TxPublishChannel
+	require.Equal(t, tx.TxOut[0].Value, tx2.TxOut[0].Value)
+	gotFeeRate = presignedHelper.getTxFeerate(tx2, inputAmt)
+	require.Equal(t, chainfee.SatPerKWeight(402), gotFeeRate)
+	require.Equal(t, uint32(601), tx2.LockTime)
+
+	// Set a higher min_relay_fee, turn off the client and try presigned tx.
+	lnd.SetMinRelayFee(500)
+	presignedHelper.SetOutpointOnline(op1, false)
+
+	// Check fee rate of the presigned tx broadcasted.
+	require.NoError(t, lnd.NotifyHeight(602))
+	tx = <-lnd.TxPublishChannel
+	gotFeeRate = presignedHelper.getTxFeerate(tx, inputAmt)
+	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	// LockTime of a presigned tx is 0.
+	require.Equal(t, uint32(0), tx.LockTime)
+
+	// Now decrease min_relay_fee and make sure fee rate doesn't decrease.
+	// It should re-broadcast the same presigned tx.
+	lnd.SetMinRelayFee(450)
+	require.NoError(t, lnd.NotifyHeight(603))
+	tx2 = <-lnd.TxPublishChannel
+	require.Equal(t, tx.TxHash(), tx2.TxHash())
+	gotFeeRate = presignedHelper.getTxFeerate(tx2, inputAmt)
+	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	// LockTime of a presigned tx is 0.
+	require.Equal(t, uint32(0), tx2.LockTime)
+
+	// Even if the client is back online, fee rate doesn't decrease.
+	presignedHelper.SetOutpointOnline(op1, true)
+	require.NoError(t, lnd.NotifyHeight(604))
+	tx3 := <-lnd.TxPublishChannel
+	require.Equal(t, tx2.TxOut[0].Value, tx3.TxOut[0].Value)
+	gotFeeRate = presignedHelper.getTxFeerate(tx3, inputAmt)
+	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	require.Equal(t, uint32(604), tx3.LockTime)
 }
 
 // testPresigned_two_inputs_one_goes_offline tests presigned mode for the
@@ -1690,6 +1807,10 @@ func TestPresigned(t *testing.T) {
 
 	t.Run("input1_offline_then_input2", func(t *testing.T) {
 		testPresigned_input1_offline_then_input2(t, NewStoreMock())
+	})
+
+	t.Run("min_relay_fee", func(t *testing.T) {
+		testPresigned_min_relay_fee(t, NewStoreMock())
 	})
 
 	t.Run("two_inputs_one_goes_offline", func(t *testing.T) {
