@@ -50,8 +50,3 @@ func infof(format string, params ...interface{}) {
 func warnf(format string, params ...interface{}) {
 	log().Warnf(format, params...)
 }
-
-// errorf logs a message with level ERROR.
-func errorf(format string, params ...interface{}) {
-	log().Errorf(format, params...)
-}

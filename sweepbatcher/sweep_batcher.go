@@ -132,6 +132,11 @@ type SweepInfo struct {
 	// has to be spent using preimage. This is only used in fee estimations
 	// when selecting a batch for the sweep to minimize fees.
 	NonCoopHint bool
+
+	// IsPresigned stores if presigned mode is enabled for the sweep. This
+	// value should be stable for a sweep. Currently presigned and
+	// non-presigned sweeps never appear in the same batch.
+	IsPresigned bool
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -155,6 +160,51 @@ type MuSig2SignSweep func(ctx context.Context,
 type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 	swapHash lntypes.Hash, rootHash chainhash.Hash, sigHash [32]byte,
 ) ([]byte, error)
+
+// PresignedHelper provides methods used when batches are presigned in advance.
+// In this mode sweepbatcher uses transactions provided by PresignedHelper,
+// which are pre-signed. The helper also memorizes transactions it previously
+// produced. It also affects batch selection: presigned inputs and regular
+// (non-presigned) inputs never appear in the same batch. Also if presigning
+// fails (e.g. because one of the inputs is offline), an input can't be added to
+// a batch.
+type PresignedHelper interface {
+	// Presign tries to presign a batch transaction. If the method returns
+	// nil, it is guaranteed that future calls to SignTx on this set of
+	// sweeps return valid signed transactions. The implementation should
+	// first check if this transaction already exists in the store to skip
+	// cosigning if possible.
+	Presign(ctx context.Context, primarySweepID wire.OutPoint,
+		tx *wire.MsgTx, inputAmt btcutil.Amount) error
+
+	// DestPkScript returns destination pkScript used by the sweep batch
+	// with the primary outpoint specified. Returns an error, if such tx
+	// doesn't exist. If there are many such transactions, returns any of
+	// pkScript's; all of them should have the same destination pkScript.
+	DestPkScript(ctx context.Context,
+		primarySweepID wire.OutPoint) ([]byte, error)
+
+	// SignTx signs an unsigned transaction or returns a pre-signed tx.
+	// It must satisfy the following invariants:
+	//   - the set of inputs is the same, though the order may change;
+	//   - the output is the same, but its amount may be different;
+	//   - feerate is higher or equal to minRelayFee;
+	//   - LockTime may be decreased;
+	//   - transaction version must be the same;
+	//   - witness must not be empty;
+	//   - Sequence numbers in the inputs must be preserved.
+	// When choosing a presigned transaction, a transaction with fee rate
+	// closer to the fee rate passed is selected. If loadOnly is set, it
+	// doesn't try to sign the transaction and only loads a presigned tx.
+	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
+		tx *wire.MsgTx, inputAmt btcutil.Amount,
+		minRelayFee, feeRate chainfee.SatPerKWeight,
+		loadOnly bool) (*wire.MsgTx, error)
+
+	// CleanupTransactions removes all transactions related to any of the
+	// outpoints. Should be called after sweep batch tx is fully confirmed.
+	CleanupTransactions(ctx context.Context, inputs []wire.OutPoint) error
+}
 
 // VerifySchnorrSig is a function that can be used to verify a schnorr
 // signature.
@@ -222,6 +272,26 @@ type SweepRequest struct {
 	Notifier *SpendNotifier
 }
 
+// addSweepsRequest is a request to sweep an outpoint or a group of outpoints
+// that is used internally by the batcher (between AddSweep and handleSweeps).
+type addSweepsRequest struct {
+	// sweeps is the list of sweeps already loaded from DB and fee rate
+	// source.
+	sweeps []*sweep
+
+	// Notifier is a notifier that is used to notify the requester of this
+	// sweep that the sweep was successful.
+	notifier *SpendNotifier
+
+	// completed is set if the sweep is spent and the spending transaction
+	// is confirmed.
+	completed bool
+
+	// parentBatch is the parent batch of this sweep. It is loaded ony if
+	// completed is true.
+	parentBatch *dbBatch
+}
+
 type SpendDetail struct {
 	// Tx is the transaction that spent the outpoint.
 	Tx *wire.MsgTx
@@ -266,8 +336,8 @@ type Batcher struct {
 	// batches is a map of batch IDs to the currently active batches.
 	batches map[int32]*batch
 
-	// sweepReqs is a channel where sweep requests are received.
-	sweepReqs chan SweepRequest
+	// addSweepsChan is a channel where sweep requests are received.
+	addSweepsChan chan *addSweepsRequest
 
 	// testReqs is a channel where test requests are received.
 	// This is used only in unit tests! The reason to have this is to
@@ -354,6 +424,10 @@ type Batcher struct {
 	// error. By default, it logs all errors as warnings, but "insufficient
 	// fee" as Info.
 	publishErrorHandler PublishErrorHandler
+
+	// presignedHelper provides methods used when presigned batches are
+	// enabled.
+	presignedHelper PresignedHelper
 }
 
 // BatcherConfig holds batcher configuration.
@@ -394,6 +468,10 @@ type BatcherConfig struct {
 	// error. By default, it logs all errors as warnings, but "insufficient
 	// fee" as Info.
 	publishErrorHandler PublishErrorHandler
+
+	// presignedHelper provides methods used when presigned batches are
+	// enabled.
+	presignedHelper PresignedHelper
 }
 
 // BatcherOption configures batcher behaviour.
@@ -467,6 +545,15 @@ func WithPublishErrorHandler(handler PublishErrorHandler) BatcherOption {
 	}
 }
 
+// WithPresignedHelper enables presigned batches in the batcher. When a sweep
+// intended for presigning is added, it must be first passed to the
+// PresignSweepsGroup method, before first call of the AddSweep method.
+func WithPresignedHelper(presignedHelper PresignedHelper) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.presignedHelper = presignedHelper
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -501,7 +588,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 
 	return &Batcher{
 		batches:              make(map[int32]*batch),
-		sweepReqs:            make(chan SweepRequest),
+		addSweepsChan:        make(chan *addSweepsRequest),
 		testReqs:             make(chan *testRequest),
 		errChan:              make(chan error, 1),
 		quit:                 make(chan struct{}),
@@ -521,6 +608,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		txLabeler:            cfg.txLabeler,
 		customMuSig2Signer:   cfg.customMuSig2Signer,
 		publishErrorHandler:  cfg.publishErrorHandler,
+		presignedHelper:      cfg.presignedHelper,
 	}
 }
 
@@ -557,15 +645,11 @@ func (b *Batcher) Run(ctx context.Context) error {
 
 	for {
 		select {
-		case sweepReq := <-b.sweepReqs:
-			sweeps, err := b.fetchSweeps(runCtx, sweepReq)
-			if err != nil {
-				warnf("fetchSweeps failed: %v.", err)
-
-				return err
-			}
-
-			err = b.handleSweeps(runCtx, sweeps, sweepReq.Notifier)
+		case req := <-b.addSweepsChan:
+			err = b.handleSweeps(
+				runCtx, req.sweeps, req.notifier, req.completed,
+				req.parentBatch,
+			)
 			if err != nil {
 				warnf("handleSweeps failed: %v.", err)
 
@@ -589,11 +673,125 @@ func (b *Batcher) Run(ctx context.Context) error {
 	}
 }
 
-// AddSweep adds a sweep request to the batcher for handling. This will either
-// place the sweep in an existing batch or create a new one.
-func (b *Batcher) AddSweep(sweepReq *SweepRequest) error {
+// PresignSweepsGroup creates and stores presigned transactions for the sweeps
+// group. This method must be called prior to AddSweep if presigned mode is
+// enabled, otherwise AddSweep will fail. All the sweeps must belong to the same
+// swap. The order of sweeps is important. The first sweep serves as
+// primarySweepID if the group starts a new batch.
+func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
+	sweepTimeout int32, destAddress btcutil.Address) error {
+
+	if len(inputs) == 0 {
+		return fmt.Errorf("no inputs passed to PresignSweepsGroup")
+	}
+	if b.presignedHelper == nil {
+		return fmt.Errorf("presignedHelper is not installed")
+	}
+
+	// Find the feerate needed to get into next block. Use conf_target=2,
+	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
+	if err != nil {
+		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
+	}
+	infof("PresignSweepsGroup: nextBlockFeeRate is %v", nextBlockFeeRate)
+
+	sweeps := make([]sweep, len(inputs))
+	for i, input := range inputs {
+		sweeps[i] = sweep{
+			outpoint: input.Outpoint,
+			value:    input.Value,
+			timeout:  sweepTimeout,
+		}
+	}
+
+	// The sweeps are ordered inside the group, the first one is the primary
+	// outpoint in the batch.
+	primarySweepID := sweeps[0].outpoint
+
+	return presign(
+		ctx, b.presignedHelper, destAddress, primarySweepID, sweeps,
+		nextBlockFeeRate,
+	)
+}
+
+// AddSweep loads information about sweeps from the store and fee rate source,
+// and adds them to the batcher for handling. This will either place the sweep
+// in an existing batch or create a new one. The method can be called multiple
+// times, but the sweeps (including the order of them) must be the same. If
+// notifier is provided, the batcher sends back sweeping results through it.
+func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
+	// If the batcher is shutting down, quit now.
 	select {
-	case b.sweepReqs <- *sweepReq:
+	case <-b.quit:
+		return ErrBatcherShuttingDown
+
+	default:
+	}
+
+	sweeps, err := b.fetchSweeps(ctx, *sweepReq)
+	if err != nil {
+		return fmt.Errorf("fetchSweeps failed: %w", err)
+	}
+
+	if len(sweeps) == 0 {
+		return fmt.Errorf("trying to add an empty group of sweeps")
+	}
+
+	// Since the whole group is added to the same batch and belongs to
+	// the same transaction, we use sweeps[0] below where we need any sweep.
+	sweep := sweeps[0]
+
+	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
+	if err != nil {
+		return fmt.Errorf("failed to get the status of sweep %v: %w",
+			sweep.outpoint, err)
+	}
+	var (
+		parentBatch    *dbBatch
+		fullyConfirmed bool
+	)
+	if completed {
+		// Verify that the parent batch is confirmed. Note that a batch
+		// is only considered confirmed after it has received three
+		// on-chain confirmations to prevent issues caused by reorgs.
+		parentBatch, err = b.store.GetParentBatch(ctx, sweep.outpoint)
+		if err != nil {
+			return fmt.Errorf("unable to get parent batch for "+
+				"sweep %x: %w", sweep.swapHash[:6], err)
+		}
+
+		if parentBatch.State == batchConfirmed {
+			fullyConfirmed = true
+		}
+	}
+
+	// If this is a presigned mode, make sure PresignSweepsGroup was called.
+	// We skip the check for fully confirmed sweeps, because their presigned
+	// transactions were already cleaned up from the store.
+	if sweep.presigned && !fullyConfirmed {
+		err := ensurePresigned(
+			ctx, sweeps, b.presignedHelper, b.chainParams,
+		)
+		if err != nil {
+			return fmt.Errorf("inputs with primarySweep %v were "+
+				"not presigned (call PresignSweepsGroup "+
+				"first): %w", sweep.outpoint, err)
+		}
+	}
+
+	infof("Batcher adding sweep group of %d sweeps with primarySweep %x, "+
+		"presigned=%v, completed=%v", len(sweeps), sweep.swapHash[:6],
+		sweep.presigned, completed)
+
+	req := &addSweepsRequest{
+		sweeps:      sweeps,
+		notifier:    sweepReq.Notifier,
+		completed:   completed,
+		parentBatch: parentBatch,
+	}
+
+	select {
+	case b.addSweepsChan <- req:
 		return nil
 
 	case <-b.quit:
@@ -634,39 +832,16 @@ func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
 // handleSweeps handles a sweep request by either placing the group of sweeps in
 // an existing batch, or by spinning up a new batch for it.
 func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
-	notifier *SpendNotifier) error {
-
-	if len(sweeps) == 0 {
-		return fmt.Errorf("trying to add an empty group of sweeps")
-	}
+	notifier *SpendNotifier, completed bool, parentBatch *dbBatch) error {
 
 	// Since the whole group is added to the same batch and belongs to
 	// the same transaction, we use sweeps[0] below where we need any sweep.
 	sweep := sweeps[0]
 
-	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
-	if err != nil {
-		return err
-	}
-
-	infof("Batcher handling sweep %x, completed=%v",
-		sweep.swapHash[:6], completed)
-
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
 	if completed && *notifier != (SpendNotifier{}) {
-		// Verify that the parent batch is confirmed. Note that a batch
-		// is only considered confirmed after it has received three
-		// on-chain confirmations to prevent issues caused by reorgs.
-		parentBatch, err := b.store.GetParentBatch(ctx, sweep.outpoint)
-		if err != nil {
-			errorf("unable to get parent batch for sweep %x:"+
-				" %v", sweep.swapHash[:6], err)
-
-			return err
-		}
-
 		// The parent batch is indeed confirmed, meaning it is complete
 		// and we won't be able to attach this sweep to it.
 		if parentBatch.State == batchConfirmed {
@@ -707,7 +882,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	}
 
 	// Try to run the greedy algorithm of batch selection to minimize costs.
-	err = b.greedyAddSweeps(ctx, sweeps)
+	err := b.greedyAddSweeps(ctx, sweeps)
 	if err == nil {
 		// The greedy algorithm succeeded.
 		return nil
@@ -735,7 +910,9 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	return b.spinUpNewBatch(ctx, sweeps)
 }
 
-// spinUpNewBatch creates new batch, starts it and adds the sweeps to it.
+// spinUpNewBatch creates new batch, starts it and adds the sweeps to it. If
+// presigned mode is enabled, the result also depends on outcome of
+// presignedHelper.Presign.
 func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
 	// Spin up a fresh batch.
 	newBatch, err := b.spinUpBatch(ctx)
@@ -1190,6 +1367,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		destAddr:               s.DestAddr,
 		minFeeRate:             minFeeRate,
 		nonCoopHint:            s.NonCoopHint,
+		presigned:              s.IsPresigned,
 	}, nil
 }
 
@@ -1200,14 +1378,15 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		noBumping:          b.customFeeRate != nil,
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
+		presignedHelper:    b.presignedHelper,
 		clock:              b.clock,
+		chainParams:        b.chainParams,
 	}
 }
 
 // newBatchKit creates new batch kit.
 func (b *Batcher) newBatchKit() batchKit {
 	return batchKit{
-		returnChan:          b.sweepReqs,
 		wallet:              b.wallet,
 		chainNotifier:       b.chainNotifier,
 		signerClient:        b.signerClient,

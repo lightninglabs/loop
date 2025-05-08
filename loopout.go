@@ -1269,7 +1269,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			}
 
 			// Send the sweep to the sweeper.
-			err := s.batcher.AddSweep(&sweepReq)
+			err := s.batcher.AddSweep(ctx, &sweepReq)
 			if err != nil {
 				return nil, err
 			}
