@@ -592,29 +592,19 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, txHash chainhash.Hash,
 	withdrawalPkscript []byte) error {
 
-	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
+		ctx,
+	)
 	if err != nil {
-		log.Errorf("error retrieving taproot address %w", err)
+		log.Errorf("error retrieving address params %w", err)
 
 		return fmt.Errorf("withdrawal failed")
 	}
 
-	address, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(staticAddress.TaprootKey),
-		m.cfg.ChainParams,
-	)
-	if err != nil {
-		return err
-	}
-
-	script, err := txscript.PayToAddrScript(address)
-	if err != nil {
-		return err
-	}
-
 	d := deposits[0]
 	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &d.OutPoint, script, int32(d.ConfirmationHeight),
+		ctx, &d.OutPoint, addrParams.PkScript,
+		int32(d.ConfirmationHeight),
 	)
 
 	go func() {
