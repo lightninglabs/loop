@@ -205,14 +205,25 @@ func (m *Manager) Run(ctx context.Context) error {
 			case request.respChan <- resp:
 
 			case <-ctx.Done():
-				// Noify subroutines that the main loop has been
-				// canceled.
+				// Notify subroutines that the main loop has
+				// been canceled.
 				close(m.exitChan)
 
 				return ctx.Err()
 			}
 
-		case sweepReq := <-sweepReqs:
+		case sweepReq, ok := <-sweepReqs:
+			if !ok {
+				// The channel has been closed, we'll stop the
+				// loop-in manager.
+				log.Debugf("Stopping loop-in manager " +
+					"(ntfnChan closed)")
+
+				close(m.exitChan)
+
+				return fmt.Errorf("ntfnChan closed")
+			}
+
 			err = m.handleLoopInSweepReq(ctx, sweepReq)
 			if err != nil {
 				log.Errorf("Error handling loop-in sweep "+
