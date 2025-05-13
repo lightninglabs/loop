@@ -688,6 +688,31 @@ func RegisterSwapClientJSONCallbacks(registry map[string]func(ctx context.Contex
 		callback(string(respBytes), nil)
 	}
 
+	registry["looprpc.SwapClient.ListStaticAddressWithdrawals"] = func(ctx context.Context,
+		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
+
+		req := &ListStaticAddressWithdrawalRequest{}
+		err := marshaler.Unmarshal([]byte(reqJSON), req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		client := NewSwapClientClient(conn)
+		resp, err := client.ListStaticAddressWithdrawals(ctx, req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		respBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			callback("", err)
+			return
+		}
+		callback(string(respBytes), nil)
+	}
+
 	registry["looprpc.SwapClient.ListStaticAddressSwaps"] = func(ctx context.Context,
 		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
 
