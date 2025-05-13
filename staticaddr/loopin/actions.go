@@ -149,7 +149,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			},
 		)
 		if err != nil {
-			log.Warnf("unable to push htlc tx sigs to server: %w",
+			log.Warnf("unable to push htlc tx sigs to server: %v",
 				err)
 		}
 	}
@@ -628,7 +628,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			if err != nil {
 				log.Errorf("unable to transition "+
 					"deposits to the htlc timeout "+
-					"sweeping state: %w", err)
+					"sweeping state: %v", err)
 			}
 
 			return OnSweepHtlcTimeout

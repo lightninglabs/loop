@@ -232,7 +232,7 @@ func (f *FSM) handleBlockNotification(ctx context.Context,
 				err := f.SendEvent(ctx, OnExpiry, nil)
 				if err != nil {
 					log.Debugf("error sending OnExpiry "+
-						"event: %w", err)
+						"event: %v", err)
 				}
 			}()
 		}

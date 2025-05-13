@@ -888,7 +888,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		// Send change back to the same static address.
 		staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
 		if err != nil {
-			log.Errorf("error retrieving taproot address %w", err)
+			log.Errorf("error retrieving taproot address %v", err)
 
 			return nil, 0, 0, fmt.Errorf("withdrawal failed")
 		}
