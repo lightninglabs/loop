@@ -208,3 +208,20 @@ type SweepsOld struct {
 	Amt           int64
 	Completed     bool
 }
+
+type Withdrawal struct {
+	ID                 int32
+	WithdrawalID       []byte
+	WithdrawalTxID     sql.NullString
+	TotalDepositAmount int64
+	WithdrawnAmount    sql.NullInt64
+	ChangeAmount       sql.NullInt64
+	InitiationTime     time.Time
+	ConfirmationHeight sql.NullInt64
+}
+
+type WithdrawalDeposit struct {
+	ID           int32
+	WithdrawalID []byte
+	DepositID    []byte
+}

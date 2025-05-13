@@ -16,8 +16,11 @@ type Querier interface {
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
+	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
+	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
 	DropBatch(ctx context.Context, id int32) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -42,6 +45,8 @@ type Querier interface {
 	GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUpdate, error)
 	GetSweepStatus(ctx context.Context, outpoint string) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
+	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) ([][]byte, error)
+	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
@@ -64,6 +69,7 @@ type Querier interface {
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
+	UpdateWithdrawal(ctx context.Context, arg UpdateWithdrawalParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
 	UpsertSweep(ctx context.Context, arg UpsertSweepParams) error
 }
