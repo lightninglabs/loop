@@ -12,10 +12,12 @@ import (
 type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
+	AllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	ConfirmBatch(ctx context.Context, id int32) error
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
+	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	DropBatch(ctx context.Context, id int32) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
