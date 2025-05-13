@@ -175,6 +175,12 @@ service SwapClient {
     rpc ListStaticAddressDeposits (ListStaticAddressDepositsRequest)
         returns (ListStaticAddressDepositsResponse);
 
+    /* loop:`listwithdrawals`
+    ListStaticAddressWithdrawals returns a list of static address withdrawals.
+    */
+    rpc ListStaticAddressWithdrawals (ListStaticAddressWithdrawalRequest)
+        returns (ListStaticAddressWithdrawalResponse);
+
     /* loop:`listswaps`
     ListStaticAddressSwaps returns a list of filtered static address
     swaps.
@@ -1735,6 +1741,16 @@ message ListStaticAddressDepositsResponse {
     repeated Deposit filtered_deposits = 1;
 }
 
+message ListStaticAddressWithdrawalRequest {
+}
+
+message ListStaticAddressWithdrawalResponse {
+    /*
+    A list of all static address withdrawals.
+    */
+    repeated StaticAddressWithdrawal withdrawals = 1;
+}
+
 message ListStaticAddressSwapsRequest {
 }
 
@@ -1894,6 +1910,40 @@ message Deposit {
     loop-in swap anymore.
     */
     int64 blocks_until_expiry = 6;
+}
+
+message StaticAddressWithdrawal {
+    /*
+    The transaction id of the withdrawal transaction.
+    */
+    string tx_id = 1;
+
+    /*
+    The selected deposits that is withdrawn from.
+    */
+    repeated Deposit deposits = 2;
+
+    /*
+    The sum of the deposit values that was selected for withdrawal.
+    */
+    int64 total_deposit_amount_satoshis = 3;
+
+    /*
+    The actual amount that was withdrawn from the selected deposits. This value
+    represents the sum of selected deposit values minus tx fees minus optional
+    change output.
+    */
+    int64 withdrawn_amount_satoshis = 4;
+
+    /*
+    An optional change.
+    */
+    int64 change_amount_satoshis = 5;
+
+    /*
+    The confirmation block height of the withdrawal transaction.
+    */
+    uint32 confirmation_height = 6;
 }
 
 message StaticAddressLoopInSwap {
