@@ -36,13 +36,7 @@ func (b *batch) ensurePresigned(ctx context.Context, newSweeps []*sweep,
 // presignedTxChecker has methods to check if the inputs are presigned.
 type presignedTxChecker interface {
 	destPkScripter
-
-	// SignTx signs an unsigned transaction or returns a pre-signed tx.
-	// It is only called with loadOnly=true by ensurePresigned.
-	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount,
-		minRelayFee, feeRate chainfee.SatPerKWeight,
-		loadOnly bool) (*wire.MsgTx, error)
+	presigner
 }
 
 // ensurePresigned checks that there is a presigned transaction spending the
@@ -289,11 +283,12 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 // presigner tries to presign a batch transaction.
 type presigner interface {
-	// Presign tries to presign a batch transaction. If the method returns
-	// nil, it is guaranteed that future calls to SignTx on this set of
-	// sweeps return valid signed transactions.
-	Presign(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount) error
+	// SignTx signs an unsigned transaction or returns a pre-signed tx.
+	// It is only called with loadOnly=true by ensurePresigned.
+	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
+		tx *wire.MsgTx, inputAmt btcutil.Amount,
+		minRelayFee, feeRate chainfee.SatPerKWeight,
+		loadOnly bool) (*wire.MsgTx, error)
 }
 
 // presign tries to presign batch sweep transactions of the sweeps. It signs
@@ -372,7 +367,14 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		}
 
 		// Try to presign this transaction.
-		err = presigner.Presign(ctx, primarySweepID, tx, batchAmt)
+		const (
+			loadOnly    = false
+			minRelayFee = chainfee.AbsoluteFeePerKwFloor
+		)
+		_, err = presigner.SignTx(
+			ctx, primarySweepID, tx, batchAmt, minRelayFee, fr,
+			loadOnly,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to presign unsigned tx %v "+
 				"for feeRate %v: %w", tx.TxHash(), fr, err)

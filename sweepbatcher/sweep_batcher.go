@@ -159,18 +159,11 @@ type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 // fails (e.g. because one of the inputs is offline), an input can't be added to
 // a batch.
 type PresignedHelper interface {
-	// Presign tries to presign a batch transaction. If the method returns
-	// nil, it is guaranteed that future calls to SignTx on this set of
-	// sweeps return valid signed transactions. The implementation should
-	// first check if this transaction already exists in the store to skip
-	// cosigning if possible.
-	Presign(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount) error
-
 	// DestPkScript returns destination pkScript used by the sweep batch
 	// with the primary outpoint specified. Returns an error, if such tx
 	// doesn't exist. If there are many such transactions, returns any of
 	// pkScript's; all of them should have the same destination pkScript.
+	// TODO: embed this data into SweepInfo.
 	DestPkScript(ctx context.Context,
 		primarySweepID wire.OutPoint) ([]byte, error)
 
@@ -951,7 +944,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 
 // spinUpNewBatch creates new batch, starts it and adds the sweeps to it. If
 // presigned mode is enabled, the result also depends on outcome of
-// presignedHelper.Presign.
+// presignedHelper.SignTx.
 func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
 	// Spin up a fresh batch.
 	newBatch, err := b.spinUpBatch(ctx)

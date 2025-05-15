@@ -485,7 +485,7 @@ func (b *batch) Errorf(format string, params ...interface{}) {
 // checkSweepToAdd checks if a sweep can be added or updated in the batch. The
 // caller must lock the event loop using scheduleNextCall. The function returns
 // if the sweep already exists in the batch. If presigned mode is enabled, the
-// result depends on the outcome of the method presignedHelper.Presign for a
+// result depends on the outcome of the method presignedHelper.SignTx for a
 // non-empty batch. For an empty batch, the input needs to pass
 // PresignSweepsGroup.
 func (b *batch) checkSweepToAdd(_ context.Context, sweep *sweep) (bool, error) {

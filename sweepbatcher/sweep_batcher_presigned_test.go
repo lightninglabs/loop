@@ -96,42 +96,6 @@ func (h *mockPresignedHelper) getTxFeerate(tx *wire.MsgTx,
 	return chainfee.NewSatPerKWeight(fee, weight)
 }
 
-// Presign tries to presign the transaction. It succeeds if all the inputs
-// are online. In case of success it adds the transaction to presignedBatches.
-func (h *mockPresignedHelper) Presign(ctx context.Context,
-	primarySweepID wire.OutPoint, tx *wire.MsgTx,
-	inputAmt btcutil.Amount) error {
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Check if such a transaction already exists. This is not only an
-	// optimization, but also enables re-adding multiple groups if sweeps
-	// are offline.
-	wantTxHash := tx.TxHash()
-	for _, candidate := range h.presignedBatches[primarySweepID] {
-		if candidate.TxHash() == wantTxHash {
-			return nil
-		}
-	}
-
-	if !hasInput(tx, primarySweepID) {
-		return fmt.Errorf("primarySweepID %v not in tx", primarySweepID)
-	}
-
-	if offline := h.offlineInputs(tx); len(offline) != 0 {
-		return fmt.Errorf("some inputs of tx are offline: %v", offline)
-	}
-
-	tx = tx.Copy()
-	h.sign(tx)
-	h.presignedBatches[primarySweepID] = append(
-		h.presignedBatches[primarySweepID], tx,
-	)
-
-	return nil
-}
-
 // DestPkScript returns destination pkScript used in presigned tx sweeping
 // these inputs.
 func (h *mockPresignedHelper) DestPkScript(ctx context.Context,
@@ -162,6 +126,11 @@ func (h *mockPresignedHelper) SignTx(ctx context.Context,
 	if feeRate < minRelayFee {
 		return nil, fmt.Errorf("feeRate (%v) is below minRelayFee (%v)",
 			feeRate, minRelayFee)
+	}
+
+	if !hasInput(tx, primarySweepID) {
+		return nil, fmt.Errorf("primarySweepID %v not in tx",
+			primarySweepID)
 	}
 
 	// If all the inputs are online and loadOnly is not set, sign this exact
@@ -205,7 +174,8 @@ func (h *mockPresignedHelper) SignTx(ctx context.Context,
 	}
 
 	if bestTx == nil {
-		return nil, fmt.Errorf("no such presigned tx found")
+		return nil, fmt.Errorf("some outpoint is offline and no " +
+			"suitable presigned tx found")
 	}
 
 	return bestTx.Copy(), nil
@@ -1025,7 +995,7 @@ func testPresigned_presigned_group(t *testing.T,
 
 	// An attempt to presign must fail.
 	err = batcher.PresignSweepsGroup(ctx, group1, sweepTimeout, destAddr)
-	require.ErrorContains(t, err, "some inputs of tx are offline")
+	require.ErrorContains(t, err, "some outpoint is offline")
 
 	// Enable both outpoints.
 	presignedHelper.SetOutpointOnline(op2, true)
