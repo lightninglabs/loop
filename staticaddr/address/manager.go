@@ -90,9 +90,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 }
 
-// NewAddress starts a new address creation flow.
+// NewAddress creates a new static address with the server or returns an
+// existing one.
 func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
-	error) {
+	int64, error) {
 
 	// If there's already a static address in the database, we can return
 	// it.
@@ -101,16 +102,23 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	if err != nil {
 		m.Unlock()
 
-		return nil, err
+		return nil, 0, err
 	}
 	if len(addresses) > 0 {
 		clientPubKey := addresses[0].ClientPubkey
 		serverPubKey := addresses[0].ServerPubkey
 		expiry := int64(addresses[0].Expiry)
 
-		m.Unlock()
+		defer m.Unlock()
 
-		return m.GetTaprootAddress(clientPubKey, serverPubKey, expiry)
+		address, err := m.GetTaprootAddress(
+			clientPubKey, serverPubKey, expiry,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return address, expiry, nil
 	}
 	m.Unlock()
 
@@ -118,14 +126,14 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	// address per L402 token allowed.
 	err = m.cfg.FetchL402(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Send our clientPubKey to the server and wait for the server to
@@ -138,14 +146,14 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	serverParams := resp.GetParams()
 
 	serverPubKey, err := btcec.ParsePubKey(serverParams.ServerKey)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	staticAddress, err := script.NewStaticAddress(
@@ -153,12 +161,12 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		clientPubKey.PubKey, serverPubKey,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	pkScript, err := staticAddress.StaticAddressScript()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Create the static address from the parameters the server provided and
@@ -179,7 +187,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Import the static address tapscript into our lnd wallet, so we can
@@ -189,15 +197,20 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	)
 	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	log.Infof("Imported static address taproot script to lnd wallet: %v",
 		addr)
 
-	return m.GetTaprootAddress(
+	address, err := m.GetTaprootAddress(
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
 	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return address, int64(serverParams.Expiry), nil
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server
