@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
@@ -71,7 +72,8 @@ func newLoopOutSweepFeerateProvider(sweeper sweeper,
 
 // GetMinFeeRate returns minimum required feerate for a sweep by swap hash.
 func (p *loopOutSweepFeerateProvider) GetMinFeeRate(ctx context.Context,
-	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	swapHash lntypes.Hash,
+	_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 	_, feeRate, err := p.GetConfTargetAndFeeRate(ctx, swapHash)
 

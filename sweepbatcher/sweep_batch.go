@@ -135,7 +135,9 @@ const (
 	Open batchState = 0
 
 	// Closed is the state in which the batch is no longer able to accept
-	// new sweeps.
+	// new sweeps. NOTE: this state exists only in-memory. In the database
+	// it is stored as Open and converted to Closed after a spend
+	// notification arrives (quickly after start of Batch.Run).
 	Closed batchState = 1
 
 	// Confirmed is the state in which the batch transaction has reached the
@@ -479,7 +481,7 @@ func (b *batch) Errorf(format string, params ...interface{}) {
 // checkSweepToAdd checks if a sweep can be added or updated in the batch. The
 // caller must lock the event loop using scheduleNextCall. The function returns
 // if the sweep already exists in the batch. If presigned mode is enabled, the
-// result depends on the outcome of the method presignedHelper.Presign for a
+// result depends on the outcome of the method presignedHelper.SignTx for a
 // non-empty batch. For an empty batch, the input needs to pass
 // PresignSweepsGroup.
 func (b *batch) checkSweepToAdd(_ context.Context, sweep *sweep) (bool, error) {
@@ -870,8 +872,8 @@ func (b *batch) Run(ctx context.Context) error {
 	// completes.
 	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
-	b.Infof("started, primary %s, total sweeps %d",
-		b.primarySweepID, len(b.sweeps))
+	b.Infof("started, primary %s, total sweeps %d, state: %d",
+		b.primarySweepID, len(b.sweeps), b.state)
 
 	for {
 		// If the batch is not empty, find earliest initialDelay.
@@ -1278,6 +1280,10 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("txscript.PayToAddrScript "+
 			"failed: %w", err)
+	}
+	if len(batchPkScript) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("txscript.PayToAddrScript " +
+			"returned an empty pkScript")
 	}
 
 	// Add the output to weight estimates.
@@ -1822,27 +1828,22 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 		b.Infof("monitoring spend for outpoint %s",
 			primarySweep.outpoint.String())
 
-		for {
+		select {
+		case spend := <-spendChan:
 			select {
-			case spend := <-spendChan:
-				select {
-				case b.spendChan <- spend:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-spendErr:
-				b.writeToErrChan(
-					fmt.Errorf("spend error: %w", err),
-				)
-
-				return
+			case b.spendChan <- spend:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-spendErr:
+			b.writeToSpendErrChan(ctx, err)
+
+			b.writeToErrChan(
+				fmt.Errorf("spend error: %w", err),
+			)
+
+		case <-ctx.Done():
 		}
 	}()
 
@@ -1876,39 +1877,33 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		defer cancel()
 		defer b.wg.Done()
 
-		for {
+		select {
+		case conf := <-confChan:
 			select {
-			case conf := <-confChan:
-				select {
-				case b.confChan <- conf:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-errChan:
-				b.writeToErrChan(fmt.Errorf("confirmations "+
-					"monitoring error: %w", err))
-
-				return
-
-			case <-reorgChan:
-				// A re-org has been detected. We set the batch
-				// state back to open since our batch
-				// transaction is no longer present in any
-				// block. We can accept more sweeps and try to
-				// publish new transactions, at this point we
-				// need to monitor again for a new spend.
-				select {
-				case b.reorgChan <- struct{}{}:
-				case <-ctx.Done():
-				}
-				return
+			case b.confChan <- conf:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-errChan:
+			b.writeToConfErrChan(ctx, err)
+
+			b.writeToErrChan(fmt.Errorf("confirmations "+
+				"monitoring error: %w", err))
+
+		case <-reorgChan:
+			// A re-org has been detected. We set the batch
+			// state back to open since our batch
+			// transaction is no longer present in any
+			// block. We can accept more sweeps and try to
+			// publish new transactions, at this point we
+			// need to monitor again for a new spend.
+			select {
+			case b.reorgChan <- struct{}{}:
+			case <-ctx.Done():
+			}
+
+		case <-ctx.Done():
 		}
 	}()
 
@@ -1932,12 +1927,12 @@ func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
 }
 
 // getFeePortionPaidBySweep returns the fee portion that the sweep should pay
-// for the batch transaction. If the sweep is the first sweep in the batch, it
+// for the batch transaction. If the sweep is the primary sweep in the batch, it
 // pays the rounding difference.
-func getFeePortionPaidBySweep(spendTx *wire.MsgTx, feePortionPerSweep,
-	roundingDiff btcutil.Amount, sweep *sweep) btcutil.Amount {
+func getFeePortionPaidBySweep(feePortionPerSweep, roundingDiff btcutil.Amount,
+	primary bool) btcutil.Amount {
 
-	if bytes.Equal(spendTx.TxIn[0].SignatureScript, sweep.htlc.SigScript) {
+	if primary {
 		return feePortionPerSweep + roundingDiff
 	}
 
@@ -1948,7 +1943,6 @@ func getFeePortionPaidBySweep(spendTx *wire.MsgTx, feePortionPerSweep,
 func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 	var (
 		txHash     = spendTx.TxHash()
-		purgeList  = make([]SweepRequest, 0, len(b.sweeps))
 		notifyList = make([]sweep, 0, len(b.sweeps))
 	)
 	b.batchTxid = &txHash
@@ -1958,7 +1952,126 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		b.Warnf("transaction %v has no outputs", txHash)
 	}
 
-	// Determine if we should use presigned mode for the batch.
+	// Make a set of confirmed sweeps.
+	confirmedSet := make(map[wire.OutPoint]struct{}, len(spendTx.TxIn))
+	for _, txIn := range spendTx.TxIn {
+		confirmedSet[txIn.PreviousOutPoint] = struct{}{}
+	}
+
+	// As a previous version of the batch transaction may get confirmed,
+	// which does not contain the latest sweeps, we need to detect the
+	// sweeps that did not make it to the confirmed transaction and feed
+	// them back to the batcher. This will ensure that the sweeps will enter
+	// a new batch instead of remaining dangling.
+	var (
+		totalSweptAmt   btcutil.Amount
+		confirmedSweeps = []wire.OutPoint{}
+	)
+	for _, sweep := range b.sweeps {
+		// Skip sweeps that were not included into the confirmed tx.
+		_, found := confirmedSet[sweep.outpoint]
+		if !found {
+			continue
+		}
+
+		totalSweptAmt += sweep.value
+		notifyList = append(notifyList, sweep)
+		confirmedSweeps = append(confirmedSweeps, sweep.outpoint)
+	}
+
+	// Calculate the fee portion that each sweep should pay for the batch.
+	feePortionPaidPerSweep, roundingDifference := getFeePortionForSweep(
+		spendTx, len(notifyList), totalSweptAmt,
+	)
+
+	// Calculate fees per swaps. Only the first sweep in a swap has a
+	// notifier, so we calculate total fee per swap and send it to a sweep
+	// having that swap and a notifier.
+	swap2fee := make(map[lntypes.Hash]btcutil.Amount)
+	for _, sweep := range notifyList {
+		primary := sweep.outpoint == b.primarySweepID
+
+		swap2fee[sweep.swapHash] += getFeePortionPaidBySweep(
+			feePortionPaidPerSweep, roundingDifference, primary,
+		)
+	}
+
+	// Now send notifications to notifiers.
+	for _, sweep := range notifyList {
+		// If the sweep's notifier is empty then this means that a swap
+		// is not waiting to read an update from it or this is not the
+		// first sweep in a swap, so we can skip the notification part.
+		if sweep.notifier == nil ||
+			*sweep.notifier == (SpendNotifier{}) {
+
+			continue
+		}
+
+		// Make sure there is only one sweep with a notifier per swap
+		// hash, otherwise our fee calculation is incorrect.
+		fee, has := swap2fee[sweep.swapHash]
+		if !has {
+			return fmt.Errorf("no fee for swap %v; maybe "+
+				"multiple sweeps with a notifier per swap?",
+				sweep.swapHash)
+		}
+		delete(swap2fee, sweep.swapHash)
+
+		spendDetail := SpendDetail{
+			Tx:                spendTx,
+			OnChainFeePortion: fee,
+		}
+
+		// Dispatch the sweep notifier, we don't care about the outcome
+		// of this action so we don't wait for it.
+		go func() {
+			// Make sure this context doesn't expire so we
+			// successfully notify the caller.
+			ctx := context.WithoutCancel(ctx)
+
+			sweep.notifySweepSpend(ctx, &spendDetail)
+		}()
+	}
+
+	b.Infof("spent, confirmed sweeps: %v", confirmedSweeps)
+
+	// We are no longer able to accept new sweeps, so we mark the batch as
+	// closed and persist on storage.
+	b.state = Closed
+
+	if err := b.persist(ctx); err != nil {
+		return fmt.Errorf("saving batch failed: %w", err)
+	}
+
+	if err := b.monitorConfirmations(ctx); err != nil {
+		return fmt.Errorf("monitorConfirmations failed: %w", err)
+	}
+
+	return nil
+}
+
+// handleConf handles a confirmation notification. This is the final step of the
+// batch. Here we signal to the batcher that this batch was completed.
+func (b *batch) handleConf(ctx context.Context,
+	conf *chainntnfs.TxConfirmation) error {
+
+	spendTx := conf.Tx
+	txHash := spendTx.TxHash()
+	if b.batchTxid == nil || *b.batchTxid != txHash {
+		b.Warnf("Mismatch of batch txid: tx in spend notification had "+
+			"txid %v, but confirmation notification has txif %v. "+
+			"Using the later.", b.batchTxid, txHash)
+	}
+	b.batchTxid = &txHash
+
+	b.Infof("confirmed in txid %s", b.batchTxid)
+	b.state = Confirmed
+
+	if err := b.persist(ctx); err != nil {
+		return fmt.Errorf("saving batch failed: %w", err)
+	}
+
+	// If the batch is in presigned mode, cleanup presignedHelper.
 	presigned, err := b.isPresigned()
 	if err != nil {
 		return fmt.Errorf("failed to determine if the batch %d uses "+
@@ -1976,40 +2089,43 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 			b.id, err)
 	}
 
+	// Make a set of confirmed sweeps.
+	confirmedSet := make(map[wire.OutPoint]struct{}, len(spendTx.TxIn))
+	for _, txIn := range spendTx.TxIn {
+		confirmedSet[txIn.PreviousOutPoint] = struct{}{}
+	}
+
 	// As a previous version of the batch transaction may get confirmed,
 	// which does not contain the latest sweeps, we need to detect the
 	// sweeps that did not make it to the confirmed transaction and feed
 	// them back to the batcher. This will ensure that the sweeps will enter
 	// a new batch instead of remaining dangling.
 	var (
-		totalSweptAmt   btcutil.Amount
 		confirmedSweeps = []wire.OutPoint{}
-		purgedSweeps    = []wire.OutPoint{}
-		purgedSwaps     = []lntypes.Hash{}
+		purgeList       = make([]SweepRequest, 0, len(b.sweeps))
 	)
 	for _, sweep := range allSweeps {
-		found := false
-
-		for _, txIn := range spendTx.TxIn {
-			if txIn.PreviousOutPoint == sweep.outpoint {
-				found = true
-				totalSweptAmt += sweep.value
-				notifyList = append(notifyList, sweep)
-				confirmedSweeps = append(
-					confirmedSweeps, sweep.outpoint,
-				)
-
-				break
+		_, found := confirmedSet[sweep.outpoint]
+		if found {
+			// Save the sweep as completed. Note that sweeps are
+			// marked completed after the batch is marked confirmed
+			// because the check in handleSweeps checks sweep's
+			// status first and then checks the batch status.
+			err := b.persistSweep(ctx, sweep, true)
+			if err != nil {
+				return err
 			}
+
+			confirmedSweeps = append(
+				confirmedSweeps, sweep.outpoint,
+			)
+
+			continue
 		}
 
 		// If the sweep's outpoint was not found in the transaction's
 		// inputs this means it was left out. So we delete it from this
 		// batch and feed it back to the batcher.
-		if found {
-			continue
-		}
-
 		newSweep := sweep
 		delete(b.sweeps, sweep.outpoint)
 
@@ -2041,6 +2157,10 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 			})
 		}
 	}
+	var (
+		purgedSweeps = []wire.OutPoint{}
+		purgedSwaps  = []lntypes.Hash{}
+	)
 	for _, sweepReq := range purgeList {
 		purgedSwaps = append(purgedSwaps, sweepReq.SwapHash)
 		for _, input := range sweepReq.Inputs {
@@ -2048,45 +2168,8 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		}
 	}
 
-	// Calculate the fee portion that each sweep should pay for the batch.
-	feePortionPaidPerSweep, roundingDifference := getFeePortionForSweep(
-		spendTx, len(notifyList), totalSweptAmt,
-	)
-
-	for _, sweep := range notifyList {
-		// Save the sweep as completed.
-		err := b.persistSweep(ctx, sweep, true)
-		if err != nil {
-			return err
-		}
-
-		// If the sweep's notifier is empty then this means that a swap
-		// is not waiting to read an update from it, so we can skip
-		// the notification part.
-		if sweep.notifier == nil ||
-			*sweep.notifier == (SpendNotifier{}) {
-
-			continue
-		}
-
-		spendDetail := SpendDetail{
-			Tx: spendTx,
-			OnChainFeePortion: getFeePortionPaidBySweep(
-				spendTx, feePortionPaidPerSweep,
-				roundingDifference, &sweep,
-			),
-		}
-
-		// Dispatch the sweep notifier, we don't care about the outcome
-		// of this action so we don't wait for it.
-		go func() {
-			// Make sure this context doesn't expire so we
-			// successfully notify the caller.
-			ctx := context.WithoutCancel(ctx)
-
-			sweep.notifySweepSpend(ctx, &spendDetail)
-		}()
-	}
+	b.Infof("fully confirmed sweeps: %v, purged sweeps: %v, "+
+		"purged swaps: %v", confirmedSweeps, purgedSweeps, purgedSwaps)
 
 	// Proceed with purging the sweeps. This will feed the sweeps that
 	// didn't make it to the confirmed batch transaction back to the batcher
@@ -2108,46 +2191,6 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		}
 	}()
 
-	b.Infof("spent, confirmed sweeps: %v, purged sweeps: %v, "+
-		"purged swaps: %v, purged groups: %v", confirmedSweeps,
-		purgedSweeps, purgedSwaps, len(purgeList))
-
-	err = b.monitorConfirmations(ctx)
-	if err != nil {
-		return err
-	}
-
-	// We are no longer able to accept new sweeps, so we mark the batch as
-	// closed and persist on storage.
-	b.state = Closed
-
-	return b.persist(ctx)
-}
-
-// handleConf handles a confirmation notification. This is the final step of the
-// batch. Here we signal to the batcher that this batch was completed. We also
-// cleanup up presigned transactions whose primarySweepID is one of the sweeps
-// that were spent and fully confirmed: such a transaction can't be broadcasted
-// since it is either in a block or double-spends one of spent outputs.
-func (b *batch) handleConf(ctx context.Context,
-	conf *chainntnfs.TxConfirmation) error {
-
-	spendTx := conf.Tx
-	txHash := spendTx.TxHash()
-	if b.batchTxid == nil || *b.batchTxid != txHash {
-		b.Warnf("Mismatch of batch txid: tx in spend notification had "+
-			"txid %v, but confirmation notification has txif %v. "+
-			"Using the later.", b.batchTxid, txHash)
-	}
-	b.batchTxid = &txHash
-
-	// If the batch is in presigned mode, cleanup presignedHelper.
-	presigned, err := b.isPresigned()
-	if err != nil {
-		return fmt.Errorf("failed to determine if the batch %d uses "+
-			"presigned mode: %w", b.id, err)
-	}
-
 	if presigned {
 		b.Infof("Cleaning up presigned store")
 
@@ -2163,10 +2206,33 @@ func (b *batch) handleConf(ctx context.Context,
 		}
 	}
 
-	b.Infof("confirmed in txid %s", b.batchTxid)
-	b.state = Confirmed
+	// Send the confirmation to all the notifiers.
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that
+		// a swap is not waiting to read an update from it, so
+		// we can skip the notification part.
+		if s.notifier == nil || s.notifier.ConfChan == nil {
+			continue
+		}
 
-	return b.store.ConfirmBatch(ctx, b.id)
+		// Notify the caller in a goroutine to avoid possible dead-lock.
+		go func(notifier *SpendNotifier) {
+			// Note that we don't unblock on ctx, because it will
+			// expire soon, when batch.Run completes. The caller is
+			// responsible to consume ConfChan or close QuitChan.
+			select {
+			// Try to write the confirmation to the notification
+			// channel.
+			case notifier.ConfChan <- conf:
+
+			// If a quit signal was provided by the swap,
+			// continue.
+			case <-notifier.QuitChan:
+			}
+		}(s.notifier)
+	}
+
+	return nil
 }
 
 // isComplete returns true if the batch is completed. This method is used by the
@@ -2189,7 +2255,7 @@ func (b *batch) persist(ctx context.Context) error {
 	bch := &dbBatch{}
 
 	bch.ID = b.id
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 
 	if b.batchTxid != nil {
 		bch.BatchTxid = *b.batchTxid
@@ -2248,7 +2314,7 @@ func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
 
 func (b *batch) insertAndAcquireID(ctx context.Context) (int32, error) {
 	bch := &dbBatch{}
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 	bch.MaxTimeoutDistance = b.cfg.maxTimeoutDistance
 
 	id, err := b.store.InsertSweepBatch(ctx, bch)
@@ -2285,6 +2351,81 @@ func (b *batch) writeToErrChan(err error) {
 	}
 }
 
+// writeToSpendErrChan sends an error to spend error channels of all the sweeps.
+func (b *batch) writeToSpendErrChan(ctx context.Context, spendErr error) {
+	done, err := b.scheduleNextCall()
+	if err != nil {
+		done()
+
+		return
+	}
+	notifiers := make([]*SpendNotifier, 0, len(b.sweeps))
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that a swap
+		// is not waiting to read an update from it, so we can skip
+		// the notification part.
+		if s.notifier == nil || s.notifier.SpendErrChan == nil {
+			continue
+		}
+
+		notifiers = append(notifiers, s.notifier)
+	}
+	done()
+
+	for _, notifier := range notifiers {
+		select {
+		// Try to write the error to the notification
+		// channel.
+		case notifier.SpendErrChan <- spendErr:
+
+		// If a quit signal was provided by the swap,
+		// continue.
+		case <-notifier.QuitChan:
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+		}
+	}
+}
+
+// writeToConfErrChan sends an error to confirmation error channels of all the
+// sweeps.
+func (b *batch) writeToConfErrChan(ctx context.Context, confErr error) {
+	done, err := b.scheduleNextCall()
+	if err != nil {
+		done()
+
+		return
+	}
+	notifiers := make([]*SpendNotifier, 0, len(b.sweeps))
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that a swap
+		// is not waiting to read an update from it, so we can skip
+		// the notification part.
+		if s.notifier == nil || s.notifier.ConfErrChan == nil {
+			continue
+		}
+
+		notifiers = append(notifiers, s.notifier)
+	}
+	done()
+
+	for _, notifier := range notifiers {
+		select {
+		// Try to write the error to the notification
+		// channel.
+		case notifier.ConfErrChan <- confErr:
+
+		// If a quit signal was provided by the swap,
+		// continue.
+		case <-notifier.QuitChan:
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+		}
+	}
+}
+
 func (b *batch) persistSweep(ctx context.Context, sweep sweep,
 	completed bool) error {
 
@@ -2311,19 +2452,4 @@ func clampBatchFee(fee btcutil.Amount,
 	}
 
 	return fee
-}
-
-func stateEnumToString(state batchState) string {
-	switch state {
-	case Open:
-		return batchOpen
-
-	case Closed:
-		return batchClosed
-
-	case Confirmed:
-		return batchConfirmed
-	}
-
-	return ""
 }
