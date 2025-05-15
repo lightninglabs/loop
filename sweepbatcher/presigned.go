@@ -247,7 +247,7 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 		// Cache the destination address.
 		destAddr, err := getPresignedSweepsDestAddr(
-			ctx, b.cfg.presignedHelper, b.primarySweepID,
+			ctx, b.cfg.presignedHelper, primarySweepID,
 			b.cfg.chainParams,
 		)
 		if err != nil {
