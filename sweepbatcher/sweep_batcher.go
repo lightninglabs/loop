@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/btcsuite/btcwallet/chain"
@@ -729,7 +730,14 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	if err != nil {
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
-	infof("PresignSweepsGroup: nextBlockFeeRate is %v", nextBlockFeeRate)
+	destPkscript, err := txscript.PayToAddrScript(destAddress)
+	if err != nil {
+		return fmt.Errorf("txscript.PayToAddrScript failed: %w", err)
+	}
+	infof("PresignSweepsGroup: nextBlockFeeRate is %v, inputs: %v, "+
+		"destAddress: %v, destPkscript: %x sweepTimeout: %d",
+		nextBlockFeeRate, inputs, destAddress, destPkscript,
+		sweepTimeout)
 
 	sweeps := make([]sweep, len(inputs))
 	for i, input := range inputs {
