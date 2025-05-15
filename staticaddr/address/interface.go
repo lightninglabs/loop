@@ -2,15 +2,10 @@ package address
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/keychain"
-)
-
-var (
-	ErrAddressAlreadyExists = fmt.Errorf("address already exists")
 )
 
 // Store is the database interface that is used to store and retrieve

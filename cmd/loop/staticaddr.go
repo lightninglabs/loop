@@ -75,8 +75,7 @@ func newStaticAddress(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("Received a new static loop-in address from the server: "+
-		"%s\n", resp.Address)
+	printRespJSON(resp)
 
 	return nil
 }
