@@ -208,3 +208,13 @@ type SweepsOld struct {
 	Amt           int64
 	Completed     bool
 }
+
+type Withdrawal struct {
+	ID                 int32
+	WithdrawalTxID     string
+	DepositOutpoints   string
+	TotalDepositAmount int64
+	WithdrawnAmount    int64
+	ChangeAmount       int64
+	ConfirmationHeight int64
+}
