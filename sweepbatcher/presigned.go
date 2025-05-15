@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
@@ -602,8 +603,9 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	unsignedOut := unsignedTx.TxOut[0]
 	signedOut := signedTx.TxOut[0]
 	if !bytes.Equal(unsignedOut.PkScript, signedOut.PkScript) {
-		return fmt.Errorf("mismatch of output pkScript: %v, %v",
-			unsignedOut.PkScript, signedOut.PkScript)
+		return fmt.Errorf("mismatch of output pkScript: %s, %s",
+			hex.EncodeToString(unsignedOut.PkScript),
+			hex.EncodeToString(signedOut.PkScript))
 	}
 
 	// Find the feerate of signedTx.
