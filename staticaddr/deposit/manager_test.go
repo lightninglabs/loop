@@ -167,6 +167,13 @@ func (s *mockStore) GetDeposit(ctx context.Context, depositID ID) (*Deposit,
 	return args.Get(0).(*Deposit), args.Error(1)
 }
 
+func (s *mockStore) DepositForOutpoint(ctx context.Context,
+	txHash chainhash.Hash, idx uint32) (*Deposit, error) {
+
+	args := s.Called(ctx, txHash, idx)
+	return args.Get(0).(*Deposit), args.Error(1)
+}
+
 func (s *mockStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	args := s.Called(ctx)
 	return args.Get(0).([]*Deposit), args.Error(1)
