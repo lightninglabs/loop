@@ -604,7 +604,7 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	unsignedOut := unsignedTx.TxOut[0]
 	signedOut := signedTx.TxOut[0]
 	if !bytes.Equal(unsignedOut.PkScript, signedOut.PkScript) {
-		return fmt.Errorf("mismatch of output pkScript: %v, %v",
+		return fmt.Errorf("mismatch of output pkScript: %x, %x",
 			unsignedOut.PkScript, signedOut.PkScript)
 	}
 
