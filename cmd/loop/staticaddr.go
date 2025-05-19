@@ -85,7 +85,7 @@ var listUnspentCommand = cli.Command{
 	ShortName: "l",
 	Usage:     "List unspent static address outputs.",
 	Description: `
-	List all unspent static address outputs.
+	List all unspent static address outputs. 
 	`,
 	Flags: []cli.Flag{
 		cli.IntFlag{
@@ -133,8 +133,8 @@ var withdrawalCommand = cli.Command{
 	ShortName: "w",
 	Usage:     "Withdraw from static address deposits.",
 	Description: `
-	Withdraws from all or selected static address deposits by sweeping them 
-	back to our lnd wallet.
+	Withdraws from all or selected static address deposits by sweeping them
+	to the internal wallet or an external address.
 	`,
 	Flags: []cli.Flag{
 		cli.StringSliceFlag{
@@ -225,8 +225,9 @@ func withdraw(ctx *cli.Context) error {
 }
 
 var listDepositsCommand = cli.Command{
-	Name:  "listdeposits",
-	Usage: "Display a summary of static address related information.",
+	Name: "listdeposits",
+	Usage: "Displays static address deposits. A filter can be applied to " +
+		"only show deposits in a specific state.",
 	Description: `
 	`,
 	Flags: []cli.Flag{
@@ -244,39 +245,6 @@ var listDepositsCommand = cli.Command{
 		},
 	},
 	Action: listDeposits,
-}
-
-var listStaticAddressSwapsCommand = cli.Command{
-	Name:  "listswaps",
-	Usage: "Display a summary of static address related information.",
-	Description: `
-	`,
-	Action: listStaticAddressSwaps,
-}
-
-var summaryCommand = cli.Command{
-	Name:      "summary",
-	ShortName: "s",
-	Usage:     "Display a summary of static address related information.",
-	Description: `
-	Displays various static address related information like deposits, 
-	withdrawals and statistics. The information can be filtered by state.
-	`,
-	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name: "filter",
-			Usage: "specify a filter to only display deposits in " +
-				"the specified state. Leaving out the filter " +
-				"returns all deposits.\nThe state can be one " +
-				"of the following: \n" +
-				"deposited\nwithdrawing\nwithdrawn\n" +
-				"looping_in\nlooped_in\n" +
-				"publish_expired_deposit\n" +
-				"sweep_htlc_timeout\nhtlc_timeout_swept\n" +
-				"wait_for_expiry_sweep\nexpired\nfailed\n.",
-		},
-	},
-	Action: summary,
 }
 
 func listDeposits(ctx *cli.Context) error {
@@ -344,6 +312,14 @@ func listDeposits(ctx *cli.Context) error {
 	return nil
 }
 
+var listStaticAddressSwapsCommand = cli.Command{
+	Name:  "listswaps",
+	Usage: "Shows a list of finalized static address swaps.",
+	Description: `
+	`,
+	Action: listStaticAddressSwaps,
+}
+
 func listStaticAddressSwaps(ctx *cli.Context) error {
 	ctxb := context.Background()
 	if ctx.NArg() > 0 {
@@ -366,6 +342,17 @@ func listStaticAddressSwaps(ctx *cli.Context) error {
 	printRespJSON(resp)
 
 	return nil
+}
+
+var summaryCommand = cli.Command{
+	Name:      "summary",
+	ShortName: "s",
+	Usage:     "Display a summary of static address related information.",
+	Description: `
+	Displays various static address related information about deposits, 
+	withdrawals and swaps. 
+	`,
+	Action: summary,
 }
 
 func summary(ctx *cli.Context) error {
