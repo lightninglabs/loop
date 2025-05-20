@@ -16,6 +16,7 @@ type Querier interface {
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
+	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
 	DropBatch(ctx context.Context, id int32) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)

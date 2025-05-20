@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli"
 )
@@ -444,6 +447,13 @@ var staticAddressLoopInCommand = cli.Command{
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
+		cli.IntFlag{
+			Name: "amount",
+			Usage: "the number of satoshis that should be " +
+				"swapped from the selected deposits. If there" +
+				"is change it is sent back to the static " +
+				"address.",
+		},
 		lastHopFlag,
 		labelFlag,
 		routeHintsFlag,
@@ -469,11 +479,14 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		ctxb                  = context.Background()
 		isAllSelected         = ctx.IsSet("all")
 		isUtxoSelected        = ctx.IsSet("utxo")
+		isAmountSelected      bool
+		selectedAmount        = ctx.Int64("amount")
 		label                 = ctx.String("static-loop-in")
 		hints                 []*swapserverrpc.RouteHint
 		lastHop               []byte
 		paymentTimeoutSeconds = uint32(loopin.DefaultPaymentTimeoutSeconds)
 	)
+	isAmountSelected = selectedAmount > 0
 
 	// Validate our label early so that we can fail before getting a quote.
 	if err := labels.Validate(label); err != nil {
@@ -508,7 +521,9 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	if len(depositList.FilteredDeposits) == 0 {
+	allDeposits := depositList.FilteredDeposits
+
+	if len(allDeposits) == 0 {
 		errString := fmt.Sprintf("no confirmed deposits available, "+
 			"deposits need at least %v confirmations",
 			deposit.MinConfs)
@@ -518,16 +533,24 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 
 	var depositOutpoints []string
 	switch {
-	case isAllSelected == isUtxoSelected:
-		return errors.New("must select either all or some utxos")
+	case isAllSelected && isUtxoSelected:
+		return errors.New("cannot select all and specific utxos")
 
 	case isAllSelected:
-		depositOutpoints = depositsToOutpoints(
-			depositList.FilteredDeposits,
-		)
+		depositOutpoints = depositsToOutpoints(allDeposits)
 
 	case isUtxoSelected:
 		depositOutpoints = ctx.StringSlice("utxo")
+
+	case isAmountSelected:
+		// If there's only a swap amount specified we'll coin-select
+		// deposits to cover the swap amount.
+		depositOutpoints, err = selectDeposits(
+			allDeposits, selectedAmount,
+		)
+		if err != nil {
+			return err
+		}
 
 	default:
 		return fmt.Errorf("unknown quote request")
@@ -538,6 +561,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	quoteReq := &looprpc.QuoteRequest{
+		Amt:              selectedAmount,
 		LoopInRouteHints: hints,
 		LoopInLastHop:    lastHop,
 		Private:          ctx.Bool(privateFlag.Name),
@@ -549,15 +573,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(quote)
-
-	// populate the quote request with the sum of selected deposits and
-	// prompt the user for acceptance.
-	quoteReq.Amt, err = sumDeposits(
-		depositOutpoints, depositList.FilteredDeposits,
-	)
-	if err != nil {
-		return err
-	}
 
 	if !(ctx.Bool("force") || ctx.Bool("f")) {
 		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
@@ -571,6 +586,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	req := &looprpc.StaticAddressLoopInRequest{
+		Amount:                quoteReq.Amt,
 		Outpoints:             depositOutpoints,
 		MaxSwapFeeSatoshis:    int64(limits.maxSwapFee),
 		LastHop:               lastHop,
@@ -591,6 +607,51 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	return nil
 }
 
+// selectDeposits sorts the deposits by amount in descending order, then by
+// blocks-until-expiry in ascending order. It then selects the deposits that
+// are needed to cover the amount requested without leaving a dust change. It
+// returns an error if the sum of deposits minus dust is less than the requested
+// amount.
+func selectDeposits(deposits []*looprpc.Deposit, amount int64) ([]string,
+	error) {
+
+	// Check that sum of deposits covers the swap amount while leaving no
+	// dust change.
+	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	var depositSum int64
+	for _, deposit := range deposits {
+		depositSum += deposit.Value
+	}
+	if depositSum-int64(dustLimit) < amount {
+		return nil, fmt.Errorf("insufficient funds to cover swap " +
+			"amount")
+	}
+
+	// Sort the deposits by amount in descending order, then by
+	// blocks-until-expiry in ascending order.
+	sort.Slice(deposits, func(i, j int) bool {
+		if deposits[i].Value == deposits[j].Value {
+			return deposits[i].BlocksUntilExpiry <
+				deposits[j].BlocksUntilExpiry
+		}
+		return deposits[i].Value > deposits[j].Value
+	})
+
+	// Select the deposits that are needed to cover the swap amount without
+	// leaving a dust change.
+	var selectedDeposits []string
+	var selectedAmount int64
+	for _, deposit := range deposits {
+		if selectedAmount >= amount+int64(dustLimit) {
+			break
+		}
+		selectedDeposits = append(selectedDeposits, deposit.Outpoint)
+		selectedAmount += deposit.Value
+	}
+
+	return selectedDeposits, nil
+}
+
 func containsDuplicates(outpoints []string) bool {
 	found := make(map[string]struct{})
 	for _, outpoint := range outpoints {
@@ -601,26 +662,6 @@ func containsDuplicates(outpoints []string) bool {
 	}
 
 	return false
-}
-
-func sumDeposits(outpoints []string, deposits []*looprpc.Deposit) (int64,
-	error) {
-
-	var sum int64
-	depositMap := make(map[string]*looprpc.Deposit)
-	for _, deposit := range deposits {
-		depositMap[deposit.Outpoint] = deposit
-	}
-
-	for _, outpoint := range outpoints {
-		if _, ok := depositMap[outpoint]; !ok {
-			return 0, fmt.Errorf("deposit %v not found", outpoint)
-		}
-
-		sum += depositMap[outpoint].Value
-	}
-
-	return sum, nil
 }
 
 func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
