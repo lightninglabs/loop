@@ -7,6 +7,7 @@ DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)"
 
 PROTOBUF_VERSION=$(go list -f '{{.Version}}' -m google.golang.org/protobuf)
 GRPC_GATEWAY_VERSION=$(go list -f '{{.Version}}' -m github.com/grpc-ecosystem/grpc-gateway/v2)
+lnd_dir=$(go list -f '{{.Dir}}' -m github.com/lightningnetwork/lnd)
 
 echo "Building protobuf compiler docker image..."
 docker build -t loop-protobuf-builder \
@@ -19,5 +20,7 @@ docker run \
   --rm \
   --user $UID:$UID \
   -e UID=$UID \
+  -e LND_DIR=/lnd \
   -v "$DIR/../:/build" \
+  -v "${lnd_dir}:/lnd" \
   loop-protobuf-builder

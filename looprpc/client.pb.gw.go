@@ -206,7 +206,7 @@ func local_request_SwapClient_LoopOutTerms_0(ctx context.Context, marshaler runt
 }
 
 var (
-	filter_SwapClient_LoopOutQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+	filter_SwapClient_LoopOutQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 2, 0, 0}, Check: []int{0, 1, 2, 2}}
 )
 
 func request_SwapClient_LoopOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
@@ -294,7 +294,7 @@ func local_request_SwapClient_GetLoopInTerms_0(ctx context.Context, marshaler ru
 }
 
 var (
-	filter_SwapClient_GetLoopInQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+	filter_SwapClient_GetLoopInQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 2, 0, 0}, Check: []int{0, 1, 2, 2}}
 )
 
 func request_SwapClient_GetLoopInQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
@@ -364,7 +364,7 @@ func local_request_SwapClient_GetLoopInQuote_0(ctx context.Context, marshaler ru
 }
 
 var (
-	filter_SwapClient_Probe_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+	filter_SwapClient_Probe_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 2, 0, 0}, Check: []int{0, 1, 2, 2}}
 )
 
 func request_SwapClient_Probe_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
@@ -1576,7 +1576,7 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 // RegisterSwapClientHandlerFromEndpoint is same as RegisterSwapClientHandler but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
 func RegisterSwapClientHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
-	conn, err := grpc.Dial(endpoint, opts...)
+	conn, err := grpc.DialContext(ctx, endpoint, opts...)
 	if err != nil {
 		return err
 	}
