@@ -32,6 +32,17 @@ type mockStaticAddressClient struct {
 	mock.Mock
 }
 
+func (m *mockStaticAddressClient) SignOpenChannelPsbt(ctx context.Context,
+	in *swapserverrpc.SignOpenChannelPsbtRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.SignOpenChannelPsbtResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.SignOpenChannelPsbtResponse),
+		args.Error(1)
+}
+
 func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
 	in *swapserverrpc.ServerStaticAddressLoopInRequest,
 	opts ...grpc.CallOption) (
