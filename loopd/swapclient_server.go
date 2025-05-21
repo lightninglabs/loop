@@ -2177,6 +2177,35 @@ func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
 	}, nil
 }
 
+// StaticOpenChannel initiates an open channel request using static address
+// deposits.
+func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
+	req *looprpc.OpenChannelRequest) (*looprpc.StaticOpenChannelResponse,
+	error) {
+
+	infof("Static open channel request received")
+
+	chanOpenTxHash, err := s.openChannelManager.DeliverOpenChannelRequest(
+		ctx, req,
+	)
+
+	var (
+		txHash string
+		errMsg string
+	)
+	if chanOpenTxHash != nil {
+		txHash = chanOpenTxHash.String()
+	}
+	if err != nil {
+		errMsg = err.Error()
+	}
+
+	return &looprpc.StaticOpenChannelResponse{
+		ChannelOpenTxHash: txHash,
+		Error:             errMsg,
+	}, nil
+}
+
 type filterFunc func(deposits *deposit.Deposit) bool
 
 func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
