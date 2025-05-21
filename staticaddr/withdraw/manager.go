@@ -944,7 +944,7 @@ func CalculateWithdrawalTxValaues(deposits []*deposit.Deposit,
 
 	// Estimate the open channel transaction fee without change.
 	hasChange := false
-	weight, err := withdrawalTxWeight(
+	weight, err := WithdrawalTxWeight(
 		len(deposits), withdrawalAddress, commitmentType, hasChange,
 	)
 	if err != nil {
@@ -957,7 +957,7 @@ func CalculateWithdrawalTxValaues(deposits []*deposit.Deposit,
 	if localAmount > 0 {
 		// Estimate the transaction weight with change.
 		hasChange = true
-		weightWithChange, err := withdrawalTxWeight(
+		weightWithChange, err := WithdrawalTxWeight(
 			len(deposits), withdrawalAddress, commitmentType,
 			hasChange,
 		)
@@ -1021,8 +1021,8 @@ func CalculateWithdrawalTxValaues(deposits []*deposit.Deposit,
 	return withdrawalFundingAmt, changeAmount, nil
 }
 
-// withdrawalFee returns the weight for the withdrawal transaction.
-func withdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
+// WithdrawalTxWeight returns the weight for the withdrawal transaction.
+func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 	commitmentType lnrpc.CommitmentType,
 	hasChange bool) (lntypes.WeightUnit, error) {
 
