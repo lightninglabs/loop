@@ -36,6 +36,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
@@ -2317,7 +2318,7 @@ func toServerState(state looprpc.DepositState) fsm.StateType {
 	}
 }
 
-func toServerOutpoints(outpoints []*looprpc.OutPoint) ([]wire.OutPoint,
+func toServerOutpoints(outpoints []*lnrpc.OutPoint) ([]wire.OutPoint,
 	error) {
 
 	var serverOutpoints []wire.OutPoint
