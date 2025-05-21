@@ -68,35 +68,32 @@ message ServerAddressParameters {
 }
 
 message ServerWithdrawRequest {
-    // The deposit outpoints the client wishes to withdraw.
-    repeated PrevoutInfo outpoints = 1;
+    // The withdrawal psbt.
+    bytes withdrawal_psbt = 1;
 
-    // The nonces that the client used to generate the withdrawal tx sigs.
-    repeated bytes client_nonces = 2;
+    // The map of deposit txid:idx to the nonce used by the client.
+    map<string, bytes> deposit_to_nonces = 2;
 
-    // The address that the client wants to sweep the static address deposits
-    // to.
-    string client_sweep_addr = 3;
-
-    // The fee rate in sat/kw that the client wants to use for the sweep.
-    uint64 tx_fee_rate = 4;
-
-    // The amount that the client wants to withdraw, in satoshis. This amount
-    // can be a fraction of the total deposit amount.
-    int64 withdraw_amount = 5;
-
-    // The change amount will be sent back to the static address. The client
-    // ensures that the change amount covers the transaction fee, and that the
-    // change after fees is at least the dust limit.
-    int64 change_amount = 6;
+    // The prevout information of the psbt.
+    repeated PrevoutInfo prevout_info = 3;
 }
 
 message ServerWithdrawResponse {
-    // The sweep sigs that the server generated for the htlc.
-    repeated bytes musig2_sweep_sigs = 1;
+    // The txid of the psbt that the client wants to push the sweepless
+    // sigs for.
+    bytes txid = 1;
 
-    // The nonces that the server used to generate the sweepless sweep sigs.
-    repeated bytes server_nonces = 2;
+    // A map of deposits in format txid:idx to the nonces.
+    map<string, ServerWithdrawSigningInfo> signing_info = 2;
+}
+
+message ServerWithdrawSigningInfo {
+    // The nonces that the client used to generate the partial sweepless tx
+    // sigs.
+    bytes nonce = 1;
+
+    // The musig2 htlc sigs that the client generated for the sweepless tx.
+    bytes sig = 2;
 }
 
 message ServerStaticAddressLoopInRequest {
