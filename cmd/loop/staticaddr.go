@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
 )
@@ -182,7 +183,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 	var (
 		isAllSelected  = cmd.IsSet("all")
 		isUtxoSelected = cmd.IsSet("utxo")
-		outpoints      []*looprpc.OutPoint
+		outpoints      []*lnrpc.OutPoint
 		destAddr       string
 	)
 
@@ -406,8 +407,8 @@ func summary(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func utxosToOutpoints(utxos []string) ([]*looprpc.OutPoint, error) {
-	outpoints := make([]*looprpc.OutPoint, 0, len(utxos))
+func utxosToOutpoints(utxos []string) ([]*lnrpc.OutPoint, error) {
+	outpoints := make([]*lnrpc.OutPoint, 0, len(utxos))
 	if len(utxos) == 0 {
 		return nil, fmt.Errorf("no utxos specified")
 	}
@@ -425,7 +426,7 @@ func utxosToOutpoints(utxos []string) ([]*looprpc.OutPoint, error) {
 
 // NewProtoOutPoint parses an OutPoint into its corresponding lnrpc.OutPoint
 // type.
-func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
+func NewProtoOutPoint(op string) (*lnrpc.OutPoint, error) {
 	parts := strings.Split(op, ":")
 	if len(parts) != 2 {
 		return nil, errors.New("outpoint should be of the form " +
@@ -440,7 +441,7 @@ func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
 		return nil, fmt.Errorf("invalid output index: %v", err)
 	}
 
-	return &looprpc.OutPoint{
+	return &lnrpc.OutPoint{
 		TxidStr:     txid,
 		OutputIndex: uint32(outputIndex),
 	}, nil
