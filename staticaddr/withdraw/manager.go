@@ -410,8 +410,24 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
+	var withdrawFeeRate chainfee.SatPerKWeight
+	if satPerVbyte == 0 {
+		withdrawFeeRate, err = m.cfg.WalletKit.EstimateFeeRate(
+			ctx, defaultConfTarget,
+		)
+		if err != nil {
+			return "", "", fmt.Errorf("error estimating fee "+
+				"rate: %w", err)
+		}
+	} else {
+		withdrawFeeRate = chainfee.SatPerKVByte(
+			satPerVbyte * 1000,
+		).FeePerKWeight()
+	}
+
 	finalizedTx, _, err := m.CreateFinalizedWithdrawalTx(
-		ctx, deposits, withdrawalAddress, satPerVbyte, amount,
+		ctx, deposits, withdrawalAddress, withdrawFeeRate, amount,
+		lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
 	)
 	if err != nil {
 		return "", "", err
@@ -510,8 +526,9 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 // signed *wire.MsgTx representation and the unsigned psbt.
 func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
-	satPerVbyte int64, selectedWithdrawalAmount int64) (*wire.MsgTx, []byte,
-	error) {
+	feeRate chainfee.SatPerKWeight,
+	selectedWithdrawalAmount int64,
+	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
 	// Create a musig2 session for each deposit.
 	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
@@ -531,21 +548,6 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 		return nil, nil, err
 	}
 
-	var withdrawalSweepFeeRate chainfee.SatPerKWeight
-	if satPerVbyte == 0 {
-		// Get the fee rate for the withdrawal sweep.
-		withdrawalSweepFeeRate, err = m.cfg.WalletKit.EstimateFeeRate(
-			ctx, defaultConfTarget,
-		)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		withdrawalSweepFeeRate = chainfee.SatPerKVByte(
-			satPerVbyte * 1000,
-		).FeePerKWeight()
-	}
-
 	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("couldn't get confirmation "+
@@ -561,7 +563,7 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	withdrawalTx, unsignedPsbt, err := m.createWithdrawalTx(
 		ctx, outpoints, deposits, prevOuts,
 		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
-		withdrawalSweepFeeRate,
+		feeRate, commitmentType,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -850,7 +852,8 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
 	prevOuts map[wire.OutPoint]*wire.TxOut,
 	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
-	feeRate chainfee.SatPerKWeight) (*wire.MsgTx, []byte, error) {
+	feeRate chainfee.SatPerKWeight,
+	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)
@@ -865,7 +868,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 
 	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
 		deposits, selectedWithdrawalAmount, feeRate,
-		withdrawAddr, lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
+		withdrawAddr, commitmentType,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error calculating funding tx "+
@@ -952,8 +955,11 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	return msgTx, psbtBuf.Bytes(), nil
 }
 
+// CalculateWithdrawalTxValues calculates the values of the withdrawal
+// transaction. It returns the withdrawal amount, the change amount, and an
+// error if any.
 func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
-	localAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
+	selectedAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
 	withdrawalAddress btcutil.Address,
 	commitmentType lnrpc.CommitmentType) (btcutil.Amount, btcutil.Amount,
 	error) {
@@ -978,7 +984,7 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		totalDepositAmount += d.Value
 	}
 
-	// Estimate the open channel transaction fee without change.
+	// Estimate the withdrawal transaction fee without change.
 	hasChange := false
 	weight, err := WithdrawalTxWeight(
 		len(deposits), withdrawalAddress, commitmentType, hasChange,
@@ -988,9 +994,9 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 	}
 	feeWithoutChange := feeRate.FeeForWeight(weight)
 
-	// If the user selected a local amount for the channel, check if a
-	// change output is needed.
-	if localAmount > 0 {
+	// If the user selected an amount to withdraw, check if a change output
+	// is needed.
+	if selectedAmount > 0 {
 		// Estimate the transaction weight with change.
 		hasChange = true
 		weightWithChange, err := WithdrawalTxWeight(
@@ -1003,30 +1009,30 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		feeWithChange := feeRate.FeeForWeight(weightWithChange)
 
 		// The available change that can cover fees is the total
-		// selected deposit amount minus the local channel amount.
-		change := totalDepositAmount - localAmount
+		// selected deposit amount minus the selected amount.
+		change := totalDepositAmount - selectedAmount
 
 		switch {
 		case change-feeWithChange >= dustLimit:
 			// If the change can cover the fees without turning into
 			// dust, add a non-dust change output.
 			changeAmount = change - feeWithChange
-			withdrawalFundingAmt = localAmount
+			withdrawalFundingAmt = selectedAmount
 
 		case change-feeWithoutChange >= 0:
 			// If the change is dust, we give it to the miners.
-			withdrawalFundingAmt = localAmount
+			withdrawalFundingAmt = selectedAmount
 
 		default:
-			// If the fees eat into our local channel amount, we
-			// fail to open the channel.
+			// If the fees eat into our selected amount, we fail the
+			// withdrawal.
 			return 0, 0, fmt.Errorf("the change doesn't " +
 				"cover for fees. Consider lowering the fee " +
-				"rate or decrease the local amount")
+				"rate or decrease the selected amount")
 		}
 	} else {
-		// If the user wants to open the channel with the total value of
-		// deposits, we don't need a change output.
+		// If the user wants to withdraw the total value of deposits, we
+		// don't need a change output.
 		withdrawalFundingAmt = totalDepositAmount - feeWithoutChange
 	}
 
@@ -1038,8 +1044,8 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		return 0, 0, fmt.Errorf("change amount is negative")
 	}
 
-	// Ensure that the channel funding amount is at least in the amount of
-	// lnd's minimum channel size.
+	// In case of a channel open, ensure that the channel funding amount is
+	// at least in the amount of lnd's minimum channel size.
 	if isChannelOpen && withdrawalFundingAmt < funding.MinChanFundingSize {
 		return 0, 0, fmt.Errorf("channel funding amount %v is lower "+
 			"than the minimum channel funding size %v",
