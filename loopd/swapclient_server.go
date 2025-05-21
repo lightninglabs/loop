@@ -32,6 +32,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/openchannel"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -97,6 +98,7 @@ type swapClientServer struct {
 	depositManager       *deposit.Manager
 	withdrawalManager    *withdraw.Manager
 	staticLoopInManager  *loopin.Manager
+	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- interface{}
@@ -1963,13 +1965,14 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	}
 
 	var (
-		totalNumDeposits = len(allDeposits)
-		valueUnconfirmed int64
-		valueDeposited   int64
-		valueExpired     int64
-		valueWithdrawn   int64
-		valueLoopedIn    int64
-		htlcTimeoutSwept int64
+		totalNumDeposits    = len(allDeposits)
+		valueUnconfirmed    int64
+		valueDeposited      int64
+		valueExpired        int64
+		valueWithdrawn      int64
+		valueLoopedIn       int64
+		valueChannelsOpened int64
+		htlcTimeoutSwept    int64
 	)
 
 	// Value unconfirmed.
@@ -2001,6 +2004,9 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 
 		case deposit.HtlcTimeoutSwept:
 			htlcTimeoutSwept += value
+
+		case deposit.ChannelPublished:
+			valueChannelsOpened += value
 		}
 	}
 
@@ -2025,6 +2031,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		ValueExpiredSatoshis:           valueExpired,
 		ValueWithdrawnSatoshis:         valueWithdrawn,
 		ValueLoopedInSatoshis:          valueLoopedIn,
+		ValueChannelsOpened:            valueChannelsOpened,
 		ValueHtlcTimeoutSweepsSatoshis: htlcTimeoutSwept,
 	}, nil
 }
@@ -2134,6 +2141,35 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 	return nil
 }
 
+// StaticOpenChannel initiates an open channel request using static address
+// deposits.
+func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
+	req *looprpc.OpenChannelRequest) (*looprpc.StaticOpenChannelResponse,
+	error) {
+
+	infof("Static open channel request received")
+
+	chanOpenTxHash, err := s.openChannelManager.DeliverOpenChannelRequest(
+		ctx, req,
+	)
+
+	var (
+		txHash string
+		errMsg string
+	)
+	if chanOpenTxHash != nil {
+		txHash = chanOpenTxHash.String()
+	}
+	if err != nil {
+		errMsg = err.Error()
+	}
+
+	return &looprpc.StaticOpenChannelResponse{
+		ChannelOpenTxHash: txHash,
+		Error:             errMsg,
+	}, nil
+}
+
 type filterFunc func(deposits *deposit.Deposit) bool
 
 func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
@@ -2186,6 +2222,12 @@ func toClientDepositState(state fsm.StateType) looprpc.DepositState {
 
 	case deposit.LoopedIn:
 		return looprpc.DepositState_LOOPED_IN
+
+	case deposit.OpeningChannel:
+		return looprpc.DepositState_OPENING_CHANNEL
+
+	case deposit.ChannelPublished:
+		return looprpc.DepositState_CHANNEL_PUBLISHED
 
 	case deposit.SweepHtlcTimeout:
 		return looprpc.DepositState_SWEEP_HTLC_TIMEOUT
@@ -2265,6 +2307,12 @@ func toServerState(state looprpc.DepositState) fsm.StateType {
 
 	case looprpc.DepositState_LOOPED_IN:
 		return deposit.LoopedIn
+
+	case looprpc.DepositState_OPENING_CHANNEL:
+		return deposit.OpeningChannel
+
+	case looprpc.DepositState_CHANNEL_PUBLISHED:
+		return deposit.ChannelPublished
 
 	case looprpc.DepositState_SWEEP_HTLC_TIMEOUT:
 		return deposit.SweepHtlcTimeout
