@@ -952,8 +952,11 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	return msgTx, psbtBuf.Bytes(), nil
 }
 
+// CalculateWithdrawalTxValues calculates the values of the withdrawal
+// transaction. It returns the withdrawal amount, the change amount, and an
+// error if any.
 func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
-	localAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
+	selectedAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
 	withdrawalAddress btcutil.Address,
 	commitmentType lnrpc.CommitmentType) (btcutil.Amount, btcutil.Amount,
 	error) {
@@ -978,7 +981,7 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		totalDepositAmount += d.Value
 	}
 
-	// Estimate the open channel transaction fee without change.
+	// Estimate the withdrawal transaction fee without change.
 	hasChange := false
 	weight, err := WithdrawalTxWeight(
 		len(deposits), withdrawalAddress, commitmentType, hasChange,
@@ -988,9 +991,9 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 	}
 	feeWithoutChange := feeRate.FeeForWeight(weight)
 
-	// If the user selected a local amount for the channel, check if a
-	// change output is needed.
-	if localAmount > 0 {
+	// If the user selected an amount to withdraw, check if a change output
+	// is needed.
+	if selectedAmount > 0 {
 		// Estimate the transaction weight with change.
 		hasChange = true
 		weightWithChange, err := WithdrawalTxWeight(
@@ -1003,30 +1006,30 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		feeWithChange := feeRate.FeeForWeight(weightWithChange)
 
 		// The available change that can cover fees is the total
-		// selected deposit amount minus the local channel amount.
-		change := totalDepositAmount - localAmount
+		// selected deposit amount minus the selected amount.
+		change := totalDepositAmount - selectedAmount
 
 		switch {
 		case change-feeWithChange >= dustLimit:
 			// If the change can cover the fees without turning into
 			// dust, add a non-dust change output.
 			changeAmount = change - feeWithChange
-			withdrawalFundingAmt = localAmount
+			withdrawalFundingAmt = selectedAmount
 
 		case change-feeWithoutChange >= 0:
 			// If the change is dust, we give it to the miners.
-			withdrawalFundingAmt = localAmount
+			withdrawalFundingAmt = selectedAmount
 
 		default:
-			// If the fees eat into our local channel amount, we
-			// fail to open the channel.
+			// If the fees eat into our selected amount, we fail the
+			// withdrawal.
 			return 0, 0, fmt.Errorf("the change doesn't " +
 				"cover for fees. Consider lowering the fee " +
-				"rate or decrease the local amount")
+				"rate or decrease the selected amount")
 		}
 	} else {
-		// If the user wants to open the channel with the total value of
-		// deposits, we don't need a change output.
+		// If the user wants to withdraw the total value of deposits, we
+		// don't need a change output.
 		withdrawalFundingAmt = totalDepositAmount - feeWithoutChange
 	}
 
@@ -1038,8 +1041,8 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		return 0, 0, fmt.Errorf("change amount is negative")
 	}
 
-	// Ensure that the channel funding amount is at least in the amount of
-	// lnd's minimum channel size.
+	// In case of a channel open, ensure that the channel funding amount is
+	// at least in the amount of lnd's minimum channel size.
 	if isChannelOpen && withdrawalFundingAmt < funding.MinChanFundingSize {
 		return 0, 0, fmt.Errorf("channel funding amount %v is lower "+
 			"than the minimum channel funding size %v",
