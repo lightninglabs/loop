@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -391,8 +392,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		)
 
 		copy(serverNonce[:], nonce)
-		musig2Session, err := loopIn.createMusig2Session(
-			ctx, m.cfg.Signer,
+		musig2Session, err := staticutil.CreateMusig2Session(
+			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
 		)
 		if err != nil {
 			return err

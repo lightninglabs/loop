@@ -93,6 +93,17 @@ func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 		args.Error(1)
 }
 
+func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(ctx context.Context,
+	in *swapserverrpc.ServerPsbtWithdrawRequest,
+	opts ...grpc.CallOption) (*swapserverrpc.ServerPsbtWithdrawResponse,
+	error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.ServerPsbtWithdrawResponse),
+		args.Error(1)
+}
+
 func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 	in *swapserverrpc.ServerNewAddressRequest, opts ...grpc.CallOption) (
 	*swapserverrpc.ServerNewAddressResponse, error) {
