@@ -26,6 +26,12 @@ type StaticAddressServerClient interface {
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
 	ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error)
+	// ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
+	// haven't timed out yet to the client's wallet. In contrast to
+	// ServerWithdrawDeposits which provides the paramters to form the
+	// withdrawal transaction, this service method will provide a psbt which
+	// is signed by the server.
+	ServerPsbtWithdrawDeposits(ctx context.Context, in *ServerPsbtWithdrawRequest, opts ...grpc.CallOption) (*ServerPsbtWithdrawResponse, error)
 	// ServerStaticAddressLoopIn initiates a static address loop-in swap. The
 	// server will respond with htlc details that the client can use to
 	// construct and sign the htlc tx.
@@ -57,6 +63,15 @@ func (c *staticAddressServerClient) ServerNewAddress(ctx context.Context, in *Se
 func (c *staticAddressServerClient) ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error) {
 	out := new(ServerWithdrawResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/ServerWithdrawDeposits", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *staticAddressServerClient) ServerPsbtWithdrawDeposits(ctx context.Context, in *ServerPsbtWithdrawRequest, opts ...grpc.CallOption) (*ServerPsbtWithdrawResponse, error) {
+	out := new(ServerPsbtWithdrawResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/ServerPsbtWithdrawDeposits", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +117,12 @@ type StaticAddressServerServer interface {
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
 	ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error)
+	// ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
+	// haven't timed out yet to the client's wallet. In contrast to
+	// ServerWithdrawDeposits which provides the paramters to form the
+	// withdrawal transaction, this service method will provide a psbt which
+	// is signed by the server.
+	ServerPsbtWithdrawDeposits(context.Context, *ServerPsbtWithdrawRequest) (*ServerPsbtWithdrawResponse, error)
 	// ServerStaticAddressLoopIn initiates a static address loop-in swap. The
 	// server will respond with htlc details that the client can use to
 	// construct and sign the htlc tx.
@@ -123,6 +144,9 @@ func (UnimplementedStaticAddressServerServer) ServerNewAddress(context.Context, 
 }
 func (UnimplementedStaticAddressServerServer) ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ServerWithdrawDeposits not implemented")
+}
+func (UnimplementedStaticAddressServerServer) ServerPsbtWithdrawDeposits(context.Context, *ServerPsbtWithdrawRequest) (*ServerPsbtWithdrawResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ServerPsbtWithdrawDeposits not implemented")
 }
 func (UnimplementedStaticAddressServerServer) ServerStaticAddressLoopIn(context.Context, *ServerStaticAddressLoopInRequest) (*ServerStaticAddressLoopInResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ServerStaticAddressLoopIn not implemented")
@@ -178,6 +202,24 @@ func _StaticAddressServer_ServerWithdrawDeposits_Handler(srv interface{}, ctx co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StaticAddressServerServer).ServerWithdrawDeposits(ctx, req.(*ServerWithdrawRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StaticAddressServer_ServerPsbtWithdrawDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerPsbtWithdrawRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).ServerPsbtWithdrawDeposits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/ServerPsbtWithdrawDeposits",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).ServerPsbtWithdrawDeposits(ctx, req.(*ServerPsbtWithdrawRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -250,6 +292,10 @@ var StaticAddressServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ServerWithdrawDeposits",
 			Handler:    _StaticAddressServer_ServerWithdrawDeposits_Handler,
+		},
+		{
+			MethodName: "ServerPsbtWithdrawDeposits",
+			Handler:    _StaticAddressServer_ServerPsbtWithdrawDeposits_Handler,
 		},
 		{
 			MethodName: "ServerStaticAddressLoopIn",

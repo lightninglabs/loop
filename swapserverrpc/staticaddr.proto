@@ -29,6 +29,14 @@ service StaticAddressServer {
     rpc ServerWithdrawDeposits (ServerWithdrawRequest)
         returns (ServerWithdrawResponse);
 
+    // ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
+    // haven't timed out yet to the client's wallet. In contrast to
+    // ServerWithdrawDeposits which provides the paramters to form the
+    // withdrawal transaction, this service method will provide a psbt which
+    // is signed by the server.
+    rpc ServerPsbtWithdrawDeposits (ServerPsbtWithdrawRequest)
+        returns (ServerPsbtWithdrawResponse);
+
     // ServerStaticAddressLoopIn initiates a static address loop-in swap. The
     // server will respond with htlc details that the client can use to
     // construct and sign the htlc tx.
@@ -92,11 +100,37 @@ message ServerWithdrawRequest {
 }
 
 message ServerWithdrawResponse {
-    // The sweep sigs that the server generated for the htlc.
+    // The sweep sigs that the server generated for the withdrawal tx.
     repeated bytes musig2_sweep_sigs = 1;
 
-    // The nonces that the server used to generate the sweepless sweep sigs.
+    // The nonces that the server used to generate the withdrawal sigs.
     repeated bytes server_nonces = 2;
+}
+
+message ServerPsbtWithdrawRequest {
+    // The withdrawal psbt.
+    // Note that txscript.SigHashDefault will be enforced by default.
+    bytes withdrawal_psbt = 1;
+
+    // The map of deposit txid:idx to the nonce used by the client.
+    map<string, bytes> deposit_to_nonces = 2;
+}
+
+message ServerPsbtWithdrawResponse {
+    // The txid of the psbt that the client wants to push the sigs for.
+    bytes txid = 1;
+
+    // A map of deposits in format txid:idx to the nonces.
+    map<string, ServerPsbtWithdrawSigningInfo> signing_info = 2;
+}
+
+message ServerPsbtWithdrawSigningInfo {
+    // The nonces that the client used to generate the partial withdrawal tx
+    // sigs.
+    bytes nonce = 1;
+
+    // The musig2 htlc sigs that the client generated for the withdrawal tx.
+    bytes sig = 2;
 }
 
 message ServerStaticAddressLoopInRequest {
