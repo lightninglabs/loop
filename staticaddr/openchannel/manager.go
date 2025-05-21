@@ -87,8 +87,8 @@ type newOpenChannelRequest struct {
 }
 
 type newOpenChannelResponse struct {
-	// ChanTxHash is the transaction hash of the channel open transaction.
-	ChanTxHash *chainhash.Hash
+	// ChanOutpoint is the outpoint of the channel open transaction.
+	ChanOutpoint *wire.OutPoint
 
 	// Err is the error that occurred during the channel open process.
 	err error
@@ -129,10 +129,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	for {
 		select {
 		case req := <-m.newOpenChannelRequestChan:
-			chanTxHash, err := m.OpenChannel(ctx, req.request)
+			chanOutpoint, err := m.OpenChannel(ctx, req.request)
 			resp := &newOpenChannelResponse{
-				ChanTxHash: chanTxHash,
-				err:        err,
+				ChanOutpoint: chanOutpoint,
+				err:          err,
 			}
 
 			select {
@@ -236,7 +236,7 @@ func (m *Manager) recoverOpeningChannelDeposits(ctx context.Context) error {
 // and then starts the open channel psbt flow between the client's lnd instance
 // and the server.
 func (m *Manager) OpenChannel(ctx context.Context,
-	req *lnrpc.OpenChannelRequest) (*chainhash.Hash, error) {
+	req *lnrpc.OpenChannelRequest) (*wire.OutPoint, error) {
 
 	var (
 		outpoints []wire.OutPoint
@@ -378,7 +378,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		Memo:                       req.Memo,
 	}
 
-	chanTxHash, err := m.openChannelPsbt(
+	chanOutpoint, err := m.openChannelPsbt(
 		ctx, openChanRequest, deposits, feeRate,
 	)
 	if err != nil {
@@ -403,7 +403,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		return nil, err
 	}
 
-	return chanTxHash, nil
+	return chanOutpoint, nil
 }
 
 // openChannelPsbt starts an interactive channel open protocol that uses a
@@ -426,7 +426,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 //	|                                    |
 func (m *Manager) openChannelPsbt(ctx context.Context,
 	req *lnrpc.OpenChannelRequest, deposits []*deposit.Deposit,
-	feeRate chainfee.SatPerKWeight) (*chainhash.Hash, error) {
+	feeRate chainfee.SatPerKWeight) (*wire.OutPoint, error) {
 
 	var (
 		pendingChanID [32]byte
@@ -689,8 +689,13 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 					"open tx: %v", err)
 			}
 
+			chanOutpoint := &wire.OutPoint{
+				Hash:  *hash,
+				Index: update.ChanPending.OutputIndex,
+			}
+
 			log.Infof("Channel transaction pending: %v",
-				hash.String())
+				chanOutpoint)
 			log.Infof("Please monitor the channel from lnd")
 
 			err = m.cfg.DepositManager.TransitionDeposits(
@@ -706,9 +711,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			// goroutine that reads from the server.
 			closeQuit()
 
-			// Nil indicates that the channel was successfully
-			// published.
-			return hash, nil
+			return chanOutpoint, nil
 		}
 	}
 }
@@ -770,7 +773,7 @@ func checkPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 // DeliverOpenChannelRequest forwards a open channel request to the manager main
 // loop.
 func (m *Manager) DeliverOpenChannelRequest(ctx context.Context,
-	req *lnrpc.OpenChannelRequest) (*chainhash.Hash, error) {
+	req *lnrpc.OpenChannelRequest) (*wire.OutPoint, error) {
 
 	request := newOpenChannelRequest{
 		request:  req,
@@ -793,7 +796,7 @@ func (m *Manager) DeliverOpenChannelRequest(ctx context.Context,
 	// Wait for the response from the manager run loop.
 	select {
 	case resp := <-request.respChan:
-		return resp.ChanTxHash, resp.err
+		return resp.ChanOutpoint, resp.err
 
 	case <-m.exitChan:
 		return nil, fmt.Errorf("open channel manager has been " +
