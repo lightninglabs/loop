@@ -12,9 +12,20 @@ import (
 	"strings"
 )
 
-// Commit stores the current commit hash of this build, this should be set
-// using the -ldflags during compilation.
+// Commit stores the current git tag of this build, when the build is based on
+// a tagged commit. If the build is based on an untagged commit or is a dirty
+// build, the Commit field stores the most recent tag suffixed by the commit
+// hash, and/or "-dirty". This should be set using the -ldflags during
+// compilation.
 var Commit string
+
+// CommitHash stores the current git commit hash of this build. This should be
+// set using the -ldflags during compilation.
+var CommitHash string
+
+// Dirty stores a "dirty" string, if the build had uncommitted changes when
+// being built. This should be set using the -ldflags during compilation.
+var Dirty string
 
 // semanticAlphabet is the allowed characters from the semantic versioning
 // guidelines for pre-release version and build metadata strings. In particular
@@ -52,16 +63,11 @@ func Version() string {
 }
 
 // RichVersion returns the application version as a properly formed string
-// per the semantic versioning 2.0.0 spec (http://semver.org/) and the commit
-// it was built on.
+// per the semantic versioning 2.0.0 spec (http://semver.org/), followed by the
+// most recent git tag the build was built on.
 func RichVersion() string {
-	// Append commit hash of current build to version.
+	// Append the most recent git tag of the current build to version.
 	return fmt.Sprintf("%s commit=%s", semanticVersion(), Commit)
-}
-
-// CommitHash returns the commit hash of the current build.
-func CommitHash() string {
-	return Commit
 }
 
 // UserAgent returns the full user agent string that identifies the software

@@ -986,7 +986,7 @@
         },
         "commit_hash": {
           "type": "string",
-          "description": "The git commit hash of the loopd binary."
+          "description": "The Git commit hash the Loop binary build was based on. If the build had\nuncommited changes, this field will contain the most recent commit hash,\nsuffixed by \"-dirty\"."
         }
       }
     },

@@ -15,8 +15,10 @@ GOBUILD := GO111MODULE=on go build -v
 GOINSTALL := GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
 
-COMMIT := $(shell git describe --abbrev=40 --dirty | sed -E 's/.*-g([0-9a-f]{40})(-dirty)?/\1\2/')
-LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT)"
+COMMIT := $(shell git describe --abbrev=40 --dirty --tags)
+COMMIT_HASH := $(shell git rev-parse HEAD)
+DIRTY := $(shell git diff-index --quiet HEAD -- || echo dirty)
+LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT) -X $(PKG).CommitHash=$(COMMIT_HASH) -X $(PKG).Dirty=$(DIRTY)"
 DEV_TAGS = dev
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*" -not -name "*pb.go" -not -name "*pb.gw.go" -not -name "*.pb.json.go")

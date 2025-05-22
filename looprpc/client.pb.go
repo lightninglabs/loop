@@ -2737,7 +2737,9 @@ type GetInfoResponse struct {
 	LoopOutStats *LoopStats `protobuf:"bytes,7,opt,name=loop_out_stats,json=loopOutStats,proto3" json:"loop_out_stats,omitempty"`
 	// Statistics about loop ins.
 	LoopInStats *LoopStats `protobuf:"bytes,8,opt,name=loop_in_stats,json=loopInStats,proto3" json:"loop_in_stats,omitempty"`
-	// The git commit hash of the loopd binary.
+	// The Git commit hash the Loop binary build was based on. If the build had
+	// uncommited changes, this field will contain the most recent commit hash,
+	// suffixed by "-dirty".
 	CommitHash string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
 }
 
