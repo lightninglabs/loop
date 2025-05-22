@@ -1249,9 +1249,16 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 		}
 	}
 
+	commitHash := loop.CommitHash
+	if loop.Dirty != "" {
+		// If the build was dirty, we add a "-dirty" suffix to the
+		// commit hash.
+		commitHash += "-" + loop.Dirty
+	}
+
 	return &looprpc.GetInfoResponse{
 		Version:      loop.Version(),
-		CommitHash:   loop.CommitHash(),
+		CommitHash:   commitHash,
 		Network:      s.config.Network,
 		RpcListen:    s.config.RPCListen,
 		RestListen:   s.config.RESTListen,
