@@ -64,10 +64,14 @@ func Version() string {
 
 // RichVersion returns the application version as a properly formed string
 // per the semantic versioning 2.0.0 spec (http://semver.org/), followed by the
-// most recent git tag the build was built on.
+// most recent git tag and commit hash the build was built on.
 func RichVersion() string {
-	// Append the most recent git tag of the current build to version.
-	return fmt.Sprintf("%s commit=%s", semanticVersion(), Commit)
+	// Append the most recent git tag and commit hash of the current build
+	// to version.
+	return fmt.Sprintf(
+		"%s commit=%s commit_hash=%s", semanticVersion(), Commit,
+		CommitHash,
+	)
 }
 
 // UserAgent returns the full user agent string that identifies the software
