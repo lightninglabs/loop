@@ -103,17 +103,20 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("private and route_hints both set")
 	}
 
-	// If Private is set, we generate route hints.
-	if request.Private {
-		// If last_hop is set, we'll only add channels with peers set to
-		// the last_hop parameter.
-		includeNodes := make(map[route.Vertex]struct{})
-		if request.LastHop != nil {
-			includeNodes[*request.LastHop] = struct{}{}
-		}
+	// If last_hop is set, we'll only add channels with peers set to
+	// the last_hop parameter.
+	includeNodes := make(map[route.Vertex]struct{})
+	if request.LastHop != nil {
+		includeNodes[*request.LastHop] = struct{}{}
+	}
 
-		// Because the Private flag is set, we'll generate our own set
-		// of hop hints.
+	// SelectHopHints is used to generate route hints for the swap and probe
+	// invoices. If the user has set the last_hop parameter, we will only
+	// add channels with the peer set to the last_hop parameter. If the user
+	// has requested a private swap, we'll use the intersection of the last
+	// hop and the private channels of the node. If the user only requested
+	// private channels, we'll select from all private channels of the node.
+	if request.Private || request.LastHop != nil {
 		request.RouteHints, err = SelectHopHints(
 			globalCtx, cfg.lnd.Client, request.Amount,
 			DefaultMaxHopHints, includeNodes,
