@@ -218,5 +218,3 @@ replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
 
 go 1.23.9
-
-toolchain go1.24.0

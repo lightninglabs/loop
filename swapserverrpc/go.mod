@@ -13,6 +13,4 @@ require (
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 )
 
-go 1.23.6
-
-toolchain go1.24.0
+go 1.23.9
