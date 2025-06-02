@@ -30,6 +30,7 @@ var staticAddressCommands = cli.Command{
 		newStaticAddressCommand,
 		listUnspentCommand,
 		listDepositsCommand,
+		listWithdrawalsCommand,
 		listStaticAddressSwapsCommand,
 		withdrawalCommand,
 		summaryCommand,
@@ -302,6 +303,38 @@ func listDeposits(ctx *cli.Context) error {
 		ctxb, &looprpc.ListStaticAddressDepositsRequest{
 			StateFilter: filterState,
 		},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+var listWithdrawalsCommand = cli.Command{
+	Name:  "listwithdrawals",
+	Usage: "Display a summary of past withdrawals.",
+	Description: `
+	`,
+	Action: listWithdrawals,
+}
+
+func listWithdrawals(ctx *cli.Context) error {
+	ctxb := context.Background()
+	if ctx.NArg() > 0 {
+		return cli.ShowCommandHelp(ctx, "withdrawals")
+	}
+
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.ListStaticAddressWithdrawals(
+		ctxb, &looprpc.ListStaticAddressWithdrawalRequest{},
 	)
 	if err != nil {
 		return err
