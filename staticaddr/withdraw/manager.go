@@ -82,6 +82,10 @@ type ManagerConfig struct {
 
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient
+
+	// Store is the store that is used to persist the finalized withdrawal
+	// transactions.
+	Store *SqlStore
 }
 
 // newWithdrawalRequest is used to send withdrawal request to the manager main
@@ -401,6 +405,13 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	// republished in case of a fee bump, it suffices if only one spent
 	// notifier is run.
 	if allDeposited {
+		// Persist info about the finalized withdrawal.
+		err = m.cfg.Store.CreateWithdrawal(ctx, deposits)
+		if err != nil {
+			log.Errorf("Error persisting "+
+				"withdrawal: %v", err)
+		}
+
 		err = m.handleWithdrawal(
 			ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
 		)
@@ -592,9 +603,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, txHash chainhash.Hash,
 	withdrawalPkscript []byte) error {
 
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
+	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
 		log.Errorf("error retrieving address params %w", err)
 
@@ -609,19 +618,20 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 	go func() {
 		select {
-		case <-spentChan:
+		case spentTx := <-spentChan:
+			spendingHeight := uint32(spentTx.SpendingHeight)
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
 			var confChan chan *chainntnfs.TxConfirmation
 			confChan, errChan, err =
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-					ctx, &txHash, withdrawalPkscript,
-					MinConfs,
+					ctx, spentTx.SpenderTxHash,
+					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
 			select {
-			case <-confChan:
+			case tx := <-confChan:
 				err = m.cfg.DepositManager.TransitionDeposits(
 					ctx, deposits, deposit.OnWithdrawn,
 					deposit.Withdrawn,
@@ -631,11 +641,22 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						"deposits: %v", err)
 				}
 
-				// Remove the withdrawal tx from the active withdrawals
-				// to stop republishing it on block arrivals.
+				// Remove the withdrawal tx from the active
+				// withdrawals to stop republishing it on block
+				// arrivals.
 				m.mu.Lock()
 				delete(m.finalizedWithdrawalTxns, txHash)
 				m.mu.Unlock()
+
+				// Persist info about the finalized withdrawal.
+				err = m.cfg.Store.UpdateWithdrawal(
+					ctx, deposits, tx.Tx, spendingHeight,
+					addrParams.PkScript,
+				)
+				if err != nil {
+					log.Errorf("Error persisting "+
+						"withdrawal: %v", err)
+				}
 
 			case err := <-errChan:
 				log.Errorf("Error waiting for confirmation: %v",
@@ -1115,4 +1136,9 @@ func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
 		return "", "", fmt.Errorf("context canceled while waiting " +
 			"for withdrawal response")
 	}
+}
+
+// GetAllWithdrawals returns all finalized withdrawals from the store.
+func (m *Manager) GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error) {
+	return m.cfg.Store.GetAllWithdrawals(ctx)
 }
