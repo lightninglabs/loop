@@ -604,6 +604,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	depositManager = deposit.NewManager(depoCfg)
 
 	// Static address deposit withdrawal manager setup.
+	withdrawalStore := withdraw.NewSqlStore(
+		loopdb.NewTypedStore[withdraw.Querier](baseDb),
+		depositStore,
+	)
 	withdrawalCfg := &withdraw.ManagerConfig{
 		StaticAddressServerClient: staticAddressClient,
 		AddressManager:            staticAddressManager,
@@ -612,6 +616,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ChainParams:               d.lnd.ChainParams,
 		ChainNotifier:             d.lnd.ChainNotifier,
 		Signer:                    d.lnd.Signer,
+		Store:                     withdrawalStore,
 	}
 	withdrawalManager = withdraw.NewManager(withdrawalCfg, blockHeight)
 

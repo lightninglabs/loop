@@ -1673,6 +1673,53 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	}, nil
 }
 
+// ListStaticAddressWithdrawals returns a list of all finalized withdrawal
+// transactions.
+func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
+	_ *looprpc.ListStaticAddressWithdrawalRequest) (
+	*looprpc.ListStaticAddressWithdrawalResponse, error) {
+
+	withdrawals, err := s.withdrawalManager.GetAllWithdrawals(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(withdrawals) == 0 {
+		return &looprpc.ListStaticAddressWithdrawalResponse{}, nil
+	}
+
+	clientWithdrawals := make(
+		[]*looprpc.StaticAddressWithdrawal, 0, len(withdrawals),
+	)
+	for _, w := range withdrawals {
+		deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
+		for _, d := range w.Deposits {
+			deposits = append(deposits, &looprpc.Deposit{
+				Id:                 d.ID[:],
+				Outpoint:           d.OutPoint.String(),
+				Value:              int64(d.Value),
+				ConfirmationHeight: d.ConfirmationHeight,
+				State: toClientDepositState(
+					d.GetState(),
+				),
+			})
+		}
+		withdrawal := &looprpc.StaticAddressWithdrawal{
+			TxId:                       w.TxID.String(),
+			Deposits:                   deposits,
+			TotalDepositAmountSatoshis: int64(w.TotalDepositAmount),
+			WithdrawnAmountSatoshis:    int64(w.WithdrawnAmount),
+			ChangeAmountSatoshis:       int64(w.ChangeAmount),
+			ConfirmationHeight:         uint32(w.ConfirmationHeight),
+		}
+		clientWithdrawals = append(clientWithdrawals, withdrawal)
+	}
+
+	return &looprpc.ListStaticAddressWithdrawalResponse{
+		Withdrawals: clientWithdrawals,
+	}, nil
+}
+
 // ListStaticAddressSwaps returns a list of all swaps that are currently pending
 // or previously succeeded.
 func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
