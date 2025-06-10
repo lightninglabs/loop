@@ -1392,6 +1392,18 @@
         }
       }
     },
+    "looprpcListStaticAddressWithdrawalResponse": {
+      "type": "object",
+      "properties": {
+        "withdrawals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcStaticAddressWithdrawal"
+          },
+          "description": "A list of all static address withdrawals."
+        }
+      }
+    },
     "looprpcListSwapsFilter": {
       "type": "object",
       "properties": {
@@ -1924,6 +1936,42 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all htlc timeout sweeps that the client swept."
+        }
+      }
+    },
+    "looprpcStaticAddressWithdrawal": {
+      "type": "object",
+      "properties": {
+        "tx_id": {
+          "type": "string",
+          "description": "The transaction id of the withdrawal transaction."
+        },
+        "deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "The selected deposits that is withdrawn from."
+        },
+        "total_deposit_amount_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The sum of the deposit values that was selected for withdrawal."
+        },
+        "withdrawn_amount_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The actual amount that was withdrawn from the selected deposits. This value\nrepresents the sum of selected deposit values minus tx fees minus optional\nchange output."
+        },
+        "change_amount_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "An optional change."
+        },
+        "confirmation_height": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The confirmation block height of the withdrawal transaction."
         }
       }
     },

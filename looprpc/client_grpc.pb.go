@@ -119,6 +119,9 @@ type SwapClientClient interface {
 	// ListStaticAddressDeposits returns a list of filtered static address
 	// deposits.
 	ListStaticAddressDeposits(ctx context.Context, in *ListStaticAddressDepositsRequest, opts ...grpc.CallOption) (*ListStaticAddressDepositsResponse, error)
+	// loop:`listwithdrawals`
+	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	ListStaticAddressWithdrawals(ctx context.Context, in *ListStaticAddressWithdrawalRequest, opts ...grpc.CallOption) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
 	// ListStaticAddressSwaps returns a list of filtered static address
 	// swaps.
@@ -397,6 +400,15 @@ func (c *swapClientClient) ListStaticAddressDeposits(ctx context.Context, in *Li
 	return out, nil
 }
 
+func (c *swapClientClient) ListStaticAddressWithdrawals(ctx context.Context, in *ListStaticAddressWithdrawalRequest, opts ...grpc.CallOption) (*ListStaticAddressWithdrawalResponse, error) {
+	out := new(ListStaticAddressWithdrawalResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListStaticAddressWithdrawals", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) ListStaticAddressSwaps(ctx context.Context, in *ListStaticAddressSwapsRequest, opts ...grpc.CallOption) (*ListStaticAddressSwapsResponse, error) {
 	out := new(ListStaticAddressSwapsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListStaticAddressSwaps", in, out, opts...)
@@ -529,6 +541,9 @@ type SwapClientServer interface {
 	// ListStaticAddressDeposits returns a list of filtered static address
 	// deposits.
 	ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error)
+	// loop:`listwithdrawals`
+	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	ListStaticAddressWithdrawals(context.Context, *ListStaticAddressWithdrawalRequest) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
 	// ListStaticAddressSwaps returns a list of filtered static address
 	// swaps.
@@ -624,6 +639,9 @@ func (UnimplementedSwapClientServer) WithdrawDeposits(context.Context, *Withdraw
 }
 func (UnimplementedSwapClientServer) ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStaticAddressDeposits not implemented")
+}
+func (UnimplementedSwapClientServer) ListStaticAddressWithdrawals(context.Context, *ListStaticAddressWithdrawalRequest) (*ListStaticAddressWithdrawalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListStaticAddressWithdrawals not implemented")
 }
 func (UnimplementedSwapClientServer) ListStaticAddressSwaps(context.Context, *ListStaticAddressSwapsRequest) (*ListStaticAddressSwapsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStaticAddressSwaps not implemented")
@@ -1118,6 +1136,24 @@ func _SwapClient_ListStaticAddressDeposits_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_ListStaticAddressWithdrawals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStaticAddressWithdrawalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).ListStaticAddressWithdrawals(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/ListStaticAddressWithdrawals",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).ListStaticAddressWithdrawals(ctx, req.(*ListStaticAddressWithdrawalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_ListStaticAddressSwaps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListStaticAddressSwapsRequest)
 	if err := dec(in); err != nil {
@@ -1278,6 +1314,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListStaticAddressDeposits",
 			Handler:    _SwapClient_ListStaticAddressDeposits_Handler,
+		},
+		{
+			MethodName: "ListStaticAddressWithdrawals",
+			Handler:    _SwapClient_ListStaticAddressWithdrawals_Handler,
 		},
 		{
 			MethodName: "ListStaticAddressSwaps",

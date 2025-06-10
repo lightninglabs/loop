@@ -11,6 +11,18 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
+// Store is the database interface that is used to store and retrieve
+// static address withdrawals.
+type Store interface {
+	// CreateWithdrawal inserts a withdrawal into the store.
+	CreateWithdrawal(ctx context.Context, tx *wire.MsgTx,
+		confirmationHeight uint32, deposits []*deposit.Deposit,
+		changePkScript []byte) error
+
+	// GetAllWithdrawals retrieves all withdrawals.
+	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+}
+
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
