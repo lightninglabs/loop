@@ -95,3 +95,9 @@ SELECT EXISTS (
     FROM static_address_swaps
     WHERE swap_hash = $1
 );
+
+-- name: OverrideSelectedSwapAmount :exec
+UPDATE static_address_swaps
+SET
+    selected_amount = $2
+WHERE swap_hash = $1;
