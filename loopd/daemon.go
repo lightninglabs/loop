@@ -635,6 +635,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	// Run the selected amount migration.
+	err = loopin.MigrateSelectedSwapAmount(
+		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
+	)
+	if err != nil {
+		errorf("Selected amount migration failed: %v", err)
+
+		return err
+	}
+
 	staticLoopInManager = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,

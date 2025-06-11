@@ -457,6 +457,23 @@ func (q *Queries) MapDepositToSwap(ctx context.Context, arg MapDepositToSwapPara
 	return err
 }
 
+const overrideSelectedSwapAmount = `-- name: OverrideSelectedSwapAmount :exec
+UPDATE static_address_swaps
+SET
+    selected_amount = $2
+WHERE swap_hash = $1
+`
+
+type OverrideSelectedSwapAmountParams struct {
+	SwapHash       []byte
+	SelectedAmount int64
+}
+
+func (q *Queries) OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error {
+	_, err := q.db.ExecContext(ctx, overrideSelectedSwapAmount, arg.SwapHash, arg.SelectedAmount)
+	return err
+}
+
 const swapHashForDepositID = `-- name: SwapHashForDepositID :one
 SELECT
     swap_hash

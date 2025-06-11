@@ -96,6 +96,12 @@ SELECT EXISTS (
     WHERE swap_hash = $1
 );
 
+-- name: OverrideSelectedSwapAmount :exec
+UPDATE static_address_swaps
+SET
+    selected_amount = $2
+WHERE swap_hash = $1;
+
 -- name: MapDepositToSwap :exec
 UPDATE
     deposits
