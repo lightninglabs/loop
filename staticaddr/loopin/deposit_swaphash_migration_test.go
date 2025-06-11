@@ -119,13 +119,13 @@ func TestDepositSwapHashMigration(t *testing.T) {
 			// If so, we reject the loop-in to prevent potential issues with
 			// parsing.
 			for _, outpoint := range loopIn.DepositOutpoints {
-				if strings.Contains(outpoint, outpointSeparator) {
+				if strings.Contains(outpoint, OutpointSeparator) {
 					return ErrInvalidOutpoint
 				}
 			}
 
 			joinedOutpoints := strings.Join(
-				loopIn.DepositOutpoints, outpointSeparator,
+				loopIn.DepositOutpoints, OutpointSeparator,
 			)
 			staticAddressLoopInParams := sqlc.InsertStaticAddressLoopInParams{
 				SwapHash:                loopIn.SwapHash[:],
