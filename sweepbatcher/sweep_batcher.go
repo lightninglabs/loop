@@ -59,9 +59,6 @@ type BatcherStore interface {
 	// UpdateSweepBatch updates a batch in the database.
 	UpdateSweepBatch(ctx context.Context, batch *dbBatch) error
 
-	// ConfirmBatch confirms a batch by setting its state to confirmed.
-	ConfirmBatch(ctx context.Context, id int32) error
-
 	// FetchBatchSweeps fetches all the sweeps that belong to a batch.
 	FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep, error)
 

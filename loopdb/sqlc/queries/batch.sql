@@ -37,14 +37,6 @@ UPDATE sweep_batches SET
         last_rbf_sat_per_kw = $6
 WHERE id = $1;
 
--- name: ConfirmBatch :exec
-UPDATE
-        sweep_batches
-SET
-        confirmed = TRUE
-WHERE
-        id = $1;
-
 -- name: UpsertSweep :exec
 INSERT INTO sweeps (
         swap_hash,
