@@ -2,6 +2,7 @@ package sweepbatcher
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/btcsuite/btcwallet/chain"
@@ -56,9 +58,6 @@ type BatcherStore interface {
 
 	// UpdateSweepBatch updates a batch in the database.
 	UpdateSweepBatch(ctx context.Context, batch *dbBatch) error
-
-	// ConfirmBatch confirms a batch by setting its state to confirmed.
-	ConfirmBatch(ctx context.Context, id int32) error
 
 	// FetchBatchSweeps fetches all the sweeps that belong to a batch.
 	FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep, error)
@@ -158,18 +157,11 @@ type SignMuSig2 func(ctx context.Context, muSig2Version input.MuSig2Version,
 // fails (e.g. because one of the inputs is offline), an input can't be added to
 // a batch.
 type PresignedHelper interface {
-	// Presign tries to presign a batch transaction. If the method returns
-	// nil, it is guaranteed that future calls to SignTx on this set of
-	// sweeps return valid signed transactions. The implementation should
-	// first check if this transaction already exists in the store to skip
-	// cosigning if possible.
-	Presign(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount) error
-
 	// DestPkScript returns destination pkScript used by the sweep batch
 	// with the primary outpoint specified. Returns an error, if such tx
 	// doesn't exist. If there are many such transactions, returns any of
 	// pkScript's; all of them should have the same destination pkScript.
+	// TODO: embed this data into SweepInfo.
 	DestPkScript(ctx context.Context,
 		primarySweepID wire.OutPoint) ([]byte, error)
 
@@ -201,8 +193,8 @@ type VerifySchnorrSig func(pubKey *btcec.PublicKey, hash, sig []byte) error
 
 // FeeRateProvider is a function that returns min fee rate of a batch sweeping
 // the UTXO of the swap.
-type FeeRateProvider func(ctx context.Context,
-	swapHash lntypes.Hash) (chainfee.SatPerKWeight, error)
+type FeeRateProvider func(ctx context.Context, swapHash lntypes.Hash,
+	utxo wire.OutPoint) (chainfee.SatPerKWeight, error)
 
 // InitialDelayProvider returns the duration after which a newly created batch
 // is first published. It allows to customize the duration based on total value
@@ -273,7 +265,7 @@ type addSweepsRequest struct {
 	notifier *SpendNotifier
 
 	// completed is set if the sweep is spent and the spending transaction
-	// is confirmed.
+	// is fully confirmed.
 	completed bool
 
 	// parentBatch is the parent batch of this sweep. It is loaded ony if
@@ -705,7 +697,14 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	if err != nil {
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
-	infof("PresignSweepsGroup: nextBlockFeeRate is %v", nextBlockFeeRate)
+	destPkscript, err := txscript.PayToAddrScript(destAddress)
+	if err != nil {
+		return fmt.Errorf("txscript.PayToAddrScript failed: %w", err)
+	}
+	infof("PresignSweepsGroup: nextBlockFeeRate is %v, inputs: %v, "+
+		"destAddress: %v, destPkscript: %v sweepTimeout: %d",
+		nextBlockFeeRate, inputs, destAddress,
+		hex.EncodeToString(destPkscript), sweepTimeout)
 
 	sweeps := make([]sweep, len(inputs))
 	for i, input := range inputs {
@@ -792,8 +791,8 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 	}
 
 	infof("Batcher adding sweep group of %d sweeps with primarySweep %x, "+
-		"presigned=%v, completed=%v", len(sweeps), sweep.swapHash[:6],
-		sweep.presigned, completed)
+		"presigned=%v, fully_confirmed=%v", len(sweeps),
+		sweep.swapHash[:6], sweep.presigned, completed)
 
 	req := &addSweepsRequest{
 		sweeps:      sweeps,
@@ -853,14 +852,10 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here.
-	if completed && *notifier != (SpendNotifier{}) {
-		// The parent batch is indeed confirmed, meaning it is complete
-		// and we won't be able to attach this sweep to it.
-		if parentBatch.Confirmed {
-			return b.monitorSpendAndNotify(
-				ctx, sweep, parentBatch.ID, notifier,
-			)
-		}
+	if completed && parentBatch.Confirmed {
+		return b.monitorSpendAndNotify(
+			ctx, sweeps, parentBatch.ID, notifier,
+		)
 	}
 
 	sweep.notifier = notifier
@@ -924,7 +919,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 
 // spinUpNewBatch creates new batch, starts it and adds the sweeps to it. If
 // presigned mode is enabled, the result also depends on outcome of
-// presignedHelper.Presign.
+// presignedHelper.SignTx.
 func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
 	// Spin up a fresh batch.
 	newBatch, err := b.spinUpBatch(ctx)
@@ -1141,8 +1136,13 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 // the response back to the response channel. It is called if the batch is fully
 // confirmed and we just need to deliver the data back to the caller though
 // SpendNotifier.
-func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
+func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
+
+	// If the caller has not provided a notifier, stop.
+	if notifier == nil || *notifier == (SpendNotifier{}) {
+		return nil
+	}
 
 	spendCtx, cancel := context.WithCancel(ctx)
 
@@ -1153,6 +1153,17 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 
 		return err
 	}
+
+	// Find the primarySweepID.
+	dbSweeps, err := b.store.FetchBatchSweeps(ctx, parentBatchID)
+	if err != nil {
+		cancel()
+
+		return err
+	}
+	primarySweepID := dbSweeps[0].Outpoint
+
+	sweep := sweeps[0]
 
 	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
 		spendCtx, &sweep.outpoint, sweep.htlc.PkScript,
@@ -1174,6 +1185,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		select {
 		case spend := <-spendChan:
 			spendTx := spend.SpendingTx
+
 			// Calculate the fee portion that each sweep should pay
 			// for the batch.
 			feePortionPerSweep, roundingDifference :=
@@ -1182,17 +1194,23 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 					totalSwept,
 				)
 
-			onChainFeePortion := getFeePortionPaidBySweep(
-				spendTx, feePortionPerSweep,
-				roundingDifference, sweep,
-			)
+			// Sum onchain fee across all the sweeps of the swap.
+			var fee btcutil.Amount
+			for _, s := range sweeps {
+				isFirst := s.outpoint == primarySweepID
+
+				fee += getFeePortionPaidBySweep(
+					feePortionPerSweep, roundingDifference,
+					isFirst,
+				)
+			}
 
 			// Notify the requester of the spend with the spend
 			// details, including the fee portion for this
 			// particular sweep.
 			spendDetail := &SpendDetail{
 				Tx:                spendTx,
-				OnChainFeePortion: onChainFeePortion,
+				OnChainFeePortion: fee,
 			}
 
 			select {
@@ -1200,7 +1218,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 			case notifier.SpendChan <- spendDetail:
 				err := b.monitorConfAndNotify(
 					ctx, sweep, notifier, spendTx,
-					onChainFeePortion,
+					fee,
 				)
 				if err != nil {
 					b.writeToErrChan(
@@ -1447,11 +1465,18 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 			swapHash[:6], err)
 	}
 
+	// Make sure that PkScript of the coin is filled. Otherwise
+	// RegisterSpendNtfn fails.
+	if len(s.HTLC.PkScript) == 0 {
+		return nil, fmt.Errorf("sweep data for %x doesn't have "+
+			"HTLC.PkScript set", swapHash[:6])
+	}
+
 	// Find minimum fee rate for the sweep. Use customFeeRate if it is
 	// provided, otherwise use wallet's EstimateFeeRate.
 	var minFeeRate chainfee.SatPerKWeight
 	if b.customFeeRate != nil {
-		minFeeRate, err = b.customFeeRate(ctx, swapHash)
+		minFeeRate, err = b.customFeeRate(ctx, swapHash, outpoint)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch min fee rate "+
 				"for %x: %w", swapHash[:6], err)
