@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -30,18 +31,6 @@ const (
 	// defaultMaxTimeoutDistance is the default maximum timeout distance
 	// of sweeps that can appear in the same batch.
 	defaultMaxTimeoutDistance = 288
-
-	// batchOpen is the string representation of the state of a batch that
-	// is open.
-	batchOpen = "open"
-
-	// batchClosed is the string representation of the state of a batch
-	// that is closed.
-	batchClosed = "closed"
-
-	// batchConfirmed is the string representation of the state of a batch
-	// that is confirmed.
-	batchConfirmed = "confirmed"
 
 	// defaultMainnetPublishDelay is the default publish delay that is used
 	// for mainnet.
@@ -292,9 +281,24 @@ type addSweepsRequest struct {
 	parentBatch *dbBatch
 }
 
+// SpendDetail is a notification that is send to the user of sweepbatcher when
+// a batch gets the first confirmation.
 type SpendDetail struct {
 	// Tx is the transaction that spent the outpoint.
 	Tx *wire.MsgTx
+
+	// OnChainFeePortion is the fee portion that was paid to get this sweep
+	// confirmed on chain. This is the difference between the value of the
+	// outpoint and the value of all sweeps that were included in the batch
+	// divided by the number of sweeps.
+	OnChainFeePortion btcutil.Amount
+}
+
+// ConfDetail is a notification that is send to the user of sweepbatcher when
+// a batch is fully confirmed, i.e. gets batchConfHeight confirmations.
+type ConfDetail struct {
+	// TxConfirmation has data about the confirmation of the transaction.
+	*chainntnfs.TxConfirmation
 
 	// OnChainFeePortion is the fee portion that was paid to get this sweep
 	// confirmed on chain. This is the difference between the value of the
@@ -307,13 +311,21 @@ type SpendDetail struct {
 // that the sweep was successful.
 type SpendNotifier struct {
 	// SpendChan is a channel where the spend details are received.
-	SpendChan chan *SpendDetail
+	SpendChan chan<- *SpendDetail
 
 	// SpendErrChan is a channel where spend errors are received.
-	SpendErrChan chan error
+	SpendErrChan chan<- error
+
+	// ConfChan is a channel where the confirmation details are received.
+	// This channel is optional.
+	ConfChan chan<- *ConfDetail
+
+	// ConfErrChan is a channel where confirmation errors are received.
+	// This channel is optional.
+	ConfErrChan chan<- error
 
 	// QuitChan is a channel that can be closed to stop the notifier.
-	QuitChan chan bool
+	QuitChan <-chan bool
 }
 
 var (
@@ -760,7 +772,7 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 				"sweep %x: %w", sweep.swapHash[:6], err)
 		}
 
-		if parentBatch.State == batchConfirmed {
+		if parentBatch.Confirmed {
 			fullyConfirmed = true
 		}
 	}
@@ -844,7 +856,7 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	if completed && *notifier != (SpendNotifier{}) {
 		// The parent batch is indeed confirmed, meaning it is complete
 		// and we won't be able to attach this sweep to it.
-		if parentBatch.State == batchConfirmed {
+		if parentBatch.Confirmed {
 			return b.monitorSpendAndNotify(
 				ctx, sweep, parentBatch.ID, notifier,
 			)
@@ -1093,15 +1105,18 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 		batch := batch{}
 		batch.id = bch.ID
 
-		switch bch.State {
-		case batchOpen:
-			batch.state = Open
-
-		case batchClosed:
-			batch.state = Closed
-
-		case batchConfirmed:
+		if bch.Confirmed {
 			batch.state = Confirmed
+		} else {
+			// We don't store Closed state separately in DB.
+			// If the batch is closed (included into a block, but
+			// not fully confirmed), it is now considered Open
+			// again. It will receive a spending notification as
+			// soon as it starts, so it is not an issue. If a sweep
+			// manages to be added during this time, it will be
+			// detected as missing when analyzing the spend
+			// notification and will be added to new batch.
+			batch.state = Open
 		}
 
 		batch.batchTxid = &bch.BatchTxid
@@ -1123,16 +1138,19 @@ func (b *Batcher) FetchUnconfirmedBatches(ctx context.Context) ([]*batch,
 }
 
 // monitorSpendAndNotify monitors the spend of a specific outpoint and writes
-// the response back to the response channel.
+// the response back to the response channel. It is called if the batch is fully
+// confirmed and we just need to deliver the data back to the caller though
+// SpendNotifier.
 func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 	parentBatchID int32, notifier *SpendNotifier) error {
 
 	spendCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// Then we get the total amount that was swept by the batch.
 	totalSwept, err := b.store.TotalSweptAmount(ctx, parentBatchID)
 	if err != nil {
+		cancel()
+
 		return err
 	}
 
@@ -1141,65 +1159,170 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweep *sweep,
 		sweep.initiationHeight,
 	)
 	if err != nil {
+		cancel()
+
 		return err
 	}
 
 	b.wg.Add(1)
 	go func() {
+		defer cancel()
 		defer b.wg.Done()
 		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
 
-		for {
-			select {
-			case spend := <-spendChan:
-				spendTx := spend.SpendingTx
-				// Calculate the fee portion that each sweep
-				// should pay for the batch.
-				feePortionPerSweep, roundingDifference :=
-					getFeePortionForSweep(
-						spendTx, len(spendTx.TxIn),
-						totalSwept,
-					)
-
-				onChainFeePortion := getFeePortionPaidBySweep(
-					spendTx, feePortionPerSweep,
-					roundingDifference, sweep,
+		select {
+		case spend := <-spendChan:
+			spendTx := spend.SpendingTx
+			// Calculate the fee portion that each sweep should pay
+			// for the batch.
+			feePortionPerSweep, roundingDifference :=
+				getFeePortionForSweep(
+					spendTx, len(spendTx.TxIn),
+					totalSwept,
 				)
 
-				// Notify the requester of the spend
-				// with the spend details, including the fee
-				// portion for this particular sweep.
-				spendDetail := &SpendDetail{
-					Tx:                spendTx,
+			onChainFeePortion := getFeePortionPaidBySweep(
+				spendTx, feePortionPerSweep,
+				roundingDifference, sweep,
+			)
+
+			// Notify the requester of the spend with the spend
+			// details, including the fee portion for this
+			// particular sweep.
+			spendDetail := &SpendDetail{
+				Tx:                spendTx,
+				OnChainFeePortion: onChainFeePortion,
+			}
+
+			select {
+			// Try to write the update to the notification channel.
+			case notifier.SpendChan <- spendDetail:
+				err := b.monitorConfAndNotify(
+					ctx, sweep, notifier, spendTx,
+					onChainFeePortion,
+				)
+				if err != nil {
+					b.writeToErrChan(
+						ctx, fmt.Errorf("monitor conf "+
+							"failed: %w", err),
+					)
+				}
+
+			// If a quit signal was provided by the swap, continue.
+			case <-notifier.QuitChan:
+
+			// If the context was canceled, stop.
+			case <-ctx.Done():
+			}
+
+			return
+
+		case err := <-spendErr:
+			select {
+			// Try to write the error to the notification
+			// channel.
+			case notifier.SpendErrChan <- err:
+
+			// If a quit signal was provided by the swap,
+			// continue.
+			case <-notifier.QuitChan:
+
+			// If the context was canceled, stop.
+			case <-ctx.Done():
+			}
+
+			b.writeToErrChan(
+				ctx, fmt.Errorf("spend error: %w", err),
+			)
+
+			return
+
+		// If a quit signal was provided by the swap, continue.
+		case <-notifier.QuitChan:
+			return
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	return nil
+}
+
+// monitorConfAndNotify monitors the confirmation of a specific transaction and
+// writes the response back to the response channel. It is called if the batch
+// is fully confirmed and we just need to deliver the data back to the caller
+// though SpendNotifier.
+func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
+	notifier *SpendNotifier, spendTx *wire.MsgTx,
+	onChainFeePortion btcutil.Amount) error {
+
+	// If confirmation notifications were not requested, stop.
+	if notifier.ConfChan == nil && notifier.ConfErrChan == nil {
+		return nil
+	}
+
+	batchTxid := spendTx.TxHash()
+
+	if len(spendTx.TxOut) != 1 {
+		return fmt.Errorf("unexpected number of outputs in batch: %d, "+
+			"want %d", len(spendTx.TxOut), 1)
+	}
+	batchPkScript := spendTx.TxOut[0].PkScript
+
+	reorgChan := make(chan struct{})
+
+	confCtx, cancel := context.WithCancel(ctx)
+
+	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
+		confCtx, &batchTxid, batchPkScript, batchConfHeight,
+		sweep.initiationHeight, lndclient.WithReOrgChan(reorgChan),
+	)
+	if err != nil {
+		cancel()
+		return err
+	}
+
+	b.wg.Add(1)
+	go func() {
+		defer cancel()
+		defer b.wg.Done()
+
+		select {
+		case conf := <-confChan:
+			if notifier.ConfChan != nil {
+				confDetail := &ConfDetail{
+					TxConfirmation:    conf,
 					OnChainFeePortion: onChainFeePortion,
 				}
 
 				select {
-				case notifier.SpendChan <- spendDetail:
+				case notifier.ConfChan <- confDetail:
+				case <-notifier.QuitChan:
 				case <-ctx.Done():
 				}
-
-				return
-
-			case err := <-spendErr:
-				select {
-				case notifier.SpendErrChan <- err:
-				case <-ctx.Done():
-				}
-
-				b.writeToErrChan(
-					ctx, fmt.Errorf("spend error: %w", err),
-				)
-
-				return
-
-			case <-notifier.QuitChan:
-				return
-
-			case <-ctx.Done():
-				return
 			}
+
+		case err := <-errChan:
+			if notifier.ConfErrChan != nil {
+				select {
+				case notifier.ConfErrChan <- err:
+				case <-notifier.QuitChan:
+				case <-ctx.Done():
+				}
+			}
+
+			b.writeToErrChan(ctx, fmt.Errorf("confirmations "+
+				"monitoring error: %w", err))
+
+		case <-reorgChan:
+			// A re-org has been detected, but the batch is fully
+			// confirmed and this is unexpected. Crash the batcher.
+			b.writeToErrChan(ctx, fmt.Errorf("unexpected reorg"))
+
+		case <-ctx.Done():
 		}
 	}()
 

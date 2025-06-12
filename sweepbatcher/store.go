@@ -213,8 +213,8 @@ type dbBatch struct {
 	// ID is the unique identifier of the batch.
 	ID int32
 
-	// State is the current state of the batch.
-	State string
+	// Confirmed is set when the batch is fully confirmed.
+	Confirmed bool
 
 	// BatchTxid is the txid of the batch transaction.
 	BatchTxid chainhash.Hash
@@ -255,11 +255,8 @@ type dbSweep struct {
 // convertBatchRow converts a batch row from db to a sweepbatcher.Batch struct.
 func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
 	batch := dbBatch{
-		ID: row.ID,
-	}
-
-	if row.Confirmed {
-		batch.State = batchOpen
+		ID:        row.ID,
+		Confirmed: row.Confirmed,
 	}
 
 	if row.BatchTxID.Valid {
@@ -288,7 +285,7 @@ func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
 // it into the database.
 func batchToInsertArgs(batch dbBatch) sqlc.InsertBatchParams {
 	args := sqlc.InsertBatchParams{
-		Confirmed: false,
+		Confirmed: batch.Confirmed,
 		BatchTxID: sql.NullString{
 			Valid:  true,
 			String: batch.BatchTxid.String(),
@@ -305,10 +302,6 @@ func batchToInsertArgs(batch dbBatch) sqlc.InsertBatchParams {
 		MaxTimeoutDistance: batch.MaxTimeoutDistance,
 	}
 
-	if batch.State == batchConfirmed {
-		args.Confirmed = true
-	}
-
 	return args
 }
 
@@ -317,7 +310,7 @@ func batchToInsertArgs(batch dbBatch) sqlc.InsertBatchParams {
 func batchToUpdateArgs(batch dbBatch) sqlc.UpdateBatchParams {
 	args := sqlc.UpdateBatchParams{
 		ID:        batch.ID,
-		Confirmed: false,
+		Confirmed: batch.Confirmed,
 		BatchTxID: sql.NullString{
 			Valid:  true,
 			String: batch.BatchTxid.String(),
@@ -331,10 +324,6 @@ func batchToUpdateArgs(batch dbBatch) sqlc.UpdateBatchParams {
 			Valid: true,
 			Int32: batch.LastRbfSatPerKw,
 		},
-	}
-
-	if batch.State == batchConfirmed {
-		args.Confirmed = true
 	}
 
 	return args

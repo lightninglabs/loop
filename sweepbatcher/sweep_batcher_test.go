@@ -762,9 +762,9 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
 		batcherStore, sweepStore)
+	runErrChan := make(chan error)
 	go func() {
-		err := batcher.Run(ctx)
-		checkBatcherError(t, err)
+		runErrChan <- batcher.Run(ctx)
 	}()
 
 	// Create a sweep request.
@@ -772,13 +772,24 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		Hash:  chainhash.Hash{1, 1},
 		Index: 1,
 	}
+	const (
+		inputValue  = 111
+		outputValue = 50
+		fee         = inputValue - outputValue
+	)
+	spendErrChan := make(chan error, 1)
+	notifier := &SpendNotifier{
+		SpendChan:    make(chan *SpendDetail, 1),
+		SpendErrChan: spendErrChan,
+		QuitChan:     make(chan bool, 1),
+	}
 	sweepReq1 := SweepRequest{
 		SwapHash: lntypes.Hash{1, 1, 1},
 		Inputs: []Input{{
-			Value:    111,
+			Value:    inputValue,
 			Outpoint: op1,
 		}},
-		Notifier: &dummyNotifier,
+		Notifier: notifier,
 	}
 
 	const initiationHeight = 550
@@ -786,7 +797,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	swap1 := &loopdb.LoopOutContract{
 		SwapContract: loopdb.SwapContract{
 			CltvExpiry:       111,
-			AmountRequested:  111,
+			AmountRequested:  inputValue,
 			ProtocolVersion:  loopdb.ProtocolVersionMuSig2,
 			HtlcKeys:         htlcKeys,
 			InitiationHeight: initiationHeight,
@@ -806,33 +817,27 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// When batch is successfully created it will execute it's first step,
 	// which leads to a spend monitor of the primary sweep.
-	<-lnd.RegisterSpendChannel
+	spendReg := <-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
 
 	// Eventually request will be consumed and a new batch will spin up.
+	var primarySweepID wire.OutPoint
 	require.Eventually(t, func() bool {
-		return batcher.numBatches(ctx) == 1
-	}, test.Timeout, eventuallyCheckFrequency)
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
 
-	// Find the batch and assign it to a local variable for easier access.
-	batch := &batch{}
-	for _, btch := range getBatches(ctx, batcher) {
-		btch.testRunInEventLoop(ctx, func() {
-			if btch.primarySweepID == op1 {
-				batch = btch
-			}
-		})
-	}
+		primarySweepID = batch.snapshot(ctx).primarySweepID
 
-	require.Eventually(t, func() bool {
 		// Batch should have the sweep stored.
 		return batch.numSweeps(ctx) == 1
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The primary sweep id should be that of the first inserted sweep.
-	require.Equal(t, batch.primarySweepID, op1)
-
-	// Wait for tx to be published.
-	<-lnd.TxPublishChannel
+	require.Equal(t, primarySweepID, op1)
 
 	err = lnd.NotifyHeight(601)
 	require.NoError(t, err)
@@ -840,13 +845,71 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// After receiving a height notification the batch will step again,
 	// leading to a new spend monitoring.
 	require.Eventually(t, func() bool {
-		batch := batch.snapshot(ctx)
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		batch = batch.snapshot(ctx)
 
 		return batch.currentHeight == 601
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Wait for tx to be published.
 	<-lnd.TxPublishChannel
+
+	// Emulate spend error.
+	testError := errors.New("test error")
+	spendReg.ErrChan <- testError
+
+	// Make sure the caller of AddSweep got the spending error.
+	notifierErr := <-spendErrChan
+	require.Error(t, notifierErr)
+	require.ErrorIs(t, notifierErr, testError)
+
+	// Wait for the batcher to crash because of the spending error.
+	runErr := <-runErrChan
+	require.ErrorIs(t, runErr, testError)
+
+	// Now launch the batcher again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	// When batch is successfully created it will execute it's first step,
+	// which leads to a spend monitor of the primary sweep.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Deliver sweep request to batcher.
+	spendChan := make(chan *SpendDetail, 1)
+	confErrChan := make(chan error)
+	notifier = &SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: make(chan error, 1),
+		ConfErrChan:  confErrChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Wait for the notifier to be installed.
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		batch = batch.snapshot(ctx)
+
+		sweep := batch.sweeps[batch.primarySweepID]
+
+		return sweep.notifier != nil &&
+			sweep.notifier.SpendChan == spendChan
+	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Create the spending tx that will trigger the spend monitor of the
 	// batch.
@@ -861,6 +924,7 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 		},
 		TxOut: []*wire.TxOut{
 			{
+				Value:    outputValue,
 				PkScript: []byte{3, 2, 1},
 			},
 		},
@@ -879,6 +943,11 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// We notify the spend.
 	lnd.SpendChannel <- spendDetail
 
+	// Make sure the notifier got a proper spending notification.
+	spending := <-spendChan
+	require.Equal(t, spendingTxHash, spending.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), spending.OnChainFeePortion)
+
 	// After receiving the spend, the batch is now monitoring for confs.
 	confReg := <-lnd.RegisterConfChannel
 
@@ -889,7 +958,90 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	// The batch should eventually read the spend notification and progress
 	// its state to closed.
 	require.Eventually(t, func() bool {
-		batch := batch.snapshot(ctx)
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		batch = batch.snapshot(ctx)
+
+		return batch.state == Closed
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Emulate a confirmation error.
+	confReg.ErrChan <- testError
+
+	// Make sure the notifier gets the confirmation error.
+	confErr := <-confErrChan
+	require.ErrorIs(t, confErr, testError)
+
+	// Wait for the batcher to crash because of the confirmation error.
+	runErr = <-runErrChan
+	require.ErrorIs(t, runErr, testError)
+
+	// Now launch the batcher again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	// When batch is successfully created it will execute it's first step,
+	// which leads to a spend monitor of the primary sweep.
+	<-lnd.RegisterSpendChannel
+
+	// Deliver sweep request to batcher.
+	spendChan = make(chan *SpendDetail, 1)
+	confChan := make(chan *ConfDetail)
+	notifier = &SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: make(chan error, 1),
+		ConfChan:     confChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Wait for tx to be published. A closed batch is stored in DB as Open.
+	<-lnd.TxPublishChannel
+
+	// Wait for the notifier to be installed.
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		batch = batch.snapshot(ctx)
+
+		sweep := batch.sweeps[batch.primarySweepID]
+
+		return sweep.notifier != nil &&
+			sweep.notifier.SpendChan == spendChan
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// We notify the spend.
+	lnd.SpendChannel <- spendDetail
+
+	// Make sure the notifier got a proper spending notification.
+	spending = <-spendChan
+	require.Equal(t, spendingTxHash, spending.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), spending.OnChainFeePortion)
+
+	// After receiving the spend, the batch is now monitoring for confs.
+	confReg = <-lnd.RegisterConfChannel
+
+	// Make sure the confirmation has proper height hint. It should pass
+	// the swap initiation height, not the current height.
+	require.Equal(t, int32(initiationHeight), confReg.HeightHint)
+
+	// The batch should eventually read the spend notification and progress
+	// its state to closed.
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		batch = batch.snapshot(ctx)
 
 		return batch.state == Closed
 	}, test.Timeout, eventuallyCheckFrequency)
@@ -899,14 +1051,125 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 
 	// We mock the tx confirmation notification.
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
-		Tx: spendingTx,
+		BlockHeight: 604,
+		Tx:          spendingTx,
 	}
+
+	// Make sure the notifier gets a confirmation notification.
+	conf := <-confChan
+	require.Equal(t, uint32(604), conf.BlockHeight)
+	require.Equal(t, spendingTx.TxHash(), conf.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), conf.OnChainFeePortion)
 
 	// Eventually the batch receives the confirmation notification and
 	// confirms itself.
 	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+
 		return batch.isComplete()
 	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Now emulate adding the sweep again after it was fully confirmed.
+	// This triggers another code path (monitorSpendAndNotify).
+	spendChan = make(chan *SpendDetail, 1)
+	confChan = make(chan *ConfDetail)
+	notifier = &SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: make(chan error, 1),
+		ConfChan:     confChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Expect a spending registration.
+	<-lnd.RegisterSpendChannel
+
+	// We notify the spend.
+	lnd.SpendChannel <- spendDetail
+
+	// Now expect the notifier to produce the spending details.
+	spending = <-spendChan
+	require.Equal(t, spendingTxHash, spending.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), spending.OnChainFeePortion)
+
+	// We mock the tx confirmation notification.
+	<-lnd.RegisterConfChannel
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		BlockHeight: 604,
+		Tx:          spendingTx,
+	}
+
+	// Make sure the notifier gets a confirmation notification.
+	conf = <-confChan
+	require.Equal(t, uint32(604), conf.BlockHeight)
+	require.Equal(t, spendingTx.TxHash(), conf.Tx.TxHash())
+	require.Equal(t, btcutil.Amount(fee), conf.OnChainFeePortion)
+
+	// Now check what happens in case of a spending error.
+	spendErrChan = make(chan error, 1)
+	notifier = &SpendNotifier{
+		SpendChan:    make(chan *SpendDetail, 1),
+		SpendErrChan: spendErrChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Expect a spending registration.
+	spendReg = <-lnd.RegisterSpendChannel
+
+	// Emulate spend error.
+	spendReg.ErrChan <- testError
+
+	// Make sure the caller of AddSweep got the spending error.
+	notifierErr = <-spendErrChan
+	require.Error(t, notifierErr)
+	require.ErrorIs(t, notifierErr, testError)
+
+	// Wait for the batcher to crash because of the spending error.
+	runErr = <-runErrChan
+	require.ErrorIs(t, runErr, testError)
+
+	// Now launch the batcher again.
+	batcher = NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	// Now check what happens in case of a confirmation error.
+	confErrChan = make(chan error, 1)
+	notifier = &SpendNotifier{
+		SpendChan:    make(chan *SpendDetail, 1),
+		SpendErrChan: make(chan error, 1),
+		ConfErrChan:  confErrChan,
+		QuitChan:     make(chan bool, 1),
+	}
+	sweepReq1.Notifier = notifier
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Expect a spending registration.
+	<-lnd.RegisterSpendChannel
+
+	// We notify the spend.
+	lnd.SpendChannel <- spendDetail
+
+	// We mock the tx confirmation error notification.
+	confReg = <-lnd.RegisterConfChannel
+	confReg.ErrChan <- testError
+
+	// Make sure the notifier gets the confirmation error.
+	confErr = <-confErrChan
+	require.ErrorIs(t, confErr, testError)
+
+	// Wait for the batcher to crash because of the confirmation error.
+	runErr = <-runErrChan
+	require.ErrorIs(t, runErr, testError)
 }
 
 // wrappedLogger implements btclog.Logger, recording last debug message format.

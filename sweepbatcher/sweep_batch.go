@@ -135,7 +135,9 @@ const (
 	Open batchState = 0
 
 	// Closed is the state in which the batch is no longer able to accept
-	// new sweeps.
+	// new sweeps. NOTE: this state exists only in-memory. In the database
+	// it is stored as Open and converted to Closed after a spend
+	// notification arrives (quickly after start of Batch.Run).
 	Closed batchState = 1
 
 	// Confirmed is the state in which the batch transaction has reached the
@@ -870,8 +872,8 @@ func (b *batch) Run(ctx context.Context) error {
 	// completes.
 	timerChan := clock.TickAfter(b.cfg.batchPublishDelay)
 
-	b.Infof("started, primary %s, total sweeps %d",
-		b.primarySweepID, len(b.sweeps))
+	b.Infof("started, primary %s, total sweeps %d, state: %d",
+		b.primarySweepID, len(b.sweeps), b.state)
 
 	for {
 		// If the batch is not empty, find earliest initialDelay.
@@ -1822,27 +1824,22 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 		b.Infof("monitoring spend for outpoint %s",
 			primarySweep.outpoint.String())
 
-		for {
+		select {
+		case spend := <-spendChan:
 			select {
-			case spend := <-spendChan:
-				select {
-				case b.spendChan <- spend:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-spendErr:
-				b.writeToErrChan(
-					fmt.Errorf("spend error: %w", err),
-				)
-
-				return
+			case b.spendChan <- spend:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-spendErr:
+			b.writeToSpendErrChan(ctx, err)
+
+			b.writeToErrChan(
+				fmt.Errorf("spend error: %w", err),
+			)
+
+		case <-ctx.Done():
 		}
 	}()
 
@@ -1876,39 +1873,33 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		defer cancel()
 		defer b.wg.Done()
 
-		for {
+		select {
+		case conf := <-confChan:
 			select {
-			case conf := <-confChan:
-				select {
-				case b.confChan <- conf:
-
-				case <-ctx.Done():
-				}
-
-				return
-
-			case err := <-errChan:
-				b.writeToErrChan(fmt.Errorf("confirmations "+
-					"monitoring error: %w", err))
-
-				return
-
-			case <-reorgChan:
-				// A re-org has been detected. We set the batch
-				// state back to open since our batch
-				// transaction is no longer present in any
-				// block. We can accept more sweeps and try to
-				// publish new transactions, at this point we
-				// need to monitor again for a new spend.
-				select {
-				case b.reorgChan <- struct{}{}:
-				case <-ctx.Done():
-				}
-				return
+			case b.confChan <- conf:
 
 			case <-ctx.Done():
-				return
 			}
+
+		case err := <-errChan:
+			b.writeToConfErrChan(ctx, err)
+
+			b.writeToErrChan(fmt.Errorf("confirmations "+
+				"monitoring error: %w", err))
+
+		case <-reorgChan:
+			// A re-org has been detected. We set the batch
+			// state back to open since our batch
+			// transaction is no longer present in any
+			// block. We can accept more sweeps and try to
+			// publish new transactions, at this point we
+			// need to monitor again for a new spend.
+			select {
+			case b.reorgChan <- struct{}{}:
+			case <-ctx.Done():
+			}
+
+		case <-ctx.Done():
 		}
 	}()
 
@@ -2112,16 +2103,19 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		"purged swaps: %v, purged groups: %v", confirmedSweeps,
 		purgedSweeps, purgedSwaps, len(purgeList))
 
-	err = b.monitorConfirmations(ctx)
-	if err != nil {
-		return err
-	}
-
 	// We are no longer able to accept new sweeps, so we mark the batch as
 	// closed and persist on storage.
 	b.state = Closed
 
-	return b.persist(ctx)
+	if err = b.persist(ctx); err != nil {
+		return fmt.Errorf("saving batch failed: %w", err)
+	}
+
+	if err = b.monitorConfirmations(ctx); err != nil {
+		return fmt.Errorf("monitorConfirmations failed: %w", err)
+	}
+
+	return nil
 }
 
 // handleConf handles a confirmation notification. This is the final step of the
@@ -2166,7 +2160,55 @@ func (b *batch) handleConf(ctx context.Context,
 	b.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
-	return b.store.ConfirmBatch(ctx, b.id)
+	if err := b.store.ConfirmBatch(ctx, b.id); err != nil {
+		return fmt.Errorf("failed to store confirmed state: %w", err)
+	}
+
+	// Calculate the fee portion that each sweep should pay for the batch.
+	// TODO: make sure spendTx matches b.sweeps.
+	var totalSweptAmt btcutil.Amount
+	for _, s := range b.sweeps {
+		totalSweptAmt += s.value
+	}
+	feePortionPaidPerSweep, roundingDifference := getFeePortionForSweep(
+		spendTx, len(b.sweeps), totalSweptAmt,
+	)
+
+	// Send the confirmation to all the notifiers.
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that
+		// a swap is not waiting to read an update from it, so
+		// we can skip the notification part.
+		if s.notifier == nil || s.notifier.ConfChan == nil {
+			continue
+		}
+
+		confDetail := &ConfDetail{
+			TxConfirmation: conf,
+			OnChainFeePortion: getFeePortionPaidBySweep(
+				spendTx, feePortionPaidPerSweep,
+				roundingDifference, &s,
+			),
+		}
+
+		// Notify the caller in a goroutine to avoid possible dead-lock.
+		go func(notifier *SpendNotifier) {
+			// Note that we don't unblock on ctx, because it will
+			// expire soon, when batch.Run completes. The caller is
+			// responsible to consume ConfChan or close QuitChan.
+			select {
+			// Try to write the confirmation to the notification
+			// channel.
+			case notifier.ConfChan <- confDetail:
+
+			// If a quit signal was provided by the swap,
+			// continue.
+			case <-notifier.QuitChan:
+			}
+		}(s.notifier)
+	}
+
+	return nil
 }
 
 // isComplete returns true if the batch is completed. This method is used by the
@@ -2189,7 +2231,7 @@ func (b *batch) persist(ctx context.Context) error {
 	bch := &dbBatch{}
 
 	bch.ID = b.id
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 
 	if b.batchTxid != nil {
 		bch.BatchTxid = *b.batchTxid
@@ -2248,7 +2290,7 @@ func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
 
 func (b *batch) insertAndAcquireID(ctx context.Context) (int32, error) {
 	bch := &dbBatch{}
-	bch.State = stateEnumToString(b.state)
+	bch.Confirmed = b.state == Confirmed
 	bch.MaxTimeoutDistance = b.cfg.maxTimeoutDistance
 
 	id, err := b.store.InsertSweepBatch(ctx, bch)
@@ -2285,6 +2327,81 @@ func (b *batch) writeToErrChan(err error) {
 	}
 }
 
+// writeToSpendErrChan sends an error to spend error channels of all the sweeps.
+func (b *batch) writeToSpendErrChan(ctx context.Context, spendErr error) {
+	done, err := b.scheduleNextCall()
+	if err != nil {
+		done()
+
+		return
+	}
+	notifiers := make([]*SpendNotifier, 0, len(b.sweeps))
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that a swap
+		// is not waiting to read an update from it, so we can skip
+		// the notification part.
+		if s.notifier == nil || s.notifier.SpendErrChan == nil {
+			continue
+		}
+
+		notifiers = append(notifiers, s.notifier)
+	}
+	done()
+
+	for _, notifier := range notifiers {
+		select {
+		// Try to write the error to the notification
+		// channel.
+		case notifier.SpendErrChan <- spendErr:
+
+		// If a quit signal was provided by the swap,
+		// continue.
+		case <-notifier.QuitChan:
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+		}
+	}
+}
+
+// writeToConfErrChan sends an error to confirmation error channels of all the
+// sweeps.
+func (b *batch) writeToConfErrChan(ctx context.Context, confErr error) {
+	done, err := b.scheduleNextCall()
+	if err != nil {
+		done()
+
+		return
+	}
+	notifiers := make([]*SpendNotifier, 0, len(b.sweeps))
+	for _, s := range b.sweeps {
+		// If the sweep's notifier is empty then this means that a swap
+		// is not waiting to read an update from it, so we can skip
+		// the notification part.
+		if s.notifier == nil || s.notifier.ConfErrChan == nil {
+			continue
+		}
+
+		notifiers = append(notifiers, s.notifier)
+	}
+	done()
+
+	for _, notifier := range notifiers {
+		select {
+		// Try to write the error to the notification
+		// channel.
+		case notifier.ConfErrChan <- confErr:
+
+		// If a quit signal was provided by the swap,
+		// continue.
+		case <-notifier.QuitChan:
+
+		// If the context was canceled, stop.
+		case <-ctx.Done():
+		}
+	}
+}
+
 func (b *batch) persistSweep(ctx context.Context, sweep sweep,
 	completed bool) error {
 
@@ -2311,19 +2428,4 @@ func clampBatchFee(fee btcutil.Amount,
 	}
 
 	return fee
-}
-
-func stateEnumToString(state batchState) string {
-	switch state {
-	case Open:
-		return batchOpen
-
-	case Closed:
-		return batchClosed
-
-	case Confirmed:
-		return batchConfirmed
-	}
-
-	return ""
 }

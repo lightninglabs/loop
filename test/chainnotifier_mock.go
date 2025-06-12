@@ -36,6 +36,7 @@ type SpendRegistration struct {
 	Outpoint   *wire.OutPoint
 	PkScript   []byte
 	HeightHint int32
+	ErrChan    chan<- error
 }
 
 // ConfRegistration contains registration details.
@@ -45,17 +46,23 @@ type ConfRegistration struct {
 	HeightHint int32
 	NumConfs   int32
 	ConfChan   chan *chainntnfs.TxConfirmation
+	ErrChan    chan<- error
 }
 
 func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	outpoint *wire.OutPoint, pkScript []byte, heightHint int32) (
 	chan *chainntnfs.SpendDetail, chan error, error) {
 
-	c.lnd.RegisterSpendChannel <- &SpendRegistration{
+	spendErrChan := make(chan error, 1)
+
+	reg := &SpendRegistration{
 		HeightHint: heightHint,
 		Outpoint:   outpoint,
 		PkScript:   pkScript,
+		ErrChan:    spendErrChan,
 	}
+
+	c.lnd.RegisterSpendChannel <- reg
 
 	spendChan := make(chan *chainntnfs.SpendDetail, 1)
 	errChan := make(chan error, 1)
@@ -70,6 +77,13 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 			case spendChan <- m:
 			case <-ctx.Done():
 			}
+
+		case err := <-spendErrChan:
+			select {
+			case errChan <- err:
+			case <-ctx.Done():
+			}
+
 		case <-ctx.Done():
 		}
 	}()
@@ -129,12 +143,15 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	opts ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
 	chan error, error) {
 
+	confErrChan := make(chan error, 1)
+
 	reg := &ConfRegistration{
 		PkScript:   pkScript,
 		TxID:       txid,
 		HeightHint: heightHint,
 		NumConfs:   numConfs,
 		ConfChan:   make(chan *chainntnfs.TxConfirmation, 1),
+		ErrChan:    confErrChan,
 	}
 
 	c.Lock()
@@ -169,6 +186,13 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 				}
 			}
 			c.Unlock()
+
+		case err := <-confErrChan:
+			select {
+			case errChan <- err:
+			case <-ctx.Done():
+			}
+
 		case <-ctx.Done():
 		}
 	}()
