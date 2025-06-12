@@ -10,20 +10,6 @@ import (
 	"database/sql"
 )
 
-const confirmBatch = `-- name: ConfirmBatch :exec
-UPDATE
-        sweep_batches
-SET
-        confirmed = TRUE
-WHERE
-        id = $1
-`
-
-func (q *Queries) ConfirmBatch(ctx context.Context, id int32) error {
-	_, err := q.db.ExecContext(ctx, confirmBatch, id)
-	return err
-}
-
 const dropBatch = `-- name: DropBatch :exec
 DELETE FROM sweep_batches WHERE id = $1
 `
