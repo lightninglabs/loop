@@ -95,10 +95,13 @@ func TestManager(t *testing.T) {
 	testContext := NewAddressManagerTestContext(t)
 
 	// Start the manager.
+	initChan := make(chan struct{})
 	go func() {
-		err := testContext.manager.Run(ctxb)
+		err := testContext.manager.Run(ctxb, initChan)
 		require.ErrorIs(t, err, context.Canceled)
 	}()
+
+	<-initChan
 
 	// Create the expected static address.
 	expectedAddress, err := GenerateExpectedTaprootAddress(testContext)

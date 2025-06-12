@@ -42,8 +42,6 @@ var (
 
 	blockErrChan = make(chan error)
 
-	initChan = make(chan struct{})
-
 	finalizedDepositChan = make(chan wire.OutPoint)
 )
 
@@ -218,8 +216,9 @@ func TestManager(t *testing.T) {
 	testContext := newManagerTestContext(t)
 
 	// Start the deposit manager.
+	initChan := make(chan struct{})
 	go func() {
-		require.NoError(t, testContext.manager.Run(ctx))
+		require.NoError(t, testContext.manager.Run(ctx, initChan))
 	}()
 
 	// Ensure that the manager has been initialized.
@@ -337,7 +336,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	}
 
 	manager := NewManager(cfg)
-	manager.initChan = initChan
 	manager.finalizedDepositChan = finalizedDepositChan
 
 	testContext := &ManagerTestContext{

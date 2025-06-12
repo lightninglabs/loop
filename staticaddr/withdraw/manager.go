@@ -113,10 +113,6 @@ type Manager struct {
 	// mu protects access to finalizedWithdrawalTxns.
 	mu sync.Mutex
 
-	// initChan signals the daemon that the withdrawal manager has completed
-	// its initialization.
-	initChan chan struct{}
-
 	// newWithdrawalRequestChan receives a list of outpoints that should be
 	// withdrawn. The request is forwarded to the managers main loop.
 	newWithdrawalRequestChan chan newWithdrawalRequest
@@ -139,7 +135,6 @@ type Manager struct {
 func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
 	m := &Manager{
 		cfg:                      cfg,
-		initChan:                 make(chan struct{}),
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
 		exitChan:                 make(chan struct{}),
 		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
@@ -151,7 +146,7 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
 }
 
 // Run runs the deposit withdrawal manager.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
@@ -166,7 +161,7 @@ func (m *Manager) Run(ctx context.Context) error {
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
-	close(m.initChan)
+	close(initChan)
 
 	for {
 		select {
@@ -272,14 +267,6 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// WaitInitComplete waits until the address manager has completed its setup.
-func (m *Manager) WaitInitComplete() {
-	defer log.Debugf("Static address withdrawal manager initiation " +
-		"complete.")
-
-	<-m.initChan
 }
 
 // WithdrawDeposits starts a deposits withdrawal flow. If the amount is set to 0
