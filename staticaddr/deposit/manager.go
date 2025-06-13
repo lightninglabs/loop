@@ -172,6 +172,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		return err
 	}
 
+	var (
+		wg                   sync.WaitGroup
+		numRecoveredDeposits int
+	)
 	for i, d := range deposits {
 		m.deposits[d.OutPoint] = deposits[i]
 
@@ -191,7 +195,9 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		}
 
 		// Send the OnRecover event to the state machine.
+		wg.Add(1)
 		go func(fsm *FSM) {
+			defer wg.Done()
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
 				log.Errorf("Error sending OnStart event: %v",
@@ -202,7 +208,13 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
 		m.mu.Unlock()
+
+		numRecoveredDeposits++
 	}
+	wg.Wait()
+
+	log.Infof("Recovered %d deposits from the database",
+		numRecoveredDeposits)
 
 	return nil
 }
