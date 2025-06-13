@@ -101,6 +101,10 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 			log.Errorf("%v: %v", txLabel, err)
 			f.LastActionError = err
 			return fsm.OnError
+		} else {
+			// If the output has already been spent the deposit is
+			// expired.
+			return OnExpiry
 		}
 	} else {
 		f.Debugf("published timeout sweep with txid: %v",
