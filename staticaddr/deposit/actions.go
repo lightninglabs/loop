@@ -101,6 +101,10 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 			log.Errorf("%v: %v", txLabel, err)
 			f.LastActionError = err
 			return fsm.OnError
+		} else {
+			// If the output has already been spent the deposit is
+			// expired.
+			return OnExpiry
 		}
 	} else {
 		f.Debugf("published timeout sweep with txid: %v",
@@ -134,21 +138,6 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 
 	case <-ctx.Done():
 		return fsm.OnError
-	}
-}
-
-// SweptExpiredDepositAction is the final action of the FSM. It signals to the
-// manager that the deposit has been swept and the FSM can be removed. It also
-// ends the state machine main loop by cancelling its context.
-func (f *FSM) SweptExpiredDepositAction(ctx context.Context,
-	_ fsm.EventContext) fsm.EventType {
-
-	select {
-	case <-ctx.Done():
-		return fsm.OnError
-
-	case f.finalizedDepositChan <- f.deposit.OutPoint:
-		return fsm.NoOp
 	}
 }
 

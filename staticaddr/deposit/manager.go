@@ -77,10 +77,6 @@ type Manager struct {
 	// mu guards access to activeDeposits map.
 	mu sync.Mutex
 
-	// initChan signals the daemon that the address manager has completed
-	// its initialization.
-	initChan chan struct{}
-
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
@@ -100,7 +96,6 @@ type Manager struct {
 func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
 		cfg:                  cfg,
-		initChan:             make(chan struct{}),
 		activeDeposits:       make(map[wire.OutPoint]*FSM),
 		deposits:             make(map[wire.OutPoint]*Deposit),
 		finalizedDepositChan: make(chan wire.OutPoint),
@@ -108,7 +103,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 }
 
 // Run runs the address manager.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
 	if err != nil {
 		return err
@@ -125,7 +120,7 @@ func (m *Manager) Run(ctx context.Context) error {
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
-	close(m.initChan)
+	close(initChan)
 
 	for {
 		select {
@@ -177,6 +172,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		return err
 	}
 
+	var (
+		wg                   sync.WaitGroup
+		numRecoveredDeposits int
+	)
 	for i, d := range deposits {
 		m.deposits[d.OutPoint] = deposits[i]
 
@@ -196,23 +195,28 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		}
 
 		// Send the OnRecover event to the state machine.
-		err = fsm.SendEvent(ctx, OnRecover, nil)
-		if err != nil {
-			log.Errorf("Error sending OnStart event: %v", err)
-		}
+		wg.Add(1)
+		go func(fsm *FSM) {
+			defer wg.Done()
+			err := fsm.SendEvent(ctx, OnRecover, nil)
+			if err != nil {
+				log.Errorf("Error sending OnStart event: %v",
+					err)
+			}
+		}(fsm)
 
 		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
 		m.mu.Unlock()
+
+		numRecoveredDeposits++
 	}
+	wg.Wait()
+
+	log.Infof("Recovered %d deposits from the database",
+		numRecoveredDeposits)
 
 	return nil
-}
-
-// WaitInitComplete waits until the address manager has completed its setup.
-func (m *Manager) WaitInitComplete() {
-	defer log.Debugf("Static address deposit manager initiation complete.")
-	<-m.initChan
 }
 
 // pollDeposits polls new deposits to our static address and notifies the

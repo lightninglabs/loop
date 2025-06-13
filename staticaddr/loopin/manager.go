@@ -116,10 +116,6 @@ type newSwapResponse struct {
 type Manager struct {
 	cfg *Config
 
-	// initChan signals the daemon that the address manager has completed
-	// its initialization.
-	initChan chan struct{}
-
 	// newLoopInChan receives swap requests from the server and initiates
 	// loop-in swaps.
 	newLoopInChan chan *newSwapRequest
@@ -141,7 +137,6 @@ type Manager struct {
 func NewManager(cfg *Config, currentHeight uint32) *Manager {
 	m := &Manager{
 		cfg:           cfg,
-		initChan:      make(chan struct{}),
 		newLoopInChan: make(chan *newSwapRequest),
 		exitChan:      make(chan struct{}),
 		errChan:       make(chan error),
@@ -153,7 +148,7 @@ func NewManager(cfg *Config, currentHeight uint32) *Manager {
 }
 
 // Run runs the static address loop-in manager.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	registerBlockNtfn := m.cfg.ChainNotifier.RegisterBlockEpochNtfn
 	newBlockChan, newBlockErrChan, err := registerBlockNtfn(ctx)
 	if err != nil {
@@ -175,7 +170,7 @@ func (m *Manager) Run(ctx context.Context) error {
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
-	close(m.initChan)
+	close(initChan)
 
 	var loopIn *StaticAddressLoopIn
 	for {
@@ -478,26 +473,18 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}
 
 		// Send the OnRecover event to the state machine.
-		swapHash := loopIn.SwapHash
-		go func() {
-			err = fsm.SendEvent(ctx, OnRecover, nil)
+		go func(fsm *FSM, swapHash lntypes.Hash) {
+			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
 				log.Errorf("Error sending OnStart event: %v",
 					err)
 			}
 
 			m.activeLoopIns[swapHash] = fsm
-		}()
+		}(fsm, loopIn.SwapHash)
 	}
 
 	return nil
-}
-
-// WaitInitComplete waits until the static address loop-in manager has completed
-// its setup.
-func (m *Manager) WaitInitComplete() {
-	defer log.Debugf("Static address loop-in manager initiation complete.")
-	<-m.initChan
 }
 
 // DeliverLoopInRequest forwards a loop-in request from the server to the

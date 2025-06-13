@@ -222,19 +222,23 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 func (f *FSM) handleBlockNotification(ctx context.Context,
 	currentHeight uint32) {
 
+	expire := func() {
+		err := f.SendEvent(ctx, OnExpiry, nil)
+		if err != nil {
+			log.Debugf("error sending OnExpiry event: %v", err)
+		}
+	}
+
 	// If the deposit is expired but not yet sufficiently confirmed, we
 	// republish the expiry sweep transaction.
 	if f.deposit.IsExpired(currentHeight, f.params.Expiry) {
 		if f.deposit.IsInState(WaitForExpirySweep) {
-			f.PublishDepositExpirySweepAction(ctx, nil)
+			event := f.PublishDepositExpirySweepAction(ctx, nil)
+			if event != OnExpiryPublished {
+				go expire()
+			}
 		} else {
-			go func() {
-				err := f.SendEvent(ctx, OnExpiry, nil)
-				if err != nil {
-					log.Debugf("error sending OnExpiry "+
-						"event: %v", err)
-				}
-			}()
+			go expire()
 		}
 	}
 }
@@ -267,6 +271,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnRecover:         PublishExpirySweep,
 				OnExpiryPublished: WaitForExpirySweep,
+				OnExpiry:          Expired,
 				// If the timeout sweep failed we go back to
 				// Deposited, hoping that another timeout sweep
 				// attempt will be successful. Alternatively,
@@ -292,7 +297,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry: Expired,
 			},
-			Action: f.SweptExpiredDepositAction,
+			Action: f.FinalizeDepositAction,
 		},
 		Withdrawing: fsm.State{
 			Transitions: fsm.Transitions{
