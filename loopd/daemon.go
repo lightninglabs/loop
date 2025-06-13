@@ -774,6 +774,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		infof("Liquidity manager stopped")
 	}()
 
+	initManagerTimeout := 10 * time.Second
+
 	// Start the reservation manager.
 	if d.reservationManager != nil {
 		d.wg.Add(1)
@@ -792,9 +794,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		}()
 
-		// Wait for the reservation server to be ready before starting the
-		// grpc server.
-		timeOutCtx, cancel := context.WithTimeout(d.mainCtx, 10*time.Second)
+		// Wait for the reservation server to be ready before starting
+		// the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
@@ -822,9 +826,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		}()
 
-		// Wait for the instantout server to be ready before starting the
-		// grpc server.
-		timeOutCtx, cancel := context.WithTimeout(d.mainCtx, 10*time.Second)
+		// Wait for the instantout server to be ready before starting
+		// the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
@@ -839,67 +845,128 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Start the static address manager.
 	if staticAddressManager != nil {
 		d.wg.Add(1)
+		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
 
 			infof("Starting static address manager...")
-			err := staticAddressManager.Run(d.mainCtx)
+			defer infof("Static address manager stopped")
+
+			err := staticAddressManager.Run(d.mainCtx, initChan)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			infof("Static address manager stopped")
 		}()
+
+		// Wait for the static address manager to be ready before
+		// starting the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("static address manager not "+
+				"ready: %v", timeOutCtx.Err())
+
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Start the static address deposit manager.
 	if depositManager != nil {
 		d.wg.Add(1)
+		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
 
 			infof("Starting static address deposit manager...")
-			err := depositManager.Run(d.mainCtx)
+			defer infof("Static address deposit manager stopped")
+
+			err := depositManager.Run(d.mainCtx, initChan)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			infof("Static address deposit manager stopped")
 		}()
-		depositManager.WaitInitComplete()
+
+		// Wait for the static address manager to be ready before
+		// starting the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("static address deposit manager "+
+				"not ready: %v", timeOutCtx.Err())
+
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Start the static address deposit withdrawal manager.
 	if withdrawalManager != nil {
 		d.wg.Add(1)
+		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
 
-			infof("Starting static address deposit withdrawal " +
-				"manager...")
-			err := withdrawalManager.Run(d.mainCtx)
+			infof("Starting static address withdrawal manager...")
+			defer infof("Static address withdrawal manager stopped")
+
+			err := withdrawalManager.Run(d.mainCtx, initChan)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			infof("Static address deposit withdrawal manager " +
-				"stopped")
 		}()
-		withdrawalManager.WaitInitComplete()
+
+		// Wait for the static address withdrawal manager to be ready
+		// before starting the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("static address withdrawal manager "+
+				"server not ready: %v", timeOutCtx.Err())
+
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Start the static address loop-in manager.
 	if staticLoopInManager != nil {
 		d.wg.Add(1)
+		initChan := make(chan struct{})
 		go func() {
 			defer d.wg.Done()
 
 			infof("Starting static address loop-in manager...")
-			err := staticLoopInManager.Run(d.mainCtx)
+			defer infof("Static address loop-in manager stopped")
+			err := staticLoopInManager.Run(d.mainCtx, initChan)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
-			infof("Starting static address loop-in manager " +
-				"stopped")
 		}()
-		staticLoopInManager.WaitInitComplete()
+
+		// Wait for the static address loop-in manager to be ready before
+		// starting the grpc server.
+		timeOutCtx, cancel := context.WithTimeout(
+			d.mainCtx, initManagerTimeout,
+		)
+		select {
+		case <-timeOutCtx.Done():
+			cancel()
+			return fmt.Errorf("static address loop-in manager "+
+				"not ready: %v", timeOutCtx.Err())
+
+		case <-initChan:
+			cancel()
+		}
 	}
 
 	// Last, start our internal error handler. This will return exactly one
