@@ -473,16 +473,15 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}
 
 		// Send the OnRecover event to the state machine.
-		swapHash := loopIn.SwapHash
-		go func() {
-			err = fsm.SendEvent(ctx, OnRecover, nil)
+		go func(fsm *FSM, swapHash lntypes.Hash) {
+			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
 				log.Errorf("Error sending OnStart event: %v",
 					err)
 			}
 
 			m.activeLoopIns[swapHash] = fsm
-		}()
+		}(fsm, loopIn.SwapHash)
 	}
 
 	return nil
