@@ -292,7 +292,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry: Expired,
 			},
-			Action: f.SweptExpiredDepositAction,
+			Action: f.FinalizeDepositAction,
 		},
 		Withdrawing: fsm.State{
 			Transitions: fsm.Transitions{
