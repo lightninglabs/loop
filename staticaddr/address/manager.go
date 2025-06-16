@@ -67,13 +67,17 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
 }
 
 // Run runs the address manager.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
 	if err != nil {
 		return err
 	}
+
+	// Communicate to the caller that the address manager has completed its
+	// initialization.
+	close(initChan)
 
 	for {
 		select {
