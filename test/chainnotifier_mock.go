@@ -33,10 +33,11 @@ func (c *mockChainNotifier) RawClientWithMacAuth(
 
 // SpendRegistration contains registration details.
 type SpendRegistration struct {
-	Outpoint   *wire.OutPoint
-	PkScript   []byte
-	HeightHint int32
-	ErrChan    chan<- error
+	Outpoint     *wire.OutPoint
+	PkScript     []byte
+	HeightHint   int32
+	SpendChannel chan<- *chainntnfs.SpendDetail
+	ErrChan      chan<- error
 }
 
 // ConfRegistration contains registration details.
@@ -53,13 +54,15 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	outpoint *wire.OutPoint, pkScript []byte, heightHint int32) (
 	chan *chainntnfs.SpendDetail, chan error, error) {
 
+	spendChan0 := make(chan *chainntnfs.SpendDetail)
 	spendErrChan := make(chan error, 1)
 
 	reg := &SpendRegistration{
-		HeightHint: heightHint,
-		Outpoint:   outpoint,
-		PkScript:   pkScript,
-		ErrChan:    spendErrChan,
+		HeightHint:   heightHint,
+		Outpoint:     outpoint,
+		PkScript:     pkScript,
+		SpendChannel: spendChan0,
+		ErrChan:      spendErrChan,
 	}
 
 	c.lnd.RegisterSpendChannel <- reg
@@ -73,6 +76,12 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 
 		select {
 		case m := <-c.lnd.SpendChannel:
+			select {
+			case spendChan <- m:
+			case <-ctx.Done():
+			}
+
+		case m := <-spendChan0:
 			select {
 			case spendChan <- m:
 			case <-ctx.Done():
