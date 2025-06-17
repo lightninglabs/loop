@@ -2078,6 +2078,21 @@ message StaticAddressLoopInRequest {
     side and the client can retry the swap with different parameters.
     */
     uint32 payment_timeout_seconds = 8;
+
+    /*
+    The optional swap amount the client is attempting to swap. It can be
+    provided in combination with the outpoints or separately. If provided with
+    outpoints the client takes out this amount from the sum of provided
+    outpoints and sends the change back to the static address. If the amount is
+    provided without outpoints, the client will select deposits automatically.
+    The coin selection strategy is simplified by sorting all available deposits
+    in descending order by amount, and equal amounts in ascending order of
+    blocks until expiry, and then selecting the largest deposits first until the
+    amount is reached. The change will be sent back to the static address. If a
+    subset of outpoints suffice to cover the specified amount the swap will be
+    canceled to allow the user to safe on transaction fees.
+    */
+    int64 amount = 9;
 }
 
 message StaticAddressLoopInResponse {
