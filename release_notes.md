@@ -18,11 +18,6 @@ This file tracks release notes for the loop client.
 
 #### Breaking Changes
 
-* The content of the `commit_hash` field of the `GetInfo` response has been updated so that it contains the Git commit
-  hash the Loop binary build was based on. If the build had uncommited changes, this field will contain the most recent 
-  commit hash, suffixed by "-dirty".
-* The `Commit` part of the `--version` command output has been updated to contain the most recent git commit tag.
-
 #### Bug Fixes
 
 #### Maintenance
