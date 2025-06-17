@@ -197,6 +197,7 @@ type SweepBatch struct {
 	LastRbfHeight      sql.NullInt32
 	LastRbfSatPerKw    sql.NullInt32
 	MaxTimeoutDistance int32
+	Cancelled          bool
 }
 
 type SweepsOld struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
@@ -146,6 +147,10 @@ type ClientConfig struct {
 	// be attempted.
 	LoopOutMaxParts uint32
 
+	// SkippedTxns is the list of existing HTLC txids to skip when starting
+	// Loop. This should only be used if affected by the historical bug.
+	SkippedTxns []string
+
 	// TotalPaymentTimeout is the total amount of time until we time out
 	// off-chain payments (used in loop out).
 	TotalPaymentTimeout time.Duration
@@ -246,11 +251,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		sweeper, loopDB, cfg.Lnd.ChainParams, getHeight,
 	)
 
-	batcher := sweepbatcher.NewBatcher(
-		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
-		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
-		cfg.Lnd.ChainParams, sweeperDb, sweepStore,
-
+	batcherOpts := []sweepbatcher.BatcherOption{
 		// Disable 100 sats/kw fee bump every block and retarget feerate
 		// every block according to the current mempool condition.
 		sweepbatcher.WithCustomFeeRate(
@@ -265,8 +266,29 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		// delay time to sweepbatcher's handling. The delay used in
 		// loopout.go is repushDelay.
 		sweepbatcher.WithPublishDelay(
-			repushDelay+additionalDelay,
+			repushDelay + additionalDelay,
 		),
+	}
+
+	if len(cfg.SkippedTxns) != 0 {
+		skippedTxns := make(map[chainhash.Hash]struct{})
+		for _, txid := range cfg.SkippedTxns {
+			txid, err := chainhash.NewHashFromStr(txid)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse "+
+					"txid to skip %v: %w", txid, err)
+			}
+			skippedTxns[*txid] = struct{}{}
+		}
+		batcherOpts = append(batcherOpts, sweepbatcher.WithSkippedTxns(
+			skippedTxns,
+		))
+	}
+
+	batcher := sweepbatcher.NewBatcher(
+		cfg.Lnd.WalletKit, cfg.Lnd.ChainNotifier, cfg.Lnd.Signer,
+		swapServerClient.MultiMuSig2SignSweep, verifySchnorrSig,
+		cfg.Lnd.ChainParams, sweeperDb, sweepStore, batcherOpts...,
 	)
 
 	executor = newExecutor(&executorConfig{

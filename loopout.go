@@ -330,7 +330,6 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 	} else {
 		swap.state = lastUpdate.State
 		swap.lastUpdateTime = lastUpdate.Time
-		swap.htlcTxHash = lastUpdate.HtlcTxHash
 	}
 
 	return swap, nil

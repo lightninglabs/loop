@@ -1172,6 +1172,159 @@ func testSweepBatcherSimpleLifecycle(t *testing.T, store testStore,
 	require.ErrorIs(t, runErr, testError)
 }
 
+// testSweepBatcherSkippedTxns tests that option WithSkippedTxns
+// works as expected.
+func testSweepBatcherSkippedTxns(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+	)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Create a sweep request.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	swapHash := lntypes.Hash{1, 1, 1}
+	const (
+		inputValue       = 111
+		initiationHeight = 550
+	)
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:       111,
+			AmountRequested:  inputValue,
+			ProtocolVersion:  loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:         htlcKeys,
+			InitiationHeight: initiationHeight,
+		},
+
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: 111,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    inputValue,
+			Outpoint: op1,
+		}},
+		Notifier: &dummyNotifier,
+	}))
+
+	// When batch is successfully created it will execute it's first step,
+	// which leads to a spend monitor of the primary sweep.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	<-lnd.TxPublishChannel
+
+	// Record batch ID.
+	var oldBatchID int32
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		oldBatchID = batch.id
+
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Restart the batcher, adding the oldBatchID to skipped batches.
+	cancel()
+	wg.Wait()
+	checkBatcherError(t, runErr)
+
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	batcher = NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithSkippedTxns(map[chainhash.Hash]struct{}{
+			op1.Hash: {},
+		}),
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Add the same swap with another outpoint.
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    inputValue,
+			Outpoint: op2,
+		}},
+		Notifier: &dummyNotifier,
+	}))
+
+	// Make sure it is launched in a new batch.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for tx to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 1)
+
+	// Record new batch ID.
+	var newBatchID int32
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+		newBatchID = batch.id
+
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure it is another batch.
+	require.NotEqual(t, oldBatchID, newBatchID)
+
+	// Stop the batcher.
+	cancel()
+	wg.Wait()
+	checkBatcherError(t, runErr)
+}
+
 // wrappedLogger implements btclog.Logger, recording last debug message format.
 // It is needed to watch for messages in tests.
 type wrappedLogger struct {
@@ -4743,6 +4896,12 @@ func TestPublishErrorHandler(t *testing.T) {
 // that are created and run by the batcher.
 func TestSweepBatcherSimpleLifecycle(t *testing.T) {
 	runTests(t, testSweepBatcherSimpleLifecycle)
+}
+
+// TestSweepBatcherSkippedTxns tests that option WithSkippedTxns
+// works as expected.
+func TestSweepBatcherSkippedTxns(t *testing.T) {
+	runTests(t, testSweepBatcherSkippedTxns)
 }
 
 // TestDelays tests that WithInitialDelay and WithPublishDelay work.

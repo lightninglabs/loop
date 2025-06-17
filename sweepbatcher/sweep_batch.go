@@ -187,6 +187,10 @@ type batchConfig struct {
 	// enabled.
 	presignedHelper PresignedHelper
 
+	// skippedTxns is the list of previous transactions to ignore when
+	// loading the sweeps from DB. This is needed to fix a historical bug.
+	skippedTxns map[chainhash.Hash]struct{}
+
 	// chainParams are the chain parameters of the chain that is used by
 	// batches.
 	chainParams *chaincfg.Params

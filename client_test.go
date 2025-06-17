@@ -291,7 +291,7 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 
 	// Expect client to register for our expected number of confirmations.
 	confIntent := ctx.Context.AssertRegisterConf(
-		preimageRevealed, int32(confs),
+		false, int32(confs),
 	)
 
 	htlc, err := utils.GetHtlc(

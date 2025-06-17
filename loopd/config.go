@@ -184,6 +184,8 @@ type Config struct {
 
 	LoopOutMaxParts uint32 `long:"loopoutmaxparts" description:"The maximum number of payment parts that may be used for a loop out swap."`
 
+	SkippedTxns []string `long:"skippedtxns" description:"The list of existing HTLC txids to skip when starting Loop. This should only be used if affected by the historical bug." hidden:"true"`
+
 	TotalPaymentTimeout time.Duration `long:"totalpaymenttimeout" description:"The timeout to use for off-chain payments."`
 	MaxPaymentRetries   int           `long:"maxpaymentretries" description:"The maximum number of times an off-chain payment may be retried."`
 

@@ -126,6 +126,8 @@ func (b *batch) getOrderedSweeps(ctx context.Context) ([]sweep, error) {
 		return nil, fmt.Errorf("FetchBatchSweeps(%d) failed: %w", b.id,
 			err)
 	}
+	dbSweeps = filterDbSweeps(b.cfg.skippedTxns, dbSweeps)
+
 	if len(dbSweeps) != len(utxo2sweep) {
 		return nil, fmt.Errorf("FetchBatchSweeps(%d) returned %d "+
 			"sweeps, len(b.sweeps) is %d", b.id, len(dbSweeps),

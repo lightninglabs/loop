@@ -50,9 +50,10 @@ type BatcherStore interface {
 	// of the inserted batch.
 	InsertSweepBatch(ctx context.Context, batch *dbBatch) (int32, error)
 
-	// DropBatch drops a batch from the database. This should only be used
-	// when a batch is empty.
-	DropBatch(ctx context.Context, id int32) error
+	// CancelBatch marks a batch as cancelled in the database. Note that we
+	// only use this call for batches that have no sweeps or all the sweeps
+	// are in skipped transaction and so we'd not be able to resume.
+	CancelBatch(ctx context.Context, id int32) error
 
 	// UpdateSweepBatch updates a batch in the database.
 	UpdateSweepBatch(ctx context.Context, batch *dbBatch) error
@@ -440,6 +441,10 @@ type Batcher struct {
 	// presignedHelper provides methods used when presigned batches are
 	// enabled.
 	presignedHelper PresignedHelper
+
+	// skippedTxns is the list of previous transactions to ignore when
+	// loading the sweeps from DB. This is needed to fix a historical bug.
+	skippedTxns map[chainhash.Hash]struct{}
 }
 
 // BatcherConfig holds batcher configuration.
@@ -484,6 +489,10 @@ type BatcherConfig struct {
 	// presignedHelper provides methods used when presigned batches are
 	// enabled.
 	presignedHelper PresignedHelper
+
+	// skippedTxns is the list of previous transactions to ignore when
+	// loading the sweeps from DB. This is needed to fix a historical bug.
+	skippedTxns map[chainhash.Hash]struct{}
 }
 
 // BatcherOption configures batcher behaviour.
@@ -566,6 +575,14 @@ func WithPresignedHelper(presignedHelper PresignedHelper) BatcherOption {
 	}
 }
 
+// WithSkippedTxns is the list of previous transactions to ignore when
+// loading the sweeps from DB. This is needed to fix a historical bug.
+func WithSkippedTxns(skippedTxns map[chainhash.Hash]struct{}) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.skippedTxns = skippedTxns
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -573,6 +590,14 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	verifySchnorrSig VerifySchnorrSig, chainparams *chaincfg.Params,
 	store BatcherStore, sweepStore SweepFetcher,
 	opts ...BatcherOption) *Batcher {
+
+	badTx1, err := chainhash.NewHashFromStr(
+		"7028bdac753a254785d29506f311abcda323706b531345105f38999" +
+			"aecd6f3d1",
+	)
+	if err != nil {
+		panic(err)
+	}
 
 	cfg := BatcherConfig{
 		// By default, loop/labels.LoopOutBatchSweepSuccess is used
@@ -583,6 +608,10 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		// publishing error. By default, it logs all errors as warnings,
 		// but "insufficient fee" as Info.
 		publishErrorHandler: defaultPublishErrorLogger,
+
+		skippedTxns: map[chainhash.Hash]struct{}{
+			*badTx1: {},
+		},
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -621,6 +650,7 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 		customMuSig2Signer:   cfg.customMuSig2Signer,
 		publishErrorHandler:  cfg.publishErrorHandler,
 		presignedHelper:      cfg.presignedHelper,
+		skippedTxns:          cfg.skippedTxns,
 	}
 }
 
@@ -1000,6 +1030,22 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	return batch, nil
 }
 
+// filterDbSweeps copies dbSweeps, skipping the sweeps from skipped txs.
+func filterDbSweeps(skippedTxns map[chainhash.Hash]struct{},
+	dbSweeps []*dbSweep) []*dbSweep {
+
+	result := make([]*dbSweep, 0, len(dbSweeps))
+	for _, dbSweep := range dbSweeps {
+		if _, has := skippedTxns[dbSweep.Outpoint.Hash]; has {
+			continue
+		}
+
+		result = append(result, dbSweep)
+	}
+
+	return result
+}
+
 // spinUpBatchFromDB spins up a batch that already existed in storage, then
 // returns it.
 func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
@@ -1007,13 +1053,15 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	if err != nil {
 		return err
 	}
+	dbSweeps = filterDbSweeps(b.skippedTxns, dbSweeps)
 
 	if len(dbSweeps) == 0 {
 		infof("skipping restored batch %d as it has no sweeps",
 			batch.id)
 
-		// It is safe to drop this empty batch as it has no sweeps.
-		err := b.store.DropBatch(ctx, batch.id)
+		// It is safe to cancel this empty batch as it has no sweeps
+		// that are not skipped.
+		err := b.store.CancelBatch(ctx, batch.id)
 		if err != nil {
 			warnf("unable to drop empty batch %d: %v",
 				batch.id, err)
@@ -1502,6 +1550,7 @@ func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
 		presignedHelper:    b.presignedHelper,
+		skippedTxns:        b.skippedTxns,
 		clock:              b.clock,
 		chainParams:        b.chainParams,
 	}
