@@ -33,8 +33,9 @@ func TestOrderedSweeps(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name   string
-		sweeps []sweep
+		name        string
+		sweeps      []sweep
+		skippedTxns map[chainhash.Hash]struct{}
 
 		// Testing errors.
 		skipStore     bool
@@ -70,6 +71,20 @@ func TestOrderedSweeps(t *testing.T) {
 		},
 
 		{
+			name: "one sweep, skipped",
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					swapHash: swapHash1,
+				},
+			},
+			skippedTxns: map[chainhash.Hash]struct{}{
+				op1.Hash: {},
+			},
+			wantGroups: [][]sweep{},
+		},
+
+		{
 			name: "two sweeps, one swap",
 			sweeps: []sweep{
 				{
@@ -89,6 +104,31 @@ func TestOrderedSweeps(t *testing.T) {
 					},
 					{
 						outpoint: op1,
+						swapHash: swapHash1,
+					},
+				},
+			},
+		},
+
+		{
+			name: "two sweeps, one swap, one skipped",
+			sweeps: []sweep{
+				{
+					outpoint: op2,
+					swapHash: swapHash1,
+				},
+				{
+					outpoint: op1,
+					swapHash: swapHash1,
+				},
+			},
+			skippedTxns: map[chainhash.Hash]struct{}{
+				op1.Hash: {},
+			},
+			wantGroups: [][]sweep{
+				{
+					{
+						outpoint: op2,
 						swapHash: swapHash1,
 					},
 				},
@@ -266,6 +306,9 @@ func TestOrderedSweeps(t *testing.T) {
 			b := &batch{
 				sweeps: m,
 				store:  NewStoreMock(),
+				cfg: &batchConfig{
+					skippedTxns: tc.skippedTxns,
+				},
 			}
 
 			// Store the sweeps in mock store.
@@ -299,6 +342,14 @@ func TestOrderedSweeps(t *testing.T) {
 				m[added.outpoint] = added
 			}
 
+			// Remove skipped sweeps from the batch to make it
+			// match with what is read from DB after filtering.
+			for op := range m {
+				if _, has := tc.skippedTxns[op.Hash]; has {
+					delete(m, op)
+				}
+			}
+
 			// Now run the tested functions.
 			orderedSweeps, err := b.getOrderedSweeps(ctx)
 			if tc.wantErr1 != "" {
@@ -313,7 +364,15 @@ func TestOrderedSweeps(t *testing.T) {
 			}
 
 			// The wanted list of sweeps matches the input order.
-			require.Equal(t, tc.sweeps, orderedSweeps)
+			notSkipped := make([]sweep, 0, len(tc.sweeps))
+			for _, s := range tc.sweeps {
+				_, has := tc.skippedTxns[s.outpoint.Hash]
+				if has {
+					continue
+				}
+				notSkipped = append(notSkipped, s)
+			}
+			require.Equal(t, notSkipped, orderedSweeps)
 
 			groups, err := b.getSweepsGroups(ctx)
 			if tc.wantErr2 != "" {

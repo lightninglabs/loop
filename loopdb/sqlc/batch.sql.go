@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const cancelBatch = `-- name: CancelBatch :exec
+UPDATE sweep_batches SET
+        cancelled = TRUE
+WHERE id = $1
+`
+
+func (q *Queries) CancelBatch(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, cancelBatch, id)
+	return err
+}
+
 const confirmBatch = `-- name: ConfirmBatch :exec
 UPDATE
         sweep_batches
@@ -21,15 +32,6 @@ WHERE
 
 func (q *Queries) ConfirmBatch(ctx context.Context, id int32) error {
 	_, err := q.db.ExecContext(ctx, confirmBatch, id)
-	return err
-}
-
-const dropBatch = `-- name: DropBatch :exec
-DELETE FROM sweep_batches WHERE id = $1
-`
-
-func (q *Queries) DropBatch(ctx context.Context, id int32) error {
-	_, err := q.db.ExecContext(ctx, dropBatch, id)
 	return err
 }
 
@@ -94,7 +96,7 @@ func (q *Queries) GetBatchSweptAmount(ctx context.Context, batchID int32) (int64
 
 const getParentBatch = `-- name: GetParentBatch :one
 SELECT
-        sweep_batches.id, sweep_batches.confirmed, sweep_batches.batch_tx_id, sweep_batches.batch_pk_script, sweep_batches.last_rbf_height, sweep_batches.last_rbf_sat_per_kw, sweep_batches.max_timeout_distance
+        sweep_batches.id, sweep_batches.confirmed, sweep_batches.batch_tx_id, sweep_batches.batch_pk_script, sweep_batches.last_rbf_height, sweep_batches.last_rbf_sat_per_kw, sweep_batches.max_timeout_distance, sweep_batches.cancelled
 FROM
         sweep_batches
 JOIN
@@ -114,6 +116,7 @@ func (q *Queries) GetParentBatch(ctx context.Context, outpoint string) (SweepBat
 		&i.LastRbfHeight,
 		&i.LastRbfSatPerKw,
 		&i.MaxTimeoutDistance,
+		&i.Cancelled,
 	)
 	return i, err
 }
@@ -136,11 +139,11 @@ func (q *Queries) GetSweepStatus(ctx context.Context, outpoint string) (bool, er
 
 const getUnconfirmedBatches = `-- name: GetUnconfirmedBatches :many
 SELECT
-        id, confirmed, batch_tx_id, batch_pk_script, last_rbf_height, last_rbf_sat_per_kw, max_timeout_distance
+        id, confirmed, batch_tx_id, batch_pk_script, last_rbf_height, last_rbf_sat_per_kw, max_timeout_distance, cancelled
 FROM
         sweep_batches
 WHERE
-        confirmed = FALSE
+        confirmed = FALSE AND cancelled = FALSE
 `
 
 func (q *Queries) GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error) {
@@ -160,6 +163,7 @@ func (q *Queries) GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, erro
 			&i.LastRbfHeight,
 			&i.LastRbfSatPerKw,
 			&i.MaxTimeoutDistance,
+			&i.Cancelled,
 		); err != nil {
 			return nil, err
 		}

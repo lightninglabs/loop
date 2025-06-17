@@ -4,7 +4,7 @@ SELECT
 FROM
         sweep_batches
 WHERE
-        confirmed = FALSE;
+        confirmed = FALSE AND cancelled = FALSE;
 
 -- name: InsertBatch :one
 INSERT INTO sweep_batches (
@@ -23,8 +23,10 @@ INSERT INTO sweep_batches (
         $6
 ) RETURNING id;
 
--- name: DropBatch :exec
-DELETE FROM sweep_batches WHERE id = $1;
+-- name: CancelBatch :exec
+UPDATE sweep_batches SET
+        cancelled = TRUE
+WHERE id = $1;
 
 -- name: UpdateBatch :exec
 UPDATE sweep_batches SET
