@@ -37,7 +37,7 @@ else
     LOOP_VERSION_OUTPUT=`./loopd-debug --version`
 
     # Use a regex to isolate the version string.
-    LOOP_VERSION_REGEX="version (.+) "
+    LOOP_VERSION_REGEX="version ([^ ]+) "
     if [[ $LOOP_VERSION_OUTPUT =~ $LOOP_VERSION_REGEX ]]; then
         # Prepend 'v' to match git tag naming scheme.
         LOOP_VERSION="v${BASH_REMATCH[1]}"
