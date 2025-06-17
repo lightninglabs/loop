@@ -13,6 +13,8 @@ type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	ConfirmBatch(ctx context.Context, id int32) error
+	CreateAssetOutSwap(ctx context.Context, swapHash []byte) error
+	CreateAssetSwap(ctx context.Context, arg CreateAssetSwapParams) error
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
@@ -20,7 +22,9 @@ type Querier interface {
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
 	DropBatch(ctx context.Context, id int32) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	GetAllAssetOutSwaps(ctx context.Context) ([]GetAllAssetOutSwapsRow, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+	GetAssetOutSwap(ctx context.Context, swapHash []byte) (GetAssetOutSwapRow, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -47,6 +51,7 @@ type Querier interface {
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) ([][]byte, error)
 	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) ([]byte, error)
+	InsertAssetSwapUpdate(ctx context.Context, arg InsertAssetSwapUpdateParams) error
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
@@ -63,6 +68,10 @@ type Querier interface {
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
+	UpdateAssetSwapHtlcTx(ctx context.Context, arg UpdateAssetSwapHtlcTxParams) error
+	UpdateAssetSwapOutPreimage(ctx context.Context, arg UpdateAssetSwapOutPreimageParams) error
+	UpdateAssetSwapOutProof(ctx context.Context, arg UpdateAssetSwapOutProofParams) error
+	UpdateAssetSwapSweepTx(ctx context.Context, arg UpdateAssetSwapSweepTxParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
