@@ -191,10 +191,13 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		}
 
 		// Send the OnRecover event to the state machine.
-		err = fsm.SendEvent(ctx, OnRecover, nil)
-		if err != nil {
-			log.Errorf("Error sending OnStart event: %v", err)
-		}
+		go func(fsm *FSM) {
+			err := fsm.SendEvent(ctx, OnRecover, nil)
+			if err != nil {
+				log.Errorf("Error sending OnStart event: %v",
+					err)
+			}
+		}(fsm)
 
 		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
