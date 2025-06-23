@@ -137,21 +137,6 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	}
 }
 
-// SweptExpiredDepositAction is the final action of the FSM. It signals to the
-// manager that the deposit has been swept and the FSM can be removed. It also
-// ends the state machine main loop by cancelling its context.
-func (f *FSM) SweptExpiredDepositAction(ctx context.Context,
-	_ fsm.EventContext) fsm.EventType {
-
-	select {
-	case <-ctx.Done():
-		return fsm.OnError
-
-	case f.finalizedDepositChan <- f.deposit.OutPoint:
-		return fsm.NoOp
-	}
-}
-
 // FinalizeDepositAction is the final action after a withdrawal. It signals to
 // the manager that the deposit has been swept and the FSM can be removed.
 func (f *FSM) FinalizeDepositAction(ctx context.Context,
