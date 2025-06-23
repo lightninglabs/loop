@@ -7,7 +7,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c // indirect
-	github.com/btcsuite/btcwallet v0.16.13
+	github.com/btcsuite/btcwallet v0.16.14
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
@@ -22,14 +22,14 @@ require (
 	github.com/lightninglabs/lndclient v0.19.0-7
 	github.com/lightninglabs/loop/looprpc v1.0.7
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightninglabs/taproot-assets v0.6.0-rc2.0.20250526132410-324bce0a1a7b
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.5
+	github.com/lightninglabs/taproot-assets v0.6.1-0.20250623121023-2bb2369190e8
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.8-0.20250623121023-2bb2369190e8
 	github.com/lightningnetwork/lnd v0.19.0-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
 	github.com/lightningnetwork/lnd/ticker v1.1.1
-	github.com/lightningnetwork/lnd/tlv v1.3.1
+	github.com/lightningnetwork/lnd/tlv v1.3.2
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.10.0
@@ -43,7 +43,7 @@ require (
 	modernc.org/sqlite v1.34.5
 )
 
-require github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
+require github.com/btcsuite/btclog/v2 v2.0.1-0.20250602222548-9967d19bb084
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
@@ -122,11 +122,11 @@ require (
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.16 // indirect
-	github.com/lightningnetwork/lnd/sqldb v1.0.9 // indirect
+	github.com/lightningnetwork/lnd/sqldb v1.0.10 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
@@ -216,5 +216,9 @@ replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
+
+replace github.com/lightningnetwork/lnd => github.com/GeorgeTsagk/lnd v0.0.0-20250623110101-626dfaed57d1
+
+replace github.com/lightningnetwork/lnd/sqldb => github.com/GeorgeTsagk/lnd/sqldb v0.0.0-20250623110101-626dfaed57d1
 
 go 1.23.9
