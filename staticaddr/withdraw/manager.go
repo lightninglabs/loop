@@ -26,6 +26,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -238,32 +239,45 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 		)
 	}
 
+	// Publishing a transaction can take a while in neutrino mode, so
+	// do it in parallel.
+	eg := &errgroup.Group{}
+
 	// We can now reinstate each cluster of deposits for a withdrawal.
-	for finalizedWithdrawalTx, deposits := range depositsByWithdrawalTx {
-		tx := finalizedWithdrawalTx
-		err = m.cfg.DepositManager.TransitionDeposits(
-			ctx, deposits, deposit.OnWithdrawInitiated,
-			deposit.Withdrawing,
-		)
-		if err != nil {
-			return err
-		}
+	for tx, deposits := range depositsByWithdrawalTx {
+		eg.Go(func() error {
+			err := m.cfg.DepositManager.TransitionDeposits(
+				ctx, deposits, deposit.OnWithdrawInitiated,
+				deposit.Withdrawing,
+			)
+			if err != nil {
+				return err
+			}
 
-		_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
-		if err != nil {
-			return err
-		}
+			_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
+			if err != nil {
+				return err
+			}
 
-		err = m.handleWithdrawal(
-			ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
-		)
-		if err != nil {
-			return err
-		}
+			err = m.handleWithdrawal(
+				ctx, deposits, tx.TxHash(),
+				tx.TxOut[0].PkScript,
+			)
+			if err != nil {
+				return err
+			}
 
-		m.mu.Lock()
-		m.finalizedWithdrawalTxns[tx.TxHash()] = tx
-		m.mu.Unlock()
+			m.mu.Lock()
+			m.finalizedWithdrawalTxns[tx.TxHash()] = tx
+			m.mu.Unlock()
+
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to report back.
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("error recovering withdrawals: %w", err)
 	}
 
 	return nil
