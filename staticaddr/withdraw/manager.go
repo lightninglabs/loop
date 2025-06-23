@@ -227,15 +227,18 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	}
 
 	// Group the deposits by their finalized withdrawal transaction.
-	depositsByWithdrawalTx := make(map[*wire.MsgTx][]*deposit.Deposit)
+	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
+	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
 	for _, d := range activeDeposits {
 		withdrawalTx := d.FinalizedWithdrawalTx
 		if withdrawalTx == nil {
 			continue
 		}
+		txid := withdrawalTx.TxHash()
+		hash2tx[txid] = withdrawalTx
 
-		depositsByWithdrawalTx[withdrawalTx] = append(
-			depositsByWithdrawalTx[withdrawalTx], d,
+		depositsByWithdrawalTx[txid] = append(
+			depositsByWithdrawalTx[txid], d,
 		)
 	}
 
@@ -244,7 +247,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	eg := &errgroup.Group{}
 
 	// We can now reinstate each cluster of deposits for a withdrawal.
-	for tx, deposits := range depositsByWithdrawalTx {
+	for txid, deposits := range depositsByWithdrawalTx {
 		eg.Go(func() error {
 			err := m.cfg.DepositManager.TransitionDeposits(
 				ctx, deposits, deposit.OnWithdrawInitiated,
@@ -252,6 +255,11 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 			)
 			if err != nil {
 				return err
+			}
+
+			tx, ok := hash2tx[txid]
+			if !ok {
+				return fmt.Errorf("can't find tx %v", txid)
 			}
 
 			_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
