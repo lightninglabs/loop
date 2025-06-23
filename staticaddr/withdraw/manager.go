@@ -558,6 +558,9 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 			"withdrawal tx is nil")
 	}
 
+	log.Debugf("Publishing deposit withdrawal with txid: %v ...",
+		tx.TxHash())
+
 	txLabel := fmt.Sprintf("deposit-withdrawal-%v", tx.TxHash())
 
 	// Publish the withdrawal sweep transaction.
@@ -577,7 +580,7 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 			return false, nil
 		}
 	} else {
-		log.Debugf("published deposit withdrawal with txid: %v",
+		log.Debugf("Published deposit withdrawal with txid: %v",
 			tx.TxHash())
 	}
 
