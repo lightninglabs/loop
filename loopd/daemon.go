@@ -922,10 +922,15 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		}()
 
+		// We need a higher timeout here, because withdrawalManager
+		// publishes transactions and each PublishTransaction call can
+		// wait for getting inv messages from a peer (neutrino).
+		const withdrawalManagerTimeout = time.Minute
+
 		// Wait for the static address withdrawal manager to be ready
 		// before starting the grpc server.
 		timeOutCtx, cancel := context.WithTimeout(
-			d.mainCtx, initManagerTimeout,
+			d.mainCtx, withdrawalManagerTimeout,
 		)
 		select {
 		case <-timeOutCtx.Done():
