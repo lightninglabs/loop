@@ -2059,6 +2059,10 @@ func (b *batch) handleConf(ctx context.Context,
 	conf *chainntnfs.TxConfirmation) error {
 
 	spendTx := conf.Tx
+	if spendTx == nil {
+		return fmt.Errorf("confirmation doesn't have spendTx, "+
+			"height=%d, TxIndex=%d", conf.BlockHeight, conf.TxIndex)
+	}
 	txHash := spendTx.TxHash()
 	if b.batchTxid == nil || *b.batchTxid != txHash {
 		b.Warnf("Mismatch of batch txid: tx in spend notification had "+
