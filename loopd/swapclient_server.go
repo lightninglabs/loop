@@ -418,11 +418,20 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 		outGoingChanSet = loopSwap.OutgoingChanSet
 
 		if loopSwap.AssetSwapInfo != nil {
-			assetName, err := s.assetClient.GetAssetName(
-				ctx, loopSwap.AssetSwapInfo.AssetId,
+			var (
+				// Default the asset name to "N/A" in case we
+				// can't fetch it due to the asset client not
+				// being set.
+				assetName string = "N/A"
+				err       error
 			)
-			if err != nil {
-				return nil, err
+			if s.assetClient != nil {
+				assetName, err = s.assetClient.GetAssetName(
+					ctx, loopSwap.AssetSwapInfo.AssetId,
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			assetInfo = &looprpc.AssetLoopOutInfo{
