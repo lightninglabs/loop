@@ -26,6 +26,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -226,44 +227,65 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	}
 
 	// Group the deposits by their finalized withdrawal transaction.
-	depositsByWithdrawalTx := make(map[*wire.MsgTx][]*deposit.Deposit)
+	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
+	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
 	for _, d := range activeDeposits {
 		withdrawalTx := d.FinalizedWithdrawalTx
 		if withdrawalTx == nil {
 			continue
 		}
+		txid := withdrawalTx.TxHash()
+		hash2tx[txid] = withdrawalTx
 
-		depositsByWithdrawalTx[withdrawalTx] = append(
-			depositsByWithdrawalTx[withdrawalTx], d,
+		depositsByWithdrawalTx[txid] = append(
+			depositsByWithdrawalTx[txid], d,
 		)
 	}
 
+	// Publishing a transaction can take a while in neutrino mode, so
+	// do it in parallel.
+	eg := &errgroup.Group{}
+
 	// We can now reinstate each cluster of deposits for a withdrawal.
-	for finalizedWithdrawalTx, deposits := range depositsByWithdrawalTx {
-		tx := finalizedWithdrawalTx
-		err = m.cfg.DepositManager.TransitionDeposits(
-			ctx, deposits, deposit.OnWithdrawInitiated,
-			deposit.Withdrawing,
-		)
-		if err != nil {
-			return err
-		}
+	for txid, deposits := range depositsByWithdrawalTx {
+		eg.Go(func() error {
+			err := m.cfg.DepositManager.TransitionDeposits(
+				ctx, deposits, deposit.OnWithdrawInitiated,
+				deposit.Withdrawing,
+			)
+			if err != nil {
+				return err
+			}
 
-		_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
-		if err != nil {
-			return err
-		}
+			tx, ok := hash2tx[txid]
+			if !ok {
+				return fmt.Errorf("can't find tx %v", txid)
+			}
 
-		err = m.handleWithdrawal(
-			ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
-		)
-		if err != nil {
-			return err
-		}
+			_, err = m.publishFinalizedWithdrawalTx(ctx, tx)
+			if err != nil {
+				return err
+			}
 
-		m.mu.Lock()
-		m.finalizedWithdrawalTxns[tx.TxHash()] = tx
-		m.mu.Unlock()
+			err = m.handleWithdrawal(
+				ctx, deposits, tx.TxHash(),
+				tx.TxOut[0].PkScript,
+			)
+			if err != nil {
+				return err
+			}
+
+			m.mu.Lock()
+			m.finalizedWithdrawalTxns[tx.TxHash()] = tx
+			m.mu.Unlock()
+
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to report back.
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("error recovering withdrawals: %w", err)
 	}
 
 	return nil
@@ -558,6 +580,9 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 			"withdrawal tx is nil")
 	}
 
+	log.Debugf("Publishing deposit withdrawal with txid: %v ...",
+		tx.TxHash())
+
 	txLabel := fmt.Sprintf("deposit-withdrawal-%v", tx.TxHash())
 
 	// Publish the withdrawal sweep transaction.
@@ -577,7 +602,7 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 			return false, nil
 		}
 	} else {
-		log.Debugf("published deposit withdrawal with txid: %v",
+		log.Debugf("Published deposit withdrawal with txid: %v",
 			tx.TxHash())
 	}
 

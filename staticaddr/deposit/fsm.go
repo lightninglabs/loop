@@ -399,7 +399,7 @@ func (f *FSM) updateDeposit(ctx context.Context,
 
 	err := f.cfg.Store.UpdateDeposit(ctx, f.deposit)
 	if err != nil {
-		f.Errorf("unable to update deposit: %w", err)
+		f.Errorf("unable to update deposit: %v", err)
 	}
 }
 
