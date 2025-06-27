@@ -1,6 +1,7 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -92,6 +93,11 @@ type StaticAddressLoopIn struct {
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
 	DepositOutpoints []string
+
+	// SelectedAmount is the amount that the user selected for the swap. If
+	// the user did not select an amount, the amount of all deposits is
+	// used.
+	SelectedAmount btcutil.Amount
 
 	// state is the current state of the swap.
 	state fsm.StateType
@@ -287,10 +293,20 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 	weight := l.htlcWeight()
 	fee := feeRate.FeeForWeight(weight)
 
-	// Check if the server breaches our fee limits.
-	amt := float64(l.TotalDepositAmount())
-	feeLimit := btcutil.Amount(amt * maxFeePercentage)
+	// Determine the swap amount. If the user selected a specific amount, we
+	// use that and use the difference to the total deposit amount as the
+	// change.
+	var (
+		swapAmt      = l.TotalDepositAmount()
+		changeAmount btcutil.Amount
+	)
+	if l.SelectedAmount > 0 {
+		swapAmt = l.SelectedAmount
+		changeAmount = l.TotalDepositAmount() - l.SelectedAmount
+	}
 
+	// Check if the server breaches our fee limits.
+	feeLimit := btcutil.Amount(float64(swapAmt) * maxFeePercentage)
 	if fee > feeLimit {
 		return nil, fmt.Errorf("htlc tx fee %v exceeds max fee %v",
 			fee, feeLimit)
@@ -308,11 +324,19 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 
 	// Create the sweep output
 	sweepOutput := &wire.TxOut{
-		Value:    int64(l.TotalDepositAmount()) - int64(fee),
+		Value:    int64(swapAmt - fee),
 		PkScript: pkscript,
 	}
 
 	msgTx.AddTxOut(sweepOutput)
+
+	// We expect change to be sent back to our static address output script.
+	if changeAmount > 0 {
+		msgTx.AddTxOut(&wire.TxOut{
+			Value:    int64(changeAmount),
+			PkScript: l.AddressParams.PkScript,
+		})
+	}
 
 	return msgTx, nil
 }
@@ -373,11 +397,25 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
+	// Check if the htlc tx has a change output. If so we need to select the
+	// non-change output index to construct the sweep with.
+	htlcInputIndex := uint32(0)
+	if len(htlcTx.TxOut) == 2 {
+		// If the first htlc tx output matches our static address
+		// script we need to select the second output to sweep from.
+		if bytes.Equal(
+			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
+		) {
+
+			htlcInputIndex = 1
+		}
+	}
+
 	// Add the htlc input.
 	sweepTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: wire.OutPoint{
 			Hash:  htlcTx.TxHash(),
-			Index: 0,
+			Index: htlcInputIndex,
 		},
 		SignatureScript: htlc.SigScript,
 		Sequence:        htlc.SuccessSequence(),
