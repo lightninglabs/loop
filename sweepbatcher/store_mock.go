@@ -77,22 +77,6 @@ func (s *StoreMock) UpdateSweepBatch(ctx context.Context,
 	return nil
 }
 
-// ConfirmBatch confirms a batch.
-func (s *StoreMock) ConfirmBatch(ctx context.Context, id int32) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	batch, ok := s.batches[id]
-	if !ok {
-		return errors.New("batch not found")
-	}
-
-	batch.Confirmed = true
-	s.batches[batch.ID] = batch
-
-	return nil
-}
-
 // FetchBatchSweeps fetches all the sweeps that belong to a batch.
 func (s *StoreMock) FetchBatchSweeps(ctx context.Context,
 	id int32) ([]*dbSweep, error) {

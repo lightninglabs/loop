@@ -408,8 +408,8 @@ func testFeeBumping(t *testing.T, store testStore,
 	// Disable fee bumping, if requested.
 	var opts []BatcherOption
 	if noFeeBumping {
-		customFeeRate := func(ctx context.Context,
-			swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+		customFeeRate := func(_ context.Context, _ lntypes.Hash,
+			_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 			// Always provide the same value, no bumping.
 			return test.DefaultMockFee, nil
@@ -2457,21 +2457,14 @@ func testSweepBatcherSweepReentry(t *testing.T, store testStore,
 		return b.state == Closed
 	}, test.Timeout, eventuallyCheckFrequency)
 
-	// Since second batch was created we check that it registered for its
-	// primary sweep's spend.
-	<-lnd.RegisterSpendChannel
-
-	// While handling the spend notification the batch should detect that
-	// some sweeps did not appear in the spending tx, therefore it redirects
-	// them back to the batcher and the batcher inserts them in a new batch.
-	require.Eventually(t, func() bool {
-		return batcher.numBatches(ctx) == 2
-	}, test.Timeout, eventuallyCheckFrequency)
-
 	// We mock the confirmation notification.
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
 		Tx: spendingTx,
 	}
+
+	// Since second batch was created we check that it registered for its
+	// primary sweep's spend.
+	<-lnd.RegisterSpendChannel
 
 	// Wait for tx to be published.
 	// Here is a race condition, which is unlikely to cause a crash: if we
@@ -3851,8 +3844,8 @@ func testSweepFetcher(t *testing.T, store testStore,
 	require.NoError(t, err)
 	store.AssertLoopOutStored()
 
-	customFeeRate := func(ctx context.Context,
-		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		// Always provide the same value, no bumping.
 		return feeRate, nil
@@ -4698,8 +4691,8 @@ func testFeeRateGrows(t *testing.T, store testStore,
 		swap2feeRate[swapHash] = rate
 	}
 
-	customFeeRate := func(ctx context.Context,
-		swapHash lntypes.Hash) (chainfee.SatPerKWeight, error) {
+	customFeeRate := func(_ context.Context, swapHash lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
 		swap2feeRateMu.Lock()
 		defer swap2feeRateMu.Unlock()

@@ -16,9 +16,6 @@ import (
 // Querier is the interface that contains all the queries generated
 // by sqlc for sweep batcher.
 type Querier interface {
-	// ConfirmBatch confirms a batch by setting the state to confirmed.
-	ConfirmBatch(ctx context.Context, id int32) error
-
 	// GetBatchSweeps fetches all the sweeps that are part a batch.
 	GetBatchSweeps(ctx context.Context, batchID int32) (
 		[]sqlc.Sweep, error)
@@ -124,11 +121,6 @@ func (s *SQLStore) UpdateSweepBatch(ctx context.Context, batch *dbBatch) error {
 	return s.baseDb.UpdateBatch(ctx, batchToUpdateArgs(*batch))
 }
 
-// ConfirmBatch confirms a batch by setting the state to confirmed.
-func (s *SQLStore) ConfirmBatch(ctx context.Context, id int32) error {
-	return s.baseDb.ConfirmBatch(ctx, id)
-}
-
 // FetchBatchSweeps fetches all the sweeps that are part a batch.
 func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) (
 	[]*dbSweep, error) {
@@ -201,7 +193,7 @@ type dbBatch struct {
 	// ID is the unique identifier of the batch.
 	ID int32
 
-	// Confirmed is set when the batch is fully confirmed.
+	// Confirmed is set when the batch is reorg-safely confirmed.
 	Confirmed bool
 
 	// BatchTxid is the txid of the batch transaction.
@@ -236,7 +228,7 @@ type dbSweep struct {
 	// Amount is the amount of the sweep.
 	Amount btcutil.Amount
 
-	// Completed indicates whether this sweep is completed.
+	// Completed indicates whether this sweep is fully-confirmed.
 	Completed bool
 }
 

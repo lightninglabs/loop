@@ -36,13 +36,7 @@ func (b *batch) ensurePresigned(ctx context.Context, newSweeps []*sweep,
 // presignedTxChecker has methods to check if the inputs are presigned.
 type presignedTxChecker interface {
 	destPkScripter
-
-	// SignTx signs an unsigned transaction or returns a pre-signed tx.
-	// It is only called with loadOnly=true by ensurePresigned.
-	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount,
-		minRelayFee, feeRate chainfee.SatPerKWeight,
-		loadOnly bool) (*wire.MsgTx, error)
+	presigner
 }
 
 // ensurePresigned checks that there is a presigned transaction spending the
@@ -253,7 +247,7 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 		// Cache the destination address.
 		destAddr, err := getPresignedSweepsDestAddr(
-			ctx, b.cfg.presignedHelper, b.primarySweepID,
+			ctx, b.cfg.presignedHelper, primarySweepID,
 			b.cfg.chainParams,
 		)
 		if err != nil {
@@ -289,11 +283,12 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 // presigner tries to presign a batch transaction.
 type presigner interface {
-	// Presign tries to presign a batch transaction. If the method returns
-	// nil, it is guaranteed that future calls to SignTx on this set of
-	// sweeps return valid signed transactions.
-	Presign(ctx context.Context, primarySweepID wire.OutPoint,
-		tx *wire.MsgTx, inputAmt btcutil.Amount) error
+	// SignTx signs an unsigned transaction or returns a pre-signed tx.
+	// It is only called with loadOnly=true by ensurePresigned.
+	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
+		tx *wire.MsgTx, inputAmt btcutil.Amount,
+		minRelayFee, feeRate chainfee.SatPerKWeight,
+		loadOnly bool) (*wire.MsgTx, error)
 }
 
 // presign tries to presign batch sweep transactions of the sweeps. It signs
@@ -372,7 +367,14 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		}
 
 		// Try to presign this transaction.
-		err = presigner.Presign(ctx, primarySweepID, tx, batchAmt)
+		const (
+			loadOnly    = false
+			minRelayFee = chainfee.AbsoluteFeePerKwFloor
+		)
+		_, err = presigner.SignTx(
+			ctx, primarySweepID, tx, batchAmt, minRelayFee, fr,
+			loadOnly,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to presign unsigned tx %v "+
 				"for feeRate %v: %w", tx.TxHash(), fr, err)
@@ -407,9 +409,16 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		}
 	}
 
+	// Determine the current minimum relay fee based on our chain backend.
+	minRelayFee, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
+			false
+	}
+
 	// Cache current height and desired feerate of the batch.
 	currentHeight := b.currentHeight
-	feeRate := b.rbfCache.FeeRate
+	feeRate := max(b.rbfCache.FeeRate, minRelayFee)
 
 	// Append this sweep to an array of sweeps. This is needed to keep the
 	// order of sweeps stored, as iterating the sweeps map does not
@@ -445,13 +454,6 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	batchAmt := btcutil.Amount(0)
 	for _, sweep := range sweeps {
 		batchAmt += sweep.value
-	}
-
-	// Determine the current minimum relay fee based on our chain backend.
-	minRelayFee, err := b.wallet.MinRelayFee(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
-			false
 	}
 
 	// Get a pre-signed transaction.
@@ -507,6 +509,9 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// purposes.
 	b.batchTxid = &txHash
 	b.batchPkScript = tx.TxOut[0].PkScript
+
+	// Update cached FeeRate not to broadcast a tx with lower feeRate.
+	b.rbfCache.FeeRate = max(b.rbfCache.FeeRate, signedFeeRate)
 
 	return fee, nil, true
 }
@@ -599,7 +604,7 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	unsignedOut := unsignedTx.TxOut[0]
 	signedOut := signedTx.TxOut[0]
 	if !bytes.Equal(unsignedOut.PkScript, signedOut.PkScript) {
-		return fmt.Errorf("mismatch of output pkScript: %v, %v",
+		return fmt.Errorf("mismatch of output pkScript: %x, %x",
 			unsignedOut.PkScript, signedOut.PkScript)
 	}
 

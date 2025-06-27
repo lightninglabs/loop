@@ -13,7 +13,6 @@ type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
-	ConfirmBatch(ctx context.Context, id int32) error
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error

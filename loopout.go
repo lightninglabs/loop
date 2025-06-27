@@ -1147,7 +1147,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	quitChan := make(chan bool, 1)
 
 	defer func() {
-		quitChan <- true
+		close(quitChan)
 	}()
 
 	notifier := sweepbatcher.SpendNotifier{

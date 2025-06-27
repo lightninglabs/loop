@@ -612,24 +612,30 @@ type mockPresigner struct {
 	failAt int
 }
 
-// Presign memorizes the value of the output and fails if the number of
+// SignTx memorizes the value of the output and fails if the number of
 // calls previously made is failAt.
-func (p *mockPresigner) Presign(ctx context.Context,
-	primarySweepID wire.OutPoint, tx *wire.MsgTx,
-	inputAmt btcutil.Amount) error {
+func (p *mockPresigner) SignTx(ctx context.Context,
+	primarySweepID wire.OutPoint, tx *wire.MsgTx, inputAmt btcutil.Amount,
+	minRelayFee, feeRate chainfee.SatPerKWeight,
+	loadOnly bool) (*wire.MsgTx, error) {
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	if !hasInput(tx, primarySweepID) {
-		return fmt.Errorf("primarySweepID %v not in tx", primarySweepID)
+		return nil, fmt.Errorf("primarySweepID %v not in tx",
+			primarySweepID)
 	}
 
 	if len(p.outputs)+1 == p.failAt {
-		return fmt.Errorf("test error in Presign")
+		return nil, fmt.Errorf("test error in SignTx")
 	}
 
 	p.outputs = append(p.outputs, btcutil.Amount(tx.TxOut[0].Value))
 	p.lockTimes = append(p.lockTimes, tx.LockTime)
 
-	return nil
+	return tx, nil
 }
 
 // TestPresign checks that function presign presigns correct set of transactions

@@ -21,20 +21,6 @@ func (q *Queries) CancelBatch(ctx context.Context, id int32) error {
 	return err
 }
 
-const confirmBatch = `-- name: ConfirmBatch :exec
-UPDATE
-        sweep_batches
-SET
-        confirmed = TRUE
-WHERE
-        id = $1
-`
-
-func (q *Queries) ConfirmBatch(ctx context.Context, id int32) error {
-	_, err := q.db.ExecContext(ctx, confirmBatch, id)
-	return err
-}
-
 const getBatchSweeps = `-- name: GetBatchSweeps :many
 SELECT
         id, swap_hash, batch_id, outpoint, amt, completed
