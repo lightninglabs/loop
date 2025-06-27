@@ -893,22 +893,62 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	infof("Loop in quote request received")
 
 	var (
-		numDeposits = uint32(len(req.DepositOutpoints))
-		err         error
+		selectedAmount     = btcutil.Amount(req.Amt)
+		totalDepositAmount btcutil.Amount
+		autoSelectDeposits = req.AutoSelectDeposits
+		err                error
 	)
 
 	htlcConfTarget, err := validateLoopInRequest(
-		req.ConfTarget, req.ExternalHtlc, numDeposits, req.Amt,
+		req.ConfTarget, req.ExternalHtlc,
+		uint32(len(req.DepositOutpoints)), selectedAmount,
+		autoSelectDeposits,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Retrieve deposits to calculate their total value.
-	var depositList *looprpc.ListStaticAddressDepositsResponse
-	amount := btcutil.Amount(req.Amt)
-	if len(req.DepositOutpoints) > 0 {
-		depositList, err = s.ListStaticAddressDeposits(
+	// If deposits should be automatically selected, we do so and count the
+	// number of deposits to quote for.
+	numDeposits := 0
+	if autoSelectDeposits {
+		deposits, err := s.depositManager.GetActiveDepositsInState(
+			deposit.Deposited,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve all "+
+				"deposits: %w", err)
+		}
+
+		// TODO(hieblmi): add params to deposit for multi-address
+		//      support.
+		params, err := s.staticAddressManager.GetStaticAddressParameters(
+			ctx,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve static "+
+				"address parameters: %w", err)
+		}
+
+		info, err := s.lnd.Client.GetInfo(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get lnd info: %w",
+				err)
+		}
+		selectedDeposits, err := loopin.SelectDeposits(
+			selectedAmount, deposits, params.Expiry,
+			info.BlockHeight,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to select deposits: %w",
+				err)
+		}
+
+		numDeposits = len(selectedDeposits)
+	} else if len(req.DepositOutpoints) > 0 {
+		// If deposits are selected, we need to retrieve them to
+		// calculate the total value which we request a quote for.
+		depositList, err := s.ListStaticAddressDeposits(
 			ctx, &looprpc.ListStaticAddressDepositsRequest{
 				Outpoints: req.DepositOutpoints,
 			},
@@ -922,20 +962,35 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 				"deposit outpoints")
 		}
 
-		// The requested amount should be 0 here if the request
-		// contained deposit outpoints.
-		if amount != 0 && len(depositList.FilteredDeposits) > 0 {
-			return nil, fmt.Errorf("amount should be 0 for " +
-				"deposit quotes")
+		if len(req.DepositOutpoints) !=
+			len(depositList.FilteredDeposits) {
+
+			return nil, fmt.Errorf("expected %d deposits, got %d",
+				len(req.DepositOutpoints),
+				len(depositList.FilteredDeposits))
+		} else {
+			numDeposits = len(depositList.FilteredDeposits)
 		}
 
-		// In case we quote for deposits we send the server both the
-		// total value and the number of deposits. This is so the server
-		// can probe the total amount and calculate the per input fee.
-		if amount == 0 && len(depositList.FilteredDeposits) > 0 {
-			for _, deposit := range depositList.FilteredDeposits {
-				amount += btcutil.Amount(deposit.Value)
-			}
+		// In case we quote for deposits, we send the server both the
+		// selected value and the number of deposits. This is so the
+		// server can probe the selected value and calculate the per
+		// input fee.
+		for _, deposit := range depositList.FilteredDeposits {
+			totalDepositAmount += btcutil.Amount(
+				deposit.Value,
+			)
+		}
+
+		// If a fractional amount is also selected, we check if it
+		// leads to a dust change output.
+		selectedAmount, err = loopin.DeduceSwapAmount(
+			totalDepositAmount, selectedAmount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error calculating "+
+				"swap amount from selected amount: %v",
+				err)
 		}
 	}
 
@@ -962,14 +1017,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	}
 
 	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
-		Amount:         amount,
+		Amount:         selectedAmount,
 		HtlcConfTarget: htlcConfTarget,
 		ExternalHtlc:   req.ExternalHtlc,
 		LastHop:        lastHop,
 		RouteHints:     routeHints,
 		Private:        req.Private,
 		Initiator:      defaultLoopdInitiator,
-		NumDeposits:    numDeposits,
+		NumDeposits:    uint32(numDeposits),
 	})
 	if err != nil {
 		return nil, err
@@ -1065,8 +1120,11 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	infof("Loop in request received")
 
+	selectDeposits := false
+	numDeposits := uint32(0)
 	htlcConfTarget, err := validateLoopInRequest(
-		in.HtlcConfTarget, in.ExternalHtlc, 0, in.Amt,
+		in.HtlcConfTarget, in.ExternalHtlc, numDeposits,
+		btcutil.Amount(in.Amt), selectDeposits,
 	)
 	if err != nil {
 		return nil, err
@@ -1980,6 +2038,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 	}
 
 	req := &loop.StaticAddressLoopInRequest{
+		SelectedAmount:        btcutil.Amount(in.Amount),
 		DepositOutpoints:      in.Outpoints,
 		MaxSwapFee:            btcutil.Amount(in.MaxSwapFeeSatoshis),
 		Label:                 in.Label,
@@ -2282,12 +2341,24 @@ func validateConfTarget(target, defaultTarget int32) (int32, error) {
 }
 
 // validateLoopInRequest fails if the mutually exclusive conf target and
-// external parameters are both set.
+// external parameters are both set. It returns the confirmation target of the
+// legacy loop-in.
 func validateLoopInRequest(htlcConfTarget int32, external bool,
-	numDeposits uint32, amount int64) (int32, error) {
+	numDeposits uint32, amount btcutil.Amount,
+	autoSelectDeposits bool) (int32, error) {
+
+	if amount < 0 {
+		return 0, errors.New("amount cannot be negative")
+	}
 
 	if amount == 0 && numDeposits == 0 {
-		return 0, errors.New("either amount or deposits must be set")
+		return 0, errors.New("either amount, or deposits or both " +
+			"must be set")
+	}
+
+	if autoSelectDeposits && numDeposits > 0 {
+		return 0, errors.New("cannot auto-select deposits while " +
+			"providing deposits at the same time")
 	}
 
 	// If the htlc is going to be externally set, the htlcConfTarget should
@@ -2305,7 +2376,7 @@ func validateLoopInRequest(htlcConfTarget int32, external bool,
 
 	// If the loop in uses static address deposits, we do not need to set a
 	// confirmation target since the HTLC won't be published by the client.
-	if numDeposits > 0 {
+	if numDeposits > 0 || autoSelectDeposits {
 		return 0, nil
 	}
 
