@@ -338,6 +338,11 @@ type StaticAddressLoopInRequest struct {
 	// swap payment. If the timeout is reached the swap will be aborted and
 	// the client can retry the swap if desired with different parameters.
 	PaymentTimeoutSeconds uint32
+
+	// SelectedAmount is the amount that the user selected for the swap. If
+	// the user did not select an amount, the amount of the selected
+	// deposits is used.
+	SelectedAmount btcutil.Amount
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.

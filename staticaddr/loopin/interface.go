@@ -53,6 +53,11 @@ type DepositManager interface {
 	// outpoints.
 	DepositsForOutpoints(ctx context.Context, outpoints []string) (
 		[]*deposit.Deposit, error)
+
+	// GetActiveDepositsInState returns all active deposits in the given
+	// state.
+	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
+		error)
 }
 
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
