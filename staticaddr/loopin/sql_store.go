@@ -190,11 +190,15 @@ func toStrings(states []fsm.StateType) []string {
 func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	loopIn *StaticAddressLoopIn) error {
 
+	amountRequested := int64(loopIn.TotalDepositAmount())
+	if loopIn.SelectedAmount > 0 {
+		amountRequested = int64(loopIn.SelectedAmount)
+	}
 	swapArgs := sqlc.InsertSwapParams{
 		SwapHash:         loopIn.SwapHash[:],
 		Preimage:         loopIn.SwapPreimage[:],
 		InitiationTime:   loopIn.InitiationTime,
-		AmountRequested:  int64(loopIn.TotalDepositAmount()),
+		AmountRequested:  amountRequested,
 		CltvExpiry:       loopIn.HtlcCltvExpiry,
 		MaxSwapFee:       int64(loopIn.MaxSwapFee),
 		InitiationHeight: int32(loopIn.InitiationHeight),
@@ -230,6 +234,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		HtlcTimeoutSweepAddress: loopIn.HtlcTimeoutSweepAddress.String(),
 		HtlcTxFeeRateSatKw:      int64(loopIn.HtlcTxFeeRate),
 		DepositOutpoints:        joinedOutpoints,
+		SelectedAmount:          int64(loopIn.SelectedAmount),
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
 	}
 
@@ -378,6 +383,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		LastHop:               row.LastHop,
 		QuotedSwapFee:         btcutil.Amount(row.QuotedSwapFeeSatoshis),
 		DepositOutpoints:      depositOutpoints,
+		SelectedAmount:        btcutil.Amount(row.SelectedAmount),
 		HtlcTxFeeRate: chainfee.SatPerKWeight(
 			row.HtlcTxFeeRateSatKw,
 		),
