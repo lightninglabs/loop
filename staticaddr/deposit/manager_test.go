@@ -165,6 +165,13 @@ func (s *mockStore) GetDeposit(ctx context.Context, depositID ID) (*Deposit,
 	return args.Get(0).(*Deposit), args.Error(1)
 }
 
+func (s *mockStore) DepositForOutpoint(ctx context.Context,
+	outpoint string) (*Deposit, error) {
+
+	args := s.Called(ctx, outpoint)
+	return args.Get(0).(*Deposit), args.Error(1)
+}
+
 func (s *mockStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	args := s.Called(ctx)
 	return args.Get(0).([]*Deposit), args.Error(1)
