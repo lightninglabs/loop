@@ -214,13 +214,11 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 }
 
 func (m *Manager) recoverWithdrawals(ctx context.Context) error {
-	// To recover withdrawals we skim through all active deposits and check
-	// if they have a withdrawal address set. For the ones that do we
-	// cluster those with equal withdrawal addresses and kick-off
-	// their withdrawal. Each cluster represents a separate withdrawal
-	// intent by the user.
-	activeDeposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
-		deposit.Deposited,
+	// To recover withdrawals we cluster those with equal withdrawal
+	// addresses and publish their withdrawal tx. Each cluster represents a
+	// separate withdrawal intent by the user.
+	withdrawingDeposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
+		deposit.Withdrawing,
 	)
 	if err != nil {
 		return err
@@ -229,7 +227,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	// Group the deposits by their finalized withdrawal transaction.
 	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
 	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
-	for _, d := range activeDeposits {
+	for _, d := range withdrawingDeposits {
 		withdrawalTx := d.FinalizedWithdrawalTx
 		if withdrawalTx == nil {
 			continue

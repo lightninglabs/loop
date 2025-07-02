@@ -300,11 +300,11 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// OnWithdrawInitiated is sent if a fee bump was
 				// requested and the withdrawal was republished.
 				OnWithdrawInitiated: Withdrawing,
-				// Upon recovery, we go back to the Deposited
-				// state. The deposit by then has a withdrawal
-				// address stamped to it which will cause it to
-				// transition into the Withdrawing state again.
-				OnRecover: Deposited,
+
+				// Upon recovery, we remain in the Withdrawing
+				// state so that the withdrawal manager can
+				// reinstate the withdrawal.
+				OnRecover: Withdrawing,
 
 				// A precondition for the Withdrawing state is
 				// that the withdrawal transaction has been
