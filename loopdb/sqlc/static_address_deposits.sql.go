@@ -100,6 +100,39 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 	return err
 }
 
+const depositForOutpoint = `-- name: DepositForOutpoint :one
+SELECT
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
+FROM
+    deposits
+WHERE
+    tx_hash = $1
+AND
+    out_index = $2
+`
+
+type DepositForOutpointParams struct {
+	TxHash   []byte
+	OutIndex int32
+}
+
+func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error) {
+	row := q.db.QueryRowContext(ctx, depositForOutpoint, arg.TxHash, arg.OutIndex)
+	var i Deposit
+	err := row.Scan(
+		&i.ID,
+		&i.DepositID,
+		&i.TxHash,
+		&i.OutIndex,
+		&i.Amount,
+		&i.ConfirmationHeight,
+		&i.TimeoutSweepPkScript,
+		&i.ExpirySweepTxid,
+		&i.FinalizedWithdrawalTx,
+	)
+	return i, err
+}
+
 const getDeposit = `-- name: GetDeposit :one
 SELECT
     id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
