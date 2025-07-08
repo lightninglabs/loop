@@ -2,6 +2,7 @@ package sweepbatcher
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -3995,6 +3996,9 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 				break
 			}
 			if errors.Is(err, context.Canceled) {
+				break
+			}
+			if errors.Is(err, sql.ErrTxDone) {
 				break
 			}
 			require.NoError(t, err)
