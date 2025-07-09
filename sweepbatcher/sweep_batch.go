@@ -169,9 +169,10 @@ type batchConfig struct {
 	// initial delay completion and publishing the batch transaction.
 	batchPublishDelay time.Duration
 
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (FeeRateProvider).
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// txLabeler is a function generating a transaction label. It is called
 	// before publishing a batch transaction. Batch ID is passed to it.
@@ -723,6 +724,9 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 			// lower that minFeeRate of other sweeps (so it is
 			// applied).
 			if b.rbfCache.FeeRate < s.minFeeRate {
+				b.Infof("Increasing feerate of the batch "+
+					"from %v to %v", b.rbfCache.FeeRate,
+					s.minFeeRate)
 				b.rbfCache.FeeRate = s.minFeeRate
 			}
 		}
@@ -769,6 +773,9 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 		// Update FeeRate. Max(s.minFeeRate) for all the sweeps of
 		// the batch is the basis for fee bumps.
 		if b.rbfCache.FeeRate < s.minFeeRate {
+			b.Infof("Increasing feerate of the batch "+
+				"from %v to %v", b.rbfCache.FeeRate,
+				s.minFeeRate)
 			b.rbfCache.FeeRate = s.minFeeRate
 			b.rbfCache.SkipNextBump = true
 		}
@@ -968,6 +975,12 @@ func (b *batch) Run(ctx context.Context) error {
 				continue
 			}
 
+			// Update feerate of sweeps. This is normally done by
+			// AddSweep, but it may not be called after the sweep
+			// is confirmed, but fresh feerate is still needed to
+			// keep publishing in case of reorg.
+			b.updateFeeRate(ctx)
+
 			err := b.publish(ctx)
 			if err != nil {
 				return fmt.Errorf("publish error: %w", err)
@@ -1013,6 +1026,41 @@ func (b *batch) Run(ctx context.Context) error {
 			return fmt.Errorf("batch context expired: %w",
 				runCtx.Err())
 		}
+	}
+}
+
+// updateFeeRate gets fresh values of minFeeRate for sweeps and updates the
+// feerate of the batch if needed. This method must be called from event loop.
+func (b *batch) updateFeeRate(ctx context.Context) {
+	for outpoint, s := range b.sweeps {
+		minFeeRate, err := minimumSweepFeeRate(
+			ctx, b.cfg.customFeeRate, b.wallet,
+			s.swapHash, s.outpoint, s.confTarget,
+		)
+		if err != nil {
+			b.Warnf("failed to determine feerate for sweep %v of "+
+				"swap %x, confTarget %d: %w", s.outpoint,
+				s.swapHash[:6], s.confTarget, err)
+			continue
+		}
+
+		if minFeeRate <= s.minFeeRate {
+			continue
+		}
+
+		b.Infof("Increasing feerate of sweep %v of swap %x from %v "+
+			"to %v", s.outpoint, s.swapHash[:6], s.minFeeRate,
+			minFeeRate)
+		s.minFeeRate = minFeeRate
+		b.sweeps[outpoint] = s
+
+		if s.minFeeRate <= b.rbfCache.FeeRate {
+			continue
+		}
+
+		b.Infof("Increasing feerate of the batch from %v to %v",
+			b.rbfCache.FeeRate, s.minFeeRate)
+		b.rbfCache.FeeRate = s.minFeeRate
 	}
 }
 
@@ -1793,7 +1841,7 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 
 		// Set the initial value for our fee rate.
 		b.rbfCache.FeeRate = rate
-	} else if !b.cfg.noBumping {
+	} else if noBumping := b.cfg.customFeeRate != nil; !noBumping {
 		if b.rbfCache.SkipNextBump {
 			// Skip fee bumping, unset the flag, to bump next time.
 			b.rbfCache.SkipNextBump = false
