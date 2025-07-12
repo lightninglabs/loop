@@ -11,8 +11,8 @@ GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
 GO_BIN := ${GOPATH}/bin
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 
-GOBUILD := GO111MODULE=on go build -v
-GOINSTALL := GO111MODULE=on go install -v
+GOBUILD := CGO_ENABLED=0 GO111MODULE=on go build -v
+GOINSTALL := CGO_ENABLED=0 GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
 
 COMMIT := $(shell git describe --abbrev=40 --dirty --tags)
