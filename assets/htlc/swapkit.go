@@ -50,11 +50,16 @@ type SwapKit struct {
 	// AddressParams is the chain parameters of the chain the deposit is
 	// being created on.
 	AddressParams *address.ChainParams
+
+	// CheckCSV indicates whether the success path script should include a
+	// CHECKSEQUENCEVERIFY check. This is used to prevent potential pinning
+	// attacks when the HTLC is not part of a package relay.
+	CheckCSV bool
 }
 
 // GetSuccessScript returns the success path script of the swap HTLC.
 func (s *SwapKit) GetSuccessScript() ([]byte, error) {
-	return GenSuccessPathScript(s.ReceiverPubKey, s.SwapHash)
+	return GenSuccessPathScript(s.ReceiverPubKey, s.SwapHash, s.CheckCSV)
 }
 
 // GetTimeoutScript returns the timeout path script of the swap HTLC.
@@ -337,7 +342,9 @@ func (s *SwapKit) CreatePreimageWitness(ctx context.Context,
 		Value:    sweepBtcPacket.Inputs[1].WitnessUtxo.Value,
 	}
 
-	//sweepBtcPacket.UnsignedTx.TxIn[0].Sequence = 1
+	if s.CheckCSV {
+		sweepBtcPacket.UnsignedTx.TxIn[0].Sequence = 1
+	}
 
 	successScript, err := s.GetSuccessScript()
 	if err != nil {
