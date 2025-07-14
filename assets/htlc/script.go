@@ -11,9 +11,12 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
-// GenSuccessPathScript constructs an HtlcScript for the success payment path.
+// GenSuccessPathScript constructs a script for the success path of the HTLC
+// payment. Optionally includes a CHECKSEQUENCEVERIFY (CSV) of 1 if `csv` is
+// true, to prevent potential pinning attacks when the HTLC is not part of a
+// package relay.
 func GenSuccessPathScript(receiverHtlcKey *btcec.PublicKey,
-	swapHash lntypes.Hash) ([]byte, error) {
+	swapHash lntypes.Hash, csv bool) ([]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
 
@@ -25,8 +28,11 @@ func GenSuccessPathScript(receiverHtlcKey *btcec.PublicKey,
 	builder.AddOp(txscript.OP_HASH160)
 	builder.AddData(input.Ripemd160H(swapHash[:]))
 	builder.AddOp(txscript.OP_EQUALVERIFY)
-	//builder.AddInt64(1)
-	//builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
+
+	if csv {
+		builder.AddInt64(1)
+		builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
+	}
 
 	return builder.Script()
 }
@@ -61,7 +67,9 @@ func CreateOpTrueLeaf() (asset.ScriptKey, txscript.TapLeaf,
 	tapLeaf := txscript.NewBaseTapLeaf(tapScript)
 	tree := txscript.AssembleTaprootScriptTree(tapLeaf)
 	rootHash := tree.RootNode.TapHash()
-	tapKey := txscript.ComputeTaprootOutputKey(asset.NUMSPubKey, rootHash[:])
+	tapKey := txscript.ComputeTaprootOutputKey(
+		asset.NUMSPubKey, rootHash[:],
+	)
 
 	merkleRootHash := tree.RootNode.TapHash()
 
