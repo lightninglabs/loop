@@ -138,7 +138,21 @@ func (s *Server) WithdrawAssetDeposits(ctx context.Context,
 	in *looprpc.WithdrawAssetDepositsRequest) (
 	*looprpc.WithdrawAssetDepositsResponse, error) {
 
-	return nil, status.Error(codes.Unimplemented, "unimplemented")
+	if s.manager == nil {
+		return nil, ErrAssetDepositsUnavailable
+	}
+
+	if len(in.DepositIds) == 0 {
+		return nil, status.Error(codes.InvalidArgument,
+			"at least one deposit id must be provided")
+	}
+
+	err := s.manager.WithdrawDeposits(ctx, in.DepositIds)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &looprpc.WithdrawAssetDepositsResponse{}, nil
 }
 
 // TestCoSignAssetDepositHTLC is the rpc endpoint for loop clients to test

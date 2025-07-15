@@ -940,3 +940,79 @@ func (m *Manager) releaseDepositSweepInputs(ctx context.Context,
 
 	return nil
 }
+
+// WithdrawDeposits withdraws the deposits with the given IDs. It will first ask
+// the server for the deposit keys, then initate the withdrawal by updating the
+// deposit state.
+func (m *Manager) WithdrawDeposits(ctx context.Context,
+	depositIDs []string) error {
+
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	for _, depositID := range depositIDs {
+		d, ok := m.deposits[depositID]
+		if !ok {
+			return fmt.Errorf("deposit %v not found", depositID)
+		}
+
+		if d.State != StateConfirmed {
+			return fmt.Errorf("deposit %v is not withdrawable, "+
+				"current state: %v", depositID, d.State)
+		}
+
+		log.Infof("Initiating deposit withdrawal %v: %v",
+			depositID, d.Amount)
+	}
+
+	keys, err := m.depositServiceClient.WithdrawAssetDeposits(
+		ctx, &swapserverrpc.WithdrawAssetDepositsServerReq{
+			DepositIds: depositIDs,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("unable to request withdrawal: %w", err)
+	}
+
+	for depositID, privKeyBytes := range keys.DepositKeys {
+		d, ok := m.deposits[depositID]
+		if !ok {
+			log.Warnf("Skipping withdrawal of unknown deposit: %v",
+				depositID)
+			continue
+		}
+
+		privKey, pubKey := btcec.PrivKeyFromBytes(privKeyBytes)
+		if !d.CoSignerInternalKey.IsEqual(pubKey) {
+			return fmt.Errorf("revealed co-signer internal key "+
+				"does not match local key for %v", depositID)
+		}
+
+		err := m.store.SetAssetDepositServerKey(ctx, depositID, privKey)
+		if err != nil {
+			return err
+		}
+
+		rpcSweepAddr, err := m.tapClient.NewAddr(
+			ctx, &taprpc.NewAddrRequest{
+				AssetId: d.AssetID[:],
+				Amt:     d.Amount,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		d.State = StateWithdrawn
+		d.SweepAddr = rpcSweepAddr.Encoded
+		err = m.handleDepositStateUpdate(ctx, d)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

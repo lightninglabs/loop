@@ -35,6 +35,9 @@ type Querier interface {
 
 	GetActiveAssetDeposits(ctx context.Context) (
 		[]sqlc.GetActiveAssetDepositsRow, error)
+
+	SetAssetDepositServerInternalKey(ctx context.Context,
+		arg sqlc.SetAssetDepositServerInternalKeyParams) error
 }
 
 // DepositBaseDB is the interface that contains all the queries generated
@@ -297,4 +300,17 @@ func (s *SQLStore) GetActiveDeposits(ctx context.Context) ([]Deposit, error) {
 	}
 
 	return deposits, nil
+}
+
+// SetAssetDepositServerKey sets the server's internal key for the give asset
+// deposit.
+func (s *SQLStore) SetAssetDepositServerKey(ctx context.Context,
+	depositID string, key *btcec.PrivateKey) error {
+
+	return s.db.SetAssetDepositServerInternalKey(
+		ctx, sqlc.SetAssetDepositServerInternalKeyParams{
+			DepositID:         depositID,
+			ServerInternalKey: key.Serialize(),
+		},
+	)
 }
