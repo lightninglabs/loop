@@ -39,3 +39,8 @@ JOIN asset_deposit_updates u ON u.id = (
     LIMIT 1
 )
 ORDER BY d.created_at ASC;
+
+-- name: SetAssetDepositSweepKeys :exec
+UPDATE asset_deposits
+SET sweep_script_pubkey = $2, sweep_internal_pubkey = $3
+WHERE deposit_id = $1;

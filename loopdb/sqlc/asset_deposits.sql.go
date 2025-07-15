@@ -172,6 +172,23 @@ func (q *Queries) MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfi
 	return err
 }
 
+const setAssetDepositSweepKeys = `-- name: SetAssetDepositSweepKeys :exec
+UPDATE asset_deposits
+SET sweep_script_pubkey = $2, sweep_internal_pubkey = $3
+WHERE deposit_id = $1
+`
+
+type SetAssetDepositSweepKeysParams struct {
+	DepositID           string
+	SweepScriptPubkey   []byte
+	SweepInternalPubkey []byte
+}
+
+func (q *Queries) SetAssetDepositSweepKeys(ctx context.Context, arg SetAssetDepositSweepKeysParams) error {
+	_, err := q.db.ExecContext(ctx, setAssetDepositSweepKeys, arg.DepositID, arg.SweepScriptPubkey, arg.SweepInternalPubkey)
+	return err
+}
+
 const updateDepositState = `-- name: UpdateDepositState :exec
 INSERT INTO asset_deposit_updates (
     deposit_id,

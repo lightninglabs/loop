@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -31,6 +32,10 @@ var (
 	// shutting down and that no further calls should be made to it.
 	ErrManagerShuttingDown = errors.New("asset deposit manager is " +
 		"shutting down")
+
+	// lockExpiration us the expiration time we use for sweep fee
+	// paying inputs.
+	lockExpiration = time.Hour * 24
 )
 
 // DepositUpdateCallback is a callback that is called when a deposit state is
@@ -66,6 +71,10 @@ type Manager struct {
 
 	// currentHeight is the current block height of the chain.
 	currentHeight uint32
+
+	// pendingSweeps is a map of all pending timeout sweeps. The key is the
+	// deposit ID.
+	pendingSweeps map[string]struct{}
 
 	// deposits is a map of all active deposits. The key is the deposit ID.
 	deposits map[string]*Deposit
@@ -118,6 +127,7 @@ func NewManager(depositServiceClient swapserverrpc.AssetDepositServiceClient,
 		sweeper:              sweeper,
 		addressParams:        addressParams,
 		deposits:             make(map[string]*Deposit),
+		pendingSweeps:        make(map[string]struct{}),
 		subscribers:          make(map[string]map[uint64]DepositUpdateCallback), //nolint:lll
 		callEnter:            make(chan struct{}),
 		callLeave:            make(chan struct{}),
@@ -220,6 +230,43 @@ func (m *Manager) criticalError(err error) {
 
 // handleBlockEpoch is called when a new block is added to the chain.
 func (m *Manager) handleBlockEpoch(ctx context.Context, height uint32) error {
+	for _, d := range m.deposits {
+		if d.State != StateConfirmed {
+			continue
+		}
+
+		log.Debugf("Checking if deposit %v is expired, expiry=%v", d.ID,
+			d.ConfirmationHeight+d.CsvExpiry)
+
+		if height < d.ConfirmationHeight+d.CsvExpiry {
+			continue
+		}
+
+		err := m.handleDepositExpired(ctx, d)
+		if err != nil {
+			log.Errorf("Unable to update deposit %v state: %v",
+				d.ID, err)
+
+			return err
+		}
+	}
+
+	// Now publish the timeout sweeps for all expired deposits and also
+	// move them to the pending sweeps map.
+	for _, d := range m.deposits {
+		// TODO(bhandras): republish will insert a new transfer entry in
+		// tapd, despite the transfer already existing. To avoid that,
+		// we won't re-publish the timeout sweep for now.
+		if d.State != StateExpired {
+			continue
+		}
+
+		err := m.publishTimeoutSweep(ctx, d)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -739,4 +786,213 @@ func (m *Manager) ListDeposits(ctx context.Context, minConfs, maxConfs uint32) (
 	}
 
 	return filteredDeposits, nil
+}
+
+// handleDepositStateUpdate updates the deposit state in the store and
+// notifies all subscribers of the deposit state change.
+func (m *Manager) handleDepositExpired(ctx context.Context, d *Deposit) error {
+	d.State = StateExpired
+	err := d.GenerateSweepKeys(ctx, m.tapClient)
+	if err != nil {
+		log.Errorf("Unable to generate sweep keys for deposit %v: %v",
+			d.ID, err)
+	}
+
+	return m.handleDepositStateUpdate(ctx, d)
+}
+
+// publishTimeoutSweep publishes a timeout sweep for the deposit. As we use the
+// same lock ID for the sponsoring inputs, it's possible to republish the sweep
+// however it'll create a new transfer entry in tapd, which we want to avoid
+// (for now).
+func (m *Manager) publishTimeoutSweep(ctx context.Context, d *Deposit) error {
+	log.Infof("(Re)publishing timeout sweep for deposit %v", d.ID)
+
+	// TODO(bhandras): conf target should be dynamic/configrable.
+	const confTarget = 2
+	feeRateSatPerKw, err := m.walletKit.EstimateFeeRate(
+		ctx, confTarget,
+	)
+	if err != nil {
+		return err
+	}
+
+	lockID, err := d.lockID()
+	if err != nil {
+		return err
+	}
+
+	snedResp, err := m.sweeper.PublishDepositTimeoutSweep(
+		ctx, d.Kit, d.Proof, asset.NewScriptKey(d.SweepScriptKey),
+		d.SweepInternalKey, d.timeoutSweepLabel(),
+		feeRateSatPerKw.FeePerVByte(), lockID, lockExpiration,
+	)
+	if err != nil {
+		// TODO(bhandras): handle republish errors.
+		log.Infof("Unable to publish timeout sweep for deposit %v: %v",
+			d.ID, err)
+	} else {
+		log.Infof("Published timeout sweep for deposit %v: %x", d.ID,
+			snedResp.Transfer.AnchorTxHash)
+
+		// Update deposit state on first successful publish.
+		if d.State != StateTimeoutSweepPublished {
+			d.State = StateTimeoutSweepPublished
+			err = m.handleDepositStateUpdate(ctx, d)
+			if err != nil {
+				log.Errorf("Unable to update deposit %v "+
+					"state: %v", d.ID, err)
+
+				return err
+			}
+		}
+	}
+
+	// Start monitoring the sweep unless we're already doing so.
+	if _, ok := m.pendingSweeps[d.ID]; !ok {
+		err := m.waitForDepositSweep(ctx, d, d.timeoutSweepLabel())
+		if err != nil {
+			log.Errorf("Unable to wait for deposit %v spend: %v",
+				d.ID, err)
+
+			return err
+		}
+
+		m.pendingSweeps[d.ID] = struct{}{}
+	}
+
+	return nil
+}
+
+// waitForDepositSpend waits for the deposit to be spent. It subscribes to
+// receive events for the deposit's sweep address notifying us once the transfer
+// has completed.
+func (m *Manager) waitForDepositSweep(ctx context.Context, d *Deposit,
+	label string) error {
+
+	log.Infof("Waiting for deposit sweep confirmation %s", d.ID)
+
+	eventChan, errChan, err := m.tapClient.WaitForSendComplete(
+		ctx, d.SweepScriptKey.SerializeCompressed(), label,
+	)
+	if err != nil {
+		log.Errorf("unable to subscribe to send events for deposit "+
+			"sweep: %v", err,
+		)
+	}
+
+	go func() {
+		select {
+		case event := <-eventChan:
+			// At this point we can consider the deposit confirmed.
+			err = m.handleDepositSpend(ctx, d, event.Transfer)
+			if err != nil {
+				m.criticalError(err)
+			}
+
+		case err := <-errChan:
+			m.criticalError(err)
+		}
+	}()
+
+	return nil
+}
+
+func formatProtoJSON(resp proto.Message) (string, error) {
+	jsonBytes, err := taprpc.ProtoJSONMarshalOpts.Marshal(resp)
+	if err != nil {
+		return "", err
+	}
+
+	return string(jsonBytes), nil
+}
+
+func toJSON(resp proto.Message) string {
+	jsonStr, _ := formatProtoJSON(resp)
+
+	return jsonStr
+}
+
+// handleDepositSpend is called when the deposit is spent. It updates the
+// deposit state and releases the inputs used for the deposit sweep.
+func (m *Manager) handleDepositSpend(ctx context.Context, d *Deposit,
+	transfer *taprpc.AssetTransfer) error {
+
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		log.Errorf("Unable to schedule next call: %v", err)
+
+		return err
+	}
+	defer done()
+
+	switch d.State {
+	case StateTimeoutSweepPublished:
+		d.State = StateSwept
+
+		err := m.releaseDepositSweepInputs(ctx, d)
+		if err != nil {
+			log.Errorf("Unable to release deposit sweep inputs: "+
+				"%v", err)
+
+			return err
+		}
+
+	default:
+		err := fmt.Errorf("Spent deposit %s in unexpected state %s",
+			d.ID, d.State)
+
+		log.Errorf(err.Error())
+
+		return err
+	}
+
+	log.Tracef("Deposit %s spent in transfer: %s\n", d.ID, toJSON(transfer))
+
+	// TODO(bhandras): should save the spend details to the store?
+	err = m.handleDepositStateUpdate(ctx, d)
+	if err != nil {
+		return err
+	}
+
+	// Sanity check that the deposit is in the pending sweeps map.
+	if _, ok := m.pendingSweeps[d.ID]; !ok {
+		log.Errorf("Deposit %v not found in pending deposits", d.ID)
+	}
+
+	// We can now remove the deposit from the pending sweeps map as we don't
+	// need to monitor for the spend anymore.
+	delete(m.pendingSweeps, d.ID)
+
+	return nil
+}
+
+// releaseDepositSweepInputs releases the inputs that were used for the deposit
+// sweep.
+func (m *Manager) releaseDepositSweepInputs(ctx context.Context,
+	d *Deposit) error {
+
+	lockID, err := d.lockID()
+	if err != nil {
+		return err
+	}
+
+	leases, err := m.walletKit.ListLeases(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, lease := range leases {
+		if lease.LockID != lockID {
+			continue
+		}
+
+		// Unlock any UTXOs that were used for the deposit sweep.
+		err = m.walletKit.ReleaseOutput(ctx, lockID, lease.Outpoint)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
