@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
@@ -20,6 +23,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1282,6 +1286,89 @@ func (m *Manager) RevealDepositKeys(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	return err
+}
+
+// PushHtlcSig will partially a deposit spending zero-fee HTLC and send the
+// resulting signature to the swap server.
+func (m *Manager) PushHtlcSig(ctx context.Context, depositID string,
+	serverNonce [musig2.PubNonceSize]byte, hash lntypes.Hash,
+	csvExpiry uint32) error {
+
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	deposit, ok := m.deposits[depositID]
+	if !ok {
+		return fmt.Errorf("deposit %v not available", depositID)
+	}
+
+	_, htlcPkt, _, _, _, err := m.sweeper.GetHTLC(
+		ctx, deposit.Kit, deposit.Proof, deposit.Amount, hash,
+		csvExpiry,
+	)
+	if err != nil {
+		log.Errorf("Unable to get HTLC packet: %v", err)
+
+		return err
+	}
+
+	prevOutFetcher := wallet.PsbtPrevOutputFetcher(htlcPkt)
+	sigHash, err := getSigHash(htlcPkt.UnsignedTx, 0, prevOutFetcher)
+	if err != nil {
+		return err
+	}
+
+	funder := true
+	depositSigner := NewMuSig2Signer(
+		m.signer, deposit.Kit, funder, deposit.AnchorRootHash,
+	)
+
+	err = depositSigner.NewSession(ctx)
+	if err != nil {
+		return fmt.Errorf("Unable to create MuSig2 session: %w", err)
+	}
+
+	publicNonce, err := depositSigner.PubNonce()
+	if err != nil {
+		return err
+	}
+
+	partialSig, err := depositSigner.PartialSignMuSig2(
+		serverNonce, sigHash,
+	)
+	if err != nil {
+		log.Errorf("Unable to create partial deposit signature %v: %v",
+			deposit.ID, err)
+
+		return err
+	}
+
+	var pktBuf bytes.Buffer
+	err = htlcPkt.Serialize(&pktBuf)
+	if err != nil {
+		return err
+	}
+
+	// TODO(bhandras): the server should return the final signature.
+	_, err = m.depositServiceClient.PushAssetDepositHtlcSigs(
+		ctx, &swapserverrpc.PushAssetDepositHtlcSigsReq{
+			Hash:      hash[:],
+			CsvExpiry: csvExpiry,
+			PartialSigs: []*swapserverrpc.AssetDepositPartialSig{
+				{
+					DepositId:  depositID,
+					Nonce:      publicNonce[:],
+					PartialSig: partialSig,
+				},
+			},
+			HtlcPsbt: pktBuf.Bytes(),
+		},
+	)
 
 	return err
 }

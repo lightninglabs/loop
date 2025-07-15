@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -175,4 +177,40 @@ func (s *Server) WithdrawAssetDeposits(ctx context.Context,
 	}
 
 	return &looprpc.WithdrawAssetDepositsResponse{}, nil
+}
+
+// PushAssetDepositHtlcSig is the rpc endpoint for loop clients to push partial
+// signatures for asset deposit spending zero fee HTLCs to the server.
+func (s *Server) PushAssetDepositHtlcSig(ctx context.Context,
+	in *looprpc.PushAssetDepositHtlcSigRequest) (
+	*looprpc.PushAssetDepositHtlcSigResponse, error) {
+
+	if len(in.Nonce) != musig2.PubNonceSize {
+		return nil, status.Error(codes.InvalidArgument,
+			fmt.Sprintf("invalid nonce length: expected %d bytes, "+
+				"got %d", musig2.PubNonceSize, len(in.Nonce)))
+	}
+
+	if len(in.PreimageHash) != lntypes.HashSize {
+		return nil, status.Error(codes.InvalidArgument,
+			fmt.Sprintf("invalid preimage hash length: expected "+
+				"%d bytes, got %d", lntypes.HashSize,
+				len(in.PreimageHash)))
+	}
+
+	var (
+		nonce        [musig2.PubNonceSize]byte
+		preimageHash lntypes.Hash
+	)
+	copy(nonce[:], in.Nonce)
+	copy(preimageHash[:], in.PreimageHash)
+
+	err := s.manager.PushHtlcSig(
+		ctx, in.DepositId, nonce, preimageHash, in.CsvExpiry,
+	)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &looprpc.PushAssetDepositHtlcSigResponse{}, nil
 }
