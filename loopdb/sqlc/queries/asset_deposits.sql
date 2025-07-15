@@ -59,3 +59,8 @@ WHERE u.id = (
 )
 AND u.update_state IN (0, 1, 2, 3, 4, 5, 6);
 
+-- name: SetAssetDepositServerInternalKey :exec
+UPDATE asset_deposits
+SET server_internal_key = $2
+WHERE deposit_id = $1
+AND server_internal_key IS NULL;
