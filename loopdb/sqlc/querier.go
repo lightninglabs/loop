@@ -70,6 +70,7 @@ type Querier interface {
 	MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error
 	MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfirmedParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
+	SetAssetDepositServerInternalKey(ctx context.Context, arg SetAssetDepositServerInternalKeyParams) error
 	SetAssetDepositSweepKeys(ctx context.Context, arg SetAssetDepositSweepKeysParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error

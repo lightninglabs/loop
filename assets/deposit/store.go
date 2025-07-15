@@ -1,6 +1,10 @@
 package deposit
 
-import "context"
+import (
+	"context"
+
+	"github.com/btcsuite/btcd/btcec/v2"
+)
 
 // Store defines the interface that the Manager requires from the storage layer.
 type Store interface {
@@ -17,4 +21,9 @@ type Store interface {
 	// GetActiveDeposits returns all active deposits from the database.
 	// Active deposits are those that have not yet been spent or swept.
 	GetActiveDeposits(ctx context.Context) ([]Deposit, error)
+
+	// SetAssetDepositServerKey sets the server's internal key for the given
+	// asset deposit.
+	SetAssetDepositServerKey(ctx context.Context, depositID string,
+		key *btcec.PrivateKey) error
 }

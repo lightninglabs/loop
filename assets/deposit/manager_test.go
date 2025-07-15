@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -43,6 +44,14 @@ func (s *mockStore) GetAllDeposits(context.Context) ([]Deposit, error) {
 // GetActiveDeposits is a mock implementation of the GetActiveDeposits method.
 func (s *mockStore) GetActiveDeposits(context.Context) ([]Deposit, error) {
 	return []Deposit{}, nil
+}
+
+// SetAssetDepositServerKey is a mock implementation of the
+// SetAssetDepositServerKey method.
+func (s *mockStore) SetAssetDepositServerKey(context.Context, string,
+	*btcec.PrivateKey) error {
+
+	return nil
 }
 
 // testAddDeposit is a helper function that (intrusively) adds a deposit to the
