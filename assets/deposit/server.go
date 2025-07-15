@@ -129,7 +129,18 @@ func (s *Server) RevealAssetDepositKey(ctx context.Context,
 	in *looprpc.RevealAssetDepositKeyRequest) (
 	*looprpc.RevealAssetDepositKeyResponse, error) {
 
-	return nil, status.Error(codes.Unimplemented, "unimplemented")
+	if s.manager == nil {
+		return nil, ErrAssetDepositsUnavailable
+	}
+
+	err := s.manager.RevealDepositKeys(
+		ctx, []string{in.DepositId},
+	)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &looprpc.RevealAssetDepositKeyResponse{}, nil
 }
 
 // WithdrawAssetDeposits is the rpc endpoint for loop clients to withdraw their
