@@ -170,6 +170,22 @@ func (q *Queries) MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfi
 	return err
 }
 
+const setAssetDepositSweepAddr = `-- name: SetAssetDepositSweepAddr :exec
+UPDATE asset_deposits
+SET sweep_addr = $2
+WHERE deposit_id = $1
+`
+
+type SetAssetDepositSweepAddrParams struct {
+	DepositID string
+	SweepAddr sql.NullString
+}
+
+func (q *Queries) SetAssetDepositSweepAddr(ctx context.Context, arg SetAssetDepositSweepAddrParams) error {
+	_, err := q.db.ExecContext(ctx, setAssetDepositSweepAddr, arg.DepositID, arg.SweepAddr)
+	return err
+}
+
 const updateDepositState = `-- name: UpdateDepositState :exec
 INSERT INTO asset_deposit_updates (
     deposit_id,

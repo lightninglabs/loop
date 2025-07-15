@@ -39,3 +39,8 @@ JOIN asset_deposit_updates u ON u.id = (
     LIMIT 1
 )
 ORDER BY d.created_at ASC;
+
+-- name: SetAssetDepositSweepAddr :exec
+UPDATE asset_deposits
+SET sweep_addr = $2
+WHERE deposit_id = $1;
