@@ -21,6 +21,7 @@ type Querier interface {
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+	GetAssetDeposits(ctx context.Context) ([]GetAssetDepositsRow, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
