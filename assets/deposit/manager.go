@@ -662,3 +662,40 @@ func (m *Manager) markDepositConfirmed(ctx context.Context, d *Deposit,
 
 	return nil
 }
+
+// ListDeposits returns all deposits that are in the given range of
+// confirmations.
+func (m *Manager) ListDeposits(ctx context.Context, minConfs, maxConfs uint32) (
+	[]Deposit, error) {
+
+	bestBlock, err := m.GetBestBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	deposits, err := m.store.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only filter based on confirmations if the user has set a min or max
+	// confs.
+	filterConfs := minConfs != 0 || maxConfs != 0
+
+	// Prefilter deposits based on the min/max confs.
+	filteredDeposits := make([]Deposit, 0, len(deposits))
+	for _, deposit := range deposits {
+		if filterConfs {
+			// Check that the deposit suits our min/max confs
+			// criteria.
+			confs := bestBlock - deposit.ConfirmationHeight
+			if confs < minConfs || confs > maxConfs {
+				continue
+			}
+		}
+
+		filteredDeposits = append(filteredDeposits, deposit)
+	}
+
+	return filteredDeposits, nil
+}

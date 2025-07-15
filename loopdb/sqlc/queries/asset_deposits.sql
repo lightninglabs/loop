@@ -27,3 +27,15 @@ INSERT INTO asset_deposit_updates (
 UPDATE asset_deposits 
 SET confirmation_height = $2, outpoint = $3, pk_script = $4
 WHERE deposit_id = $1;
+
+-- name: GetAssetDeposits :many
+SELECT d.*, u.update_state, u.update_timestamp
+FROM asset_deposits d
+JOIN asset_deposit_updates u ON u.id = (
+    SELECT id
+    FROM asset_deposit_updates
+    WHERE deposit_id = d.deposit_id
+    ORDER BY update_timestamp DESC
+    LIMIT 1
+)
+ORDER BY d.created_at ASC;
