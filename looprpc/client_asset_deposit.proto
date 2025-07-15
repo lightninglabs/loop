@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/looprpc";
+
+service AssetDepositClient {
+    rpc NewAssetDeposit (NewAssetDepositRequest)
+        returns (NewAssetDepositResponse);
+
+    rpc ListAssetDeposits (ListAssetDepositsRequest)
+        returns (ListAssetDepositsResponse);
+
+    rpc WithdrawAssetDeposits (WithdrawAssetDepositsRequest)
+        returns (WithdrawAssetDepositsResponse);
+
+    rpc RevealAssetDepositKey (RevealAssetDepositKeyRequest)
+        returns (RevealAssetDepositKeyResponse);
+
+    rpc TestCoSignAssetDepositHTLC (TestCoSignAssetDepositHTLCRequest)
+        returns (TestCoSignAssetDepositHTLCResponse);
+}
+
+message NewAssetDepositRequest {
+    string asset_id = 1;
+
+    uint64 amount = 2;
+
+    int32 csv_expiry = 3;
+}
+
+message NewAssetDepositResponse {
+    string deposit_id = 1;
+}
+
+message ListAssetDepositsRequest {
+    // The number of minimum confirmations a deposit anchor must have to be
+    // listed.
+    uint32 min_confs = 1;
+
+    // The number of maximum confirmations a deposit anchor may have to be
+    // listed. A zero value indicates that there is no maximum.
+    uint32 max_confs = 2;
+}
+
+message ListAssetDepositsResponse {
+    // A list of all deposits that match the filtered state.
+    repeated AssetDeposit filtered_deposits = 1;
+}
+
+message AssetDeposit {
+    string deposit_id = 1;
+
+    int64 created_at = 2;
+
+    string asset_id = 3;
+
+    uint64 amount = 4;
+
+    string deposit_addr = 5;
+
+    string state = 6;
+
+    string anchor_outpoint = 7;
+
+    uint32 confirmation_height = 8;
+
+    uint32 expiry = 9;
+
+    string sweep_addr = 10;
+}
+
+message WithdrawAssetDepositsRequest {
+    repeated string deposit_ids = 1;
+}
+
+message WithdrawAssetDepositsResponse {
+}
+
+message RevealAssetDepositKeyRequest {
+    string deposit_id = 1;
+}
+
+message RevealAssetDepositKeyResponse {
+}
+
+message TestCoSignAssetDepositHTLCRequest {
+    string deposit_id = 1;
+}
+
+message TestCoSignAssetDepositHTLCResponse {
+}
