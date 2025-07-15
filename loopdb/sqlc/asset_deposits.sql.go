@@ -256,6 +256,23 @@ func (q *Queries) MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfi
 	return err
 }
 
+const setAssetDepositServerInternalKey = `-- name: SetAssetDepositServerInternalKey :exec
+UPDATE asset_deposits
+SET server_internal_key = $2
+WHERE deposit_id = $1
+AND server_internal_key IS NULL
+`
+
+type SetAssetDepositServerInternalKeyParams struct {
+	DepositID         string
+	ServerInternalKey []byte
+}
+
+func (q *Queries) SetAssetDepositServerInternalKey(ctx context.Context, arg SetAssetDepositServerInternalKeyParams) error {
+	_, err := q.db.ExecContext(ctx, setAssetDepositServerInternalKey, arg.DepositID, arg.ServerInternalKey)
+	return err
+}
+
 const setAssetDepositSweepKeys = `-- name: SetAssetDepositSweepKeys :exec
 UPDATE asset_deposits
 SET sweep_script_pubkey = $2, sweep_internal_pubkey = $3
