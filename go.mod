@@ -6,8 +6,8 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
-	github.com/btcsuite/btcwallet v0.16.13
+	github.com/btcsuite/btclog/v2 v2.0.1-0.20250602222548-9967d19bb084
+	github.com/btcsuite/btcwallet v0.16.14
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
@@ -19,17 +19,17 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.13-beta
-	github.com/lightninglabs/lndclient v0.19.0-7
+	github.com/lightninglabs/lndclient v0.19.0-9
 	github.com/lightninglabs/loop/looprpc v1.0.7
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.6.0-rc2.0.20250526132410-324bce0a1a7b
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.5
-	github.com/lightningnetwork/lnd v0.19.0-beta
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.9
+	github.com/lightningnetwork/lnd v0.19.2-beta.rc2
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
 	github.com/lightningnetwork/lnd/ticker v1.1.1
-	github.com/lightningnetwork/lnd/tlv v1.3.1
+	github.com/lightningnetwork/lnd/tlv v1.3.2
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.10.0
@@ -79,7 +79,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fergusstrange/embedded-postgres v1.25.0 // indirect
-	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
@@ -122,11 +121,11 @@ require (
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.16 // indirect
-	github.com/lightningnetwork/lnd/sqldb v1.0.9 // indirect
+	github.com/lightningnetwork/lnd/sqldb v1.0.10 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
@@ -212,8 +211,22 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // did not yet make it into the upstream repository.
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
 
+replace github.com/btcsuite/btcwallet => github.com/bhandras/btcwallet v0.11.1-0.20250507171803-0de1c46b1cfc
+
+replace github.com/btcsuite/btcd => github.com/bhandras/btcd v0.22.0-beta.0.20250507171227-f18160c86e92
+
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
+
+replace github.com/lightningnetwork/lnd => ../lnd
+
+replace github.com/lightningnetwork/lnd/sqldb => ../lnd/sqldb
+
+replace github.com/lightninglabs/lndclient => ../lndclient
+
+replace github.com/lightninglabs/taproot-assets => ../taproot-assets
+
+replace github.com/lightninglabs/taproot-assets/taprpc => ../taproot-assets/taprpc
 
 go 1.23.9
