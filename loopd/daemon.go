@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof" //nolint:gosec
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,6 +102,8 @@ type Daemon struct {
 	restCtxCancel func()
 
 	macaroonService *lndclient.MacaroonService
+
+	profiler *Profiler
 }
 
 // New creates a new instance of the loop client daemon.
@@ -132,6 +135,10 @@ func (d *Daemon) Start() error {
 	if atomic.AddInt32(&d.started, 1) != 1 {
 		return errOnlyStartOnce
 	}
+
+	// TODO(bhandras): only start if enabled. Make port configurable.
+	d.profiler = NewProfiler(4321)
+	d.profiler.Start()
 
 	network := lndclient.Network(d.cfg.Network)
 
@@ -1079,6 +1086,13 @@ func (d *Daemon) stop() {
 	}
 	if d.clientCleanup != nil {
 		d.clientCleanup()
+	}
+
+	if d.profiler != nil {
+		err := d.profiler.Stop()
+		if err != nil {
+			errorf("Error stopping profiler: %v", err)
+		}
 	}
 
 	// Everything should be shutting down now, wait for completion.
