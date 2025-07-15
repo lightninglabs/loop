@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -132,6 +133,16 @@ func (d *Daemon) Start() error {
 	if atomic.AddInt32(&d.started, 1) != 1 {
 		return errOnlyStartOnce
 	}
+
+	go func() {
+		http.Handle("/", http.RedirectHandler(
+			"/debug/pprof", http.StatusSeeOther,
+		))
+
+		listenAddr := fmt.Sprintf(":%d", 4321)
+		infof("Starting profile server at %s", listenAddr)
+		fmt.Println(http.ListenAndServe(listenAddr, nil)) // nolint: gosec
+	}()
 
 	network := lndclient.Network(d.cfg.Network)
 
