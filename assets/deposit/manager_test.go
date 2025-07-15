@@ -40,6 +40,11 @@ func (s *mockStore) GetAllDeposits(context.Context) ([]Deposit, error) {
 	return []Deposit{}, nil
 }
 
+// GetActiveDeposits is a mock implementation of the GetActiveDeposits method.
+func (s *mockStore) GetActiveDeposits(context.Context) ([]Deposit, error) {
+	return []Deposit{}, nil
+}
+
 // testAddDeposit is a helper function that (intrusively) adds a deposit to the
 // manager.
 func testAddDeposit(t *testing.T, m *Manager, d *Deposit) {

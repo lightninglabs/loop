@@ -13,4 +13,8 @@ type Store interface {
 
 	// GetAllDeposits returns all deposits known to the store.
 	GetAllDeposits(ctx context.Context) ([]Deposit, error)
+
+	// GetActiveDeposits returns all active deposits from the database.
+	// Active deposits are those that have not yet been spent or swept.
+	GetActiveDeposits(ctx context.Context) ([]Deposit, error)
 }
