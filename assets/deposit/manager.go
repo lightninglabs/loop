@@ -1171,3 +1171,76 @@ func (m *Manager) publishPendingWithdrawals(ctx context.Context) error {
 
 	return nil
 }
+
+// RevealDepositKeys reveals the internal keys for the given deposit IDs to
+// the swap server.
+func (m *Manager) RevealDepositKeys(ctx context.Context,
+	depositIDs []string) error {
+
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	// First check that all requested deposits are in the required state and
+	// collect the keys.
+	keys := make(map[string][]byte, len(depositIDs))
+	for _, depositID := range depositIDs {
+		d, ok := m.deposits[depositID]
+		if !ok {
+			log.Warnf("Can't reveal key for deposit %v as it is "+
+				"not active", depositID)
+		}
+
+		if d.State != StateConfirmed && d.State != StateKeyRevealed {
+			return fmt.Errorf("deposit %v key cannot be revealed",
+				depositID)
+		}
+
+		internalPubKey, internalPrivKey, err := DeriveSharedDepositKey(
+			ctx, m.signer, d.FunderScriptKey,
+		)
+		if err != nil {
+			return err
+		}
+
+		if !d.FunderInternalKey.IsEqual(internalPubKey) {
+			log.Errorf("Funder internal key %x does not match "+
+				"expected %x for deposit %v",
+				d.FunderInternalKey.SerializeCompressed(),
+				internalPubKey.SerializeCompressed(), depositID)
+
+			return fmt.Errorf("funder internal key mismatch")
+		}
+
+		keys[depositID] = internalPrivKey.Serialize()
+	}
+
+	// Update the deposit state before we actually push the keys to the
+	// server. Otherwise we may fail to update the state in our database,
+	// despite the server accepting the keys.
+	for depositID := range keys {
+		d := m.deposits[depositID]
+		d.State = StateKeyRevealed
+		err = m.handleDepositStateUpdate(ctx, d)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("Revealing deposit key for %v: pub=%x", depositID,
+			d.FunderInternalKey.SerializeCompressed())
+	}
+
+	// Now push the keys to the server.
+	_, err = m.depositServiceClient.PushAssetDepositKeys(
+		ctx, &swapserverrpc.PushAssetDepositKeysReq{
+			DepositKeys: keys,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
