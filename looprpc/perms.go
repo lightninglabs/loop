@@ -196,4 +196,8 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "swap",
 		Action: "execute",
 	}},
+	"/looprpc.AssetDepositClient/PushAssetDepositHtlcSig": {{
+		Entity: "swap",
+		Action: "execute",
+	}},
 }
