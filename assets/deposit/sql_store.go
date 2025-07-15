@@ -29,6 +29,9 @@ type Querier interface {
 
 	GetAssetDeposits(ctx context.Context) ([]sqlc.GetAssetDepositsRow,
 		error)
+
+	SetAssetDepositSweepKeys(ctx context.Context,
+		arg sqlc.SetAssetDepositSweepKeysParams) error
 }
 
 // DepositBaseDB is the interface that contains all the queries generated
@@ -122,6 +125,20 @@ func (s *SQLStore) UpdateDeposit(ctx context.Context, d *Deposit) error {
 						Valid:  true,
 					},
 					PkScript: d.PkScript,
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+		case StateExpired:
+			scriptKey := d.SweepScriptKey.SerializeCompressed()
+			internalKey := d.SweepInternalKey.SerializeCompressed()
+			err := tx.SetAssetDepositSweepKeys(
+				ctx, sqlc.SetAssetDepositSweepKeysParams{
+					DepositID:           d.ID,
+					SweepScriptPubkey:   scriptKey,
+					SweepInternalPubkey: internalKey,
 				},
 			)
 			if err != nil {
