@@ -185,20 +185,42 @@ func main() {
 	}
 }
 
-func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
+func getConn(ctx *cli.Context) (*grpc.ClientConn, func(), error) {
 	rpcServer := ctx.GlobalString("rpcserver")
 	tlsCertPath, macaroonPath, err := extractPathArgs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	cleanup := func() { conn.Close() }
 
+	return conn, cleanup, nil
+}
+
+func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
+	conn, cleanup, err := getConn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	loopClient := looprpc.NewSwapClientClient(conn)
 	return loopClient, cleanup, nil
+}
+
+func getAssetDepositsClient(ctx *cli.Context) (
+	looprpc.AssetDepositClientClient, func(), error) {
+
+	conn, cleanup, err := getConn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	assetDepositsClient := looprpc.NewAssetDepositClientClient(conn)
+	return assetDepositsClient, cleanup, nil
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {

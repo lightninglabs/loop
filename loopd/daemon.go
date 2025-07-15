@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	asset_deposit "github.com/lightninglabs/loop/assets/deposit"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -247,6 +248,11 @@ func (d *Daemon) startWebServers() error {
 		grpc.StreamInterceptor(streamInterceptor),
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
+
+	// Register the asset deposit sub-server within the grpc server.
+	loop_looprpc.RegisterAssetDepositClientServer(
+		d.grpcServer, d.swapClientServer.assetDepositServer,
+	)
 
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
@@ -700,6 +706,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		)
 	}
 
+	// If the deposit manager is nil, the server will reutrn Unimplemented
+	// error for all RPCs.
+	assetDepositServer := asset_deposit.NewServer()
+
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
 		config:               d.cfg,
@@ -717,6 +727,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		depositManager:       depositManager,
 		withdrawalManager:    withdrawalManager,
 		staticLoopInManager:  staticLoopInManager,
+		assetDepositServer:   assetDepositServer,
 		assetClient:          d.assetClient,
 	}
 
