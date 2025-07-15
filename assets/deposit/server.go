@@ -83,7 +83,44 @@ func (s *Server) ListAssetDeposits(ctx context.Context,
 	in *looprpc.ListAssetDepositsRequest) (
 	*looprpc.ListAssetDepositsResponse, error) {
 
-	return nil, status.Error(codes.Unimplemented, "unimplemented")
+	if s.manager == nil {
+		return nil, ErrAssetDepositsUnavailable
+	}
+
+	if in.MinConfs < in.MaxConfs {
+		return nil, status.Error(codes.InvalidArgument,
+			"max_confs must be greater than or equal to min_confs")
+	}
+
+	deposits, err := s.manager.ListDeposits(ctx, in.MinConfs, in.MaxConfs)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	filteredDeposits := make([]*looprpc.AssetDeposit, 0, len(deposits))
+	for _, d := range deposits {
+		rpcDeposit := &looprpc.AssetDeposit{
+			DepositId:          d.ID,
+			CreatedAt:          d.CreatedAt.Unix(),
+			AssetId:            d.AssetID.String(),
+			Amount:             d.Amount,
+			DepositAddr:        d.Addr,
+			State:              d.State.String(),
+			ConfirmationHeight: d.ConfirmationHeight,
+			Expiry:             d.ConfirmationHeight + d.CsvExpiry,
+			SweepAddr:          d.SweepAddr,
+		}
+
+		if d.Outpoint != nil {
+			rpcDeposit.AnchorOutpoint = d.Outpoint.String()
+		}
+
+		filteredDeposits = append(filteredDeposits, rpcDeposit)
+	}
+
+	return &looprpc.ListAssetDepositsResponse{
+		FilteredDeposits: filteredDeposits,
+	}, nil
 }
 
 // RevealAssetDepositKey is the rpc endpoint for loop clients to reveal the

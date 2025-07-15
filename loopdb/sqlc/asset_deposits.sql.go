@@ -67,6 +67,86 @@ func (q *Queries) AddAssetDeposit(ctx context.Context, arg AddAssetDepositParams
 	return err
 }
 
+const getAssetDeposits = `-- name: GetAssetDeposits :many
+SELECT d.deposit_id, d.protocol_version, d.created_at, d.asset_id, d.amount, d.client_script_pubkey, d.server_script_pubkey, d.client_internal_pubkey, d.server_internal_pubkey, d.server_internal_key, d.expiry, d.client_key_family, d.client_key_index, d.addr, d.confirmation_height, d.outpoint, d.pk_script, d.sweep_addr, u.update_state, u.update_timestamp
+FROM asset_deposits d
+JOIN asset_deposit_updates u ON u.id = (
+    SELECT id
+    FROM asset_deposit_updates
+    WHERE deposit_id = d.deposit_id
+    ORDER BY update_timestamp DESC
+    LIMIT 1
+)
+ORDER BY d.created_at ASC
+`
+
+type GetAssetDepositsRow struct {
+	DepositID            string
+	ProtocolVersion      int32
+	CreatedAt            time.Time
+	AssetID              []byte
+	Amount               int64
+	ClientScriptPubkey   []byte
+	ServerScriptPubkey   []byte
+	ClientInternalPubkey []byte
+	ServerInternalPubkey []byte
+	ServerInternalKey    []byte
+	Expiry               int32
+	ClientKeyFamily      int32
+	ClientKeyIndex       int32
+	Addr                 string
+	ConfirmationHeight   sql.NullInt32
+	Outpoint             sql.NullString
+	PkScript             []byte
+	SweepAddr            sql.NullString
+	UpdateState          int32
+	UpdateTimestamp      time.Time
+}
+
+func (q *Queries) GetAssetDeposits(ctx context.Context) ([]GetAssetDepositsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAssetDeposits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssetDepositsRow
+	for rows.Next() {
+		var i GetAssetDepositsRow
+		if err := rows.Scan(
+			&i.DepositID,
+			&i.ProtocolVersion,
+			&i.CreatedAt,
+			&i.AssetID,
+			&i.Amount,
+			&i.ClientScriptPubkey,
+			&i.ServerScriptPubkey,
+			&i.ClientInternalPubkey,
+			&i.ServerInternalPubkey,
+			&i.ServerInternalKey,
+			&i.Expiry,
+			&i.ClientKeyFamily,
+			&i.ClientKeyIndex,
+			&i.Addr,
+			&i.ConfirmationHeight,
+			&i.Outpoint,
+			&i.PkScript,
+			&i.SweepAddr,
+			&i.UpdateState,
+			&i.UpdateTimestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markDepositConfirmed = `-- name: MarkDepositConfirmed :exec
 UPDATE asset_deposits 
 SET confirmation_height = $2, outpoint = $3, pk_script = $4

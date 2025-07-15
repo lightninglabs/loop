@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/taproot-assets/address"
+	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // Querier is a subset of the methods we need from the postgres.querier
@@ -22,6 +26,9 @@ type Querier interface {
 
 	MarkDepositConfirmed(ctx context.Context,
 		arg sqlc.MarkDepositConfirmedParams) error
+
+	GetAssetDeposits(ctx context.Context) ([]sqlc.GetAssetDepositsRow,
+		error)
 }
 
 // DepositBaseDB is the interface that contains all the queries generated
@@ -134,4 +141,116 @@ func (s *SQLStore) UpdateDeposit(ctx context.Context, d *Deposit) error {
 			},
 		)
 	})
+}
+
+func (s *SQLStore) GetAllDeposits(ctx context.Context) ([]Deposit, error) {
+	sqlDeposits, err := s.db.GetAssetDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deposits := make([]Deposit, 0, len(sqlDeposits))
+	for _, sqlDeposit := range sqlDeposits {
+		deposit, err := sqlcDepositToDeposit(
+			sqlDeposit, &s.addressParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, deposit)
+	}
+
+	return deposits, nil
+}
+
+func sqlcDepositToDeposit(sqlDeposit sqlc.GetAssetDepositsRow,
+	addressParams *address.ChainParams) (Deposit, error) {
+
+	clientScriptPubKey, err := btcec.ParsePubKey(
+		sqlDeposit.ClientScriptPubkey,
+	)
+	if err != nil {
+		return Deposit{}, err
+	}
+
+	serverScriptPubKey, err := btcec.ParsePubKey(
+		sqlDeposit.ServerScriptPubkey,
+	)
+	if err != nil {
+		return Deposit{}, err
+	}
+
+	clientInteralPubKey, err := btcec.ParsePubKey(
+		sqlDeposit.ClientInternalPubkey,
+	)
+	if err != nil {
+		return Deposit{}, err
+	}
+
+	serverInternalPubKey, err := btcec.ParsePubKey(
+		sqlDeposit.ServerInternalPubkey,
+	)
+	if err != nil {
+		return Deposit{}, err
+	}
+
+	clientKeyLocator := keychain.KeyLocator{
+		Family: keychain.KeyFamily(
+			sqlDeposit.ClientKeyFamily,
+		),
+		Index: uint32(sqlDeposit.ClientKeyIndex),
+	}
+
+	if len(sqlDeposit.AssetID) != len(asset.ID{}) {
+		return Deposit{}, fmt.Errorf("malformed asset ID for deposit: "+
+			"%v", sqlDeposit.DepositID)
+	}
+
+	depositInfo := &DepositInfo{
+		ID: sqlDeposit.DepositID,
+		Version: AssetDepositProtocolVersion(
+			sqlDeposit.ProtocolVersion,
+		),
+		CreatedAt: sqlDeposit.CreatedAt.Local(),
+		Amount:    uint64(sqlDeposit.Amount),
+		Addr:      sqlDeposit.Addr,
+		State:     State(sqlDeposit.UpdateState),
+	}
+
+	if sqlDeposit.ConfirmationHeight.Valid {
+		depositInfo.ConfirmationHeight = uint32(
+			sqlDeposit.ConfirmationHeight.Int32,
+		)
+	}
+
+	if sqlDeposit.Outpoint.Valid {
+		outpoint, err := wire.NewOutPointFromString(
+			sqlDeposit.Outpoint.String,
+		)
+		if err != nil {
+			return Deposit{}, err
+		}
+
+		depositInfo.Outpoint = outpoint
+	}
+
+	if sqlDeposit.SweepAddr.Valid {
+		depositInfo.SweepAddr = sqlDeposit.SweepAddr.String
+	}
+
+	kit, err := NewKit(
+		clientScriptPubKey, clientInteralPubKey, serverScriptPubKey,
+		serverInternalPubKey, clientKeyLocator,
+		asset.ID(sqlDeposit.AssetID), uint32(sqlDeposit.Expiry),
+		addressParams,
+	)
+	if err != nil {
+		return Deposit{}, err
+	}
+
+	return Deposit{
+		Kit:         kit,
+		DepositInfo: depositInfo,
+	}, nil
 }

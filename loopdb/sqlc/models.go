@@ -30,6 +30,12 @@ type AssetDeposit struct {
 	SweepAddr            sql.NullString
 }
 
+type AssetDepositLeasedUtxo struct {
+	ID        int32
+	DepositID string
+	Outpoint  string
+}
+
 type AssetDepositUpdate struct {
 	ID              int32
 	DepositID       string
