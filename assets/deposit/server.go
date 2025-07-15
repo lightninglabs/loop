@@ -11,10 +11,14 @@ import (
 // Server is the grpc server that serves the reservation service.
 type Server struct {
 	looprpc.UnimplementedAssetDepositClientServer
+
+	manager *Manager
 }
 
-func NewServer() *Server {
-	return &Server{}
+func NewServer(manager *Manager) *Server {
+	return &Server{
+		manager: manager,
+	}
 }
 
 // NewAssetDeposit is the rpc endpoint for loop clients to request a new asset
