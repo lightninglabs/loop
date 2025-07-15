@@ -44,3 +44,18 @@ ORDER BY d.created_at ASC;
 UPDATE asset_deposits
 SET sweep_script_pubkey = $2, sweep_internal_pubkey = $3
 WHERE deposit_id = $1;
+
+-- name: GetActiveAssetDeposits :many
+SELECT d.*, u.update_state, u.update_timestamp
+FROM asset_deposits d
+JOIN asset_deposit_updates u
+  ON u.deposit_id = d.deposit_id
+WHERE u.id = (
+    SELECT id
+    FROM asset_deposit_updates
+    WHERE deposit_id = d.deposit_id
+    ORDER BY update_timestamp DESC
+    LIMIT 1
+)
+AND u.update_state IN (0, 1, 2, 3, 4, 5, 6);
+
