@@ -10,6 +10,7 @@ import (
 )
 
 type Querier interface {
+	AddAssetDeposit(ctx context.Context, arg AddAssetDepositParams) error
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
@@ -65,10 +66,12 @@ type Querier interface {
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error
+	MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfirmedParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
+	UpdateDepositState(ctx context.Context, arg UpdateDepositStateParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
