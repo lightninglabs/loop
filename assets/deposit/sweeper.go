@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -16,11 +17,16 @@ import (
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/proof"
+	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -332,4 +338,111 @@ func getSigHash(tx *wire.MsgTx, idx int,
 	copy(sigHash[:], taprootSigHash)
 
 	return sigHash, nil
+}
+
+// GetHTLC creates a new zero-fee HTLC packet to be able to partially sign it
+// and send it to the server for further processing.
+//
+// TODO(bhandras): add support for spending multiple deposits into the HTLC.
+func (s *Sweeper) GetHTLC(ctx context.Context, deposit *Kit,
+	depositProof *proof.Proof, amount uint64, hash lntypes.Hash,
+	csvExpiry uint32) (*htlc.SwapKit, *psbt.Packet, []*tappsbt.VPacket,
+	[]*tappsbt.VPacket, *assetwalletrpc.CommitVirtualPsbtsResponse, error) {
+
+	// Genearate the HTLC address that will be used to sweep the deposit to
+	// in case the client is uncooperative.
+	rpcHtlcAddr, swapKit, err := deposit.NewHtlcAddr(
+		ctx, s.tapdClient, amount, hash, csvExpiry,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("unable to create "+
+			"htlc addr: %v", err)
+	}
+
+	htlcAddr, err := address.DecodeAddress(
+		rpcHtlcAddr.Encoded, &s.addressParams,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	// Now we can create the sweep vpacket that'd sweep the deposited
+	// assets to the HTLC output.
+	depositSpendVpkt, err := assets.CreateOpTrueSweepVpkt(
+		ctx, []*proof.Proof{depositProof}, htlcAddr, &s.addressParams,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("unable to create "+
+			"deposit spend vpacket: %v", err)
+	}
+
+	// By committing the virtual transaction to the BTC template we
+	// created, our lnd node will fund the BTC level transaction with an
+	// input to pay for the fees. We'll further add a change output to the
+	// transaction that will be generated using the above key descriptor.
+	feeRate := chainfee.SatPerVByte(0)
+
+	// Use an empty lock ID, as we don't need to lock any UTXOs for this
+	// operation.
+	lockID := wtxmgr.LockID{}
+
+	htlcBtcPkt, activeAssets, passiveAssets, commitResp, err :=
+		s.tapdClient.PrepareAndCommitVirtualPsbts(
+			ctx, depositSpendVpkt, feeRate, nil,
+			s.addressParams.Params, nil, lockID,
+			time.Duration(0),
+		)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("deposit spend "+
+			"HTLC prepare and commit failed: %v", err)
+	}
+
+	htlcBtcPkt.UnsignedTx.Version = 3
+
+	return swapKit, htlcBtcPkt, activeAssets, passiveAssets, commitResp, nil
+}
+
+// PartialSignMuSig2 is used to partially sign a message hash with the deposit's
+// keys.
+func (s *Sweeper) PartialSignMuSig2(ctx context.Context, d *Kit,
+	anchorRootHash []byte, cosignerNonce [musig2.PubNonceSize]byte,
+	message [32]byte) ([musig2.PubNonceSize]byte, []byte, error) {
+
+	signers := [][]byte{
+		d.FunderInternalKey.SerializeCompressed(),
+		d.CoSignerInternalKey.SerializeCompressed(),
+	}
+
+	session, err := s.signer.MuSig2CreateSession(
+		ctx, input.MuSig2Version100RC2,
+		&keychain.KeyLocator{
+			Family: d.KeyLocator.Family,
+			Index:  d.KeyLocator.Index,
+		}, signers, lndclient.MuSig2TaprootTweakOpt(
+			anchorRootHash, false,
+		),
+	)
+	if err != nil {
+		return [musig2.PubNonceSize]byte{}, nil, err
+	}
+
+	_, err = s.signer.MuSig2RegisterNonces(
+		ctx, session.SessionID,
+		[][musig2.PubNonceSize]byte{cosignerNonce},
+	)
+	if err != nil {
+		return [musig2.PubNonceSize]byte{}, nil, err
+	}
+
+	clientPartialSig, err := s.signer.MuSig2Sign(
+		ctx, session.SessionID, message, true,
+	)
+	if err != nil {
+		return [musig2.PubNonceSize]byte{}, nil, err
+	}
+
+	fmt.Printf("!!! client partial sig: %x\n", clientPartialSig)
+	fmt.Printf("!!! client nonce: %x\n", session.PublicNonce)
+
+	return session.PublicNonce, clientPartialSig, nil
 }

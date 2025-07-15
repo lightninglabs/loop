@@ -1,20 +1,24 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -1166,6 +1170,71 @@ func (m *Manager) RevealDepositKeys(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	return err
+}
+
+// CoSignHTLC will partially a deposit spending zero-fee HTLC and send the
+// resulting signature to the swap server.
+func (m *Manager) CoSignHTLC(ctx context.Context, depositID string,
+	serverNonce [musig2.PubNonceSize]byte, hash lntypes.Hash,
+	csvExpiry uint32) error {
+
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	deposit, ok := m.deposits[depositID]
+	if !ok {
+		return fmt.Errorf("deposit %v not available", depositID)
+	}
+
+	_, htlcPkt, _, _, _, err := m.sweeper.GetHTLC(
+		ctx, deposit.Kit, deposit.Proof, deposit.Amount, hash,
+		csvExpiry,
+	)
+	if err != nil {
+		log.Errorf("Unable to get HTLC packet: %v", err)
+
+		return err
+	}
+
+	prevOutFetcher := wallet.PsbtPrevOutputFetcher(htlcPkt)
+	sigHash, err := getSigHash(htlcPkt.UnsignedTx, 0, prevOutFetcher)
+	if err != nil {
+		return err
+	}
+
+	nonce, partialSig, err := m.sweeper.PartialSignMuSig2(
+		ctx, deposit.Kit, deposit.AnchorRootHash, serverNonce, sigHash,
+	)
+	if err != nil {
+		log.Errorf("Unable to partial sign HTLC: %v", err)
+
+		return err
+	}
+
+	var pktBuf bytes.Buffer
+	err = htlcPkt.Serialize(&pktBuf)
+	if err != nil {
+		log.Errorf("Unable to write HTLC packet: %v", err)
+		return err
+	}
+
+	_, err = m.depositServiceClient.PushAssetDepositHtlcSigs(
+		ctx, &swapserverrpc.PushAssetDepositHtlcSigsReq{
+			PartialSigs: []*swapserverrpc.AssetDepositPartialSig{
+				{
+					DepositId:  depositID,
+					Nonce:      nonce[:],
+					PartialSig: partialSig,
+				},
+			},
+			HtlcPsbt: pktBuf.Bytes(),
+		},
+	)
 
 	return err
 }

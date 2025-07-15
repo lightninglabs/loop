@@ -7,6 +7,7 @@ import (
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -172,5 +173,18 @@ func (s *Server) TestCoSignAssetDepositHTLC(ctx context.Context,
 	in *looprpc.TestCoSignAssetDepositHTLCRequest) (
 	*looprpc.TestCoSignAssetDepositHTLCResponse, error) {
 
-	return nil, status.Error(codes.Unimplemented, "unimplemented")
+	// Values for testing.
+	serverNonce := secNonceToPubNonce(tmpServerSecNonce)
+	preimage := lntypes.Preimage{1, 2, 3}
+	swapHash := preimage.Hash()
+	htlcExpiry := uint32(100)
+
+	err := s.manager.CoSignHTLC(
+		ctx, in.DepositId, serverNonce, swapHash, htlcExpiry,
+	)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &looprpc.TestCoSignAssetDepositHTLCResponse{}, nil
 }
