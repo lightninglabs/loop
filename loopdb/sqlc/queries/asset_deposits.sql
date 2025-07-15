@@ -1,0 +1,29 @@
+-- name: AddAssetDeposit :exec
+INSERT INTO asset_deposits (
+    deposit_id,
+    protocol_version,
+    created_at,
+    asset_id,
+    amount,
+    client_script_pubkey,
+    server_script_pubkey,
+    client_internal_pubkey,
+    server_internal_pubkey,
+    server_internal_key,
+    client_key_family,
+    client_key_index,
+    expiry,
+    addr
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
+
+-- name: UpdateDepositState :exec
+INSERT INTO asset_deposit_updates (
+    deposit_id,
+    update_state,
+    update_timestamp
+) VALUES ($1, $2, $3);
+
+-- name: MarkDepositConfirmed :exec
+UPDATE asset_deposits 
+SET confirmation_height = $2, outpoint = $3, pk_script = $4
+WHERE deposit_id = $1;

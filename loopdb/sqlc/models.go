@@ -9,6 +9,34 @@ import (
 	"time"
 )
 
+type AssetDeposit struct {
+	DepositID            string
+	ProtocolVersion      int32
+	CreatedAt            time.Time
+	AssetID              []byte
+	Amount               int64
+	ClientScriptPubkey   []byte
+	ServerScriptPubkey   []byte
+	ClientInternalPubkey []byte
+	ServerInternalPubkey []byte
+	ServerInternalKey    []byte
+	Expiry               int32
+	ClientKeyFamily      int32
+	ClientKeyIndex       int32
+	Addr                 string
+	ConfirmationHeight   sql.NullInt32
+	Outpoint             sql.NullString
+	PkScript             []byte
+	SweepAddr            sql.NullString
+}
+
+type AssetDepositUpdate struct {
+	ID              int32
+	DepositID       string
+	UpdateState     int32
+	UpdateTimestamp time.Time
+}
+
 type Deposit struct {
 	ID                    int32
 	DepositID             []byte
