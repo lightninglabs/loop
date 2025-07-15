@@ -1,0 +1,10 @@
+package deposit
+
+import "context"
+
+// Store defines the interface that the Manager requires from the storage layer.
+type Store interface {
+	// UpdateDeposit updates the deposit state and extends the deposit
+	// update log in the SQL store.
+	UpdateDeposit(ctx context.Context, d *Deposit) error
+}
