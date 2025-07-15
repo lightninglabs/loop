@@ -32,6 +32,9 @@ type Querier interface {
 
 	SetAssetDepositSweepAddr(ctx context.Context,
 		arg sqlc.SetAssetDepositSweepAddrParams) error
+
+	GetActiveAssetDeposits(ctx context.Context) (
+		[]sqlc.GetActiveAssetDepositsRow, error)
 }
 
 // DepositBaseDB is the interface that contains all the queries generated
@@ -270,4 +273,28 @@ func sqlcDepositToDeposit(sqlDeposit sqlc.GetAssetDepositsRow,
 		Kit:         kit,
 		DepositInfo: depositInfo,
 	}, nil
+}
+
+// GetActiveDeposits returns all active deposits from the database. Active
+// deposits are those that have not yet been spent or swept.
+func (s *SQLStore) GetActiveDeposits(ctx context.Context) ([]Deposit, error) {
+	sqlDeposits, err := s.db.GetActiveAssetDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deposits := make([]Deposit, 0, len(sqlDeposits))
+	for _, sqlDeposit := range sqlDeposits {
+		deposit, err := sqlcDepositToDeposit(
+			sqlc.GetAssetDepositsRow(sqlDeposit),
+			&s.addressParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, deposit)
+	}
+
+	return deposits, nil
 }

@@ -146,6 +146,13 @@ func (m *Manager) Run(ctx context.Context, bestBlock uint32) error {
 
 	m.currentHeight = bestBlock
 
+	err := m.recoverDeposits(ctx)
+	if err != nil {
+		log.Errorf("Unable to recover deposits: %v", err)
+
+		return err
+	}
+
 	blockChan, blockErrChan, err := m.chainNotifier.RegisterBlockEpochNtfn(
 		ctxc,
 	)
@@ -217,6 +224,48 @@ func (m *Manager) criticalError(err error) {
 	case m.criticalErrChan <- err:
 	default:
 	}
+}
+
+// recoverDeposits recovers all active deppsits when the deposit manager starts.
+func (m *Manager) recoverDeposits(ctx context.Context) error {
+	// Fetch all active deposits from the store to kick-off the manager.
+	activeDeposits, err := m.store.GetActiveDeposits(ctx)
+	if err != nil {
+		log.Errorf("Unable to fetch deposits from store: %v", err)
+
+		return err
+	}
+
+	for i := range activeDeposits {
+		d := &activeDeposits[i]
+		log.Infof("Recovering deposit %v (state=%s)", d.ID, d.State)
+
+		m.deposits[d.ID] = d
+		_, _, _, err = m.isDepositFunded(ctx, d)
+		if err != nil {
+			return err
+		}
+
+		if d.State == StateInitiated {
+			// If the deposit has just been initiated, then we need
+			// to ensure that it is funded.
+			err = m.fundDepositIfNeeded(ctx, d)
+			if err != nil {
+				log.Errorf("Unable to fund deposit %v: %v",
+					d.ID, err)
+
+				return err
+			}
+		} else {
+			// Cache proof info of the deposit in-memory.
+			err = m.cacheProofInfo(ctx, d)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // handleBlockEpoch is called when a new block is added to the chain.
