@@ -4,15 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/taproot-assets/address"
+	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/rpcutils"
+	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 )
 
 var (
+	// AssetDepositKeyFamily is the key family used for generating asset
+	// deposit keys.
+	AssetDepositKeyFamily = int32(1122)
+
 	// ErrManagerShuttingDown signals that the asset deposit manager is
 	// shutting down and that no further calls should be made to it.
 	ErrManagerShuttingDown = errors.New("asset deposit manager is " +
@@ -266,6 +280,385 @@ func (m *Manager) handleDepositStateUpdate(ctx context.Context,
 	for _, subscriber := range subscribers {
 		go subscriber(d.DepositInfo.Copy())
 	}
+
+	return nil
+}
+
+// NewDeposit creates a new asset deposit with the given parameters.
+func (m *Manager) NewDeposit(ctx context.Context, assetID asset.ID,
+	amount uint64, csvExpiry uint32) (DepositInfo, error) {
+
+	clientKeyDesc, err := m.walletKit.DeriveNextKey(
+		ctx, AssetDepositKeyFamily,
+	)
+	if err != nil {
+		return DepositInfo{}, err
+	}
+	clientInternalPubKey, _, err := DeriveSharedDepositKey(
+		ctx, m.signer, clientKeyDesc.PubKey,
+	)
+	if err != nil {
+		return DepositInfo{}, err
+	}
+
+	clientScriptPubKeyBytes := clientKeyDesc.PubKey.SerializeCompressed()
+	clientInternalPubKeyBytes := clientInternalPubKey.SerializeCompressed()
+
+	resp, err := m.depositServiceClient.NewAssetDeposit(
+		ctx, &swapserverrpc.NewAssetDepositServerReq{
+			AssetId:              assetID[:],
+			Amount:               amount,
+			ClientInternalPubkey: clientInternalPubKeyBytes,
+			ClientScriptPubkey:   clientScriptPubKeyBytes,
+			CsvExpiry:            int32(csvExpiry),
+		},
+	)
+	if err != nil {
+		log.Errorf("Swap server was unable to create the deposit: %v",
+			err)
+
+		return DepositInfo{}, err
+	}
+
+	serverScriptPubKey, err := btcec.ParsePubKey(resp.ServerScriptPubkey)
+	if err != nil {
+		return DepositInfo{}, err
+	}
+
+	serverInternalPubKey, err := btcec.ParsePubKey(
+		resp.ServerInternalPubkey,
+	)
+	if err != nil {
+		return DepositInfo{}, err
+	}
+
+	kit, err := NewKit(
+		clientKeyDesc.PubKey, clientInternalPubKey, serverScriptPubKey,
+		serverInternalPubKey, clientKeyDesc.KeyLocator, assetID,
+		csvExpiry, &m.addressParams,
+	)
+	if err != nil {
+		return DepositInfo{}, err
+	}
+
+	deposit := &Deposit{
+		Kit: kit,
+		DepositInfo: &DepositInfo{
+			ID:        resp.DepositId,
+			Version:   CurrentProtocolVersion(),
+			CreatedAt: time.Now(),
+			Amount:    amount,
+			Addr:      resp.DepositAddr,
+			State:     StateInitiated,
+		},
+	}
+
+	err = m.store.AddAssetDeposit(ctx, deposit)
+	if err != nil {
+		log.Errorf("Unable to add deposit to store: %v", err)
+
+		return DepositInfo{}, err
+	}
+
+	err = m.handleNewDeposit(ctx, deposit)
+	if err != nil {
+		log.Errorf("Unable to add deposit to active deposits: %v", err)
+
+		return DepositInfo{}, err
+	}
+
+	return *deposit.DepositInfo.Copy(), nil
+}
+
+// handleNewDeposit adds the deposit to the active deposits map and starts the
+// funding process, all on the main event loop goroutine.
+func (m *Manager) handleNewDeposit(ctx context.Context, deposit *Deposit) error {
+	done, err := m.scheduleNextCall()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	m.deposits[deposit.ID] = deposit
+
+	return m.fundDepositIfNeeded(ctx, deposit)
+}
+
+// fundDepositIfNeeded attempts to fund the passed deposit if it is not already
+// funded.
+func (m *Manager) fundDepositIfNeeded(ctx context.Context, d *Deposit) error {
+	// Now list transfers from tapd and check if the deposit is funded.
+	funded, transfer, outIndex, err := m.isDepositFunded(ctx, d)
+	if err != nil {
+		log.Errorf("Unable to check if deposit %v is funded: %v", d.ID,
+			err)
+
+		return err
+	}
+
+	if !funded {
+		// No funding transfer found, so we'll attempt to fund the
+		// deposit by sending the asset to the deposit address. Note
+		// that we label the send request with a specific label in order
+		// to be able to subscribe to send events with a label filter.
+		sendResp, err := m.tapClient.SendAsset(
+			ctx, &taprpc.SendAssetRequest{
+				TapAddrs: []string{d.Addr},
+				Label:    d.fundingLabel(),
+			},
+		)
+		if err != nil {
+			log.Errorf("Unable to send asset to deposit %v: %v",
+				d.ID, err)
+
+			return err
+		}
+
+		// Extract the funding outpoint from the transfer.
+		transfer, outIndex, err = d.GetMatchingOut(
+			d.Amount, []*taprpc.AssetTransfer{sendResp.Transfer},
+		)
+		if err != nil {
+			log.Errorf("Unable to get funding out for %v: %v ",
+				d.ID, err)
+
+			return err
+		}
+	}
+
+	log.Infof("Deposit %v is funded in anchor %x:%d, "+
+		"anchor tx block height: %v", d.ID,
+		transfer.AnchorTxHash, outIndex, transfer.AnchorTxBlockHeight)
+
+	// If the deposit is confirmed, then we don't need to wait for the
+	// confirmation to happen.
+	// TODO(bhandras): once backlog events are supported we can remove this.
+	if transfer.AnchorTxBlockHeight != 0 {
+		return m.markDepositConfirmed(ctx, d, transfer)
+	}
+
+	// Wait for deposit confirmation otherwise.
+	err = m.waitForDepositConfirmation(m.runCtx(), d)
+	if err != nil {
+		log.Errorf("Unable to wait for deposit confirmation: %v", err)
+
+		return err
+	}
+
+	return nil
+}
+
+// isDepositFunded checks if the deposit is funded with the expected amount. It
+// does so by checking if there is a deposit output with the expected keys and
+// amount in the list of transfers of the funder.
+func (m *Manager) isDepositFunded(ctx context.Context, d *Deposit) (bool,
+	*taprpc.AssetTransfer, int, error) {
+
+	res, err := m.tapClient.ListTransfers(
+		ctx, &taprpc.ListTransfersRequest{},
+	)
+	if err != nil {
+		return false, nil, 0, err
+	}
+
+	transfer, outIndex, err := d.GetMatchingOut(d.Amount, res.Transfers)
+	if err != nil {
+		return false, nil, 0, err
+	}
+
+	if transfer == nil {
+		return false, nil, 0, nil
+	}
+
+	return true, transfer, outIndex, nil
+}
+
+// cacheProofInfo caches the proof information for the deposit in-memory.
+func (m *Manager) cacheProofInfo(ctx context.Context, d *Deposit) error {
+	proofFile, err := d.ExportProof(ctx, m.tapClient, d.Outpoint)
+	if err != nil {
+		log.Errorf("Unable to export proof for deposit %v: %v", d.ID,
+			err)
+
+		return err
+	}
+
+	// Import the proof in order to be able to spend the deposit later on
+	// either into an HTLC or a timeout sweep. Note that if the proof is
+	// already imoported then this will be a no-op and just return the
+	// last proof (ie the deposit proof).
+	depositProof, err := m.tapClient.ImportProofFile(
+		ctx, proofFile.RawProofFile,
+	)
+	if err != nil {
+		return err
+	}
+
+	d.Proof = depositProof
+
+	// Verify that the proof is valid for the deposit and get the root hash
+	// which we may use later when signing the HTLC transaction.
+	anchorRootHash, err := d.VerifyProof(depositProof)
+	if err != nil {
+		log.Errorf("failed to verify deposity proof: %v", err)
+
+		return err
+	}
+
+	d.AnchorRootHash = anchorRootHash
+
+	return nil
+}
+
+// registerDepositAsKnown registers the deposit with the tapd server so it
+// can claim the funds committed to the OP_TRUE script.
+func (m *Manager) registerDepositAsKnown(ctx context.Context,
+	d *Deposit) error {
+
+	opTrueScriptKey, _, _, _, err := htlc.CreateOpTrueLeaf()
+	if err != nil {
+		return err
+	}
+
+	// Declare the script key as known on the underlying tapd. Note that
+	// under the hood this is an upsert operation, so if the script is
+	// already known it will be a no-op. This is useful since we use the
+	// same OP_TRUE script key for all deposits.
+	_, err = m.tapClient.DeclareScriptKey(
+		ctx, &assetwalletrpc.DeclareScriptKeyRequest{
+			ScriptKey: rpcutils.MarshalScriptKey(
+				opTrueScriptKey,
+			),
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	// Now let the underlying tapd know about the deposit transfer so it can
+	// then claim the funds committed to the OP_TRUE script.
+	opTrueScriptKeyBytes := opTrueScriptKey.PubKey.SerializeCompressed()
+	opTrueScriptKeyBytes[0] = secp256k1.PubKeyFormatCompressedEven
+
+	_, err = m.tapClient.RegisterTransfer(
+		ctx, &taprpc.RegisterTransferRequest{
+			AssetId:   d.AssetID[:],
+			ScriptKey: opTrueScriptKeyBytes,
+			Outpoint: &taprpc.OutPoint{
+				Txid:        d.Outpoint.Hash[:],
+				OutputIndex: d.Outpoint.Index,
+			},
+		},
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			log.Debugf("Deposit %v already registered as known: %v",
+				d.ID, err)
+
+			return nil
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+// waitForDepositConfirmation waits for the deposit to be confirmed.
+func (m *Manager) waitForDepositConfirmation(ctx context.Context,
+	d *Deposit) error {
+
+	log.Infof("Subscribing to send events for pending deposit %s, "+
+		"addr=%v, created_at=%v", d.ID, d.Addr, d.CreatedAt)
+
+	resChan, errChan, err := m.tapClient.WaitForSendComplete(
+		ctx, nil, d.fundingLabel(),
+	)
+	if err != nil {
+		log.Errorf("unable to subscribe to send events: %v", err)
+		return err
+	}
+
+	go func() {
+		select {
+		case res := <-resChan:
+			done, err := m.scheduleNextCall()
+			if err != nil {
+				log.Errorf("Unable to schedule next call: %v",
+					err)
+
+				m.criticalError(err)
+			}
+			defer done()
+
+			err = m.markDepositConfirmed(ctx, d, res.Transfer)
+			if err != nil {
+				log.Errorf("Unable to mark deposit %v as "+
+					"confirmed: %v", d.ID, err)
+
+				m.criticalError(err)
+			}
+
+		case err := <-errChan:
+			m.criticalError(err)
+		}
+	}()
+
+	return nil
+}
+
+// markDepositConfirmed marks the deposit as confirmed in the store and moves it
+// to the active deposits map. It also updates the outpoint and the confirmation
+// height of the deposit.
+func (m *Manager) markDepositConfirmed(ctx context.Context, d *Deposit,
+	transfer *taprpc.AssetTransfer) error {
+
+	// Extract the funding outpoint from the transfer.
+	_, outIdx, err := d.GetMatchingOut(
+		d.Amount, []*taprpc.AssetTransfer{transfer},
+	)
+	if err != nil {
+		return err
+	}
+
+	outpoint, err := wire.NewOutPointFromString(
+		transfer.Outputs[outIdx].Anchor.Outpoint,
+	)
+	if err != nil {
+		log.Errorf("Unable to parse deposit outpoint %v: %v",
+			transfer.Outputs[outIdx].Anchor.Outpoint, err)
+
+		return err
+	}
+
+	d.Outpoint = outpoint
+	d.PkScript = transfer.Outputs[outIdx].Anchor.PkScript
+	d.ConfirmationHeight = transfer.AnchorTxBlockHeight
+	d.State = StateConfirmed
+
+	err = m.handleDepositStateUpdate(ctx, d)
+	if err != nil {
+		return err
+	}
+
+	err = m.cacheProofInfo(ctx, d)
+	if err != nil {
+		log.Errorf("Unable to cache proof info for deposit %v: %v",
+			d.ID, err)
+
+		return err
+	}
+
+	err = m.registerDepositAsKnown(ctx, d)
+	if err != nil {
+		log.Errorf("Unable to register deposit %v as known: %v",
+			d.ID, err)
+
+		return err
+	}
+
+	log.Infof("Deposit %v is confirmed at block %v", d.ID,
+		d.ConfirmationHeight)
 
 	return nil
 }
