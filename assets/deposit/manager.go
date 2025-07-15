@@ -163,6 +163,10 @@ func (m *Manager) Run(ctx context.Context, bestBlock uint32) error {
 		return err
 	}
 
+	// Wake the manager up very 10 seconds to check if there're any pending
+	// chores to do.
+	const wakeupInterval = time.Duration(10) * time.Second
+
 	for {
 		select {
 		case <-m.callEnter:
@@ -179,6 +183,15 @@ func (m *Manager) Run(ctx context.Context, bestBlock uint32) error {
 			m.currentHeight = uint32(blockHeight)
 			err := m.handleBlockEpoch(ctxc, m.currentHeight)
 			if err != nil {
+				return err
+			}
+
+		case <-time.After(wakeupInterval):
+			err := m.publishPendingWithdrawals(ctx)
+			if err != nil {
+				log.Errorf("Unable to publish pending "+
+					"withdrawals: %v", err)
+
 				return err
 			}
 
@@ -871,6 +884,8 @@ func (m *Manager) handleDepositSpend(ctx context.Context, d *Deposit,
 
 	switch d.State {
 	case StateTimeoutSweepPublished:
+		fallthrough
+	case StateCooperativeSweepPublished:
 		log.Infof("Deposit %s withdrawn in: %s", d.ID, outpoint)
 		d.State = StateSwept
 
@@ -1011,6 +1026,71 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		err = m.handleDepositStateUpdate(ctx, d)
 		if err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// publishPendingWithdrawals publishes any pending deposit withdrawals.
+func (m *Manager) publishPendingWithdrawals(ctx context.Context) error {
+	for _, d := range m.deposits {
+		// TODO(bhandras): republish on StateCooperativeSweepPublished.
+		if d.State != StateWithdrawn {
+			continue
+		}
+
+		// Start monitoring the sweep unless we're already doing so.
+		if _, ok := m.pendingSweeps[d.ID]; !ok {
+			err := m.waitForDepositSpend(ctx, d)
+			if err != nil {
+				log.Errorf("Unable to wait for deposit %v "+
+					"spend: %v", d.ID, err)
+
+				return err
+			}
+
+			m.pendingSweeps[d.ID] = struct{}{}
+		}
+
+		serverKey, err := m.store.GetAssetDepositServerKey(
+			ctx, d.ID,
+		)
+		if err != nil {
+			return err
+		}
+
+		lockID, err := d.lockID()
+		if err != nil {
+			return err
+		}
+
+		sweepAddr, err := address.DecodeAddress(
+			d.SweepAddr, &m.addressParams,
+		)
+		if err != nil {
+			return err
+		}
+
+		// TODO(bhandras): conf target should be dynamic/configrable.
+		const confTarget = 2
+		feeRateSatPerKw, err := m.walletKit.EstimateFeeRate(
+			ctx, confTarget,
+		)
+
+		funder := true
+		sendAssetResp, err := m.sweeper.PublishDepositSweepMuSig2(
+			ctx, d.Kit, funder, d.Proof, serverKey, sweepAddr,
+			feeRateSatPerKw.FeePerVByte(), lockID, lockExpiration,
+		)
+		if err != nil {
+			log.Errorf("Unable to publish deposit sweep for %v: %v",
+				d.ID, err)
+		} else {
+			log.Infof("Published sweep for deposit %v: %v", d.ID,
+				sendAssetResp.Transfer.AnchorTxHash)
+
+			d.State = StateCooperativeSweepPublished
 		}
 	}
 
