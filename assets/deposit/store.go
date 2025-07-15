@@ -10,4 +10,7 @@ type Store interface {
 	// UpdateDeposit updates the deposit state and extends the deposit
 	// update log in the SQL store.
 	UpdateDeposit(ctx context.Context, d *Deposit) error
+
+	// GetAllDeposits returns all deposits known to the store.
+	GetAllDeposits(ctx context.Context) ([]Deposit, error)
 }
