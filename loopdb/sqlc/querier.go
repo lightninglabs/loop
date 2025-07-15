@@ -65,6 +65,7 @@ type Querier interface {
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfirmedParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
+	SetAssetDepositSweepAddr(ctx context.Context, arg SetAssetDepositSweepAddrParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateDepositState(ctx context.Context, arg UpdateDepositStateParams) error
