@@ -172,7 +172,7 @@ func (m *MockChainNotifier) RawClientWithMacAuth(
 
 func (m *MockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	txid *chainhash.Hash, pkScript []byte, numConfs, heightHint int32,
-	options ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
+	_ ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
 	chan error, error) {
 
 	args := m.Called(ctx, txid, pkScript, numConfs, heightHint)
@@ -187,7 +187,8 @@ func (m *MockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 }
 
 func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
-	outpoint *wire.OutPoint, pkScript []byte, heightHint int32) (
+	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
+	_ ...lndclient.NotifierOption) (
 	chan *chainntnfs.SpendDetail, chan error, error) {
 
 	args := m.Called(ctx, pkScript, heightHint)

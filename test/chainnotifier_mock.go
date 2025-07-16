@@ -51,8 +51,9 @@ type ConfRegistration struct {
 }
 
 func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
-	outpoint *wire.OutPoint, pkScript []byte, heightHint int32) (
-	chan *chainntnfs.SpendDetail, chan error, error) {
+	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
+	_ ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+	chan error, error) {
 
 	spendChan0 := make(chan *chainntnfs.SpendDetail)
 	spendErrChan := make(chan error, 1)
