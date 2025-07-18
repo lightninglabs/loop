@@ -826,7 +826,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	feeWithoutChange := feeRate.FeeForWeight(weight)
+	feeWithoutChange := feeRate.FeeForWeightRoundUp(weight)
 
 	// If the user selected a fraction of the sum of the selected deposits
 	// to withdraw, check if a change output is needed.
@@ -839,7 +839,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		feeWithChange := feeRate.FeeForWeight(weight)
+		feeWithChange := feeRate.FeeForWeightRoundUp(weight)
 
 		// The available change that can cover fees is the total
 		// selected deposit amount minus the selected withdrawal amount.
