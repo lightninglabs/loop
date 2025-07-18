@@ -125,6 +125,9 @@ type SweepInfo struct {
 	// value should be stable for a sweep. Currently presigned and
 	// non-presigned sweeps never appear in the same batch.
 	IsPresigned bool
+
+	// Change is an optional change output of the sweep.
+	Change *wire.TxOut
 }
 
 // SweepFetcher is used to get details of a sweep.
@@ -168,7 +171,10 @@ type PresignedHelper interface {
 	// SignTx signs an unsigned transaction or returns a pre-signed tx.
 	// It must satisfy the following invariants:
 	//   - the set of inputs is the same, though the order may change;
-	//   - the output is the same, but its amount may be different;
+	//   - the main output is the same, but its amount may be different;
+	//   - the main output is the first output in the transaction;
+	//   - an optional set of change outputs may be added, the values and
+	//     pkscripts must be preserved.
 	//   - feerate is higher or equal to minRelayFee;
 	//   - LockTime may be decreased;
 	//   - transaction version must be the same;
@@ -177,6 +183,7 @@ type PresignedHelper interface {
 	// When choosing a presigned transaction, a transaction with fee rate
 	// closer to the fee rate passed is selected. If loadOnly is set, it
 	// doesn't try to sign the transaction and only loads a presigned tx.
+	// These rules are enforced by CheckSignedTx function.
 	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
 		tx *wire.MsgTx, inputAmt btcutil.Amount,
 		minRelayFee, feeRate chainfee.SatPerKWeight,
@@ -711,9 +718,11 @@ func (b *Batcher) Run(ctx context.Context) error {
 // group. This method must be called prior to AddSweep if presigned mode is
 // enabled, otherwise AddSweep will fail. All the sweeps must belong to the same
 // swap. The order of sweeps is important. The first sweep serves as
-// primarySweepID if the group starts a new batch.
+// primarySweepID if the group starts a new batch. The change output may be nil
+// to indicate that the sweep group does not create a change output.
 func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
-	sweepTimeout int32, destAddress btcutil.Address) error {
+	sweepTimeout int32, destAddress btcutil.Address,
+	changeOutput *wire.TxOut) error {
 
 	if len(inputs) == 0 {
 		return fmt.Errorf("no inputs passed to PresignSweepsGroup")
@@ -744,6 +753,9 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 			timeout:  sweepTimeout,
 		}
 	}
+
+	// Set the change output on the primary group sweep.
+	sweeps[0].change = changeOutput
 
 	// The sweeps are ordered inside the group, the first one is the primary
 	// outpoint in the batch.
@@ -1548,6 +1560,7 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 		minFeeRate:             minFeeRate,
 		nonCoopHint:            s.NonCoopHint,
 		presigned:              s.IsPresigned,
+		change:                 s.Change,
 	}, nil
 }
 

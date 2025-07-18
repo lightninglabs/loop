@@ -51,6 +51,7 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 			outpoint:  s.outpoint,
 			value:     s.value,
 			presigned: s.presigned,
+			change:    s.change,
 		}
 	}
 
@@ -493,10 +494,12 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	signedFeeRate := chainfee.NewSatPerKWeight(fee, realWeight)
 
 	numSweeps := len(tx.TxIn)
+	numChange := len(tx.TxOut) - 1
 	b.Infof("attempting to publish custom signed tx=%v, desiredFeerate=%v,"+
-		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, destAddr=%s",
+		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, "+
+		"changeOutputs=%d, destAddr=%s",
 		txHash, feeRate, signedFeeRate, realWeight, fee, numSweeps,
-		address)
+		numChange, address)
 	b.debugLogTx("serialized batch", tx)
 
 	// Publish the transaction.
@@ -593,23 +596,31 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	}
 
 	// Compare outputs.
-	if len(unsignedTx.TxOut) != 1 {
-		return fmt.Errorf("unsigned tx has %d outputs, want 1",
-			len(unsignedTx.TxOut))
-	}
-	if len(signedTx.TxOut) != 1 {
-		return fmt.Errorf("the signed tx has %d outputs, want 1",
+	if len(unsignedTx.TxOut) != len(signedTx.TxOut) {
+		return fmt.Errorf("unsigned tx has %d outputs, signed tx has "+
+			"%d outputs, should be equal", len(unsignedTx.TxOut),
 			len(signedTx.TxOut))
 	}
-	unsignedOut := unsignedTx.TxOut[0]
-	signedOut := signedTx.TxOut[0]
-	if !bytes.Equal(unsignedOut.PkScript, signedOut.PkScript) {
-		return fmt.Errorf("mismatch of output pkScript: %x, %x",
-			unsignedOut.PkScript, signedOut.PkScript)
+	for i, o := range unsignedTx.TxOut {
+		if !bytes.Equal(o.PkScript, signedTx.TxOut[i].PkScript) {
+			return fmt.Errorf("mismatch of output pkScript: %x, %x",
+				o.PkScript, signedTx.TxOut[i].PkScript)
+		}
+		if i != 0 && o.Value != signedTx.TxOut[i].Value {
+			return fmt.Errorf("mismatch of output value: %d, %d",
+				o.Value, signedTx.TxOut[i].Value)
+		}
+	}
+
+	// Calculate the total value of all outputs to help determine the
+	// transaction fee.
+	totalOutputValue := btcutil.Amount(0)
+	for _, o := range signedTx.TxOut {
+		totalOutputValue += btcutil.Amount(o.Value)
 	}
 
 	// Find the feerate of signedTx.
-	fee := inputAmt - btcutil.Amount(signedOut.Value)
+	fee := inputAmt - totalOutputValue
 	weight := lntypes.WeightUnit(
 		blockchain.GetTransactionWeight(btcutil.NewTx(signedTx)),
 	)

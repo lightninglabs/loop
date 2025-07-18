@@ -1460,7 +1460,8 @@ func TestCheckSignedTx(t *testing.T) {
 			},
 			inputAmt:    3_000_000,
 			minRelayFee: 253,
-			wantErr:     "unsigned tx has 2 outputs, want 1",
+			wantErr: "unsigned tx has 2 outputs, signed tx " +
+				"has 1 outputs, should be equal",
 		},
 
 		{
@@ -1517,7 +1518,153 @@ func TestCheckSignedTx(t *testing.T) {
 			},
 			inputAmt:    3_000_000,
 			minRelayFee: 253,
-			wantErr:     "the signed tx has 2 outputs, want 1",
+			wantErr: "unsigned tx has 1 outputs, signed tx " +
+				"has 2 outputs, should be equal",
+		},
+
+		{
+			name: "pkscript mismatch",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: []byte{0xaf, 0xfe}, // Just to make it different.
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "mismatch of output pkScript",
+		},
+
+		{
+			name: "value mismatch, first output",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    1_337_000, // Just to make it different.
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "",
+		},
+
+		{
+			name: "value mismatch, change output",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+					{
+						PreviousOutPoint: op1,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+					{
+						Value:    1_337_000,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+					{
+						PreviousOutPoint: op1,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2_493_300,
+						PkScript: batchPkScript,
+					},
+					{
+						Value:    1_338, // Just to make it different.
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "mismatch of output value",
 		},
 
 		{
