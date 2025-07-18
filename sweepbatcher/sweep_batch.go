@@ -125,6 +125,9 @@ type sweep struct {
 
 	// presigned is set, if the sweep should be handled in presigned mode.
 	presigned bool
+
+	// change is the optional change output of the sweep.
+	change *wire.TxOut
 }
 
 // batchState is the state of the batch.
