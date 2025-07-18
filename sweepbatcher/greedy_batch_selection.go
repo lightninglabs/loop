@@ -210,6 +210,13 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 			err)
 	}
 
+	// Add change output weights.
+	for _, s := range batch.sweeps {
+		if s.change != nil {
+			weight.AddOutput(s.change.PkScript)
+		}
+	}
+
 	// Add inputs.
 	for _, sweep := range batch.sweeps {
 		if sweep.nonCoopHint || sweep.coopFailed {

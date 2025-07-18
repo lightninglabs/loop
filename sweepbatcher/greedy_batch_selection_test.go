@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -16,24 +17,28 @@ import (
 
 // Useful constants for tests.
 const (
-	lowFeeRate  = chainfee.FeePerKwFloor
-	highFeeRate = chainfee.SatPerKWeight(30000)
+	lowFeeRate    = chainfee.FeePerKwFloor
+	mediumFeeRate = lowFeeRate + 200
+	highFeeRate   = chainfee.SatPerKWeight(30000)
 
 	coopInputWeight       = lntypes.WeightUnit(230)
+	batchOutputWeight     = lntypes.WeightUnit(343)
 	nonCoopInputWeight    = lntypes.WeightUnit(393)
 	nonCoopPenalty        = nonCoopInputWeight - coopInputWeight
 	coopNewBatchWeight    = lntypes.WeightUnit(444)
 	nonCoopNewBatchWeight = coopNewBatchWeight + nonCoopPenalty
+	changeOutputWeight    = lntypes.WeightUnit(input.P2TROutputSize)
 
 	// p2pkhDiscount is weight discount P2PKH output has over P2TR output.
 	p2pkhDiscount = lntypes.WeightUnit(
 		input.P2TROutputSize-input.P2PKHOutputSize,
 	) * 4
 
-	coopTwoSweepBatchWeight    = coopNewBatchWeight + coopInputWeight
-	nonCoopTwoSweepBatchWeight = coopTwoSweepBatchWeight + 2*nonCoopPenalty
-	v2v3BatchWeight            = nonCoopTwoSweepBatchWeight - 25
-	mixedTwoSweepBatchWeight   = coopTwoSweepBatchWeight + nonCoopPenalty
+	coopTwoSweepBatchWeight          = coopNewBatchWeight + coopInputWeight
+	coopSingleSweepChangeBatchWeight = coopInputWeight + batchOutputWeight + changeOutputWeight
+	nonCoopTwoSweepBatchWeight       = coopTwoSweepBatchWeight + 2*nonCoopPenalty
+	v2v3BatchWeight                  = nonCoopTwoSweepBatchWeight - 25
+	mixedTwoSweepBatchWeight         = coopTwoSweepBatchWeight + nonCoopPenalty
 )
 
 // testHtlcV2SuccessEstimator adds weight of non-cooperative input to estimator
@@ -265,6 +270,13 @@ func TestEstimateBatchWeight(t *testing.T) {
 	se3 := testHtlcV3SuccessEstimator
 	trAddr := (*btcutil.AddressTaproot)(nil)
 
+	changeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
+		"lwyyeq5ryn6r"
+	changeAddress, err := btcutil.DecodeAddress(changeAddr, nil)
+	require.NoError(t, err)
+	changePkscript, err := txscript.PayToAddrScript(changeAddress)
+	require.NoError(t, err)
+
 	cases := []struct {
 		name                string
 		batch               *batch
@@ -287,6 +299,29 @@ func TestEstimateBatchWeight(t *testing.T) {
 				BatchId: 1,
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
+			},
+		},
+
+		{
+			name: "one sweep regular batch with change",
+			batch: &batch{
+				id: 1,
+				rbfCache: rbfCache{
+					FeeRate: lowFeeRate,
+				},
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
+						htlcSuccessEstimator: se3,
+						change: &wire.TxOut{
+							PkScript: changePkscript,
+						},
+					},
+				},
+			},
+			wantBatchFeeDetails: feeDetails{
+				BatchId: 1,
+				FeeRate: lowFeeRate,
+				Weight:  coopSingleSweepChangeBatchWeight,
 			},
 		},
 
@@ -774,6 +809,47 @@ func TestSelectBatches(t *testing.T) {
 			},
 			oneSweepBatch: feeDetails{
 				FeeRate: highFeeRate,
+				Weight:  coopNewBatchWeight,
+			},
+			wantBestBatchesIds: []int32{1, newBatchSignal},
+		},
+
+		{
+			name: "low fee change sweep, placed in new batch",
+			batches: []feeDetails{
+				{
+					BatchId: 1,
+					FeeRate: mediumFeeRate,
+					Weight:  coopNewBatchWeight,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate: lowFeeRate,
+				Weight:  coopInputWeight + changeOutputWeight,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate: lowFeeRate,
+				Weight:  coopNewBatchWeight,
+			},
+			wantBestBatchesIds: []int32{newBatchSignal, 1},
+		},
+
+		{
+			name: "low fee sweep without change, placed in " +
+				"existing batch",
+			batches: []feeDetails{
+				{
+					BatchId: 1,
+					FeeRate: mediumFeeRate,
+					Weight:  coopNewBatchWeight,
+				},
+			},
+			sweep: feeDetails{
+				FeeRate: lowFeeRate,
+				Weight:  coopInputWeight,
+			},
+			oneSweepBatch: feeDetails{
+				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
 			wantBestBatchesIds: []int32{1, newBatchSignal},
