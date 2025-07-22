@@ -736,6 +736,10 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	if err != nil {
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minRelayFeeRate: %w", err)
+	}
 	destPkscript, err := txscript.PayToAddrScript(destAddress)
 	if err != nil {
 		return fmt.Errorf("txscript.PayToAddrScript failed: %w", err)
@@ -763,7 +767,7 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 
 	return presign(
 		ctx, b.presignedHelper, destAddress, primarySweepID, sweeps,
-		nextBlockFeeRate,
+		nextBlockFeeRate, minRelayFeeRate,
 	)
 }
 
@@ -818,12 +822,18 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 		}
 	}
 
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get min relay fee: %w", err)
+	}
+
 	// If this is a presigned mode, make sure PresignSweepsGroup was called.
 	// We skip the check for reorg-safely confirmed sweeps, because their
 	// presigned transactions were already cleaned up from the store.
 	if sweep.presigned && !fullyConfirmed {
 		err := ensurePresigned(
-			ctx, sweeps, b.presignedHelper, b.chainParams,
+			ctx, sweeps, b.presignedHelper, minRelayFeeRate,
+			b.chainParams,
 		)
 		if err != nil {
 			return fmt.Errorf("inputs with primarySweep %v were "+

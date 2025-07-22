@@ -1296,9 +1296,9 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 // outputs. If the main output value is below dust limit this function will
 // return an error.
 func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
-	currentHeight int32, feeRate chainfee.SatPerKWeight) (
-	*wire.MsgTx, lntypes.WeightUnit, btcutil.Amount, btcutil.Amount,
-	error) {
+	currentHeight int32, feeRate chainfee.SatPerKWeight,
+	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx,
+	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
 
 	// Sanity check, there should be at least 1 sweep in this batch.
 	if len(sweeps) == 0 {
@@ -1400,7 +1400,14 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	}
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee := clampBatchFee(feeForWeight, batchAmt-btcutil.Amount(sumChange))
+	fee, err := clampBatchFee(
+		feeForWeight, batchAmt-btcutil.Amount(sumChange),
+		minRelayFeeRate, weight,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("failed to clamp batch "+
+			"fee: %w", err)
+	}
 
 	// Ensure that batch amount exceeds the sum of change outputs and the
 	// fee, and that it is also greater than dust limit for the main
@@ -1516,15 +1523,21 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	// known in advance to be non-cooperative (nonCoopHint) and not failed
 	// to sign cooperatively in previous rounds (coopFailed). If any of them
 	// fails, the sweep is excluded from all following rounds and another
-	// round is attempted. Otherwise the cycle completes and we sign the
+	// round is attempted. Otherwise, the cycle completes and we sign the
 	// remaining sweeps non-cooperatively.
 	var (
-		tx           *wire.MsgTx
-		weight       lntypes.WeightUnit
-		feeForWeight btcutil.Amount
-		fee          btcutil.Amount
-		coopInputs   int
+		tx              *wire.MsgTx
+		weight          lntypes.WeightUnit
+		feeForWeight    btcutil.Amount
+		fee             btcutil.Amount
+		minRelayFeeRate chainfee.SatPerKWeight
+		coopInputs      int
 	)
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get min relay fee: %w", err),
+			false
+	}
 	for attempt := 1; ; attempt++ {
 		b.Infof("Attempt %d of collecting cooperative signatures.",
 			attempt)
@@ -1533,6 +1546,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		var err error
 		tx, weight, feeForWeight, fee, err = constructUnsignedTx(
 			sweeps, address, b.currentHeight, b.rbfCache.FeeRate,
+			minRelayFeeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -1584,7 +1598,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		// If there was any failure of cooperative signing, we need to
 		// update weight estimates (since non-cooperative signing has
 		// larger witness) and hence update the whole transaction and
-		// all the signatures. Otherwise we complete cooperative part.
+		// all the signatures. Otherwise, we complete cooperative part.
 		if !newCoopFailures {
 			break
 		}
@@ -1720,7 +1734,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	}
 
 	// Publish the transaction.
-	err := b.wallet.PublishTransaction(
+	err = b.wallet.PublishTransaction(
 		ctx, tx, b.cfg.txLabeler(b.id),
 	)
 	if err != nil {
@@ -2583,16 +2597,25 @@ func (b *batch) persistSweep(ctx context.Context, sweep sweep,
 
 // clampBatchFee takes the fee amount and total amount of the sweeps in the
 // batch and makes sure the fee is not too high. If the fee is too high, it is
-// clamped to the maximum allowed fee.
-func clampBatchFee(fee btcutil.Amount,
-	totalAmount btcutil.Amount) btcutil.Amount {
+// clamped to the maximum allowed fee. If the clamped fee results in a fee rate
+// below the minimum relay fee, an error is returned.
+func clampBatchFee(fee btcutil.Amount, totalAmount btcutil.Amount,
+	minRelayFeeRate chainfee.SatPerKWeight,
+	weight lntypes.WeightUnit) (btcutil.Amount, error) {
 
 	maxFeeAmount := btcutil.Amount(float64(totalAmount) *
 		maxFeeToSwapAmtRatio)
 
+	clampedFee := fee
 	if fee > maxFeeAmount {
-		return maxFeeAmount
+		clampedFee = maxFeeAmount
 	}
 
-	return fee
+	clampedFeeRate := chainfee.NewSatPerKWeight(clampedFee, weight)
+	if clampedFeeRate < minRelayFeeRate {
+		return 0, fmt.Errorf("clamped fee rate %v is less than "+
+			"minimum relay fee %v", clampedFeeRate, minRelayFeeRate)
+	}
+
+	return clampedFee, nil
 }

@@ -28,8 +28,14 @@ func (b *batch) ensurePresigned(ctx context.Context, newSweeps []*sweep,
 			"adding to an empty batch")
 	}
 
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minRelayFee: %w", err)
+	}
+
 	return ensurePresigned(
-		ctx, newSweeps, b.cfg.presignedHelper, b.cfg.chainParams,
+		ctx, newSweeps, b.cfg.presignedHelper, minRelayFeeRate,
+		b.cfg.chainParams,
 	)
 }
 
@@ -43,6 +49,7 @@ type presignedTxChecker interface {
 // inputs of this group only.
 func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 	presignedTxChecker presignedTxChecker,
+	minRelayFeeRate chainfee.SatPerKWeight,
 	chainParams *chaincfg.Params) error {
 
 	sweeps := make([]sweep, len(newSweeps))
@@ -74,7 +81,7 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 	const feeRate = chainfee.FeePerKwFloor
 
 	tx, _, _, _, err := constructUnsignedTx(
-		sweeps, destAddr, currentHeight, feeRate,
+		sweeps, destAddr, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct unsigned tx "+
@@ -218,6 +225,14 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 	b.Infof("nextBlockFeeRate is %v", nextBlockFeeRate)
 
+	// Find the minRelayFeeRate.
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minRelayFeeRate: %w", err)
+	}
+
+	b.Infof("minRelayFeeRate is %v", minRelayFeeRate)
+
 	// We need to restore previously added groups. We can do it by reading
 	// all the sweeps from DB (they must be ordered) and grouping by swap.
 	groups, err := b.getSweepsGroups(ctx)
@@ -258,7 +273,7 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 		err = presign(
 			ctx, b.cfg.presignedHelper, destAddr, primarySweepID,
-			sweeps, nextBlockFeeRate,
+			sweeps, nextBlockFeeRate, minRelayFeeRate,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to presign a transaction "+
@@ -300,7 +315,8 @@ type presigner interface {
 // 10x of the current next block feerate.
 func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	primarySweepID wire.OutPoint, sweeps []sweep,
-	nextBlockFeeRate chainfee.SatPerKWeight) error {
+	nextBlockFeeRate chainfee.SatPerKWeight,
+	minRelayFeeRate chainfee.SatPerKWeight) error {
 
 	if presigner == nil {
 		return fmt.Errorf("presigner is not installed")
@@ -354,7 +370,7 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	for fr := start; fr <= stop; fr = (fr * factorPPM) / 1_000_000 {
 		// Construct an unsigned transaction for this fee rate.
 		tx, _, feeForWeight, fee, err := constructUnsignedTx(
-			sweeps, destAddr, currentHeight, fr,
+			sweeps, destAddr, currentHeight, fr, minRelayFeeRate,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to construct unsigned tx "+
@@ -411,15 +427,15 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	}
 
 	// Determine the current minimum relay fee based on our chain backend.
-	minRelayFee, err := b.wallet.MinRelayFee(ctx)
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
+		return 0, fmt.Errorf("failed to get minRelayFeeRate: %w", err),
 			false
 	}
 
 	// Cache current height and desired feerate of the batch.
 	currentHeight := b.currentHeight
-	feeRate := max(b.rbfCache.FeeRate, minRelayFee)
+	feeRate := max(b.rbfCache.FeeRate, minRelayFeeRate)
 
 	// Append this sweep to an array of sweeps. This is needed to keep the
 	// order of sweeps stored, as iterating the sweeps map does not
@@ -441,7 +457,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Construct unsigned batch transaction.
 	tx, weight, _, fee, err := constructUnsignedTx(
-		sweeps, address, currentHeight, feeRate,
+		sweeps, address, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -460,7 +476,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// Get a pre-signed transaction.
 	const loadOnly = false
 	signedTx, err := b.cfg.presignedHelper.SignTx(
-		ctx, b.primarySweepID, tx, batchAmt, minRelayFee, feeRate,
+		ctx, b.primarySweepID, tx, batchAmt, minRelayFeeRate, feeRate,
 		loadOnly,
 	)
 	if err != nil {
@@ -470,7 +486,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Run sanity checks to make sure presignedHelper.SignTx complied with
 	// all the invariants.
-	err = CheckSignedTx(tx, signedTx, batchAmt, minRelayFee)
+	err = CheckSignedTx(tx, signedTx, batchAmt, minRelayFeeRate)
 	if err != nil {
 		return 0, fmt.Errorf("signed tx doesn't correspond the "+
 			"unsigned tx: %w", err), false

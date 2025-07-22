@@ -15,6 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	minRelayFeeRate = chainfee.FeePerKwFloor
+)
+
 // TestOrderedSweeps checks that methods batch.getOrderedSweeps and
 // batch.getSweepsGroups works properly.
 func TestOrderedSweeps(t *testing.T) {
@@ -561,7 +565,7 @@ func TestEnsurePresigned(t *testing.T) {
 			}
 
 			err := ensurePresigned(
-				ctx, tc.sweeps, c,
+				ctx, tc.sweeps, c, minRelayFeeRate,
 				&chaincfg.RegressionNetParams,
 			)
 			switch {
@@ -1010,7 +1014,7 @@ func TestPresign(t *testing.T) {
 			err := presign(
 				ctx, tc.presigner, tc.destAddr,
 				tc.primarySweepID, tc.sweeps,
-				tc.nextBlockFeeRate,
+				tc.nextBlockFeeRate, minRelayFeeRate,
 			)
 			if tc.wantErr != "" {
 				require.Error(t, err)

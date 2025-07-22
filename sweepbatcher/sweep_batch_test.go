@@ -440,12 +440,13 @@ func TestConstructUnsignedTx(t *testing.T) {
 					change:   change1,
 				},
 			},
-			address:       p2trAddress,
-			currentHeight: 800_000,
-			feeRate:       1,
+			address:         p2trAddress,
+			currentHeight:   800_000,
+			feeRate:         1_000,
+			minRelayFeeRate: 50,
 			wantErr: "batch amount 0.00100294 BTC is <= the sum " +
 				"of change outputs 0.00100000 BTC plus fee " +
-				"0.00000001 BTC and dust limit 0.00000330 BTC",
+				"0.00000058 BTC and dust limit 0.00000330 BTC",
 		},
 
 		{

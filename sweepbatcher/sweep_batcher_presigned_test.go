@@ -519,7 +519,7 @@ func testPresigned_min_relay_fee(t *testing.T,
 	}()
 
 	// Set high min_relay_fee.
-	lnd.SetMinRelayFee(400)
+	lnd.SetMinRelayFee(252)
 
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
@@ -554,16 +554,16 @@ func testPresigned_min_relay_fee(t *testing.T,
 	// Wait for a transactions to be published.
 	tx := <-lnd.TxPublishChannel
 	gotFeeRate := presignedHelper.getTxFeerate(tx, inputAmt)
-	require.Equal(t, chainfee.SatPerKWeight(402), gotFeeRate)
+	require.Equal(t, chainfee.SatPerKWeight(253), gotFeeRate)
 
 	// Now decrease min_relay_fee and make sure fee rate doesn't decrease.
 	// The only difference of tx2 is a higher lock_time.
-	lnd.SetMinRelayFee(300)
+	lnd.SetMinRelayFee(150)
 	require.NoError(t, lnd.NotifyHeight(601))
 	tx2 := <-lnd.TxPublishChannel
 	require.Equal(t, tx.TxOut[0].Value, tx2.TxOut[0].Value)
 	gotFeeRate = presignedHelper.getTxFeerate(tx2, inputAmt)
-	require.Equal(t, chainfee.SatPerKWeight(402), gotFeeRate)
+	require.Equal(t, chainfee.SatPerKWeight(253), gotFeeRate)
 	require.Equal(t, uint32(601), tx2.LockTime)
 
 	// Set a higher min_relay_fee, turn off the client and try presigned tx.
@@ -1269,9 +1269,10 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	require.NoError(t, lnd.NotifyHeight(601))
 }
 
-// testPresigned_presigned_group_with_dust_main_output tests passing multiple
-// sweeps to the method PresignSweepsGroup. It tests that a dust change output of
-// a primary deposit sweep is rejected by PresignSweepsGroup and AddSweep.
+// testPresigned_presigned_group_with_dust_main_output passes a dust main output
+// and a change output to PresignSweepsGroup. It will fail because of the dust
+// main output. Note that the min relay fee is set low enough to pass the
+// clampBatchFee check, so the error is not related to the fee rate.
 func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	batcherStore testBatcherStore) {
 
@@ -1285,8 +1286,11 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	customFeeRate := func(_ context.Context, _ lntypes.Hash,
 		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
 
-		return chainfee.SatPerKWeight(10_000), nil
+		return chainfee.SatPerKWeight(100_000), nil
 	}
+
+	// Set min relay fee low enough to pass the clampBatchFee check.
+	lnd.SetMinRelayFee(140)
 
 	presignedHelper := newMockPresignedHelper()
 
@@ -1335,6 +1339,81 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 		"feeRate 253 sat/kw: batch amount 0.01000000 BTC is <= the "+
 		"sum of change outputs 0.00999671 BTC plus fee "+
 		"0.00000065 BTC and dust limit 0.00000294 BTC")
+
+	// Add the sweep, triggering the publishing attempt.
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash1,
+		Inputs:   group1,
+		Notifier: &dummyNotifier,
+	})
+	require.ErrorContains(t, err, "were not presigned")
+}
+
+// testPresigned_presigned_group_with_dust_below_relay_fee passes a tx with a
+// dust main output and one change output to PresignSweepsGroup. The tx fee rate
+// is below the min relay fee, hence clampBatchFee will return an error.
+func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.SatPerKWeight(100_000), nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, presignedHelper,
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Create a swap of two sweeps.
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	inputValue := int64(1_000_000)
+	group1 := []Input{
+		{
+			Outpoint: op1,
+			Value:    1_000_000,
+		},
+	}
+	dustLimit := int64(lnwallet.DustLimitForSize(input.P2TRSize))
+	change := &wire.TxOut{
+		Value:    inputValue - dustLimit + 1,
+		PkScript: []byte{0xaf, 0xfe},
+	}
+
+	presignedHelper.setChangeForPrimaryDeposit(op1, change)
+
+	// Enable only one of the sweeps.
+	presignedHelper.SetOutpointOnline(op1, true)
+
+	// An attempt to presign must fail.
+	err := batcher.PresignSweepsGroup(
+		ctx, group1, sweepTimeout, destAddr, change,
+	)
+	require.EqualError(t, err, "failed to construct unsigned tx for "+
+		"feeRate 253 sat/kw: failed to clamp batch fee: clamped "+
+		"fee rate 148 sat/kw is less than minimum relay fee 253 sat/kw")
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -2098,6 +2177,12 @@ func TestPresigned(t *testing.T) {
 
 	t.Run("dust_main_output", func(t *testing.T) {
 		testPresigned_presigned_group_with_dust_main_output(
+			t, NewStoreMock(),
+		)
+	})
+
+	t.Run("dust_main_output_below_min_relay_fee", func(t *testing.T) {
+		testPresigned_presigned_group_with_dust_below_relay_fee(
 			t, NewStoreMock(),
 		)
 	})

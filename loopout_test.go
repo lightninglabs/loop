@@ -280,6 +280,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	// yields a much higher fee rate.
 	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, 250)
 	ctx.Lnd.SetFeeEstimate(DefaultSweepConfTarget, 10000)
+	ctx.Lnd.SetMinRelayFee(250)
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
