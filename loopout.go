@@ -841,7 +841,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 			return nil, fmt.Errorf("rfq id has wrong length: %v", n)
 		}
 
-		htlc := rfqmsg.NewHtlc(nil, fn.Some(rfq))
+		htlc := rfqmsg.NewHtlc(nil, fn.Some(rfq), fn.None[[]rfqmsg.ID]())
 		htlcMapRecords, err := tlv.RecordsToMap(htlc.Records())
 		if err != nil {
 			return nil, err
