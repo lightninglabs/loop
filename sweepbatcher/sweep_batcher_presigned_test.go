@@ -16,10 +16,9 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -574,7 +573,7 @@ func testPresigned_min_relay_fee(t *testing.T,
 	require.NoError(t, lnd.NotifyHeight(602))
 	tx = <-lnd.TxPublishChannel
 	gotFeeRate = presignedHelper.getTxFeerate(tx, inputAmt)
-	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	require.Equal(t, chainfee.SatPerKWeight(520), gotFeeRate)
 	// LockTime of a presigned tx is 0.
 	require.Equal(t, uint32(0), tx.LockTime)
 
@@ -585,7 +584,7 @@ func testPresigned_min_relay_fee(t *testing.T,
 	tx2 = <-lnd.TxPublishChannel
 	require.Equal(t, tx.TxHash(), tx2.TxHash())
 	gotFeeRate = presignedHelper.getTxFeerate(tx2, inputAmt)
-	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	require.Equal(t, chainfee.SatPerKWeight(520), gotFeeRate)
 	// LockTime of a presigned tx is 0.
 	require.Equal(t, uint32(0), tx2.LockTime)
 
@@ -595,7 +594,7 @@ func testPresigned_min_relay_fee(t *testing.T,
 	tx3 := <-lnd.TxPublishChannel
 	require.Equal(t, tx2.TxOut[0].Value, tx3.TxOut[0].Value)
 	gotFeeRate = presignedHelper.getTxFeerate(tx3, inputAmt)
-	require.Equal(t, chainfee.SatPerKWeight(523), gotFeeRate)
+	require.Equal(t, chainfee.SatPerKWeight(520), gotFeeRate)
 	require.Equal(t, uint32(604), tx3.LockTime)
 }
 
@@ -1278,6 +1277,9 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 
 	defer test.Guard(t)()
 
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
 	lnd := test.NewMockLnd()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1288,9 +1290,6 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 
 		return chainfee.SatPerKWeight(100_000), nil
 	}
-
-	// Set min relay fee low enough to pass the clampBatchFee check.
-	lnd.SetMinRelayFee(140)
 
 	presignedHelper := newMockPresignedHelper()
 
@@ -1320,9 +1319,23 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 			Value:    1_000_000,
 		},
 	}
-	dustLimit := int64(lnwallet.DustLimitForSize(input.P2TRSize))
+	dustLimit := int64(utils.DustLimitForPkScript(batchPkScript))
+	mainOutput := dustLimit
+
+	// Let's solve an equation of what the fee should be so it is 20%
+	// (clamped fee) of fee (itself) + main output.
+	// fee / (fee+main) = 0.2
+	// fee = 0.2 fee + 0.2 main
+	// 0.8 fee = 0.2 main
+	// fee = 0.25 main
+	clampedFee := mainOutput / 4
+
+	// Set min relay fee low enough to pass the clampBatchFee check.
+	lnd.SetMinRelayFee(166)
+
 	change := &wire.TxOut{
-		Value:    inputValue - dustLimit + 1,
+		// If "+1" is removed, the group would be added successfully.
+		Value:    inputValue - dustLimit - clampedFee + 1,
 		PkScript: []byte{0xaf, 0xfe},
 	}
 
@@ -1332,13 +1345,13 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	presignedHelper.SetOutpointOnline(op1, true)
 
 	// An attempt to presign must fail.
-	err := batcher.PresignSweepsGroup(
+	err = batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
 	require.EqualError(t, err, "failed to construct unsigned tx for "+
-		"feeRate 253 sat/kw: batch amount 0.01000000 BTC is <= the "+
-		"sum of change outputs 0.00999671 BTC plus fee "+
-		"0.00000065 BTC and dust limit 0.00000294 BTC")
+		"feeRate 166 sat/kw: batch amount 0.01000000 BTC is < the "+
+		"sum of change outputs 0.00999634 BTC plus fee "+
+		"0.00000073 BTC and dust limit 0.00000294 BTC")
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -1347,6 +1360,21 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 		Notifier: &dummyNotifier,
 	})
 	require.ErrorContains(t, err, "were not presigned")
+
+	// Now let's verify that we found the edge value correctly.
+	change.Value--
+
+	err = batcher.PresignSweepsGroup(
+		ctx, group1, sweepTimeout, destAddr, change,
+	)
+	require.NoError(t, err)
+
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash1,
+		Inputs:   group1,
+		Notifier: &dummyNotifier,
+	})
+	require.NoError(t, err)
 }
 
 // testPresigned_presigned_group_with_dust_below_relay_fee passes a tx with a
@@ -1357,6 +1385,9 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 
 	defer test.Guard(t)()
 
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
 	lnd := test.NewMockLnd()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1396,9 +1427,10 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 			Value:    1_000_000,
 		},
 	}
-	dustLimit := int64(lnwallet.DustLimitForSize(input.P2TRSize))
+	dustLimit := int64(utils.DustLimitForPkScript(batchPkScript))
 	change := &wire.TxOut{
-		Value:    inputValue - dustLimit + 1,
+		// Note that there is no space for fee.
+		Value:    inputValue - dustLimit,
 		PkScript: []byte{0xaf, 0xfe},
 	}
 
@@ -1408,12 +1440,12 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 	presignedHelper.SetOutpointOnline(op1, true)
 
 	// An attempt to presign must fail.
-	err := batcher.PresignSweepsGroup(
+	err = batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
 	require.EqualError(t, err, "failed to construct unsigned tx for "+
 		"feeRate 253 sat/kw: failed to clamp batch fee: clamped "+
-		"fee rate 148 sat/kw is less than minimum relay fee 253 sat/kw")
+		"fee rate 132 sat/kw is less than minimum relay fee 253 sat/kw")
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -1478,10 +1510,12 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 			Value:    2_000_000,
 		},
 	}
-	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	changePkScript := []byte{0xaf, 0xfe}
+	dustLimit := utils.DustLimitForPkScript(changePkScript)
 	change := &wire.TxOut{
+		// If "-1" is removed, the group would be added successfully.
 		Value:    int64(dustLimit - 1),
-		PkScript: []byte{0xaf, 0xfe},
+		PkScript: changePkScript,
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op1, change)
@@ -1495,7 +1529,7 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
 	require.EqualError(t, err, "failed to construct unsigned tx for "+
-		"feeRate 253 sat/kw: output 0.00000329 BTC is below dust "+
+		"feeRate 253 sat/kw: output 0.00000476 BTC is below dust "+
 		"limit 0.00000477 BTC")
 
 	// Add the sweep, triggering the publishing attempt.
@@ -1505,6 +1539,21 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 		Notifier: &dummyNotifier,
 	})
 	require.ErrorContains(t, err, "were not presigned")
+
+	// Now let's verify that we found the edge value correctly.
+	change.Value++
+
+	err = batcher.PresignSweepsGroup(
+		ctx, group1, sweepTimeout, destAddr, change,
+	)
+	require.NoError(t, err)
+
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash1,
+		Inputs:   group1,
+		Notifier: &dummyNotifier,
+	})
+	require.NoError(t, err)
 }
 
 // wrappedStoreWithPresignedFlag wraps a SweepFetcher store adding IsPresigned

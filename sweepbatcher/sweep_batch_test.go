@@ -444,7 +444,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 			currentHeight:   800_000,
 			feeRate:         1_000,
 			minRelayFeeRate: 50,
-			wantErr: "batch amount 0.00100294 BTC is <= the sum " +
+			wantErr: "batch amount 0.00100294 BTC is < the sum " +
 				"of change outputs 0.00100000 BTC plus fee " +
 				"0.00000058 BTC and dust limit 0.00000330 BTC",
 		},
@@ -570,7 +570,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			relayFeeRate := minRelayFeeRate
+			relayFeeRate := chainfee.FeePerKwFloor
 			if tc.minRelayFeeRate != 0 {
 				relayFeeRate = tc.minRelayFeeRate
 			}

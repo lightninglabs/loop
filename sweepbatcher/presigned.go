@@ -78,7 +78,7 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 	const currentHeight = 0
 
 	// Check if we can sign with minimum fee rate.
-	const feeRate = chainfee.FeePerKwFloor
+	feeRate := minRelayFeeRate
 
 	tx, _, _, _, err := constructUnsignedTx(
 		sweeps, destAddr, currentHeight, feeRate, minRelayFeeRate,
@@ -330,6 +330,10 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		return fmt.Errorf("nextBlockFeeRate is not set")
 	}
 
+	if minRelayFeeRate == 0 {
+		return fmt.Errorf("minRelayFeeRate is not set")
+	}
+
 	// Keep track of the total amount this batch is sweeping back.
 	batchAmt := btcutil.Amount(0)
 	for _, sweep := range sweeps {
@@ -345,9 +349,9 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		return fmt.Errorf("timeout is invalid: %d", timeout)
 	}
 
-	// Go from the floor (1.01 sat/vbyte) to 2k sat/vbyte with step of 1.2x.
+	// Go from minRelayFeeRate to 2k sat/vbyte with step of 1.2x.
+	var start = minRelayFeeRate
 	const (
-		start            = chainfee.FeePerKwFloor
 		stop             = chainfee.AbsoluteFeePerKwFloor * 2_000
 		factorPPM        = 1_200_000
 		timeoutThreshold = 50
@@ -384,12 +388,9 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		}
 
 		// Try to presign this transaction.
-		const (
-			loadOnly    = false
-			minRelayFee = chainfee.AbsoluteFeePerKwFloor
-		)
+		const loadOnly = false
 		_, err = presigner.SignTx(
-			ctx, primarySweepID, tx, batchAmt, minRelayFee, fr,
+			ctx, primarySweepID, tx, batchAmt, minRelayFeeRate, fr,
 			loadOnly,
 		)
 		if err != nil {

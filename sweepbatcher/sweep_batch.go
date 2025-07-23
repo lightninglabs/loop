@@ -1409,12 +1409,12 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 			"fee: %w", err)
 	}
 
-	// Ensure that batch amount exceeds the sum of change outputs and the
-	// fee, and that it is also greater than dust limit for the main
-	// output.
+	// Ensure that batch amount is equal or exceeds the sum of change
+	// outputs and the fee, and that it is also greater than dust limit
+	// for the main output.
 	dustLimit := utils.DustLimitForPkScript(batchPkScript)
 	if fee+btcutil.Amount(sumChange)+dustLimit > batchAmt {
-		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is <= the "+
+		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is < the "+
 			"sum of change outputs %v plus fee %v and dust "+
 			"limit %v", batchAmt, btcutil.Amount(sumChange),
 			fee, dustLimit)
