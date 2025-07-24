@@ -18,6 +18,7 @@ type Querier interface {
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
+	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
@@ -61,6 +62,7 @@ type Querier interface {
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
+	OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
