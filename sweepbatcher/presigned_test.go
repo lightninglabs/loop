@@ -486,6 +486,7 @@ func TestEnsurePresigned(t *testing.T) {
 		primarySweepID  wire.OutPoint
 		sweeps          []*sweep
 		destPkScript    []byte
+		minRelayFeeRate chainfee.SatPerKWeight
 		wantInputAmt    btcutil.Amount
 		destPkScriptErr error
 		signedTxErr     error
@@ -500,8 +501,24 @@ func TestEnsurePresigned(t *testing.T) {
 					timeout:  1000,
 				},
 			},
-			destPkScript: batchPkScript,
-			wantInputAmt: 1_000_000,
+			destPkScript:    batchPkScript,
+			minRelayFeeRate: chainfee.FeePerKwFloor,
+			wantInputAmt:    1_000_000,
+		},
+
+		{
+			name:           "one input, higher minRelayFeeRate",
+			primarySweepID: op1,
+			sweeps: []*sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+					timeout:  1000,
+				},
+			},
+			destPkScript:    batchPkScript,
+			minRelayFeeRate: 1000,
+			wantInputAmt:    1_000_000,
 		},
 
 		{
@@ -519,8 +536,9 @@ func TestEnsurePresigned(t *testing.T) {
 					timeout:  1000,
 				},
 			},
-			destPkScript: batchPkScript,
-			wantInputAmt: 3_000_000,
+			destPkScript:    batchPkScript,
+			minRelayFeeRate: chainfee.FeePerKwFloor,
+			wantInputAmt:    3_000_000,
 		},
 
 		{
@@ -533,6 +551,7 @@ func TestEnsurePresigned(t *testing.T) {
 					timeout:  1000,
 				},
 			},
+			minRelayFeeRate: chainfee.FeePerKwFloor,
 			destPkScriptErr: fmt.Errorf("test DestPkScript error"),
 		},
 
@@ -546,8 +565,9 @@ func TestEnsurePresigned(t *testing.T) {
 					timeout:  1000,
 				},
 			},
-			destPkScript: batchPkScript,
-			signedTxErr:  fmt.Errorf("test SignTx error"),
+			destPkScript:    batchPkScript,
+			minRelayFeeRate: chainfee.FeePerKwFloor,
+			signedTxErr:     fmt.Errorf("test SignTx error"),
 		},
 	}
 
@@ -561,7 +581,7 @@ func TestEnsurePresigned(t *testing.T) {
 			}
 
 			err := ensurePresigned(
-				ctx, tc.sweeps, c,
+				ctx, tc.sweeps, c, tc.minRelayFeeRate,
 				&chaincfg.RegressionNetParams,
 			)
 			switch {
@@ -576,11 +596,11 @@ func TestEnsurePresigned(t *testing.T) {
 					t, tc.wantInputAmt, c.recordedInputAmt,
 				)
 				require.Equal(
-					t, chainfee.FeePerKwFloor,
+					t, tc.minRelayFeeRate,
 					c.recordedMinRelayFee,
 				)
 				require.Equal(
-					t, chainfee.FeePerKwFloor,
+					t, tc.minRelayFeeRate,
 					c.recordedFeeRate,
 				)
 				require.True(t, c.recordedLoadOnly)
@@ -660,6 +680,7 @@ func TestPresign(t *testing.T) {
 		sweeps           []sweep
 		destAddr         btcutil.Address
 		nextBlockFeeRate chainfee.SatPerKWeight
+		minRelayFeeRate  chainfee.SatPerKWeight
 		wantErr          string
 		wantOutputs      []btcutil.Amount
 		wantLockTimes    []uint32
@@ -676,6 +697,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "presigner is not installed",
 		},
 
@@ -685,6 +707,7 @@ func TestPresign(t *testing.T) {
 			presigner:        &mockPresigner{},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "there are no sweeps",
 		},
 
@@ -700,6 +723,7 @@ func TestPresign(t *testing.T) {
 				},
 			},
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "unsupported address type <nil>",
 		},
 
@@ -719,8 +743,30 @@ func TestPresign(t *testing.T) {
 					timeout:  1000,
 				},
 			},
-			destAddr: destAddr,
-			wantErr:  "nextBlockFeeRate is not set",
+			destAddr:        destAddr,
+			minRelayFeeRate: chainfee.FeePerKwFloor,
+			wantErr:         "nextBlockFeeRate is not set",
+		},
+
+		{
+			name:           "error: zero minRelayFeeRate",
+			presigner:      &mockPresigner{},
+			primarySweepID: op1,
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+					timeout:  1000,
+				},
+				{
+					outpoint: op2,
+					value:    2_000_000,
+					timeout:  1000,
+				},
+			},
+			destAddr:         destAddr,
+			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			wantErr:          "minRelayFeeRate is not set",
 		},
 
 		{
@@ -739,6 +785,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "timeout is invalid: 0",
 		},
 
@@ -759,6 +806,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "not in tx",
 		},
 
@@ -775,6 +823,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "not in tx",
 		},
 
@@ -791,6 +840,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				999900, 999880, 999856, 999827, 999793, 999752,
 				999702, 999643, 999572, 999486, 999384, 999260,
@@ -805,6 +855,34 @@ func TestPresign(t *testing.T) {
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 950, 950, 950,
 				950, 950, 950, 950, 950, 950, 950, 950, 950,
 				950, 950, 950, 950,
+			},
+		},
+
+		{
+			name:           "higher minRelayFeeRate, fewer txns",
+			presigner:      &mockPresigner{},
+			primarySweepID: op1,
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+					timeout:  1000,
+				},
+			},
+			destAddr:         destAddr,
+			nextBlockFeeRate: 10 * chainfee.FeePerKwFloor,
+			minRelayFeeRate:  10 * chainfee.FeePerKwFloor,
+			wantOutputs: []btcutil.Amount{
+				998998, 998797, 998557, 998269, 997923, 997507,
+				997009, 996411, 995694, 994833, 993800, 992560,
+				991072, 989286, 987144, 984573, 981488, 977786,
+				973343, 968012, 961614, 953937, 944725, 933670,
+				920405, 904486, 885383, 862460, 834952,
+			},
+			wantLockTimes: []uint32{
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 950, 950,
+				950, 950, 950, 950, 950, 950, 950, 950, 950,
+				950, 950, 950, 950, 950,
 			},
 		},
 
@@ -826,6 +904,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999841, 2999810, 2999773, 2999728, 2999673,
 				2999608, 2999530, 2999436, 2999323, 2999188,
@@ -863,6 +942,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999841, 2999810, 2999773, 2999728, 2999673,
 				2999608, 2999530, 2999436, 2999323, 2999188,
@@ -900,6 +980,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: 50 * chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999841, 2999810, 2999773, 2999728, 2999673,
 				2999608, 2999530, 2999436, 2999323, 2999188,
@@ -936,6 +1017,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: 50 * chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2999841, 2999810, 2999773, 2999728, 2999673,
 				2999608, 2999530, 2999436, 2999323, 2999188,
@@ -972,6 +1054,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantOutputs: []btcutil.Amount{
 				2841, 2810, 2773, 2728, 2673, 2608, 2530, 2436,
 				2400,
@@ -1001,6 +1084,7 @@ func TestPresign(t *testing.T) {
 			},
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
+			minRelayFeeRate:  chainfee.FeePerKwFloor,
 			wantErr:          "for feeRate 363 sat/kw",
 		},
 	}
@@ -1010,7 +1094,7 @@ func TestPresign(t *testing.T) {
 			err := presign(
 				ctx, tc.presigner, tc.destAddr,
 				tc.primarySweepID, tc.sweeps,
-				tc.nextBlockFeeRate,
+				tc.nextBlockFeeRate, tc.minRelayFeeRate,
 			)
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -1460,7 +1544,8 @@ func TestCheckSignedTx(t *testing.T) {
 			},
 			inputAmt:    3_000_000,
 			minRelayFee: 253,
-			wantErr:     "unsigned tx has 2 outputs, want 1",
+			wantErr: "unsigned tx has 2 outputs, signed tx " +
+				"has 1 outputs, should be equal",
 		},
 
 		{
@@ -1517,7 +1602,153 @@ func TestCheckSignedTx(t *testing.T) {
 			},
 			inputAmt:    3_000_000,
 			minRelayFee: 253,
-			wantErr:     "the signed tx has 2 outputs, want 1",
+			wantErr: "unsigned tx has 1 outputs, signed tx " +
+				"has 2 outputs, should be equal",
+		},
+
+		{
+			name: "pkscript mismatch",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: []byte{0xaf, 0xfe}, // Just to make it different.
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "mismatch of output pkScript",
+		},
+
+		{
+			name: "value mismatch, first output",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    1_337_000, // Just to make it different.
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "",
+		},
+
+		{
+			name: "value mismatch, change output",
+			unsignedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+					},
+					{
+						PreviousOutPoint: op1,
+						Sequence:         2,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2999374,
+						PkScript: batchPkScript,
+					},
+					{
+						Value:    1_337_000,
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 800_000,
+			},
+			signedTx: &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op2,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+					{
+						PreviousOutPoint: op1,
+						Sequence:         2,
+						Witness: wire.TxWitness{
+							[]byte("test"),
+						},
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    2_493_300,
+						PkScript: batchPkScript,
+					},
+					{
+						Value:    1_338, // Just to make it different.
+						PkScript: batchPkScript,
+					},
+				},
+				LockTime: 799_999,
+			},
+			inputAmt:    3_000_000,
+			minRelayFee: 253,
+			wantErr:     "mismatch of output value",
 		},
 
 		{
