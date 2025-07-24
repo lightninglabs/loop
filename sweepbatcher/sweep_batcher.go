@@ -1579,10 +1579,18 @@ func minimumSweepFeeRate(ctx context.Context, customFeeRate FeeRateProvider,
 		return minFeeRate, nil
 	}
 
-	if sweepConfTarget == 0 {
-		warnf("Fee estimation was requested for zero "+
-			"confTarget for sweep %x.", swapHash[:6])
+	// Make sure sweepConfTarget is at least 2. LND's walletkit fails with
+	// conftarget of 0 or 1.
+	// TODO: when https://github.com/lightningnetwork/lnd/pull/10087 is
+	// merged and that LND version becomes a requirement, we can decrease
+	// this from 2 to 1.
+	if sweepConfTarget < 2 {
+		warnf("Fee estimation was requested for confTarget=%d for "+
+			"sweep %x; changing confTarget to 2", sweepConfTarget,
+			swapHash[:6])
+		sweepConfTarget = 2
 	}
+
 	minFeeRate, err := wallet.EstimateFeeRate(ctx, sweepConfTarget)
 	if err != nil {
 		return 0, fmt.Errorf("failed to estimate fee rate "+
