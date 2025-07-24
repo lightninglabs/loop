@@ -98,8 +98,9 @@ for i in $SYS; do
     cd $PACKAGE-$i-$TAG
 
     echo "Building:" $OS $ARCH $ARM
-    env GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -ldflags "$COMMITFLAGS" github.com/lightninglabs/loop/cmd/loop
-    env GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -ldflags "$COMMITFLAGS" github.com/lightninglabs/loop/cmd/loopd
+    for bin in loop loopd; do
+        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
+    done
     cd ..
 
     if [[ $OS = "windows" ]]; then
