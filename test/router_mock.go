@@ -1,9 +1,10 @@
 package test
 
 import (
+	"context"
+
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lntypes"
-	"golang.org/x/net/context"
 )
 
 type mockRouter struct {

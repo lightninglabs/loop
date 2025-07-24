@@ -1246,7 +1246,11 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			s.height = notification.(int32)
 			timerChan = s.timerFactory(repushDelay)
 
+			s.log.Infof("Received block %d", s.height)
+
 		case <-timerChan:
+			s.log.Infof("Checking the sweep")
+
 			// canSweep will return false if the preimage is
 			// not revealed yet but the conf target is closer than
 			// 20 blocks. In this case to be sure we won't attempt
@@ -1268,6 +1272,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			}
 
 			// Send the sweep to the sweeper.
+			s.log.Infof("(Re)adding the sweep to sweepbatcher")
 			err := s.batcher.AddSweep(ctx, &sweepReq)
 			if err != nil {
 				return nil, err

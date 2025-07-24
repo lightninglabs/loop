@@ -2,6 +2,7 @@ package sweepbatcher
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -3997,6 +3998,9 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 			if errors.Is(err, context.Canceled) {
 				break
 			}
+			if errors.Is(err, sql.ErrTxDone) {
+				break
+			}
 			require.NoError(t, err)
 		}
 	}()
@@ -4834,8 +4838,6 @@ func testFeeRateGrows(t *testing.T, store testStore,
 	// Now update fee rate of second sweep (which is not primary) to
 	// feeRateHigh. Fee rate of sweep 1 is still feeRateLow.
 	setFeeRate(swapHash2, feeRateHigh)
-	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
-	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
 
 	// Tick tock next block.
 	err = lnd.NotifyHeight(603)

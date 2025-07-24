@@ -1522,28 +1522,12 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 
 	// Find minimum fee rate for the sweep. Use customFeeRate if it is
 	// provided, otherwise use wallet's EstimateFeeRate.
-	var minFeeRate chainfee.SatPerKWeight
-	if b.customFeeRate != nil {
-		minFeeRate, err = b.customFeeRate(ctx, swapHash, outpoint)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch min fee rate "+
-				"for %x: %w", swapHash[:6], err)
-		}
-		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
-			return nil, fmt.Errorf("min fee rate too low (%v) for "+
-				"%x", minFeeRate, swapHash[:6])
-		}
-	} else {
-		if s.ConfTarget == 0 {
-			warnf("Fee estimation was requested for zero "+
-				"confTarget for sweep %x.", swapHash[:6])
-		}
-		minFeeRate, err = b.wallet.EstimateFeeRate(ctx, s.ConfTarget)
-		if err != nil {
-			return nil, fmt.Errorf("failed to estimate fee rate "+
-				"for %x, confTarget=%d: %w", swapHash[:6],
-				s.ConfTarget, err)
-		}
+	minFeeRate, err := minimumSweepFeeRate(
+		ctx, b.customFeeRate, b.wallet,
+		swapHash, outpoint, s.ConfTarget,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &sweep{
@@ -1567,11 +1551,61 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 	}, nil
 }
 
+// feeRateEstimator determines feerate by confTarget.
+type feeRateEstimator interface {
+	// EstimateFeeRate returns feerate corresponding to the confTarget.
+	EstimateFeeRate(ctx context.Context,
+		confTarget int32) (chainfee.SatPerKWeight, error)
+}
+
+// minimumSweepFeeRate determines minimum feerate for a sweep.
+func minimumSweepFeeRate(ctx context.Context, customFeeRate FeeRateProvider,
+	wallet feeRateEstimator, swapHash lntypes.Hash, outpoint wire.OutPoint,
+	sweepConfTarget int32) (chainfee.SatPerKWeight, error) {
+
+	// Find minimum fee rate for the sweep. Use customFeeRate if it is
+	// provided, otherwise use wallet's EstimateFeeRate.
+	if customFeeRate != nil {
+		minFeeRate, err := customFeeRate(ctx, swapHash, outpoint)
+		if err != nil {
+			return 0, fmt.Errorf("failed to fetch min fee rate "+
+				"for %x: %w", swapHash[:6], err)
+		}
+		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
+			return 0, fmt.Errorf("min fee rate too low (%v) for "+
+				"%x", minFeeRate, swapHash[:6])
+		}
+
+		return minFeeRate, nil
+	}
+
+	// Make sure sweepConfTarget is at least 2. LND's walletkit fails with
+	// conftarget of 0 or 1.
+	// TODO: when https://github.com/lightningnetwork/lnd/pull/10087 is
+	// merged and that LND version becomes a requirement, we can decrease
+	// this from 2 to 1.
+	if sweepConfTarget < 2 {
+		warnf("Fee estimation was requested for confTarget=%d for "+
+			"sweep %x; changing confTarget to 2", sweepConfTarget,
+			swapHash[:6])
+		sweepConfTarget = 2
+	}
+
+	minFeeRate, err := wallet.EstimateFeeRate(ctx, sweepConfTarget)
+	if err != nil {
+		return 0, fmt.Errorf("failed to estimate fee rate "+
+			"for %x, confTarget=%d: %w", swapHash[:6],
+			sweepConfTarget, err)
+	}
+
+	return minFeeRate, nil
+}
+
 // newBatchConfig creates new batch config.
 func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 	return batchConfig{
 		maxTimeoutDistance: maxTimeoutDistance,
-		noBumping:          b.customFeeRate != nil,
+		customFeeRate:      b.customFeeRate,
 		txLabeler:          b.txLabeler,
 		customMuSig2Signer: b.customMuSig2Signer,
 		presignedHelper:    b.presignedHelper,

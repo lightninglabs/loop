@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"sync"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
-	"golang.org/x/net/context"
 )
 
 type mockChainNotifier struct {

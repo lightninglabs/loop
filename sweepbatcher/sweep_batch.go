@@ -169,9 +169,10 @@ type batchConfig struct {
 	// initial delay completion and publishing the batch transaction.
 	batchPublishDelay time.Duration
 
-	// noBumping instructs sweepbatcher not to fee bump itself and rely on
-	// external source of fee rates (FeeRateProvider).
-	noBumping bool
+	// customFeeRate provides custom min fee rate per swap. The batch uses
+	// max of the fee rates of its swaps. In this mode confTarget is
+	// ignored and fee bumping by sweepbatcher is disabled.
+	customFeeRate FeeRateProvider
 
 	// txLabeler is a function generating a transaction label. It is called
 	// before publishing a batch transaction. Batch ID is passed to it.
@@ -231,6 +232,10 @@ type batch struct {
 
 	// spendChan is the channel over which spend notifications are received.
 	spendChan chan *chainntnfs.SpendDetail
+
+	// spendErrChan is the channel over which spend notifier errors are
+	// received.
+	spendErrChan chan error
 
 	// confChan is the channel over which confirmation notifications are
 	// received.
@@ -378,9 +383,7 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 		id:                  -1,
 		state:               Open,
 		sweeps:              make(map[wire.OutPoint]sweep),
-		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
-		reorgChan:           make(chan struct{}, 1),
 		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
@@ -423,9 +426,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		state:               bk.state,
 		primarySweepID:      bk.primaryID,
 		sweeps:              bk.sweeps,
-		spendChan:           make(chan *chainntnfs.SpendDetail),
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
-		reorgChan:           make(chan struct{}, 1),
 		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
 		callEnter:           make(chan struct{}),
@@ -723,6 +724,9 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 			// lower that minFeeRate of other sweeps (so it is
 			// applied).
 			if b.rbfCache.FeeRate < s.minFeeRate {
+				b.Infof("Increasing feerate of the batch "+
+					"from %v to %v", b.rbfCache.FeeRate,
+					s.minFeeRate)
 				b.rbfCache.FeeRate = s.minFeeRate
 			}
 		}
@@ -769,6 +773,9 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 		// Update FeeRate. Max(s.minFeeRate) for all the sweeps of
 		// the batch is the basis for fee bumps.
 		if b.rbfCache.FeeRate < s.minFeeRate {
+			b.Infof("Increasing feerate of the batch "+
+				"from %v to %v", b.rbfCache.FeeRate,
+				s.minFeeRate)
 			b.rbfCache.FeeRate = s.minFeeRate
 			b.rbfCache.SkipNextBump = true
 		}
@@ -968,6 +975,12 @@ func (b *batch) Run(ctx context.Context) error {
 				continue
 			}
 
+			// Update feerate of sweeps. This is normally done by
+			// AddSweep, but it may not be called after the sweep
+			// is confirmed, but fresh feerate is still needed to
+			// keep publishing in case of reorg.
+			b.updateFeeRate(ctx)
+
 			err := b.publish(ctx)
 			if err != nil {
 				return fmt.Errorf("publish error: %w", err)
@@ -979,6 +992,11 @@ func (b *batch) Run(ctx context.Context) error {
 				return fmt.Errorf("handleSpend error: %w", err)
 			}
 
+		case err := <-b.spendErrChan:
+			b.writeToSpendErrChan(ctx, err)
+
+			return fmt.Errorf("spend notifier failed: %w", err)
+
 		case conf := <-b.confChan:
 			if err := b.handleConf(runCtx, conf); err != nil {
 				return fmt.Errorf("handleConf error: %w", err)
@@ -986,15 +1004,13 @@ func (b *batch) Run(ctx context.Context) error {
 
 			return nil
 
+		// A re-org has been detected. We set the batch state back to
+		// open since our batch transaction is no longer present in any
+		// block. We can accept more sweeps and try to publish.
 		case <-b.reorgChan:
 			b.state = Open
 			b.Warnf("reorg detected, batch is able to " +
 				"accept new sweeps")
-
-			err := b.monitorSpend(ctx, b.sweeps[b.primarySweepID])
-			if err != nil {
-				return fmt.Errorf("monitorSpend error: %w", err)
-			}
 
 		case testReq := <-b.testReqs:
 			testReq.handler()
@@ -1010,6 +1026,41 @@ func (b *batch) Run(ctx context.Context) error {
 			return fmt.Errorf("batch context expired: %w",
 				runCtx.Err())
 		}
+	}
+}
+
+// updateFeeRate gets fresh values of minFeeRate for sweeps and updates the
+// feerate of the batch if needed. This method must be called from event loop.
+func (b *batch) updateFeeRate(ctx context.Context) {
+	for outpoint, s := range b.sweeps {
+		minFeeRate, err := minimumSweepFeeRate(
+			ctx, b.cfg.customFeeRate, b.wallet,
+			s.swapHash, s.outpoint, s.confTarget,
+		)
+		if err != nil {
+			b.Warnf("failed to determine feerate for sweep %v of "+
+				"swap %x, confTarget %d: %w", s.outpoint,
+				s.swapHash[:6], s.confTarget, err)
+			continue
+		}
+
+		if minFeeRate <= s.minFeeRate {
+			continue
+		}
+
+		b.Infof("Increasing feerate of sweep %v of swap %x from %v "+
+			"to %v", s.outpoint, s.swapHash[:6], s.minFeeRate,
+			minFeeRate)
+		s.minFeeRate = minFeeRate
+		b.sweeps[outpoint] = s
+
+		if s.minFeeRate <= b.rbfCache.FeeRate {
+			continue
+		}
+
+		b.Infof("Increasing feerate of the batch from %v to %v",
+			b.rbfCache.FeeRate, s.minFeeRate)
+		b.rbfCache.FeeRate = s.minFeeRate
 	}
 }
 
@@ -1790,7 +1841,7 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 
 		// Set the initial value for our fee rate.
 		b.rbfCache.FeeRate = rate
-	} else if !b.cfg.noBumping {
+	} else if noBumping := b.cfg.customFeeRate != nil; !noBumping {
 		if b.rbfCache.SkipNextBump {
 			// Skip fee bumping, unset the flag, to bump next time.
 			b.rbfCache.SkipNextBump = false
@@ -1812,44 +1863,33 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 // of the batch transaction gets confirmed, due to the uncertainty of RBF
 // replacements and network propagation, we can always detect the transaction.
 func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
-	spendCtx, cancel := context.WithCancel(ctx)
-
-	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
-		spendCtx, &primarySweep.outpoint, primarySweep.htlc.PkScript,
-		primarySweep.initiationHeight,
-	)
-	if err != nil {
-		cancel()
-
-		return err
+	if b.spendChan != nil || b.spendErrChan != nil || b.reorgChan != nil {
+		return fmt.Errorf("an attempt to run monitorSpend multiple " +
+			"times per batch")
 	}
 
-	b.wg.Add(1)
-	go func() {
-		defer cancel()
-		defer b.wg.Done()
+	reorgChan := make(chan struct{}, 1)
 
-		b.Infof("monitoring spend for outpoint %s",
-			primarySweep.outpoint.String())
+	spendChan, spendErrChan, err := b.chainNotifier.RegisterSpendNtfn(
+		ctx, &primarySweep.outpoint, primarySweep.htlc.PkScript,
+		primarySweep.initiationHeight,
+		lndclient.WithReOrgChan(reorgChan),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register spend notifier for "+
+			"primary sweep %v, pkscript %x, height %d: %w",
+			primarySweep.outpoint, primarySweep.htlc.PkScript,
+			primarySweep.initiationHeight, err)
+	}
 
-		select {
-		case spend := <-spendChan:
-			select {
-			case b.spendChan <- spend:
+	b.Infof("monitoring spend for outpoint %s",
+		primarySweep.outpoint.String())
 
-			case <-ctx.Done():
-			}
-
-		case err := <-spendErr:
-			b.writeToSpendErrChan(ctx, err)
-
-			b.writeToErrChan(
-				fmt.Errorf("spend error: %w", err),
-			)
-
-		case <-ctx.Done():
-		}
-	}()
+	// This is safe to do as we always call monitorSpend from the event
+	// loop's goroutine.
+	b.spendChan = spendChan
+	b.spendErrChan = spendErrChan
+	b.reorgChan = reorgChan
 
 	return nil
 }
@@ -1862,14 +1902,11 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		return fmt.Errorf("can't find primarySweep")
 	}
 
-	reorgChan := make(chan struct{})
-
 	confCtx, cancel := context.WithCancel(ctx)
 
 	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
 		confCtx, b.batchTxid, b.batchPkScript, batchConfHeight,
 		primarySweep.initiationHeight,
-		lndclient.WithReOrgChan(reorgChan),
 	)
 	if err != nil {
 		cancel()
@@ -1894,18 +1931,6 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 
 			b.writeToErrChan(fmt.Errorf("confirmations "+
 				"monitoring error: %w", err))
-
-		case <-reorgChan:
-			// A re-org has been detected. We set the batch
-			// state back to open since our batch
-			// transaction is no longer present in any
-			// block. We can accept more sweeps and try to
-			// publish new transactions, at this point we
-			// need to monitor again for a new spend.
-			select {
-			case b.reorgChan <- struct{}{}:
-			case <-ctx.Done():
-			}
 
 		case <-ctx.Done():
 		}
@@ -2395,12 +2420,6 @@ func (b *batch) writeToErrChan(err error) {
 
 // writeToSpendErrChan sends an error to spend error channels of all the sweeps.
 func (b *batch) writeToSpendErrChan(ctx context.Context, spendErr error) {
-	done, err := b.scheduleNextCall()
-	if err != nil {
-		done()
-
-		return
-	}
 	notifiers := make([]*SpendNotifier, 0, len(b.sweeps))
 	for _, s := range b.sweeps {
 		// If the sweep's notifier is empty then this means that a swap
@@ -2412,7 +2431,6 @@ func (b *batch) writeToSpendErrChan(ctx context.Context, spendErr error) {
 
 		notifiers = append(notifiers, s.notifier)
 	}
-	done()
 
 	for _, notifier := range notifiers {
 		select {
