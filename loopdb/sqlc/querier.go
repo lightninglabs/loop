@@ -10,6 +10,7 @@ import (
 )
 
 type Querier interface {
+	AddAssetDeposit(ctx context.Context, arg AddAssetDepositParams) error
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
@@ -19,7 +20,10 @@ type Querier interface {
 	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	GetActiveAssetDeposits(ctx context.Context) ([]GetActiveAssetDepositsRow, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+	GetAssetDepositServerInternalKey(ctx context.Context, depositID string) ([]byte, error)
+	GetAssetDeposits(ctx context.Context) ([]GetAssetDepositsRow, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -61,9 +65,13 @@ type Querier interface {
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
+	MarkDepositConfirmed(ctx context.Context, arg MarkDepositConfirmedParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
+	SetAssetDepositServerInternalKey(ctx context.Context, arg SetAssetDepositServerInternalKeyParams) error
+	SetAssetDepositSweepAddr(ctx context.Context, arg SetAssetDepositSweepAddrParams) error
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
+	UpdateDepositState(ctx context.Context, arg UpdateDepositStateParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
