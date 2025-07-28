@@ -36,6 +36,7 @@ const (
 
 	coopTwoSweepBatchWeight          = coopNewBatchWeight + coopInputWeight
 	coopSingleSweepChangeBatchWeight = coopInputWeight + batchOutputWeight + changeOutputWeight
+	coopDoubleSweepChangeBatchWeight = 2*coopInputWeight + batchOutputWeight + changeOutputWeight
 	nonCoopTwoSweepBatchWeight       = coopTwoSweepBatchWeight + 2*nonCoopPenalty
 	v2v3BatchWeight                  = nonCoopTwoSweepBatchWeight - 25
 	mixedTwoSweepBatchWeight         = coopTwoSweepBatchWeight + nonCoopPenalty
@@ -322,6 +323,35 @@ func TestEstimateBatchWeight(t *testing.T) {
 				BatchId: 1,
 				FeeRate: lowFeeRate,
 				Weight:  coopSingleSweepChangeBatchWeight,
+			},
+		},
+
+		{
+			name: "two sweeps regular batch with identical change",
+			batch: &batch{
+				id: 1,
+				rbfCache: rbfCache{
+					FeeRate: lowFeeRate,
+				},
+				sweeps: map[wire.OutPoint]sweep{
+					outpoint1: {
+						htlcSuccessEstimator: se3,
+						change: &wire.TxOut{
+							PkScript: changePkscript,
+						},
+					},
+					outpoint2: {
+						htlcSuccessEstimator: se3,
+						change: &wire.TxOut{
+							PkScript: changePkscript,
+						},
+					},
+				},
+			},
+			wantBatchFeeDetails: feeDetails{
+				BatchId: 1,
+				FeeRate: lowFeeRate,
+				Weight:  coopDoubleSweepChangeBatchWeight,
 			},
 		},
 

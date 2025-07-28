@@ -210,11 +210,21 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 			err)
 	}
 
-	// Add change output weights.
+	// Add change output weights. Change outputs with identical pkscript
+	// will be consolidated into a single output.
+	changeOutputs := make(map[string]struct{})
 	for _, s := range batch.sweeps {
-		if s.change != nil {
-			weight.AddOutput(s.change.PkScript)
+		if s.change == nil {
+			continue
 		}
+
+		pkScriptString := string(s.change.PkScript)
+		if _, has := changeOutputs[pkScriptString]; has {
+			continue
+		}
+
+		weight.AddOutput(s.change.PkScript)
+		changeOutputs[pkScriptString] = struct{}{}
 	}
 
 	// Add inputs.

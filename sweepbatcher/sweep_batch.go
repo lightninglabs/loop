@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1311,10 +1312,22 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		LockTime: uint32(currentHeight),
 	}
 
-	var changeOutputs []*wire.TxOut
-	for _, sweep := range sweeps {
-		if sweep.change != nil {
-			changeOutputs = append(changeOutputs, sweep.change)
+	// Consolidate change outputs with identical pkscript.
+	changeOutputs := make(map[string]*wire.TxOut)
+	for _, s := range sweeps {
+		if s.change == nil {
+			continue
+		}
+
+		stringPkScript := string(s.change.PkScript)
+		if _, has := changeOutputs[stringPkScript]; has {
+			changeOutputs[stringPkScript].Value += s.change.Value
+			continue
+		}
+
+		changeOutputs[stringPkScript] = &wire.TxOut{
+			Value:    s.change.Value,
+			PkScript: s.change.PkScript,
 		}
 	}
 
@@ -1425,11 +1438,25 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		PkScript: batchPkScript,
 		Value:    int64(batchAmt-fee) - sumChange,
 	})
-	// Then add change outputs.
-	for _, txOut := range changeOutputs {
+	// Then add change outputs. Sort the keys first to make tests
+	// deterministic.
+	sortedChangeOutputs := make([]*wire.TxOut, 0, len(changeOutputs))
+	for _, output := range changeOutputs {
+		sortedChangeOutputs = append(sortedChangeOutputs, output)
+	}
+
+	// Sort the keys
+	sort.Slice(sortedChangeOutputs, func(i, j int) bool {
+		return utils.Bip69Less(
+			sortedChangeOutputs[i], sortedChangeOutputs[j],
+		)
+	})
+
+	// Add change outputs orderly.
+	for _, output := range sortedChangeOutputs {
 		batchTx.AddTxOut(&wire.TxOut{
-			PkScript: txOut.PkScript,
-			Value:    txOut.Value,
+			PkScript: output.PkScript,
+			Value:    output.Value,
 		})
 	}
 

@@ -1230,7 +1230,7 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	presignedHelper.SetOutpointOnline(op1, true)
 	presignedHelper.SetOutpointOnline(op2, true)
 
-	// An attempt to presign must fail.
+	// An attempt to presign shouldn't fail.
 	err = batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
@@ -1263,6 +1263,134 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	require.Equal(t, change.Value, tx.TxOut[1].Value)
 	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
 	require.Equal(t, change.PkScript, tx.TxOut[1].PkScript)
+
+	// Mine a blocks to trigger republishing.
+	require.NoError(t, lnd.NotifyHeight(601))
+}
+
+// testPresigned_presigned_group_with_identical_change_pkscript tests passing multiple sweeps to
+// the method PresignSweepsGroup. It tests that a change output of a primary
+// deposit sweep is properly added to the presigned transaction.
+func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	batchPkScript, err := txscript.PayToAddrScript(destAddr)
+	require.NoError(t, err)
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.SatPerKWeight(10_000), nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, presignedHelper,
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	// Create two swaps of a single sweep
+	swapHash1 := lntypes.Hash{1, 1, 1}
+	swapHash2 := lntypes.Hash{2, 2, 2}
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	group1 := []Input{
+		{
+			Outpoint: op1,
+			Value:    1_000_000,
+		},
+	}
+	change1 := &wire.TxOut{
+		Value:    500_000,
+		PkScript: []byte{0xaf, 0xfe},
+	}
+	group2 := []Input{
+		{
+			Outpoint: op2,
+			Value:    2_000_000,
+		},
+	}
+	change2 := &wire.TxOut{
+		Value:    600_000,
+		PkScript: []byte{0xaf, 0xfe},
+	}
+
+	presignedHelper.setChangeForPrimaryDeposit(op1, change1)
+	presignedHelper.setChangeForPrimaryDeposit(op2, change2)
+
+	// Enable only one of the sweeps.
+	presignedHelper.SetOutpointOnline(op1, true)
+	presignedHelper.SetOutpointOnline(op2, true)
+
+	// An attempt to presign group1 shouldn't fail.
+	err = batcher.PresignSweepsGroup(
+		ctx, group1, sweepTimeout, destAddr, change1,
+	)
+	require.NoError(t, err)
+
+	// Add the sweep, triggering the publishing attempt.
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash1,
+		Inputs:   group1,
+		Notifier: &dummyNotifier,
+	})
+	require.NoError(t, err)
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
+
+	// An attempt to presign group2 shouldn't fail.
+	err = batcher.PresignSweepsGroup(
+		ctx, group2, sweepTimeout, destAddr, change2,
+	)
+	require.NoError(t, err)
+
+	// Add the sweep, triggering the publishing attempt.
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash2,
+		Inputs:   group2,
+		Notifier: &dummyNotifier,
+	})
+	require.NoError(t, err)
+
+	// Wait for a transactions to be published.
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 2)
+	require.Len(t, tx.TxOut, 2)
+	require.ElementsMatch(
+		t, []wire.OutPoint{op1, op2},
+		[]wire.OutPoint{
+			tx.TxIn[0].PreviousOutPoint,
+			tx.TxIn[1].PreviousOutPoint,
+		},
+	)
+	require.Equal(t, int64(1_893_300), tx.TxOut[0].Value)
+	require.Equal(t, change1.Value+change2.Value, tx.TxOut[1].Value)
+	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+	require.Equal(t, change1.PkScript, tx.TxOut[1].PkScript)
 
 	// Mine a blocks to trigger republishing.
 	require.NoError(t, lnd.NotifyHeight(601))
@@ -2222,6 +2350,10 @@ func TestPresigned(t *testing.T) {
 
 	t.Run("change", func(t *testing.T) {
 		testPresigned_presigned_group_with_change(t, NewStoreMock())
+	})
+
+	t.Run("identical change pkscript", func(t *testing.T) {
+		testPresigned_presigned_group_with_identical_change_pkscript(t, NewStoreMock())
 	})
 
 	t.Run("dust_main_output", func(t *testing.T) {

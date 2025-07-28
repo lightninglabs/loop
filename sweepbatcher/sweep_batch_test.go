@@ -55,6 +55,17 @@ func TestConstructUnsignedTx(t *testing.T) {
 		PkScript: change1Pkscript,
 	}
 
+	change1PrimeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
+		"lwyyeq5ryn6r"
+	change1PrimeAddress, err := btcutil.DecodeAddress(change1PrimeAddr, nil)
+	require.NoError(t, err)
+	change1PrimePkscript, err := txscript.PayToAddrScript(change1PrimeAddress)
+	require.NoError(t, err)
+	change1Prime := &wire.TxOut{
+		Value:    200_000,
+		PkScript: change1PrimePkscript,
+	}
+
 	change2Addr := "bc1psw0nrrulq4pgyuyk09a3wsutygltys4gxjjw3zl2uz4ep8pa" +
 		"r2vsvntfe0"
 	change2Address, err := btcutil.DecodeAddress(change2Addr, nil)
@@ -393,6 +404,108 @@ func TestConstructUnsignedTx(t *testing.T) {
 			wantWeight:       1248,
 			wantFeeForWeight: 1248,
 			wantFee:          1248,
+		},
+
+		{
+			name: "identical change pkscripts",
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+				},
+				{
+					outpoint: op2,
+					value:    2_000_000,
+					change:   change1,
+				},
+				{
+					outpoint: op3,
+					value:    3_000_000,
+					change:   change1,
+				},
+			},
+			address:       p2trAddress,
+			currentHeight: 800_000,
+			feeRate:       1000,
+			wantTx: &wire.MsgTx{
+				Version:  2,
+				LockTime: 800_000,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op1,
+					},
+					{
+						PreviousOutPoint: op2,
+					},
+					{
+						PreviousOutPoint: op3,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    5_798_924,
+						PkScript: p2trPkScript,
+					},
+					{
+						Value:    2 * change1.Value,
+						PkScript: change1.PkScript,
+					},
+				},
+			},
+			wantWeight:       1076,
+			wantFeeForWeight: 1076,
+			wantFee:          1076,
+		},
+
+		{
+			name: "identical change pkscripts different values",
+			sweeps: []sweep{
+				{
+					outpoint: op1,
+					value:    1_000_000,
+				},
+				{
+					outpoint: op2,
+					value:    2_000_000,
+					change:   change1,
+				},
+				{
+					outpoint: op3,
+					value:    3_000_000,
+					change:   change1Prime,
+				},
+			},
+			address:       p2trAddress,
+			currentHeight: 800_000,
+			feeRate:       1000,
+			wantTx: &wire.MsgTx{
+				Version:  2,
+				LockTime: 800_000,
+				TxIn: []*wire.TxIn{
+					{
+						PreviousOutPoint: op1,
+					},
+					{
+						PreviousOutPoint: op2,
+					},
+					{
+						PreviousOutPoint: op3,
+					},
+				},
+				TxOut: []*wire.TxOut{
+					{
+						Value:    5_698_924,
+						PkScript: p2trPkScript,
+					},
+					{
+						Value:    change1.Value + change1Prime.Value,
+						PkScript: change1.PkScript,
+					},
+				},
+			},
+			wantWeight:       1076,
+			wantFeeForWeight: 1076,
+			wantFee:          1076,
 		},
 
 		{
