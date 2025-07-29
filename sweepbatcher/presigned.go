@@ -28,8 +28,14 @@ func (b *batch) ensurePresigned(ctx context.Context, newSweeps []*sweep,
 			"adding to an empty batch")
 	}
 
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minRelayFee: %w", err)
+	}
+
 	return ensurePresigned(
-		ctx, newSweeps, b.cfg.presignedHelper, b.cfg.chainParams,
+		ctx, newSweeps, b.cfg.presignedHelper, minRelayFeeRate,
+		b.cfg.chainParams,
 	)
 }
 
@@ -43,6 +49,7 @@ type presignedTxChecker interface {
 // inputs of this group only.
 func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 	presignedTxChecker presignedTxChecker,
+	minRelayFeeRate chainfee.SatPerKWeight,
 	chainParams *chaincfg.Params) error {
 
 	sweeps := make([]sweep, len(newSweeps))
@@ -51,6 +58,7 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 			outpoint:  s.outpoint,
 			value:     s.value,
 			presigned: s.presigned,
+			change:    s.change,
 		}
 	}
 
@@ -70,10 +78,10 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 	const currentHeight = 0
 
 	// Check if we can sign with minimum fee rate.
-	const feeRate = chainfee.FeePerKwFloor
+	feeRate := minRelayFeeRate
 
 	tx, _, _, _, err := constructUnsignedTx(
-		sweeps, destAddr, currentHeight, feeRate,
+		sweeps, destAddr, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct unsigned tx "+
@@ -217,6 +225,14 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 	b.Infof("nextBlockFeeRate is %v", nextBlockFeeRate)
 
+	// Find the minRelayFeeRate.
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get minRelayFeeRate: %w", err)
+	}
+
+	b.Infof("minRelayFeeRate is %v", minRelayFeeRate)
+
 	// We need to restore previously added groups. We can do it by reading
 	// all the sweeps from DB (they must be ordered) and grouping by swap.
 	groups, err := b.getSweepsGroups(ctx)
@@ -257,7 +273,7 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 
 		err = presign(
 			ctx, b.cfg.presignedHelper, destAddr, primarySweepID,
-			sweeps, nextBlockFeeRate,
+			sweeps, nextBlockFeeRate, minRelayFeeRate,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to presign a transaction "+
@@ -299,7 +315,8 @@ type presigner interface {
 // 10x of the current next block feerate.
 func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	primarySweepID wire.OutPoint, sweeps []sweep,
-	nextBlockFeeRate chainfee.SatPerKWeight) error {
+	nextBlockFeeRate chainfee.SatPerKWeight,
+	minRelayFeeRate chainfee.SatPerKWeight) error {
 
 	if presigner == nil {
 		return fmt.Errorf("presigner is not installed")
@@ -311,6 +328,10 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 
 	if nextBlockFeeRate == 0 {
 		return fmt.Errorf("nextBlockFeeRate is not set")
+	}
+
+	if minRelayFeeRate == 0 {
+		return fmt.Errorf("minRelayFeeRate is not set")
 	}
 
 	// Keep track of the total amount this batch is sweeping back.
@@ -328,9 +349,9 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		return fmt.Errorf("timeout is invalid: %d", timeout)
 	}
 
-	// Go from the floor (1.01 sat/vbyte) to 2k sat/vbyte with step of 1.2x.
+	// Go from minRelayFeeRate to 2k sat/vbyte with step of 1.2x.
+	var start = minRelayFeeRate
 	const (
-		start            = chainfee.FeePerKwFloor
 		stop             = chainfee.AbsoluteFeePerKwFloor * 2_000
 		factorPPM        = 1_200_000
 		timeoutThreshold = 50
@@ -353,7 +374,7 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	for fr := start; fr <= stop; fr = (fr * factorPPM) / 1_000_000 {
 		// Construct an unsigned transaction for this fee rate.
 		tx, _, feeForWeight, fee, err := constructUnsignedTx(
-			sweeps, destAddr, currentHeight, fr,
+			sweeps, destAddr, currentHeight, fr, minRelayFeeRate,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to construct unsigned tx "+
@@ -367,12 +388,9 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 		}
 
 		// Try to presign this transaction.
-		const (
-			loadOnly    = false
-			minRelayFee = chainfee.AbsoluteFeePerKwFloor
-		)
+		const loadOnly = false
 		_, err = presigner.SignTx(
-			ctx, primarySweepID, tx, batchAmt, minRelayFee, fr,
+			ctx, primarySweepID, tx, batchAmt, minRelayFeeRate, fr,
 			loadOnly,
 		)
 		if err != nil {
@@ -410,15 +428,15 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	}
 
 	// Determine the current minimum relay fee based on our chain backend.
-	minRelayFee, err := b.wallet.MinRelayFee(ctx)
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFee: %w", err),
+		return 0, fmt.Errorf("failed to get minRelayFeeRate: %w", err),
 			false
 	}
 
 	// Cache current height and desired feerate of the batch.
 	currentHeight := b.currentHeight
-	feeRate := max(b.rbfCache.FeeRate, minRelayFee)
+	feeRate := max(b.rbfCache.FeeRate, minRelayFeeRate)
 
 	// Append this sweep to an array of sweeps. This is needed to keep the
 	// order of sweeps stored, as iterating the sweeps map does not
@@ -440,7 +458,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Construct unsigned batch transaction.
 	tx, weight, _, fee, err := constructUnsignedTx(
-		sweeps, address, currentHeight, feeRate,
+		sweeps, address, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -459,7 +477,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// Get a pre-signed transaction.
 	const loadOnly = false
 	signedTx, err := b.cfg.presignedHelper.SignTx(
-		ctx, b.primarySweepID, tx, batchAmt, minRelayFee, feeRate,
+		ctx, b.primarySweepID, tx, batchAmt, minRelayFeeRate, feeRate,
 		loadOnly,
 	)
 	if err != nil {
@@ -469,7 +487,7 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Run sanity checks to make sure presignedHelper.SignTx complied with
 	// all the invariants.
-	err = CheckSignedTx(tx, signedTx, batchAmt, minRelayFee)
+	err = CheckSignedTx(tx, signedTx, batchAmt, minRelayFeeRate)
 	if err != nil {
 		return 0, fmt.Errorf("signed tx doesn't correspond the "+
 			"unsigned tx: %w", err), false
@@ -493,10 +511,12 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	signedFeeRate := chainfee.NewSatPerKWeight(fee, realWeight)
 
 	numSweeps := len(tx.TxIn)
+	numChange := len(tx.TxOut) - 1
 	b.Infof("attempting to publish custom signed tx=%v, desiredFeerate=%v,"+
-		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, destAddr=%s",
+		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, "+
+		"changeOutputs=%d, destAddr=%s",
 		txHash, feeRate, signedFeeRate, realWeight, fee, numSweeps,
-		address)
+		numChange, address)
 	b.debugLogTx("serialized batch", tx)
 
 	// Publish the transaction.
@@ -593,23 +613,31 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	}
 
 	// Compare outputs.
-	if len(unsignedTx.TxOut) != 1 {
-		return fmt.Errorf("unsigned tx has %d outputs, want 1",
-			len(unsignedTx.TxOut))
-	}
-	if len(signedTx.TxOut) != 1 {
-		return fmt.Errorf("the signed tx has %d outputs, want 1",
+	if len(unsignedTx.TxOut) != len(signedTx.TxOut) {
+		return fmt.Errorf("unsigned tx has %d outputs, signed tx has "+
+			"%d outputs, should be equal", len(unsignedTx.TxOut),
 			len(signedTx.TxOut))
 	}
-	unsignedOut := unsignedTx.TxOut[0]
-	signedOut := signedTx.TxOut[0]
-	if !bytes.Equal(unsignedOut.PkScript, signedOut.PkScript) {
-		return fmt.Errorf("mismatch of output pkScript: %x, %x",
-			unsignedOut.PkScript, signedOut.PkScript)
+	for i, o := range unsignedTx.TxOut {
+		if !bytes.Equal(o.PkScript, signedTx.TxOut[i].PkScript) {
+			return fmt.Errorf("mismatch of output pkScript: %x, %x",
+				o.PkScript, signedTx.TxOut[i].PkScript)
+		}
+		if i != 0 && o.Value != signedTx.TxOut[i].Value {
+			return fmt.Errorf("mismatch of output value: %d, %d",
+				o.Value, signedTx.TxOut[i].Value)
+		}
+	}
+
+	// Calculate the total value of all outputs to help determine the
+	// transaction fee.
+	totalOutputValue := btcutil.Amount(0)
+	for _, o := range signedTx.TxOut {
+		totalOutputValue += btcutil.Amount(o.Value)
 	}
 
 	// Find the feerate of signedTx.
-	fee := inputAmt - btcutil.Amount(signedOut.Value)
+	fee := inputAmt - totalOutputValue
 	weight := lntypes.WeightUnit(
 		blockchain.GetTransactionWeight(btcutil.NewTx(signedTx)),
 	)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	sweeppkg "github.com/lightninglabs/loop/sweep"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
@@ -125,6 +127,9 @@ type sweep struct {
 
 	// presigned is set, if the sweep should be handled in presigned mode.
 	presigned bool
+
+	// change is the optional change output of the sweep.
+	change *wire.TxOut
 }
 
 // batchState is the state of the batch.
@@ -1287,9 +1292,13 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 }
 
 // constructUnsignedTx creates unsigned tx from the sweeps, paying to the addr.
-// It also returns absolute fee (from weight and clamped).
+// It also returns absolute fee (from weight and clamped). The main output is
+// the first output of the transaction, followed by an optional list of change
+// outputs. If the main output value is below dust limit this function will
+// return an error.
 func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
-	currentHeight int32, feeRate chainfee.SatPerKWeight) (*wire.MsgTx,
+	currentHeight int32, feeRate chainfee.SatPerKWeight,
+	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx,
 	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
 
 	// Sanity check, there should be at least 1 sweep in this batch.
@@ -1301,6 +1310,25 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	batchTx := &wire.MsgTx{
 		Version:  2,
 		LockTime: uint32(currentHeight),
+	}
+
+	// Consolidate change outputs with identical pkscript.
+	changeOutputs := make(map[string]*wire.TxOut)
+	for _, s := range sweeps {
+		if s.change == nil {
+			continue
+		}
+
+		stringPkScript := string(s.change.PkScript)
+		if _, has := changeOutputs[stringPkScript]; has {
+			changeOutputs[stringPkScript].Value += s.change.Value
+			continue
+		}
+
+		changeOutputs[stringPkScript] = &wire.TxOut{
+			Value:    s.change.Value,
+			PkScript: s.change.PkScript,
+		}
 	}
 
 	// Add transaction inputs and estimate its weight.
@@ -1348,6 +1376,11 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 			"failed: %w", err)
 	}
 
+	// Add the optional change outputs to weight estimates.
+	for _, o := range changeOutputs {
+		weightEstimate.AddOutput(o.PkScript)
+	}
+
 	// Keep track of the total amount this batch is sweeping back.
 	batchAmt := btcutil.Amount(0)
 	for _, sweep := range sweeps {
@@ -1365,15 +1398,99 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		feeForWeight++
 	}
 
-	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee := clampBatchFee(feeForWeight, batchAmt)
-
 	// Add the batch transaction output, which excludes the fees paid to
-	// miners.
+	// miners. Reduce the amount by the sum of change outputs, if any.
+	var sumChange int64
+	for _, change := range changeOutputs {
+		sumChange += change.Value
+	}
+
+	// Ensure that the batch amount is greater than the sum of change.
+	if batchAmt <= btcutil.Amount(sumChange) {
+		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is <= the "+
+			"sum of change outputs %v", batchAmt,
+			btcutil.Amount(sumChange))
+	}
+
+	// Clamp the calculated fee to the max allowed fee amount for the batch.
+	fee, err := clampBatchFee(
+		feeForWeight, batchAmt-btcutil.Amount(sumChange),
+		minRelayFeeRate, weight,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("failed to clamp batch "+
+			"fee: %w", err)
+	}
+
+	// Ensure that batch amount is equal or exceeds the sum of change
+	// outputs and the fee, and that it is also greater than dust limit
+	// for the main output.
+	dustLimit := utils.DustLimitForPkScript(batchPkScript)
+	if fee+btcutil.Amount(sumChange)+dustLimit > batchAmt {
+		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is < the "+
+			"sum of change outputs %v plus fee %v and dust "+
+			"limit %v", batchAmt, btcutil.Amount(sumChange),
+			fee, dustLimit)
+	}
+
+	// Add the main output first.
 	batchTx.AddTxOut(&wire.TxOut{
 		PkScript: batchPkScript,
-		Value:    int64(batchAmt - fee),
+		Value:    int64(batchAmt-fee) - sumChange,
 	})
+	// Then add change outputs. Sort the keys first to make tests
+	// deterministic.
+	sortedChangeOutputs := make([]*wire.TxOut, 0, len(changeOutputs))
+	for _, output := range changeOutputs {
+		sortedChangeOutputs = append(sortedChangeOutputs, output)
+	}
+
+	// Sort the keys
+	sort.Slice(sortedChangeOutputs, func(i, j int) bool {
+		return utils.Bip69Less(
+			sortedChangeOutputs[i], sortedChangeOutputs[j],
+		)
+	})
+
+	// Add change outputs orderly.
+	for _, output := range sortedChangeOutputs {
+		batchTx.AddTxOut(&wire.TxOut{
+			PkScript: output.PkScript,
+			Value:    output.Value,
+		})
+	}
+
+	// Check that for each swap, inputs exceed the change outputs.
+	if len(changeOutputs) != 0 {
+		swap2Inputs := make(map[lntypes.Hash]btcutil.Amount)
+		swap2Change := make(map[lntypes.Hash]btcutil.Amount)
+		for _, sweep := range sweeps {
+			swap2Inputs[sweep.swapHash] += sweep.value
+			if sweep.change != nil {
+				swap2Change[sweep.swapHash] +=
+					btcutil.Amount(sweep.change.Value)
+			}
+		}
+
+		for swapHash, inputs := range swap2Inputs {
+			change := swap2Change[swapHash]
+			if inputs <= change {
+				return nil, 0, 0, 0, fmt.Errorf(""+
+					"inputs %v <= change %v for swap %x",
+					inputs, change, swapHash[:6])
+			}
+		}
+	}
+
+	// Ensure that each output is above dust limit.
+	for _, txOut := range batchTx.TxOut {
+		dustLimit = utils.DustLimitForPkScript(txOut.PkScript)
+		if btcutil.Amount(txOut.Value) < dustLimit {
+			return nil, 0, 0, 0, fmt.Errorf("output %v is below "+
+				"dust limit %v", btcutil.Amount(txOut.Value),
+				dustLimit)
+		}
+	}
 
 	return batchTx, weight, feeForWeight, fee, nil
 }
@@ -1433,15 +1550,21 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	// known in advance to be non-cooperative (nonCoopHint) and not failed
 	// to sign cooperatively in previous rounds (coopFailed). If any of them
 	// fails, the sweep is excluded from all following rounds and another
-	// round is attempted. Otherwise the cycle completes and we sign the
+	// round is attempted. Otherwise, the cycle completes and we sign the
 	// remaining sweeps non-cooperatively.
 	var (
-		tx           *wire.MsgTx
-		weight       lntypes.WeightUnit
-		feeForWeight btcutil.Amount
-		fee          btcutil.Amount
-		coopInputs   int
+		tx              *wire.MsgTx
+		weight          lntypes.WeightUnit
+		feeForWeight    btcutil.Amount
+		fee             btcutil.Amount
+		minRelayFeeRate chainfee.SatPerKWeight
+		coopInputs      int
 	)
+	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get min relay fee: %w", err),
+			false
+	}
 	for attempt := 1; ; attempt++ {
 		b.Infof("Attempt %d of collecting cooperative signatures.",
 			attempt)
@@ -1450,6 +1573,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		var err error
 		tx, weight, feeForWeight, fee, err = constructUnsignedTx(
 			sweeps, address, b.currentHeight, b.rbfCache.FeeRate,
+			minRelayFeeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to construct tx: %w", err),
@@ -1501,7 +1625,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		// If there was any failure of cooperative signing, we need to
 		// update weight estimates (since non-cooperative signing has
 		// larger witness) and hence update the whole transaction and
-		// all the signatures. Otherwise we complete cooperative part.
+		// all the signatures. Otherwise, we complete cooperative part.
 		if !newCoopFailures {
 			break
 		}
@@ -1637,7 +1761,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	}
 
 	// Publish the transaction.
-	err := b.wallet.PublishTransaction(
+	err = b.wallet.PublishTransaction(
 		ctx, tx, b.cfg.txLabeler(b.id),
 	)
 	if err != nil {
@@ -2500,16 +2624,25 @@ func (b *batch) persistSweep(ctx context.Context, sweep sweep,
 
 // clampBatchFee takes the fee amount and total amount of the sweeps in the
 // batch and makes sure the fee is not too high. If the fee is too high, it is
-// clamped to the maximum allowed fee.
-func clampBatchFee(fee btcutil.Amount,
-	totalAmount btcutil.Amount) btcutil.Amount {
+// clamped to the maximum allowed fee. If the clamped fee results in a fee rate
+// below the minimum relay fee, an error is returned.
+func clampBatchFee(fee btcutil.Amount, totalAmount btcutil.Amount,
+	minRelayFeeRate chainfee.SatPerKWeight,
+	weight lntypes.WeightUnit) (btcutil.Amount, error) {
 
 	maxFeeAmount := btcutil.Amount(float64(totalAmount) *
 		maxFeeToSwapAmtRatio)
 
+	clampedFee := fee
 	if fee > maxFeeAmount {
-		return maxFeeAmount
+		clampedFee = maxFeeAmount
 	}
 
-	return fee
+	clampedFeeRate := chainfee.NewSatPerKWeight(clampedFee, weight)
+	if clampedFeeRate < minRelayFeeRate {
+		return 0, fmt.Errorf("clamped fee rate %v is less than "+
+			"minimum relay fee %v", clampedFeeRate, minRelayFeeRate)
+	}
+
+	return clampedFee, nil
 }
