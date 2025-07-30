@@ -13,7 +13,7 @@ import (
 
 const allDeposits = `-- name: AllDeposits :many
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
 FROM
     deposits
 ORDER BY
@@ -39,6 +39,7 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
 			&i.TimeoutSweepPkScript,
 			&i.ExpirySweepTxid,
 			&i.FinalizedWithdrawalTx,
+			&i.SwapHash,
 		); err != nil {
 			return nil, err
 		}
@@ -102,7 +103,7 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 
 const depositForOutpoint = `-- name: DepositForOutpoint :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
 FROM
     deposits
 WHERE
@@ -129,13 +130,14 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 		&i.TimeoutSweepPkScript,
 		&i.ExpirySweepTxid,
 		&i.FinalizedWithdrawalTx,
+		&i.SwapHash,
 	)
 	return i, err
 }
 
 const getDeposit = `-- name: GetDeposit :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
 FROM
     deposits
 WHERE
@@ -155,6 +157,7 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, er
 		&i.TimeoutSweepPkScript,
 		&i.ExpirySweepTxid,
 		&i.FinalizedWithdrawalTx,
+		&i.SwapHash,
 	)
 	return i, err
 }

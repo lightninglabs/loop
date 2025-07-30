@@ -93,3 +93,30 @@ SELECT EXISTS (
     FROM static_address_swaps
     WHERE swap_hash = $1
 );
+
+-- name: MapDepositToSwap :exec
+UPDATE
+    deposits
+SET
+    swap_hash = $2
+WHERE
+    deposit_id = $1;
+
+-- name: SwapHashForDepositID :one
+SELECT
+    swap_hash
+FROM
+    deposits
+WHERE
+    deposit_id = $1;
+
+-- name: DepositIDsForSwapHash :many
+SELECT
+    deposit_id
+FROM
+    deposits
+WHERE
+    swap_hash = $1;
+
+
+
