@@ -118,5 +118,26 @@ FROM
 WHERE
     swap_hash = $1;
 
+-- name: DepositsForSwapHash :many
+SELECT
+    d.*,
+    u.update_state,
+    u.update_timestamp
+FROM
+    deposits d
+        LEFT JOIN
+    deposit_updates u ON u.id = (
+        SELECT id
+        FROM deposit_updates
+        WHERE deposit_id = d.deposit_id
+        ORDER BY update_timestamp DESC
+        LIMIT 1
+    )
+WHERE
+    d.swap_hash = $1;
+
+
+
+
 
 

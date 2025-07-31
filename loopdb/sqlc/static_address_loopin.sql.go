@@ -43,6 +43,76 @@ func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([
 	return items, nil
 }
 
+const depositsForSwapHash = `-- name: DepositsForSwapHash :many
+SELECT
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash,
+    u.update_state,
+    u.update_timestamp
+FROM
+    deposits d
+        LEFT JOIN
+    deposit_updates u ON u.id = (
+        SELECT id
+        FROM deposit_updates
+        WHERE deposit_id = d.deposit_id
+        ORDER BY update_timestamp DESC
+        LIMIT 1
+    )
+WHERE
+    d.swap_hash = $1
+`
+
+type DepositsForSwapHashRow struct {
+	ID                    int32
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
+	SwapHash              []byte
+	UpdateState           sql.NullString
+	UpdateTimestamp       sql.NullTime
+}
+
+func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error) {
+	rows, err := q.db.QueryContext(ctx, depositsForSwapHash, swapHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DepositsForSwapHashRow
+	for rows.Next() {
+		var i DepositsForSwapHashRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DepositID,
+			&i.TxHash,
+			&i.OutIndex,
+			&i.Amount,
+			&i.ConfirmationHeight,
+			&i.TimeoutSweepPkScript,
+			&i.ExpirySweepTxid,
+			&i.FinalizedWithdrawalTx,
+			&i.SwapHash,
+			&i.UpdateState,
+			&i.UpdateTimestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLoopInSwapUpdates = `-- name: GetLoopInSwapUpdates :many
 SELECT
     static_address_swap_updates.id, static_address_swap_updates.swap_hash, static_address_swap_updates.update_state, static_address_swap_updates.update_timestamp

@@ -20,6 +20,7 @@ type Querier interface {
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
 	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
 	DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([][]byte, error)
+	DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
