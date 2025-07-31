@@ -841,7 +841,17 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 			return nil, fmt.Errorf("rfq id has wrong length: %v", n)
 		}
 
-		htlc := rfqmsg.NewHtlc(nil, fn.Some(rfq))
+		// In order to still be compatible with the old wire format for
+		// asset HTLCs, we populate both fields.
+		//
+		// Older versions of tapd will ignore the new field and only use
+		// the old one.
+		//
+		// Newer versions will ignore the old field and only use the new
+		// field.
+		htlc := rfqmsg.NewHtlc(
+			nil, fn.Some(rfq), fn.Some([]rfqmsg.ID{rfq}),
+		)
 		htlcMapRecords, err := tlv.RecordsToMap(htlc.Records())
 		if err != nil {
 			return nil, err
