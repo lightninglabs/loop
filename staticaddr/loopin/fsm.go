@@ -130,15 +130,16 @@ var (
 
 var PendingStates = []fsm.StateType{
 	InitHtlcTx, SignHtlcTx, MonitorInvoiceAndHtlcTx, PaymentReceived,
-	SweepHtlcTimeout, MonitorHtlcTimeoutSweep,
-	UnlockDeposits,
+	SweepHtlcTimeout, MonitorHtlcTimeoutSweep, UnlockDeposits,
 }
 
 var FinalStates = []fsm.StateType{
 	HtlcTimeoutSwept, Succeeded, SucceededTransitioningFailed, Failed,
 }
 
-var AllStates = append(PendingStates, FinalStates...)
+var AllStates = append(
+	append([]fsm.StateType{}, PendingStates...), FinalStates...,
+)
 
 // Events.
 var (
@@ -149,7 +150,6 @@ var (
 	OnHtlcTimeoutSweepPublished = fsm.EventType("OnHtlcTimeoutSweepPublished")
 	OnHtlcTimeoutSwept          = fsm.EventType("OnHtlcTimeoutSwept")
 	OnPaymentReceived           = fsm.EventType("OnPaymentReceived")
-	OnPaymentDeadlineExceeded   = fsm.EventType("OnPaymentDeadlineExceeded")
 	OnSwapTimedOut              = fsm.EventType("OnSwapTimedOut")
 	OnSucceeded                 = fsm.EventType("OnSucceeded")
 	OnRecover                   = fsm.EventType("OnRecover")

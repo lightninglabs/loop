@@ -135,7 +135,7 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 				return err
 			}
 
-			deposit, err = s.toDeposit(row, latestUpdate)
+			deposit, err = ToDeposit(row, latestUpdate)
 			if err != nil {
 				return err
 			}
@@ -177,7 +177,7 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 				return err
 			}
 
-			deposit, err = s.toDeposit(row, latestUpdate)
+			deposit, err = ToDeposit(row, latestUpdate)
 			if err != nil {
 				return err
 			}
@@ -212,7 +212,7 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 					return err
 				}
 
-				d, err := s.toDeposit(deposit, latestUpdate)
+				d, err := ToDeposit(deposit, latestUpdate)
 				if err != nil {
 					return err
 				}
@@ -229,9 +229,9 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return allDeposits, nil
 }
 
-// toDeposit converts an sql deposit to a deposit.
-func (s *SqlStore) toDeposit(row sqlc.Deposit,
-	lastUpdate sqlc.DepositUpdate) (*Deposit, error) {
+// ToDeposit converts an sql deposit to a deposit.
+func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
+	error) {
 
 	id := ID{}
 	err := id.FromByteSlice(row.DepositID)

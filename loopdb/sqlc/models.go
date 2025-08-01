@@ -19,6 +19,7 @@ type Deposit struct {
 	TimeoutSweepPkScript  []byte
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
+	SwapHash              []byte
 }
 
 type DepositUpdate struct {
@@ -146,6 +147,7 @@ type StaticAddressSwap struct {
 	HtlcTxFeeRateSatKw      int64
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
+	SelectedAmount          int64
 }
 
 type StaticAddressSwapUpdate struct {

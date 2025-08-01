@@ -6,6 +6,7 @@ INSERT INTO static_address_swaps (
     payment_timeout_seconds,
     quoted_swap_fee_satoshis,
     deposit_outpoints,
+    selected_amount,
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address
@@ -18,7 +19,8 @@ INSERT INTO static_address_swaps (
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10
 );
 
 -- name: UpdateStaticAddressLoopIn :exec
@@ -93,3 +95,57 @@ SELECT EXISTS (
     FROM static_address_swaps
     WHERE swap_hash = $1
 );
+
+-- name: OverrideSelectedSwapAmount :exec
+UPDATE static_address_swaps
+SET
+    selected_amount = $2
+WHERE swap_hash = $1;
+
+-- name: MapDepositToSwap :exec
+UPDATE
+    deposits
+SET
+    swap_hash = $2
+WHERE
+    deposit_id = $1;
+
+-- name: SwapHashForDepositID :one
+SELECT
+    swap_hash
+FROM
+    deposits
+WHERE
+    deposit_id = $1;
+
+-- name: DepositIDsForSwapHash :many
+SELECT
+    deposit_id
+FROM
+    deposits
+WHERE
+    swap_hash = $1;
+
+-- name: DepositsForSwapHash :many
+SELECT
+    d.*,
+    u.update_state,
+    u.update_timestamp
+FROM
+    deposits d
+        LEFT JOIN
+    deposit_updates u ON u.id = (
+        SELECT id
+        FROM deposit_updates
+        WHERE deposit_id = d.deposit_id
+        ORDER BY update_timestamp DESC
+        LIMIT 1
+    )
+WHERE
+    d.swap_hash = $1;
+
+
+
+
+
+
