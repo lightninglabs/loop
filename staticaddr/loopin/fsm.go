@@ -138,7 +138,9 @@ var FinalStates = []fsm.StateType{
 	HtlcTimeoutSwept, Succeeded, SucceededTransitioningFailed, Failed,
 }
 
-var AllStates = append(PendingStates, FinalStates...)
+var AllStates = append(
+	append([]fsm.StateType{}, PendingStates...), FinalStates...,
+)
 
 // Events.
 var (
