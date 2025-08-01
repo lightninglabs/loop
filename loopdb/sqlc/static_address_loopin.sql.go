@@ -11,6 +11,108 @@ import (
 	"time"
 )
 
+const depositIDsForSwapHash = `-- name: DepositIDsForSwapHash :many
+SELECT
+    deposit_id
+FROM
+    deposits
+WHERE
+    swap_hash = $1
+`
+
+func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([][]byte, error) {
+	rows, err := q.db.QueryContext(ctx, depositIDsForSwapHash, swapHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items [][]byte
+	for rows.Next() {
+		var deposit_id []byte
+		if err := rows.Scan(&deposit_id); err != nil {
+			return nil, err
+		}
+		items = append(items, deposit_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const depositsForSwapHash = `-- name: DepositsForSwapHash :many
+SELECT
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash,
+    u.update_state,
+    u.update_timestamp
+FROM
+    deposits d
+        LEFT JOIN
+    deposit_updates u ON u.id = (
+        SELECT id
+        FROM deposit_updates
+        WHERE deposit_id = d.deposit_id
+        ORDER BY update_timestamp DESC
+        LIMIT 1
+    )
+WHERE
+    d.swap_hash = $1
+`
+
+type DepositsForSwapHashRow struct {
+	ID                    int32
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
+	SwapHash              []byte
+	UpdateState           sql.NullString
+	UpdateTimestamp       sql.NullTime
+}
+
+func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error) {
+	rows, err := q.db.QueryContext(ctx, depositsForSwapHash, swapHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DepositsForSwapHashRow
+	for rows.Next() {
+		var i DepositsForSwapHashRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DepositID,
+			&i.TxHash,
+			&i.OutIndex,
+			&i.Amount,
+			&i.ConfirmationHeight,
+			&i.TimeoutSweepPkScript,
+			&i.ExpirySweepTxid,
+			&i.FinalizedWithdrawalTx,
+			&i.SwapHash,
+			&i.UpdateState,
+			&i.UpdateTimestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLoopInSwapUpdates = `-- name: GetLoopInSwapUpdates :many
 SELECT
     static_address_swap_updates.id, static_address_swap_updates.swap_hash, static_address_swap_updates.update_state, static_address_swap_updates.update_timestamp
@@ -326,6 +428,41 @@ func (q *Queries) IsStored(ctx context.Context, swapHash []byte) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const mapDepositToSwap = `-- name: MapDepositToSwap :exec
+UPDATE
+    deposits
+SET
+    swap_hash = $2
+WHERE
+    deposit_id = $1
+`
+
+type MapDepositToSwapParams struct {
+	DepositID []byte
+	SwapHash  []byte
+}
+
+func (q *Queries) MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error {
+	_, err := q.db.ExecContext(ctx, mapDepositToSwap, arg.DepositID, arg.SwapHash)
+	return err
+}
+
+const swapHashForDepositID = `-- name: SwapHashForDepositID :one
+SELECT
+    swap_hash
+FROM
+    deposits
+WHERE
+    deposit_id = $1
+`
+
+func (q *Queries) SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, swapHashForDepositID, depositID)
+	var swap_hash []byte
+	err := row.Scan(&swap_hash)
+	return swap_hash, err
 }
 
 const updateStaticAddressLoopIn = `-- name: UpdateStaticAddressLoopIn :exec
