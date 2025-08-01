@@ -626,6 +626,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		clock.NewDefaultClock(), d.lnd.ChainParams,
 	)
 
+	// Run the deposit swap hash migration.
+	err = loopin.MigrateDepositSwapHash(
+		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
+	)
+	if err != nil {
+		errorf("Deposit swap hash migration failed: %v", err)
+
+		return err
+	}
+
 	staticLoopInManager = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,

@@ -19,6 +19,7 @@ type Deposit struct {
 	TimeoutSweepPkScript  []byte
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
+	SwapHash              []byte
 }
 
 type DepositUpdate struct {
