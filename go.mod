@@ -215,4 +215,4 @@ replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
 
-go 1.23.9
+go 1.23.12

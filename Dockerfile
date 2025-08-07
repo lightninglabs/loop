@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM} golang:1.24-alpine as builder
+FROM --platform=${BUILDPLATFORM} golang:1.23.12-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop
@@ -14,8 +14,8 @@ ENV GO111MODULE on
 RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
-&&  cd /go/src/github.com/lightningnetwork/loop \
-&&  make install
+    &&  cd /go/src/github.com/lightningnetwork/loop \
+    &&  make install
 
 # Start a new, final image to reduce size.
 FROM --platform=${BUILDPLATFORM} alpine as final
