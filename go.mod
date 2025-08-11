@@ -23,8 +23,8 @@ require (
 	github.com/lightninglabs/lndclient v0.19.0-12
 	github.com/lightninglabs/loop/looprpc v1.0.7
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightninglabs/taproot-assets v0.6.1-0.20250729190616-3f323918a96e
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20250729190616-3f323918a96e
+	github.com/lightninglabs/taproot-assets v0.6.1-0.20250811063104-e3690c5592a1
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20250811063104-e3690c5592a1
 	github.com/lightningnetwork/lnd v0.19.2-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
