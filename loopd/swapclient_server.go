@@ -1924,6 +1924,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			Outpoint:           outpoint,
 			Value:              int64(d.Value),
 			ConfirmationHeight: d.ConfirmationHeight,
+			SwapHash:           d.SwapHash[:],
 		}
 
 		clientDeposits = append(clientDeposits, deposit)
