@@ -1874,6 +1874,13 @@
           "type": "string",
           "format": "int64",
           "description": "The invoiced swap amount. It is the swap amount minus the quoted server\nfees."
+        },
+        "deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "The deposits that were used for this swap."
         }
       }
     },

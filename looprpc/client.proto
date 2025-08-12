@@ -1977,6 +1977,11 @@ message StaticAddressLoopInSwap {
     fees.
     */
     int64 payment_request_amount_satoshis = 5;
+
+    /*
+    The deposits that were used for this swap.
+    */
+    repeated Deposit deposits = 6;
 }
 
 enum StaticAddressLoopInSwapState {
