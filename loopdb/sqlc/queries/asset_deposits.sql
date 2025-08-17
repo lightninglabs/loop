@@ -64,3 +64,8 @@ UPDATE asset_deposits
 SET server_internal_key = $2
 WHERE deposit_id = $1
 AND server_internal_key IS NULL;
+
+-- name: GetAssetDepositServerInternalKey :one
+SELECT server_internal_key
+FROM asset_deposits
+WHERE deposit_id = $1;

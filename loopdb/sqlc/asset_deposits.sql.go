@@ -151,6 +151,19 @@ func (q *Queries) GetActiveAssetDeposits(ctx context.Context) ([]GetActiveAssetD
 	return items, nil
 }
 
+const getAssetDepositServerInternalKey = `-- name: GetAssetDepositServerInternalKey :one
+SELECT server_internal_key
+FROM asset_deposits
+WHERE deposit_id = $1
+`
+
+func (q *Queries) GetAssetDepositServerInternalKey(ctx context.Context, depositID string) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, getAssetDepositServerInternalKey, depositID)
+	var server_internal_key []byte
+	err := row.Scan(&server_internal_key)
+	return server_internal_key, err
+}
+
 const getAssetDeposits = `-- name: GetAssetDeposits :many
 SELECT d.deposit_id, d.protocol_version, d.created_at, d.asset_id, d.amount, d.client_script_pubkey, d.server_script_pubkey, d.client_internal_pubkey, d.server_internal_pubkey, d.server_internal_key, d.expiry, d.client_key_family, d.client_key_index, d.addr, d.confirmation_height, d.outpoint, d.pk_script, d.sweep_script_pubkey, d.sweep_internal_pubkey, u.update_state, u.update_timestamp
 FROM asset_deposits d
