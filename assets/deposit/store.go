@@ -26,4 +26,9 @@ type Store interface {
 	// asset deposit.
 	SetAssetDepositServerKey(ctx context.Context, depositID string,
 		key *btcec.PrivateKey) error
+
+	// GetAssetDepositServerKey gets the server's internal key for the given
+	// asset deposit.
+	GetAssetDepositServerKey(ctx context.Context, depositID string) (
+		*btcec.PrivateKey, error)
 }

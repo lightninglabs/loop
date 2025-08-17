@@ -54,6 +54,16 @@ func (s *mockStore) SetAssetDepositServerKey(context.Context, string,
 	return nil
 }
 
+// GetAssetDepositServerKey is a mock implementation of the
+// GetAssetDepositServerKey method.
+func (s *mockStore) GetAssetDepositServerKey(context.Context, string) (
+	*btcec.PrivateKey, error) {
+
+	// Return a dummy private key for testing
+	privKey, _ := btcec.NewPrivateKey()
+	return privKey, nil
+}
+
 // testAddDeposit is a helper function that (intrusively) adds a deposit to the
 // manager.
 func testAddDeposit(t *testing.T, m *Manager, d *Deposit) {
