@@ -194,10 +194,10 @@ func (c *CachedObserver) WaitForStateAsync(ctx context.Context, state StateType,
 
 // FixedSizeSlice is a slice with a fixed size.
 type FixedSizeSlice[T any] struct {
+	sync.Mutex
+
 	data   []T
 	maxLen int
-
-	sync.Mutex
 }
 
 // NewFixedSizeSlice initializes a new FixedSlice with a given maximum length.

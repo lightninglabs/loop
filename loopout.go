@@ -538,7 +538,7 @@ func (s *loopOutSwap) handlePaymentResult(ctx context.Context,
 	}
 }
 
-// executeSwap executes the swap, but returns as soon as the swap outcome is
+// executeSwap executes the swap but returns as soon as the swap outcome is
 // final. At that point, there may still be pending off-chain payment(s).
 func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	// Decode the prepay invoice so we can ensure that we account for the
@@ -1192,7 +1192,7 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 	}
 
 	var (
-		// paymentComplete tracks whether our payment is complete, and
+		// paymentComplete tracks whether our payment is complete and
 		// is used to decide whether we need to push our preimage to
 		// the server.
 		paymentComplete bool

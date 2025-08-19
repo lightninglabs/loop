@@ -59,9 +59,9 @@ func (s *PostgresConfig) DSN(hidePassword bool) string {
 // PostgresStore is a database store implementation that uses a Postgres
 // backend.
 type PostgresStore struct {
-	cfg *PostgresConfig
-
 	*BaseDB
+
+	cfg *PostgresConfig
 }
 
 // In migration of sweeps table from outpoint_txid and outpoint_index to

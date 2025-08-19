@@ -138,7 +138,7 @@ func NewStateMachine(states States, observerSize int) *StateMachine {
 func NewStateMachineWithState(states States, current StateType,
 	observerSize int) *StateMachine {
 
-	observers := []Observer{}
+	var observers []Observer
 	var defaultObserver *CachedObserver
 
 	if observerSize > 0 {

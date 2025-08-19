@@ -36,7 +36,6 @@ func isPublicNode(ctx context.Context, lndClient lndclient.LightningClient,
 	// GetNodeInfo doesn't report our private channels with the queried node
 	// so, we can use it to determine if the node is considered public.
 	nodeInfo, err := lndClient.GetNodeInfo(ctx, pubKey, true)
-
 	if err != nil {
 		return false, err
 	}

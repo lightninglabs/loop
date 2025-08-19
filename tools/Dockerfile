@@ -1,16 +1,18 @@
-FROM golang:1.23.12
+FROM golang:1.24.6
 
-RUN apt-get update && apt-get install -y git
-ENV GOCACHE=/tmp/build/.cache
-ENV GOMODCACHE=/tmp/build/.modcache
-ENV GOFLAGS="-buildvcs=false"
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV CGO_ENABLED=0 \
+    GOCACHE=/tmp/build/.cache \
+    GOMODCACHE=/tmp/build/.modcache \
+    GOFLAGS="-buildvcs=false"
 
 COPY . /tmp/tools
 
-RUN cd /tmp \
-  && mkdir -p /tmp/build/.cache \
-  && mkdir -p /tmp/build/.modcache \
-  && cd /tmp/tools \
-  && go install -trimpath github.com/golangci/golangci-lint/cmd/golangci-lint \
-  && chmod -R 777 /tmp/build/
+RUN mkdir -p /tmp/build/.cache /tmp/build/.modcache \
+ && cd /tmp/tools \
+ && go install -trimpath github.com/golangci/golangci-lint/v2/cmd/golangci-lint \
+ && chmod -R 777 /tmp/build/
+
 WORKDIR /build

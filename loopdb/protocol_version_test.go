@@ -48,7 +48,7 @@ func TestProtocolVersionSanity(t *testing.T) {
 		require.Equal(t, uint32(version), uint32(rpcVersions[i]))
 	}
 
-	// Finally test that the current version contants are up to date
+	// Finally, test that the current version constants are up to date
 	require.Equal(t,
 		CurrentProtocolVersion(),
 		versions[len(versions)-1],

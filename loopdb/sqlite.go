@@ -40,9 +40,9 @@ type SqliteConfig struct {
 
 // SqliteSwapStore is a sqlite3 based database for the loop daemon.
 type SqliteSwapStore struct {
-	cfg *SqliteConfig
-
 	*BaseDB
+
+	cfg *SqliteConfig
 }
 
 // NewSqliteStore attempts to open a new sqlite database based on the passed
@@ -174,11 +174,11 @@ func NewTestSqliteDB(t *testing.T) *SqliteSwapStore {
 // BaseDB is the base database struct that each implementation can embed to
 // gain some common functionality.
 type BaseDB struct {
-	network *chaincfg.Params
-
 	*sql.DB
 
 	*sqlc.Queries
+
+	network *chaincfg.Params
 }
 
 // BeginTx wraps the normal sql specific BeginTx method with the TxOptions

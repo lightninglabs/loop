@@ -64,14 +64,13 @@ type ListenerCfg struct {
 
 // Daemon is the struct that holds one instance of the loop client daemon.
 type Daemon struct {
-	// To be used atomically. Declared first to optimize struct alignment.
-	started int32
-
 	// swapClientServer is the embedded RPC server that satisfies the client
 	// RPC interface. We embed this struct so the Daemon itself can be
 	// registered to an existing grpc.Server to run as a subserver in the
 	// same process.
 	swapClientServer
+
+	started atomic.Bool
 
 	// ErrChan is an error channel that users of the Daemon struct must use
 	// to detect runtime errors and also whether a shutdown is fully
@@ -128,7 +127,7 @@ func (d *Daemon) Start() error {
 	// There should be no reason to start the daemon twice. Therefore,
 	// return an error if that's tried. This is mostly to guard against
 	// Start and StartAsSubserver both being called.
-	if atomic.AddInt32(&d.started, 1) != 1 {
+	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
 
@@ -168,7 +167,7 @@ func (d *Daemon) Start() error {
 	// anything goes wrong now, we need to cleanly shut down again.
 	startErr := d.startWebServers()
 	if startErr != nil {
-		errorf("Error while starting daemon: %v", err)
+		errorf("Error while starting daemon: %v", startErr)
 		d.Stop()
 		stopErr := <-d.ErrChan
 		if stopErr != nil {
@@ -190,7 +189,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// There should be no reason to start the daemon twice. Therefore,
 	// return an error if that's tried. This is mostly to guard against
 	// Start and StartAsSubserver both being called.
-	if atomic.AddInt32(&d.started, 1) != 1 {
+	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
 

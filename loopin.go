@@ -240,6 +240,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		request.Amount, senderKey, senderInternalPubKey, swapInvoice,
 		probeInvoice, request.LastHop, request.Initiator,
 	)
+
 	probeWaitCancel()
 	if err != nil {
 		return nil, wrapGrpcError("cannot initiate swap", err)
@@ -352,6 +353,7 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 				switch update.State {
 				case invpkg.ContractAccepted:
 					log.Infof("Server probe successful")
+
 					probeResult <- nil
 
 					// Cancel probe invoice so that the

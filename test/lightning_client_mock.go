@@ -21,12 +21,12 @@ import (
 )
 
 type mockLightningClient struct {
-	lnd *LndMockServices
-	wg  sync.WaitGroup
-
 	// Embed lndclient's interface so that lndclient can be expanded
 	// without the need to implement unused functions on the mock.
 	lndclient.LightningClient
+
+	lnd *LndMockServices
+	wg  sync.WaitGroup
 }
 
 // PayInvoice pays an invoice.

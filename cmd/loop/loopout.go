@@ -176,8 +176,10 @@ func loopOut(ctx *cli.Context) error {
 			"address to sweep the loop amount to")
 	}
 
-	var destAddr string
-	var account string
+	var (
+		destAddr string
+		account  string
+	)
 	switch {
 	case ctx.IsSet("addr"):
 		destAddr = ctx.String("addr")

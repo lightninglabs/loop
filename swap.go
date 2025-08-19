@@ -13,6 +13,8 @@ import (
 )
 
 type swapKit struct {
+	swapConfig
+
 	hash lntypes.Hash
 
 	height int32 //nolint:structcheck
@@ -28,8 +30,6 @@ type swapKit struct {
 	contract *loopdb.SwapContract
 
 	swapType swap.Type
-
-	swapConfig
 }
 
 func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,

@@ -115,18 +115,18 @@ type OutRequest struct {
 
 // Out contains the full details of a loop out request. This includes things
 // like the payment hash, the total value, and the final CTLV delay of the
-// swap. We'll use this to track an active swap throughout that various swap
+// swap. We'll use this to track an active swap throughout those various swap
 // stages.
 type Out struct {
+	// SwapInfoKit contains shared data amongst all swap types.
+	SwapInfoKit
+
 	// LoopOutContract describes the details of this loop.Out. Using these
-	// details,the full swap can be executed.
+	// details, the full swap can be executed.
 	loopdb.LoopOutContract
 
 	// State is the current state of the target swap.
 	State loopdb.SwapState
-
-	// SwapInfoKit contains shared data amongst all swap types.
-	SwapInfoKit
 }
 
 // LoopOutQuoteRequest specifies the swap parameters for which a quote is

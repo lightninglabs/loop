@@ -15,8 +15,8 @@ import (
 
 type mockChainNotifier struct {
 	lndclient.ChainNotifierClient
-
 	sync.Mutex
+
 	lnd               *LndMockServices
 	confRegistrations []*ConfRegistration
 	wg                sync.WaitGroup

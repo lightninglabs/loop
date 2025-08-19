@@ -29,14 +29,16 @@ func (r *ID) FromByteSlice(b []byte) error {
 // Deposit bundles an utxo at a static address together with manager-relevant
 // data.
 type Deposit struct {
+	sync.Mutex
+
+	// Outpoint of the deposit.
+	wire.OutPoint
+
 	// ID is the unique identifier of the deposit.
 	ID ID
 
 	// state is the current state of the deposit.
 	state fsm.StateType
-
-	// Outpoint of the deposit.
-	wire.OutPoint
 
 	// Value is the amount of the deposit.
 	Value btcutil.Amount
@@ -52,11 +54,9 @@ type Deposit struct {
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
 
-	// FinalizedWithdrawalTx is the coop signed withdrawal transaction. It
+	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
-
-	sync.Mutex
 }
 
 // IsInFinalState returns true if the deposit is final.

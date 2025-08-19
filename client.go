@@ -93,6 +93,8 @@ var (
 // Client performs the client side part of swaps. This interface exists to be
 // able to implement a stub.
 type Client struct {
+	clientConfig
+
 	started uint32 // To be used atomically.
 	errChan chan error
 
@@ -107,8 +109,6 @@ type Client struct {
 
 	resumeReady chan struct{}
 	wg          sync.WaitGroup
-
-	clientConfig
 }
 
 // ClientConfig is the exported configuration structure that is required to
