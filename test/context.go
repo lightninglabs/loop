@@ -151,7 +151,7 @@ func (ctx *Context) AssertPaid(
 		return done
 	}
 
-	// Assert that client pays swap invoice.
+	// Assert that the client pays swap invoice.
 	for {
 		var swapPayment RouterPaymentChannelMessage
 		select {
@@ -171,7 +171,12 @@ func (ctx *Context) AssertPaid(
 
 		done := func(result error) {
 			if result != nil {
-				swapPayment.Errors <- result
+				// Send a terminal FAILED status so the client
+				// always receives a non-nil PaymentStatus and
+				// won't dereference nil.
+				swapPayment.Updates <- lndclient.PaymentStatus{
+					State: lnrpc.Payment_FAILED,
+				}
 				return
 			}
 			swapPayment.Updates <- lndclient.PaymentStatus{

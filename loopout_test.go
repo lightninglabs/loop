@@ -140,6 +140,18 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	// this to prevent a blocked channel in the mock.
 	ctx.AssertRegisterConf(false, defaultConfirmations)
 
+	// Drive both payments to a terminal state so the async payment
+	// goroutines complete and don't hit a nil status path.
+	for _, p := range payments {
+		select {
+		case p.Updates <- lndclient.PaymentStatus{
+			State: lnrpc.Payment_SUCCEEDED,
+		}:
+		case <-time.After(test.Timeout):
+			t.Fatalf("could not send payment update")
+		}
+	}
+
 	// Cancel the swap. There is nothing else we need to assert. The payment
 	// parameters don't play a role in the remainder of the swap process.
 	cancel()
