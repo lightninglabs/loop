@@ -70,8 +70,7 @@ type Daemon struct {
 	// same process.
 	swapClientServer
 
-	// To be used atomically.
-	started int32
+	started atomic.Bool
 
 	// ErrChan is an error channel that users of the Daemon struct must use
 	// to detect runtime errors and also whether a shutdown is fully
@@ -128,7 +127,7 @@ func (d *Daemon) Start() error {
 	// There should be no reason to start the daemon twice. Therefore,
 	// return an error if that's tried. This is mostly to guard against
 	// Start and StartAsSubserver both being called.
-	if atomic.AddInt32(&d.started, 1) != 1 {
+	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
 
@@ -190,7 +189,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// There should be no reason to start the daemon twice. Therefore,
 	// return an error if that's tried. This is mostly to guard against
 	// Start and StartAsSubserver both being called.
-	if atomic.AddInt32(&d.started, 1) != 1 {
+	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
 
