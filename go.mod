@@ -16,7 +16,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/jackc/pgconn v1.14.3
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.4
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.13-beta
@@ -36,7 +36,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli v1.22.14
 	go.etcd.io/bbolt v1.3.11
-	golang.org/x/sync v0.12.0
+	golang.org/x/sync v0.13.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -73,8 +73,8 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/decred/dcrd/lru v1.1.2 // indirect
-	github.com/docker/cli v28.0.1+incompatible // indirect
-	github.com/docker/docker v28.0.1+incompatible // indirect
+	github.com/docker/cli v28.1.1+incompatible // indirect
+	github.com/docker/docker v28.1.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -102,11 +102,11 @@ require (
 	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgproto3/v2 v2.3.3 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/pgtype v1.14.0 // indirect
-	github.com/jackc/pgx/v4 v4.18.2 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/pgtype v1.14.4 // indirect
+	github.com/jackc/pgx/v4 v4.18.3 // indirect
 	github.com/jackc/puddle v1.3.0 // indirect
-	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jackpal/gateway v1.0.5 // indirect
 	github.com/jackpal/go-nat-pmp v0.0.0-20170405195558-28a68d0c24ad // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
@@ -120,7 +120,7 @@ require (
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.16 // indirect
@@ -180,13 +180,13 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/term v0.30.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/term v0.31.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
@@ -215,4 +215,27 @@ replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
 
+// Temporary replace to add SubmitPackage support (https://github.com/btcsuite/btcwallet/pull/1009).
+replace github.com/btcsuite/btcwallet => github.com/bhandras/btcwallet v0.11.1-0.20250507171803-0de1c46b1cfc
+
+// Temporary replace to add SubmitPackage support to btcd (https://github.com/btcsuite/btcd/pull/2366).
+replace github.com/btcsuite/btcd => github.com/bhandras/btcd v0.22.0-beta.0.20250507171227-f18160c86e92
+
+// Temporary replace to add SubmitPackage support to lnd (https://github.com/lightningnetwork/lnd/pull/9784).
+replace github.com/lightningnetwork/lnd => github.com/bhandras/lnd v0.8.0-beta-rc3.0.20250717123715-6cda96a60994
+
+// Temporary replace to make lnd compile with the SubmitPackage changes.
+replace github.com/lightningnetwork/lnd/sqldb => github.com/bhandras/lnd/sqldb v0.0.0-20250716041958-643fbb8af65b
+
+// Temporary replace to include client API for SubmitPackage in lndclient (https://github.com/lightninglabs/lndclient/pull/223)
+replace github.com/lightninglabs/lndclient => github.com/lightninglabs/lndclient v1.0.1-0.20250717123354-cf534c9968b9
+
+// Temporary replace to experimentally change all bitcoin transactions to use v3 (https://github.com/bhandras/taproot-assets/tree/v3-temp)
+replace github.com/lightninglabs/taproot-assets => github.com/bhandras/taproot-assets v0.0.0-20250817135045-e6c8a3e9bfa7
+
+// Temporary replace to make taproot-assets compile with the v3 changes.
+replace github.com/lightninglabs/taproot-assets/taprpc => github.com/bhandras/taproot-assets/taprpc v0.0.0-20250814120557-c9b71df55dd9
+
 go 1.23.12
+
+toolchain go1.24.5
