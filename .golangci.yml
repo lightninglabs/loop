@@ -1,149 +1,131 @@
+version: "2"
 run:
+  go: "1.24"
+
   # timeout for analysis
   timeout: 4m
-  
-  go: "1.23"
-
-linters-settings:
-  govet:
-    # Don't report about shadowed variables
-    shadowing: false
-
-  gofmt:
-    # simplify code: gofmt with `-s` option, true by default
-    simplify: true
-
-  tagliatelle:
-    case:
-      rules:
-        json: snake
-  
-  whitespace:
-    multi-func: true
-    multi-if: true
-
-  gosec:
-    excludes:
-      - G402 # Look for bad TLS connection settings.
-      - G306 # Poor file permissions used when writing to a new file.
-      - G115 # Integer overflow conversion.
-
-  staticcheck:
-    checks: [ "-SA1019" ]
 
 linters:
-  enable-all: true
+  default: all
   disable:
-    # Global variables are used in many places throughout the code base.
-    - gochecknoglobals
-    
-    # Some lines are over 80 characters on purpose and we don't want to make them
-    # even longer by marking them as 'nolint'.
-    - lll
-    
-    # We want to allow short variable names.
-    - varnamelen
-    
-    # We want to allow TODOs.
-    - godox
-    
-    # We have long functions, especially in tests. Moving or renaming those would
-    # trigger funlen problems that we may not want to solve at that time.
-    - funlen
-    
-    # Disable for now as we haven't yet tuned the sensitivity to our codebase
-    # yet. Enabling by default for example, would also force new contributors to
-    # potentially extensively refactor code, when they want to smaller change to
-    # land.
-    - gocyclo
-    - gocognit
-    - cyclop
-    
-    # Instances of table driven tests that don't pre-allocate shouldn't trigger
-    # the linter.
-    - prealloc
-    
-    # Init functions are used by loggers throughout the codebase.
-    - gochecknoinits
-    
-    # Causes stack overflow, see https://github.com/polyfloyd/go-errorlint/issues/19.
-    - errorlint
-    
-    # New linters that need a code adjustment first.
-    - wrapcheck
-    - nolintlint
-    - paralleltest
-    - tparallel
-    - testpackage
-    - gofumpt
-    - gomoddirectives
-    - ireturn
-    - maintidx
-    - nlreturn
-    - dogsled
-    - gci
     - containedctx
     - contextcheck
-    - errname
+    - cyclop
+    - depguard
+    - dogsled
     - err113
-    - mnd
-    - noctx
-    - nestif
-    - wsl
+    - errname
+    - errorlint
     - exhaustive
+    - exhaustruct
     - forcetypeassert
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - gocyclo
+    - godox
+    - gomoddirectives
+    - inamedparam
+    - interfacebloat
+    - intrange
+    - ireturn
+    - maintidx
+    - mnd
+    - nestif
     - nilerr
     - nilnil
-    - stylecheck
-    - thelper
+    - nlreturn
+    - noctx
+    - nolintlint
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - protogetter
     - revive
     - tagalign
-    - depguard
-    - interfacebloat
-    - inamedparam
-    - intrange
-    - perfsprint
-    - protogetter
     - testifylint
-    
-    # Additions compared to LND
-    - exhaustruct
-
+    - testpackage
+    - thelper
+    - tparallel
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - funcorder
+    - wsl_v5
+    - noinlineerr
+  settings:
+    gosec:
+      excludes:
+        - G402
+        - G306
+        - G115
+    staticcheck:
+      checks:
+        - -SA1019
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    whitespace:
+      multi-if: true
+      multi-func: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - forbidigo
+          - gosec
+          - unparam
+        path: _test\.go
+      - linters:
+          - gosec
+        path: _mock\.go
+      - linters:
+          - errcheck
+          - forbidigo
+        path: cmd/loopd/*
+      - linters:
+          - forbidigo
+        path: loopd/*
+      - linters:
+          - errcheck
+          - forbidigo
+        path: cmd/loop/*
+      - linters:
+          - forbidigo
+        path: fsm/stateparser/*
+      - linters:
+          - lll
+        path: loopd/config.go
+      - linters:
+          - lll
+        path: loopdb/*
+    paths:
+      - \.pb\.go$
+      - \.pb\.gw\.go$
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  # Only show newly introduced problems.
   new-from-rev: 36838cf7f464cf73b0201798063b2caffeae4250
-
-  exclude-files:
-    - "\\.pb\\.go$"
-    - "\\.pb\\.gw\\.go$"
-
-  exclude-rules:
-    # Allow fmt.Printf() in test files
-    - path: _test\.go
-      linters:
-        - forbidigo
-        - unparam
-        - gosec
-    - path: _mock\.go
-      linters:
-        - gosec
-    
-    # Allow fmt.Printf() in loopd
-    - path: cmd/loopd/*
-      linters:
-        - forbidigo
-        - errcheck
-    - path: loopd/*
-      linters:
-        - forbidigo
-    
-    # Allow fmt.Printf() in loop
-    - path: cmd/loop/*
-      linters:
-        - forbidigo
-        - errcheck
-    
-    # Allow fmt.Printf() in stateparser
-    - path: fsm/stateparser/*
-      linters:
-        - forbidigo
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+  exclusions:
+    generated: lax
+    paths:
+      - \.pb\.go$
+      - \.pb\.gw\.go$
+      - third_party$
+      - builtin$
+      - examples$
