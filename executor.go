@@ -42,17 +42,14 @@ type executorConfig struct {
 }
 
 // executor is responsible for executing swaps.
-//
-// TODO(roasbeef): rename to SubSwapper.
 type executor struct {
+	sync.Mutex
+	executorConfig
+
 	wg            sync.WaitGroup
 	newSwaps      chan genericSwap
 	currentHeight uint32
 	ready         chan struct{}
-
-	sync.Mutex
-
-	executorConfig
 }
 
 // newExecutor returns a new swap executor instance.
@@ -80,7 +77,6 @@ func (s *executor) run(mainCtx context.Context,
 	for {
 		blockEpochChan, blockErrorChan, err =
 			s.lnd.ChainNotifier.RegisterBlockEpochNtfn(mainCtx)
-
 		if err == nil {
 			break
 		}

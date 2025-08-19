@@ -25,7 +25,7 @@ func CalculateLoopOutCost(params *chaincfg.Params, loopOutSwap *loopdb.LoopOut,
 	paymentFees map[lntypes.Hash]lnwire.MilliSatoshi) (loopdb.SwapCost,
 	error) {
 
-	// First make sure that this swap is actually finished.
+	// First, make sure that this swap is actually finished.
 	if loopOutSwap.State().State.IsPending() {
 		return loopdb.SwapCost{}, fmt.Errorf("swap is not yet finished")
 	}
@@ -41,8 +41,8 @@ func CalculateLoopOutCost(params *chaincfg.Params, loopOutSwap *loopdb.LoopOut,
 	}
 
 	// The swap hash is given and we don't need to get it from the
-	// swap invoice, however we'll decode it anyway to get the invoice amount
-	// that was paid in case we don't have the payment anymore.
+	// swap invoice, however we'll decode it anyway to get the invoice
+	// amount that was paid in case we don't have the payment anymore.
 	_, _, swapHash, swapPaymentAmount, err := swap.DecodeInvoice(
 		params, loopOutSwap.Contract.SwapInvoice,
 	)
@@ -195,6 +195,6 @@ func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
 		return err
 	}
 
-	// Finally mark the migration as done.
+	// Finally, mark the migration as done.
 	return db.SetMigration(ctx, costMigrationID)
 }

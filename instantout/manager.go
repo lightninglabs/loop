@@ -22,6 +22,8 @@ var (
 
 // Manager manages the instantout state machines.
 type Manager struct {
+	sync.Mutex
+
 	// cfg contains all the services that the reservation manager needs to
 	// operate.
 	cfg *Config
@@ -36,8 +38,6 @@ type Manager struct {
 	blockEpochChan chan int32
 
 	runCtx context.Context
-
-	sync.Mutex
 }
 
 // NewInstantOutManager creates a new instantout manager.

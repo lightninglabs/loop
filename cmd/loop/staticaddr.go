@@ -417,6 +417,7 @@ func utxosToOutpoints(utxos []string) ([]*looprpc.OutPoint, error) {
 	if len(utxos) == 0 {
 		return nil, fmt.Errorf("no utxos specified")
 	}
+
 	for _, utxo := range utxos {
 		outpoint, err := NewProtoOutPoint(utxo)
 		if err != nil {

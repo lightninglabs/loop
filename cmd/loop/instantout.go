@@ -187,7 +187,6 @@ func instantOut(ctx *cli.Context) error {
 			DestAddr:        ctx.String("addr"),
 		},
 	)
-
 	if err != nil {
 		return err
 	}
@@ -228,5 +227,6 @@ func listInstantOuts(ctx *cli.Context) error {
 	}
 
 	printRespJSON(resp)
+
 	return nil
 }

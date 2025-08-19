@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -92,7 +93,7 @@ func AcquireRoutingPlugin(ctx context.Context, pluginType RoutingPluginType,
 	// Initialize the plugin with the passed parameters.
 	err := routingPluginInstance.Init(ctx, target, routeHints, amt)
 	if err != nil {
-		if err == ErrRoutingPluginNotApplicable {
+		if errors.Is(err, ErrRoutingPluginNotApplicable) {
 			// Since the routing plugin is not applicable for this
 			// payment, we can immediately destruct it.
 			if err := routingPluginInstance.Done(ctx); err != nil {
@@ -100,7 +101,7 @@ func AcquireRoutingPlugin(ctx context.Context, pluginType RoutingPluginType,
 					"plugin: %v", err)
 			}
 
-			// ErrRoutingPluginNotApplicable is non critical, so
+			// ErrRoutingPluginNotApplicable is non-critical, so
 			// we're masking this error as we can continue the swap
 			// flow without the routing plugin.
 			err = nil

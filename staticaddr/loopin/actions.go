@@ -689,7 +689,7 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 
 		select {
 		case <-ctx.Done():
-			f.Errorf(ctx.Err().Error())
+			f.Errorf("%v", ctx.Err())
 
 		default:
 			<-time.After(1 * time.Hour)

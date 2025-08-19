@@ -23,11 +23,12 @@ var (
 
 // mockNotificationsClient implements the NotificationsClient interface for testing.
 type mockNotificationsClient struct {
+	sync.Mutex
+
 	mockStream   swapserverrpc.SwapServer_SubscribeNotificationsClient
 	subscribeErr error
 	attemptTimes []time.Time
 	timesCalled  int
-	sync.Mutex
 }
 
 func (m *mockNotificationsClient) SubscribeNotifications(ctx context.Context,
@@ -49,6 +50,7 @@ func (m *mockNotificationsClient) SubscribeNotifications(ctx context.Context,
 // mockSubscribeNotificationsClient simulates the server stream.
 type mockSubscribeNotificationsClient struct {
 	grpc.ClientStream
+
 	recvChan    chan *swapserverrpc.SubscribeNotificationsResponse
 	recvErrChan chan error
 }

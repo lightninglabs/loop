@@ -49,9 +49,9 @@ type ManagerConfig struct {
 
 // Manager manages the address state machines.
 type Manager struct {
-	cfg *ManagerConfig
-
 	sync.Mutex
+
+	cfg *ManagerConfig
 
 	currentHeight atomic.Int32
 }

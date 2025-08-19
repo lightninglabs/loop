@@ -15,14 +15,14 @@ import (
 
 // Manager manages the reservation state machines.
 type Manager struct {
+	sync.Mutex
+
 	// cfg contains all the services that the reservation manager needs to
 	// operate.
 	cfg *Config
 
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
-
-	sync.Mutex
 }
 
 // NewManager creates a new reservation manager.

@@ -62,12 +62,13 @@ type Config struct {
 // Manager is a manager for notifications that the swap server sends to the
 // client.
 type Manager struct {
+	sync.Mutex
+
 	cfg *Config
 
 	hasL402 bool
 
 	subscribers map[NotificationType][]subscriber
-	sync.Mutex
 }
 
 // NewManager creates a new notification manager.
