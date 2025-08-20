@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 // SqlStore is the backing store for static address deposits.
@@ -270,6 +271,16 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		}
 	}
 
+	var swapHash *lntypes.Hash
+	if row.SwapHash != nil {
+		hash, err := lntypes.MakeHash(row.SwapHash)
+		if err != nil {
+			return nil, err
+		}
+
+		swapHash = &hash
+	}
+
 	return &Deposit{
 		ID:    id,
 		state: fsm.StateType(lastUpdate.UpdateState),
@@ -281,6 +292,7 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		ConfirmationHeight:    row.ConfirmationHeight,
 		TimeOutSweepPkScript:  row.TimeoutSweepPkScript,
 		ExpirySweepTxid:       expirySweepTxid,
+		SwapHash:              swapHash,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
 	}, nil
 }

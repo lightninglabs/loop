@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 // ID is a unique identifier for a deposit.
@@ -53,6 +54,10 @@ type Deposit struct {
 
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
+
+	// SwapHash is an optional reference to a static address loop-in swap
+	// that used this deposit.
+	SwapHash *lntypes.Hash
 
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.

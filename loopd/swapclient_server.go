@@ -1744,6 +1744,38 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		return &looprpc.ListStaticAddressSwapsResponse{}, nil
 	}
 
+	// Query lnd's info to get the current block height.
+	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	addrParams, err := s.staticAddressManager.GetStaticAddressParameters(
+		ctx,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch all deposits at once and index them by swap hash for a quick
+	// lookup.
+	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	depositsBySwap := make(map[lntypes.Hash][]*deposit.Deposit, len(swaps))
+	for _, d := range allDeposits {
+		if d.SwapHash == nil {
+			// This deposit is not associated with a swap, so we
+			// skip it.
+			continue
+		}
+		depositsBySwap[*d.SwapHash] = append(
+			depositsBySwap[*d.SwapHash], d,
+		)
+	}
+
 	var clientSwaps []*looprpc.StaticAddressLoopInSwap
 	for _, swp := range swaps {
 		chainParams, err := s.network.ChainParams()
@@ -1752,19 +1784,43 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		}
 		swapPayReq, err := zpay32.Decode(swp.SwapInvoice, chainParams)
 		if err != nil {
-			return nil, fmt.Errorf("error decoding swap invoice: "+
-				"%v", err)
+			return nil, fmt.Errorf("error decoding swap "+
+				"invoice: %v", err)
 		}
+
+		// Assemble the deposits associated with this swap, if any.
+		var protoDeposits []*looprpc.Deposit
+		if ds, ok := depositsBySwap[swp.SwapHash]; ok {
+			protoDeposits = make([]*looprpc.Deposit, 0, len(ds))
+			for _, d := range ds {
+				state := toClientDepositState(d.GetState())
+				blocksUntilExpiry := d.ConfirmationHeight +
+					int64(addrParams.Expiry) -
+					int64(lndInfo.BlockHeight)
+
+				pd := &looprpc.Deposit{
+					Id:                 d.ID[:],
+					State:              state,
+					Outpoint:           d.OutPoint.String(),
+					Value:              int64(d.Value),
+					ConfirmationHeight: d.ConfirmationHeight,
+					SwapHash:           d.SwapHash[:],
+					BlocksUntilExpiry:  blocksUntilExpiry,
+				}
+				protoDeposits = append(protoDeposits, pd)
+			}
+		}
+
+		state := toClientStaticAddressLoopInState(swp.GetState())
+		swapAmount := int64(swp.TotalDepositAmount())
+		payReqAmount := int64(swapPayReq.MilliSat.ToSatoshis())
 		swap := &looprpc.StaticAddressLoopInSwap{
-			SwapHash:         swp.SwapHash[:],
-			DepositOutpoints: swp.DepositOutpoints,
-			State: toClientStaticAddressLoopInState(
-				swp.GetState(),
-			),
-			SwapAmountSatoshis: int64(swp.TotalDepositAmount()),
-			PaymentRequestAmountSatoshis: int64(
-				swapPayReq.MilliSat.ToSatoshis(),
-			),
+			SwapHash:                     swp.SwapHash[:],
+			DepositOutpoints:             swp.DepositOutpoints,
+			State:                        state,
+			SwapAmountSatoshis:           swapAmount,
+			PaymentRequestAmountSatoshis: payReqAmount,
+			Deposits:                     protoDeposits,
 		}
 
 		clientSwaps = append(clientSwaps, swap)
@@ -1914,6 +1970,11 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			continue
 		}
 
+		swapHash := make([]byte, 0, len(lntypes.Hash{}))
+		if d.SwapHash != nil {
+			swapHash = d.SwapHash[:]
+		}
+
 		hash := d.Hash
 		outpoint := wire.NewOutPoint(&hash, d.Index).String()
 		deposit := &looprpc.Deposit{
@@ -1924,6 +1985,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			Outpoint:           outpoint,
 			Value:              int64(d.Value),
 			ConfirmationHeight: d.ConfirmationHeight,
+			SwapHash:           swapHash,
 		}
 
 		clientDeposits = append(clientDeposits, deposit)

@@ -1910,6 +1910,12 @@ message Deposit {
     loop-in swap anymore.
     */
     int64 blocks_until_expiry = 6;
+
+    /*
+    The swap hash of the swap that this deposit is part of. This field is only
+    set if the deposit is part of a loop-in swap.
+    */
+    bytes swap_hash = 7;
 }
 
 message StaticAddressWithdrawal {
@@ -1971,6 +1977,11 @@ message StaticAddressLoopInSwap {
     fees.
     */
     int64 payment_request_amount_satoshis = 5;
+
+    /*
+    The deposits that were used for this swap.
+    */
+    repeated Deposit deposits = 6;
 }
 
 enum StaticAddressLoopInSwapState {

@@ -860,6 +860,11 @@
           "type": "string",
           "format": "int64",
           "description": "The number of blocks that are left until the deposit cannot be used for a\nloop-in swap anymore."
+        },
+        "swap_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The swap hash of the swap that this deposit is part of. This field is only\nset if the deposit is part of a loop-in swap."
         }
       }
     },
@@ -1869,6 +1874,13 @@
           "type": "string",
           "format": "int64",
           "description": "The invoiced swap amount. It is the swap amount minus the quoted server\nfees."
+        },
+        "deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "The deposits that were used for this swap."
         }
       }
     },
