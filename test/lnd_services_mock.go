@@ -290,3 +290,9 @@ func (s *LndMockServices) SetFeeEstimate(confTarget int32,
 func (s *LndMockServices) SetMinRelayFee(feeEstimate chainfee.SatPerKWeight) {
 	s.LndServices.WalletKit.(*mockWalletKit).setMinRelayFee(feeEstimate)
 }
+
+// SetListUnspent sets the list of UTXOs returned by the mock's WalletKit
+// ListUnspent call.
+func (s *LndMockServices) SetListUnspent(utxos []*lnwallet.Utxo) {
+	s.LndServices.WalletKit.(*mockWalletKit).setListUnspent(utxos)
+}
