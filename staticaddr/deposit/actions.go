@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
@@ -103,20 +104,27 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 			return fsm.OnError
 		}
 	} else {
-		f.Debugf("published timeout sweep with txid: %v",
-			msgTx.TxHash())
+		txHash := msgTx.TxHash()
+		f.deposit.ExpirySweepTxid = txHash
+		f.Debugf("published timeout sweep with txid: %v", txHash)
 	}
 
 	return OnExpiryPublished
 }
 
-// WaitForExpirySweepAction waits for a sufficient number of confirmations
-// before a timeout sweep is considered successful.
+// WaitForExpirySweepAction waits for enough confirmations before a timeout
+// sweep is considered successful.
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	var txID *chainhash.Hash
+	// Only pass the txid if we know it from our own publication.
+	if f.deposit.ExpirySweepTxid != (chainhash.Hash{}) {
+		txID = &f.deposit.ExpirySweepTxid
+	}
+
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, nil, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
+		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.ConfirmationHeight),
 	)
 	if err != nil {
