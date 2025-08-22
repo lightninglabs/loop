@@ -36,6 +36,9 @@ type mockWalletKit struct {
 	feeEstimateLock sync.Mutex
 	feeEstimates    map[int32]chainfee.SatPerKWeight
 	minRelayFee     chainfee.SatPerKWeight
+
+	// listUnspent holds test UTXOs to be returned by ListUnspent.
+	listUnspent []*lnwallet.Utxo
 }
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
@@ -51,7 +54,7 @@ func (m *mockWalletKit) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32, opts ...lndclient.ListUnspentOption) (
 	[]*lnwallet.Utxo, error) {
 
-	return nil, nil
+	return m.listUnspent, nil
 }
 
 func (m *mockWalletKit) ListLeases(
@@ -182,6 +185,11 @@ func (m *mockWalletKit) setMinRelayFee(fee chainfee.SatPerKWeight) {
 	defer m.feeEstimateLock.Unlock()
 
 	m.minRelayFee = fee
+}
+
+// setListUnspent sets the list of UTXOs returned by ListUnspent.
+func (m *mockWalletKit) setListUnspent(utxos []*lnwallet.Utxo) {
+	m.listUnspent = utxos
 }
 
 // MinRelayFee returns the current minimum relay fee based on our chain backend
