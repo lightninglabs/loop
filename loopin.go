@@ -854,9 +854,11 @@ func getTxFee(tx *wire.MsgTx, fee chainfee.SatPerKVByte) btcutil.Amount {
 	return fee.FeeForVSize(lntypes.VByte(vsize))
 }
 
-// waitForSwapComplete waits until a spending tx of the htlc gets confirmed and
-// the swap invoice is either settled or canceled. If the htlc times out, the
-// timeout tx will be published.
+// waitForSwapComplete waits until a spending tx of the HTLC gets confirmed and
+// the swap invoice is either settled or canceled. If the HTLC times out and the
+// invoice is still not paid, the timeout tx will be published. If the HTLC
+// times out and the invoice is paid, the function stops waiting and returns
+// clearly.
 func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	htlcOutpoint *wire.OutPoint, htlcValue btcutil.Amount) error {
 
@@ -882,8 +884,18 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	}
 
 	// publishTxOnTimeout publishes the timeout tx if the contract has
-	// expired.
+	// expired and invoice has not been settled.
 	publishTxOnTimeout := func() (btcutil.Amount, error) {
+		// Don't publish the timeout tx if the invoice was settled.
+		if s.state == loopdb.StateInvoiceSettled {
+			return 0, nil
+		}
+
+		// Don't publish the timeout tx if the swap succeeded.
+		if s.state == loopdb.StateSuccess {
+			return 0, nil
+		}
+
 		if s.height >= s.LoopInContract.CltvExpiry {
 			return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
 		}
@@ -902,7 +914,18 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	htlcSpend := false
 	invoiceFinalized := false
 	htlcKeyRevealed := false
-	for !htlcSpend || !invoiceFinalized {
+	for {
+		// Check stop conditions.
+		if htlcSpend && invoiceFinalized {
+			break
+		}
+		if s.state == loopdb.StateInvoiceSettled {
+			if s.height >= s.LoopInContract.CltvExpiry {
+				s.setState(loopdb.StateSuccess)
+				break
+			}
+		}
+
 		select {
 		// If the client requested the swap to be abandoned, we override
 		// the status in the database.
