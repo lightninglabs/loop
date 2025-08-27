@@ -106,12 +106,16 @@ func NewManager(cfg *ManagerConfig) *Manager {
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
 	if err != nil {
+		log.Errorf("unable to register block epoch notifier: %v", err)
+
 		return err
 	}
 
 	// Recover previous deposits and static address parameters from the DB.
 	err = m.recoverDeposits(ctx)
 	if err != nil {
+		log.Errorf("unable to recover deposits: %v", err)
+
 		return err
 	}
 

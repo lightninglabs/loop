@@ -152,6 +152,9 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	registerBlockNtfn := m.cfg.ChainNotifier.RegisterBlockEpochNtfn
 	newBlockChan, newBlockErrChan, err := registerBlockNtfn(ctx)
 	if err != nil {
+		log.Errorf("unable to register for block notifications: %v",
+			err)
+
 		return err
 	}
 
@@ -159,14 +162,14 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	// that are not yet completed.
 	err = m.recoverLoopIns(ctx)
 	if err != nil {
+		log.Errorf("unable to recover loop-ins: %v", err)
+
 		return err
 	}
 
 	// Register for notifications of loop-in sweep requests.
 	sweepReqs := m.cfg.NotificationManager.
-		SubscribeStaticLoopInSweepRequests(
-			ctx,
-		)
+		SubscribeStaticLoopInSweepRequests(ctx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.

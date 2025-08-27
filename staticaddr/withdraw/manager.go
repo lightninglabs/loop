@@ -152,11 +152,16 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
 	if err != nil {
+		log.Errorf("unable to register for block epoch "+
+			"notifications: %v", err)
+
 		return err
 	}
 
 	err = m.recoverWithdrawals(ctx)
 	if err != nil {
+		log.Errorf("unable to recover withdrawals: %v", err)
+
 		return err
 	}
 
