@@ -1546,9 +1546,65 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		return nil, err
 	}
 
-	// Prepare the list response.
+	// ListUnspentRaw returns the unspent wallet view of the backing lnd
+	// wallet. It might be that deposits show up there that are actually
+	// not spendable because they already have been used but not yet spent
+	// by the server. We filter out such deposits here.
+	var (
+		outpoints []string
+		isUnspent = make(map[wire.OutPoint]struct{})
+	)
+
+	// Keep track of confirmed outpoints that we need to check against our
+	// database.
+	confirmedToCheck := make(map[wire.OutPoint]struct{})
+
+	for _, utxo := range utxos {
+		if utxo.Confirmations < deposit.MinConfs {
+			// Unconfirmed deposits are always available.
+			isUnspent[utxo.OutPoint] = struct{}{}
+		} else {
+			// Confirmed deposits need to be checked.
+			outpoints = append(outpoints, utxo.OutPoint.String())
+			confirmedToCheck[utxo.OutPoint] = struct{}{}
+		}
+	}
+
+	// Check the spent status of the deposits by looking at their states.
+	deposits, err := s.depositManager.DepositsForOutpoints(ctx, outpoints)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range deposits {
+		// A nil deposit means we don't have a record for it. We'll
+		// handle this case after the loop.
+		if d == nil {
+			continue
+		}
+
+		// If the deposit is in the "Deposited" state, it's available.
+		if d.IsInState(deposit.Deposited) {
+			isUnspent[d.OutPoint] = struct{}{}
+		}
+
+		// We have a record for this deposit, so we no longer need to
+		// check it.
+		delete(confirmedToCheck, d.OutPoint)
+	}
+
+	// Any remaining outpoints in confirmedToCheck are ones that lnd knows
+	// about but we don't. These are new, unspent deposits.
+	for op := range confirmedToCheck {
+		isUnspent[op] = struct{}{}
+	}
+
+	// Prepare the list of unspent deposits for the rpc response.
 	var respUtxos []*looprpc.Utxo
 	for _, u := range utxos {
+		if _, ok := isUnspent[u.OutPoint]; !ok {
+			continue
+		}
+
 		utxo := &looprpc.Utxo{
 			StaticAddress: staticAddress.String(),
 			AmountSat:     int64(u.Value),

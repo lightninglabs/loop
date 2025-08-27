@@ -8,15 +8,21 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
@@ -890,4 +896,234 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			)
 		})
 	}
+}
+
+// mockAddressStore is a minimal in-memory store for address parameters.
+type mockAddressStore struct {
+	params []*address.Parameters
+}
+
+func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
+	p *address.Parameters) error {
+
+	s.params = append(s.params, p)
+	return nil
+}
+
+func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
+	*address.Parameters, error) {
+
+	if len(s.params) == 0 {
+		return nil, nil
+	}
+
+	return s.params[0], nil
+}
+
+func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
+	[]*address.Parameters, error) {
+
+	return s.params, nil
+}
+
+// mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
+type mockDepositStore struct {
+	byOutpoint map[string]*deposit.Deposit
+}
+
+func (s *mockDepositStore) CreateDeposit(_ context.Context,
+	_ *deposit.Deposit) error {
+
+	return nil
+}
+
+func (s *mockDepositStore) UpdateDeposit(_ context.Context,
+	_ *deposit.Deposit) error {
+
+	return nil
+}
+
+func (s *mockDepositStore) GetDeposit(_ context.Context,
+	_ deposit.ID) (*deposit.Deposit, error) {
+
+	return nil, nil
+}
+
+func (s *mockDepositStore) DepositForOutpoint(_ context.Context,
+	outpoint string) (*deposit.Deposit, error) {
+
+	if d, ok := s.byOutpoint[outpoint]; ok {
+		return d, nil
+	}
+	return nil, nil
+}
+func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
+	error) {
+
+	return nil, nil
+}
+
+// TestListUnspentDeposits tests filtering behavior of ListUnspentDeposits.
+func TestListUnspentDeposits(t *testing.T) {
+	ctx := context.Background()
+	mock := mock_lnd.NewMockLnd()
+
+	// Prepare a single static address parameter set.
+	_, client := mock_lnd.CreateKey(1)
+	_, server := mock_lnd.CreateKey(2)
+	pkScript := []byte("pkscript")
+	addrParams := &address.Parameters{
+		ClientPubkey: client,
+		ServerPubkey: server,
+		Expiry:       10,
+		PkScript:     pkScript,
+	}
+
+	addrStore := &mockAddressStore{params: []*address.Parameters{addrParams}}
+
+	// Build an address manager using our mock lnd and fake address store.
+	addrMgr := address.NewManager(&address.ManagerConfig{
+		Store:       addrStore,
+		WalletKit:   mock.WalletKit,
+		ChainParams: mock.ChainParams,
+		// ChainNotifier and AddressClient are not needed for this test.
+	}, 0)
+
+	// Construct several UTXOs with different confirmation counts.
+	makeUtxo := func(idx uint32, confs int64) *lnwallet.Utxo {
+		return &lnwallet.Utxo{
+			AddressType:   lnwallet.TaprootPubkey,
+			Value:         btcutil.Amount(250_000 + int64(idx)),
+			Confirmations: confs,
+			PkScript:      pkScript,
+			OutPoint: wire.OutPoint{
+				Hash:  chainhash.Hash{byte(idx + 1)},
+				Index: idx,
+			},
+		}
+	}
+
+	minConfs := int64(deposit.MinConfs)
+	utxoBelow := makeUtxo(0, minConfs-1) // always included
+	utxoAt := makeUtxo(1, minConfs)      // included only if Deposited
+	utxoAbove1 := makeUtxo(2, minConfs+1)
+	utxoAbove2 := makeUtxo(3, minConfs+2)
+
+	// Helper to build the deposit manager with specific states.
+	buildDepositMgr := func(
+		states map[wire.OutPoint]fsm.StateType) *deposit.Manager {
+
+		store := &mockDepositStore{
+			byOutpoint: make(map[string]*deposit.Deposit),
+		}
+		for op, state := range states {
+			d := &deposit.Deposit{OutPoint: op}
+			d.SetState(state)
+			store.byOutpoint[op.String()] = d
+		}
+
+		return deposit.NewManager(&deposit.ManagerConfig{Store: store})
+	}
+
+	// Include below-min-conf and >=min with Deposited; exclude others.
+	t.Run("below min conf always, Deposited included, others excluded",
+		func(t *testing.T) {
+			mock.SetListUnspent([]*lnwallet.Utxo{
+				utxoBelow, utxoAt, utxoAbove1, utxoAbove2,
+			})
+
+			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+				utxoAt.OutPoint:     deposit.Deposited,
+				utxoAbove1.OutPoint: deposit.Withdrawn,
+				utxoAbove2.OutPoint: deposit.LoopingIn,
+			})
+
+			server := &swapClientServer{
+				staticAddressManager: addrMgr,
+				depositManager:       depMgr,
+			}
+
+			resp, err := server.ListUnspentDeposits(
+				ctx, &looprpc.ListUnspentDepositsRequest{},
+			)
+			require.NoError(t, err)
+
+			// Expect utxoBelow and utxoAt only.
+			require.Len(t, resp.Utxos, 2)
+			got := map[string]struct{}{}
+			for _, u := range resp.Utxos {
+				got[u.Outpoint] = struct{}{}
+				// Confirm address string is non-empty and the
+				// same across utxos.
+				require.NotEmpty(t, u.StaticAddress)
+			}
+			_, ok1 := got[utxoBelow.OutPoint.String()]
+			_, ok2 := got[utxoAt.OutPoint.String()]
+			require.True(t, ok1)
+			require.True(t, ok2)
+		})
+
+	// Swap states, now include utxoBelow and utxoAbove1.
+	t.Run("Deposited on >=min included; non-Deposited excluded",
+		func(t *testing.T) {
+			mock.SetListUnspent(
+				[]*lnwallet.Utxo{
+					utxoBelow, utxoAt, utxoAbove1,
+					utxoAbove2,
+				})
+
+			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+				utxoAt.OutPoint:     deposit.Withdrawn,
+				utxoAbove1.OutPoint: deposit.Deposited,
+				utxoAbove2.OutPoint: deposit.Withdrawn,
+			})
+
+			server := &swapClientServer{
+				staticAddressManager: addrMgr,
+				depositManager:       depMgr,
+			}
+
+			resp, err := server.ListUnspentDeposits(
+				ctx, &looprpc.ListUnspentDepositsRequest{},
+			)
+			require.NoError(t, err)
+
+			require.Len(t, resp.Utxos, 2)
+			got := map[string]struct{}{}
+			for _, u := range resp.Utxos {
+				got[u.Outpoint] = struct{}{}
+			}
+			_, ok1 := got[utxoBelow.OutPoint.String()]
+			_, ok2 := got[utxoAbove1.OutPoint.String()]
+			require.True(t, ok1)
+			require.True(t, ok2)
+		})
+
+	// Confirmed UTXO not present in store should be included.
+	t.Run("confirmed utxo not in store is included", func(t *testing.T) {
+		// Only return a confirmed UTXO from lnd and make sure the
+		// deposit manager/store doesn't know about it.
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoAbove2})
+
+		// Empty store (no states for any outpoint).
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{})
+
+		server := &swapClientServer{
+			staticAddressManager: addrMgr,
+			depositManager:       depMgr,
+		}
+
+		resp, err := server.ListUnspentDeposits(
+			ctx, &looprpc.ListUnspentDepositsRequest{},
+		)
+		require.NoError(t, err)
+
+		// We expect the confirmed UTXO to be included even though it
+		// doesn't exist in the store yet.
+		require.Len(t, resp.Utxos, 1)
+		require.Equal(
+			t, utxoAbove2.OutPoint.String(), resp.Utxos[0].Outpoint,
+		)
+		require.NotEmpty(t, resp.Utxos[0].StaticAddress)
+	})
 }
