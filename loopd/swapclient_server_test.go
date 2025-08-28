@@ -158,6 +158,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 		numDeposits    uint32
 		external       bool
 		confTarget     int32
+		depositSelect  bool
 		expectErr      bool
 		expectedTarget int32
 	}{
@@ -216,6 +217,28 @@ func TestValidateLoopInRequest(t *testing.T) {
 			external:    false,
 			expectErr:   false,
 		},
+
+		{
+			name:        "not external, deposit fractional amount",
+			amount:      100_000,
+			numDeposits: 1,
+			external:    false,
+			expectErr:   false,
+		},
+		{
+			name:          "amount with deposit coin select",
+			amount:        100_000,
+			depositSelect: true,
+			external:      false,
+			expectErr:     false,
+		},
+		{
+			name:          "amount with deposit coin select",
+			numDeposits:   1,
+			depositSelect: true,
+			external:      false,
+			expectErr:     true,
+		},
 	}
 
 	for _, test := range tests {
@@ -223,7 +246,7 @@ func TestValidateLoopInRequest(t *testing.T) {
 			external := test.external
 			conf, err := validateLoopInRequest(
 				test.confTarget, external, test.numDeposits,
-				test.amount,
+				test.amount, test.depositSelect,
 			)
 
 			if test.expectErr {

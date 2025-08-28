@@ -65,6 +65,7 @@ type Querier interface {
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error
+	OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
