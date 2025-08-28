@@ -119,14 +119,19 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new static address.
-	taprootAddress, expiry, err := testContext.manager.NewAddress(ctxb)
+	params, err := testContext.manager.NewAddress(ctxb)
+	require.NoError(t, err)
+
+	address, err := testContext.manager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
 	require.NoError(t, err)
 
 	// The addresses have to match.
-	require.Equal(t, expectedAddress.String(), taprootAddress.String())
+	require.Equal(t, expectedAddress.String(), address.String())
 
 	// The expiry has to match.
-	require.EqualValues(t, defaultExpiry, expiry)
+	require.EqualValues(t, defaultExpiry, params.Expiry)
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that
