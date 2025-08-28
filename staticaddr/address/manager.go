@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -49,8 +48,6 @@ type ManagerConfig struct {
 
 // Manager manages the address state machines.
 type Manager struct {
-	sync.Mutex
-
 	cfg *ManagerConfig
 
 	currentHeight atomic.Int32
@@ -207,19 +204,14 @@ func (m *Manager) newAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	// If there's already a static address in the database, we can return
 	// it.
-	m.Lock()
 	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
 	if err != nil {
-		m.Unlock()
-
 		return nil, 0, err
 	}
 	if len(addresses) > 0 {
 		clientPubKey := addresses[0].ClientPubkey
 		serverPubKey := addresses[0].ServerPubkey
 		expiry := int64(addresses[0].Expiry)
-
-		defer m.Unlock()
 
 		address, err := m.GetTaprootAddress(
 			clientPubKey, serverPubKey, expiry,
@@ -230,7 +222,6 @@ func (m *Manager) newAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 		return address, expiry, nil
 	}
-	m.Unlock()
 
 	// We are fetching a new L402 token from the server. There is one static
 	// address per L402 token allowed.
