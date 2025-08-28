@@ -1591,14 +1591,21 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	_ *looprpc.NewStaticAddressRequest) (
 	*looprpc.NewStaticAddressResponse, error) {
 
-	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	params, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := s.staticAddressManager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &looprpc.NewStaticAddressResponse{
-		Address: staticAddress.String(),
-		Expiry:  uint32(expiry),
+		Address: address.String(),
+		Expiry:  params.Expiry,
 	}, nil
 }
 

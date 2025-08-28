@@ -54,19 +54,68 @@ type Manager struct {
 	cfg *ManagerConfig
 
 	currentHeight atomic.Int32
+
+	// addrRequest is a channel used to request new static addresses from
+	// the manager. The manager employs a go worker routine that handles the
+	// requests.
+	addrRequest chan request
+}
+
+type request struct {
+	ctx      context.Context
+	respChan chan response
+}
+
+type response struct {
+	parameters *Parameters
+	err        error
 }
 
 // NewManager creates a new address manager.
 func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
 	m := &Manager{
-		cfg: cfg,
+		cfg:         cfg,
+		addrRequest: make(chan request),
 	}
 	m.currentHeight.Store(currentHeight)
 
 	return m
 }
 
-// Run runs the address manager.
+// addrWorker is a worker that handles address creation requests. It calls
+// m.newAddress which blocks on server I/O and returns the address and expiry.
+func (m *Manager) addrWorker(ctx context.Context) {
+	for {
+		select {
+		case req := <-m.addrRequest:
+			m.handleAddrRequest(ctx, req)
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// handleAddrRequest is responsible for processing a single address request.
+func (m *Manager) handleAddrRequest(managerCtx context.Context, req request) {
+	addrParams, err := m.newAddress(req.ctx)
+
+	resp := response{
+		parameters: addrParams,
+		err:        err,
+	}
+
+	select {
+	case req.respChan <- resp:
+
+	case <-req.ctx.Done():
+
+	case <-managerCtx.Done():
+	}
+}
+
+// Run runs the address manager. It keeps track of the current block height and
+// creates new static addresses as needed.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
@@ -74,6 +123,10 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	if err != nil {
 		return err
 	}
+
+	// The address worker offloads the address creation with the server to a
+	// separate go routine.
+	go m.addrWorker(ctx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -95,10 +148,36 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 }
 
 // NewAddress creates a new static address with the server or returns an
-// existing one.
-func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
-	int64, error) {
+// existing one. It now sends a request to the manager's Run loop which
+// executes the actual address creation logic.
+func (m *Manager) NewAddress(ctx context.Context) (*Parameters, error) {
+	respChan := make(chan response, 1)
+	req := request{
+		ctx:      ctx,
+		respChan: respChan,
+	}
 
+	// Send the new address request to the manager run loop.
+	select {
+	case m.addrRequest <- req:
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Wait for the response from the manager run loop.
+	select {
+	case resp := <-respChan:
+		return resp.parameters, resp.err
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// newAddress contains the body of the former NewAddress method and performs the
+// actual address creation/lookup according to the requested type.
+func (m *Manager) newAddress(ctx context.Context) (*Parameters, error) {
 	// If there's already a static address in the database, we can return
 	// it.
 	m.Lock()
@@ -106,23 +185,12 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	if err != nil {
 		m.Unlock()
 
-		return nil, 0, err
+		return nil, err
 	}
 	if len(addresses) > 0 {
-		clientPubKey := addresses[0].ClientPubkey
-		serverPubKey := addresses[0].ServerPubkey
-		expiry := int64(addresses[0].Expiry)
+		m.Unlock()
 
-		defer m.Unlock()
-
-		address, err := m.GetTaprootAddress(
-			clientPubKey, serverPubKey, expiry,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		return address, expiry, nil
+		return addresses[0], nil
 	}
 	m.Unlock()
 
@@ -130,14 +198,14 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	// address per L402 token allowed.
 	err = m.cfg.FetchL402(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// Send our clientPubKey to the server and wait for the server to
@@ -150,14 +218,14 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		},
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	serverParams := resp.GetParams()
 
 	serverPubKey, err := btcec.ParsePubKey(serverParams.ServerKey)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	staticAddress, err := script.NewStaticAddress(
@@ -165,12 +233,12 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		clientPubKey.PubKey, serverPubKey,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	pkScript, err := staticAddress.StaticAddressScript()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// Create the static address from the parameters the server provided and
@@ -191,7 +259,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// Import the static address tapscript into our lnd wallet, so we can
@@ -201,20 +269,13 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	)
 	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	log.Infof("Imported static address taproot script to lnd wallet: %v",
 		addr)
 
-	address, err := m.GetTaprootAddress(
-		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return address, int64(serverParams.Expiry), nil
+	return addrParams, nil
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server
