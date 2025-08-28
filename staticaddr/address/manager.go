@@ -54,19 +54,91 @@ type Manager struct {
 	cfg *ManagerConfig
 
 	currentHeight atomic.Int32
+
+	// addrRequest is a channel used to request new static addresses from
+	// the manager. The manager employs a go worker routine that handles the
+	// requests.
+	addrRequest chan request
+}
+
+type request struct {
+	ctx      context.Context
+	respChan chan response
+}
+
+type response struct {
+	addr   *btcutil.AddressTaproot
+	expiry int64
+	err    error
 }
 
 // NewManager creates a new address manager.
 func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
 	m := &Manager{
-		cfg: cfg,
+		cfg:         cfg,
+		addrRequest: make(chan request),
 	}
 	m.currentHeight.Store(currentHeight)
 
 	return m
 }
 
-// Run runs the address manager.
+// addrWorker is a worker that handles address creation requests. It calls
+// m.newAddress which blocks on server I/O and returns the address and expiry.
+func (m *Manager) addrWorker(ctx context.Context) {
+	for {
+		select {
+		case req := <-m.addrRequest:
+			m.handleAddrRequest(ctx, req)
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// handleAddrRequest is responsible for processing a single address request.
+func (m *Manager) handleAddrRequest(managerCtx context.Context, req request) {
+	// If processing this request panics, we want to recover to process
+	// successive requests after we returned an error to the caller.
+	defer func() {
+		if r := recover(); r != nil {
+			var err error
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("addrWorker panic: %v", r)
+			}
+
+			select {
+			case req.respChan <- response{err: err}:
+
+			case <-req.ctx.Done():
+
+			case <-managerCtx.Done():
+			}
+		}
+	}()
+
+	addr, expiry, e := m.newAddress(req.ctx)
+
+	resp := response{
+		addr:   addr,
+		expiry: expiry,
+		err:    e,
+	}
+
+	select {
+	case req.respChan <- resp:
+
+	case <-req.ctx.Done():
+
+	case <-managerCtx.Done():
+	}
+}
+
+// Run runs the address manager. It keeps track of the current block height and
+// creates new static addresses as needed.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
@@ -74,6 +146,10 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	if err != nil {
 		return err
 	}
+
+	// The address worker offloads the address creation with the server to a
+	// separate go routine.
+	go m.addrWorker(ctx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -95,8 +171,38 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 }
 
 // NewAddress creates a new static address with the server or returns an
-// existing one.
+// existing one. It now sends a request to the manager's Run loop which
+// executes the actual address creation logic.
 func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
+	int64, error) {
+
+	respChan := make(chan response, 1)
+	req := request{
+		ctx:      ctx,
+		respChan: respChan,
+	}
+
+	// Send the new address request to the manager run loop.
+	select {
+	case m.addrRequest <- req:
+
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
+	}
+
+	// Wait for the response from the manager run loop.
+	select {
+	case resp := <-respChan:
+		return resp.addr, resp.expiry, resp.err
+
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
+	}
+}
+
+// newAddress contains the body of the former NewAddress method and performs the
+// actual address creation/lookup according to the requested type.
+func (m *Manager) newAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	int64, error) {
 
 	// If there's already a static address in the database, we can return
