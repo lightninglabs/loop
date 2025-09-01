@@ -582,6 +582,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	staticAddressStore := address.NewSqlStore(baseDb)
 	addrCfg := &address.ManagerConfig{
 		AddressClient: staticAddressClient,
+		CurrentToken:  swapClient.L402Store.CurrentToken,
 		FetchL402:     swapClient.Server.FetchL402,
 		Store:         staticAddressStore,
 		WalletKit:     d.lnd.WalletKit,
