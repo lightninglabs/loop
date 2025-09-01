@@ -3,6 +3,7 @@ package address
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -26,10 +28,14 @@ type ManagerConfig struct {
 	// to manage static addresses.
 	AddressClient staticaddressrpc.StaticAddressServerClient
 
+	// CurrentToken returns the token currently contained in the store or a
+	// l402.ErrNoToken error if there is none.
+	CurrentToken func() (*l402.Token, error)
+
 	// FetchL402 is the function used to fetch the l402 token.
 	FetchL402 func(context.Context) error
 
-	// Store is the database store that is used to store static address
+	// Store is the database store that is used to store static address-
 	// related records.
 	Store Store
 
@@ -121,6 +127,20 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
+	// Check if we need to fetch a new L402 token.
+	_, err = m.cfg.CurrentToken()
+	if err != nil {
+		if !errors.Is(err, l402.ErrNoToken) {
+			return err
+		}
+
+		// We are fetching a new L402 token from the server.
+		err = m.cfg.FetchL402(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
 	// The address worker offloads the address creation with the server to a
 	// separate go routine.
 	go m.addrWorker(ctx)
@@ -175,13 +195,6 @@ func (m *Manager) NewAddress(ctx context.Context) (*Parameters, error) {
 // newAddress contains the body of the former NewAddress method and performs the
 // actual address creation/lookup according to the requested type.
 func (m *Manager) newAddress(ctx context.Context) (*Parameters, error) {
-	// We are fetching a new L402 token from the server. There is one static
-	// address per L402 token allowed.
-	err := m.cfg.FetchL402(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
@@ -192,10 +205,11 @@ func (m *Manager) newAddress(ctx context.Context) (*Parameters, error) {
 	// Send our clientPubKey to the server and wait for the server to
 	// respond with he serverPubKey and the static address CSV expiry.
 	protocolVersion := version.CurrentRPCProtocolVersion()
+	serializedPubKey := clientPubKey.PubKey.SerializeCompressed()
 	resp, err := m.cfg.AddressClient.ServerNewAddress(
 		ctx, &staticaddressrpc.ServerNewAddressRequest{
 			ProtocolVersion: protocolVersion,
-			ClientKey:       clientPubKey.PubKey.SerializeCompressed(), //nolint:lll
+			ClientKey:       serializedPubKey,
 		},
 	)
 	if err != nil {
