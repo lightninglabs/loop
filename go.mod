@@ -6,8 +6,8 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/btcsuite/btclog/v2 v2.0.1-0.20250602222548-9967d19bb084
-	github.com/btcsuite/btcwallet v0.16.14
+	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b
+	github.com/btcsuite/btcwallet v0.16.15-0.20250805011126-a3632ae48ab3
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
@@ -25,7 +25,7 @@ require (
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.6.1-0.20250729190616-3f323918a96e
 	github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20250729190616-3f323918a96e
-	github.com/lightningnetwork/lnd v0.19.2-beta
+	github.com/lightningnetwork/lnd v0.19.3-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/queue v1.1.1
