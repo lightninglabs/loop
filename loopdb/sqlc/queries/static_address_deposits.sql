@@ -77,3 +77,10 @@ WHERE
 ORDER BY
     update_timestamp DESC
 LIMIT 1;
+
+-- name: SetAllNullDepositsStaticAddressID :exec
+UPDATE deposits
+SET
+    static_address_id = $1
+WHERE
+    static_address_id IS NULL;
