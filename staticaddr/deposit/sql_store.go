@@ -310,3 +310,19 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
 	}, nil
 }
+
+// BatchSetStaticAddressID sets static_address_id for all deposits that are
+// NULL.
+func (s *SqlStore) BatchSetStaticAddressID(ctx context.Context,
+	staticAddrID int32) error {
+
+	return s.baseDB.ExecTx(
+		ctx, loopdb.NewSqlWriteOpts(), func(q *sqlc.Queries) error {
+			return q.SetAllNullDepositsStaticAddressID(
+				ctx, sql.NullInt32{
+					Int32: staticAddrID, Valid: true,
+				},
+			)
+		},
+	)
+}
