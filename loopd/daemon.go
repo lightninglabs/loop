@@ -661,6 +661,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	// Run the deposit static_address_id backfill migration.
+	err = deposit.MigrateDepositStaticAddressID(
+		d.mainCtx, swapDb, depositStore,
+	)
+	if err != nil {
+		errorf("Deposit static_address_id migration failed: %v", err)
+
+		return err
+	}
+
 	staticLoopInManager = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
