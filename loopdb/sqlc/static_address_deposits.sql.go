@@ -212,6 +212,19 @@ func (q *Queries) InsertDepositUpdate(ctx context.Context, arg InsertDepositUpda
 	return err
 }
 
+const setAllNullDepositsStaticAddressID = `-- name: SetAllNullDepositsStaticAddressID :exec
+UPDATE deposits
+SET
+    static_address_id = $1
+WHERE
+    static_address_id IS NULL
+`
+
+func (q *Queries) SetAllNullDepositsStaticAddressID(ctx context.Context, staticAddressID sql.NullInt32) error {
+	_, err := q.db.ExecContext(ctx, setAllNullDepositsStaticAddressID, staticAddressID)
+	return err
+}
+
 const updateDeposit = `-- name: UpdateDeposit :exec
 UPDATE deposits
 SET
