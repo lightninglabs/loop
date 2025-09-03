@@ -2577,7 +2577,7 @@
       ],
       "default": "UNKNOWN_STATIC_ADDRESS_SWAP_STATE"
     },
-    "looprpcStaticAddressSummaryResponse": {
+    "looprpcStaticAddressSummary": {
       "type": "object",
       "properties": {
         "static_address": {
@@ -2628,6 +2628,67 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all deposits that have been used for channel openings."
+        }
+      }
+    },
+    "looprpcStaticAddressSummaryResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address of the client.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "relative_expiry_blocks": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The CSV expiry of the static address.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "total_num_deposits": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total number of deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_unconfirmed_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of unconfirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_deposited_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of confirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_expired_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all expired deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_withdrawn_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been withdrawn.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_looped_in_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all loop-ins that have been finalized.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_htlc_timeout_sweeps_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all htlc timeout sweeps that the client swept.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_channels_opened": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been used for channel openings."
+        },
+        "per_address_summaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcStaticAddressSummary"
+          },
+          "description": "A per-address summary of all static addresses known to the client."
         }
       }
     },

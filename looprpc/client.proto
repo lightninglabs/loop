@@ -1795,6 +1795,72 @@ message StaticAddressSummaryRequest {
 message StaticAddressSummaryResponse {
     /*
     The static address of the client.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    string static_address = 1 [deprecated = true];
+
+    /*
+    The CSV expiry of the static address.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    uint64 relative_expiry_blocks = 2 [deprecated = true];
+
+    /*
+    The total number of deposits.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    uint32 total_num_deposits = 3 [deprecated = true];
+
+    /*
+    The total value of unconfirmed deposits.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_unconfirmed_satoshis = 4 [deprecated = true];
+
+    /*
+    The total value of confirmed deposits.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_deposited_satoshis = 5 [deprecated = true];
+
+    /*
+    The total value of all expired deposits.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_expired_satoshis = 6 [deprecated = true];
+
+    /*
+    The total value of all deposits that have been withdrawn.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_withdrawn_satoshis = 7 [deprecated = true];
+
+    /*
+    The total value of all loop-ins that have been finalized.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_looped_in_satoshis = 8 [deprecated = true];
+
+    /*
+    The total value of all htlc timeout sweeps that the client swept.
+    Deprecated: use the per_address_summaries field instead.
+    */
+    int64 value_htlc_timeout_sweeps_satoshis = 9 [deprecated = true];
+
+    /*
+    The total value of all deposits that have been used for channel openings.
+    */
+    int64 value_channels_opened = 10 [deprecated = true];
+
+    /*
+    A per-address summary of all static addresses known to the client.
+    */
+    repeated StaticAddressSummary per_address_summaries = 11;
+}
+
+message StaticAddressSummary {
+    /*
+    The static address of the client.
     */
     string static_address = 1;
 

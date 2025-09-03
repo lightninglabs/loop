@@ -5244,25 +5244,56 @@ type StaticAddressSummaryResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	// The static address of the client.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
 	// The CSV expiry of the static address.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
 	// The total number of deposits.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	TotalNumDeposits uint32 `protobuf:"varint,3,opt,name=total_num_deposits,json=totalNumDeposits,proto3" json:"total_num_deposits,omitempty"`
 	// The total value of unconfirmed deposits.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueUnconfirmedSatoshis int64 `protobuf:"varint,4,opt,name=value_unconfirmed_satoshis,json=valueUnconfirmedSatoshis,proto3" json:"value_unconfirmed_satoshis,omitempty"`
 	// The total value of confirmed deposits.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueDepositedSatoshis int64 `protobuf:"varint,5,opt,name=value_deposited_satoshis,json=valueDepositedSatoshis,proto3" json:"value_deposited_satoshis,omitempty"`
 	// The total value of all expired deposits.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueExpiredSatoshis int64 `protobuf:"varint,6,opt,name=value_expired_satoshis,json=valueExpiredSatoshis,proto3" json:"value_expired_satoshis,omitempty"`
 	// The total value of all deposits that have been withdrawn.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueWithdrawnSatoshis int64 `protobuf:"varint,7,opt,name=value_withdrawn_satoshis,json=valueWithdrawnSatoshis,proto3" json:"value_withdrawn_satoshis,omitempty"`
 	// The total value of all loop-ins that have been finalized.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueLoopedInSatoshis int64 `protobuf:"varint,8,opt,name=value_looped_in_satoshis,json=valueLoopedInSatoshis,proto3" json:"value_looped_in_satoshis,omitempty"`
 	// The total value of all htlc timeout sweeps that the client swept.
+	// Deprecated: use the per_address_summaries field instead.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueHtlcTimeoutSweepsSatoshis int64 `protobuf:"varint,9,opt,name=value_htlc_timeout_sweeps_satoshis,json=valueHtlcTimeoutSweepsSatoshis,proto3" json:"value_htlc_timeout_sweeps_satoshis,omitempty"`
 	// The total value of all deposits that have been used for channel openings.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	ValueChannelsOpened int64 `protobuf:"varint,10,opt,name=value_channels_opened,json=valueChannelsOpened,proto3" json:"value_channels_opened,omitempty"`
+	// A per-address summary of all static addresses known to the client.
+	PerAddressSummaries []*StaticAddressSummary `protobuf:"bytes,11,rep,name=per_address_summaries,json=perAddressSummaries,proto3" json:"per_address_summaries,omitempty"`
 }
 
 func (x *StaticAddressSummaryResponse) Reset() {
@@ -5297,6 +5328,7 @@ func (*StaticAddressSummaryResponse) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{61}
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetStaticAddress() string {
 	if x != nil {
 		return x.StaticAddress
@@ -5304,6 +5336,7 @@ func (x *StaticAddressSummaryResponse) GetStaticAddress() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetRelativeExpiryBlocks() uint64 {
 	if x != nil {
 		return x.RelativeExpiryBlocks
@@ -5311,6 +5344,7 @@ func (x *StaticAddressSummaryResponse) GetRelativeExpiryBlocks() uint64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetTotalNumDeposits() uint32 {
 	if x != nil {
 		return x.TotalNumDeposits
@@ -5318,6 +5352,7 @@ func (x *StaticAddressSummaryResponse) GetTotalNumDeposits() uint32 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueUnconfirmedSatoshis() int64 {
 	if x != nil {
 		return x.ValueUnconfirmedSatoshis
@@ -5325,6 +5360,7 @@ func (x *StaticAddressSummaryResponse) GetValueUnconfirmedSatoshis() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueDepositedSatoshis() int64 {
 	if x != nil {
 		return x.ValueDepositedSatoshis
@@ -5332,6 +5368,7 @@ func (x *StaticAddressSummaryResponse) GetValueDepositedSatoshis() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueExpiredSatoshis() int64 {
 	if x != nil {
 		return x.ValueExpiredSatoshis
@@ -5339,6 +5376,7 @@ func (x *StaticAddressSummaryResponse) GetValueExpiredSatoshis() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueWithdrawnSatoshis() int64 {
 	if x != nil {
 		return x.ValueWithdrawnSatoshis
@@ -5346,6 +5384,7 @@ func (x *StaticAddressSummaryResponse) GetValueWithdrawnSatoshis() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueLoopedInSatoshis() int64 {
 	if x != nil {
 		return x.ValueLoopedInSatoshis
@@ -5353,6 +5392,7 @@ func (x *StaticAddressSummaryResponse) GetValueLoopedInSatoshis() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueHtlcTimeoutSweepsSatoshis() int64 {
 	if x != nil {
 		return x.ValueHtlcTimeoutSweepsSatoshis
@@ -5360,7 +5400,144 @@ func (x *StaticAddressSummaryResponse) GetValueHtlcTimeoutSweepsSatoshis() int64
 	return 0
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetValueChannelsOpened() int64 {
+	if x != nil {
+		return x.ValueChannelsOpened
+	}
+	return 0
+}
+
+func (x *StaticAddressSummaryResponse) GetPerAddressSummaries() []*StaticAddressSummary {
+	if x != nil {
+		return x.PerAddressSummaries
+	}
+	return nil
+}
+
+type StaticAddressSummary struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// The static address of the client.
+	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
+	// The CSV expiry of the static address.
+	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
+	// The total number of deposits.
+	TotalNumDeposits uint32 `protobuf:"varint,3,opt,name=total_num_deposits,json=totalNumDeposits,proto3" json:"total_num_deposits,omitempty"`
+	// The total value of unconfirmed deposits.
+	ValueUnconfirmedSatoshis int64 `protobuf:"varint,4,opt,name=value_unconfirmed_satoshis,json=valueUnconfirmedSatoshis,proto3" json:"value_unconfirmed_satoshis,omitempty"`
+	// The total value of confirmed deposits.
+	ValueDepositedSatoshis int64 `protobuf:"varint,5,opt,name=value_deposited_satoshis,json=valueDepositedSatoshis,proto3" json:"value_deposited_satoshis,omitempty"`
+	// The total value of all expired deposits.
+	ValueExpiredSatoshis int64 `protobuf:"varint,6,opt,name=value_expired_satoshis,json=valueExpiredSatoshis,proto3" json:"value_expired_satoshis,omitempty"`
+	// The total value of all deposits that have been withdrawn.
+	ValueWithdrawnSatoshis int64 `protobuf:"varint,7,opt,name=value_withdrawn_satoshis,json=valueWithdrawnSatoshis,proto3" json:"value_withdrawn_satoshis,omitempty"`
+	// The total value of all loop-ins that have been finalized.
+	ValueLoopedInSatoshis int64 `protobuf:"varint,8,opt,name=value_looped_in_satoshis,json=valueLoopedInSatoshis,proto3" json:"value_looped_in_satoshis,omitempty"`
+	// The total value of all htlc timeout sweeps that the client swept.
+	ValueHtlcTimeoutSweepsSatoshis int64 `protobuf:"varint,9,opt,name=value_htlc_timeout_sweeps_satoshis,json=valueHtlcTimeoutSweepsSatoshis,proto3" json:"value_htlc_timeout_sweeps_satoshis,omitempty"`
+	// The total value of all deposits that have been used for channel openings.
+	ValueChannelsOpened int64 `protobuf:"varint,10,opt,name=value_channels_opened,json=valueChannelsOpened,proto3" json:"value_channels_opened,omitempty"`
+}
+
+func (x *StaticAddressSummary) Reset() {
+	*x = StaticAddressSummary{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_client_proto_msgTypes[62]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *StaticAddressSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StaticAddressSummary) ProtoMessage() {}
+
+func (x *StaticAddressSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[62]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StaticAddressSummary.ProtoReflect.Descriptor instead.
+func (*StaticAddressSummary) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *StaticAddressSummary) GetStaticAddress() string {
+	if x != nil {
+		return x.StaticAddress
+	}
+	return ""
+}
+
+func (x *StaticAddressSummary) GetRelativeExpiryBlocks() uint64 {
+	if x != nil {
+		return x.RelativeExpiryBlocks
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetTotalNumDeposits() uint32 {
+	if x != nil {
+		return x.TotalNumDeposits
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueUnconfirmedSatoshis() int64 {
+	if x != nil {
+		return x.ValueUnconfirmedSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueDepositedSatoshis() int64 {
+	if x != nil {
+		return x.ValueDepositedSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueExpiredSatoshis() int64 {
+	if x != nil {
+		return x.ValueExpiredSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueWithdrawnSatoshis() int64 {
+	if x != nil {
+		return x.ValueWithdrawnSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueLoopedInSatoshis() int64 {
+	if x != nil {
+		return x.ValueLoopedInSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueHtlcTimeoutSweepsSatoshis() int64 {
+	if x != nil {
+		return x.ValueHtlcTimeoutSweepsSatoshis
+	}
+	return 0
+}
+
+func (x *StaticAddressSummary) GetValueChannelsOpened() int64 {
 	if x != nil {
 		return x.ValueChannelsOpened
 	}
@@ -5393,7 +5570,7 @@ type Deposit struct {
 func (x *Deposit) Reset() {
 	*x = Deposit{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[62]
+		mi := &file_client_proto_msgTypes[63]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5406,7 +5583,7 @@ func (x *Deposit) String() string {
 func (*Deposit) ProtoMessage() {}
 
 func (x *Deposit) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[62]
+	mi := &file_client_proto_msgTypes[63]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5419,7 +5596,7 @@ func (x *Deposit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Deposit.ProtoReflect.Descriptor instead.
 func (*Deposit) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{62}
+	return file_client_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *Deposit) GetId() []byte {
@@ -5495,7 +5672,7 @@ type StaticAddressWithdrawal struct {
 func (x *StaticAddressWithdrawal) Reset() {
 	*x = StaticAddressWithdrawal{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[63]
+		mi := &file_client_proto_msgTypes[64]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5508,7 +5685,7 @@ func (x *StaticAddressWithdrawal) String() string {
 func (*StaticAddressWithdrawal) ProtoMessage() {}
 
 func (x *StaticAddressWithdrawal) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[63]
+	mi := &file_client_proto_msgTypes[64]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5521,7 +5698,7 @@ func (x *StaticAddressWithdrawal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StaticAddressWithdrawal.ProtoReflect.Descriptor instead.
 func (*StaticAddressWithdrawal) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{63}
+	return file_client_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *StaticAddressWithdrawal) GetTxId() string {
@@ -5588,7 +5765,7 @@ type StaticAddressLoopInSwap struct {
 func (x *StaticAddressLoopInSwap) Reset() {
 	*x = StaticAddressLoopInSwap{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[64]
+		mi := &file_client_proto_msgTypes[65]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5601,7 +5778,7 @@ func (x *StaticAddressLoopInSwap) String() string {
 func (*StaticAddressLoopInSwap) ProtoMessage() {}
 
 func (x *StaticAddressLoopInSwap) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[64]
+	mi := &file_client_proto_msgTypes[65]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5614,7 +5791,7 @@ func (x *StaticAddressLoopInSwap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StaticAddressLoopInSwap.ProtoReflect.Descriptor instead.
 func (*StaticAddressLoopInSwap) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{64}
+	return file_client_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *StaticAddressLoopInSwap) GetSwapHash() []byte {
@@ -5714,7 +5891,7 @@ type StaticAddressLoopInRequest struct {
 func (x *StaticAddressLoopInRequest) Reset() {
 	*x = StaticAddressLoopInRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[65]
+		mi := &file_client_proto_msgTypes[66]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5727,7 +5904,7 @@ func (x *StaticAddressLoopInRequest) String() string {
 func (*StaticAddressLoopInRequest) ProtoMessage() {}
 
 func (x *StaticAddressLoopInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[65]
+	mi := &file_client_proto_msgTypes[66]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5740,7 +5917,7 @@ func (x *StaticAddressLoopInRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StaticAddressLoopInRequest.ProtoReflect.Descriptor instead.
 func (*StaticAddressLoopInRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{65}
+	return file_client_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *StaticAddressLoopInRequest) GetOutpoints() []string {
@@ -5862,7 +6039,7 @@ type StaticAddressLoopInResponse struct {
 func (x *StaticAddressLoopInResponse) Reset() {
 	*x = StaticAddressLoopInResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[66]
+		mi := &file_client_proto_msgTypes[67]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5875,7 +6052,7 @@ func (x *StaticAddressLoopInResponse) String() string {
 func (*StaticAddressLoopInResponse) ProtoMessage() {}
 
 func (x *StaticAddressLoopInResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[66]
+	mi := &file_client_proto_msgTypes[67]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5888,7 +6065,7 @@ func (x *StaticAddressLoopInResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StaticAddressLoopInResponse.ProtoReflect.Descriptor instead.
 func (*StaticAddressLoopInResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{66}
+	return file_client_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *StaticAddressLoopInResponse) GetSwapHash() []byte {
@@ -6019,7 +6196,7 @@ type AssetLoopOutRequest struct {
 func (x *AssetLoopOutRequest) Reset() {
 	*x = AssetLoopOutRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[67]
+		mi := &file_client_proto_msgTypes[68]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6032,7 +6209,7 @@ func (x *AssetLoopOutRequest) String() string {
 func (*AssetLoopOutRequest) ProtoMessage() {}
 
 func (x *AssetLoopOutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[67]
+	mi := &file_client_proto_msgTypes[68]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6045,7 +6222,7 @@ func (x *AssetLoopOutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetLoopOutRequest.ProtoReflect.Descriptor instead.
 func (*AssetLoopOutRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{67}
+	return file_client_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *AssetLoopOutRequest) GetAssetId() []byte {
@@ -6102,7 +6279,7 @@ type AssetRfqInfo struct {
 func (x *AssetRfqInfo) Reset() {
 	*x = AssetRfqInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[68]
+		mi := &file_client_proto_msgTypes[69]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6115,7 +6292,7 @@ func (x *AssetRfqInfo) String() string {
 func (*AssetRfqInfo) ProtoMessage() {}
 
 func (x *AssetRfqInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[68]
+	mi := &file_client_proto_msgTypes[69]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6128,7 +6305,7 @@ func (x *AssetRfqInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetRfqInfo.ProtoReflect.Descriptor instead.
 func (*AssetRfqInfo) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{68}
+	return file_client_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *AssetRfqInfo) GetPrepayRfqId() []byte {
@@ -6219,7 +6396,7 @@ type FixedPoint struct {
 func (x *FixedPoint) Reset() {
 	*x = FixedPoint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[69]
+		mi := &file_client_proto_msgTypes[70]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6232,7 +6409,7 @@ func (x *FixedPoint) String() string {
 func (*FixedPoint) ProtoMessage() {}
 
 func (x *FixedPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[69]
+	mi := &file_client_proto_msgTypes[70]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6245,7 +6422,7 @@ func (x *FixedPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FixedPoint.ProtoReflect.Descriptor instead.
 func (*FixedPoint) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{69}
+	return file_client_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *FixedPoint) GetCoefficient() string {
@@ -6278,7 +6455,7 @@ type AssetLoopOutInfo struct {
 func (x *AssetLoopOutInfo) Reset() {
 	*x = AssetLoopOutInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[70]
+		mi := &file_client_proto_msgTypes[71]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6291,7 +6468,7 @@ func (x *AssetLoopOutInfo) String() string {
 func (*AssetLoopOutInfo) ProtoMessage() {}
 
 func (x *AssetLoopOutInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[70]
+	mi := &file_client_proto_msgTypes[71]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6304,7 +6481,7 @@ func (x *AssetLoopOutInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetLoopOutInfo.ProtoReflect.Descriptor instead.
 func (*AssetLoopOutInfo) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{70}
+	return file_client_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *AssetLoopOutInfo) GetAssetId() string {
@@ -6426,7 +6603,7 @@ type OpenChannelRequest struct {
 func (x *OpenChannelRequest) Reset() {
 	*x = OpenChannelRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[71]
+		mi := &file_client_proto_msgTypes[72]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6439,7 +6616,7 @@ func (x *OpenChannelRequest) String() string {
 func (*OpenChannelRequest) ProtoMessage() {}
 
 func (x *OpenChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[71]
+	mi := &file_client_proto_msgTypes[72]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6452,7 +6629,7 @@ func (x *OpenChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenChannelRequest.ProtoReflect.Descriptor instead.
 func (*OpenChannelRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{71}
+	return file_client_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *OpenChannelRequest) GetSatPerVbyte() uint64 {
@@ -6649,7 +6826,7 @@ type OpenStatusUpdate struct {
 func (x *OpenStatusUpdate) Reset() {
 	*x = OpenStatusUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[72]
+		mi := &file_client_proto_msgTypes[73]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6662,7 +6839,7 @@ func (x *OpenStatusUpdate) String() string {
 func (*OpenStatusUpdate) ProtoMessage() {}
 
 func (x *OpenStatusUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[72]
+	mi := &file_client_proto_msgTypes[73]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6675,7 +6852,7 @@ func (x *OpenStatusUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenStatusUpdate.ProtoReflect.Descriptor instead.
 func (*OpenStatusUpdate) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{72}
+	return file_client_proto_rawDescGZIP(), []int{73}
 }
 
 func (m *OpenStatusUpdate) GetUpdate() isOpenStatusUpdate_Update {
@@ -6755,7 +6932,7 @@ type PendingUpdate struct {
 func (x *PendingUpdate) Reset() {
 	*x = PendingUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[73]
+		mi := &file_client_proto_msgTypes[74]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6768,7 +6945,7 @@ func (x *PendingUpdate) String() string {
 func (*PendingUpdate) ProtoMessage() {}
 
 func (x *PendingUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[73]
+	mi := &file_client_proto_msgTypes[74]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6781,7 +6958,7 @@ func (x *PendingUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingUpdate.ProtoReflect.Descriptor instead.
 func (*PendingUpdate) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{73}
+	return file_client_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *PendingUpdate) GetTxid() []byte {
@@ -6823,7 +7000,7 @@ type ChannelOpenUpdate struct {
 func (x *ChannelOpenUpdate) Reset() {
 	*x = ChannelOpenUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[74]
+		mi := &file_client_proto_msgTypes[75]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6836,7 +7013,7 @@ func (x *ChannelOpenUpdate) String() string {
 func (*ChannelOpenUpdate) ProtoMessage() {}
 
 func (x *ChannelOpenUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[74]
+	mi := &file_client_proto_msgTypes[75]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6849,7 +7026,7 @@ func (x *ChannelOpenUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChannelOpenUpdate.ProtoReflect.Descriptor instead.
 func (*ChannelOpenUpdate) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{74}
+	return file_client_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ChannelOpenUpdate) GetChannelPoint() *ChannelPoint {
@@ -6880,7 +7057,7 @@ type ReadyForPsbtFunding struct {
 func (x *ReadyForPsbtFunding) Reset() {
 	*x = ReadyForPsbtFunding{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[75]
+		mi := &file_client_proto_msgTypes[76]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6893,7 +7070,7 @@ func (x *ReadyForPsbtFunding) String() string {
 func (*ReadyForPsbtFunding) ProtoMessage() {}
 
 func (x *ReadyForPsbtFunding) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[75]
+	mi := &file_client_proto_msgTypes[76]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6906,7 +7083,7 @@ func (x *ReadyForPsbtFunding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadyForPsbtFunding.ProtoReflect.Descriptor instead.
 func (*ReadyForPsbtFunding) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{75}
+	return file_client_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ReadyForPsbtFunding) GetFundingAddress() string {
@@ -6945,7 +7122,7 @@ type FundingShim struct {
 func (x *FundingShim) Reset() {
 	*x = FundingShim{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[76]
+		mi := &file_client_proto_msgTypes[77]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6958,7 +7135,7 @@ func (x *FundingShim) String() string {
 func (*FundingShim) ProtoMessage() {}
 
 func (x *FundingShim) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[76]
+	mi := &file_client_proto_msgTypes[77]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6971,7 +7148,7 @@ func (x *FundingShim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FundingShim.ProtoReflect.Descriptor instead.
 func (*FundingShim) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{76}
+	return file_client_proto_rawDescGZIP(), []int{77}
 }
 
 func (m *FundingShim) GetShim() isFundingShim_Shim {
@@ -7027,7 +7204,7 @@ type FundingShimCancel struct {
 func (x *FundingShimCancel) Reset() {
 	*x = FundingShimCancel{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[77]
+		mi := &file_client_proto_msgTypes[78]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7040,7 +7217,7 @@ func (x *FundingShimCancel) String() string {
 func (*FundingShimCancel) ProtoMessage() {}
 
 func (x *FundingShimCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[77]
+	mi := &file_client_proto_msgTypes[78]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7053,7 +7230,7 @@ func (x *FundingShimCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FundingShimCancel.ProtoReflect.Descriptor instead.
 func (*FundingShimCancel) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{77}
+	return file_client_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *FundingShimCancel) GetPendingChanId() []byte {
@@ -7087,7 +7264,7 @@ type PsbtShim struct {
 func (x *PsbtShim) Reset() {
 	*x = PsbtShim{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[78]
+		mi := &file_client_proto_msgTypes[79]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7100,7 +7277,7 @@ func (x *PsbtShim) String() string {
 func (*PsbtShim) ProtoMessage() {}
 
 func (x *PsbtShim) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[78]
+	mi := &file_client_proto_msgTypes[79]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7113,7 +7290,7 @@ func (x *PsbtShim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PsbtShim.ProtoReflect.Descriptor instead.
 func (*PsbtShim) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{78}
+	return file_client_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *PsbtShim) GetPendingChanId() []byte {
@@ -7169,7 +7346,7 @@ type ChanPointShim struct {
 func (x *ChanPointShim) Reset() {
 	*x = ChanPointShim{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[79]
+		mi := &file_client_proto_msgTypes[80]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7182,7 +7359,7 @@ func (x *ChanPointShim) String() string {
 func (*ChanPointShim) ProtoMessage() {}
 
 func (x *ChanPointShim) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[79]
+	mi := &file_client_proto_msgTypes[80]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7195,7 +7372,7 @@ func (x *ChanPointShim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChanPointShim.ProtoReflect.Descriptor instead.
 func (*ChanPointShim) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{79}
+	return file_client_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ChanPointShim) GetAmt() int64 {
@@ -7264,7 +7441,7 @@ type ChannelPoint struct {
 func (x *ChannelPoint) Reset() {
 	*x = ChannelPoint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[80]
+		mi := &file_client_proto_msgTypes[81]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7277,7 +7454,7 @@ func (x *ChannelPoint) String() string {
 func (*ChannelPoint) ProtoMessage() {}
 
 func (x *ChannelPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[80]
+	mi := &file_client_proto_msgTypes[81]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7290,7 +7467,7 @@ func (x *ChannelPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChannelPoint.ProtoReflect.Descriptor instead.
 func (*ChannelPoint) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{80}
+	return file_client_proto_rawDescGZIP(), []int{81}
 }
 
 func (m *ChannelPoint) GetFundingTxid() isChannelPoint_FundingTxid {
@@ -7355,7 +7532,7 @@ type KeyDescriptor struct {
 func (x *KeyDescriptor) Reset() {
 	*x = KeyDescriptor{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[81]
+		mi := &file_client_proto_msgTypes[82]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7368,7 +7545,7 @@ func (x *KeyDescriptor) String() string {
 func (*KeyDescriptor) ProtoMessage() {}
 
 func (x *KeyDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[81]
+	mi := &file_client_proto_msgTypes[82]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7381,7 +7558,7 @@ func (x *KeyDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyDescriptor.ProtoReflect.Descriptor instead.
 func (*KeyDescriptor) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{81}
+	return file_client_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *KeyDescriptor) GetRawKeyBytes() []byte {
@@ -7412,7 +7589,7 @@ type KeyLocator struct {
 func (x *KeyLocator) Reset() {
 	*x = KeyLocator{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[82]
+		mi := &file_client_proto_msgTypes[83]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7425,7 +7602,7 @@ func (x *KeyLocator) String() string {
 func (*KeyLocator) ProtoMessage() {}
 
 func (x *KeyLocator) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[82]
+	mi := &file_client_proto_msgTypes[83]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7438,7 +7615,7 @@ func (x *KeyLocator) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyLocator.ProtoReflect.Descriptor instead.
 func (*KeyLocator) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{82}
+	return file_client_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *KeyLocator) GetKeyFamily() int32 {
@@ -7471,7 +7648,7 @@ type OutPoint struct {
 func (x *OutPoint) Reset() {
 	*x = OutPoint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_client_proto_msgTypes[83]
+		mi := &file_client_proto_msgTypes[84]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7484,7 +7661,7 @@ func (x *OutPoint) String() string {
 func (*OutPoint) ProtoMessage() {}
 
 func (x *OutPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[83]
+	mi := &file_client_proto_msgTypes[84]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7497,7 +7674,7 @@ func (x *OutPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutPoint.ProtoReflect.Descriptor instead.
 func (*OutPoint) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{83}
+	return file_client_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *OutPoint) GetTxidBytes() []byte {
@@ -8158,9 +8335,53 @@ var file_client_proto_rawDesc = []byte{
 	0x65, 0x73, 0x73, 0x4c, 0x6f, 0x6f, 0x70, 0x49, 0x6e, 0x53, 0x77, 0x61, 0x70, 0x52, 0x05, 0x73,
 	0x77, 0x61, 0x70, 0x73, 0x22, 0x1d, 0x0a, 0x1b, 0x53, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64,
 	0x64, 0x72, 0x65, 0x73, 0x73, 0x53, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x79, 0x52, 0x65, 0x71, 0x75,
-	0x65, 0x73, 0x74, 0x22, 0xca, 0x04, 0x0a, 0x1c, 0x53, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64,
+	0x65, 0x73, 0x74, 0x22, 0xc5, 0x05, 0x0a, 0x1c, 0x53, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64,
 	0x64, 0x72, 0x65, 0x73, 0x73, 0x53, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x79, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x25, 0x0a, 0x0e, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x5f, 0x61,
+	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x29, 0x0a, 0x0e, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x5f, 0x61,
+	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x02, 0x18, 0x01,
+	0x52, 0x0d, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12,
+	0x38, 0x0a, 0x16, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x65, 0x78, 0x70, 0x69,
+	0x72, 0x79, 0x5f, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x42,
+	0x02, 0x18, 0x01, 0x52, 0x14, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x76, 0x65, 0x45, 0x78, 0x70,
+	0x69, 0x72, 0x79, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x12, 0x30, 0x0a, 0x12, 0x74, 0x6f, 0x74,
+	0x61, 0x6c, 0x5f, 0x6e, 0x75, 0x6d, 0x5f, 0x64, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x73, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x0d, 0x42, 0x02, 0x18, 0x01, 0x52, 0x10, 0x74, 0x6f, 0x74, 0x61, 0x6c,
+	0x4e, 0x75, 0x6d, 0x44, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x73, 0x12, 0x40, 0x0a, 0x1a, 0x76,
+	0x61, 0x6c, 0x75, 0x65, 0x5f, 0x75, 0x6e, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x72, 0x6d, 0x65, 0x64,
+	0x5f, 0x73, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x42,
+	0x02, 0x18, 0x01, 0x52, 0x18, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x55, 0x6e, 0x63, 0x6f, 0x6e, 0x66,
+	0x69, 0x72, 0x6d, 0x65, 0x64, 0x53, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x12, 0x3c, 0x0a,
+	0x18, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x64, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x65, 0x64,
+	0x5f, 0x73, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x42,
+	0x02, 0x18, 0x01, 0x52, 0x16, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x44, 0x65, 0x70, 0x6f, 0x73, 0x69,
+	0x74, 0x65, 0x64, 0x53, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x12, 0x38, 0x0a, 0x16, 0x76,
+	0x61, 0x6c, 0x75, 0x65, 0x5f, 0x65, 0x78, 0x70, 0x69, 0x72, 0x65, 0x64, 0x5f, 0x73, 0x61, 0x74,
+	0x6f, 0x73, 0x68, 0x69, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x42, 0x02, 0x18, 0x01, 0x52,
+	0x14, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x45, 0x78, 0x70, 0x69, 0x72, 0x65, 0x64, 0x53, 0x61, 0x74,
+	0x6f, 0x73, 0x68, 0x69, 0x73, 0x12, 0x3c, 0x0a, 0x18, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x77,
+	0x69, 0x74, 0x68, 0x64, 0x72, 0x61, 0x77, 0x6e, 0x5f, 0x73, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69,
+	0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x42, 0x02, 0x18, 0x01, 0x52, 0x16, 0x76, 0x61, 0x6c,
+	0x75, 0x65, 0x57, 0x69, 0x74, 0x68, 0x64, 0x72, 0x61, 0x77, 0x6e, 0x53, 0x61, 0x74, 0x6f, 0x73,
+	0x68, 0x69, 0x73, 0x12, 0x3b, 0x0a, 0x18, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x6c, 0x6f, 0x6f,
+	0x70, 0x65, 0x64, 0x5f, 0x69, 0x6e, 0x5f, 0x73, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x18,
+	0x08, 0x20, 0x01, 0x28, 0x03, 0x42, 0x02, 0x18, 0x01, 0x52, 0x15, 0x76, 0x61, 0x6c, 0x75, 0x65,
+	0x4c, 0x6f, 0x6f, 0x70, 0x65, 0x64, 0x49, 0x6e, 0x53, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73,
+	0x12, 0x4e, 0x0a, 0x22, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x68, 0x74, 0x6c, 0x63, 0x5f, 0x74,
+	0x69, 0x6d, 0x65, 0x6f, 0x75, 0x74, 0x5f, 0x73, 0x77, 0x65, 0x65, 0x70, 0x73, 0x5f, 0x73, 0x61,
+	0x74, 0x6f, 0x73, 0x68, 0x69, 0x73, 0x18, 0x09, 0x20, 0x01, 0x28, 0x03, 0x42, 0x02, 0x18, 0x01,
+	0x52, 0x1e, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x48, 0x74, 0x6c, 0x63, 0x54, 0x69, 0x6d, 0x65, 0x6f,
+	0x75, 0x74, 0x53, 0x77, 0x65, 0x65, 0x70, 0x73, 0x53, 0x61, 0x74, 0x6f, 0x73, 0x68, 0x69, 0x73,
+	0x12, 0x36, 0x0a, 0x15, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x63, 0x68, 0x61, 0x6e, 0x6e, 0x65,
+	0x6c, 0x73, 0x5f, 0x6f, 0x70, 0x65, 0x6e, 0x65, 0x64, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x03, 0x42,
+	0x02, 0x18, 0x01, 0x52, 0x13, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x43, 0x68, 0x61, 0x6e, 0x6e, 0x65,
+	0x6c, 0x73, 0x4f, 0x70, 0x65, 0x6e, 0x65, 0x64, 0x12, 0x51, 0x0a, 0x15, 0x70, 0x65, 0x72, 0x5f,
+	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x5f, 0x73, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x69, 0x65,
+	0x73, 0x18, 0x0b, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x6c, 0x6f, 0x6f, 0x70, 0x72, 0x70,
+	0x63, 0x2e, 0x53, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x53,
+	0x75, 0x6d, 0x6d, 0x61, 0x72, 0x79, 0x52, 0x13, 0x70, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x53, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x69, 0x65, 0x73, 0x22, 0xc2, 0x04, 0x0a, 0x14,
+	0x53, 0x74, 0x61, 0x74, 0x69, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x53, 0x75, 0x6d,
+	0x6d, 0x61, 0x72, 0x79, 0x12, 0x25, 0x0a, 0x0e, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x5f, 0x61,
 	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x73, 0x74,
 	0x61, 0x74, 0x69, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x34, 0x0a, 0x16, 0x72,
 	0x65, 0x6c, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x65, 0x78, 0x70, 0x69, 0x72, 0x79, 0x5f, 0x62,
@@ -8804,7 +9025,7 @@ func file_client_proto_rawDescGZIP() []byte {
 }
 
 var file_client_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 85)
+var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 86)
 var file_client_proto_goTypes = []any{
 	(AddressType)(0),                            // 0: looprpc.AddressType
 	(SwapType)(0),                               // 1: looprpc.SwapType
@@ -8878,53 +9099,54 @@ var file_client_proto_goTypes = []any{
 	(*ListStaticAddressSwapsResponse)(nil),      // 69: looprpc.ListStaticAddressSwapsResponse
 	(*StaticAddressSummaryRequest)(nil),         // 70: looprpc.StaticAddressSummaryRequest
 	(*StaticAddressSummaryResponse)(nil),        // 71: looprpc.StaticAddressSummaryResponse
-	(*Deposit)(nil),                             // 72: looprpc.Deposit
-	(*StaticAddressWithdrawal)(nil),             // 73: looprpc.StaticAddressWithdrawal
-	(*StaticAddressLoopInSwap)(nil),             // 74: looprpc.StaticAddressLoopInSwap
-	(*StaticAddressLoopInRequest)(nil),          // 75: looprpc.StaticAddressLoopInRequest
-	(*StaticAddressLoopInResponse)(nil),         // 76: looprpc.StaticAddressLoopInResponse
-	(*AssetLoopOutRequest)(nil),                 // 77: looprpc.AssetLoopOutRequest
-	(*AssetRfqInfo)(nil),                        // 78: looprpc.AssetRfqInfo
-	(*FixedPoint)(nil),                          // 79: looprpc.FixedPoint
-	(*AssetLoopOutInfo)(nil),                    // 80: looprpc.AssetLoopOutInfo
-	(*OpenChannelRequest)(nil),                  // 81: looprpc.OpenChannelRequest
-	(*OpenStatusUpdate)(nil),                    // 82: looprpc.OpenStatusUpdate
-	(*PendingUpdate)(nil),                       // 83: looprpc.PendingUpdate
-	(*ChannelOpenUpdate)(nil),                   // 84: looprpc.ChannelOpenUpdate
-	(*ReadyForPsbtFunding)(nil),                 // 85: looprpc.ReadyForPsbtFunding
-	(*FundingShim)(nil),                         // 86: looprpc.FundingShim
-	(*FundingShimCancel)(nil),                   // 87: looprpc.FundingShimCancel
-	(*PsbtShim)(nil),                            // 88: looprpc.PsbtShim
-	(*ChanPointShim)(nil),                       // 89: looprpc.ChanPointShim
-	(*ChannelPoint)(nil),                        // 90: looprpc.ChannelPoint
-	(*KeyDescriptor)(nil),                       // 91: looprpc.KeyDescriptor
-	(*KeyLocator)(nil),                          // 92: looprpc.KeyLocator
-	(*OutPoint)(nil),                            // 93: looprpc.OutPoint
-	nil,                                         // 94: looprpc.LiquidityParameters.EasyAssetParamsEntry
-	(*swapserverrpc.RouteHint)(nil),             // 95: looprpc.RouteHint
+	(*StaticAddressSummary)(nil),                // 72: looprpc.StaticAddressSummary
+	(*Deposit)(nil),                             // 73: looprpc.Deposit
+	(*StaticAddressWithdrawal)(nil),             // 74: looprpc.StaticAddressWithdrawal
+	(*StaticAddressLoopInSwap)(nil),             // 75: looprpc.StaticAddressLoopInSwap
+	(*StaticAddressLoopInRequest)(nil),          // 76: looprpc.StaticAddressLoopInRequest
+	(*StaticAddressLoopInResponse)(nil),         // 77: looprpc.StaticAddressLoopInResponse
+	(*AssetLoopOutRequest)(nil),                 // 78: looprpc.AssetLoopOutRequest
+	(*AssetRfqInfo)(nil),                        // 79: looprpc.AssetRfqInfo
+	(*FixedPoint)(nil),                          // 80: looprpc.FixedPoint
+	(*AssetLoopOutInfo)(nil),                    // 81: looprpc.AssetLoopOutInfo
+	(*OpenChannelRequest)(nil),                  // 82: looprpc.OpenChannelRequest
+	(*OpenStatusUpdate)(nil),                    // 83: looprpc.OpenStatusUpdate
+	(*PendingUpdate)(nil),                       // 84: looprpc.PendingUpdate
+	(*ChannelOpenUpdate)(nil),                   // 85: looprpc.ChannelOpenUpdate
+	(*ReadyForPsbtFunding)(nil),                 // 86: looprpc.ReadyForPsbtFunding
+	(*FundingShim)(nil),                         // 87: looprpc.FundingShim
+	(*FundingShimCancel)(nil),                   // 88: looprpc.FundingShimCancel
+	(*PsbtShim)(nil),                            // 89: looprpc.PsbtShim
+	(*ChanPointShim)(nil),                       // 90: looprpc.ChanPointShim
+	(*ChannelPoint)(nil),                        // 91: looprpc.ChannelPoint
+	(*KeyDescriptor)(nil),                       // 92: looprpc.KeyDescriptor
+	(*KeyLocator)(nil),                          // 93: looprpc.KeyLocator
+	(*OutPoint)(nil),                            // 94: looprpc.OutPoint
+	nil,                                         // 95: looprpc.LiquidityParameters.EasyAssetParamsEntry
+	(*swapserverrpc.RouteHint)(nil),             // 96: looprpc.RouteHint
 }
 var file_client_proto_depIdxs = []int32{
 	0,  // 0: looprpc.LoopOutRequest.account_addr_type:type_name -> looprpc.AddressType
-	77, // 1: looprpc.LoopOutRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
-	78, // 2: looprpc.LoopOutRequest.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
-	95, // 3: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	78, // 1: looprpc.LoopOutRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
+	79, // 2: looprpc.LoopOutRequest.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
+	96, // 3: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
 	1,  // 4: looprpc.SwapStatus.type:type_name -> looprpc.SwapType
 	2,  // 5: looprpc.SwapStatus.state:type_name -> looprpc.SwapState
 	3,  // 6: looprpc.SwapStatus.failure_reason:type_name -> looprpc.FailureReason
-	80, // 7: looprpc.SwapStatus.asset_info:type_name -> looprpc.AssetLoopOutInfo
+	81, // 7: looprpc.SwapStatus.asset_info:type_name -> looprpc.AssetLoopOutInfo
 	17, // 8: looprpc.ListSwapsRequest.list_swap_filter:type_name -> looprpc.ListSwapsFilter
 	9,  // 9: looprpc.ListSwapsFilter.swap_type:type_name -> looprpc.ListSwapsFilter.SwapTypeFilter
 	15, // 10: looprpc.ListSwapsResponse.swaps:type_name -> looprpc.SwapStatus
-	95, // 11: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
-	77, // 12: looprpc.QuoteRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
-	78, // 13: looprpc.OutQuoteResponse.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
-	95, // 14: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
+	96, // 11: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
+	78, // 12: looprpc.QuoteRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
+	79, // 13: looprpc.OutQuoteResponse.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
+	96, // 14: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
 	32, // 15: looprpc.TokensResponse.tokens:type_name -> looprpc.L402Token
 	33, // 16: looprpc.GetInfoResponse.loop_out_stats:type_name -> looprpc.LoopStats
 	33, // 17: looprpc.GetInfoResponse.loop_in_stats:type_name -> looprpc.LoopStats
 	39, // 18: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
 	0,  // 19: looprpc.LiquidityParameters.account_addr_type:type_name -> looprpc.AddressType
-	94, // 20: looprpc.LiquidityParameters.easy_asset_params:type_name -> looprpc.LiquidityParameters.EasyAssetParamsEntry
+	95, // 20: looprpc.LiquidityParameters.easy_asset_params:type_name -> looprpc.LiquidityParameters.EasyAssetParamsEntry
 	1,  // 21: looprpc.LiquidityRule.swap_type:type_name -> looprpc.SwapType
 	4,  // 22: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
 	37, // 23: looprpc.SetLiquidityParamsRequest.parameters:type_name -> looprpc.LiquidityParameters
@@ -8935,99 +9157,100 @@ var file_client_proto_depIdxs = []int32{
 	49, // 28: looprpc.ListReservationsResponse.reservations:type_name -> looprpc.ClientReservation
 	56, // 29: looprpc.ListInstantOutsResponse.swaps:type_name -> looprpc.InstantOut
 	61, // 30: looprpc.ListUnspentDepositsResponse.utxos:type_name -> looprpc.Utxo
-	93, // 31: looprpc.WithdrawDepositsRequest.outpoints:type_name -> looprpc.OutPoint
+	94, // 31: looprpc.WithdrawDepositsRequest.outpoints:type_name -> looprpc.OutPoint
 	6,  // 32: looprpc.ListStaticAddressDepositsRequest.state_filter:type_name -> looprpc.DepositState
-	72, // 33: looprpc.ListStaticAddressDepositsResponse.filtered_deposits:type_name -> looprpc.Deposit
-	73, // 34: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
-	74, // 35: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
-	6,  // 36: looprpc.Deposit.state:type_name -> looprpc.DepositState
-	72, // 37: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
-	7,  // 38: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
-	72, // 39: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
-	95, // 40: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
-	72, // 41: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
-	79, // 42: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
-	79, // 43: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
-	86, // 44: looprpc.OpenChannelRequest.funding_shim:type_name -> looprpc.FundingShim
-	8,  // 45: looprpc.OpenChannelRequest.commitment_type:type_name -> looprpc.CommitmentType
-	93, // 46: looprpc.OpenChannelRequest.outpoints:type_name -> looprpc.OutPoint
-	83, // 47: looprpc.OpenStatusUpdate.chan_pending:type_name -> looprpc.PendingUpdate
-	84, // 48: looprpc.OpenStatusUpdate.chan_open:type_name -> looprpc.ChannelOpenUpdate
-	85, // 49: looprpc.OpenStatusUpdate.psbt_fund:type_name -> looprpc.ReadyForPsbtFunding
-	90, // 50: looprpc.ChannelOpenUpdate.channel_point:type_name -> looprpc.ChannelPoint
-	89, // 51: looprpc.FundingShim.chan_point_shim:type_name -> looprpc.ChanPointShim
-	88, // 52: looprpc.FundingShim.psbt_shim:type_name -> looprpc.PsbtShim
-	90, // 53: looprpc.ChanPointShim.chan_point:type_name -> looprpc.ChannelPoint
-	91, // 54: looprpc.ChanPointShim.local_key:type_name -> looprpc.KeyDescriptor
-	92, // 55: looprpc.KeyDescriptor.key_loc:type_name -> looprpc.KeyLocator
-	38, // 56: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
-	11, // 57: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
-	12, // 58: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
-	14, // 59: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
-	16, // 60: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
-	19, // 61: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
-	45, // 62: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
-	20, // 63: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
-	23, // 64: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
-	20, // 65: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
-	23, // 66: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
-	26, // 67: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	28, // 68: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
-	28, // 69: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
-	30, // 70: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
-	34, // 71: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
-	36, // 72: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
-	40, // 73: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
-	42, // 74: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
-	47, // 75: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
-	50, // 76: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
-	52, // 77: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
-	54, // 78: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
-	57, // 79: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
-	59, // 80: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
-	62, // 81: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
-	64, // 82: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
-	66, // 83: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
-	68, // 84: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
-	70, // 85: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
-	75, // 86: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
-	81, // 87: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.OpenChannelRequest
-	13, // 88: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
-	13, // 89: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
-	15, // 90: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
-	18, // 91: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
-	15, // 92: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
-	46, // 93: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
-	22, // 94: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
-	25, // 95: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
-	21, // 96: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
-	24, // 97: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
-	27, // 98: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	29, // 99: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
-	29, // 100: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
-	31, // 101: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
-	35, // 102: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
-	37, // 103: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
-	41, // 104: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
-	44, // 105: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
-	48, // 106: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
-	51, // 107: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
-	53, // 108: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
-	55, // 109: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
-	58, // 110: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
-	60, // 111: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
-	63, // 112: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
-	65, // 113: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
-	67, // 114: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
-	69, // 115: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
-	71, // 116: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
-	76, // 117: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
-	10, // 118: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
-	88, // [88:119] is the sub-list for method output_type
-	57, // [57:88] is the sub-list for method input_type
-	57, // [57:57] is the sub-list for extension type_name
-	57, // [57:57] is the sub-list for extension extendee
-	0,  // [0:57] is the sub-list for field type_name
+	73, // 33: looprpc.ListStaticAddressDepositsResponse.filtered_deposits:type_name -> looprpc.Deposit
+	74, // 34: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
+	75, // 35: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
+	72, // 36: looprpc.StaticAddressSummaryResponse.per_address_summaries:type_name -> looprpc.StaticAddressSummary
+	6,  // 37: looprpc.Deposit.state:type_name -> looprpc.DepositState
+	73, // 38: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
+	7,  // 39: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
+	73, // 40: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
+	96, // 41: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	73, // 42: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
+	80, // 43: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
+	80, // 44: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
+	87, // 45: looprpc.OpenChannelRequest.funding_shim:type_name -> looprpc.FundingShim
+	8,  // 46: looprpc.OpenChannelRequest.commitment_type:type_name -> looprpc.CommitmentType
+	94, // 47: looprpc.OpenChannelRequest.outpoints:type_name -> looprpc.OutPoint
+	84, // 48: looprpc.OpenStatusUpdate.chan_pending:type_name -> looprpc.PendingUpdate
+	85, // 49: looprpc.OpenStatusUpdate.chan_open:type_name -> looprpc.ChannelOpenUpdate
+	86, // 50: looprpc.OpenStatusUpdate.psbt_fund:type_name -> looprpc.ReadyForPsbtFunding
+	91, // 51: looprpc.ChannelOpenUpdate.channel_point:type_name -> looprpc.ChannelPoint
+	90, // 52: looprpc.FundingShim.chan_point_shim:type_name -> looprpc.ChanPointShim
+	89, // 53: looprpc.FundingShim.psbt_shim:type_name -> looprpc.PsbtShim
+	91, // 54: looprpc.ChanPointShim.chan_point:type_name -> looprpc.ChannelPoint
+	92, // 55: looprpc.ChanPointShim.local_key:type_name -> looprpc.KeyDescriptor
+	93, // 56: looprpc.KeyDescriptor.key_loc:type_name -> looprpc.KeyLocator
+	38, // 57: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
+	11, // 58: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
+	12, // 59: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
+	14, // 60: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
+	16, // 61: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
+	19, // 62: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
+	45, // 63: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
+	20, // 64: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
+	23, // 65: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
+	20, // 66: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
+	23, // 67: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
+	26, // 68: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
+	28, // 69: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
+	28, // 70: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	30, // 71: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
+	34, // 72: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
+	36, // 73: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
+	40, // 74: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
+	42, // 75: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
+	47, // 76: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
+	50, // 77: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
+	52, // 78: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
+	54, // 79: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
+	57, // 80: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
+	59, // 81: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
+	62, // 82: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
+	64, // 83: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
+	66, // 84: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
+	68, // 85: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
+	70, // 86: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
+	76, // 87: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
+	82, // 88: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.OpenChannelRequest
+	13, // 89: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
+	13, // 90: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
+	15, // 91: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
+	18, // 92: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
+	15, // 93: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
+	46, // 94: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
+	22, // 95: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
+	25, // 96: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
+	21, // 97: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
+	24, // 98: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
+	27, // 99: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
+	29, // 100: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
+	29, // 101: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	31, // 102: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
+	35, // 103: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
+	37, // 104: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
+	41, // 105: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
+	44, // 106: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
+	48, // 107: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
+	51, // 108: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
+	53, // 109: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
+	55, // 110: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
+	58, // 111: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
+	60, // 112: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
+	63, // 113: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
+	65, // 114: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
+	67, // 115: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
+	69, // 116: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
+	71, // 117: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
+	77, // 118: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
+	10, // 119: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
+	89, // [89:120] is the sub-list for method output_type
+	58, // [58:89] is the sub-list for method input_type
+	58, // [58:58] is the sub-list for extension type_name
+	58, // [58:58] is the sub-list for extension extendee
+	0,  // [0:58] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
@@ -9781,7 +10004,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[62].Exporter = func(v any, i int) any {
-			switch v := v.(*Deposit); i {
+			switch v := v.(*StaticAddressSummary); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9793,7 +10016,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[63].Exporter = func(v any, i int) any {
-			switch v := v.(*StaticAddressWithdrawal); i {
+			switch v := v.(*Deposit); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9805,7 +10028,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[64].Exporter = func(v any, i int) any {
-			switch v := v.(*StaticAddressLoopInSwap); i {
+			switch v := v.(*StaticAddressWithdrawal); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9817,7 +10040,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[65].Exporter = func(v any, i int) any {
-			switch v := v.(*StaticAddressLoopInRequest); i {
+			switch v := v.(*StaticAddressLoopInSwap); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9829,7 +10052,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[66].Exporter = func(v any, i int) any {
-			switch v := v.(*StaticAddressLoopInResponse); i {
+			switch v := v.(*StaticAddressLoopInRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9841,7 +10064,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[67].Exporter = func(v any, i int) any {
-			switch v := v.(*AssetLoopOutRequest); i {
+			switch v := v.(*StaticAddressLoopInResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9853,7 +10076,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[68].Exporter = func(v any, i int) any {
-			switch v := v.(*AssetRfqInfo); i {
+			switch v := v.(*AssetLoopOutRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9865,7 +10088,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[69].Exporter = func(v any, i int) any {
-			switch v := v.(*FixedPoint); i {
+			switch v := v.(*AssetRfqInfo); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9877,7 +10100,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[70].Exporter = func(v any, i int) any {
-			switch v := v.(*AssetLoopOutInfo); i {
+			switch v := v.(*FixedPoint); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9889,7 +10112,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[71].Exporter = func(v any, i int) any {
-			switch v := v.(*OpenChannelRequest); i {
+			switch v := v.(*AssetLoopOutInfo); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9901,7 +10124,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[72].Exporter = func(v any, i int) any {
-			switch v := v.(*OpenStatusUpdate); i {
+			switch v := v.(*OpenChannelRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9913,7 +10136,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[73].Exporter = func(v any, i int) any {
-			switch v := v.(*PendingUpdate); i {
+			switch v := v.(*OpenStatusUpdate); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9925,7 +10148,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[74].Exporter = func(v any, i int) any {
-			switch v := v.(*ChannelOpenUpdate); i {
+			switch v := v.(*PendingUpdate); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9937,7 +10160,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[75].Exporter = func(v any, i int) any {
-			switch v := v.(*ReadyForPsbtFunding); i {
+			switch v := v.(*ChannelOpenUpdate); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9949,7 +10172,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[76].Exporter = func(v any, i int) any {
-			switch v := v.(*FundingShim); i {
+			switch v := v.(*ReadyForPsbtFunding); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9961,7 +10184,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[77].Exporter = func(v any, i int) any {
-			switch v := v.(*FundingShimCancel); i {
+			switch v := v.(*FundingShim); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9973,7 +10196,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[78].Exporter = func(v any, i int) any {
-			switch v := v.(*PsbtShim); i {
+			switch v := v.(*FundingShimCancel); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9985,7 +10208,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[79].Exporter = func(v any, i int) any {
-			switch v := v.(*ChanPointShim); i {
+			switch v := v.(*PsbtShim); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -9997,7 +10220,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[80].Exporter = func(v any, i int) any {
-			switch v := v.(*ChannelPoint); i {
+			switch v := v.(*ChanPointShim); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -10009,7 +10232,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[81].Exporter = func(v any, i int) any {
-			switch v := v.(*KeyDescriptor); i {
+			switch v := v.(*ChannelPoint); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -10021,7 +10244,7 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[82].Exporter = func(v any, i int) any {
-			switch v := v.(*KeyLocator); i {
+			switch v := v.(*KeyDescriptor); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -10033,6 +10256,18 @@ func file_client_proto_init() {
 			}
 		}
 		file_client_proto_msgTypes[83].Exporter = func(v any, i int) any {
+			switch v := v.(*KeyLocator); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_client_proto_msgTypes[84].Exporter = func(v any, i int) any {
 			switch v := v.(*OutPoint); i {
 			case 0:
 				return &v.state
@@ -10045,16 +10280,16 @@ func file_client_proto_init() {
 			}
 		}
 	}
-	file_client_proto_msgTypes[72].OneofWrappers = []any{
+	file_client_proto_msgTypes[73].OneofWrappers = []any{
 		(*OpenStatusUpdate_ChanPending)(nil),
 		(*OpenStatusUpdate_ChanOpen)(nil),
 		(*OpenStatusUpdate_PsbtFund)(nil),
 	}
-	file_client_proto_msgTypes[76].OneofWrappers = []any{
+	file_client_proto_msgTypes[77].OneofWrappers = []any{
 		(*FundingShim_ChanPointShim)(nil),
 		(*FundingShim_PsbtShim)(nil),
 	}
-	file_client_proto_msgTypes[80].OneofWrappers = []any{
+	file_client_proto_msgTypes[81].OneofWrappers = []any{
 		(*ChannelPoint_FundingTxidBytes)(nil),
 		(*ChannelPoint_FundingTxidStr)(nil),
 	}
@@ -10064,7 +10299,7 @@ func file_client_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_client_proto_rawDesc,
 			NumEnums:      10,
-			NumMessages:   85,
+			NumMessages:   86,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
