@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
@@ -991,6 +992,7 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 func TestListUnspentDeposits(t *testing.T) {
 	ctx := context.Background()
 	mock := mock_lnd.NewMockLnd()
+	currentTokenMock := func() (*l402.Token, error) { return nil, nil }
 
 	// Prepare a single static address parameter set.
 	_, client := mock_lnd.CreateKey(1)
@@ -1007,11 +1009,25 @@ func TestListUnspentDeposits(t *testing.T) {
 
 	// Build an address manager using our mock lnd and fake address store.
 	addrMgr := address.NewManager(&address.ManagerConfig{
-		Store:       addrStore,
-		WalletKit:   mock.WalletKit,
-		ChainParams: mock.ChainParams,
-		// ChainNotifier and AddressClient are not needed for this test.
+		Store:         addrStore,
+		WalletKit:     mock.WalletKit,
+		ChainParams:   mock.ChainParams,
+		ChainNotifier: mock.ChainNotifier,
+		CurrentToken:  currentTokenMock,
 	}, 0)
+
+	initChan := make(chan struct{})
+	go func() {
+		err := addrMgr.Run(t.Context(), initChan)
+		require.NoError(t, err)
+	}()
+
+	select {
+	case <-initChan:
+	case <-t.Context().Done():
+		t.Fatalf("failed to initialize address manager: %v",
+			t.Context().Err())
+	}
 
 	// Construct several UTXOs with different confirmation counts.
 	makeUtxo := func(idx uint32, confs int64) *lnwallet.Utxo {
@@ -1065,6 +1081,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			server := &swapClientServer{
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
+				network:              lndclient.NetworkRegtest,
 			}
 
 			resp, err := server.ListUnspentDeposits(
@@ -1105,6 +1122,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			server := &swapClientServer{
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
+				network:              lndclient.NetworkRegtest,
 			}
 
 			resp, err := server.ListUnspentDeposits(
@@ -1135,6 +1153,7 @@ func TestListUnspentDeposits(t *testing.T) {
 		server := &swapClientServer{
 			staticAddressManager: addrMgr,
 			depositManager:       depMgr,
+			network:              lndclient.NetworkRegtest,
 		}
 
 		resp, err := server.ListUnspentDeposits(
