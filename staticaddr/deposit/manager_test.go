@@ -134,16 +134,6 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
-	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
-	error) {
-
-	args := m.Called(clientPubkey, serverPubkey, expiry)
-
-	return args.Get(0).(*btcutil.AddressTaproot),
-		args.Error(1)
-}
-
 type mockStore struct {
 	mock.Mock
 }
