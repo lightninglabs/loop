@@ -1604,11 +1604,15 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
-	staticAddress, utxos, err := s.staticAddressManager.ListUnspentRaw(
+	utxos, err := s.staticAddressManager.ListUnspentRaw(
 		ctx, req.MinConfs, req.MaxConfs,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(utxos) == 0 {
+		return &looprpc.ListUnspentDepositsResponse{}, nil
 	}
 
 	// ListUnspentRaw returns the unspent wallet view of the backing lnd
@@ -1658,7 +1662,7 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	// Any remaining outpoints in confirmedToCheck are ones that lnd knows
-	// about but we don't. These are new, unspent deposits.
+	// about, but we don't. These are new, unspent deposits.
 	for op := range confirmedToCheck {
 		isUnspent[op] = struct{}{}
 	}
@@ -1670,8 +1674,24 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 			continue
 		}
 
+		params := s.staticAddressManager.GetParameters(u.PkScript)
+		if params == nil {
+			return nil, fmt.Errorf("unknown pkscript %x",
+				u.PkScript)
+		}
+
+		network, err := s.network.ChainParams()
+		if err != nil {
+			return nil, err
+		}
+
+		staticAddress, err := params.TaprootAddress(network)
+		if err != nil {
+			return nil, err
+		}
+
 		utxo := &looprpc.Utxo{
-			StaticAddress: staticAddress.String(),
+			StaticAddress: staticAddress,
 			AmountSat:     int64(u.Value),
 			Confirmations: u.Confirmations,
 			Outpoint:      u.OutPoint.String(),
@@ -2014,15 +2034,18 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		return nil, err
 	}
 
-	address, err := s.staticAddressManager.GetTaprootAddress(
-		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
-	)
+	network, err := s.network.ChainParams()
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := params.TaprootAddress(network)
 	if err != nil {
 		return nil, err
 	}
 
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:                  address.String(),
+		StaticAddress:                  address,
 		RelativeExpiryBlocks:           uint64(params.Expiry),
 		TotalNumDeposits:               uint32(totalNumDeposits),
 		ValueUnconfirmedSatoshis:       valueUnconfirmed,
