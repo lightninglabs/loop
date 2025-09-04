@@ -34,9 +34,9 @@ type Store interface {
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
+	// GetParameters returns the static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
 
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
