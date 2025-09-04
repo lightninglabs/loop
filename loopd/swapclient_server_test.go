@@ -1018,15 +1018,14 @@ func TestListUnspentDeposits(t *testing.T) {
 
 	initChan := make(chan struct{})
 	go func() {
-		err := addrMgr.Run(t.Context(), initChan)
+		err := addrMgr.Run(ctx, initChan)
 		require.NoError(t, err)
 	}()
 
 	select {
 	case <-initChan:
-	case <-t.Context().Done():
-		t.Fatalf("failed to initialize address manager: %v",
-			t.Context().Err())
+	case <-ctx.Done():
+		t.Fatalf("failed to initialize address manager: %v", ctx.Err())
 	}
 
 	// Construct several UTXOs with different confirmation counts.

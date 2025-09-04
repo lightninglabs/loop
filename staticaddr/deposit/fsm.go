@@ -3,14 +3,12 @@ package deposit
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -157,15 +155,13 @@ type FSM struct {
 
 	params *address.Parameters
 
-	address *script.StaticAddress
-
 	blockNtfnChan chan uint32
 
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
 	// finalizedDepositChan is used to signal that the deposit has been
-	// finalized and the FSM can be removed from the manager's memory.
+	// finalized, and the FSM can be removed from the manager's memory.
 	finalizedDepositChan chan wire.OutPoint
 }
 
@@ -175,29 +171,17 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
-	}
-
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address: %w", err)
-	}
-
 	depoFsm := &FSM{
 		cfg:                  cfg,
 		deposit:              deposit,
-		params:               params,
-		address:              address,
+		params:               deposit.AddressParams,
 		blockNtfnChan:        make(chan uint32),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
 
 	depositStates := depoFsm.DepositStatesV0()
-	switch params.ProtocolVersion {
+	switch deposit.AddressParams.ProtocolVersion {
 	case version.ProtocolVersion_V0:
 
 	default:

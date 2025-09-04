@@ -116,6 +116,14 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 		args.Error(1)
 }
 
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	args := m.Called(pkScript)
+
+	return args.Get(0).(*address.Parameters)
+}
+
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
 	*script.StaticAddress, error) {
 

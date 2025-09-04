@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -62,6 +63,10 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// AddressParams are the parameters of the address that are backing this
+	// deposit.
+	AddressParams *address.Parameters
 }
 
 // IsInFinalState returns true if the deposit is final.
