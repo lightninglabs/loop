@@ -189,7 +189,7 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	for i, d := range deposits {
 		m.deposits[d.OutPoint] = deposits[i]
 
-		// If the current deposit is final it wasn't active when we
+		// If the current deposit is final, it wasn't active when we
 		// shut down the client last. So we don't need to start a fsm
 		// for it.
 		if d.IsInFinalState() {
@@ -293,6 +293,13 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	params := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if params == nil {
+		return nil, fmt.Errorf("couldn't find static address "+
+			"parameters for deposit with pkscript %x", utxo.PkScript)
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -300,6 +307,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		Value:                utxo.Value,
 		ConfirmationHeight:   int64(blockHeight),
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        params,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -318,12 +326,10 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 func (m *Manager) getBlockHeight(ctx context.Context,
 	utxo *lnwallet.Utxo) (uint32, error) {
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return 0, fmt.Errorf("couldn't get confirmation height for " +
+			"deposit")
 	}
 
 	notifChan, errChan, err :=
