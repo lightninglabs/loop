@@ -945,6 +945,12 @@ func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
 	return s.params[0], nil
 }
 
+func (s *mockAddressStore) GetStaticAddressID(_ context.Context,
+	_ []byte) (int32, error) {
+
+	return 1, nil
+}
+
 func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	[]*address.Parameters, error) {
 
