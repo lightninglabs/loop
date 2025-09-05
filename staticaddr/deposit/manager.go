@@ -2,6 +2,8 @@ package deposit
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -10,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/jackc/pgx/v5"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
@@ -300,6 +303,13 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 			"parameters for deposit with pkscript %x", utxo.PkScript)
 	}
 
+	addressID, err := m.cfg.AddressManager.GetStaticAddressID(
+		ctx, utxo.PkScript,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -308,6 +318,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		ConfirmationHeight:   int64(blockHeight),
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 		AddressParams:        params,
+		AddressID:            addressID,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -570,7 +581,7 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 }
 
 // DepositsForOutpoints returns all deposits that are behind the given
-// outpoints.
+// outpoints. If there's no deposit for an outpoint, it's skipped.
 func (m *Manager) DepositsForOutpoints(ctx context.Context,
 	outpoints []string) ([]*Deposit, error) {
 
@@ -593,6 +604,11 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 
 		deposit, err := m.cfg.Store.DepositForOutpoint(ctx, op.String())
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) ||
+				errors.Is(err, pgx.ErrNoRows) {
+
+				continue
+			}
 			return nil, err
 		}
 

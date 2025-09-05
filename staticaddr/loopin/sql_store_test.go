@@ -10,8 +10,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/test"
+	loop_test "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -27,11 +28,28 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	testClock := clock.NewTestClock(time.Now())
 	defer testDb.Close()
 
+	addressStore := address.NewSqlStore(testDb.BaseDB)
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	swapStore := NewSqlStore(
 		loopdb.NewTypedStore[Querier](testDb), testClock,
 		&chaincfg.RegressionNetParams,
 	)
+
+	_, client := loop_test.CreateKey(1)
+	_, server := loop_test.CreateKey(2)
+	pkScript := []byte("pkscript")
+	addrParams := &address.Parameters{
+		ClientPubkey: client,
+		ServerPubkey: server,
+		Expiry:       10,
+		PkScript:     pkScript,
+	}
+
+	err := addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
+	addrParams.PkScript = []byte("pkscript2")
+	err = addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()
@@ -52,6 +70,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
+		AddressID: 1,
 	},
 		&deposit.Deposit{
 			ID: loopedInDepositID,
@@ -63,9 +82,10 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 			TimeOutSweepPkScript: []byte{
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
+			AddressID: 2,
 		}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)
@@ -87,8 +107,8 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	err = depositStore.UpdateDeposit(ctxb, d2)
 	require.NoError(t, err)
 
-	_, clientPubKey := test.CreateKey(1)
-	_, serverPubKey := test.CreateKey(2)
+	_, clientPubKey := loop_test.CreateKey(1)
+	_, serverPubKey := loop_test.CreateKey(2)
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
@@ -164,11 +184,28 @@ func TestCreateLoopIn(t *testing.T) {
 	testClock := clock.NewTestClock(time.Now())
 	defer testDb.Close()
 
+	addressStore := address.NewSqlStore(testDb.BaseDB)
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	swapStore := NewSqlStore(
 		loopdb.NewTypedStore[Querier](testDb), testClock,
 		&chaincfg.RegressionNetParams,
 	)
+
+	_, client := loop_test.CreateKey(1)
+	_, server := loop_test.CreateKey(2)
+	pkScript := []byte("pkscript")
+	addrParams := &address.Parameters{
+		ClientPubkey: client,
+		ServerPubkey: server,
+		Expiry:       10,
+		PkScript:     pkScript,
+	}
+
+	err := addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
+	addrParams.PkScript = []byte("pkscript2")
+	err = addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()
@@ -187,6 +224,7 @@ func TestCreateLoopIn(t *testing.T) {
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
+		AddressID: 1,
 	},
 		&deposit.Deposit{
 			ID: newID(),
@@ -198,9 +236,10 @@ func TestCreateLoopIn(t *testing.T) {
 			TimeOutSweepPkScript: []byte{
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
+			AddressID: 2,
 		}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)
@@ -213,8 +252,8 @@ func TestCreateLoopIn(t *testing.T) {
 	err = depositStore.UpdateDeposit(ctxb, d2)
 	require.NoError(t, err)
 
-	_, clientPubKey := test.CreateKey(1)
-	_, serverPubKey := test.CreateKey(2)
+	_, clientPubKey := loop_test.CreateKey(1)
+	_, serverPubKey := loop_test.CreateKey(2)
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
