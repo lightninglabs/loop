@@ -301,6 +301,13 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 			"parameters for deposit with pkscript %x", utxo.PkScript)
 	}
 
+	addressID, err := m.cfg.AddressManager.GetStaticAddressID(
+		ctx, utxo.PkScript,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -309,6 +316,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		ConfirmationHeight:   int64(blockHeight),
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 		AddressParams:        params,
+		AddressID:            addressID,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -571,7 +579,7 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 }
 
 // DepositsForOutpoints returns all deposits that are behind the given
-// outpoints.
+// outpoints. If there's no deposit for an outpoint, it's skipped.
 func (m *Manager) DepositsForOutpoints(ctx context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*Deposit, error) {
 
