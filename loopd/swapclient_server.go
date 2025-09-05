@@ -39,6 +39,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -1986,83 +1987,147 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	_ *looprpc.StaticAddressSummaryRequest) (
 	*looprpc.StaticAddressSummaryResponse, error) {
 
+	summaries := make(map[string]*looprpc.StaticAddressSummary)
+
 	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var (
-		totalNumDeposits    = len(allDeposits)
-		valueUnconfirmed    int64
-		valueDeposited      int64
-		valueExpired        int64
-		valueWithdrawn      int64
-		valueLoopedIn       int64
-		valueChannelsOpened int64
-		htlcTimeoutSwept    int64
-	)
-
-	// Value unconfirmed.
-	utxos, err := s.staticAddressManager.ListUnspent(
-		ctx, 0, deposit.MinConfs-1,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, u := range utxos {
-		valueUnconfirmed += int64(u.Value)
-	}
-
-	// Confirmed total values by category.
+	pkScriptDepositMap := make(map[string][]*deposit.Deposit)
 	for _, d := range allDeposits {
-		value := int64(d.Value)
-		switch d.GetState() {
-		case deposit.Deposited:
-			valueDeposited += value
-
-		case deposit.Expired:
-			valueExpired += value
-
-		case deposit.Withdrawn:
-			valueWithdrawn += value
-
-		case deposit.LoopedIn:
-			valueLoopedIn += value
-
-		case deposit.HtlcTimeoutSwept:
-			htlcTimeoutSwept += value
-
-		case deposit.ChannelPublished:
-			valueChannelsOpened += value
-		}
-	}
-
-	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
+		pkScript := string(d.AddressParams.PkScript)
+		pkScriptDepositMap[pkScript] = append(
+			pkScriptDepositMap[pkScript], d,
+		)
 	}
 
 	network, err := s.network.ChainParams()
 	if err != nil {
 		return nil, err
 	}
+	for pkScript, deposits := range pkScriptDepositMap {
+		if len(deposits) == 0 {
+			continue
+		}
 
-	address, err := params.TaprootAddress(network)
+		address, err := deposits[0].AddressParams.TaprootAddress(network)
+		if err != nil {
+			return nil, err
+		}
+		summary := &looprpc.StaticAddressSummary{
+			StaticAddress:        address,
+			RelativeExpiryBlocks: uint64(deposits[0].AddressParams.Expiry),
+			TotalNumDeposits:     uint32(len(deposits)),
+		}
+
+		for _, d := range deposits {
+			value := int64(d.Value)
+			switch d.GetState() {
+			case deposit.Deposited:
+				summary.ValueDepositedSatoshis += value
+
+			case deposit.Expired:
+				summary.ValueExpiredSatoshis += value
+
+			case deposit.Withdrawn:
+				summary.ValueWithdrawnSatoshis += value
+
+			case deposit.LoopedIn:
+				summary.ValueLoopedInSatoshis += value
+
+			case deposit.HtlcTimeoutSwept:
+				summary.ValueHtlcTimeoutSweepsSatoshis += value
+
+			case deposit.ChannelPublished:
+				summary.ValueChannelsOpened += value
+			}
+		}
+
+		// Store per-address summary pointer directly.
+		summaries[pkScript] = summary
+	}
+
+	listUnspentMap := make(map[string][]*lnwallet.Utxo)
+	preDepositedUtxos, err := s.staticAddressManager.ListUnspent(
+		ctx, 0, deposit.MinConfs-1,
+	)
 	if err != nil {
 		return nil, err
 	}
 
+	for _, utxo := range preDepositedUtxos {
+		pkScript := string(utxo.PkScript)
+		listUnspentMap[pkScript] = append(
+			listUnspentMap[pkScript], utxo,
+		)
+	}
+
+	for pkScript, utxos := range listUnspentMap {
+		notDepositedValue := int64(0)
+		for _, utxo := range utxos {
+			notDepositedValue += int64(utxo.Value)
+		}
+
+		if _, ok := summaries[pkScript]; ok {
+			summaries[pkScript].ValueUnconfirmedSatoshis =
+				notDepositedValue
+		} else {
+			params := s.staticAddressManager.GetParameters([]byte(pkScript))
+			staticAddress, err := params.TaprootAddress(network)
+			if err != nil {
+				return nil, err
+			}
+			summaries[pkScript] = &looprpc.StaticAddressSummary{
+				StaticAddress:            staticAddress,
+				RelativeExpiryBlocks:     uint64(params.Expiry),
+				ValueUnconfirmedSatoshis: notDepositedValue,
+			}
+		}
+	}
+
+	deprecatedParams, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deprecatedAddress, err := deprecatedParams.TaprootAddress(network)
+	if err != nil {
+		return nil, err
+	}
+
+	deprecatedSummary := &looprpc.StaticAddressSummary{
+		StaticAddress:                  deprecatedAddress,
+		RelativeExpiryBlocks:           0,
+		TotalNumDeposits:               0,
+		ValueDepositedSatoshis:         0,
+		ValueExpiredSatoshis:           0,
+		ValueWithdrawnSatoshis:         0,
+		ValueLoopedInSatoshis:          0,
+		ValueChannelsOpened:            0,
+		ValueHtlcTimeoutSweepsSatoshis: 0,
+		ValueUnconfirmedSatoshis:       0,
+	}
+	results := make([]*looprpc.StaticAddressSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.StaticAddress == deprecatedAddress {
+			deprecatedSummary = summary
+		}
+		results = append(results, summary)
+	}
+
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:                  address,
-		RelativeExpiryBlocks:           uint64(params.Expiry),
-		TotalNumDeposits:               uint32(totalNumDeposits),
-		ValueUnconfirmedSatoshis:       valueUnconfirmed,
-		ValueDepositedSatoshis:         valueDeposited,
-		ValueExpiredSatoshis:           valueExpired,
-		ValueWithdrawnSatoshis:         valueWithdrawn,
-		ValueLoopedInSatoshis:          valueLoopedIn,
-		ValueChannelsOpened:            valueChannelsOpened,
-		ValueHtlcTimeoutSweepsSatoshis: htlcTimeoutSwept,
+		StaticAddress:                  deprecatedSummary.StaticAddress,
+		RelativeExpiryBlocks:           deprecatedSummary.RelativeExpiryBlocks,
+		TotalNumDeposits:               deprecatedSummary.TotalNumDeposits,
+		ValueUnconfirmedSatoshis:       deprecatedSummary.ValueUnconfirmedSatoshis,
+		ValueDepositedSatoshis:         deprecatedSummary.ValueDepositedSatoshis,
+		ValueExpiredSatoshis:           deprecatedSummary.ValueExpiredSatoshis,
+		ValueWithdrawnSatoshis:         deprecatedSummary.ValueWithdrawnSatoshis,
+		ValueLoopedInSatoshis:          deprecatedSummary.ValueLoopedInSatoshis,
+		ValueHtlcTimeoutSweepsSatoshis: deprecatedSummary.ValueHtlcTimeoutSweepsSatoshis,
+		ValueChannelsOpened:            deprecatedSummary.ValueChannelsOpened,
+		PerAddressSummaries:            results,
 	}, nil
 }
 
