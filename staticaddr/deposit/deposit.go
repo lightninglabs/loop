@@ -67,6 +67,9 @@ type Deposit struct {
 	// AddressParams are the parameters of the address that are backing this
 	// deposit.
 	AddressParams *address.Parameters
+
+	// AddressID is the ID of the address that is backing this deposit.
+	AddressID int32
 }
 
 // IsInFinalState returns true if the deposit is final.

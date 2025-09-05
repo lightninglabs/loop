@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -14,7 +16,10 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -43,6 +48,10 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateDeposit creates a static address deposit record in the database.
 func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
+	if deposit.AddressID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
 	createArgs := sqlc.CreateDepositParams{
 		DepositID:            deposit.ID[:],
 		TxHash:               deposit.Hash[:],
@@ -50,6 +59,10 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.ConfirmationHeight,
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+		StaticAddressID: sql.NullInt32{
+			Int32: deposit.AddressID,
+			Valid: true,
+		},
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -144,7 +157,23 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			allDepositsRow := sqlc.AllDepositsRow{
+				ID:                    row.ID,
+				DepositID:             row.DepositID,
+				TxHash:                row.TxHash,
+				OutIndex:              row.OutIndex,
+				Amount:                row.Amount,
+				ConfirmationHeight:    row.ConfirmationHeight,
+				TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+				ExpirySweepTxid:       row.ExpirySweepTxid,
+				FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+				SwapHash:              row.SwapHash,
+				StaticAddressID:       row.StaticAddressID,
+				ClientPubkey:          row.ClientPubkey,
+				ServerPubkey:          row.ServerPubkey,
+				Expiry:                row.Expiry,
+			}
+			deposit, err = ToDeposit(allDepositsRow, latestUpdate)
 			if err != nil {
 				return err
 			}
@@ -192,7 +221,24 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			allDepositsRow := sqlc.AllDepositsRow{
+				ID:                    row.ID,
+				DepositID:             row.DepositID,
+				TxHash:                row.TxHash,
+				OutIndex:              row.OutIndex,
+				Amount:                row.Amount,
+				ConfirmationHeight:    row.ConfirmationHeight,
+				TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+				ExpirySweepTxid:       row.ExpirySweepTxid,
+				FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+				SwapHash:              row.SwapHash,
+				StaticAddressID:       row.StaticAddressID,
+				ClientPubkey:          row.ClientPubkey,
+				ServerPubkey:          row.ServerPubkey,
+				Expiry:                row.Expiry,
+			}
+
+			deposit, err = ToDeposit(allDepositsRow, latestUpdate)
 			if err != nil {
 				return err
 			}
@@ -219,15 +265,15 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 				return err
 			}
 
-			for _, deposit := range deposits {
+			for _, d := range deposits {
 				latestUpdate, err := q.GetLatestDepositUpdate(
-					ctx, deposit.DepositID,
+					ctx, d.DepositID,
 				)
 				if err != nil {
 					return err
 				}
 
-				d, err := ToDeposit(deposit, latestUpdate)
+				d, err := ToDeposit(d, latestUpdate)
 				if err != nil {
 					return err
 				}
@@ -245,8 +291,8 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 }
 
 // ToDeposit converts an sql deposit to a deposit.
-func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
-	error) {
+func ToDeposit(row sqlc.AllDepositsRow,
+	lastUpdate sqlc.DepositUpdate) (*Deposit, error) {
 
 	id := ID{}
 	err := id.FromByteSlice(row.DepositID)
@@ -295,6 +341,31 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		swapHash = &hash
 	}
 
+	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	serverPubkey, err := btcec.ParsePubKey(row.ServerPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	params := &address.Parameters{
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       uint32(row.Expiry.Int32),
+		PkScript:     row.Pkscript,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(row.ClientKeyFamily.Int32),
+			Index:  uint32(row.ClientKeyIndex.Int32),
+		},
+		ProtocolVersion: version.AddressProtocolVersion(
+			row.ProtocolVersion.Int32,
+		),
+		InitiationHeight: row.InitiationHeight.Int32,
+	}
+
 	return &Deposit{
 		ID:    id,
 		state: fsm.StateType(lastUpdate.UpdateState),
@@ -308,6 +379,8 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		ExpirySweepTxid:       expirySweepTxid,
 		SwapHash:              swapHash,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
+		AddressParams:         params,
+		AddressID:             row.StaticAddressID.Int32,
 	}, nil
 }
 
@@ -316,11 +389,16 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 func (s *SqlStore) BatchSetStaticAddressID(ctx context.Context,
 	staticAddrID int32) error {
 
+	if staticAddrID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
 	return s.baseDB.ExecTx(
 		ctx, loopdb.NewSqlWriteOpts(), func(q *sqlc.Queries) error {
 			return q.SetAllNullDepositsStaticAddressID(
 				ctx, sql.NullInt32{
-					Int32: staticAddrID, Valid: true,
+					Int32: staticAddrID,
+					Valid: true,
 				},
 			)
 		},

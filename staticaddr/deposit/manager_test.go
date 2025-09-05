@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
@@ -114,6 +115,14 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 
 	return args.Get(0).(*address.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	args := m.Called(ctx, pkScript)
+
+	return args.Get(0).(int32), nil
 }
 
 func (m *mockAddressManager) GetParameters(
@@ -311,6 +320,11 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Value:                utxo.Value,
 			ConfirmationHeight:   3,
 			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+			AddressID:            1,
+			AddressParams: &address.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+				Expiry:          100,
+			},
 		},
 	}
 

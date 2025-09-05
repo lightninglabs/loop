@@ -34,6 +34,10 @@ type Store interface {
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
+	// GetStaticAddressID the ID of the static address for the given
+	// pkScript.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
 	// GetParameters returns the static address parameters for the given
 	// pkScript.
 	GetParameters(pkScript []byte) *address.Parameters
