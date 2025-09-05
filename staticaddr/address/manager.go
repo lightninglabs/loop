@@ -368,6 +368,12 @@ func (m *Manager) GetParameters(pkScript []byte) *Parameters {
 	return m.activeStaticAddresses[string(pkScript)]
 }
 
+func (m *Manager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	return m.cfg.Store.GetStaticAddressID(ctx, pkScript)
+}
+
 // GetStaticAddress returns a taproot address for the given client and server
 // public keys and expiry.
 func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
