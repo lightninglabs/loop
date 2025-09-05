@@ -10,7 +10,7 @@ import (
 )
 
 type Querier interface {
-	AllDeposits(ctx context.Context) ([]Deposit, error)
+	AllDeposits(ctx context.Context) ([]AllDepositsRow, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
@@ -18,14 +18,14 @@ type Querier interface {
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
-	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
+	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (DepositForOutpointRow, error)
 	DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([][]byte, error)
 	DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
-	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
+	GetDeposit(ctx context.Context, depositID []byte) (GetDepositRow, error)
 	GetInstantOutSwap(ctx context.Context, swapHash []byte) (GetInstantOutSwapRow, error)
 	GetInstantOutSwapUpdates(ctx context.Context, swapHash []byte) ([]InstantoutUpdate, error)
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
