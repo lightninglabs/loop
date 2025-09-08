@@ -19,10 +19,6 @@ import (
 )
 
 const (
-	// PollInterval is the interval in which we poll for new deposits to our
-	// static address.
-	PollInterval = 10 * time.Second
-
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered available for loop-ins, coop-spends and
 	// timeouts.
@@ -74,16 +70,16 @@ type ManagerConfig struct {
 type Manager struct {
 	cfg *ManagerConfig
 
-	// mu guards access to activeDeposits map.
+	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
-	// deposits contains all the deposits that have ever been made to the
+	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
-	// also serves as basis for reconciliation of newly detected deposits by
-	// matching them against deposits in this map that were already seen.
+	// also serves as a basis for reconciliation of newly detected deposits
+	// by matching them against deposits in this map that were already seen.
 	deposits map[wire.OutPoint]*Deposit
 
 	// finalizedDepositChan is a channel that receives deposits that have
@@ -119,8 +115,13 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	// Start the deposit notifier.
-	m.pollDeposits(ctx)
+	// Initially reconcile new deposits after a restart, so we catch up with
+	// missed deposits while we were offline.
+	if err = m.reconcileDeposits(ctx); err != nil {
+		log.Errorf("unable to reconcile deposits: %v", err)
+
+		return err
+	}
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -147,6 +148,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 				case <-ctx.Done():
 					return ctx.Err()
 				}
+			}
+
+			// Reconcile new deposits that might have just gotten
+			// confirmed.
+			if err = m.reconcileDeposits(ctx); err != nil {
+				log.Errorf("unable to reconcile deposits: %v",
+					err)
+
+				return err
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
@@ -213,31 +223,7 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	return nil
 }
 
-// pollDeposits polls new deposits to our static address and notifies the
-// manager's event loop about them.
-func (m *Manager) pollDeposits(ctx context.Context) {
-	log.Debugf("Waiting for new static address deposits...")
-
-	go func() {
-		ticker := time.NewTicker(PollInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				err := m.reconcileDeposits(ctx)
-				if err != nil {
-					log.Errorf("unable to reconcile "+
-						"deposits: %v", err)
-				}
-
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-}
-
-// reconcileDeposits fetches all spends to our static address from our lnd
+// reconcileDeposits fetches all spends to our static addresses from our lnd
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
 // deposit to track its progress.
