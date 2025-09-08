@@ -1851,9 +1851,19 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 	clientWithdrawals := make(
 		[]*looprpc.StaticAddressWithdrawal, 0, len(withdrawals),
 	)
+	network, err := s.network.ChainParams()
+	if err != nil {
+		return nil, err
+	}
 	for _, w := range withdrawals {
 		deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
 		for _, d := range w.Deposits {
+			staticAddress, err := d.AddressParams.TaprootAddress(
+				network,
+			)
+			if err != nil {
+				return nil, err
+			}
 			deposits = append(deposits, &looprpc.Deposit{
 				Id:                 d.ID[:],
 				Outpoint:           d.OutPoint.String(),
@@ -1862,6 +1872,7 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 				State: toClientDepositState(
 					d.GetState(),
 				),
+				StaticAddress: staticAddress,
 			})
 		}
 		withdrawal := &looprpc.StaticAddressWithdrawal{
