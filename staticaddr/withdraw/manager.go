@@ -46,6 +46,11 @@ var (
 	ErrMissingPreviousWithdrawn = errors.New("can't bump fee for subset " +
 		"of clustered deposits")
 
+	// ErrMissingFinalizedTx is returned if previously withdrawn deposits
+	// don't have a finalized withdrawal tx attached.
+	ErrMissingFinalizedTx = errors.New("deposit does not have a " +
+		"finalized withdrawal tx, can't bump fee")
+
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered withdrawn.
 	MinConfs int32 = 3
@@ -328,6 +333,14 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 
 		if !allWithdrawing {
 			return "", "", ErrWithdrawingMixedDeposits
+		}
+
+		// Ensure that all previously withdrawn deposits reference their
+		// finalized withdrawal tx.
+		for _, d := range deposits {
+			if d.FinalizedWithdrawalTx == nil {
+				return "", "", ErrMissingFinalizedTx
+			}
 		}
 
 		// If republishing of an existing withdrawal is requested we
