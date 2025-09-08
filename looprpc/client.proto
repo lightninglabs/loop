@@ -2027,6 +2027,11 @@ message Deposit {
     set if the deposit is part of a loop-in swap.
     */
     bytes swap_hash = 7;
+
+    /*
+    The static address for the deposit's address parameters.
+    */
+    string static_address = 8;
 }
 
 message StaticAddressWithdrawal {

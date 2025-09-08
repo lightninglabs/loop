@@ -1338,6 +1338,10 @@
           "type": "string",
           "format": "byte",
           "description": "The swap hash of the swap that this deposit is part of. This field is only\nset if the deposit is part of a loop-in swap."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address for the deposit's address parameters."
         }
       }
     },

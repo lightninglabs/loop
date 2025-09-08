@@ -1787,6 +1787,11 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 		return nil, err
 	}
 
+	network, err := s.network.ChainParams()
+	if err != nil {
+		return nil, err
+	}
+
 	// Deposits filtered by state or outpoints.
 	var filteredDeposits []*looprpc.Deposit
 	if len(outpoints) > 0 {
@@ -1798,7 +1803,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 			}
 			return false
 		}
-		filteredDeposits = filter(allDeposits, f)
+		filteredDeposits = filter(allDeposits, network, f)
 
 		if len(outpoints) != len(filteredDeposits) {
 			return nil, fmt.Errorf("not all outpoints found in " +
@@ -1814,7 +1819,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 
 			return d.IsInState(toServerState(req.StateFilter))
 		}
-		filteredDeposits = filter(allDeposits, f)
+		filteredDeposits = filter(allDeposits, network, f)
 	}
 
 	// Calculate the blocks until expiry for each deposit.
@@ -2267,7 +2272,9 @@ func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
 
 type filterFunc func(deposits *deposit.Deposit) bool
 
-func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
+func filter(deposits []*deposit.Deposit, network *chaincfg.Params,
+	f filterFunc) []*looprpc.Deposit {
+
 	var clientDeposits []*looprpc.Deposit
 	for _, d := range deposits {
 		if !f(d) {
@@ -2281,6 +2288,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 
 		hash := d.Hash
 		outpoint := wire.NewOutPoint(&hash, d.Index).String()
+		staticAddr, _ := d.AddressParams.TaprootAddress(network)
 		deposit := &looprpc.Deposit{
 			Id: d.ID[:],
 			State: toClientDepositState(
@@ -2290,6 +2298,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			Value:              int64(d.Value),
 			ConfirmationHeight: d.ConfirmationHeight,
 			SwapHash:           swapHash,
+			StaticAddress:      staticAddr,
 		}
 
 		clientDeposits = append(clientDeposits, deposit)
