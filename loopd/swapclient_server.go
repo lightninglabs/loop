@@ -931,24 +931,13 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 				"deposits: %w", err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := s.staticAddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		info, err := s.lnd.Client.GetInfo(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get lnd info: %w",
 				err)
 		}
 		selectedDeposits, err := loopin.SelectDeposits(
-			selectedAmount, deposits, params.Expiry,
-			info.BlockHeight,
+			selectedAmount, deposits, info.BlockHeight,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -1792,6 +1781,11 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 		return nil, err
 	}
 
+	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Deposits filtered by state or outpoints.
 	var filteredDeposits []*looprpc.Deposit
 	if len(outpoints) > 0 {
@@ -1803,7 +1797,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 			}
 			return false
 		}
-		filteredDeposits = filter(allDeposits, network, f)
+		filteredDeposits = filter(allDeposits, network, lndInfo, f)
 
 		if len(outpoints) != len(filteredDeposits) {
 			return nil, fmt.Errorf("not all outpoints found in " +
@@ -1819,24 +1813,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 
 			return d.IsInState(toServerState(req.StateFilter))
 		}
-		filteredDeposits = filter(allDeposits, network, f)
-	}
-
-	// Calculate the blocks until expiry for each deposit.
-	lndInfo, err := s.lnd.Client.GetInfo(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	bestBlockHeight := int64(lndInfo.BlockHeight)
-	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < len(filteredDeposits); i++ {
-		filteredDeposits[i].BlocksUntilExpiry =
-			filteredDeposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		filteredDeposits = filter(allDeposits, network, lndInfo, f)
 	}
 
 	return &looprpc.ListStaticAddressDepositsResponse{
@@ -1923,13 +1900,6 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		return nil, err
 	}
 
-	addrParams, err := s.staticAddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	// Fetch all deposits at once and index them by swap hash for a quick
 	// lookup.
 	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
@@ -1968,7 +1938,7 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			for _, d := range ds {
 				state := toClientDepositState(d.GetState())
 				blocksUntilExpiry := d.ConfirmationHeight +
-					int64(addrParams.Expiry) -
+					int64(d.AddressParams.Expiry) -
 					int64(lndInfo.BlockHeight)
 
 				pd := &looprpc.Deposit{
@@ -2113,7 +2083,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		}
 	}
 
-	deprecatedParams, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	deprecatedParams, err := s.staticAddressManager.GetLegacyParameters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2243,7 +2213,7 @@ func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
 type filterFunc func(deposits *deposit.Deposit) bool
 
 func filter(deposits []*deposit.Deposit, network *chaincfg.Params,
-	f filterFunc) []*looprpc.Deposit {
+	lndInfo *lndclient.Info, f filterFunc) []*looprpc.Deposit {
 
 	var clientDeposits []*looprpc.Deposit
 	for _, d := range deposits {
@@ -2269,6 +2239,9 @@ func filter(deposits []*deposit.Deposit, network *chaincfg.Params,
 			ConfirmationHeight: d.ConfirmationHeight,
 			SwapHash:           swapHash,
 			StaticAddress:      staticAddr,
+			BlocksUntilExpiry: d.ConfirmationHeight +
+				int64(d.AddressParams.Expiry) -
+				int64(lndInfo.BlockHeight),
 		}
 
 		clientDeposits = append(clientDeposits, deposit)
