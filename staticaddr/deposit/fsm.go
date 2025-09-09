@@ -3,12 +3,14 @@ package deposit
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -480,16 +482,15 @@ func (f *FSM) Errorf(format string, args ...interface{}) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
-	error) {
+func (f *FSM) SignDescriptor(addressScript *script.StaticAddress) (
+	*lndclient.SignDescriptor, error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, err
+	if addressScript == nil {
+		return nil, fmt.Errorf("address script is nil")
 	}
 
 	return &lndclient.SignDescriptor{
-		WitnessScript: address.TimeoutLeaf.Script,
+		WitnessScript: addressScript.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
 			PubKey: f.params.ClientPubkey,
 		},

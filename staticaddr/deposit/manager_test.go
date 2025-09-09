@@ -108,7 +108,7 @@ type mockAddressManager struct {
 	mock.Mock
 }
 
-func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
+func (m *mockAddressManager) GetLegacyParameters(ctx context.Context) (
 	*address.Parameters, error) {
 
 	args := m.Called(ctx)
@@ -337,7 +337,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	).Return(nil)
 
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
+		"GetLegacyParameters", mock.Anything,
 	).Return(&address.Parameters{
 		Expiry: defaultExpiry,
 	}, nil)

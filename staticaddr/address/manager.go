@@ -3,7 +3,6 @@ package address
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -348,20 +347,17 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 	return resultList, nil
 }
 
-// GetStaticAddressParameters returns the parameters of the static address.
-func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
+// GetLegacyParameters returns the first address parameters that were created
+// under this L402.
+func (m *Manager) GetLegacyParameters(ctx context.Context) (*Parameters,
 	error) {
 
-	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	params, err := m.cfg.Store.GetLegacyParameters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(params) == 0 {
-		return nil, fmt.Errorf("no static address parameters found")
-	}
-
-	return params[0], nil
+	return params, nil
 }
 
 func (m *Manager) GetParameters(pkScript []byte) *Parameters {
@@ -374,25 +370,11 @@ func (m *Manager) GetStaticAddressID(ctx context.Context,
 	return m.cfg.Store.GetStaticAddressID(ctx, pkScript)
 }
 
-// GetStaticAddress returns a taproot address for the given client and server
-// public keys and expiry.
-func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
-	error) {
-
-	params, err := m.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	address, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry),
-		params.ClientPubkey, params.ServerPubkey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return address, nil
+// IsOurPkScript returns true if the given pkScript is one of our active
+// static addresses.
+func (m *Manager) IsOurPkScript(pkScript []byte) bool {
+	_, ok := m.activeStaticAddresses[string(pkScript)]
+	return ok
 }
 
 // ListUnspent returns a list of utxos at the static address.

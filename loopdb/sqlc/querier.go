@@ -31,6 +31,7 @@ type Querier interface {
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
 	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
+	GetLegacyAddress(ctx context.Context) (StaticAddress, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
 	GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)

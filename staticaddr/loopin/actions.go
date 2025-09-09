@@ -299,23 +299,6 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 
 	var err error
 
-	f.loopIn.AddressParams, err =
-		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		err = fmt.Errorf("unable to get static address parameters: "+
-			"%w", err)
-
-		return f.HandleError(err)
-	}
-
-	f.loopIn.Address, err = f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		err = fmt.Errorf("unable to get static address: %w", err)
-
-		return f.HandleError(err)
-	}
-
 	// Create a musig2 session for each deposit and different htlc tx fee
 	// rates.
 	createSession := f.loopIn.createMusig2Sessions

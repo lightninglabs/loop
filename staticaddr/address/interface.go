@@ -25,8 +25,11 @@ type Store interface {
 	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
-		error)
+	GetAllStaticAddresses(ctx context.Context) ([]*Parameters, error)
+
+	// GetLegacyParameters retrieves the parameters of the legacy static
+	// address.
+	GetLegacyParameters(ctx context.Context) (*Parameters, error)
 }
 
 // Parameters hold all the necessary information for the 2-of-2 multisig

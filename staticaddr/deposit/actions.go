@@ -65,7 +65,12 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	prevOut := []*wire.TxOut{txOut}
 
-	signDesc, err := f.SignDescriptor(ctx)
+	addressScript, err := f.deposit.GetStaticAddressScript()
+	if err != nil {
+		return f.HandleError(err)
+	}
+
+	signDesc, err := f.SignDescriptor(addressScript)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -77,13 +82,8 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
 	sig := rawSigs[0]
-	msgTx.TxIn[0].Witness, err = address.GenTimeoutWitness(sig)
+	msgTx.TxIn[0].Witness, err = addressScript.GenTimeoutWitness(sig)
 	if err != nil {
 		return f.HandleError(err)
 	}

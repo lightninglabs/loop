@@ -113,7 +113,7 @@ func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 // UpdateWithdrawal updates a withdrawal record with the transaction
 // information, including the withdrawn amount, change amount, and
 // confirmation height. It is expected that the withdrawal has already been
-// created with CreateWithdrawal, and that the deposits slice contains the
+// created with CreateWithdrawal, and that the deposit slice contains the
 // deposits associated with the withdrawal.
 func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, tx *wire.MsgTx, confirmationHeight uint32,

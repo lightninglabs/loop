@@ -7,7 +7,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -21,13 +20,8 @@ type Estimator interface {
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
-
-	// GetStaticAddress returns the deposit address for the given
-	// client and server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+	// NewAddress returns a new static address.
+	NewAddress(ctx context.Context) (*address.Parameters, error)
 }
 
 type DepositManager interface {

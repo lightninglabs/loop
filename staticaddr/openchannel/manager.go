@@ -51,8 +51,8 @@ type Config struct {
 	// rpcs to negotiate static address withdrawals.
 	Server serverrpc.StaticAddressServerClient
 
-	// AddressManager gives the withdrawal manager access to static address
-	// parameters.
+	// AddressManager is the address manager that is used to generate
+	// a change address for the channel open process.
 	AddressManager AddressManager
 
 	// DepositManager gives the withdrawal manager access to the deposits
@@ -511,25 +511,43 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 					"address: %w", err)
 			}
 
-			addrParams, err :=
-				m.cfg.AddressManager.GetStaticAddressParameters(
-					ctx,
-				)
-			if err != nil {
-				return nil, err
-			}
+			var changeAddress btcutil.Address
+			if changeAmt > 0 {
+				changeAddrParams, err :=
+					m.cfg.AddressManager.NewAddress(ctx)
+				if err != nil {
+					err = fmt.Errorf("unable to create change "+
+						"address: %w", err)
 
-			staticAddress, err :=
-				m.cfg.AddressManager.GetStaticAddress(
-					ctx,
+					return nil,
+						fmt.Errorf("unable to create "+
+							"change address: %w",
+							err)
+				}
+
+				taprootAddress, err :=
+					changeAddrParams.TaprootAddress(
+						m.cfg.ChainParams,
+					)
+				if err != nil {
+					return nil, fmt.Errorf("unable to "+
+						"create taproot address: %w",
+						err)
+				}
+
+				changeAddress, err = btcutil.DecodeAddress(
+					taprootAddress, m.cfg.ChainParams,
 				)
-			if err != nil {
-				return nil, err
+				if err != nil {
+					return nil, fmt.Errorf("unable to "+
+						"decode change address: %w",
+						err)
+				}
 			}
 
 			tx, psbtBytes, err := m.createFundingPsbt(
 				deposits, fundingAmount, changeAmt,
-				channelFundingAddress, addrParams.PkScript,
+				channelFundingAddress, changeAddress,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("creating PSBT "+
@@ -559,17 +577,14 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			// Create a musig2 session for each deposit.
 			sessions, clientNonces, idx, err :=
 				staticutil.CreateMusig2SessionsPerDeposit(
-					ctx, m.cfg.Signer, deposits, addrParams,
-					staticAddress,
+					ctx, m.cfg.Signer, deposits,
 				)
 			if err != nil {
 				return nil, fmt.Errorf("failed creating " +
 					"session per deposit")
 			}
 
-			prevOuts, err := staticutil.ToPrevOuts(
-				deposits, addrParams.PkScript,
-			)
+			prevOuts, err := staticutil.ToPrevOuts(deposits)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get "+
 					"prevouts: %w", err)
@@ -745,8 +760,9 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 // createFundingPsbt creates the unsigned channel funding transaction and psbt
 // packet.
 func (m *Manager) createFundingPsbt(deposits []*deposit.Deposit,
-	fundingAmount int64, changeAmount int64, fundingAddress btcutil.Address,
-	staticAddressPkScript []byte) (*wire.MsgTx, []byte, error) {
+	fundingAmount int64, changeAmount int64,
+	fundingAddress btcutil.Address, changeAddress btcutil.Address) (
+	*wire.MsgTx, []byte, error) {
 
 	msgTx := wire.NewMsgTx(2)
 
@@ -773,10 +789,17 @@ func (m *Manager) createFundingPsbt(deposits []*deposit.Deposit,
 	msgTx.AddTxOut(fundingOutput)
 
 	// Check if we need to add a change output.
+	var changePkScript []byte
 	if changeAmount > 0 {
+		// Check that the sum of deposit outpoints is equal to the swap
+		// amount.
+		changePkScript, err = txscript.PayToAddrScript(changeAddress)
+		if err != nil {
+			return nil, nil, err
+		}
 		changeOutput := &wire.TxOut{
 			Value:    changeAmount,
-			PkScript: staticAddressPkScript,
+			PkScript: changePkScript,
 		}
 		msgTx.AddTxOut(changeOutput)
 	}
@@ -791,7 +814,7 @@ func (m *Manager) createFundingPsbt(deposits []*deposit.Deposit,
 		pInputs[i] = psbt.PInput{
 			WitnessUtxo: &wire.TxOut{
 				Value:    int64(d.Value),
-				PkScript: staticAddressPkScript,
+				PkScript: d.AddressParams.PkScript,
 			},
 		}
 	}

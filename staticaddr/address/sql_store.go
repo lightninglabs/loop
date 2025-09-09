@@ -74,6 +74,22 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 	return result, nil
 }
 
+// GetLegacyParameters returns all address known to the server.
+func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	legacyAddress, err := s.baseDB.Queries.GetLegacyAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.toAddressParameters(legacyAddress)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 // Close closes the database connection.
 func (s *SqlStore) Close() {
 	s.baseDB.DB.Close()

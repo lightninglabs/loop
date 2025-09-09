@@ -1,11 +1,14 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -30,15 +33,19 @@ func TestSelectDeposits(t *testing.T) {
 	d1, d2, d3, d4 := &deposit.Deposit{
 		Value:              1_000_000,
 		ConfirmationHeight: 5_000,
+		AddressParams:      &address.Parameters{Expiry: 10_000},
 	}, &deposit.Deposit{
 		Value:              2_000_000,
 		ConfirmationHeight: 5_001,
+		AddressParams:      &address.Parameters{Expiry: 10_000},
 	}, &deposit.Deposit{
 		Value:              3_000_000,
 		ConfirmationHeight: 5_002,
+		AddressParams:      &address.Parameters{Expiry: 10_000},
 	}, &deposit.Deposit{
 		Value:              3_000_000,
 		ConfirmationHeight: 5_003,
+		AddressParams:      &address.Parameters{Expiry: 10_000},
 	}
 	d1.Hash = chainhash.Hash{1}
 	d1.Index = 0
@@ -131,12 +138,18 @@ func TestSelectDeposits(t *testing.T) {
 				dClose := &deposit.Deposit{
 					Value:              3_000_000,
 					ConfirmationHeight: 3000,
+					AddressParams: &address.Parameters{
+						Expiry: 10,
+					},
 				}
 				dClose.Hash = chainhash.Hash{5}
 				dClose.Index = 0
 				dOK := &deposit.Deposit{
 					Value:              2_000_000,
 					ConfirmationHeight: 3050,
+					AddressParams: &address.Parameters{
+						Expiry: 10_000,
+					},
 				}
 				dOK.Hash = chainhash.Hash{6}
 				dOK.Index = 0
@@ -151,6 +164,9 @@ func TestSelectDeposits(t *testing.T) {
 				dOK := &deposit.Deposit{
 					Value:              2_000_000,
 					ConfirmationHeight: 3050,
+					AddressParams: &address.Parameters{
+						Expiry: 10_000,
+					},
 				}
 				dOK.Hash = chainhash.Hash{6}
 				dOK.Index = 0
@@ -163,8 +179,7 @@ func TestSelectDeposits(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -174,6 +189,21 @@ func TestSelectDeposits(t *testing.T) {
 			require.ElementsMatch(t, tc.expected, selectedDeposits)
 		})
 	}
+}
+
+// mockAddressManager implements AddressManager for tests.
+type mockAddressManager struct {
+	OurPkScript []byte
+}
+
+func (m *mockAddressManager) NewAddress(_ context.Context) (*address.Parameters,
+	error) {
+
+	return nil, nil
+}
+
+func (m *mockAddressManager) IsOurPkScript(pkScript []byte) bool {
+	return bytes.Equal(pkScript, m.OurPkScript)
 }
 
 // mockDepositManager implements DepositManager for tests.
@@ -310,7 +340,16 @@ func TestCheckChange(t *testing.T) {
 	ctx := context.Background()
 
 	// Prepare a common change address and an alternate address.
-	changeAddr := &address.Parameters{PkScript: []byte{0xaa, 0xbb}}
+	addrStr := "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" // testnet
+
+	changeAddr, err := btcutil.DecodeAddress(
+		addrStr, &chaincfg.RegressionNetParams,
+	)
+	require.NoError(t, err)
+
+	changePkScript, err := txscript.PayToAddrScript(changeAddr)
+	require.NoError(t, err)
+
 	otherAddr := &address.Parameters{PkScript: []byte{0xcc, 0xdd}}
 	serverAddr := &address.Parameters{PkScript: []byte{0xee, 0xff}}
 
@@ -324,7 +363,7 @@ func TestCheckChange(t *testing.T) {
 		li := &StaticAddressLoopIn{
 			Deposits:       deposits,
 			SelectedAmount: selected,
-			AddressParams:  changeAddr,
+			ChangeAddress:  changeAddr,
 		}
 		return hash, li
 	}
@@ -364,6 +403,9 @@ func TestCheckChange(t *testing.T) {
 	// Common manager with mocked dependencies; will change inputs per test.
 	mgr := &Manager{
 		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				OurPkScript: changePkScript,
+			},
 			DepositManager: &mockDepositManager{
 				byOutpoint: map[string]*deposit.Deposit{},
 			},
@@ -378,7 +420,6 @@ func TestCheckChange(t *testing.T) {
 		name           string
 		inDeps         []*deposit.Deposit // deposits referenced by tx inputs
 		outputs        []*wire.TxOut      // outputs in sweep tx
-		addr           *address.Parameters
 		expectErr      bool
 		expectedErrMsg string
 	}
@@ -394,7 +435,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: serverAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "single swap change present",
@@ -406,10 +446,9 @@ func TestCheckChange(t *testing.T) {
 				},
 				{
 					Value:    500,
-					PkScript: changeAddr.PkScript,
+					PkScript: changePkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "multiple swaps different change amounts",
@@ -421,10 +460,9 @@ func TestCheckChange(t *testing.T) {
 				},
 				{
 					Value:    900,
-					PkScript: changeAddr.PkScript,
+					PkScript: changePkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "two swaps with identical change values sum correctly",
@@ -436,16 +474,14 @@ func TestCheckChange(t *testing.T) {
 				},
 				{
 					Value:    800,
-					PkScript: changeAddr.PkScript,
+					PkScript: changePkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:           "missing change output results in error",
 			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
 			outputs:        []*wire.TxOut{},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -462,7 +498,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -476,10 +511,9 @@ func TestCheckChange(t *testing.T) {
 				},
 				{
 					Value:    400,
-					PkScript: changeAddr.PkScript,
+					PkScript: changePkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -493,14 +527,13 @@ func TestCheckChange(t *testing.T) {
 				},
 				{
 					Value:    400,
-					PkScript: changeAddr.PkScript,
+					PkScript: changePkScript,
 				},
 				{
 					Value:    1000,
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 	}
 
@@ -523,7 +556,7 @@ func TestCheckChange(t *testing.T) {
 			mgr.cfg.DepositManager = mdm
 
 			tx := makeSweepTx(inputs, tc.outputs)
-			err := mgr.checkChange(ctx, tx, tc.addr)
+			err := mgr.checkChange(ctx, tx)
 			if tc.expectErr {
 				require.Error(t, err)
 				if tc.expectedErrMsg != "" {

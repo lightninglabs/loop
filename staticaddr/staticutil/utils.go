@@ -19,8 +19,8 @@ import (
 )
 
 // ToPrevOuts converts a slice of deposits to a map of outpoints to TxOuts.
-func ToPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
+func ToPrevOuts(deposits []*deposit.Deposit) (map[wire.OutPoint]*wire.TxOut,
+	error) {
 
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
 	for _, d := range deposits {
@@ -30,7 +30,7 @@ func ToPrevOuts(deposits []*deposit.Deposit,
 		}
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
-			PkScript: pkScript,
+			PkScript: d.AddressParams.PkScript,
 		}
 		if _, ok := prevOuts[outpoint]; ok {
 			return nil, fmt.Errorf("duplicate outpoint %v",
@@ -71,9 +71,7 @@ func CreateMusig2Sessions(ctx context.Context,
 // CreateMusig2SessionsPerDeposit creates a musig2 session for a number of
 // deposits.
 func CreateMusig2SessionsPerDeposit(ctx context.Context,
-	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
-	staticAddress *script.StaticAddress) (
+	signer lndclient.SignerClient, deposits []*deposit.Deposit) (
 	map[string]*input.MuSig2SessionInfo, map[string][]byte, map[string]int,
 	error) {
 
@@ -83,8 +81,13 @@ func CreateMusig2SessionsPerDeposit(ctx context.Context,
 
 	// Create the musig2 sessions for the sweepless sweep tx.
 	for i, deposit := range deposits {
+		addressScript, err := deposit.GetStaticAddressScript()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
 		session, err := createMusig2Session(
-			ctx, signer, addrParams, staticAddress,
+			ctx, signer, deposit.AddressParams, addressScript,
 		)
 		if err != nil {
 			return nil, nil, nil, err

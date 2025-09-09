@@ -957,6 +957,12 @@ func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	return s.params, nil
 }
 
+func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
+	*address.Parameters, error) {
+
+	return s.params[0], nil
+}
+
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
 type mockDepositStore struct {
 	byOutpoint map[string]*deposit.Deposit

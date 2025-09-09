@@ -95,6 +95,9 @@ message ServerWithdrawRequest {
     // ensures that the change amount covers the transaction fee, and that the
     // change after fees is at least the dust limit.
     int64 change_amount = 6;
+
+    // The address the client wants to send the change output to.
+    string client_change_addr = 7;
 }
 
 message ServerWithdrawResponse {
