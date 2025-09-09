@@ -23,10 +23,6 @@ type Store interface {
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
-
 	// GetDefaultParameters returns the default static address parameters.
 	// They are used when no other parameters are available, e.g. for
 	// change outputs of swaps or withdrawals.

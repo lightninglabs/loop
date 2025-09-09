@@ -43,10 +43,6 @@ type Config struct {
 	// address server.
 	Server swapserverrpc.StaticAddressServerClient
 
-	// AddressManager gives the withdrawal manager access to static address
-	// parameters.
-	AddressManager AddressManager
-
 	// DepositManager gives the withdrawal manager access to the deposits
 	// enabling it to create and manage loop-ins.
 	DepositManager DepositManager
@@ -276,13 +272,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	loopIn.AddressParams, err =
-		m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		return err
-	}
-
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
@@ -495,19 +484,12 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 			log.Errorf("one or more deposits are not active")
 		}
 
-		loopIn.AddressParams, err =
-			m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-		if err != nil {
-			return err
-		}
-
 		// Create a state machine for a given loop-in.
 		var (
 			recovery = true
 			fsm      *FSM
 		)
-		fsm, err = NewFSM(ctx, loopIn, m.cfg, recovery)
+		fsm, err = NewFSM(loopIn, m.cfg, recovery)
 		if err != nil {
 			return err
 		}
@@ -736,7 +718,7 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 
 	// Create a state machine for a given deposit.
 	recovery := false
-	loopInFsm, err := NewFSM(ctx, loopIn, m.cfg, recovery)
+	loopInFsm, err := NewFSM(loopIn, m.cfg, recovery)
 	if err != nil {
 		return nil, err
 	}

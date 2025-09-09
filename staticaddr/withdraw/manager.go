@@ -525,14 +525,8 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 		).FeePerKWeight()
 	}
 
-	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
 	outpoints := toOutpoints(deposits)
-	prevOuts := m.toPrevOuts(deposits, params.PkScript)
+	prevOuts := m.toPrevOuts(deposits)
 	withdrawalTx, withdrawAmount, changeAmount, err := m.createWithdrawalTx(
 		ctx, outpoints, prevOuts,
 		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
@@ -632,16 +626,18 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, txHash chainhash.Hash,
 	withdrawalPkscript []byte) error {
 
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	changeAddrParams, err := m.cfg.AddressManager.GetDefaultParameters(ctx)
 	if err != nil {
-		log.Errorf("error retrieving address params %w", err)
+		log.Errorf("error retrieving change address params %v", err)
 
 		return fmt.Errorf("withdrawal failed")
 	}
 
+	changePkScript := changeAddrParams.PkScript
+
 	d := deposits[0]
 	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &d.OutPoint, addrParams.PkScript,
+		ctx, &d.OutPoint, d.AddressParams.PkScript,
 		int32(d.ConfirmationHeight),
 	)
 
@@ -680,7 +676,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				// Persist info about the finalized withdrawal.
 				err = m.cfg.Store.UpdateWithdrawal(
 					ctx, deposits, tx.Tx, spendingHeight,
-					addrParams.PkScript,
+					changePkScript,
 				)
 				if err != nil {
 					log.Errorf("Error persisting "+
@@ -900,9 +896,9 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		return nil, 0, 0, fmt.Errorf("change amount is negative")
 	}
 
-	// For the users convenience we check that the change amount is lower
+	// For the user's convenience, we check that the change amount is lower
 	// than each input's value. If the change amount is higher than an
-	// input's value, we wouldn't have to include that input into the
+	// input's value, we wouldn't have to include that input in the
 	// transaction, saving fees.
 	for outpoint, txOut := range prevOuts {
 		if changeAmount >= btcutil.Amount(txOut.Value) {
@@ -1048,7 +1044,7 @@ func (m *Manager) createMusig2Sessions(ctx context.Context,
 
 	// Create the sessions and nonces from the deposits.
 	for i := 0; i < len(deposits); i++ {
-		session, err := m.createMusig2Session(ctx)
+		session, err := m.createMusig2Session(ctx, deposits[i])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1061,42 +1057,32 @@ func (m *Manager) createMusig2Sessions(ctx context.Context,
 }
 
 // Musig2CreateSession creates a musig2 session for the deposit.
-func (m *Manager) createMusig2Session(ctx context.Context) (
-	*input.MuSig2SessionInfo, error) {
+func (m *Manager) createMusig2Session(ctx context.Context,
+	deposit *deposit.Deposit) (*input.MuSig2SessionInfo, error) {
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
+	addrParams := deposit.AddressParams
+	signers := [][]byte{
+		addrParams.ClientPubkey.SerializeCompressed(),
+		addrParams.ServerPubkey.SerializeCompressed(),
+	}
+
+	addressScript, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get confirmation height for "+
 			"deposit, %w", err)
 	}
 
-	signers := [][]byte{
-		addressParams.ClientPubkey.SerializeCompressed(),
-		addressParams.ServerPubkey.SerializeCompressed(),
-	}
-
-	addressScript, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(addressParams.Expiry),
-		addressParams.ClientPubkey, addressParams.ServerPubkey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	expiryLeaf := addressScript.TimeoutLeaf
-
 	rootHash := expiryLeaf.TapHash()
 
 	return m.cfg.Signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &addressParams.KeyLocator,
+		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator,
 		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
 	)
 }
 
-func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) map[wire.OutPoint]*wire.TxOut {
+func (m *Manager) toPrevOuts(
+	deposits []*deposit.Deposit) map[wire.OutPoint]*wire.TxOut {
 
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
 	for _, d := range deposits {
@@ -1106,7 +1092,7 @@ func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
 		}
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
-			PkScript: pkScript,
+			PkScript: d.AddressParams.PkScript,
 		}
 		prevOuts[outpoint] = txOut
 	}

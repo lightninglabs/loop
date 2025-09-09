@@ -18,7 +18,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -126,10 +125,6 @@ type StaticAddressLoopIn struct {
 	// implicitly carry the swap amount.
 	Deposits []*deposit.Deposit
 
-	// AddressParams are the parameters of the address that is used for the
-	// swap.
-	AddressParams *address.Parameters
-
 	// HTLC fields.
 
 	// HtlcTxFeeRate is the fee rate that is used for the htlc transaction.
@@ -207,7 +202,7 @@ func (l *StaticAddressLoopIn) createMusig2Session(ctx context.Context,
 	rootHash := expiryLeaf.TapHash()
 
 	return signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &l.AddressParams.KeyLocator,
+		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator,
 		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
 	)
 }
@@ -219,7 +214,7 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := l.toPrevOuts(l.Deposits, l.AddressParams.PkScript)
+	prevOuts, err := l.toPrevOuts()
 	if err != nil {
 		return nil, err
 	}
@@ -525,18 +520,18 @@ func (l *StaticAddressLoopIn) Outpoints() []wire.OutPoint {
 	return outpoints
 }
 
-func (l *StaticAddressLoopIn) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
+func (l *StaticAddressLoopIn) toPrevOuts() (map[wire.OutPoint]*wire.TxOut,
+	error) {
 
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(l.Deposits))
+	for _, d := range l.Deposits {
 		outpoint := wire.OutPoint{
 			Hash:  d.Hash,
 			Index: d.Index,
 		}
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
-			PkScript: pkScript,
+			PkScript: d.AddressParams.PkScript,
 		}
 		if _, ok := prevOuts[outpoint]; ok {
 			return nil, fmt.Errorf("duplicate outpoint %v",

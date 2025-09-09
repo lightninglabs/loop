@@ -348,20 +348,17 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 	return resultList, nil
 }
 
-// GetStaticAddressParameters returns the parameters of the static address.
-func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
+// GetLegacyParameters returns the first address parameters that were created
+// under this L402.
+func (m *Manager) GetLegacyParameters(ctx context.Context) (*Parameters,
 	error) {
 
-	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	params, err := m.cfg.Store.GetLegacyParameters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(params) == 0 {
-		return nil, fmt.Errorf("no static address parameters found")
-	}
-
-	return params[0], nil
+	return params, nil
 }
 
 // GetDefaultParameters returns the parameters of the static address.
