@@ -283,19 +283,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return err
-	}
-
-	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
-		ctx, loopIn.DepositOutpoints,
-	)
-	if err != nil {
-		return err
-	}
-	loopIn.Deposits = deposits
-
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
@@ -304,7 +291,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 
 	sweepTx := sweepPacket.UnsignedTx
 
-	// If the loop-in is not in the Succeeded state we return an
+	// If the loop-in is not in the Succeeded state, we return an
 	// error.
 	if !loopIn.IsInState(Succeeded) {
 		// We'll notify the server that we don't consider the swap
@@ -322,8 +309,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	}
 
 	// If the user selected an amount that is less than the total deposit
-	// amount we'll check that the server sends us the correct change amount
-	// back to our static address.
+	// amount, we'll check that the server sends us the correct change
+	// amount back to our static address.
 	totalDepositAmount := loopIn.TotalDepositAmount()
 	changeAmt := totalDepositAmount - loopIn.SelectedAmount
 	if changeAmt > 0 && changeAmt < totalDepositAmount {
@@ -404,8 +391,21 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		)
 
 		copy(serverNonce[:], nonce)
+
+		deposit, err := m.cfg.DepositManager.DepositsForOutpoints(
+			ctx, []string{depositOutpoint},
+		)
+		if err != nil {
+			return err
+		}
+		if len(deposit) != 1 {
+			return fmt.Errorf("expected 1 deposit for "+
+				"outpoint %v, got %v", depositOutpoint,
+				len(deposit))
+		}
+
 		musig2Session, err := loopIn.createMusig2Session(
-			ctx, m.cfg.Signer,
+			ctx, m.cfg.Signer, deposit[0],
 		)
 		if err != nil {
 			return err
@@ -484,7 +484,7 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 
 		// Retrieve all deposits regardless of deposit state. If any of
 		// the deposits is not active in the in-mem map of the deposits
-		// manager we log it, but continue to recover the loop-in.
+		// manager, we log it but continue to recover the loop-in.
 		var allActive bool
 		loopIn.Deposits, allActive =
 			m.cfg.DepositManager.AllStringOutpointsActiveDeposits(
@@ -498,13 +498,6 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		loopIn.AddressParams, err =
 			m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 
-		if err != nil {
-			return err
-		}
-
-		loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(
-			ctx,
-		)
 		if err != nil {
 			return err
 		}

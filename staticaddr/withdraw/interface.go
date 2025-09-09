@@ -7,7 +7,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 )
 
 // Store is the database interface that is used to store and retrieve
@@ -27,10 +26,6 @@ type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
 	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
 		error)
-
-	// GetStaticAddress returns the deposit address for the given
-	// client and server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
 
 	// GetDefaultParameters returns the default static address parameters.
 	// They are used when no other parameters are available, e.g. for

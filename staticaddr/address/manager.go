@@ -390,27 +390,6 @@ func (m *Manager) GetStaticAddressID(ctx context.Context,
 	return m.cfg.Store.GetStaticAddressID(ctx, pkScript)
 }
 
-// GetStaticAddress returns a taproot address for the given client and server
-// public keys and expiry.
-func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
-	error) {
-
-	params, err := m.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	address, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry),
-		params.ClientPubkey, params.ServerPubkey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return address, nil
-}
-
 // ListUnspent returns a list of utxos at the static address.
 func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32) ([]*lnwallet.Utxo, error) {

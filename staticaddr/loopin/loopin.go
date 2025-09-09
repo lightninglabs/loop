@@ -20,7 +20,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -131,9 +130,6 @@ type StaticAddressLoopIn struct {
 	// swap.
 	AddressParams *address.Parameters
 
-	// Address is the address script that is used for the swap.
-	Address *script.StaticAddress
-
 	// HTLC fields.
 
 	// HtlcTxFeeRate is the fee rate that is used for the htlc transaction.
@@ -175,7 +171,9 @@ func (l *StaticAddressLoopIn) createMusig2Sessions(ctx context.Context,
 
 	// Create the sessions and nonces from the deposits.
 	for i := 0; i < len(l.Deposits); i++ {
-		session, err := l.createMusig2Session(ctx, signer)
+		session, err := l.createMusig2Session(
+			ctx, signer, l.Deposits[i],
+		)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -189,14 +187,22 @@ func (l *StaticAddressLoopIn) createMusig2Sessions(ctx context.Context,
 
 // Musig2CreateSession creates a musig2 session for the deposit.
 func (l *StaticAddressLoopIn) createMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient) (*input.MuSig2SessionInfo, error) {
+	signer lndclient.SignerClient, deposit *deposit.Deposit) (
+	*input.MuSig2SessionInfo, error) {
+
+	addrParams := deposit.AddressParams
 
 	signers := [][]byte{
-		l.AddressParams.ClientPubkey.SerializeCompressed(),
-		l.AddressParams.ServerPubkey.SerializeCompressed(),
+		addrParams.ClientPubkey.SerializeCompressed(),
+		addrParams.ServerPubkey.SerializeCompressed(),
 	}
 
-	expiryLeaf := l.Address.TimeoutLeaf
+	addrScript, err := deposit.GetStaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	expiryLeaf := addrScript.TimeoutLeaf
 
 	rootHash := expiryLeaf.TapHash()
 

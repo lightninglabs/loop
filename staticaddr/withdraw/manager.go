@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
@@ -925,15 +926,26 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 
 	if hasChange {
 		// Send change back to the same static address.
-		staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+		defaultParams, err := m.cfg.AddressManager.GetDefaultParameters(
+			ctx,
+		)
 		if err != nil {
-			log.Errorf("error retrieving taproot address %v", err)
+			log.Errorf("error retrieving default address "+
+				"parameters %v", err)
 
 			return nil, 0, 0, fmt.Errorf("withdrawal failed")
 		}
 
+		addressScript, err := script.NewStaticAddress(
+			input.MuSig2Version100RC2, int64(defaultParams.Expiry),
+			defaultParams.ClientPubkey, defaultParams.ServerPubkey,
+		)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
 		changeAddress, err := btcutil.NewAddressTaproot(
-			schnorr.SerializePubKey(staticAddress.TaprootKey),
+			schnorr.SerializePubKey(addressScript.TaprootKey),
 			m.cfg.ChainParams,
 		)
 		if err != nil {
@@ -1065,13 +1077,15 @@ func (m *Manager) createMusig2Session(ctx context.Context) (
 		addressParams.ServerPubkey.SerializeCompressed(),
 	}
 
-	address, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+	addressScript, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(addressParams.Expiry),
+		addressParams.ClientPubkey, addressParams.ServerPubkey,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+		return nil, err
 	}
 
-	expiryLeaf := address.TimeoutLeaf
+	expiryLeaf := addressScript.TimeoutLeaf
 
 	rootHash := expiryLeaf.TapHash()
 
