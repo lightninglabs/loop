@@ -364,6 +364,22 @@ func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
 	return params[0], nil
 }
 
+// GetDefaultParameters returns the parameters of the static address.
+func (m *Manager) GetDefaultParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(params) == 0 {
+		return nil, fmt.Errorf("no static address parameters found")
+	}
+
+	return params[0], nil
+}
+
 func (m *Manager) GetParameters(pkScript []byte) *Parameters {
 	return m.activeStaticAddresses[string(pkScript)]
 }

@@ -31,6 +31,11 @@ type AddressManager interface {
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
 	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+
+	// GetDefaultParameters returns the default static address parameters.
+	// They are used when no other parameters are available, e.g. for
+	// change outputs of swaps or withdrawals.
+	GetDefaultParameters(ctx context.Context) (*address.Parameters, error)
 }
 
 type DepositManager interface {
