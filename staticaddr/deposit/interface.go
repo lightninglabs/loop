@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
@@ -41,10 +40,6 @@ type AddressManager interface {
 	// GetParameters returns the static address parameters for the given
 	// pkScript.
 	GetParameters(pkScript []byte) *address.Parameters
-
-	// GetStaticAddress returns the deposit address for the given
-	// client and server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
 
 	// ListUnspent returns a list of utxos at the static address.
 	ListUnspent(ctx context.Context, minConfs,
