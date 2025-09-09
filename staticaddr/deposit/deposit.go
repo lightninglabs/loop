@@ -10,6 +10,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -116,6 +118,20 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 
 func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// GetStaticAddressScript returns the static address script of the deposit.
+func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
+	params := d.AddressParams
+	address, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return address, nil
 }
 
 // GetRandomDepositID generates a random deposit ID.
