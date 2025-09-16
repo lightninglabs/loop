@@ -65,3 +65,49 @@ Phases:
            |                    |              |              |                  |               |
            '--------------------'              '--------------'                  '---------------'
 ```
+
+### Standard Loop-In (on -> off-chain)
+
+The reverse of a Loop-Out. The client sends funds to an on-chain HTLC with a
+2-of-2 MuSig2 keyspend path. Once the server detects that the HTLC transaction
+is confirmed, it pays the Lightning invoice provided by the client to "loop in"
+the funds to their node's channels and sweeps the HTLC. The client cooperates
+with the server to cosign the sweep transaction to save on onchain fees.
+
+### Instant Loop-Out
+
+A faster, more efficient Loop-Out that prioritizes a cooperative path, built on
+**Reservations** (on-chain UTXOs controlled by a 2-of-2 MuSig2 key between the
+client and server).
+
+1.  **Cooperative Path ("Sweepless Sweep"):** After the client pays the
+    off-chain swap invoice, the client and server cooperatively sign a
+    transaction that spends the reservation UTXO directly to the client's final
+    destination address. This avoids publishing an HTLC, saving fees and chain
+    space.
+
+2.  **Fallback Path:** If the cooperative path fails, the system falls back to
+    creating a standard on-chain HTLC from the reservation UTXO, which is then
+    swept by the client. This ensures the swap remains non-custodial.
+
+### Static Address (for Loop-In)
+
+Provides a permanent, reusable on-chain address for receiving funds that can
+then be swapped for an off-chain Lightning payment.
+
+-   **Address Type:** The address is a P2TR (Taproot) output with two spending
+    paths:
+    1.  **Keyspend Path (Cooperative):** The internal key is a 2-of-2 MuSig2
+        aggregate key held by the client and server. This path is used to
+        cooperatively sign transactions for performing a Loop-In or withdrawing
+        funds.
+    2.  **Scriptspend Path (Timeout):** A tapleaf contains a script that allows
+        the client to unilaterally sweep their funds after a CSV timeout. This
+        is a safety mechanism ensuring the client never loses access to their
+        deposits.
+
+-   **Loop-In Flow:** When a user wants to loop in funds from this address, the
+    client and server use the cooperative keyspend path to create and sign an
+    HTLC transaction, which then follows a standard Loop-In flow. When the
+    client gets the LN payment, they cooperate with the server to sweep the
+    deposit directly to the server's wallet instead of publishing the HTLC tx.
