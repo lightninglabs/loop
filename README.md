@@ -7,6 +7,8 @@ bitcoin into and out of the Lightning Network.
 - Automated channel balancing
 - Privacy-forward non-custodial swaps
 - Opportunistic transaction batching to save on fees
+- Instant Loop-Outs for faster off-chain to on-chain swaps
+- Static, reusable addresses for Loop-Ins
 - Progress monitoring of in-flight swaps
 
 ## Use Cases
