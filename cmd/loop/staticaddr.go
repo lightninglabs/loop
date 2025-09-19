@@ -478,6 +478,13 @@ var staticAddressLoopInCommand = cli.Command{
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
+		cli.Uint64Flag{
+			Name: "amount",
+			Usage: "the number of satoshis that should be " +
+				"swapped from the selected deposits. If there" +
+				"is change it is sent back to the static " +
+				"address.",
+		},
 		lastHopFlag,
 		labelFlag,
 		routeHintsFlag,
@@ -500,13 +507,15 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	defer cleanup()
 
 	var (
-		ctxb                  = context.Background()
-		isAllSelected         = ctx.IsSet("all")
-		isUtxoSelected        = ctx.IsSet("utxo")
-		label                 = ctx.String("static-loop-in")
-		hints                 []*swapserverrpc.RouteHint
-		lastHop               []byte
-		paymentTimeoutSeconds = uint32(loopin.DefaultPaymentTimeoutSeconds)
+		ctxb                       = context.Background()
+		isAllSelected              = ctx.IsSet("all")
+		isUtxoSelected             = ctx.IsSet("utxo")
+		selectedAmount             = ctx.Int64("amount")
+		autoSelectDepositsForQuote bool
+		label                      = ctx.String("static-loop-in")
+		hints                      []*swapserverrpc.RouteHint
+		lastHop                    []byte
+		paymentTimeoutSeconds      = uint32(loopin.DefaultPaymentTimeoutSeconds)
 	)
 
 	// Validate our label early so that we can fail before getting a quote.
@@ -542,7 +551,9 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	if len(depositList.FilteredDeposits) == 0 {
+	allDeposits := depositList.FilteredDeposits
+
+	if len(allDeposits) == 0 {
 		errString := fmt.Sprintf("no confirmed deposits available, "+
 			"deposits need at least %v confirmations",
 			deposit.MinConfs)
@@ -552,16 +563,17 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 
 	var depositOutpoints []string
 	switch {
-	case isAllSelected == isUtxoSelected:
-		return errors.New("must select either all or some utxos")
+	case isAllSelected && isUtxoSelected:
+		return errors.New("cannot select all and specific utxos")
 
 	case isAllSelected:
-		depositOutpoints = depositsToOutpoints(
-			depositList.FilteredDeposits,
-		)
+		depositOutpoints = depositsToOutpoints(allDeposits)
 
 	case isUtxoSelected:
 		depositOutpoints = ctx.StringSlice("utxo")
+
+	case selectedAmount > 0:
+		// If only an amount is selected we will trigger coin selection.
 
 	default:
 		return fmt.Errorf("unknown quote request")
@@ -571,11 +583,17 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return errors.New("duplicate outpoints detected")
 	}
 
+	if len(depositOutpoints) == 0 && selectedAmount > 0 {
+		autoSelectDepositsForQuote = true
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
-		LoopInRouteHints: hints,
-		LoopInLastHop:    lastHop,
-		Private:          ctx.Bool(privateFlag.Name),
-		DepositOutpoints: depositOutpoints,
+		Amt:                selectedAmount,
+		LoopInRouteHints:   hints,
+		LoopInLastHop:      lastHop,
+		Private:            ctx.Bool(privateFlag.Name),
+		DepositOutpoints:   depositOutpoints,
+		AutoSelectDeposits: autoSelectDepositsForQuote,
 	}
 	quote, err := client.GetLoopInQuote(ctxb, quoteReq)
 	if err != nil {
@@ -583,15 +601,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	limits := getInLimits(quote)
-
-	// populate the quote request with the sum of selected deposits and
-	// prompt the user for acceptance.
-	quoteReq.Amt, err = sumDeposits(
-		depositOutpoints, depositList.FilteredDeposits,
-	)
-	if err != nil {
-		return err
-	}
 
 	if !(ctx.Bool("force") || ctx.Bool("f")) {
 		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
@@ -605,6 +614,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 	}
 
 	req := &looprpc.StaticAddressLoopInRequest{
+		Amount:                quoteReq.Amt,
 		Outpoints:             depositOutpoints,
 		MaxSwapFeeSatoshis:    int64(limits.maxSwapFee),
 		LastHop:               lastHop,
@@ -635,26 +645,6 @@ func containsDuplicates(outpoints []string) bool {
 	}
 
 	return false
-}
-
-func sumDeposits(outpoints []string, deposits []*looprpc.Deposit) (int64,
-	error) {
-
-	var sum int64
-	depositMap := make(map[string]*looprpc.Deposit)
-	for _, deposit := range deposits {
-		depositMap[deposit.Outpoint] = deposit
-	}
-
-	for _, outpoint := range outpoints {
-		if _, ok := depositMap[outpoint]; !ok {
-			return 0, fmt.Errorf("deposit %v not found", outpoint)
-		}
-
-		sum += depositMap[outpoint].Value
-	}
-
-	return sum, nil
 }
 
 func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
