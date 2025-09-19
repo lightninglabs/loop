@@ -211,7 +211,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "The amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis. In the loop-in case this can either be taken\nfrom the connected lnd wallet or coin-selected from static address deposits.\nThis is controlled by the select_deposits flag. If deposit_outpoints are\nspecified, the coins are taken out of that.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -257,7 +257,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. If the amt field is set as well the respective\npartial amount will be swapped. Cannot be used in conjunction with\nauto_select_deposits.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -297,6 +297,13 @@
             "required": false,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "auto_select_deposits",
+            "description": "In the legacy loop-in case this field must be set to false.\nIf set to true, the swap amount will be automatically selected from the\nstatic address deposits. If set to true, deposit_outpoints must be empty.\nThis option only pertains to loop in swaps.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -404,7 +411,7 @@
         "parameters": [
           {
             "name": "amt",
-            "description": "The amount to swap in satoshis.",
+            "description": "The amount to swap in satoshis. In the loop-in case this can either be taken\nfrom the connected lnd wallet or coin-selected from static address deposits.\nThis is controlled by the select_deposits flag. If deposit_outpoints are\nspecified, the coins are taken out of that.",
             "in": "path",
             "required": true,
             "type": "string",
@@ -450,7 +457,7 @@
           },
           {
             "name": "deposit_outpoints",
-            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. Either this or the amt parameter can be set at\nthe same time.",
+            "description": "Static address deposit outpoints that will be quoted for. This option only\npertains to loop in swaps. If the amt field is set as well the respective\npartial amount will be swapped. Cannot be used in conjunction with\nauto_select_deposits.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -490,6 +497,13 @@
             "required": false,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "auto_select_deposits",
+            "description": "In the legacy loop-in case this field must be set to false.\nIf set to true, the swap amount will be automatically selected from the\nstatic address deposits. If set to true, deposit_outpoints must be empty.\nThis option only pertains to loop in swaps.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -865,6 +879,10 @@
           "type": "string",
           "format": "byte",
           "description": "The swap hash of the swap that this deposit is part of. This field is only\nset if the deposit is part of a loop-in swap."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address for the deposit's address parameters."
         }
       }
     },
@@ -1902,7 +1920,7 @@
       ],
       "default": "UNKNOWN_STATIC_ADDRESS_SWAP_STATE"
     },
-    "looprpcStaticAddressSummaryResponse": {
+    "looprpcStaticAddressSummary": {
       "type": "object",
       "properties": {
         "static_address": {
@@ -1948,6 +1966,62 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all htlc timeout sweeps that the client swept."
+        }
+      }
+    },
+    "looprpcStaticAddressSummaryResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address of the client.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "relative_expiry_blocks": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The CSV expiry of the static address.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "total_num_deposits": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total number of deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_unconfirmed_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of unconfirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_deposited_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of confirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_expired_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all expired deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_withdrawn_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been withdrawn.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_looped_in_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all loop-ins that have been finalized.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_htlc_timeout_sweeps_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all htlc timeout sweeps that the client swept.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "per_address_summaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcStaticAddressSummary"
+          },
+          "description": "A per-address summary of all static addresses known to the client."
         }
       }
     },

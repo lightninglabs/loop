@@ -6,9 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -20,17 +18,6 @@ type (
 	// request.
 	ValidateLoopInContract func(height int32, htlcExpiry int32) error
 )
-
-// AddressManager handles fetching of address parameters.
-type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
-
-	// GetStaticAddress returns the deposit address for the given client and
-	// server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
-}
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
@@ -53,6 +40,11 @@ type DepositManager interface {
 	// outpoints.
 	DepositsForOutpoints(ctx context.Context, outpoints []string) (
 		[]*deposit.Deposit, error)
+
+	// GetActiveDepositsInState returns all active deposits in the given
+	// state.
+	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
+		error)
 }
 
 // StaticAddressLoopInStore provides access to the static address loop-in DB.

@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
@@ -107,13 +108,29 @@ type mockAddressManager struct {
 	mock.Mock
 }
 
-func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
+func (m *mockAddressManager) GetLegacyParameters(ctx context.Context) (
 	*address.Parameters, error) {
 
 	args := m.Called(ctx)
 
 	return args.Get(0).(*address.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	args := m.Called(ctx, pkScript)
+
+	return args.Get(0).(int32), nil
+}
+
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	args := m.Called(pkScript)
+
+	return args.Get(0).(*address.Parameters)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
@@ -131,16 +148,6 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 	args := m.Called(ctx, minConfs, maxConfs)
 
 	return args.Get(0).([]*lnwallet.Utxo),
-		args.Error(1)
-}
-
-func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
-	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
-	error) {
-
-	args := m.Called(clientPubkey, serverPubkey, expiry)
-
-	return args.Get(0).(*btcutil.AddressTaproot),
 		args.Error(1)
 }
 
@@ -302,6 +309,11 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Value:                utxo.Value,
 			ConfirmationHeight:   3,
 			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+			AddressID:            1,
+			AddressParams: &address.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+				Expiry:          100,
+			},
 		},
 	}
 
@@ -314,7 +326,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	).Return(nil)
 
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
+		"GetLegacyParameters", mock.Anything,
 	).Return(&address.Parameters{
 		Expiry: defaultExpiry,
 	}, nil)

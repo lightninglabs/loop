@@ -25,3 +25,9 @@ INSERT INTO static_addresses (
              $7,
              $8
          );
+
+-- name: GetLegacyAddress :one
+SELECT * FROM static_addresses
+ORDER BY id ASC
+LIMIT 1;
+

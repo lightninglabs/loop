@@ -4,7 +4,12 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -15,17 +20,19 @@ type Store interface {
 	// into the store.
 	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
-	// GetStaticAddress fetches static address parameters for a given
-	// address ID.
-	GetStaticAddress(ctx context.Context, pkScript []byte) (*Parameters,
-		error)
+	// GetStaticAddressID retrieves the ID of a static address from the
+	// database.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
-		error)
+	GetAllStaticAddresses(ctx context.Context) ([]*Parameters, error)
+
+	// GetLegacyParameters retrieves the parameters of the legacy static
+	// address.
+	GetLegacyParameters(ctx context.Context) (*Parameters, error)
 }
 
-// Parameters holds all the necessary information for the 2-of-2 multisig
+// Parameters hold all the necessary information for the 2-of-2 multisig
 // address.
 type Parameters struct {
 	// ClientPubkey is the client's pubkey for the static address. It is
@@ -52,4 +59,25 @@ type Parameters struct {
 
 	// InitiationHeight is the height at which the address was initiated.
 	InitiationHeight int32
+}
+
+// TaprootAddress returns the taproot address of the static address.
+// Example: bc1phl46hgna56hfs0aykgccq29xl7z5z265vvs47lhfkkna749zmqyqa380nh.
+func (p *Parameters) TaprootAddress(network *chaincfg.Params) (string, error) {
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(p.Expiry), p.ClientPubkey,
+		p.ServerPubkey,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	tpAddress, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(staticAddress.TaprootKey), network,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return tpAddress.String(), nil
 }
