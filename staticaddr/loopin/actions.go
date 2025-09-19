@@ -68,9 +68,18 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 
 	// Calculate the swap invoice amount. The server needs to pay us the
-	// sum of all deposits minus the fees that the server charges for the
-	// swap.
-	swapInvoiceAmt := f.loopIn.TotalDepositAmount() - f.loopIn.QuotedSwapFee
+	// swap amount minus the fees that the server charges for the swap. The
+	// swap amount is either the total value of the selected deposits, or
+	// the selected amount if a specific amount was requested.
+	swapAmount := f.loopIn.TotalDepositAmount()
+	var hasChange bool
+	if f.loopIn.SelectedAmount > 0 {
+		swapAmount = f.loopIn.SelectedAmount
+		remainingAmount := f.loopIn.TotalDepositAmount() - swapAmount
+		hasChange = remainingAmount > 0 && remainingAmount <
+			f.loopIn.TotalDepositAmount()
+	}
+	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage
@@ -120,6 +129,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
 		SwapHash:              f.loopIn.SwapHash[:],
 		DepositOutpoints:      f.loopIn.DepositOutpoints,
+		Amount:                uint64(f.loopIn.SelectedAmount),
 		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
 		SwapInvoice:           f.loopIn.SwapInvoice,
 		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
@@ -204,7 +214,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// We need to defend against the server setting high fees for the htlc
 	// tx since we might have to sweep the timeout path. We maximally allow
 	// a configured percentage of the swap value to be spent on fees.
-	amt := float64(f.loopIn.TotalDepositAmount())
+	amt := float64(swapAmount)
 	maxHtlcTxFee := btcutil.Amount(amt *
 		f.cfg.MaxStaticAddrHtlcFeePercentage)
 
@@ -212,7 +222,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		f.cfg.MaxStaticAddrHtlcBackupFeePercentage)
 
 	feeRate := chainfee.SatPerKWeight(loopInResp.StandardHtlcInfo.FeeRate)
-	fee := feeRate.FeeForWeight(f.loopIn.htlcWeight())
+	fee := feeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
 	if fee > maxHtlcTxFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()
@@ -225,7 +235,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	f.loopIn.HtlcTxFeeRate = feeRate
 
 	highFeeRate := chainfee.SatPerKWeight(loopInResp.HighFeeHtlcInfo.FeeRate)
-	fee = highFeeRate.FeeForWeight(f.loopIn.htlcWeight())
+	fee = highFeeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
 	if fee > maxHtlcTxBackupFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()
@@ -241,7 +251,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	extremelyHighFeeRate := chainfee.SatPerKWeight(
 		loopInResp.ExtremeFeeHtlcInfo.FeeRate,
 	)
-	fee = extremelyHighFeeRate.FeeForWeight(f.loopIn.htlcWeight())
+	fee = extremelyHighFeeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
 	if fee > maxHtlcTxBackupFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()

@@ -107,7 +107,9 @@ message ServerStaticAddressLoopInRequest {
     bytes swap_hash = 2;
 
     // The deposit outpoints the client wishes to loop in. They implicitly state
-    // the swap amount.
+    // the swap amount if the amount field is not specified. If the amount field
+    // is specified, the server will use the total amount of the deposit
+    // outpoints minus the amount as the change amount.
     repeated string deposit_outpoints = 3;
 
     // The swap invoice that the client wants the server to pay.
@@ -135,6 +137,17 @@ message ServerStaticAddressLoopInRequest {
     // swap payment. If the timeout is reached the swap will be aborted on the
     // server side and the client can retry the swap with different parameters.
     uint32 payment_timeout_seconds = 8;
+
+    /*
+    The optional swap amount in satoshis the client is attempting to swap. If
+    specified the server will take out this amount from the total value of
+    provided deposit_outpoints and will send the change back to the static
+    address. If this results in dust change the server will reject the swap
+    request. If the amount is not specified the server will use the total amount
+    of the deposit_outpoints as swap amount without providing an additional
+    flag - this is to maintain backwards compatibility.
+    */
+    uint64 amount = 9;
 }
 
 message ServerStaticAddressLoopInResponse {
