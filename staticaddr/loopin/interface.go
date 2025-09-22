@@ -79,6 +79,11 @@ type StaticAddressLoopInStore interface {
 	// GetLoopInByHash returns the loop-in swap with the given hash.
 	GetLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
 		*StaticAddressLoopIn, error)
+
+	// SwapHashesForDepositIDs returns a map of swap hashes to deposit IDs
+	// for the given deposit IDs.
+	SwapHashesForDepositIDs(ctx context.Context,
+		depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error)
 }
 
 type QuoteGetter interface {

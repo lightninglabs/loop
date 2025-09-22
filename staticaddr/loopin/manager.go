@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
@@ -324,29 +325,9 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	totalDepositAmount := loopIn.TotalDepositAmount()
-	changeAmt := totalDepositAmount - loopIn.SelectedAmount
-	if changeAmt > 0 && changeAmt < totalDepositAmount {
-		var foundChange bool
-		changePkScript := loopIn.AddressParams.PkScript
-
-		for _, out := range sweepTx.TxOut {
-			if out.Value == int64(changeAmt) &&
-				bytes.Equal(out.PkScript, changePkScript) {
-
-				foundChange = true
-				break
-			}
-		}
-
-		if !foundChange {
-			return fmt.Errorf("expected change output to our "+
-				"static address, total_deposit_amount=%v, "+
-				"selected_amount=%v, "+
-				"expected_change_amount=%v ",
-				totalDepositAmount, loopIn.SelectedAmount,
-				changeAmt)
-		}
+	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	if err != nil {
+		return err
 	}
 
 	// Check if all the deposits requested are part of the loop-in and
@@ -463,6 +444,73 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		},
 	)
 	return err
+}
+
+// checkChange ensures that the server sends us the correct change amount
+// back to our static address. An edge case arises if a batch contains two
+// swaps with identical change outputs. The client needs to ensure that any
+// swap referenced by the inputs has a respective change output in the batch.
+func (m *Manager) checkChange(ctx context.Context,
+	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
+
+	prevOuts := make([]string, len(sweepTx.TxIn))
+	for i, in := range sweepTx.TxIn {
+		prevOuts[i] = in.PreviousOutPoint.String()
+	}
+
+	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
+		ctx, prevOuts,
+	)
+	if err != nil {
+		return err
+	}
+
+	depositIDs := make([]deposit.ID, len(deposits))
+	for i, d := range deposits {
+		depositIDs[i] = d.ID
+	}
+
+	swapHashes, err := m.cfg.Store.SwapHashesForDepositIDs(ctx, depositIDs)
+	if err != nil {
+		return err
+	}
+
+	var expectedChange btcutil.Amount
+	for swapHash := range swapHashes {
+		loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
+		if err != nil {
+			return err
+		}
+
+		totalDepositAmount := loopIn.TotalDepositAmount()
+		changeAmt := totalDepositAmount - loopIn.SelectedAmount
+		if changeAmt > 0 && changeAmt < totalDepositAmount {
+			log.Debugf("expected change output to our "+
+				"static address, total_deposit_amount=%v, "+
+				"selected_amount=%v, "+
+				"expected_change_amount=%v ",
+				totalDepositAmount, loopIn.SelectedAmount,
+				changeAmt)
+
+			expectedChange += changeAmt
+		}
+	}
+
+	if expectedChange == 0 {
+		return nil
+	}
+
+	for _, out := range sweepTx.TxOut {
+		if out.Value == int64(expectedChange) &&
+			bytes.Equal(out.PkScript, changeAddr.PkScript) {
+
+			// We found the expected change output.
+			return nil
+		}
+	}
+
+	return fmt.Errorf("couldn't find expected change of %v "+
+		"satoshis sent to our static address", expectedChange)
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
