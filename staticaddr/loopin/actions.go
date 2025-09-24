@@ -43,12 +43,6 @@ var (
 	// amount.
 	ErrFeeTooHigh = errors.New("server htlc tx fee is higher than the " +
 		"configured allowed maximum")
-
-	// ErrBackupFeeTooHigh is returned if the server sets a fee rate for the
-	// htlc backup tx that is too high. We prevent here against a low htlc
-	// timeout sweep amount.
-	ErrBackupFeeTooHigh = errors.New("server htlc backup tx fee is " +
-		"higher than the configured allowed maximum")
 )
 
 // InitHtlcAction is executed if all loop-in information has been validated. We
