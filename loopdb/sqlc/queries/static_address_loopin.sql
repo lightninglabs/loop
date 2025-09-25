@@ -7,6 +7,7 @@ INSERT INTO static_address_swaps (
     quoted_swap_fee_satoshis,
     deposit_outpoints,
     selected_amount,
+    change_address,
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address,
@@ -22,7 +23,8 @@ INSERT INTO static_address_swaps (
     $8,
     $9,
     $10,
-    $11
+    $11,
+    $12
 );
 
 -- name: UpdateStaticAddressLoopIn :exec
