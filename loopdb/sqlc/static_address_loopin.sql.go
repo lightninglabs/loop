@@ -180,7 +180,7 @@ func (q *Queries) GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]
 const getStaticAddressLoopInSwap = `-- name: GetStaticAddressLoopInSwap :one
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount,
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.change_address,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -215,6 +215,7 @@ type GetStaticAddressLoopInSwapRow struct {
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
 	SelectedAmount          int64
+	ChangeAddress           string
 	SwapHash_3              []byte
 	SenderScriptPubkey      []byte
 	ReceiverScriptPubkey    []byte
@@ -250,6 +251,7 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 		&i.HtlcTimeoutSweepTxID,
 		&i.HtlcTimeoutSweepAddress,
 		&i.SelectedAmount,
+		&i.ChangeAddress,
 		&i.SwapHash_3,
 		&i.SenderScriptPubkey,
 		&i.ReceiverScriptPubkey,
@@ -264,7 +266,7 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 const getStaticAddressLoopInSwapsByStates = `-- name: GetStaticAddressLoopInSwapsByStates :many
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount,
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.change_address,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -310,6 +312,7 @@ type GetStaticAddressLoopInSwapsByStatesRow struct {
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
 	SelectedAmount          int64
+	ChangeAddress           string
 	SwapHash_3              []byte
 	SenderScriptPubkey      []byte
 	ReceiverScriptPubkey    []byte
@@ -351,6 +354,7 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.HtlcTimeoutSweepTxID,
 			&i.HtlcTimeoutSweepAddress,
 			&i.SelectedAmount,
+			&i.ChangeAddress,
 			&i.SwapHash_3,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,
@@ -381,6 +385,7 @@ INSERT INTO static_address_swaps (
     quoted_swap_fee_satoshis,
     deposit_outpoints,
     selected_amount,
+    change_address,
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address
@@ -394,7 +399,8 @@ INSERT INTO static_address_swaps (
     $7,
     $8,
     $9,
-    $10
+    $10,
+    $11
 )
 `
 
@@ -406,6 +412,7 @@ type InsertStaticAddressLoopInParams struct {
 	QuotedSwapFeeSatoshis   int64
 	DepositOutpoints        string
 	SelectedAmount          int64
+	ChangeAddress           string
 	HtlcTxFeeRateSatKw      int64
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
@@ -420,6 +427,7 @@ func (q *Queries) InsertStaticAddressLoopIn(ctx context.Context, arg InsertStati
 		arg.QuotedSwapFeeSatoshis,
 		arg.DepositOutpoints,
 		arg.SelectedAmount,
+		arg.ChangeAddress,
 		arg.HtlcTxFeeRateSatKw,
 		arg.HtlcTimeoutSweepTxID,
 		arg.HtlcTimeoutSweepAddress,
