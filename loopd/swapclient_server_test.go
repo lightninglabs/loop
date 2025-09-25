@@ -153,13 +153,14 @@ func TestValidateConfTarget(t *testing.T) {
 // TestValidateLoopInRequest tests validation of loop in requests.
 func TestValidateLoopInRequest(t *testing.T) {
 	tests := []struct {
-		name           string
-		amount         int64
-		numDeposits    uint32
-		external       bool
-		confTarget     int32
-		expectErr      bool
-		expectedTarget int32
+		name               string
+		amount             int64
+		numDeposits        uint32
+		external           bool
+		confTarget         int32
+		autoSelectDeposits bool
+		expectErr          bool
+		expectedTarget     int32
 	}{
 		{
 			name:           "external and htlc conf set",
@@ -216,6 +217,28 @@ func TestValidateLoopInRequest(t *testing.T) {
 			external:    false,
 			expectErr:   false,
 		},
+
+		{
+			name:        "not external, deposit fractional amount",
+			amount:      100_000,
+			numDeposits: 1,
+			external:    false,
+			expectErr:   false,
+		},
+		{
+			name:               "amount with deposit coin select",
+			amount:             100_000,
+			autoSelectDeposits: true,
+			external:           false,
+			expectErr:          false,
+		},
+		{
+			name:               "amount with deposit coin select",
+			numDeposits:        1,
+			autoSelectDeposits: true,
+			external:           false,
+			expectErr:          true,
+		},
 	}
 
 	for _, test := range tests {
@@ -223,7 +246,8 @@ func TestValidateLoopInRequest(t *testing.T) {
 			external := test.external
 			conf, err := validateLoopInRequest(
 				test.confTarget, external, test.numDeposits,
-				test.amount,
+				btcutil.Amount(test.amount),
+				test.autoSelectDeposits,
 			)
 
 			if test.expectErr {

@@ -1341,7 +1341,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 
 // monitorConfAndNotify monitors the confirmation of a specific transaction and
 // writes the response back to the response channel. It is called if the batch
-// is reorg-safely confirmed and we just need to deliver the data back to the
+// is reorg-safely confirmed, and we just need to deliver the data back to the
 // caller though SpendNotifier.
 func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 	notifier *SpendNotifier, spendTx *wire.MsgTx,
@@ -1354,9 +1354,8 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 
 	batchTxid := spendTx.TxHash()
 
-	if len(spendTx.TxOut) != 1 {
-		return fmt.Errorf("unexpected number of outputs in batch: %d, "+
-			"want %d", len(spendTx.TxOut), 1)
+	if len(spendTx.TxOut) < 1 {
+		return fmt.Errorf("expected at least one output in batch")
 	}
 	batchPkScript := spendTx.TxOut[0].PkScript
 
@@ -1426,7 +1425,7 @@ func (b *Batcher) writeToErrChan(ctx context.Context, err error) {
 
 // convertSweep converts a fetched sweep from the database to a sweep that is
 // ready to be processed by the batcher. It loads swap from loopdb by calling
-// method FetchLoopOutSwap.
+// the method FetchLoopOutSwap.
 func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
 	*sweep, error) {
 

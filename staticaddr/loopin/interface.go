@@ -53,6 +53,11 @@ type DepositManager interface {
 	// outpoints.
 	DepositsForOutpoints(ctx context.Context, outpoints []string) (
 		[]*deposit.Deposit, error)
+
+	// GetActiveDepositsInState returns all active deposits in the given
+	// state.
+	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
+		error)
 }
 
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
@@ -74,6 +79,11 @@ type StaticAddressLoopInStore interface {
 	// GetLoopInByHash returns the loop-in swap with the given hash.
 	GetLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
 		*StaticAddressLoopIn, error)
+
+	// SwapHashesForDepositIDs returns a map of swap hashes to deposit IDs
+	// for the given deposit IDs.
+	SwapHashesForDepositIDs(ctx context.Context,
+		depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error)
 }
 
 type QuoteGetter interface {

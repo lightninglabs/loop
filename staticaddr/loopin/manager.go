@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -17,9 +19,12 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -27,6 +32,10 @@ const (
 	// SwapNotFinishedMsg is the message that is sent to the server if a
 	// swap is not considered finished yet.
 	SwapNotFinishedMsg = "swap not finished yet"
+)
+
+var (
+	dustLimit = lnwallet.DustLimitForSize(input.P2TRSize)
 )
 
 // Config contains the services required for the loop-in manager.
@@ -280,6 +289,14 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
+	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
+		ctx, loopIn.DepositOutpoints,
+	)
+	if err != nil {
+		return err
+	}
+	loopIn.Deposits = deposits
+
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
@@ -303,6 +320,14 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	if len(sweepTx.TxIn) != len(req.PrevoutInfo) {
 		return fmt.Errorf("expected %v inputs, got %v",
 			len(req.PrevoutInfo), len(sweepTx.TxIn))
+	}
+
+	// If the user selected an amount that is less than the total deposit
+	// amount we'll check that the server sends us the correct change amount
+	// back to our static address.
+	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	if err != nil {
+		return err
 	}
 
 	// Check if all the deposits requested are part of the loop-in and
@@ -421,6 +446,73 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	return err
 }
 
+// checkChange ensures that the server sends us the correct change amount
+// back to our static address. An edge case arises if a batch contains two
+// swaps with identical change outputs. The client needs to ensure that any
+// swap referenced by the inputs has a respective change output in the batch.
+func (m *Manager) checkChange(ctx context.Context,
+	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
+
+	prevOuts := make([]string, len(sweepTx.TxIn))
+	for i, in := range sweepTx.TxIn {
+		prevOuts[i] = in.PreviousOutPoint.String()
+	}
+
+	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
+		ctx, prevOuts,
+	)
+	if err != nil {
+		return err
+	}
+
+	depositIDs := make([]deposit.ID, len(deposits))
+	for i, d := range deposits {
+		depositIDs[i] = d.ID
+	}
+
+	swapHashes, err := m.cfg.Store.SwapHashesForDepositIDs(ctx, depositIDs)
+	if err != nil {
+		return err
+	}
+
+	var expectedChange btcutil.Amount
+	for swapHash := range swapHashes {
+		loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
+		if err != nil {
+			return err
+		}
+
+		totalDepositAmount := loopIn.TotalDepositAmount()
+		changeAmt := totalDepositAmount - loopIn.SelectedAmount
+		if changeAmt > 0 && changeAmt < totalDepositAmount {
+			log.Debugf("expected change output to our "+
+				"static address, total_deposit_amount=%v, "+
+				"selected_amount=%v, "+
+				"expected_change_amount=%v ",
+				totalDepositAmount, loopIn.SelectedAmount,
+				changeAmt)
+
+			expectedChange += changeAmt
+		}
+	}
+
+	if expectedChange == 0 {
+		return nil
+	}
+
+	for _, out := range sweepTx.TxOut {
+		if out.Value == int64(expectedChange) &&
+			bytes.Equal(out.PkScript, changeAddr.PkScript) {
+
+			// We found the expected change output.
+			return nil
+		}
+	}
+
+	return fmt.Errorf("couldn't find expected change of %v "+
+		"satoshis sent to our static address", expectedChange)
+}
+
 // recover stars a loop-in state machine for each non-final loop-in to pick up
 // work where it was left off before the restart.
 func (m *Manager) recoverLoopIns(ctx context.Context) error {
@@ -531,29 +623,80 @@ func (m *Manager) DeliverLoopInRequest(ctx context.Context,
 func (m *Manager) initiateLoopIn(ctx context.Context,
 	req *loop.StaticAddressLoopInRequest) (*StaticAddressLoopIn, error) {
 
-	// Validate the loop-in request.
-	if len(req.DepositOutpoints) == 0 {
-		return nil, fmt.Errorf("no deposit outpoints provided")
-	}
-
-	// Retrieve all deposits referenced by the outpoints and ensure that
-	// they are in state Deposited.
-	deposits, active := m.cfg.DepositManager.AllStringOutpointsActiveDeposits( //nolint:lll
-		req.DepositOutpoints, deposit.Deposited,
+	var (
+		err               error
+		selectedOutpoints = req.DepositOutpoints
+		selectedDeposits  []*deposit.Deposit
 	)
-	if !active {
-		return nil, fmt.Errorf("one or more deposits are not in "+
-			"state %s", deposit.Deposited)
+
+	// Determine which deposits to use for the loop-in swap. If none are
+	// selected by the client, we will coin-select them based on the amount.
+	switch {
+	case len(selectedOutpoints) == 0 && req.SelectedAmount == 0:
+		return nil, fmt.Errorf("neither deposit outpoints nor amount " +
+			"provided")
+
+	case len(selectedOutpoints) > 0:
+		// Retrieve all deposits referenced by the outpoints and ensure
+		// that they are in state Deposited.
+		var active bool
+		selectedDeposits, active = m.cfg.DepositManager.
+			AllStringOutpointsActiveDeposits(
+				selectedOutpoints, deposit.Deposited,
+			)
+		if !active {
+			return nil, fmt.Errorf("one or more deposits are not in "+
+				"state %s", deposit.Deposited)
+		}
+
+	case len(selectedOutpoints) == 0:
+		// If an amount was provided, we'll coin-select deposits to
+		// cover for the amount.
+		allDeposits, err := m.cfg.DepositManager.
+			GetActiveDepositsInState(deposit.Deposited)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve all "+
+				"deposits: %w", err)
+		}
+
+		// TODO(hieblmi): add params to deposit for multi-address
+		//      support.
+		params, err := m.cfg.AddressManager.GetStaticAddressParameters(
+			ctx,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve static "+
+				"address parameters: %w", err)
+		}
+
+		selectedDeposits, err = SelectDeposits(
+			req.SelectedAmount, allDeposits, params.Expiry,
+			m.currentHeight.Load(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to select deposits: %w",
+				err)
+		}
+
+		selectedOutpoints = make([]string, 0, len(selectedDeposits))
+		for _, deposit := range selectedDeposits {
+			selectedOutpoints = append(selectedOutpoints,
+				deposit.String())
+		}
 	}
 
-	// Calculate the total deposit amount.
-	tmp := &StaticAddressLoopIn{
-		Deposits: deposits,
+	// Calculate the total deposit amount and check if the selected amount
+	// would leave a dust output.
+	swapAmount, err := DeduceSwapAmount(
+		sumOfDeposits(selectedDeposits), req.SelectedAmount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to determine swap amount: %w",
+			err)
 	}
-	totalDepositAmount := tmp.TotalDepositAmount()
 
 	// Check that the label is valid.
-	err := labels.Validate(req.Label)
+	err = labels.Validate(req.Label)
 	if err != nil {
 		return nil, fmt.Errorf("invalid label: %w", err)
 	}
@@ -577,7 +720,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		// Because the Private flag is set, we'll generate our own set
 		// of hop hints.
 		req.RouteHints, err = loop.SelectHopHints(
-			ctx, m.cfg.LndClient, totalDepositAmount,
+			ctx, m.cfg.LndClient, swapAmount,
 			loop.DefaultMaxHopHints, includeNodes,
 		)
 		if err != nil {
@@ -586,19 +729,19 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		}
 	}
 
-	// Request current server loop in terms and use these to calculate the
-	// swap fee that we should subtract from the swap amount in the payment
-	// request that we send to the server. We pass nil as optional route
-	// hints as hop hint selection when generating invoices with private
-	// channels is an LND side black box feature. Advanced users will quote
-	// directly anyway and there they have the option to add specific route
-	// hints.
+	// Request the current server loop in terms and use these to calculate
+	// the swap fee that we should subtract from the swap amount in the
+	// payment request that we send to the server. We pass nil as optional
+	// route hints as hop hint selection when generating invoices with
+	// private channels is an LND side black box feature. Advanced users
+	// will quote directly anyway, and there they are able to add specific
+	// route hints.
 	// The quote call will also request a probe from the server to ensure
-	// feasibility of a loop-in for the totalDepositAmount.
-	numDeposits := uint32(len(deposits))
+	// feasibility of a loop-in for the selected.
+	numDeposits := uint32(len(selectedDeposits))
 	quote, err := m.cfg.QuoteGetter.GetLoopInQuote(
-		ctx, totalDepositAmount, m.cfg.NodePubkey, req.LastHop,
-		req.RouteHints, req.Initiator, numDeposits,
+		ctx, swapAmount, m.cfg.NodePubkey, req.LastHop, req.RouteHints,
+		req.Initiator, numDeposits,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get loop in quote: %w", err)
@@ -619,8 +762,9 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
-		DepositOutpoints:      req.DepositOutpoints,
-		Deposits:              deposits,
+		SelectedAmount:        req.SelectedAmount,
+		DepositOutpoints:      selectedOutpoints,
+		Deposits:              selectedDeposits,
 		Label:                 req.Label,
 		Initiator:             req.Initiator,
 		InitiationTime:        time.Now(),
@@ -710,9 +854,102 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 	return swaps, nil
 }
 
+// SelectDeposits sorts the deposits by amount in descending order, then by
+// blocks-until-expiry in ascending order. It then selects the deposits that
+// are needed to cover the amount requested without leaving a dust change. It
+// returns an error if the sum of deposits minus dust is less than the requested
+// amount.
+func SelectDeposits(targetAmount btcutil.Amount, deposits []*deposit.Deposit,
+	csvExpiry uint32, blockHeight uint32) ([]*deposit.Deposit, error) {
+
+	// Sort the deposits by amount in descending order, then by
+	// blocks-until-expiry in ascending order.
+	sort.Slice(deposits, func(i, j int) bool {
+		if deposits[i].Value == deposits[j].Value {
+			iExp := uint32(deposits[i].ConfirmationHeight) +
+				csvExpiry - blockHeight
+			jExp := uint32(deposits[j].ConfirmationHeight) +
+				csvExpiry - blockHeight
+
+			return iExp < jExp
+		}
+		return deposits[i].Value > deposits[j].Value
+	})
+
+	// Select the deposits that are needed to cover the swap amount without
+	// leaving a dust change.
+	var selectedDeposits []*deposit.Deposit
+	var selectedAmount btcutil.Amount
+	for _, deposit := range deposits {
+		selectedDeposits = append(selectedDeposits, deposit)
+		selectedAmount += deposit.Value
+		if selectedAmount == targetAmount {
+			return selectedDeposits, nil
+		}
+		if selectedAmount > targetAmount {
+			if selectedAmount-targetAmount >= dustLimit {
+				return selectedDeposits, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("not enough deposits to cover "+
+		"requested amount or prevent dust change, have %d but need %d",
+		selectedAmount, targetAmount)
+}
+
+// DeduceSwapAmount calculates the swap amount based on the selected amount and
+// the total deposit amount. It checks if the selected amount leaves a dust
+// change output or exceeds the total deposits value. Note that if the selected
+// amount is 0, the swap amount is the total deposit value. If the selected
+// amount is equal to the total deposit value, the total deposit value will be
+// swapped.
+func DeduceSwapAmount(totalDepositAmount btcutil.Amount,
+	selectedAmount btcutil.Amount) (btcutil.Amount, error) {
+
+	// If the selected amount leaves a dust change output or exceeds the
+	// total deposits value, we return an error.
+	swapAmount := selectedAmount
+	remainingAmount := totalDepositAmount - selectedAmount
+	switch {
+	case selectedAmount < 0:
+		return 0, fmt.Errorf("selected amount %v is negative",
+			selectedAmount)
+
+	case selectedAmount > 0 && selectedAmount < dustLimit:
+		return 0, fmt.Errorf("selected amount %v is dust, "+
+			"need at least %v", selectedAmount, dustLimit)
+
+	case totalDepositAmount < dustLimit:
+		return 0, fmt.Errorf("total deposit value %v is dust, "+
+			"need at least %v", totalDepositAmount, dustLimit)
+
+	case remainingAmount < 0:
+		return 0, fmt.Errorf("selected amount %v exceeds total "+
+			"deposit value %v", selectedAmount, totalDepositAmount)
+
+	case remainingAmount > 0 && remainingAmount < dustLimit:
+		return 0, fmt.Errorf("selected amount %v leaves dust change "+
+			"%v", selectedAmount, remainingAmount)
+
+	default:
+		// If the remaining amount is 0 or equal or greater than the
+		// dust limit, we can proceed with the swap.
+	}
+
+	// If the client didn't select an amount, we quote for the total
+	// deposits value.
+	if selectedAmount == 0 {
+		swapAmount = totalDepositAmount
+	}
+
+	return swapAmount, nil
+}
+
 // mapDepositsToIndices maps the deposit outpoints to their respective indices
 // in the sweep transaction.
-func mapDepositsToIndices(req *swapserverrpc.ServerStaticLoopInSweepNotification, //nolint:lll
+func mapDepositsToIndices(
+	req *swapserverrpc.ServerStaticLoopInSweepNotification,
 	loopIn *StaticAddressLoopIn, sweepTx *wire.MsgTx) (map[string]int,
 	error) {
 
@@ -754,4 +991,13 @@ func mapDepositsToIndices(req *swapserverrpc.ServerStaticLoopInSweepNotification
 		}
 	}
 	return depositToIdxMap, nil
+}
+
+func sumOfDeposits(deposits []*deposit.Deposit) btcutil.Amount {
+	sum := btcutil.Amount(0)
+	for _, d := range deposits {
+		sum += d.Value
+	}
+
+	return sum
 }
