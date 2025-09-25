@@ -26,19 +26,14 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	msgTx := wire.NewMsgTx(2)
 
-	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return fsm.OnError
-	}
-
 	// Add the deposit outpoint as input to the transaction.
 	msgTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: f.deposit.OutPoint,
-		Sequence:         params.Expiry,
+		Sequence:         f.deposit.AddressParams.Expiry,
 		SignatureScript:  nil,
 	})
 
-	// Estimate the fee rate of an expiry spend transaction.
+	// Estimate the fee rate of an expiry spending transaction.
 	feeRateEstimator, err := f.cfg.WalletKit.EstimateFeeRate(
 		ctx, DefaultConfTarget,
 	)
@@ -65,12 +60,17 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	txOut := &wire.TxOut{
 		Value:    int64(f.deposit.Value),
-		PkScript: params.PkScript,
+		PkScript: f.deposit.AddressParams.PkScript,
 	}
 
 	prevOut := []*wire.TxOut{txOut}
 
-	signDesc, err := f.SignDescriptor(ctx)
+	addressScript, err := f.deposit.GetStaticAddressScript()
+	if err != nil {
+		return f.HandleError(err)
+	}
+
+	signDesc, err := f.SignDescriptor(addressScript)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -82,13 +82,8 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
 	sig := rawSigs[0]
-	msgTx.TxIn[0].Witness, err = address.GenTimeoutWitness(sig)
+	msgTx.TxIn[0].Witness, err = addressScript.GenTimeoutWitness(sig)
 	if err != nil {
 		return f.HandleError(err)
 	}

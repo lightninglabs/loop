@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
@@ -277,26 +276,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	loopIn.AddressParams, err =
-		m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return err
-	}
-
-	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
-		ctx, loopIn.DepositOutpoints,
-	)
-	if err != nil {
-		return err
-	}
-	loopIn.Deposits = deposits
-
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
@@ -305,7 +284,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 
 	sweepTx := sweepPacket.UnsignedTx
 
-	// If the loop-in is not in the Succeeded state we return an
+	// If the loop-in is not in the Succeeded state, we return an
 	// error.
 	if !loopIn.IsInState(Succeeded) {
 		// We'll notify the server that we don't consider the swap
@@ -325,7 +304,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	err = m.checkChange(ctx, sweepTx)
 	if err != nil {
 		return err
 	}
@@ -385,8 +364,21 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		)
 
 		copy(serverNonce[:], nonce)
+
+		deposit, err := m.cfg.DepositManager.DepositsForOutpoints(
+			ctx, []string{depositOutpoint},
+		)
+		if err != nil {
+			return err
+		}
+		if len(deposit) != 1 {
+			return fmt.Errorf("expected 1 deposit for "+
+				"outpoint %v, got %v", depositOutpoint,
+				len(deposit))
+		}
+
 		musig2Session, err := loopIn.createMusig2Session(
-			ctx, m.cfg.Signer,
+			ctx, m.cfg.Signer, deposit[0],
 		)
 		if err != nil {
 			return err
@@ -447,12 +439,10 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 }
 
 // checkChange ensures that the server sends us the correct change amount
-// back to our static address. An edge case arises if a batch contains two
-// swaps with identical change outputs. The client needs to ensure that any
-// swap referenced by the inputs has a respective change output in the batch.
-func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
-
+// back to our static address. The client checks for each batch if the sum of
+// change of referenced swaps in the inputs is the sum of change in the outputs
+// that reference our static addresses.
+func (m *Manager) checkChange(ctx context.Context, sweepTx *wire.MsgTx) error {
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
 		prevOuts[i] = in.PreviousOutPoint.String()
@@ -500,13 +490,19 @@ func (m *Manager) checkChange(ctx context.Context,
 		return nil
 	}
 
+	var actualChange btcutil.Amount
 	for _, out := range sweepTx.TxOut {
-		if out.Value == int64(expectedChange) &&
-			bytes.Equal(out.PkScript, changeAddr.PkScript) {
-
-			// We found the expected change output.
-			return nil
+		isOurs, err := m.cfg.AddressManager.IsOutPkScript(out.PkScript)
+		if err != nil {
+			return err
 		}
+		if isOurs {
+			actualChange += btcutil.Amount(out.Value)
+		}
+	}
+
+	if actualChange == expectedChange {
+		return nil
 	}
 
 	return fmt.Errorf("couldn't find expected change of %v "+
@@ -532,7 +528,7 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 
 		// Retrieve all deposits regardless of deposit state. If any of
 		// the deposits is not active in the in-mem map of the deposits
-		// manager we log it, but continue to recover the loop-in.
+		// manager, we log it but continue to recover the loop-in.
 		var allActive bool
 		loopIn.Deposits, allActive =
 			m.cfg.DepositManager.AllStringOutpointsActiveDeposits(
@@ -543,26 +539,12 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 			log.Errorf("one or more deposits are not active")
 		}
 
-		loopIn.AddressParams, err =
-			m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-		if err != nil {
-			return err
-		}
-
-		loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(
-			ctx,
-		)
-		if err != nil {
-			return err
-		}
-
 		// Create a state machine for a given loop-in.
 		var (
 			recovery = true
 			fsm      *FSM
 		)
-		fsm, err = NewFSM(ctx, loopIn, m.cfg, recovery)
+		fsm, err = NewFSM(loopIn, m.cfg, recovery)
 		if err != nil {
 			return err
 		}
@@ -659,19 +641,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				"deposits: %w", err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := m.cfg.AddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		selectedDeposits, err = SelectDeposits(
-			req.SelectedAmount, allDeposits, params.Expiry,
-			m.currentHeight.Load(),
+			req.SelectedAmount, allDeposits, m.currentHeight.Load(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -791,7 +762,7 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 
 	// Create a state machine for a given deposit.
 	recovery := false
-	loopInFsm, err := NewFSM(ctx, loopIn, m.cfg, recovery)
+	loopInFsm, err := NewFSM(loopIn, m.cfg, recovery)
 	if err != nil {
 		return nil, err
 	}
@@ -860,16 +831,16 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 // returns an error if the sum of deposits minus dust is less than the requested
 // amount.
 func SelectDeposits(targetAmount btcutil.Amount, deposits []*deposit.Deposit,
-	csvExpiry uint32, blockHeight uint32) ([]*deposit.Deposit, error) {
+	blockHeight uint32) ([]*deposit.Deposit, error) {
 
 	// Sort the deposits by amount in descending order, then by
 	// blocks-until-expiry in ascending order.
 	sort.Slice(deposits, func(i, j int) bool {
 		if deposits[i].Value == deposits[j].Value {
 			iExp := uint32(deposits[i].ConfirmationHeight) +
-				csvExpiry - blockHeight
+				deposits[i].AddressParams.Expiry - blockHeight
 			jExp := uint32(deposits[j].ConfirmationHeight) +
-				csvExpiry - blockHeight
+				deposits[j].AddressParams.Expiry - blockHeight
 
 			return iExp < jExp
 		}

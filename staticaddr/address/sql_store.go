@@ -41,16 +41,15 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 	return s.baseDB.Queries.CreateStaticAddress(ctx, createArgs)
 }
 
-// GetStaticAddress retrieves static address parameters for a given pkScript.
-func (s *SqlStore) GetStaticAddress(ctx context.Context,
-	pkScript []byte) (*Parameters, error) {
+func (s *SqlStore) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
 
-	staticAddress, err := s.baseDB.Queries.GetStaticAddress(ctx, pkScript)
+	address, err := s.baseDB.Queries.GetStaticAddress(ctx, pkScript)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	return s.toAddressParameters(staticAddress)
+	return address.ID, nil
 }
 
 // GetAllStaticAddresses returns all address known to the server.
@@ -73,6 +72,22 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 	}
 
 	return result, nil
+}
+
+// GetLegacyParameters returns all address known to the server.
+func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	legacyAddress, err := s.baseDB.Queries.GetLegacyAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.toAddressParameters(legacyAddress)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // Close closes the database connection.

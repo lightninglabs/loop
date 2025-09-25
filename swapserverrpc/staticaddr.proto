@@ -89,6 +89,9 @@ message ServerWithdrawRequest {
     // ensures that the change amount covers the transaction fee, and that the
     // change after fees is at least the dust limit.
     int64 change_amount = 6;
+
+    // The address the client wants to send the change output to.
+    string client_change_addr = 7;
 }
 
 message ServerWithdrawResponse {
@@ -148,6 +151,11 @@ message ServerStaticAddressLoopInRequest {
     flag - this is to maintain backwards compatibility.
     */
     uint64 amount = 9;
+
+    /*
+    The optional address the client wants to send the change output to.
+    */
+    string change_address = 10;
 }
 
 message ServerStaticAddressLoopInResponse {

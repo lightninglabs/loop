@@ -9,6 +9,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -62,6 +65,13 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// AddressParams are the parameters of the address that are backing this
+	// deposit.
+	AddressParams *address.Parameters
+
+	// AddressID is the ID of the address that is backing this deposit.
+	AddressID int32
 }
 
 // IsInFinalState returns true if the deposit is final.
@@ -107,6 +117,20 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 
 func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// GetStaticAddressScript returns the static address script of the deposit.
+func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
+	params := d.AddressParams
+	address, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return address, nil
 }
 
 // GetRandomDepositID generates a random deposit ID.
