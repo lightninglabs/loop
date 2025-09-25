@@ -161,6 +161,11 @@ message ServerStaticAddressLoopInRequest {
     // If set, request the server to use fast publication behavior for this
     // swap.
     bool fast = 10;
+
+    /*
+    The optional address the client wants to send the change output to.
+    */
+    string change_address = 11;
 }
 
 message ServerStaticAddressLoopInResponse {

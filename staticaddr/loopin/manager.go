@@ -343,9 +343,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 	}
 
-	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(
-		prevoutMap,
-	)
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(prevoutMap)
 
 	sigHashes := txscript.NewTxSigHashes(
 		sweepPacket.UnsignedTx, prevOutputFetcher,
@@ -374,6 +372,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 
 		copy(serverNonce[:], nonce)
 
+		ignoreUnknownOutpoints := false
 		deposit, err := m.cfg.DepositManager.DepositsForOutpoints(
 			ctx, []string{depositOutpoint}, ignoreUnknownOutpoints,
 		)

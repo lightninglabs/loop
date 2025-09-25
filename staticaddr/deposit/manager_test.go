@@ -312,6 +312,9 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		},
 	}
 	require.NoError(t, err)
+
+	_, clientPub := test.CreateKey(1)
+	_, serverPub := test.CreateKey(2)
 	storedDeposits := []*Deposit{
 		{
 			ID:                   ID,
@@ -324,6 +327,9 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			AddressParams: &address.Parameters{
 				ProtocolVersion: version.ProtocolVersion_V0,
 				Expiry:          100,
+				ClientPubkey:    clientPub,
+				ServerPubkey:    serverPub,
+				PkScript:        utxo.PkScript,
 			},
 		},
 	}

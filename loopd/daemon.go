@@ -677,6 +677,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		LndClient:                            d.lnd.Client,
 		InvoicesClient:                       d.lnd.Invoices,
 		NodePubkey:                           d.lnd.NodePubkey,
+		AddressManager:                       staticAddressManager,
 		DepositManager:                       depositManager,
 		Store:                                staticAddressLoopInStore,
 		WalletKit:                            d.lnd.WalletKit,

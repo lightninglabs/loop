@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -63,15 +64,55 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 
 	// Calculate the swap invoice amount. The server needs to pay us the
 	// swap amount minus the fees that the server charges for the swap. The
-	// swap amount is either the total value of the selected deposits, or
-	// the selected amount if a specific amount was requested.
-	swapAmount := f.loopIn.TotalDepositAmount()
-	var hasChange bool
+	// swap amount is either the total value of the selected deposits or the
+	// selected amount if a specific amount was requested. If the selection
+	// results in change, we create a new static address for it.
+	var (
+		swapAmount       = f.loopIn.TotalDepositAmount()
+		hasChange        bool
+		changeAddrParams *address.Parameters
+		changeAddress    string
+	)
 	if f.loopIn.SelectedAmount > 0 {
 		swapAmount = f.loopIn.SelectedAmount
 		remainingAmount := f.loopIn.TotalDepositAmount() - swapAmount
 		hasChange = remainingAmount > 0 && remainingAmount <
 			f.loopIn.TotalDepositAmount()
+
+		if hasChange {
+			changeAddrParams, err = f.cfg.AddressManager.NewAddress(
+				ctx,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to create change "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			taprootAddress, err := changeAddrParams.TaprootAddress(
+				f.cfg.ChainParams,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to create taproot "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			changeAddr, err := btcutil.DecodeAddress(
+				taprootAddress, f.cfg.ChainParams,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to decode change "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			f.loopIn.ChangeAddress = changeAddr
+			changeAddress = changeAddr.String()
+		}
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
@@ -124,6 +165,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		SwapHash:              f.loopIn.SwapHash[:],
 		DepositOutpoints:      f.loopIn.DepositOutpoints,
 		Amount:                uint64(f.loopIn.SelectedAmount),
+		ChangeAddress:         changeAddress,
 		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
 		SwapInvoice:           f.loopIn.SwapInvoice,
 		ProtocolVersion:       version.CurrentRPCProtocolVersion(),

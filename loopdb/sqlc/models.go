@@ -150,6 +150,7 @@ type StaticAddressSwap struct {
 	HtlcTimeoutSweepAddress string
 	SelectedAmount          int64
 	Fast                    bool
+	ChangeAddress           string
 }
 
 type StaticAddressSwapUpdate struct {

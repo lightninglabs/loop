@@ -268,6 +268,11 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	joinedOutpoints := strings.Join(
 		loopIn.DepositOutpoints, OutpointSeparator,
 	)
+
+	var changeAddress string
+	if loopIn.ChangeAddress != nil {
+		changeAddress = loopIn.ChangeAddress.String()
+	}
 	staticAddressLoopInParams := sqlc.InsertStaticAddressLoopInParams{
 		SwapHash:                loopIn.SwapHash[:],
 		SwapInvoice:             loopIn.SwapInvoice,
@@ -277,6 +282,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		HtlcTxFeeRateSatKw:      int64(loopIn.HtlcTxFeeRate),
 		DepositOutpoints:        joinedOutpoints,
 		SelectedAmount:          int64(loopIn.SelectedAmount),
+		ChangeAddress:           changeAddress,
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
 		Fast:                    loopIn.Fast,
 	}
@@ -565,6 +571,16 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		depositList = append(depositList, deposit)
 	}
 
+	var changeAddress btcutil.Address
+	if swap.ChangeAddress != "" {
+		changeAddress, err = btcutil.DecodeAddress(
+			swap.ChangeAddress, network,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
 		SwapPreimage:     swapPreImage,
@@ -588,6 +604,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		QuotedSwapFee:         btcutil.Amount(swap.QuotedSwapFeeSatoshis),
 		DepositOutpoints:      depositOutpoints,
 		SelectedAmount:        btcutil.Amount(swap.SelectedAmount),
+		ChangeAddress:         changeAddress,
 		Fast:                  swap.Fast,
 		HtlcTxFeeRate: chainfee.SatPerKWeight(
 			swap.HtlcTxFeeRateSatKw,

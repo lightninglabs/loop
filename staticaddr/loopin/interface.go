@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -32,6 +33,9 @@ type (
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
+	// NewAddress returns a new static address.
+	NewAddress(ctx context.Context) (*address.Parameters, error)
+
 	// IsOurPkScript returns true if the given pkScript is our static
 	// address script.
 	IsOurPkScript(pkScript []byte) bool
