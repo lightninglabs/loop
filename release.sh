@@ -10,6 +10,16 @@
 # Exit on errors.
 set -e
 
+# Get the directory of the script
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Checkout the repo to a subdir to clean from clean from unstaged files and
+# build exactly what is committed.
+BUILD_DIR="${SCRIPT_DIR}/tmp-build-$(date +%Y%m%d-%H%M%S)"
+mkdir -p $BUILD_DIR
+cd $BUILD_DIR
+git clone --tags "$SCRIPT_DIR" .
+
 TAG=''
 
 check_tag() {
@@ -80,25 +90,21 @@ go mod vendor
 tar -cvzf vendor.tar.gz vendor
 
 PACKAGE=loop
-MAINDIR=$PACKAGE-$TAG
-mkdir -p $MAINDIR
+ARTIFACTS_DIR="${SCRIPT_DIR}/${PACKAGE}-${TAG}"
+mkdir -p $ARTIFACTS_DIR
 
-cp vendor.tar.gz $MAINDIR/
+cp vendor.tar.gz $ARTIFACTS_DIR/
 rm vendor.tar.gz
 rm -r vendor
 
-PACKAGESRC="$MAINDIR/$PACKAGE-source-$TAG.tar"
+PACKAGESRC="${ARTIFACTS_DIR}/${PACKAGE}-source-${TAG}.tar"
 git archive -o $PACKAGESRC HEAD
 gzip -f $PACKAGESRC > "$PACKAGESRC.gz"
-
-cd $MAINDIR
 
 # If LOOPBUILDSYS is set the default list is ignored. Useful to release
 # for a subset of systems/architectures.
 SYS=${LOOPBUILDSYS:-"windows-amd64 linux-386 linux-amd64 linux-armv6 linux-armv7 linux-arm64 darwin-arm64 darwin-amd64 freebsd-amd64 freebsd-arm"}
 
-# Use the first element of $GOPATH in the case where GOPATH is a list
-# (something that is totally allowed).
 PKG="github.com/lightninglabs/loop"
 COMMIT=$(git describe --abbrev=40 --dirty)
 COMMITFLAGS="-X $PKG/build.Commit=$COMMIT"
@@ -126,12 +132,14 @@ for i in $SYS; do
     cd ..
 
     if [[ $OS = "windows" ]]; then
-	zip -r $PACKAGE-$i-$TAG.zip $PACKAGE-$i-$TAG
+        zip -r "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.zip" "${PACKAGE}-${i}-${TAG}"
     else
-	tar -cvzf $PACKAGE-$i-$TAG.tar.gz $PACKAGE-$i-$TAG
+        tar -cvzf "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.tar.gz" "${PACKAGE}-${i}-${TAG}"
     fi
 
     rm -r $PACKAGE-$i-$TAG
 done
+
+cd "$ARTIFACTS_DIR"
 
 shasum -a 256 * > manifest-$TAG.txt
