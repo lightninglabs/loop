@@ -16,9 +16,16 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # Checkout the repo to a subdir to clean from clean from unstaged files and
 # build exactly what is committed.
 BUILD_DIR="${SCRIPT_DIR}/tmp-build-$(date +%Y%m%d-%H%M%S)"
-mkdir -p $BUILD_DIR
-cd $BUILD_DIR
-git clone --tags "$SCRIPT_DIR" .
+
+# green prints one line of green text (if the terminal supports it).
+function green() {
+  echo -e "\e[0;32m${1}\e[0m"
+}
+
+# red prints one line of red text (if the terminal supports it).
+function red() {
+  echo -e "\e[0;31m${1}\e[0m"
+}
 
 TAG=''
 
@@ -26,6 +33,7 @@ check_tag() {
     # If no tag specified, use date + version otherwise use tag.
     if [[ $1x = x ]]; then
         TAG=`date +%Y%m%d-%H%M%S`
+        green "No tag specified, using ${TAG} as tag"
 
         return
     fi
@@ -34,7 +42,7 @@ check_tag() {
 
     # If a tag is specified, ensure that tag is present and checked out.
     if [[ $TAG != $(git describe) ]]; then
-        echo "tag $TAG not checked out"
+        red "tag $TAG not checked out"
         exit 1
     fi
 
@@ -48,7 +56,7 @@ check_tag() {
         DESCRIBED_HASH=${BASH_REMATCH[1]}
         CURRENT_HASH=$(git rev-parse HEAD)
         if [[ $CURRENT_HASH != $DESCRIBED_HASH* ]]; then
-            echo "Described hash $DESCRIBED_HASH is not a prefix of current commit $CURRENT_HASH"
+            red "Described hash $DESCRIBED_HASH is not a prefix of current commit $CURRENT_HASH"
             exit 1
         fi
 
@@ -56,7 +64,7 @@ check_tag() {
     fi
 
     if ! git verify-tag $TAG; then
-        echo "tag $TAG not signed"
+        red "tag $TAG not signed"
         exit 1
     fi
 
@@ -75,31 +83,111 @@ check_tag() {
 
         # Match git tag with loop version.
         if [[ $TAG != $LOOP_VERSION ]]; then
-            echo "loop version $LOOP_VERSION does not match tag $TAG"
+            red "loop version $LOOP_VERSION does not match tag $TAG"
             exit 1
         fi
     else
-        echo "malformed loop version output"
+        red "malformed loop version output"
         exit 1
     fi
 }
 
-check_tag $1
+# Needed for setting file timestamps to get reproducible archives.
+BUILD_DATE="2020-01-01 00:00:00"
+BUILD_DATE_STAMP="202001010000.00"
 
-go mod vendor
-tar -cvzf vendor.tar.gz vendor
+# reproducible_tar_gzip creates a reproducible tar.gz file of a directory. This
+# includes setting all file timestamps and ownership settings uniformly.
+function reproducible_tar_gzip() {
+    local dir=$1
+    local dst=$2
+    local tar_cmd=tar
+
+    # MacOS has a version of BSD tar which doesn't support setting the --mtime
+    # flag. We need gnu-tar, or gtar for short to be installed for this script to
+    # work properly.
+    tar_version=$(tar --version)
+    if [[ ! "$tar_version" =~ "GNU tar" ]]; then
+        if ! command -v "gtar"; then
+            red "GNU tar is required but cannot be found!"
+            red "On MacOS please run 'brew install gnu-tar' to install gtar."
+            exit 1
+        fi
+
+        # We have gtar installed, use that instead.
+        tar_cmd=gtar
+    fi
+
+    # Pin down the timestamp time zone.
+    export TZ=UTC
+
+    find "${dir}" -print0 | LC_ALL=C sort -r -z | $tar_cmd \
+        "--mtime=${BUILD_DATE}" --no-recursion --null --mode=u+rw,go+r-w,a+X \
+        --owner=0 --group=0 --numeric-owner -c -T - | gzip -9n > "$dst"
+}
+
+# reproducible_zip creates a reproducible zip file of a directory. This
+# includes setting all file timestamps.
+function reproducible_zip() {
+    local dir=$1
+    local dst=$2
+
+    # Pin down file name encoding and timestamp time zone.
+    export TZ=UTC
+
+    # Set the date of each file in the directory that's about to be packaged to
+    # the same timestamp and make sure the same permissions are used everywhere.
+    chmod -R 0755 "${dir}"
+    touch -t "${BUILD_DATE_STAMP}" "${dir}"
+    find "${dir}" -print0 | LC_ALL=C sort -r -z | xargs -0r touch \
+        -t "${BUILD_DATE_STAMP}"
+
+    find "${dir}" | LC_ALL=C sort -r | zip -o -X -r -@ "$dst"
+}
+
+##################
+# Start Building #
+##################
+
+if [ -d "$BUILD_DIR" ]; then
+    red "Build directory ${BUILD_DIR} already exists!"
+    exit 1
+fi
+
+green " - Cloning to subdir ${BUILD_DIR} to get clean Git"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+git clone --tags "$SCRIPT_DIR" .
+
+green " - Checking tag $1"
+check_tag $1
 
 PACKAGE=loop
 ARTIFACTS_DIR="${SCRIPT_DIR}/${PACKAGE}-${TAG}"
-mkdir -p $ARTIFACTS_DIR
-
-cp vendor.tar.gz $ARTIFACTS_DIR/
-rm vendor.tar.gz
+if [ -d "$ARTIFACTS_DIR" ]; then
+    red "artifacts directory ${ARTIFACTS_DIR} already exists!"
+    exit 1
+fi
+green " - Creating artifacts directory ${ARTIFACTS_DIR}"
+mkdir -p "$ARTIFACTS_DIR"
+green " - Packaging vendor to ${ARTIFACTS_DIR}/vendor.tar.gz"
+go mod vendor
+reproducible_tar_gzip vendor "${ARTIFACTS_DIR}/vendor.tar.gz"
 rm -r vendor
 
-PACKAGESRC="${ARTIFACTS_DIR}/${PACKAGE}-source-${TAG}.tar"
-git archive -o $PACKAGESRC HEAD
-gzip -f $PACKAGESRC > "$PACKAGESRC.gz"
+PACKAGESRC="${ARTIFACTS_DIR}/${PACKAGE}-source-${TAG}.tar.gz"
+green " - Creating source archive ${PACKAGESRC}"
+TMPSOURCETAR="${ARTIFACTS_DIR}/tmp-${PACKAGE}-source-${TAG}.tar"
+PKGSRC="${PACKAGE}-source"
+git archive -o "$TMPSOURCETAR" HEAD
+cd "$ARTIFACTS_DIR"
+mkdir "$PKGSRC"
+tar -xf "$TMPSOURCETAR" -C "$PKGSRC"
+cd "$PKGSRC"
+reproducible_tar_gzip . "$PACKAGESRC"
+cd ..
+rm -r "$PKGSRC"
+rm "$TMPSOURCETAR"
 
 # If LOOPBUILDSYS is set the default list is ignored. Useful to release
 # for a subset of systems/architectures.
@@ -109,6 +197,7 @@ PKG="github.com/lightninglabs/loop"
 COMMIT=$(git describe --abbrev=40 --dirty)
 COMMITFLAGS="-X $PKG/build.Commit=$COMMIT"
 
+cd "$BUILD_DIR"
 for i in $SYS; do
     OS=$(echo $i | cut -f1 -d-)
     ARCH=$(echo $i | cut -f2 -d-)
@@ -125,16 +214,18 @@ for i in $SYS; do
     mkdir $PACKAGE-$i-$TAG
     cd $PACKAGE-$i-$TAG
 
-    echo "Building:" $OS $ARCH $ARM
+    green "- Building: $OS $ARCH $ARM"
     for bin in loop loopd; do
         env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
     done
     cd ..
 
     if [[ $OS = "windows" ]]; then
-        zip -r "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.zip" "${PACKAGE}-${i}-${TAG}"
+        green "- Producing ZIP file ${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.zip"
+        reproducible_zip "${PACKAGE}-${i}-${TAG}" "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.zip"
     else
-        tar -cvzf "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.tar.gz" "${PACKAGE}-${i}-${TAG}"
+        green "- Producing TAR.GZ file ${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.tar.gz"
+        reproducible_tar_gzip "${PACKAGE}-${i}-${TAG}" "${ARTIFACTS_DIR}/${PACKAGE}-${i}-${TAG}.tar.gz"
     fi
 
     rm -r $PACKAGE-$i-$TAG
@@ -142,4 +233,5 @@ done
 
 cd "$ARTIFACTS_DIR"
 
+green "- Producing manifest-$TAG.txt"
 shasum -a 256 * > manifest-$TAG.txt
