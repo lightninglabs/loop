@@ -38,9 +38,17 @@ endif
 
 DOCKER_TOOLS = docker run \
   --rm \
-  -v $(shell bash -c "go env GOCACHE || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
-  -v $(shell bash -c "go env GOMODCACHE || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
+  -v $(shell bash -c "go env GOCACHE 2>/dev/null || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
+  -v $(shell bash -c "go env GOMODCACHE 2>/dev/null || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
   -v $$(pwd):/build loop-tools
+
+DOCKER_RELEASE_BUILDER = docker run \
+  --rm \
+  -v $(shell bash -c "go env GOCACHE 2>/dev/null || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
+  -v $(shell bash -c "go env GOMODCACHE 2>/dev/null || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
+  -v $$(pwd):/repo \
+  -e LOOPBUILDSYS='$(buildsys)' \
+  loop-release-builder
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
@@ -70,6 +78,13 @@ install:
 	@$(call print, "Installing loop and loopd.")
 	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loop
 	$(GOINSTALL) -tags="${tags}" $(LDFLAGS) $(PKG)/cmd/loopd
+
+# docker-release: Same as release.sh but within a docker container to support
+# reproducible builds on any platform.
+docker-release: docker-release-builder
+	@$(call print, "Building release binaries in docker.")
+	@if [ "$(tag)" = "" ]; then echo "Must specify tag=<commit_or_tag>!"; exit 1; fi
+	$(DOCKER_RELEASE_BUILDER) bash release.sh $(tag)
 
 rpc:
 	@$(call print, "Compiling protos.")
@@ -130,6 +145,10 @@ lint: docker-tools
 docker-tools:
 	@$(call print, "Building tools docker image.")
 	docker build -q -t loop-tools $(TOOLS_DIR)
+
+docker-release-builder:
+	@$(call print, "Building release builder docker image.")
+	docker build -q -t loop-release-builder -f release.Dockerfile .
 
 mod-tidy:
 	@$(call print, "Tidying modules.")
