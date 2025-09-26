@@ -50,10 +50,10 @@ DOCKER_RELEASE_BUILDER = docker run \
   -e LOOPBUILDSYS='$(buildsys)' \
   loop-release-builder
 
-GREEN := "\\033[0;32m"
-NC := "\\033[0m"
+GREEN=\033[0;32m
+NC=\033[0m
 define print
-	echo $(GREEN)$1$(NC)
+	@printf '%b%s%b\n' '${GREEN}' $1 '${NC}'
 endef
 
 # ============
