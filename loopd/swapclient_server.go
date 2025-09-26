@@ -1629,7 +1629,10 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	// Check the spent status of the deposits by looking at their states.
-	deposits, err := s.depositManager.DepositsForOutpoints(ctx, outpoints)
+	ignoreUnknownOutpoints := false
+	deposits, err := s.depositManager.DepositsForOutpoints(
+		ctx, outpoints, ignoreUnknownOutpoints,
+	)
 	if err != nil {
 		return nil, err
 	}

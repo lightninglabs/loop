@@ -163,7 +163,7 @@ func (m *mockDepositManager) TransitionDeposits(_ context.Context,
 }
 
 func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
-	outpoints []string) ([]*deposit.Deposit, error) {
+	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
 
 	res := make([]*deposit.Deposit, 0, len(outpoints))
 	for _, op := range outpoints {

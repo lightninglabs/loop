@@ -50,9 +50,10 @@ type DepositManager interface {
 		event fsm.EventType, expectedFinalState fsm.StateType) error
 
 	// DepositsForOutpoints returns all deposits that behind the given
-	// outpoints.
-	DepositsForOutpoints(ctx context.Context, outpoints []string) (
-		[]*deposit.Deposit, error)
+	// outpoints. If ignoreUnknown is false, the function returns an error
+	// if any of the outpoints is not known, no error otherwise.
+	DepositsForOutpoints(ctx context.Context, outpoints []string,
+		ignoreUnknown bool) ([]*deposit.Deposit, error)
 
 	// GetActiveDepositsInState returns all active deposits in the given
 	// state.
