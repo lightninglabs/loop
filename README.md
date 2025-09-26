@@ -125,3 +125,8 @@ git clone https://github.com/lightninglabs/loop.git
 cd loop/cmd
 go install ./...
 ```
+
+## Reproducible builds
+
+If you want to build release files yourself, follow
+[the guide](./docs/release.md).
