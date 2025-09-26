@@ -216,7 +216,7 @@ for i in $SYS; do
 
     green "- Building: $OS $ARCH $ARM"
     for bin in loop loopd; do
-        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
+        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -trimpath -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
     done
     cd ..
 
