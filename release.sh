@@ -10,12 +10,16 @@
 # Exit on errors.
 set -e
 
-# If no tag specified, use date + version otherwise use tag.
-if [[ $1x = x ]]; then
-    DATE=`date +%Y%m%d`
-    VERSION="01"
-    TAG=$DATE-$VERSION
-else
+TAG=''
+
+check_tag() {
+    # If no tag specified, use date + version otherwise use tag.
+    if [[ $1x = x ]]; then
+        TAG=`date +%Y%m%d-%H%M%S`
+
+        return
+    fi
+
     TAG=$1
 
     # If a tag is specified, ensure that tag is present and checked out.
@@ -24,8 +28,24 @@ else
         exit 1
     fi
 
-    # Verify that it is signed.
-    if ! git verify-tag $TAG; then 
+    # Verify that it is signed if it is a real tag. If the tag looks like the
+    # output of "git describe" for an untagged commit, skip verification.
+    # The pattern is: <tag_name>-<number_of_commits>-g<abbreviated_commit_hash>
+    # Example: "v0.31.2-beta-122-g8c6b73c".
+    if [[ $TAG =~ -[0-9]+-g([0-9a-f]+)$ ]]; then
+        # This looks like a "git describe" output. Make sure the hash
+        # described is a prefix of the current commit.
+        DESCRIBED_HASH=${BASH_REMATCH[1]}
+        CURRENT_HASH=$(git rev-parse HEAD)
+        if [[ $CURRENT_HASH != $DESCRIBED_HASH* ]]; then
+            echo "Described hash $DESCRIBED_HASH is not a prefix of current commit $CURRENT_HASH"
+            exit 1
+        fi
+
+        return
+    fi
+
+    if ! git verify-tag $TAG; then
         echo "tag $TAG not signed"
         exit 1
     fi
@@ -52,7 +72,9 @@ else
         echo "malformed loop version output"
         exit 1
     fi
-fi
+}
+
+check_tag $1
 
 go mod vendor
 tar -cvzf vendor.tar.gz vendor
