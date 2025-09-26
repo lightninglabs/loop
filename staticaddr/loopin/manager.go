@@ -289,8 +289,9 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
+	ignoreUnknownOutpoints := false
 	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
-		ctx, loopIn.DepositOutpoints,
+		ctx, loopIn.DepositOutpoints, ignoreUnknownOutpoints,
 	)
 	if err != nil {
 		return err
@@ -458,8 +459,9 @@ func (m *Manager) checkChange(ctx context.Context,
 		prevOuts[i] = in.PreviousOutPoint.String()
 	}
 
+	ignoreUnknownOutpoints := true
 	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
-		ctx, prevOuts,
+		ctx, prevOuts, ignoreUnknownOutpoints,
 	)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -566,7 +567,7 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 // DepositsForOutpoints returns all deposits that are behind the given
 // outpoints.
 func (m *Manager) DepositsForOutpoints(ctx context.Context,
-	outpoints []string) ([]*Deposit, error) {
+	outpoints []string, ignoreUnknown bool) ([]*Deposit, error) {
 
 	// Check for duplicates.
 	existingOutpoints := make(map[string]struct{}, len(outpoints))
@@ -587,6 +588,9 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 
 		deposit, err := m.cfg.Store.DepositForOutpoint(ctx, op.String())
 		if err != nil {
+			if ignoreUnknown && errors.Is(err, ErrDepositNotFound) {
+				continue
+			}
 			return nil, err
 		}
 

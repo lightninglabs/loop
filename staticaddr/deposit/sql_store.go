@@ -5,15 +5,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/jackc/pgx/v5"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
+)
+
+var (
+	// ErrDepositNotFound is returned when a deposit is not found in the
+	// database.
+	ErrDepositNotFound = errors.New("deposit not found")
 )
 
 // SqlStore is the backing store for static address deposits.
@@ -168,6 +176,12 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 			}
 			row, err := q.DepositForOutpoint(ctx, params)
 			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) ||
+					errors.Is(err, pgx.ErrNoRows) {
+
+					return ErrDepositNotFound
+				}
+
 				return err
 			}
 
