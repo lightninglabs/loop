@@ -157,7 +157,19 @@ fi
 green " - Cloning to subdir ${BUILD_DIR} to get clean Git"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
-git clone --tags "$SCRIPT_DIR" .
+git clone --no-tags "$SCRIPT_DIR" .
+
+# It is cloned without tags from the local dir and tags are pulled later
+# from the upstream to make sure we have the same set of tags. Otherwise
+# we can endup with different `git describe` and buildvcs info depending
+# on local tags.
+green " - Pulling tags from upstream"
+git pull --tags https://github.com/lightninglabs/loop
+
+# The cloned Git repo may be on wrong branch and commit.
+commit=$(git --git-dir "${SCRIPT_DIR}/.git" rev-parse HEAD)
+green " - Checkout commit ${commit} in ${BUILD_DIR}"
+git checkout -b build-branch "$commit"
 
 green " - Checking tag $1"
 check_tag $1
