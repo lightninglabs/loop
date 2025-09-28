@@ -163,9 +163,14 @@ green " - Checking tag $1"
 check_tag $1
 
 PACKAGE=loop
-ARTIFACTS_DIR="${SCRIPT_DIR}/${PACKAGE}-${TAG}"
+FINAL_ARTIFACTS_DIR="${SCRIPT_DIR}/${PACKAGE}-${TAG}"
+ARTIFACTS_DIR="${SCRIPT_DIR}/tmp-${PACKAGE}-${TAG}-$(date +%Y%m%d-%H%M%S)"
 if [ -d "$ARTIFACTS_DIR" ]; then
     red "artifacts directory ${ARTIFACTS_DIR} already exists!"
+    exit 1
+fi
+if [ -d "$FINAL_ARTIFACTS_DIR" ]; then
+    red "final artifacts directory ${FINAL_ARTIFACTS_DIR} already exists!"
     exit 1
 fi
 green " - Creating artifacts directory ${ARTIFACTS_DIR}"
@@ -232,6 +237,13 @@ for i in $SYS; do
 done
 
 cd "$ARTIFACTS_DIR"
-
 green "- Producing manifest-$TAG.txt"
 shasum -a 256 * > manifest-$TAG.txt
+cd ..
+
+green "- Moving artifacts directory to final place ${FINAL_ARTIFACTS_DIR}"
+mv "$ARTIFACTS_DIR" "$FINAL_ARTIFACTS_DIR"
+
+green "- Removing the subdir used for building ${BUILD_DIR}"
+
+rm -r "$BUILD_DIR"
