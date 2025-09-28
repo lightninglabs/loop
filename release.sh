@@ -251,6 +251,7 @@ done
 cd "$ARTIFACTS_DIR"
 green "- Producing manifest-$TAG.txt"
 shasum -a 256 * > manifest-$TAG.txt
+shasum -a 256 manifest-$TAG.txt
 cd ..
 
 green "- Moving artifacts directory to final place ${FINAL_ARTIFACTS_DIR}"
