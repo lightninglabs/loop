@@ -1503,6 +1503,10 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 		Notifier: &dummyNotifier,
 	})
 	require.NoError(t, err)
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend.
+	<-lnd.RegisterSpendChannel
 }
 
 // testPresigned_presigned_group_with_dust_below_relay_fee passes a tx with a
