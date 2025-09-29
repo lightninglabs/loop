@@ -259,4 +259,4 @@ mv "$ARTIFACTS_DIR" "$FINAL_ARTIFACTS_DIR"
 
 green "- Removing the subdir used for building ${BUILD_DIR}"
 
-rm -r "$BUILD_DIR"
+rm -rf "$BUILD_DIR"
