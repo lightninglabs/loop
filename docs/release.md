@@ -23,13 +23,13 @@ make docker-release tag=v0.31.3-beta
 This will create the release artifacts in the `loop-v0.31.3-beta` directory.
 
 If you want to build from an untagged commit, first check it out, then use the
-output of `git describe` as the tag:
+output of `git describe --abbrev=10` as the tag:
 
 ```bash
-git describe
-# v0.31.2-beta-128-gfa80357
+git describe --abbrev=10
+# v0.31.2-beta-135-g35d0fa26ac
 
-make docker-release tag=v0.31.2-beta-128-gfa80357
+make docker-release tag=v0.31.2-beta-135-g35d0fa26ac
 ```
 
 You can filter the target platforms to speed up the build process. For example,

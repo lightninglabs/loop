@@ -41,7 +41,7 @@ check_tag() {
     TAG=$1
 
     # If a tag is specified, ensure that tag is present and checked out.
-    if [[ $TAG != $(git describe) ]]; then
+    if [[ $TAG != $(git describe --abbrev=10) ]]; then
         red "tag $TAG not checked out"
         exit 1
     fi
@@ -50,7 +50,7 @@ check_tag() {
     # output of "git describe" for an untagged commit, skip verification.
     # The pattern is: <tag_name>-<number_of_commits>-g<abbreviated_commit_hash>
     # Example: "v0.31.2-beta-122-g8c6b73c".
-    if [[ $TAG =~ -[0-9]+-g([0-9a-f]+)$ ]]; then
+    if [[ $TAG =~ -[0-9]+-g([0-9a-f]{10})$ ]]; then
         # This looks like a "git describe" output. Make sure the hash
         # described is a prefix of the current commit.
         DESCRIBED_HASH=${BASH_REMATCH[1]}
