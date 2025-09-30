@@ -246,7 +246,7 @@ SYS=${LOOPBUILDSYS:-"windows-amd64 linux-386 linux-amd64 linux-armv6 linux-armv7
 
 PKG="github.com/lightninglabs/loop"
 COMMIT=$(git describe --abbrev=40 --dirty)
-COMMITFLAGS="-X $PKG/build.Commit=$COMMIT"
+GOLDFLAGS="-X $PKG/build.Commit=$COMMIT -buildid="
 
 cd "$BUILD_DIR"
 for i in $SYS; do
@@ -267,7 +267,7 @@ for i in $SYS; do
 
     green "- Building: $OS $ARCH $ARM"
     for bin in loop loopd; do
-        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM "$GO_CMD" build -v -trimpath -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
+        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM "$GO_CMD" build -v -trimpath -ldflags "$GOLDFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
     done
     cd ..
 
