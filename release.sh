@@ -19,12 +19,12 @@ BUILD_DIR="${SCRIPT_DIR}/tmp-build-$(date +%Y%m%d-%H%M%S)"
 
 # green prints one line of green text (if the terminal supports it).
 function green() {
-  echo -e "\e[0;32m${1}\e[0m"
+  printf "\e[0;32m%s\e[0m\n" "${1}"
 }
 
 # red prints one line of red text (if the terminal supports it).
 function red() {
-  echo -e "\e[0;31m${1}\e[0m"
+  printf "\e[0;31m%s\e[0m\n" "${1}"
 }
 
 # Use GO_CMD from env if set, otherwise default to "go".
