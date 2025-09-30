@@ -102,13 +102,14 @@ function reproducible_tar_gzip() {
     local dir=$1
     local dst=$2
     local tar_cmd=tar
+    local gzip_cmd=gzip
 
     # MacOS has a version of BSD tar which doesn't support setting the --mtime
     # flag. We need gnu-tar, or gtar for short to be installed for this script to
     # work properly.
-    tar_version=$(tar --version)
+    tar_version=$(tar --version 2>&1 || true)
     if [[ ! "$tar_version" =~ "GNU tar" ]]; then
-        if ! command -v "gtar"; then
+        if ! command -v "gtar" >/dev/null 2>&1; then
             red "GNU tar is required but cannot be found!"
             red "On MacOS please run 'brew install gnu-tar' to install gtar."
             exit 1
@@ -118,12 +119,26 @@ function reproducible_tar_gzip() {
         tar_cmd=gtar
     fi
 
+    # On MacOS, the default BSD gzip produces a different output than the GNU
+    # gzip on Linux. To ensure reproducible builds, we need to use GNU gzip.
+    gzip_version=$(gzip --version 2>&1 || true)
+    if [[ ! "$gzip_version" =~ "GNU" ]]; then
+        if ! command -v "ggzip" >/dev/null 2>&1; then
+            red "GNU gzip is required but cannot be found!"
+            red "On MacOS please run 'brew install gzip' to install ggzip."
+            exit 1
+        fi
+
+        # We have ggzip installed, use that instead.
+        gzip_cmd=ggzip
+    fi
+
     # Pin down the timestamp time zone.
     export TZ=UTC
 
     find "${dir}" -print0 | LC_ALL=C sort -r -z | $tar_cmd \
         "--mtime=${BUILD_DATE}" --no-recursion --null --mode=u+rw,go+r-w,a+X \
-        --owner=0 --group=0 --numeric-owner -c -T - | gzip -9n > "$dst"
+        --owner=0 --group=0 --numeric-owner -c -T - | $gzip_cmd -9n > "$dst"
 }
 
 # reproducible_zip creates a reproducible zip file of a directory. This

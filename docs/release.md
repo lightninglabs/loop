@@ -58,6 +58,13 @@ other tools:
 sudo apt-get install build-essential git make zip perl gpg
 ```
 
+On MacOS, you will need to install GNU tar and GNU gzip, which can be done with
+`brew`:
+
+```bash
+brew install gnu-tar gzip
+```
+
 Add GPG key of Alex Bosworth to verify release tag signature:
 ```bash
 gpg --keyserver keys.openpgp.org --recv-keys DE23E73BFA8A0AD5587D2FCDE80D2F3F311FD87E
