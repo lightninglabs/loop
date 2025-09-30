@@ -27,6 +27,25 @@ function red() {
   echo -e "\e[0;31m${1}\e[0m"
 }
 
+# Use GO_CMD from env if set, otherwise default to "go".
+GO_CMD="${GO_CMD:-go}"
+
+# Check if the command exists.
+if ! command -v "$GO_CMD" >/dev/null 2>&1; then
+    red "Error: Go command '$GO_CMD' not found"
+    exit 1
+fi
+
+# Make sure we have the expected Go version installed.
+EXPECTED_VERSION="go1.24.6"
+INSTALLED_VERSION=$("$GO_CMD" version 2>/dev/null | awk '{print $3}')
+if [ "$INSTALLED_VERSION" = "$EXPECTED_VERSION" ]; then
+    green "Go version matches expected: $INSTALLED_VERSION"
+else
+    red "Error: Expected Go version $EXPECTED_VERSION but found $INSTALLED_VERSION"
+    exit 1
+fi
+
 TAG=''
 
 check_tag() {
@@ -203,7 +222,7 @@ fi
 green " - Creating artifacts directory ${ARTIFACTS_DIR}"
 mkdir -p "$ARTIFACTS_DIR"
 green " - Packaging vendor to ${ARTIFACTS_DIR}/vendor.tar.gz"
-go mod vendor
+"$GO_CMD" mod vendor
 reproducible_tar_gzip vendor "${ARTIFACTS_DIR}/vendor.tar.gz"
 rm -r vendor
 
@@ -248,7 +267,7 @@ for i in $SYS; do
 
     green "- Building: $OS $ARCH $ARM"
     for bin in loop loopd; do
-        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM go build -v -trimpath -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
+        env CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH GOARM=$ARM "$GO_CMD" build -v -trimpath -ldflags "$COMMITFLAGS" "github.com/lightninglabs/loop/cmd/$bin"
     done
     cd ..
 
