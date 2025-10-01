@@ -908,6 +908,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		return nil, err
 	}
 
+	// The fast flag is only available for static loop in quote requests.
+	if req.Fast {
+		if !autoSelectDeposits && len(req.DepositOutpoints) == 0 {
+			return nil, fmt.Errorf("fast flag is only " +
+				"available for static address requests")
+		}
+	}
+
 	// If deposits should be automatically selected, we do so and count the
 	// number of deposits to quote for.
 	numDeposits := 0
@@ -1025,6 +1033,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		Private:        req.Private,
 		Initiator:      defaultLoopdInitiator,
 		NumDeposits:    uint32(numDeposits),
+		Fast:           req.Fast,
 	})
 	if err != nil {
 		return nil, err
@@ -2052,6 +2061,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Private:               in.Private,
 		RouteHints:            routeHints,
 		PaymentTimeoutSeconds: in.PaymentTimeoutSeconds,
+		Fast:                  in.Fast,
 	}
 
 	if in.LastHop != nil {
