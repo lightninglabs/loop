@@ -900,8 +900,9 @@ func (b *batch) Run(ctx context.Context) error {
 
 		skipBeforeUpdated := false
 		if totalSweptAmt != 0 {
+			fast := false
 			initialDelay, err := b.cfg.initialDelayProvider(
-				ctx, len(b.sweeps), totalSweptAmt,
+				ctx, len(b.sweeps), totalSweptAmt, fast,
 			)
 			if err != nil {
 				b.Warnf("InitialDelayProvider failed: %v. We "+
