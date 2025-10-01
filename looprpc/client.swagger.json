@@ -304,6 +304,13 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "fast",
+            "description": "If set to true the server will immediately publish the swap in exchange for\na higher fee. This can be useful if the client expects change from a swap.\nNote that this feature is only available for static address loop in swaps.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -501,6 +508,13 @@
           {
             "name": "auto_select_deposits",
             "description": "In the legacy loop-in case this field must be set to false.\nIf set to true, the swap amount will be automatically selected from the\nstatic address deposits. If set to true, deposit_outpoints must be empty.\nThis option only pertains to loop in swaps.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "fast",
+            "description": "If set to true the server will immediately publish the swap in exchange for\na higher fee. This can be useful if the client expects change from a swap.\nNote that this feature is only available for static address loop in swaps.",
             "in": "query",
             "required": false,
             "type": "boolean"
