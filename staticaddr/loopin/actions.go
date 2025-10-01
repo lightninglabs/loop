@@ -135,6 +135,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
 		UserAgent:             loop.UserAgent(f.loopIn.Initiator),
 		PaymentTimeoutSeconds: f.loopIn.PaymentTimeoutSeconds,
+		Fast:                  f.loopIn.Fast,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
