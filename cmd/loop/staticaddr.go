@@ -478,13 +478,6 @@ var staticAddressLoopInCommand = cli.Command{
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
-		cli.Uint64Flag{
-			Name: "amount",
-			Usage: "the number of satoshis that should be " +
-				"swapped from the selected deposits. If there" +
-				"is change it is sent back to the static " +
-				"address.",
-		},
 		cli.BoolFlag{
 			Name: "fast",
 			Usage: "expedited publishing of the change output if " +
@@ -506,6 +499,18 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "in")
 	}
 
+	var selectedAmount int64
+	if ctx.NArg() == 1 {
+		amt, err := parseAmt(ctx.Args().Get(0))
+		if err != nil {
+			return err
+		}
+		selectedAmount = int64(amt)
+	} else if ctx.NArg() > 1 {
+		return fmt.Errorf("only a single positional argument is " +
+			"allowed")
+	}
+
 	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
@@ -516,7 +521,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		ctxb                       = context.Background()
 		isAllSelected              = ctx.IsSet("all")
 		isUtxoSelected             = ctx.IsSet("utxo")
-		selectedAmount             = ctx.Int64("amount")
 		autoSelectDepositsForQuote bool
 		label                      = ctx.String("static-loop-in")
 		hints                      []*swapserverrpc.RouteHint
