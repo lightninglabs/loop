@@ -506,6 +506,23 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "in")
 	}
 
+	var selectedAmount int64
+	switch {
+	case ctx.NArg() == 1:
+		amt, err := parseAmt(ctx.Args().Get(0))
+		if err != nil {
+			return err
+		}
+		selectedAmount = int64(amt)
+
+	case ctx.NArg() > 1:
+		return fmt.Errorf("only a single positional argument is " +
+			"allowed")
+
+	default:
+		selectedAmount = ctx.Int64("amount")
+	}
+
 	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
@@ -516,7 +533,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		ctxb                       = context.Background()
 		isAllSelected              = ctx.IsSet("all")
 		isUtxoSelected             = ctx.IsSet("utxo")
-		selectedAmount             = ctx.Int64("amount")
 		autoSelectDepositsForQuote bool
 		label                      = ctx.String("static-loop-in")
 		hints                      []*swapserverrpc.RouteHint
