@@ -101,6 +101,10 @@ type StaticAddressLoopIn struct {
 	// used.
 	SelectedAmount btcutil.Amount
 
+	// Fast indicates whether the client requested fast publication behavior
+	// on the server side for this static loop in.
+	Fast bool
+
 	// state is the current state of the swap.
 	state fsm.StateType
 
