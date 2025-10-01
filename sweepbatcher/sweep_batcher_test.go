@@ -1374,7 +1374,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	)
 
 	initialDelayProvider := func(_ context.Context, _ int,
-		_ btcutil.Amount) (time.Duration, error) {
+		_ btcutil.Amount, fast bool) (time.Duration, error) {
 
 		return initialDelay, nil
 	}
@@ -1652,7 +1652,7 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	const largeInitialDelay = 6 * time.Hour
 
 	largeInitialDelayProvider := func(_ context.Context, _ int,
-		_ btcutil.Amount) (time.Duration, error) {
+		_ btcutil.Amount, fast bool) (time.Duration, error) {
 
 		return largeInitialDelay, nil
 	}
@@ -1877,7 +1877,7 @@ func testCustomDelays(t *testing.T, store testStore,
 
 	// initialDelay returns initialDelay depending of batch size (sats).
 	initialDelayProvider := func(_ context.Context, numSweeps int,
-		value btcutil.Amount) (time.Duration, error) {
+		value btcutil.Amount, fast bool) (time.Duration, error) {
 
 		if value <= swapSize1 {
 			// Verify the number of sweeps.

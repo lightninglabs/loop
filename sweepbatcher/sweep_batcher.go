@@ -210,11 +210,11 @@ type FeeRateProvider func(ctx context.Context, swapHash lntypes.Hash,
 // faster. If the function returns an error, no delay is used and the error is
 // logged as a warning.
 type InitialDelayProvider func(ctx context.Context, numSweeps int,
-	value btcutil.Amount) (time.Duration, error)
+	value btcutil.Amount, fast bool) (time.Duration, error)
 
 // zeroInitialDelay returns no delay for any sweeps.
 func zeroInitialDelay(_ context.Context, _ int,
-	_ btcutil.Amount) (time.Duration, error) {
+	_ btcutil.Amount, _ bool) (time.Duration, error) {
 
 	return 0, nil
 }
@@ -259,6 +259,10 @@ type SweepRequest struct {
 	// Notifier is a notifier that is used to notify the requester of this
 	// sweep that the sweep was successful.
 	Notifier *SpendNotifier
+
+	// Fast is set by the client if the sweep should be published
+	// immediately.
+	Fast bool
 }
 
 // addSweepsRequest is a request to sweep an outpoint or a group of outpoints
@@ -279,6 +283,8 @@ type addSweepsRequest struct {
 	// parentBatch is the parent batch of this sweep. It is loaded ony if
 	// completed is true.
 	parentBatch *dbBatch
+
+	fast bool
 }
 
 // SpendDetail is a notification that is send to the user of sweepbatcher when
@@ -689,7 +695,7 @@ func (b *Batcher) Run(ctx context.Context) error {
 		case req := <-b.addSweepsChan:
 			err = b.handleSweeps(
 				runCtx, req.sweeps, req.notifier, req.completed,
-				req.parentBatch,
+				req.parentBatch, req.fast,
 			)
 			if err != nil {
 				warnf("handleSweeps failed: %v.", err)
@@ -851,6 +857,7 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 		notifier:    sweepReq.Notifier,
 		completed:   completed,
 		parentBatch: parentBatch,
+		fast:        sweepReq.Fast,
 	}
 
 	select {
@@ -895,7 +902,8 @@ func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
 // handleSweeps handles a sweep request by either placing the group of sweeps in
 // an existing batch, or by spinning up a new batch for it.
 func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
-	notifier *SpendNotifier, completed bool, parentBatch *dbBatch) error {
+	notifier *SpendNotifier, completed bool, parentBatch *dbBatch,
+	fast bool) error {
 
 	// Since the whole group is added to the same batch and belongs to
 	// the same transaction, we use sweeps[0] below where we need any sweep.
@@ -940,6 +948,12 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 		}
 	}
 
+	// If fast is set, we spin up a new batch which is published
+	// immediately.
+	if fast {
+		return b.spinUpNewBatch(ctx, sweeps, true)
+	}
+
 	// Try to run the greedy algorithm of batch selection to minimize costs.
 	err := b.greedyAddSweeps(ctx, sweeps)
 	if err == nil {
@@ -966,15 +980,17 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 
 	// If no batch is capable of accepting the sweep, we spin up a fresh
 	// batch and hand the sweep over to it.
-	return b.spinUpNewBatch(ctx, sweeps)
+	return b.spinUpNewBatch(ctx, sweeps, false)
 }
 
 // spinUpNewBatch creates new batch, starts it and adds the sweeps to it. If
 // presigned mode is enabled, the result also depends on outcome of
 // presignedHelper.SignTx.
-func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
+func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep,
+	fast bool) error {
+
 	// Spin up a fresh batch.
-	newBatch, err := b.spinUpBatch(ctx)
+	newBatch, err := b.spinUpBatch(ctx, fast)
 	if err != nil {
 		return err
 	}
@@ -996,7 +1012,7 @@ func (b *Batcher) spinUpNewBatch(ctx context.Context, sweeps []*sweep) error {
 }
 
 // spinUpBatch spins up a new batch and returns it.
-func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
+func (b *Batcher) spinUpBatch(ctx context.Context, fast bool) (*batch, error) {
 	cfg := b.newBatchConfig(defaultMaxTimeoutDistance)
 
 	switch b.chainParams {
@@ -1016,7 +1032,7 @@ func (b *Batcher) spinUpBatch(ctx context.Context) (*batch, error) {
 	}
 
 	cfg.initialDelayProvider = b.initialDelayProvider
-	if cfg.initialDelayProvider == nil {
+	if cfg.initialDelayProvider == nil || fast {
 		cfg.initialDelayProvider = zeroInitialDelay
 	}
 
