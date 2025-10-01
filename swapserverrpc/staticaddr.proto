@@ -148,6 +148,10 @@ message ServerStaticAddressLoopInRequest {
     flag - this is to maintain backwards compatibility.
     */
     uint64 amount = 9;
+
+    // If set, request the server to use fast publication behavior for this
+    // swap.
+    bool fast = 10;
 }
 
 message ServerStaticAddressLoopInResponse {

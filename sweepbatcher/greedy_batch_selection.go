@@ -75,9 +75,10 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 
 	// Try batches, starting with the best.
 	for _, batchId := range batchesIds {
-		// If the best option is to start new batch, do it.
+		// If the best option is to start a new batch, do it.
 		if batchId == newBatchSignal {
-			return b.spinUpNewBatch(ctx, sweeps)
+			fast := false
+			return b.spinUpNewBatch(ctx, sweeps, fast)
 		}
 
 		// Locate the batch to add the sweeps to.

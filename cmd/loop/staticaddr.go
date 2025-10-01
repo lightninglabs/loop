@@ -478,12 +478,11 @@ var staticAddressLoopInCommand = cli.Command{
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
-		cli.Uint64Flag{
-			Name: "amount",
-			Usage: "the number of satoshis that should be " +
-				"swapped from the selected deposits. If there" +
-				"is change it is sent back to the static " +
-				"address.",
+		cli.BoolFlag{
+			Name: "fast",
+			Usage: "expedited publishing of the change output if " +
+				"the swap creates one. This results in a " +
+				"higher swap fee.",
 		},
 		lastHopFlag,
 		labelFlag,
@@ -500,6 +499,18 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "in")
 	}
 
+	var selectedAmount int64
+	if ctx.NArg() == 1 {
+		amt, err := parseAmt(ctx.Args().Get(0))
+		if err != nil {
+			return err
+		}
+		selectedAmount = int64(amt)
+	} else if ctx.NArg() > 1 {
+		return fmt.Errorf("only a single positional argument is " +
+			"allowed")
+	}
+
 	client, cleanup, err := getClient(ctx)
 	if err != nil {
 		return err
@@ -510,7 +521,6 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		ctxb                       = context.Background()
 		isAllSelected              = ctx.IsSet("all")
 		isUtxoSelected             = ctx.IsSet("utxo")
-		selectedAmount             = ctx.Int64("amount")
 		autoSelectDepositsForQuote bool
 		label                      = ctx.String("static-loop-in")
 		hints                      []*swapserverrpc.RouteHint
@@ -573,7 +583,8 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		depositOutpoints = ctx.StringSlice("utxo")
 
 	case selectedAmount > 0:
-		// If only an amount is selected we will trigger coin selection.
+		// If only an amount is selected, we will trigger coin
+		// selection.
 
 	default:
 		return fmt.Errorf("unknown quote request")
@@ -594,6 +605,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		Private:            ctx.Bool(privateFlag.Name),
 		DepositOutpoints:   depositOutpoints,
 		AutoSelectDeposits: autoSelectDepositsForQuote,
+		Fast:               ctx.Bool("fast"),
 	}
 	quote, err := client.GetLoopInQuote(ctxb, quoteReq)
 	if err != nil {
@@ -623,6 +635,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		RouteHints:            hints,
 		Private:               ctx.Bool("private"),
 		PaymentTimeoutSeconds: paymentTimeoutSeconds,
+		Fast:                  ctx.Bool("fast"),
 	}
 
 	resp, err := client.StaticAddressLoopIn(ctxb, req)

@@ -278,6 +278,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		DepositOutpoints:        joinedOutpoints,
 		SelectedAmount:          int64(loopIn.SelectedAmount),
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
+		Fast:                    loopIn.Fast,
 	}
 
 	updateArgs := sqlc.InsertStaticAddressMetaUpdateParams{
@@ -581,6 +582,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		QuotedSwapFee:         btcutil.Amount(swap.QuotedSwapFeeSatoshis),
 		DepositOutpoints:      depositOutpoints,
 		SelectedAmount:        btcutil.Amount(swap.SelectedAmount),
+		Fast:                  swap.Fast,
 		HtlcTxFeeRate: chainfee.SatPerKWeight(
 			swap.HtlcTxFeeRateSatKw,
 		),

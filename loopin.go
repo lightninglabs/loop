@@ -130,9 +130,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// channels is an LND side black box feature. Advanced users will quote
 	// directly anyway and there they have the option to add specific route
 	// hints.
+	numDeposits := uint32(0)
+	fast := false
 	quote, err := cfg.server.GetLoopInQuote(
 		globalCtx, request.Amount, cfg.lnd.NodePubkey, request.LastHop,
-		request.RouteHints, request.Initiator, 0,
+		request.RouteHints, request.Initiator, numDeposits, fast,
 	)
 	if err != nil {
 		return nil, wrapGrpcError("loop in terms", err)

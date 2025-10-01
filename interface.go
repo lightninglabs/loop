@@ -343,6 +343,11 @@ type StaticAddressLoopInRequest struct {
 	// the user did not select an amount, the amount of the selected
 	// deposits is used.
 	SelectedAmount btcutil.Amount
+
+	// Fast indicates whether the user requested a fast static loop-in. If
+	// set, the flag is passed to the server which may alter its behavior
+	// (for example, publish sooner) and is stored in the database.
+	Fast bool
 }
 
 // LoopInTerms are the server terms on which it executes loop in swaps.
@@ -405,6 +410,12 @@ type LoopInQuoteRequest struct {
 	// per-input service fee. This is to cover for the increased on-chain
 	// fee the server has to pay when the sweeping transaction is broadcast.
 	NumDeposits uint32
+
+	// Fast indicates whether the user requested a fast static loop-in
+	// publication on-chain. This is helpful if swap change needs to get
+	// confirmed fast. This comes at a higher swap cost since the server has
+	// to pay more on-chain fees.
+	Fast bool
 }
 
 // LoopInQuote contains estimates for the fees making up the total swap cost

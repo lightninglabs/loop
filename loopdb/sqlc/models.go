@@ -148,6 +148,7 @@ type StaticAddressSwap struct {
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
 	SelectedAmount          int64
+	Fast                    bool
 }
 
 type StaticAddressSwapUpdate struct {

@@ -82,7 +82,8 @@ type swapServerClient interface {
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
 		pubKey route.Vertex, lastHop *route.Vertex,
 		routeHints [][]zpay32.HopHint,
-		initiator string, numDeposits uint32) (*LoopInQuote, error)
+		initiator string, numDeposits uint32,
+		fast bool) (*LoopInQuote, error)
 
 	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
 		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
@@ -269,7 +270,7 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context,
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
 	routeHints [][]zpay32.HopHint, initiator string,
-	numDeposits uint32) (*LoopInQuote, error) {
+	numDeposits uint32, fast bool) (*LoopInQuote, error) {
 
 	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
 	if err != nil && status.Code(err) != codes.Unavailable {
@@ -285,6 +286,7 @@ func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 		Pubkey:                   pubKey[:],
 		UserAgent:                UserAgent(initiator),
 		NumStaticAddressDeposits: numDeposits,
+		Fast:                     fast,
 	}
 
 	if lastHop != nil {

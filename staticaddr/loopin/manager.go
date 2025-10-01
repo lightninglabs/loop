@@ -743,14 +743,14 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	numDeposits := uint32(len(selectedDeposits))
 	quote, err := m.cfg.QuoteGetter.GetLoopInQuote(
 		ctx, swapAmount, m.cfg.NodePubkey, req.LastHop, req.RouteHints,
-		req.Initiator, numDeposits,
+		req.Initiator, numDeposits, req.Fast,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get loop in quote: %w", err)
 	}
 
-	// If the previously accepted quote fee is lower than what is quoted now
-	// we abort the swap.
+	// If the previously accepted quote fee is lower than what is quoted, we
+	// abort the swap.
 	if quote.SwapFee > req.MaxSwapFee {
 		log.Warnf("Swap fee %v exceeding maximum of %v",
 			quote.SwapFee, req.MaxSwapFee)
@@ -774,6 +774,7 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		QuotedSwapFee:         quote.SwapFee,
 		MaxSwapFee:            req.MaxSwapFee,
 		PaymentTimeoutSeconds: paymentTimeoutSeconds,
+		Fast:                  req.Fast,
 	}
 	if req.LastHop != nil {
 		swap.LastHop = req.LastHop[:]
