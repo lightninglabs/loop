@@ -1025,6 +1025,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		Private:        req.Private,
 		Initiator:      defaultLoopdInitiator,
 		NumDeposits:    uint32(numDeposits),
+		Fast:           req.Fast,
 	})
 	if err != nil {
 		return nil, err
@@ -2052,6 +2053,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Private:               in.Private,
 		RouteHints:            routeHints,
 		PaymentTimeoutSeconds: in.PaymentTimeoutSeconds,
+		Fast:                  in.Fast,
 	}
 
 	if in.LastHop != nil {
