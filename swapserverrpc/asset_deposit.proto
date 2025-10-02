@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+// We can't change this to swapserverrpc, it would be a breaking change because
+// the package name is also contained in the HTTP URIs and old clients would
+// call the wrong endpoints. Luckily with the go_package option we can have
+// different golang and RPC package names to fix protobuf namespace conflicts.
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+// AssetDepositService is the service handling asset deposit creation and
+// spending. Asset deposits are used in asset loop-in swaps.
+service AssetDepositService {
+    // NewAssetDeposit creates a new asset deposit address.
+    rpc NewAssetDeposit (NewAssetDepositServerReq)
+        returns (NewAssetDepositServerRes);
+
+    // WithdrawAssetDeposit withdraws asset deposits to the user's wallet.
+    rpc WithdrawAssetDeposits (WithdrawAssetDepositsServerReq)
+        returns (WithdrawAssetDepositsServerRes);
+
+    // InitAssetDepositSigningSession initializes a signing session for one or
+    // more deposits. The Server will return a list of nonces that the client
+    // may use at most once to sign the deposits. The server may revoke nonces,
+    // in which case the client needs to re-initiate the signing session.
+    rpc InitAssetDepositSigningSession (InitAssetDepositSigningSessionReq)
+        returns (InitAssetDepositSigningSessionRes);
+
+    // PushHtlcSigs pushes a MuSig2 partial signatures to the server spending
+    // one ore more deposits to a zero fee HTLC.
+    rpc PushAssetDepositHtlcSigs (PushAssetDepositHtlcSigsReq)
+        returns (PushAssetDepositHtlcSigsRes);
+
+    // PushKeys pushes (ie reveals) the private keys of one ore more deposits to
+    // the server.
+    rpc PushAssetDepositKeys (PushAssetDepositKeysReq)
+        returns (PushAssetDepositKeysRes);
+}
+
+// NewAssetDepositServerReq is the request to the Server to create a new asset
+// deposit.
+message NewAssetDepositServerReq {
+    // asset_id is the id of the asset to deposit.
+    bytes asset_id = 1;
+
+    // amount is the amount of the asset to deposit.
+    uint64 amount = 2;
+
+    // client_internal_key is the client's internal pubkey used for the asset
+    // deposit deposit MuSig2 key.
+    bytes client_internal_pubkey = 3;
+
+    // client_script_key is the client's script pubkey used for the asset
+    // deposit timeout script.
+    bytes client_script_pubkey = 4;
+
+    // csv_expiry is the CSV expiry for the deposit transaction.
+    int32 csv_expiry = 5;
+}
+
+// NewAssetDepositServerRes is the Server's response to a NewAssetDeposit
+// request.
+message NewAssetDepositServerRes {
+    // deposit_id is the unique id of the deposit.
+    string deposit_id = 1;
+
+    // server_script_pubkey is the script pubkey of the server used for the
+    // asset deposit spending HTLC script.
+    bytes server_script_pubkey = 2;
+
+    // server_internal_pubkey is the public key of the server used for the asset
+    // deposit MuSig2 key.
+    bytes server_internal_pubkey = 3;
+
+    // deposit_addr is the TAP address to deposit the asset to.
+    string deposit_addr = 4;
+}
+
+message WithdrawAssetDepositsServerReq {
+    repeated string deposit_ids = 1;
+}
+
+message WithdrawAssetDepositsServerRes {
+    map<string, bytes> deposit_keys = 1;
+}
+
+// AssetDepositPartialSig holds a nonce and partial signature spending a
+// deposit.
+message AssetDepositPartialSig {
+    // deposit_id is the deposit ID corresponding to this partial signature.
+    string deposit_id = 1;
+
+    // nonce is the nonce used for generating this signature.
+    bytes nonce = 2;
+
+    // partial_sig is the partial signature for spending the deposit.
+    bytes partial_sig = 3;
+}
+
+// InitAssetDepositSigningSessionReq is the request to the Server to initialize
+// a signing session for one or more deposits. The Server will return a list of
+// nonces that the client must use to sign the deposits.
+message InitAssetDepositSigningSessionReq {
+    // deposit_ids is a list of deposit IDs to sign.
+    repeated string deposit_ids = 1;
+}
+
+// InitDepositSigningSessionRes contains a list of nonces that the client must
+// use to sign the deposits.
+message InitAssetDepositSigningSessionRes {
+    // nonces is a map which maps deposit_id to nonce. The client can use these
+    // nonces at most once to sign the deposits. The server may revoke nonces
+    // in which case the client needs to re-initiate the signing session.
+    map<string, bytes> nonces = 1;
+}
+
+// PushAssetDepositHtlcSigsReq holds partial signatures spending one or more
+// deposits and the zero fee HTLC spending them.
+message PushAssetDepositHtlcSigsReq {
+    // hash is the hash used in the HTLC script.
+    bytes hash = 1;
+
+    // csv_expiry is the CSV expiry for the HTLC.
+    uint32 csv_expiry = 2;
+
+    // partial_sigs holds the partial signatures for the deposits spent by the
+    // HTLC. The inputs of the HTLC will be in the same order defined here.
+    repeated AssetDepositPartialSig partial_sigs = 3;
+
+    // htlc_psbt is the HTLC psbt.
+    bytes htlc_psbt = 4;
+}
+
+message PushAssetDepositHtlcSigsRes {
+}
+
+// PushAssetDepositKeysReq holds private keys of one or more deposits.
+message PushAssetDepositKeysReq {
+    // deposit_keys is a map wich maps deposit_id to deposit internal private
+    // key.
+    map<string, bytes> deposit_keys = 1;
+}
+
+message PushAssetDepositKeysRes {
+}
+
+// AssetDepositProtocolVersion is the version of the asset deposit protocol.
+enum AssetDepositProtocolVersion {
+    // V0 is the first version of the asset deposit protocol.
+    ASSET_DEPOSIT_V0 = 0;
+};
