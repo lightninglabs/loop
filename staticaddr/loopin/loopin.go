@@ -18,9 +18,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -127,13 +125,6 @@ type StaticAddressLoopIn struct {
 	// implicitly carry the swap amount.
 	Deposits []*deposit.Deposit
 
-	// AddressParams are the parameters of the address that is used for the
-	// swap.
-	AddressParams *address.Parameters
-
-	// Address is the address script that is used for the swap.
-	Address *script.StaticAddress
-
 	// HTLC fields.
 
 	// HtlcTxFeeRate is the fee rate that is used for the htlc transaction.
@@ -152,6 +143,10 @@ type StaticAddressLoopIn struct {
 
 	// HtlcTimeoutSweepAddress
 	HtlcTimeoutSweepAddress btcutil.Address
+
+	// ChangeAddress is the optional change address used for the client's
+	// change in the sweepless sweep and htlc transaction.
+	ChangeAddress btcutil.Address
 
 	mu sync.Mutex
 }
@@ -175,7 +170,9 @@ func (l *StaticAddressLoopIn) createMusig2Sessions(ctx context.Context,
 
 	// Create the sessions and nonces from the deposits.
 	for i := 0; i < len(l.Deposits); i++ {
-		session, err := l.createMusig2Session(ctx, signer)
+		session, err := l.createMusig2Session(
+			ctx, signer, l.Deposits[i],
+		)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -189,19 +186,27 @@ func (l *StaticAddressLoopIn) createMusig2Sessions(ctx context.Context,
 
 // Musig2CreateSession creates a musig2 session for the deposit.
 func (l *StaticAddressLoopIn) createMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient) (*input.MuSig2SessionInfo, error) {
+	signer lndclient.SignerClient, deposit *deposit.Deposit) (
+	*input.MuSig2SessionInfo, error) {
+
+	addrParams := deposit.AddressParams
 
 	signers := [][]byte{
-		l.AddressParams.ClientPubkey.SerializeCompressed(),
-		l.AddressParams.ServerPubkey.SerializeCompressed(),
+		addrParams.ClientPubkey.SerializeCompressed(),
+		addrParams.ServerPubkey.SerializeCompressed(),
 	}
 
-	expiryLeaf := l.Address.TimeoutLeaf
+	addrScript, err := deposit.GetStaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	expiryLeaf := addrScript.TimeoutLeaf
 
 	rootHash := expiryLeaf.TapHash()
 
 	return signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &l.AddressParams.KeyLocator,
+		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator,
 		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
 	)
 }
@@ -213,7 +218,7 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := l.toPrevOuts(l.Deposits, l.AddressParams.PkScript)
+	prevOuts, err := l.toPrevOuts()
 	if err != nil {
 		return nil, err
 	}
@@ -335,9 +340,13 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 
 	// We expect change to be sent back to our static address output script.
 	if changeAmount > 0 {
+		changePkScript, err := txscript.PayToAddrScript(l.ChangeAddress)
+		if err != nil {
+			return nil, err
+		}
 		msgTx.AddTxOut(&wire.TxOut{
 			Value:    int64(changeAmount),
-			PkScript: l.AddressParams.PkScript,
+			PkScript: changePkScript,
 		})
 	}
 
@@ -408,12 +417,14 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 	// non-change output index to construct the sweep with.
 	htlcInputIndex := uint32(0)
 	if len(htlcTx.TxOut) == 2 {
-		// If the first htlc tx output matches our static address
-		// script we need to select the second output to sweep from.
-		if bytes.Equal(
-			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
-		) {
+		changePkScript, err := txscript.PayToAddrScript(sweepAddress)
+		if err != nil {
+			return nil, err
+		}
 
+		// If the first htlc tx output matches our static address
+		// script, we need to select the second output to sweep from.
+		if bytes.Equal(htlcTx.TxOut[0].PkScript, changePkScript) {
 			htlcInputIndex = 1
 		}
 	}
@@ -519,18 +530,18 @@ func (l *StaticAddressLoopIn) Outpoints() []wire.OutPoint {
 	return outpoints
 }
 
-func (l *StaticAddressLoopIn) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
+func (l *StaticAddressLoopIn) toPrevOuts() (map[wire.OutPoint]*wire.TxOut,
+	error) {
 
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(l.Deposits))
+	for _, d := range l.Deposits {
 		outpoint := wire.OutPoint{
 			Hash:  d.Hash,
 			Index: d.Index,
 		}
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
-			PkScript: pkScript,
+			PkScript: d.AddressParams.PkScript,
 		}
 		if _, ok := prevOuts[outpoint]; ok {
 			return nil, fmt.Errorf("duplicate outpoint %v",

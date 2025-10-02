@@ -137,15 +137,13 @@ type FSM struct {
 
 	params *address.Parameters
 
-	address *script.StaticAddress
-
 	blockNtfnChan chan uint32
 
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
 	// finalizedDepositChan is used to signal that the deposit has been
-	// finalized and the FSM can be removed from the manager's memory.
+	// finalized, and the FSM can be removed from the manager's memory.
 	finalizedDepositChan chan wire.OutPoint
 }
 
@@ -155,29 +153,17 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
-	}
-
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address: %w", err)
-	}
-
 	depoFsm := &FSM{
 		cfg:                  cfg,
 		deposit:              deposit,
-		params:               params,
-		address:              address,
+		params:               deposit.AddressParams,
 		blockNtfnChan:        make(chan uint32),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
 
 	depositStates := depoFsm.DepositStatesV0()
-	switch params.ProtocolVersion {
+	switch deposit.AddressParams.ProtocolVersion {
 	case version.ProtocolVersion_V0:
 
 	default:
@@ -464,16 +450,15 @@ func (f *FSM) Errorf(format string, args ...interface{}) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
-	error) {
+func (f *FSM) SignDescriptor(addressScript *script.StaticAddress) (
+	*lndclient.SignDescriptor, error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, err
+	if addressScript == nil {
+		return nil, fmt.Errorf("address script is nil")
 	}
 
 	return &lndclient.SignDescriptor{
-		WitnessScript: address.TimeoutLeaf.Script,
+		WitnessScript: addressScript.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
 			PubKey: f.params.ClientPubkey,
 		},
