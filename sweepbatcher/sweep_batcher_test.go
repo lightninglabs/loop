@@ -4035,6 +4035,233 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	<-registrationChan
 }
 
+// testSweepBatcherHandleSweepRace reproduces a race between AddSweep and the
+// event loop handling the sweep after the sweep has already confirmed. During
+// the race the handler gets stale completion data, incorrectly spins up a new
+// batch and rewrites the sweep's parent batch. This test verifies that no
+// extra batch is created and the sweep stays associated with its original
+// batch.
+func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+	)
+
+	var wg sync.WaitGroup
+	var runErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	<-batcher.initDone
+
+	const (
+		sweepValue btcutil.Amount = 1_000_000
+		confHeight                = 605
+	)
+
+	sweepOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0, 0, 0, 1},
+		Index: 5,
+	}
+
+	spendChan := make(chan *SpendDetail, 10)
+	spendErrChan := make(chan error, 1)
+	confChan := make(chan *ConfDetail, 10)
+	confErrChan := make(chan error, 1)
+	notifier := &SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: spendErrChan,
+		ConfChan:     confChan,
+		ConfErrChan:  confErrChan,
+		QuitChan:     make(chan bool),
+	}
+
+	swapHash := lntypes.Hash{7, 7, 7}
+	sweepReq := SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    sweepValue,
+			Outpoint: sweepOutpoint,
+		}},
+		Notifier: notifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      144,
+			AmountRequested: sweepValue,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+			Preimage:        lntypes.Preimage{7},
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	err = store.CreateLoopOut(ctx, swapHash, swap)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq))
+
+	// Make sure the batch starts monitoring the primary sweep.
+	<-lnd.RegisterSpendChannel
+
+	publishedTx := <-lnd.TxPublishChannel
+
+	var originalBatchID int32
+	require.Eventually(t, func() bool {
+		batch := tryGetOnlyBatch(ctx, batcher)
+		if batch == nil {
+			return false
+		}
+
+		originalBatchID = batch.snapshot(ctx).id
+		return true
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	var addWG sync.WaitGroup
+	addErrChan := make(chan error, 2)
+
+	addCtx, addCancel := context.WithCancel(ctx)
+	defer addCancel()
+
+	confCtx, confCancel := context.WithCancel(ctx)
+	defer confCancel()
+
+	addWG.Add(1)
+	go func() {
+		defer addWG.Done()
+
+		// After this goroutine completes, stop the goroutine that handles
+		// registrations as well. Give it one second to finish the last
+		// AddSweep to prevent goroutine leaks.
+		defer time.AfterFunc(time.Second, confCancel)
+
+		for {
+			select {
+			case <-addCtx.Done():
+				return
+			default:
+			}
+
+			err := batcher.AddSweep(ctx, &sweepReq)
+			if err != nil {
+				addErrChan <- err
+
+				return
+			}
+		}
+	}()
+
+	// Wait a bit so the AddSweep loop runs and keeps handleSweep busy.
+	time.Sleep(100 * time.Millisecond)
+
+	// This goroutine handles spending and confirmation registrations.
+	// One spending registration has been created above, so the loop starts
+	// with the next step - notifying about spending.
+	addWG.Add(1)
+	go func() {
+		defer addWG.Done()
+		for {
+			spendingTx := publishedTx
+			spendingHash := spendingTx.TxHash()
+			spendDetail := &chainntnfs.SpendDetail{
+				SpentOutPoint:     &sweepOutpoint,
+				SpendingTx:        spendingTx,
+				SpenderTxHash:     &spendingHash,
+				SpenderInputIndex: 0,
+			}
+			lnd.SpendChannel <- spendDetail
+
+			select {
+			case <-spendChan:
+			case <-time.After(test.Timeout):
+				addErrChan <- fmt.Errorf("expected spend " +
+					"notification")
+
+				return
+			}
+
+			<-lnd.RegisterConfChannel
+
+			require.NoError(t, lnd.NotifyHeight(confHeight))
+
+			lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+				BlockHeight: confHeight,
+				Tx:          spendingTx,
+			}
+
+			select {
+			case <-confChan:
+			case <-time.After(test.Timeout):
+				addErrChan <- fmt.Errorf("expected " +
+					"confirmation notification")
+
+				return
+			}
+
+			select {
+			// If another spending registration is issued, it means
+			// handleSweep chose the monitorSpendAndNotify path, so
+			// any race has already occurred. Stop calling AddSweep.
+			case <-lnd.RegisterSpendChannel:
+				addCancel()
+
+			case <-confCtx.Done():
+				return
+			}
+		}
+	}()
+
+	addWG.Wait()
+
+	select {
+	case err := <-addErrChan:
+		require.NoError(t, err, "error from a goroutine")
+	default:
+	}
+
+	require.Eventually(t, func() bool {
+		running, err := batcherStore.FetchUnconfirmedSweepBatches(ctx)
+		if err != nil {
+			return false
+		}
+		return len(running) == 0
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Make sure the sweep belongs to the original batch. If another batch
+	// launches, the sweep is reassigns to the new batch.
+	sweeps, err := batcherStore.FetchBatchSweeps(ctx, originalBatchID)
+	require.NoError(t, err)
+	require.Len(t, sweeps, 1)
+	require.Equal(t, sweepOutpoint, sweeps[0].Outpoint)
+
+	parentBatch, err := batcherStore.GetParentBatch(ctx, sweepOutpoint)
+	require.NoError(t, err)
+	require.Equal(t, originalBatchID, parentBatch.ID)
+
+	cancel()
+	wg.Wait()
+	checkBatcherError(t, runErr)
+}
+
 // testCustomSignMuSig2 tests the operation with custom musig2 signer.
 func testCustomSignMuSig2(t *testing.T, store testStore,
 	batcherStore testBatcherStore) {
@@ -4973,6 +5200,12 @@ func TestSweepFetcher(t *testing.T) {
 // if it is closed (stops running) during AddSweep call.
 func TestSweepBatcherCloseDuringAdding(t *testing.T) {
 	runTests(t, testSweepBatcherCloseDuringAdding)
+}
+
+// TestSweepBatcherHandleSweepRace ensures we reproduce the data race where a
+// sweep is re-added while the original batch is confirming.
+func TestSweepBatcherHandleSweepRace(t *testing.T) {
+	runTests(t, testSweepBatcherHandleSweepRace)
 }
 
 // TestCustomSignMuSig2 tests the operation with custom musig2 signer.
