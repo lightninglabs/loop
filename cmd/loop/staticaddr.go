@@ -15,18 +15,18 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
 	commands = append(commands, staticAddressCommands)
 }
 
-var staticAddressCommands = cli.Command{
-	Name:      "static",
-	ShortName: "s",
-	Usage:     "perform on-chain to off-chain swaps using static addresses.",
-	Subcommands: []cli.Command{
+var staticAddressCommands = &cli.Command{
+	Name:    "static",
+	Aliases: []string{"s"},
+	Usage:   "perform on-chain to off-chain swaps using static addresses.",
+	Commands: []*cli.Command{
 		newStaticAddressCommand,
 		listUnspentCommand,
 		listDepositsCommand,
@@ -38,10 +38,10 @@ var staticAddressCommands = cli.Command{
 	},
 }
 
-var newStaticAddressCommand = cli.Command{
-	Name:      "new",
-	ShortName: "n",
-	Usage:     "Create a new static loop in address.",
+var newStaticAddressCommand = &cli.Command{
+	Name:    "new",
+	Aliases: []string{"n"},
+	Usage:   "Create a new static loop in address.",
 	Description: `
 	Requests a new static loop in address from the server. Funds that are
 	sent to this address will be locked by a 2:2 multisig between us and the
@@ -52,10 +52,9 @@ var newStaticAddressCommand = cli.Command{
 	Action: newStaticAddress,
 }
 
-func newStaticAddress(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "new")
+func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
 	err := displayNewAddressWarning()
@@ -63,14 +62,14 @@ func newStaticAddress(ctx *cli.Context) error {
 		return err
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.NewStaticAddress(
-		ctxb, &looprpc.NewStaticAddressRequest{},
+		ctx, &looprpc.NewStaticAddressRequest{},
 	)
 	if err != nil {
 		return err
@@ -81,20 +80,20 @@ func newStaticAddress(ctx *cli.Context) error {
 	return nil
 }
 
-var listUnspentCommand = cli.Command{
-	Name:      "listunspent",
-	ShortName: "l",
-	Usage:     "List unspent static address outputs.",
+var listUnspentCommand = &cli.Command{
+	Name:    "listunspent",
+	Aliases: []string{"l"},
+	Usage:   "List unspent static address outputs.",
 	Description: `
 	List all unspent static address outputs. 
 	`,
 	Flags: []cli.Flag{
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "min_confs",
 			Usage: "The minimum amount of confirmations an " +
 				"output should have to be listed.",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "max_confs",
 			Usage: "The maximum number of confirmations an " +
 				"output could have to be listed.",
@@ -103,22 +102,21 @@ var listUnspentCommand = cli.Command{
 	Action: listUnspent,
 }
 
-func listUnspent(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "listunspent")
+func listUnspent(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.ListUnspentDeposits(
-		ctxb, &looprpc.ListUnspentDepositsRequest{
-			MinConfs: int32(ctx.Int("min_confs")),
-			MaxConfs: int32(ctx.Int("max_confs")),
+		ctx, &looprpc.ListUnspentDepositsRequest{
+			MinConfs: int32(cmd.Int("min_confs")),
+			MaxConfs: int32(cmd.Int("max_confs")),
 		})
 	if err != nil {
 		return err
@@ -129,37 +127,37 @@ func listUnspent(ctx *cli.Context) error {
 	return nil
 }
 
-var withdrawalCommand = cli.Command{
-	Name:      "withdraw",
-	ShortName: "w",
-	Usage:     "Withdraw from static address deposits.",
+var withdrawalCommand = &cli.Command{
+	Name:    "withdraw",
+	Aliases: []string{"w"},
+	Usage:   "Withdraw from static address deposits.",
 	Description: `
 	Withdraws from all or selected static address deposits by sweeping them
 	to the internal wallet or an external address.
 	`,
 	Flags: []cli.Flag{
-		cli.StringSliceFlag{
+		&cli.StringSliceFlag{
 			Name: "utxo",
 			Usage: "specify utxos as outpoints(tx:idx) which will" +
 				"be withdrawn.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "all",
 			Usage: "withdraws all static address deposits.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "dest_addr",
 			Usage: "the optional address that the withdrawn " +
 				"funds should be sent to, if let blank the " +
 				"funds will go to lnd's wallet",
 		},
-		cli.Int64Flag{
+		&cli.Int64Flag{
 			Name: "sat_per_vbyte",
 			Usage: "(optional) a manual fee expressed in " +
 				"sat/vbyte that should be used when crafting " +
 				"the transaction",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "amount",
 			Usage: "the number of satoshis that should be " +
 				"withdrawn from the selected deposits. The " +
@@ -169,22 +167,21 @@ var withdrawalCommand = cli.Command{
 	Action: withdraw,
 }
 
-func withdraw(ctx *cli.Context) error {
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "withdraw")
+func withdraw(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	var (
-		isAllSelected  = ctx.IsSet("all")
-		isUtxoSelected = ctx.IsSet("utxo")
+		isAllSelected  = cmd.IsSet("all")
+		isUtxoSelected = cmd.IsSet("utxo")
 		outpoints      []*looprpc.OutPoint
-		ctxb           = context.Background()
 		destAddr       string
 	)
 
@@ -194,7 +191,7 @@ func withdraw(ctx *cli.Context) error {
 
 	case isAllSelected:
 	case isUtxoSelected:
-		utxos := ctx.StringSlice("utxo")
+		utxos := cmd.StringSlice("utxo")
 		outpoints, err = utxosToOutpoints(utxos)
 		if err != nil {
 			return err
@@ -204,17 +201,17 @@ func withdraw(ctx *cli.Context) error {
 		return fmt.Errorf("unknown withdrawal request")
 	}
 
-	if ctx.IsSet("dest_addr") {
-		destAddr = ctx.String("dest_addr")
+	if cmd.IsSet("dest_addr") {
+		destAddr = cmd.String("dest_addr")
 	}
 
-	resp, err := client.WithdrawDeposits(ctxb,
+	resp, err := client.WithdrawDeposits(ctx,
 		&looprpc.WithdrawDepositsRequest{
 			Outpoints:   outpoints,
 			All:         isAllSelected,
 			DestAddr:    destAddr,
-			SatPerVbyte: int64(ctx.Uint64("sat_per_vbyte")),
-			Amount:      ctx.Int64("amount"),
+			SatPerVbyte: int64(cmd.Uint64("sat_per_vbyte")),
+			Amount:      cmd.Int64("amount"),
 		})
 	if err != nil {
 		return err
@@ -225,14 +222,14 @@ func withdraw(ctx *cli.Context) error {
 	return nil
 }
 
-var listDepositsCommand = cli.Command{
+var listDepositsCommand = &cli.Command{
 	Name: "listdeposits",
 	Usage: "Displays static address deposits. A filter can be applied to " +
 		"only show deposits in a specific state.",
 	Description: `
 	`,
 	Flags: []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "filter",
 			Usage: "specify a filter to only display deposits in " +
 				"the specified state. Leaving out the filter " +
@@ -248,20 +245,19 @@ var listDepositsCommand = cli.Command{
 	Action: listDeposits,
 }
 
-func listDeposits(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "listdeposits")
+func listDeposits(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	var filterState looprpc.DepositState
-	switch ctx.String("filter") {
+	switch cmd.String("filter") {
 	case "":
 		// If no filter is specified, we'll default to showing all.
 
@@ -300,7 +296,7 @@ func listDeposits(ctx *cli.Context) error {
 	}
 
 	resp, err := client.ListStaticAddressDeposits(
-		ctxb, &looprpc.ListStaticAddressDepositsRequest{
+		ctx, &looprpc.ListStaticAddressDepositsRequest{
 			StateFilter: filterState,
 		},
 	)
@@ -313,7 +309,7 @@ func listDeposits(ctx *cli.Context) error {
 	return nil
 }
 
-var listWithdrawalsCommand = cli.Command{
+var listWithdrawalsCommand = &cli.Command{
 	Name:  "listwithdrawals",
 	Usage: "Display a summary of past withdrawals.",
 	Description: `
@@ -321,20 +317,19 @@ var listWithdrawalsCommand = cli.Command{
 	Action: listWithdrawals,
 }
 
-func listWithdrawals(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "withdrawals")
+func listWithdrawals(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.ListStaticAddressWithdrawals(
-		ctxb, &looprpc.ListStaticAddressWithdrawalRequest{},
+		ctx, &looprpc.ListStaticAddressWithdrawalRequest{},
 	)
 	if err != nil {
 		return err
@@ -345,7 +340,7 @@ func listWithdrawals(ctx *cli.Context) error {
 	return nil
 }
 
-var listStaticAddressSwapsCommand = cli.Command{
+var listStaticAddressSwapsCommand = &cli.Command{
 	Name:  "listswaps",
 	Usage: "Shows a list of finalized static address swaps.",
 	Description: `
@@ -353,20 +348,19 @@ var listStaticAddressSwapsCommand = cli.Command{
 	Action: listStaticAddressSwaps,
 }
 
-func listStaticAddressSwaps(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "listswaps")
+func listStaticAddressSwaps(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.ListStaticAddressSwaps(
-		ctxb, &looprpc.ListStaticAddressSwapsRequest{},
+		ctx, &looprpc.ListStaticAddressSwapsRequest{},
 	)
 	if err != nil {
 		return err
@@ -377,10 +371,10 @@ func listStaticAddressSwaps(ctx *cli.Context) error {
 	return nil
 }
 
-var summaryCommand = cli.Command{
-	Name:      "summary",
-	ShortName: "s",
-	Usage:     "Display a summary of static address related information.",
+var summaryCommand = &cli.Command{
+	Name:    "summary",
+	Aliases: []string{"s"},
+	Usage:   "Display a summary of static address related information.",
 	Description: `
 	Displays various static address related information about deposits, 
 	withdrawals and swaps. 
@@ -388,20 +382,19 @@ var summaryCommand = cli.Command{
 	Action: summary,
 }
 
-func summary(ctx *cli.Context) error {
-	ctxb := context.Background()
-	if ctx.NArg() > 0 {
-		return cli.ShowCommandHelp(ctx, "summary")
+func summary(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.GetStaticAddressSummary(
-		ctxb, &looprpc.StaticAddressSummaryRequest{},
+		ctx, &looprpc.StaticAddressSummaryRequest{},
 	)
 	if err != nil {
 		return err
@@ -452,9 +445,10 @@ func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
 	}, nil
 }
 
-var staticAddressLoopInCommand = cli.Command{
-	Name:  "in",
-	Usage: "Loop in funds from static address deposits.",
+var staticAddressLoopInCommand = &cli.Command{
+	Name:      "in",
+	Usage:     "Loop in funds from static address deposits.",
+	ArgsUsage: "[amt] [--all | --utxo xxx:xx]",
 	Description: `
 	Requests a loop-in swap based on static address deposits. After the
 	creation of a static address funds can be sent to it. Once the funds are
@@ -462,30 +456,30 @@ var staticAddressLoopInCommand = cli.Command{
 	funds are not needed they can we withdrawn back to the local lnd wallet.
 	`,
 	Flags: []cli.Flag{
-		cli.StringSliceFlag{
+		&cli.StringSliceFlag{
 			Name: "utxo",
 			Usage: "specify the utxos of deposits as " +
 				"outpoints(tx:idx) that should be looped in.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "all",
 			Usage: "loop in all static address deposits.",
 		},
-		cli.DurationFlag{
+		&cli.DurationFlag{
 			Name: "payment_timeout",
 			Usage: "the maximum time in seconds that the server " +
 				"is allowed to take for the swap payment. " +
 				"The client can retry the swap with adjusted " +
 				"parameters after the payment timed out.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "amount",
 			Usage: "the number of satoshis that should be " +
 				"swapped from the selected deposits. If there" +
 				"is change it is sent back to the static " +
 				"address.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "fast",
 			Usage: "Usage: complete the swap faster by paying a " +
 				"higher fee, so the change output is " +
@@ -501,40 +495,39 @@ var staticAddressLoopInCommand = cli.Command{
 	Action: staticAddressLoopIn,
 }
 
-func staticAddressLoopIn(ctx *cli.Context) error {
-	if ctx.NumFlags() == 0 && ctx.NArg() == 0 {
-		return cli.ShowCommandHelp(ctx, "in")
+func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NumFlags() == 0 && cmd.NArg() == 0 {
+		return showCommandHelp(ctx, cmd)
 	}
 
 	var selectedAmount int64
 	switch {
-	case ctx.NArg() == 1:
-		amt, err := parseAmt(ctx.Args().Get(0))
+	case cmd.NArg() == 1:
+		amt, err := parseAmt(cmd.Args().Get(0))
 		if err != nil {
 			return err
 		}
 		selectedAmount = int64(amt)
 
-	case ctx.NArg() > 1:
+	case cmd.NArg() > 1:
 		return fmt.Errorf("only a single positional argument is " +
 			"allowed")
 
 	default:
-		selectedAmount = ctx.Int64("amount")
+		selectedAmount = cmd.Int64("amount")
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	var (
-		ctxb                       = context.Background()
-		isAllSelected              = ctx.IsSet("all")
-		isUtxoSelected             = ctx.IsSet("utxo")
+		isAllSelected              = cmd.IsSet("all")
+		isUtxoSelected             = cmd.IsSet("utxo")
 		autoSelectDepositsForQuote bool
-		label                      = ctx.String(labelFlag.Name)
+		label                      = cmd.String(labelFlag.Name)
 		hints                      []*swapserverrpc.RouteHint
 		lastHop                    []byte
 		paymentTimeoutSeconds      = uint32(loopin.DefaultPaymentTimeoutSeconds)
@@ -547,14 +540,14 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 
 	// Private and route hints are mutually exclusive as setting private
 	// means we retrieve our own route hints from the connected node.
-	hints, err = validateRouteHints(ctx)
+	hints, err = validateRouteHints(cmd)
 	if err != nil {
 		return err
 	}
 
-	if ctx.IsSet(lastHopFlag.Name) {
+	if cmd.IsSet(lastHopFlag.Name) {
 		lastHopVertex, err := route.NewVertexFromStr(
-			ctx.String(lastHopFlag.Name),
+			cmd.String(lastHopFlag.Name),
 		)
 		if err != nil {
 			return err
@@ -565,7 +558,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 
 	// Get the amount we need to quote for.
 	depositList, err := client.ListStaticAddressDeposits(
-		ctxb, &looprpc.ListStaticAddressDepositsRequest{
+		ctx, &looprpc.ListStaticAddressDepositsRequest{
 			StateFilter: looprpc.DepositState_DEPOSITED,
 		},
 	)
@@ -592,7 +585,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		depositOutpoints = depositsToOutpoints(allDeposits)
 
 	case isUtxoSelected:
-		depositOutpoints = ctx.StringSlice("utxo")
+		depositOutpoints = cmd.StringSlice("utxo")
 
 	case selectedAmount > 0:
 		// If only an amount is selected, we will trigger coin
@@ -614,27 +607,27 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		Amt:                selectedAmount,
 		LoopInRouteHints:   hints,
 		LoopInLastHop:      lastHop,
-		Private:            ctx.Bool(privateFlag.Name),
+		Private:            cmd.Bool(privateFlag.Name),
 		DepositOutpoints:   depositOutpoints,
 		AutoSelectDeposits: autoSelectDepositsForQuote,
-		Fast:               ctx.Bool("fast"),
+		Fast:               cmd.Bool("fast"),
 	}
-	quote, err := client.GetLoopInQuote(ctxb, quoteReq)
+	quote, err := client.GetLoopInQuote(ctx, quoteReq)
 	if err != nil {
 		return err
 	}
 
 	limits := getInLimits(quote)
 
-	if !(ctx.Bool("force") || ctx.Bool("f")) {
-		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
+	if !(cmd.Bool("force") || cmd.Bool("f")) {
+		err = displayInDetails(quoteReq, quote, cmd.Bool("verbose"))
 		if err != nil {
 			return err
 		}
 	}
 
-	if ctx.IsSet("payment_timeout") {
-		paymentTimeoutSeconds = uint32(ctx.Duration("payment_timeout").Seconds())
+	if cmd.IsSet("payment_timeout") {
+		paymentTimeoutSeconds = uint32(cmd.Duration("payment_timeout").Seconds())
 	}
 
 	req := &looprpc.StaticAddressLoopInRequest{
@@ -645,12 +638,12 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		Label:                 label,
 		Initiator:             defaultInitiator,
 		RouteHints:            hints,
-		Private:               ctx.Bool("private"),
+		Private:               cmd.Bool("private"),
 		PaymentTimeoutSeconds: paymentTimeoutSeconds,
-		Fast:                  ctx.Bool("fast"),
+		Fast:                  cmd.Bool("fast"),
 	}
 
-	resp, err := client.StaticAddressLoopIn(ctxb, req)
+	resp, err := client.StaticAddressLoopIn(ctx, req)
 	if err != nil {
 		return err
 	}

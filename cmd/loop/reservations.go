@@ -4,29 +4,29 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var reservationsCommands = cli.Command{
+var reservationsCommands = &cli.Command{
 
-	Name:      "reservations",
-	ShortName: "r",
-	Usage:     "manage reservations",
+	Name:    "reservations",
+	Aliases: []string{"r"},
+	Usage:   "manage reservations",
 	Description: `
 		With loopd running, you can use this command to manage your
 		reservations. Reservations are 2-of-2 multisig utxos that
 		the loop server can open to clients. The reservations are used
 		to enable instant swaps.
 	`,
-	Subcommands: []cli.Command{
+	Commands: []*cli.Command{
 		listReservationsCommand,
 	},
 }
 
 var (
-	listReservationsCommand = cli.Command{
+	listReservationsCommand = &cli.Command{
 		Name:      "list",
-		ShortName: "l",
+		Aliases:   []string{"l"},
 		Usage:     "list all reservations",
 		ArgsUsage: "",
 		Description: `
@@ -36,15 +36,15 @@ var (
 	}
 )
 
-func listReservations(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func listReservations(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.ListReservations(
-		context.Background(), &looprpc.ListReservationsRequest{},
+		ctx, &looprpc.ListReservationsRequest{},
 	)
 	if err != nil {
 		return err

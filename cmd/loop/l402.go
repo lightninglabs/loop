@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"gopkg.in/macaroon.v2"
 )
 
@@ -24,22 +24,22 @@ type printableToken struct {
 	FileName        string `json:"file_name"`
 }
 
-var listAuthCommand = cli.Command{
+var listAuthCommand = &cli.Command{
 	Name:        "listauth",
 	Usage:       "list all L402 tokens",
 	Description: "Shows a list of all L402 tokens that loopd has paid for",
 	Action:      listAuth,
 }
 
-func listAuth(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func listAuth(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.GetL402Tokens(
-		context.Background(), &looprpc.TokensRequest{},
+		ctx, &looprpc.TokensRequest{},
 	)
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func listAuth(ctx *cli.Context) error {
 	return nil
 }
 
-var fetchL402Command = cli.Command{
+var fetchL402Command = &cli.Command{
 	Name:  "fetchl402",
 	Usage: "fetches a new L402 authentication token from the server",
 	Description: "Fetches a new L402 authentication token from the server. " +
@@ -84,15 +84,15 @@ var fetchL402Command = cli.Command{
 	Action: fetchL402,
 }
 
-func fetchL402(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func fetchL402(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	res, err := client.FetchL402Token(
-		context.Background(), &looprpc.FetchL402TokenRequest{},
+		ctx, &looprpc.FetchL402TokenRequest{},
 	)
 	if err != nil {
 		return err

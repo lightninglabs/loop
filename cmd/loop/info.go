@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var getInfoCommand = cli.Command{
+var getInfoCommand = &cli.Command{
 	Name:  "getinfo",
 	Usage: "show general information about the loop daemon",
 	Description: "Displays general information about the daemon like " +
@@ -16,16 +16,14 @@ var getInfoCommand = cli.Command{
 	Action: getInfo,
 }
 
-func getInfo(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func getInfo(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	cfg, err := client.GetInfo(
-		context.Background(), &looprpc.GetInfoRequest{},
-	)
+	cfg, err := client.GetInfo(ctx, &looprpc.GetInfoRequest{})
 	if err != nil {
 		return err
 	}

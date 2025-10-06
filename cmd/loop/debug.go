@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
@@ -15,7 +15,7 @@ func init() {
 	commands = append(commands, forceAutoloopCmd)
 }
 
-var forceAutoloopCmd = cli.Command{
+var forceAutoloopCmd = &cli.Command{
 	Name: "forceautoloop",
 	Usage: `
 	Forces to trigger an autoloop step, regardless of the current internal 
@@ -25,16 +25,14 @@ var forceAutoloopCmd = cli.Command{
 	Hidden: true,
 }
 
-func forceAutoloop(ctx *cli.Context) error {
-	client, cleanup, err := getDebugClient(ctx)
+func forceAutoloop(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getDebugClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	cfg, err := client.ForceAutoLoop(
-		context.Background(), &looprpc.ForceAutoLoopRequest{},
-	)
+	cfg, err := client.ForceAutoLoop(ctx, &looprpc.ForceAutoLoopRequest{})
 	if err != nil {
 		return err
 	}
@@ -44,13 +42,13 @@ func forceAutoloop(ctx *cli.Context) error {
 	return nil
 }
 
-func getDebugClient(ctx *cli.Context) (looprpc.DebugClient, func(), error) {
-	rpcServer := ctx.GlobalString("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(ctx)
+func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient, func(), error) {
+	rpcServer := cmd.String("rpcserver")
+	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, err := getClientConn(ctx, rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}
