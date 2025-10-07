@@ -534,7 +534,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		isAllSelected              = ctx.IsSet("all")
 		isUtxoSelected             = ctx.IsSet("utxo")
 		autoSelectDepositsForQuote bool
-		label                      = ctx.String("static-loop-in")
+		label                      = ctx.String(labelFlag.Name)
 		hints                      []*swapserverrpc.RouteHint
 		lastHop                    []byte
 		paymentTimeoutSeconds      = uint32(loopin.DefaultPaymentTimeoutSeconds)
@@ -642,7 +642,7 @@ func staticAddressLoopIn(ctx *cli.Context) error {
 		Outpoints:             depositOutpoints,
 		MaxSwapFeeSatoshis:    int64(limits.maxSwapFee),
 		LastHop:               lastHop,
-		Label:                 ctx.String(labelFlag.Name),
+		Label:                 label,
 		Initiator:             defaultInitiator,
 		RouteHints:            hints,
 		Private:               ctx.Bool("private"),
