@@ -361,8 +361,13 @@ func displayOutDetails(l *outLimits, warning string, req *looprpc.QuoteRequest,
 func parseAmt(text string) (btcutil.Amount, error) {
 	amtInt64, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid amt value")
+		return 0, fmt.Errorf("invalid amt value %q", text)
 	}
+
+	if amtInt64 < 0 {
+		return 0, fmt.Errorf("negative amount %d", amtInt64)
+	}
+
 	return btcutil.Amount(amtInt64), nil
 }
 
