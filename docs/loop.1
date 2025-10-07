@@ -1,0 +1,566 @@
+.nh
+.TH loop 1
+
+.SH NAME
+.PP
+loop - control plane for your loopd
+
+
+.SH SYNOPSIS
+.PP
+loop
+
+.PP
+.RS
+
+.nf
+[--help|-h]
+[--loopdir]=[value]
+[--macaroonpath]=[value]
+[--network|-n]=[value]
+[--rpcserver]=[value]
+[--tlscertpath]=[value]
+[--version|-v]
+
+.fi
+.RE
+
+.PP
+\fBUsage\fP:
+
+.PP
+.RS
+
+.nf
+loop [GLOBAL OPTIONS] [command [COMMAND OPTIONS]] [ARGUMENTS...]
+
+.fi
+.RE
+
+
+.SH GLOBAL OPTIONS
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--loopdir\fP="": path to loop's base directory (default: ~/.loop)
+
+.PP
+\fB--macaroonpath\fP="": path to macaroon file (default: ~/.loop/mainnet/loop.macaroon)
+
+.PP
+\fB--network, -n\fP="": the network loop is running on e.g. mainnet, testnet, etc. (default: mainnet)
+
+.PP
+\fB--rpcserver\fP="": loopd daemon address host:port (default: localhost:11010)
+
+.PP
+\fB--tlscertpath\fP="": path to loop's TLS certificate (default: ~/.loop/mainnet/tls.cert)
+
+.PP
+\fB--version, -v\fP: print the version
+
+
+.SH COMMANDS
+.SH out
+.PP
+perform an off-chain to on-chain swap (looping out)
+
+.PP
+\fB--account\fP="": the name of the account to generate a new address from. You can list the names of valid accounts in your backing lnd instance with "lncli wallet accounts list"
+
+.PP
+\fB--account_addr_type\fP="": the address type of the extended public key specified in account. Currently only pay-to-taproot-pubkey(p2tr) is supported (default: p2tr)
+
+.PP
+\fB--addr\fP="": the optional address that the looped out funds should be sent to, if let blank the funds will go to lnd's wallet
+
+.PP
+\fB--amt\fP="": the amount in satoshis to loop out. To check for the minimum and maximum amounts to loop out please consult "loop terms" (default: 0)
+
+.PP
+\fB--asset_edge_node\fP="": the pubkey of the edge node of the asset to loop out, this is required if the taproot assets daemon has multiple channels of the given asset id with different edge nodes
+
+.PP
+\fB--asset_id\fP="": the asset ID of the asset to loop out, if this is set, the loop daemon will require a connection to a taproot assets daemon
+
+.PP
+\fB--channel\fP="": the comma-separated list of short channel IDs of the channels to loop out
+
+.PP
+\fB--conf_target\fP="": the number of blocks from the swap initiation height that the on-chain HTLC should be swept within (default: 9)
+
+.PP
+\fB--fast\fP: indicate you want to swap immediately, paying potentially a higher fee. If not set the swap server might choose to wait up to 30 minutes before publishing the swap HTLC on-chain, to save on its chain fees. Not setting this flag therefore might result in a lower swap fee
+
+.PP
+\fB--force\fP: Assumes yes during confirmation. Using this option will result in an immediate swap
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--htlc_confs\fP="": the number of confirmations (in blocks) that we require for the htlc extended by the server before we reveal the preimage (default: 1)
+
+.PP
+\fB--label\fP="": an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].
+
+.PP
+\fB--max_swap_routing_fee\fP="": the max off-chain swap routing fee in satoshis, if not specified, a default max fee will be used (default: 0)
+
+.PP
+\fB--payment_timeout\fP="": the timeout for each individual off-chain payment attempt. If not set, the default timeout of 1 hour will be used. As the payment might be retried, the actual total time may be longer (default: 0s)
+
+.PP
+\fB--verbose, -v\fP: show expanded details
+
+.SH in
+.PP
+perform an on-chain to off-chain swap (loop in)
+
+.PP
+\fB--amt\fP="": the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms" (default: 0)
+
+.PP
+\fB--conf_target\fP="": the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
+
+.PP
+\fB--external\fP: expect htlc to be published externally
+
+.PP
+\fB--force\fP: Assumes yes during confirmation. Using this option will result in an immediate swap
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--label\fP="": an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].
+
+.PP
+\fB--last_hop\fP="": the pubkey of the last hop to use for this swap
+
+.PP
+\fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
+
+.PP
+\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+
+.PP
+\fB--verbose, -v\fP: show expanded details
+
+.SH terms
+.PP
+Display the current swap terms imposed by the server.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH monitor
+.PP
+monitor progress of any active swaps
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH quote
+.PP
+get a quote for the cost of a swap
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS in
+.PP
+get a quote for the cost of a loop in swap
+
+.PP
+\fB--conf_target\fP="": the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
+
+.PP
+\fB--deposit_outpoint\fP="": one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx (default: [])
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--last_hop\fP="": the pubkey of the last hop to use for the quote
+
+.PP
+\fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
+
+.PP
+\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+
+.PP
+\fB--verbose, -v\fP: show expanded details
+
+.SS out
+.PP
+get a quote for the cost of a loop out swap
+
+.PP
+\fB--conf_target\fP="": the number of blocks from the swap initiation height that the on-chain HTLC should be swept within in a Loop Out (default: 9)
+
+.PP
+\fB--fast\fP: Indicate you want to swap immediately, paying potentially a higher fee. If not set the swap server might choose to wait up to 30 minutes before publishing the swap HTLC on-chain, to save on chain fees. Not setting this flag might result in a lower swap fee.
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--verbose, -v\fP: show expanded details
+
+.SH listauth
+.PP
+list all L402 tokens
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH fetchl402
+.PP
+fetches a new L402 authentication token from the server
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH listswaps
+.PP
+list all swaps in the local database
+
+.PP
+\fB--channel\fP="": the comma-separated list of short channel IDs of the channels to loop out
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--label\fP="": an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].
+
+.PP
+\fB--last_hop\fP="": the pubkey of the last hop to use for this swap
+
+.PP
+\fB--loop_in_only\fP: only list swaps that are loop in swaps
+
+.PP
+\fB--loop_out_only\fP: only list swaps that are loop out swaps
+
+.PP
+\fB--max_swaps\fP="": Max number of swaps to return after filtering (default: 0)
+
+.PP
+\fB--pending_only\fP: only list pending swaps
+
+.PP
+\fB--start_time_ns\fP="": Unix timestamp in nanoseconds to select swaps initiated after this time (default: 0)
+
+.SH swapinfo
+.PP
+show the status of a swap
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--id\fP="": the ID of the swap (default: 0)
+
+.SH getparams
+.PP
+show liquidity manager parameters
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH setrule
+.PP
+set liquidity manager rule for a channel/peer
+
+.PP
+\fB--clear\fP: remove the rule currently set for the channel/peer.
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--incoming_threshold\fP="": the minimum percentage of incoming liquidity to total capacity beneath which to recommend loop out to acquire incoming. (default: 0)
+
+.PP
+\fB--outgoing_threshold\fP="": the minimum percentage of outbound liquidity that we do not want to drop below. (default: 0)
+
+.PP
+\fB--type\fP="": the type of swap to perform, set to 'out' for acquiring inbound liquidity or 'in' for acquiring outbound liquidity. (default: out)
+
+.SH suggestswaps
+.PP
+show a list of suggested swaps
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH setparams
+.PP
+update the parameters set for the liquidity manager
+
+.PP
+\fB--account\fP="": the name of the account to generate a new address from. You can list the names of valid accounts in your backing lnd instance with "lncli wallet accounts list".
+
+.PP
+\fB--account_addr_type\fP="": the address type of the extended public key specified in account. Currently only pay-to-taproot-pubkey(p2tr) is supported (default: p2tr)
+
+.PP
+\fB--asset_easyautoloop\fP: set to true to enable asset easy autoloop, which will automatically dispatch asset swaps in order to meet the target local balance.
+
+.PP
+\fB--asset_id\fP="": If set to a valid asset ID, the easyautoloop and localbalancesat flags will be set for the specified asset.
+
+.PP
+\fB--asset_localbalance\fP="": the target size of total local balance in asset units, used by asset easy autoloop. (default: 0)
+
+.PP
+\fB--autobudget\fP="": the maximum amount of fees in satoshis that automatically dispatched loop out swaps may spend. (default: 0)
+
+.PP
+\fB--autobudgetrefreshperiod\fP="": the time period over which the automated loop budget is refreshed. (default: 0s)
+
+.PP
+\fB--autoinflight\fP="": the maximum number of automatically dispatched swaps that we allow to be in flight. (default: 0)
+
+.PP
+\fB--autoloop\fP: set to true to enable automated dispatch of swaps, limited to the budget set by autobudget.
+
+.PP
+\fB--destaddr\fP="": custom address to be used as destination for autoloop loop out, set to "default" in order to revert to default behavior.
+
+.PP
+\fB--easyautoloop\fP: set to true to enable easy autoloop, which will automatically dispatch swaps in order to meet the target local balance.
+
+.PP
+\fB--failurebackoff\fP="": the amount of time, in seconds, that should pass before a channel that previously had a failed swap will be included in suggestions. (default: 0)
+
+.PP
+\fB--fast\fP: if set new swaps are expected to be published immediately, paying a potentially higher fee. If not set the swap server might choose to wait up to 30 minutes before publishing swap HTLCs on-chain, to save on chain fees. Not setting this flag therefore might result in a lower swap fees
+
+.PP
+\fB--feepercent\fP="": the maximum percentage of swap amount to be used across all fee categories (default: 0)
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--htlc_conf\fP="": the confirmation target for loop in on-chain htlcs. (default: 0)
+
+.PP
+\fB--localbalancesat\fP="": the target size of total local balance in satoshis, used by easy autoloop. (default: 0)
+
+.PP
+\fB--maxamt\fP="": the maximum amount in satoshis that the autoloop client will dispatch per-swap. (default: 0)
+
+.PP
+\fB--maxminer\fP="": the maximum miner fee in satoshis that swap suggestions should be limited to. (default: 0)
+
+.PP
+\fB--maxprepay\fP="": the maximum no-show (prepay) in satoshis that swap suggestions should be limited to. (default: 0)
+
+.PP
+\fB--maxprepayfee\fP="": the maximum percentage of off-chain prepay volume that we are willing to pay in routing fees. (default: 0)
+
+.PP
+\fB--maxroutingfee\fP="": the maximum percentage of off-chain payment volume that we are willing to pay in routingfees. (default: 0)
+
+.PP
+\fB--maxswapfee\fP="": the maximum percentage of swap volume we are willing to pay in server fees. (default: 0)
+
+.PP
+\fB--minamt\fP="": the minimum amount in satoshis that the autoloop client will dispatch per-swap. (default: 0)
+
+.PP
+\fB--sweepconf\fP="": the number of blocks from htlc height that swap suggestion sweeps should target, used to estimate max miner fee. (default: 0)
+
+.PP
+\fB--sweeplimit\fP="": the limit placed on our estimated sweep fee in sat/vByte. (default: 0)
+
+.SH getinfo
+.PP
+show general information about the loop daemon
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH abandonswap
+.PP
+abandon a swap with a given swap hash
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--i_know_what_i_am_doing\fP: Specify this flag if you made sure that you read and understood the following consequence of applying this command.
+
+.SH reservations, r
+.PP
+manage reservations
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS list, l
+.PP
+list all reservations
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH instantout
+.PP
+perform an instant off-chain to on-chain swap (looping out)
+
+.PP
+\fB--addr\fP="": the optional address that the looped out funds should be sent to, if let blank the funds will go to lnd's wallet
+
+.PP
+\fB--channel\fP="": the comma-separated list of short channel IDs of the channels to loop out
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH listinstantouts
+.PP
+list all instant out swaps
+
+.PP
+\fB--help, -h\fP: show help
+
+.SH static, s
+.PP
+perform on-chain to off-chain swaps using static addresses.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS new, n
+.PP
+Create a new static loop in address.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS listunspent, l
+.PP
+List unspent static address outputs.
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--max_confs\fP="": The maximum number of confirmations an output could have to be listed. (default: 0)
+
+.PP
+\fB--min_confs\fP="": The minimum amount of confirmations an output should have to be listed. (default: 0)
+
+.SS listdeposits
+.PP
+Displays static address deposits. A filter can be applied to only show deposits in a specific state.
+
+.PP
+\fB--filter\fP="": specify a filter to only display deposits in the specified state. Leaving out the filter returns all deposits.
+The state can be one of the following:
+deposited
+withdrawing
+withdrawn
+looping_in
+looped_in
+publish_expired_deposit
+sweep_htlc_timeout
+htlc_timeout_swept
+wait_for_expiry_sweep
+expired
+failed
+.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS listwithdrawals
+.PP
+Display a summary of past withdrawals.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS listswaps
+.PP
+Shows a list of finalized static address swaps.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS withdraw, w
+.PP
+Withdraw from static address deposits.
+
+.PP
+\fB--all\fP: withdraws all static address deposits.
+
+.PP
+\fB--amount\fP="": the number of satoshis that should be withdrawn from the selected deposits. The change is sent back to the static address (default: 0)
+
+.PP
+\fB--dest_addr\fP="": the optional address that the withdrawn funds should be sent to, if let blank the funds will go to lnd's wallet
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--sat_per_vbyte\fP="": (optional) a manual fee expressed in sat/vbyte that should be used when crafting the transaction (default: 0)
+
+.PP
+\fB--utxo\fP="": specify utxos as outpoints(tx:idx) which willbe withdrawn. (default: [])
+
+.SS summary, s
+.PP
+Display a summary of static address related information.
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS in
+.PP
+Loop in funds from static address deposits.
+
+.PP
+\fB--all\fP: loop in all static address deposits.
+
+.PP
+\fB--amount\fP="": the number of satoshis that should be swapped from the selected deposits. If thereis change it is sent back to the static address. (default: 0)
+
+.PP
+\fB--fast\fP: Usage: complete the swap faster by paying a higher fee, so the change output is available sooner
+
+.PP
+\fB--force\fP: Assumes yes during confirmation. Using this option will result in an immediate swap
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--label\fP="": an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].
+
+.PP
+\fB--last_hop\fP="": the pubkey of the last hop to use for this swap
+
+.PP
+\fB--payment_timeout\fP="": the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out. (default: 0s)
+
+.PP
+\fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
+
+.PP
+\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+
+.PP
+\fB--utxo\fP="": specify the utxos of deposits as outpoints(tx:idx) that should be looped in. (default: [])
+
+.PP
+\fB--verbose, -v\fP: show expanded details
+
