@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -94,7 +95,7 @@ func loopIn(ctx *cli.Context) error {
 	var amtStr string
 	switch {
 	case ctx.IsSet("amt"):
-		amtStr = ctx.String("amt")
+		amtStr = strconv.FormatUint(ctx.Uint64("amt"), 10)
 	case ctx.NArg() == 1:
 		amtStr = args[0]
 	default:
