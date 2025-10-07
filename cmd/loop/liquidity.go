@@ -10,12 +10,12 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/routing/route"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-var getLiquidityParamsCommand = cli.Command{
+var getLiquidityParamsCommand = &cli.Command{
 	Name:  "getparams",
 	Usage: "show liquidity manager parameters",
 	Description: "Displays the current set of parameters that are set " +
@@ -23,15 +23,15 @@ var getLiquidityParamsCommand = cli.Command{
 	Action: getParams,
 }
 
-func getParams(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func getParams(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	cfg, err := client.GetLiquidityParams(
-		context.Background(), &looprpc.GetLiquidityParamsRequest{},
+		ctx, &looprpc.GetLiquidityParamsRequest{},
 	)
 	if err != nil {
 		return err
@@ -42,13 +42,13 @@ func getParams(ctx *cli.Context) error {
 	return nil
 }
 
-var setLiquidityRuleCommand = cli.Command{
+var setLiquidityRuleCommand = &cli.Command{
 	Name:        "setrule",
 	Usage:       "set liquidity manager rule for a channel/peer",
 	Description: "Update or remove the liquidity rule for a channel/peer.",
 	ArgsUsage:   "{shortchanid | peerpubkey}",
 	Flags: []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "type",
 			Usage: "the type of swap to perform, set to 'out' " +
 				"for acquiring inbound liquidity or 'in' for " +
@@ -56,18 +56,18 @@ var setLiquidityRuleCommand = cli.Command{
 			Value: "out",
 		},
 
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "incoming_threshold",
 			Usage: "the minimum percentage of incoming liquidity " +
 				"to total capacity beneath which to " +
 				"recommend loop out to acquire incoming.",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "outgoing_threshold",
 			Usage: "the minimum percentage of outbound liquidity " +
 				"that we do not want to drop below.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "clear",
 			Usage: "remove the rule currently set for the " +
 				"channel/peer.",
@@ -76,9 +76,9 @@ var setLiquidityRuleCommand = cli.Command{
 	Action: setRule,
 }
 
-func setRule(ctx *cli.Context) error {
+func setRule(ctx context.Context, cmd *cli.Command) error {
 	// We require that a channel ID is set for this rule update.
-	if ctx.NArg() != 1 {
+	if cmd.NArg() != 1 {
 		return fmt.Errorf("please set a channel id or peer pubkey " +
 			"for the rule update")
 	}
@@ -87,9 +87,9 @@ func setRule(ctx *cli.Context) error {
 		pubkey     route.Vertex
 		pubkeyRule bool
 	)
-	chanID, err := strconv.ParseUint(ctx.Args().First(), 10, 64)
+	chanID, err := strconv.ParseUint(cmd.Args().First(), 10, 64)
 	if err != nil {
-		pubkey, err = route.NewVertexFromStr(ctx.Args().First())
+		pubkey, err = route.NewVertexFromStr(cmd.Args().First())
 		if err != nil {
 			return fmt.Errorf("please provide a valid pubkey: "+
 				"%v, or short channel ID", err)
@@ -97,7 +97,7 @@ func setRule(ctx *cli.Context) error {
 		pubkeyRule = true
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -107,15 +107,15 @@ func setRule(ctx *cli.Context) error {
 	// SetParameters. To allow users to set only individual fields on the
 	// cli, we lookup our current params, then update individual values.
 	params, err := client.GetLiquidityParams(
-		context.Background(), &looprpc.GetLiquidityParamsRequest{},
+		ctx, &looprpc.GetLiquidityParamsRequest{},
 	)
 	if err != nil {
 		return err
 	}
 
 	var (
-		inboundSet  = ctx.IsSet("incoming_threshold")
-		outboundSet = ctx.IsSet("outgoing_threshold")
+		inboundSet  = cmd.IsSet("incoming_threshold")
+		outboundSet = cmd.IsSet("outgoing_threshold")
 		ruleSet     bool
 		otherRules  []*looprpc.LiquidityRule
 	)
@@ -144,7 +144,7 @@ func setRule(ctx *cli.Context) error {
 	// If we want to clear the rule for this channel, check that we had a
 	// rule set in the first place, and set our parameters to the current
 	// set excluding the channel specified.
-	if ctx.IsSet("clear") {
+	if cmd.IsSet("clear") {
 		if !ruleSet {
 			return fmt.Errorf("cannot clear channel: %v, no rule "+
 				"set at present", chanID)
@@ -157,7 +157,7 @@ func setRule(ctx *cli.Context) error {
 
 		params.Rules = otherRules
 		_, err = client.SetLiquidityParams(
-			context.Background(),
+			ctx,
 			&looprpc.SetLiquidityParamsRequest{
 				Parameters: params,
 			},
@@ -177,8 +177,8 @@ func setRule(ctx *cli.Context) error {
 		ChannelId: chanID,
 		Type:      looprpc.LiquidityRuleType_THRESHOLD,
 	}
-	if ctx.IsSet("type") {
-		switch ctx.String("type") {
+	if cmd.IsSet("type") {
+		switch cmd.String("type") {
 		case "in":
 			newRule.SwapType = looprpc.SwapType_LOOP_IN
 
@@ -196,13 +196,13 @@ func setRule(ctx *cli.Context) error {
 
 	if inboundSet {
 		newRule.IncomingThreshold = uint32(
-			ctx.Int("incoming_threshold"),
+			cmd.Int("incoming_threshold"),
 		)
 	}
 
 	if outboundSet {
 		newRule.OutgoingThreshold = uint32(
-			ctx.Int("outgoing_threshold"),
+			cmd.Int("outgoing_threshold"),
 		)
 	}
 
@@ -213,7 +213,7 @@ func setRule(ctx *cli.Context) error {
 
 	// Update our parameters to the existing set, plus our new rule.
 	_, err = client.SetLiquidityParams(
-		context.Background(),
+		ctx,
 		&looprpc.SetLiquidityParamsRequest{
 			Parameters: params,
 		},
@@ -222,7 +222,7 @@ func setRule(ctx *cli.Context) error {
 	return err
 }
 
-var setParamsCommand = cli.Command{
+var setParamsCommand = &cli.Command{
 	Name:  "setparams",
 	Usage: "update the parameters set for the liquidity manager",
 	Description: "Updates the parameters set for the liquidity manager. " +
@@ -230,69 +230,69 @@ var setParamsCommand = cli.Command{
 		"of setting them again upon loopd restart. To get the default" +
 		"values, use `getparams` before any `setparams`.",
 	Flags: []cli.Flag{
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "sweeplimit",
 			Usage: "the limit placed on our estimated sweep fee " +
 				"in sat/vByte.",
 		},
-		cli.Float64Flag{
+		&cli.Float64Flag{
 			Name: "feepercent",
 			Usage: "the maximum percentage of swap amount to be " +
 				"used across all fee categories",
 		},
-		cli.Float64Flag{
+		&cli.Float64Flag{
 			Name: "maxswapfee",
 			Usage: "the maximum percentage of swap volume we are " +
 				"willing to pay in server fees.",
 		},
-		cli.Float64Flag{
+		&cli.Float64Flag{
 			Name: "maxroutingfee",
 			Usage: "the maximum percentage of off-chain payment " +
 				"volume that we are willing to pay in routing" +
 				"fees.",
 		},
-		cli.Float64Flag{
+		&cli.Float64Flag{
 			Name: "maxprepayfee",
 			Usage: "the maximum percentage of off-chain prepay " +
 				"volume that we are willing to pay in " +
 				"routing fees.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "maxprepay",
 			Usage: "the maximum no-show (prepay) in satoshis that " +
 				"swap suggestions should be limited to.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "maxminer",
 			Usage: "the maximum miner fee in satoshis that swap " +
 				"suggestions should be limited to.",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "sweepconf",
 			Usage: "the number of blocks from htlc height that " +
 				"swap suggestion sweeps should target, used " +
 				"to estimate max miner fee.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "failurebackoff",
 			Usage: "the amount of time, in seconds, that " +
 				"should pass before a channel that " +
 				"previously had a failed swap will be " +
 				"included in suggestions.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "autoloop",
 			Usage: "set to true to enable automated dispatch " +
 				"of swaps, limited to the budget set by " +
 				"autobudget.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "destaddr",
 			Usage: "custom address to be used as destination for " +
 				"autoloop loop out, set to \"default\" in " +
 				"order to revert to default behavior.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "account",
 			Usage: "the name of the account to generate a new " +
 				"address from. You can list the names of " +
@@ -300,74 +300,74 @@ var setParamsCommand = cli.Command{
 				"instance with \"lncli wallet accounts list\".",
 			Value: "",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "account_addr_type",
 			Usage: "the address type of the extended public key " +
 				"specified in account. Currently only " +
 				"pay-to-taproot-pubkey(p2tr) is supported",
 			Value: "p2tr",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "autobudget",
 			Usage: "the maximum amount of fees in satoshis that " +
 				"automatically dispatched loop out swaps may " +
 				"spend.",
 		},
-		cli.DurationFlag{
+		&cli.DurationFlag{
 			Name: "autobudgetrefreshperiod",
 			Usage: "the time period over which the automated " +
 				"loop budget is refreshed.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "autoinflight",
 			Usage: "the maximum number of automatically " +
 				"dispatched swaps that we allow to be in " +
 				"flight.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "minamt",
 			Usage: "the minimum amount in satoshis that the " +
 				"autoloop client will dispatch per-swap.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "maxamt",
 			Usage: "the maximum amount in satoshis that the " +
 				"autoloop client will dispatch per-swap.",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name: "htlc_conf",
 			Usage: "the confirmation target for loop in on-chain " +
 				"htlcs.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "easyautoloop",
 			Usage: "set to true to enable easy autoloop, which " +
 				"will automatically dispatch swaps in order " +
 				"to meet the target local balance.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "localbalancesat",
 			Usage: "the target size of total local balance in " +
 				"satoshis, used by easy autoloop.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "asset_easyautoloop",
 			Usage: "set to true to enable asset easy autoloop, which " +
 				"will automatically dispatch asset swaps in order " +
 				"to meet the target local balance.",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "asset_id",
 			Usage: "If set to a valid asset ID, the easyautoloop " +
 				"and localbalancesat flags will be set for the " +
 				"specified asset.",
 		},
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "asset_localbalance",
 			Usage: "the target size of total local balance in " +
 				"asset units, used by asset easy autoloop.",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "fast",
 			Usage: "if set new swaps are expected to be " +
 				"published immediately, paying a potentially " +
@@ -381,8 +381,8 @@ var setParamsCommand = cli.Command{
 	Action: setParams,
 }
 
-func setParams(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func setParams(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func setParams(ctx *cli.Context) error {
 	// SetParameters. To allow users to set only individual fields on the
 	// cli, we lookup our current params, then update individual values.
 	params, err := client.GetLiquidityParams(
-		context.Background(), &looprpc.GetLiquidityParamsRequest{},
+		ctx, &looprpc.GetLiquidityParamsRequest{},
 	)
 	if err != nil {
 		return err
@@ -403,8 +403,8 @@ func setParams(ctx *cli.Context) error {
 	// Update our existing parameters with the values provided by cli flags.
 	// Our fee categories and fee percentage are exclusive, so track which
 	// flags are set to ensure that we don't have nonsensical overlap.
-	if ctx.IsSet("maxswapfee") {
-		feeRate := ctx.Float64("maxswapfee")
+	if cmd.IsSet("maxswapfee") {
+		feeRate := cmd.Float64("maxswapfee")
 		params.MaxSwapFeePpm, err = ppmFromPercentage(feeRate)
 		if err != nil {
 			return err
@@ -414,16 +414,16 @@ func setParams(ctx *cli.Context) error {
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("sweeplimit") {
-		satPerVByte := ctx.Int("sweeplimit")
+	if cmd.IsSet("sweeplimit") {
+		satPerVByte := cmd.Int("sweeplimit")
 		params.SweepFeeRateSatPerVbyte = uint64(satPerVByte)
 
 		flagSet = true
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("feepercent") {
-		feeRate := ctx.Float64("feepercent")
+	if cmd.IsSet("feepercent") {
+		feeRate := cmd.Float64("feepercent")
 		params.FeePpm, err = ppmFromPercentage(feeRate)
 		if err != nil {
 			return err
@@ -433,8 +433,8 @@ func setParams(ctx *cli.Context) error {
 		feePercentSet = true
 	}
 
-	if ctx.IsSet("maxroutingfee") {
-		feeRate := ctx.Float64("maxroutingfee")
+	if cmd.IsSet("maxroutingfee") {
+		feeRate := cmd.Float64("maxroutingfee")
 		params.MaxRoutingFeePpm, err = ppmFromPercentage(feeRate)
 		if err != nil {
 			return err
@@ -444,8 +444,8 @@ func setParams(ctx *cli.Context) error {
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("maxprepayfee") {
-		feeRate := ctx.Float64("maxprepayfee")
+	if cmd.IsSet("maxprepayfee") {
+		feeRate := cmd.Float64("maxprepayfee")
 		params.MaxPrepayRoutingFeePpm, err = ppmFromPercentage(feeRate)
 		if err != nil {
 			return err
@@ -455,59 +455,59 @@ func setParams(ctx *cli.Context) error {
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("maxprepay") {
-		params.MaxPrepaySat = ctx.Uint64("maxprepay")
+	if cmd.IsSet("maxprepay") {
+		params.MaxPrepaySat = cmd.Uint64("maxprepay")
 		flagSet = true
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("maxminer") {
-		params.MaxMinerFeeSat = ctx.Uint64("maxminer")
+	if cmd.IsSet("maxminer") {
+		params.MaxMinerFeeSat = cmd.Uint64("maxminer")
 		flagSet = true
 		categoriesSet = true
 	}
 
-	if ctx.IsSet("sweepconf") {
-		params.SweepConfTarget = int32(ctx.Int("sweepconf"))
+	if cmd.IsSet("sweepconf") {
+		params.SweepConfTarget = int32(cmd.Int("sweepconf"))
 		flagSet = true
 	}
 
-	if ctx.IsSet("failurebackoff") {
-		params.FailureBackoffSec = ctx.Uint64("failurebackoff")
+	if cmd.IsSet("failurebackoff") {
+		params.FailureBackoffSec = cmd.Uint64("failurebackoff")
 		flagSet = true
 	}
 
-	if ctx.IsSet("autoloop") {
-		params.Autoloop = ctx.Bool("autoloop")
+	if cmd.IsSet("autoloop") {
+		params.Autoloop = cmd.Bool("autoloop")
 		flagSet = true
 	}
 
-	if ctx.IsSet("autobudget") {
-		params.AutoloopBudgetSat = ctx.Uint64("autobudget")
+	if cmd.IsSet("autobudget") {
+		params.AutoloopBudgetSat = cmd.Uint64("autobudget")
 		flagSet = true
 	}
 
 	switch {
-	case ctx.IsSet("destaddr") && ctx.IsSet("account"):
+	case cmd.IsSet("destaddr") && cmd.IsSet("account"):
 		return fmt.Errorf("cannot set destaddr and account at the " +
 			"same time")
 
-	case ctx.IsSet("destaddr"):
-		params.AutoloopDestAddress = ctx.String("destaddr")
+	case cmd.IsSet("destaddr"):
+		params.AutoloopDestAddress = cmd.String("destaddr")
 		params.Account = ""
 		flagSet = true
 
-	case ctx.IsSet("account") != ctx.IsSet("account_addr_type"):
+	case cmd.IsSet("account") != cmd.IsSet("account_addr_type"):
 		return liquidity.ErrAccountAndAddrType
 
-	case ctx.IsSet("account"):
-		params.Account = ctx.String("account")
+	case cmd.IsSet("account"):
+		params.Account = cmd.String("account")
 		params.AutoloopDestAddress = ""
 		flagSet = true
 	}
 
-	if ctx.IsSet("account_addr_type") {
-		switch ctx.String("account_addr_type") {
+	if cmd.IsSet("account_addr_type") {
+		switch cmd.String("account_addr_type") {
 		case "p2tr":
 			params.AccountAddrType = looprpc.AddressType_TAPROOT_PUBKEY
 
@@ -516,78 +516,78 @@ func setParams(ctx *cli.Context) error {
 		}
 	}
 
-	if ctx.IsSet("autobudgetrefreshperiod") {
+	if cmd.IsSet("autobudgetrefreshperiod") {
 		params.AutoloopBudgetRefreshPeriodSec =
-			uint64(ctx.Duration("autobudgetrefreshperiod").Seconds())
+			uint64(cmd.Duration("autobudgetrefreshperiod").Seconds())
 		flagSet = true
 	}
 
-	if ctx.IsSet("autoinflight") {
-		params.AutoMaxInFlight = ctx.Uint64("autoinflight")
+	if cmd.IsSet("autoinflight") {
+		params.AutoMaxInFlight = cmd.Uint64("autoinflight")
 		flagSet = true
 	}
 
-	if ctx.IsSet("minamt") {
-		params.MinSwapAmount = ctx.Uint64("minamt")
+	if cmd.IsSet("minamt") {
+		params.MinSwapAmount = cmd.Uint64("minamt")
 		flagSet = true
 	}
 
-	if ctx.IsSet("maxamt") {
-		params.MaxSwapAmount = ctx.Uint64("maxamt")
+	if cmd.IsSet("maxamt") {
+		params.MaxSwapAmount = cmd.Uint64("maxamt")
 		flagSet = true
 	}
 
-	if ctx.IsSet("htlc_conf") {
-		params.HtlcConfTarget = int32(ctx.Int("htlc_conf"))
+	if cmd.IsSet("htlc_conf") {
+		params.HtlcConfTarget = int32(cmd.Int("htlc_conf"))
 		flagSet = true
 	}
 
 	// If we are setting easy autoloop parameters, we need to ensure that
 	// the asset ID is set, and that we have a valid entry in our params
 	// map.
-	if ctx.IsSet("asset_id") {
+	if cmd.IsSet("asset_id") {
 		if params.EasyAssetParams == nil {
 			params.EasyAssetParams = make(
 				map[string]*looprpc.EasyAssetAutoloopParams,
 			)
 		}
-		if _, ok := params.EasyAssetParams[ctx.String("asset_id")]; !ok { //nolint:lll
-			params.EasyAssetParams[ctx.String("asset_id")] =
+		if _, ok := params.EasyAssetParams[cmd.String("asset_id")]; !ok { //nolint:lll
+			params.EasyAssetParams[cmd.String("asset_id")] =
 				&looprpc.EasyAssetAutoloopParams{}
 		}
 	}
 
-	if ctx.IsSet("easyautoloop") {
-		params.EasyAutoloop = ctx.Bool("easyautoloop")
+	if cmd.IsSet("easyautoloop") {
+		params.EasyAutoloop = cmd.Bool("easyautoloop")
 		flagSet = true
 	}
 
-	if ctx.IsSet("localbalancesat") {
-		params.EasyAutoloopLocalTargetSat = ctx.Uint64("localbalancesat")
+	if cmd.IsSet("localbalancesat") {
+		params.EasyAutoloopLocalTargetSat = cmd.Uint64("localbalancesat")
 		flagSet = true
 	}
 
-	if ctx.IsSet("asset_easyautoloop") {
-		if !ctx.IsSet("asset_id") {
+	if cmd.IsSet("asset_easyautoloop") {
+		if !cmd.IsSet("asset_id") {
 			return fmt.Errorf("asset_id must be set to use " +
 				"asset_easyautoloop")
 		}
-		params.EasyAssetParams[ctx.String("asset_id")].
-			Enabled = ctx.Bool("asset_easyautoloop")
+		params.EasyAssetParams[cmd.String("asset_id")].
+			Enabled = cmd.Bool("asset_easyautoloop")
 		flagSet = true
 	}
 
-	if ctx.IsSet("asset_localbalance") {
-		if !ctx.IsSet("asset_id") {
+	if cmd.IsSet("asset_localbalance") {
+		if !cmd.IsSet("asset_id") {
 			return fmt.Errorf("asset_id must be set to use " +
 				"asset_localbalance")
 		}
-		params.EasyAssetParams[ctx.String("asset_id")].
-			LocalTargetAssetAmt = ctx.Uint64("asset_localbalance")
+		params.EasyAssetParams[cmd.String("asset_id")].
+			LocalTargetAssetAmt = cmd.Uint64("asset_localbalance")
 		flagSet = true
 	}
 
-	if ctx.IsSet("fast") {
+	if cmd.IsSet("fast") {
 		params.FastSwapPublication = true
 	}
 
@@ -619,7 +619,7 @@ func setParams(ctx *cli.Context) error {
 	}
 	// Update our parameters to our mutated values.
 	_, err = client.SetLiquidityParams(
-		context.Background(), &looprpc.SetLiquidityParamsRequest{
+		ctx, &looprpc.SetLiquidityParamsRequest{
 			Parameters: params,
 		},
 	)
@@ -637,7 +637,7 @@ func ppmFromPercentage(percentage float64) (uint64, error) {
 	return uint64(percentage / 100 * liquidity.FeeBase), nil
 }
 
-var suggestSwapCommand = cli.Command{
+var suggestSwapCommand = &cli.Command{
 	Name:  "suggestswaps",
 	Usage: "show a list of suggested swaps",
 	Description: "Displays a list of suggested swaps that aim to obtain " +
@@ -646,15 +646,15 @@ var suggestSwapCommand = cli.Command{
 	Action: suggestSwap,
 }
 
-func suggestSwap(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func suggestSwap(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.SuggestSwaps(
-		context.Background(), &looprpc.SuggestSwapsRequest{},
+		ctx, &looprpc.SuggestSwapsRequest{},
 	)
 	if err == nil {
 		printRespJSON(resp)

@@ -34,7 +34,8 @@ require (
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.10.0
-	github.com/urfave/cli v1.22.14
+	github.com/urfave/cli-docs/v3 v3.1.0
+	github.com/urfave/cli/v3 v3.4.1
 	go.etcd.io/bbolt v1.3.11
 	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.64.1

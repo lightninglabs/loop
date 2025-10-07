@@ -14,23 +14,23 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var quoteCommand = cli.Command{
-	Name:        "quote",
-	Usage:       "get a quote for the cost of a swap",
-	Subcommands: []cli.Command{quoteInCommand, quoteOutCommand},
+var quoteCommand = &cli.Command{
+	Name:     "quote",
+	Usage:    "get a quote for the cost of a swap",
+	Commands: []*cli.Command{quoteInCommand, quoteOutCommand},
 }
 
-var quoteInCommand = cli.Command{
+var quoteInCommand = &cli.Command{
 	Name:      "in",
 	Usage:     "get a quote for the cost of a loop in swap",
 	ArgsUsage: "amt",
 	Description: "Allows to determine the cost of a swap up front." +
 		"Either specify an amount or deposit outpoints.",
 	Flags: []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: lastHopFlag.Name,
 			Usage: "the pubkey of the last hop to use for the " +
 				"quote",
@@ -39,7 +39,7 @@ var quoteInCommand = cli.Command{
 		verboseFlag,
 		privateFlag,
 		routeHintsFlag,
-		cli.StringSliceFlag{
+		&cli.StringSliceFlag{
 			Name: "deposit_outpoint",
 			Usage: "one or more static address deposit outpoints " +
 				"to quote for. Deposit outpoints are not to " +
@@ -51,10 +51,10 @@ var quoteInCommand = cli.Command{
 	Action: quoteIn,
 }
 
-func quoteIn(ctx *cli.Context) error {
+func quoteIn(ctx context.Context, cmd *cli.Command) error {
 	// Show command help if the incorrect number arguments was provided.
-	if ctx.NArg() != 1 && !ctx.IsSet("deposit_outpoint") {
-		return cli.ShowCommandHelp(ctx, "in")
+	if cmd.NArg() != 1 && !cmd.IsSet("deposit_outpoint") {
+		return showCommandHelp(ctx, cmd)
 	}
 
 	var (
@@ -62,18 +62,17 @@ func quoteIn(ctx *cli.Context) error {
 		depositAmt       btcutil.Amount
 		depositOutpoints []string
 		err              error
-		ctxb             = context.Background()
 	)
 
-	if ctx.NArg() == 1 {
-		args := ctx.Args()
-		manualAmt, err = parseAmt(args[0])
+	if cmd.NArg() == 1 {
+		args := cmd.Args()
+		manualAmt, err = parseAmt(args.First())
 		if err != nil {
 			return err
 		}
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -81,14 +80,14 @@ func quoteIn(ctx *cli.Context) error {
 
 	// Private and routehints are mutually exclusive as setting private
 	// means we retrieve our own routehints from the connected node.
-	hints, err := validateRouteHints(ctx)
+	hints, err := validateRouteHints(cmd)
 	if err != nil {
 		return err
 	}
 
-	if ctx.IsSet("deposit_outpoint") {
-		depositOutpoints = ctx.StringSlice("deposit_outpoint")
-		depositAmt, err = depositAmount(ctxb, client, depositOutpoints)
+	if cmd.IsSet("deposit_outpoint") {
+		depositOutpoints = cmd.StringSlice("deposit_outpoint")
+		depositAmt, err = depositAmount(ctx, client, depositOutpoints)
 		if err != nil {
 			return err
 		}
@@ -96,15 +95,15 @@ func quoteIn(ctx *cli.Context) error {
 
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:              int64(manualAmt),
-		ConfTarget:       int32(ctx.Uint64("conf_target")),
+		ConfTarget:       int32(cmd.Uint64("conf_target")),
 		LoopInRouteHints: hints,
-		Private:          ctx.Bool(privateFlag.Name),
+		Private:          cmd.Bool(privateFlag.Name),
 		DepositOutpoints: depositOutpoints,
 	}
 
-	if ctx.IsSet(lastHopFlag.Name) {
+	if cmd.IsSet(lastHopFlag.Name) {
 		lastHopVertex, err := route.NewVertexFromStr(
-			ctx.String(lastHopFlag.Name),
+			cmd.String(lastHopFlag.Name),
 		)
 		if err != nil {
 			return err
@@ -113,7 +112,7 @@ func quoteIn(ctx *cli.Context) error {
 		quoteReq.LoopInLastHop = lastHopVertex[:]
 	}
 
-	quoteResp, err := client.GetLoopInQuote(ctxb, quoteReq)
+	quoteResp, err := client.GetLoopInQuote(ctx, quoteReq)
 	if err != nil {
 		return err
 	}
@@ -136,7 +135,7 @@ func quoteIn(ctx *cli.Context) error {
 	if manualAmt == 0 {
 		quoteReq.Amt = int64(depositAmt)
 	}
-	printQuoteInResp(quoteReq, quoteResp, ctx.Bool("verbose"))
+	printQuoteInResp(quoteReq, quoteResp, cmd.Bool("verbose"))
 	return nil
 }
 
@@ -160,20 +159,20 @@ func depositAmount(ctx context.Context, client looprpc.SwapClientClient,
 	return depositAmt, nil
 }
 
-var quoteOutCommand = cli.Command{
+var quoteOutCommand = &cli.Command{
 	Name:        "out",
 	Usage:       "get a quote for the cost of a loop out swap",
 	ArgsUsage:   "amt",
 	Description: "Allows to determine the cost of a swap up front",
 	Flags: []cli.Flag{
-		cli.Uint64Flag{
+		&cli.Uint64Flag{
 			Name: "conf_target",
 			Usage: "the number of blocks from the swap " +
 				"initiation height that the on-chain HTLC " +
 				"should be swept within in a Loop Out",
 			Value: uint64(loop.DefaultSweepConfTarget),
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name: "fast",
 			Usage: "Indicate you want to swap immediately, " +
 				"paying potentially a higher fee. If not " +
@@ -188,42 +187,41 @@ var quoteOutCommand = cli.Command{
 	Action: quoteOut,
 }
 
-func quoteOut(ctx *cli.Context) error {
+func quoteOut(ctx context.Context, cmd *cli.Command) error {
 	// Show command help if the incorrect number arguments was provided.
-	if ctx.NArg() != 1 {
-		return cli.ShowCommandHelp(ctx, "out")
+	if cmd.NArg() != 1 {
+		return showCommandHelp(ctx, cmd)
 	}
 
-	args := ctx.Args()
-	amt, err := parseAmt(args[0])
+	args := cmd.Args()
+	amt, err := parseAmt(args.First())
 	if err != nil {
 		return err
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	fast := ctx.Bool("fast")
+	fast := cmd.Bool("fast")
 	swapDeadline := time.Now()
 	if !fast {
 		swapDeadline = time.Now().Add(defaultSwapWaitTime)
 	}
 
-	ctxb := context.Background()
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:                     int64(amt),
-		ConfTarget:              int32(ctx.Uint64("conf_target")),
+		ConfTarget:              int32(cmd.Uint64("conf_target")),
 		SwapPublicationDeadline: uint64(swapDeadline.Unix()),
 	}
-	quoteResp, err := client.LoopOutQuote(ctxb, quoteReq)
+	quoteResp, err := client.LoopOutQuote(ctx, quoteReq)
 	if err != nil {
 		return err
 	}
 
-	printQuoteOutResp(quoteReq, quoteResp, ctx.Bool("verbose"))
+	printQuoteOutResp(quoteReq, quoteResp, cmd.Bool("verbose"))
 	return nil
 }
 

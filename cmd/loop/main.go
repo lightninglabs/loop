@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
@@ -50,44 +51,46 @@ var (
 	// user agent string we send when using the command line utility.
 	defaultInitiator = "loop-cli"
 
-	loopDirFlag = cli.StringFlag{
-		Name:   "loopdir",
-		Value:  loopd.LoopDirBase,
-		Usage:  "path to loop's base directory",
-		EnvVar: envVarLoopDir,
+	loopDirFlag = &cli.StringFlag{
+		Name:    "loopdir",
+		Value:   loopd.LoopDirBase,
+		Usage:   "path to loop's base directory",
+		Sources: cli.EnvVars(envVarLoopDir),
 	}
-	networkFlag = cli.StringFlag{
-		Name: "network, n",
-		Usage: "the network loop is running on e.g. mainnet, " +
-			"testnet, etc.",
-		Value:  loopd.DefaultNetwork,
-		EnvVar: envVarNetwork,
-	}
-
-	tlsCertFlag = cli.StringFlag{
-		Name:   "tlscertpath",
-		Usage:  "path to loop's TLS certificate",
-		Value:  loopd.DefaultTLSCertPath,
-		EnvVar: envVarTLSCertPath,
-	}
-	macaroonPathFlag = cli.StringFlag{
-		Name:   "macaroonpath",
-		Usage:  "path to macaroon file",
-		Value:  loopd.DefaultMacaroonPath,
-		EnvVar: envVarMacaroonPath,
-	}
-	verboseFlag = cli.BoolFlag{
-		Name:  "verbose, v",
-		Usage: "show expanded details",
+	networkFlag = &cli.StringFlag{
+		Name:    "network",
+		Aliases: []string{"n"},
+		Usage:   "the network loop is running on e.g. mainnet, testnet, etc.",
+		Value:   loopd.DefaultNetwork,
+		Sources: cli.EnvVars(envVarNetwork),
 	}
 
-	commands = []cli.Command{
+	tlsCertFlag = &cli.StringFlag{
+		Name:    "tlscertpath",
+		Usage:   "path to loop's TLS certificate",
+		Value:   loopd.DefaultTLSCertPath,
+		Sources: cli.EnvVars(envVarTLSCertPath),
+	}
+	macaroonPathFlag = &cli.StringFlag{
+		Name:    "macaroonpath",
+		Usage:   "path to macaroon file",
+		Value:   loopd.DefaultMacaroonPath,
+		Sources: cli.EnvVars(envVarMacaroonPath),
+	}
+	verboseFlag = &cli.BoolFlag{
+		Name:    "verbose",
+		Aliases: []string{"v"},
+		Usage:   "show expanded details",
+	}
+
+	commands = []*cli.Command{
 		loopOutCommand, loopInCommand, termsCommand,
 		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,
 		instantOutCommand, listInstantOutsCommand,
+		printManCommand, printMarkdownCommand,
 	}
 )
 
@@ -160,38 +163,40 @@ func fatal(err error) {
 }
 
 func main() {
-	app := cli.NewApp()
-
-	app.Version = loop.RichVersion()
-	app.Name = "loop"
-	app.Usage = "control plane for your loopd"
-	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:   "rpcserver",
-			Value:  "localhost:11010",
-			Usage:  "loopd daemon address host:port",
-			EnvVar: envVarRPCServer,
+	rootCmd := &cli.Command{
+		Name:    "loop",
+		Usage:   "control plane for your loopd",
+		Version: loop.RichVersion(),
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "rpcserver",
+				Value:   "localhost:11010",
+				Usage:   "loopd daemon address host:port",
+				Sources: cli.EnvVars(envVarRPCServer),
+			},
+			networkFlag,
+			loopDirFlag,
+			tlsCertFlag,
+			macaroonPathFlag,
 		},
-		networkFlag,
-		loopDirFlag,
-		tlsCertFlag,
-		macaroonPathFlag,
+		Commands: commands,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return cli.ShowRootCommandHelp(cmd)
+		},
 	}
-	app.Commands = commands
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
 		fatal(err)
 	}
 }
 
-func getClient(ctx *cli.Context) (looprpc.SwapClientClient, func(), error) {
-	rpcServer := ctx.GlobalString("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(ctx)
+func getClient(ctx context.Context, cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
+	rpcServer := cmd.String("rpcserver")
+	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, err := getClientConn(ctx, rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -207,11 +212,11 @@ func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
 
 // extractPathArgs parses the TLS certificate and macaroon paths from the
 // command.
-func extractPathArgs(ctx *cli.Context) (string, string, error) {
+func extractPathArgs(cmd *cli.Command) (string, string, error) {
 	// We'll start off by parsing the network. This is needed to determine
 	// the correct path to the TLS certificate and macaroon when not
 	// specified.
-	networkStr := strings.ToLower(ctx.GlobalString("network"))
+	networkStr := strings.ToLower(cmd.String("network"))
 	_, err := lndclient.Network(networkStr).ChainParams()
 	if err != nil {
 		return "", "", err
@@ -220,12 +225,12 @@ func extractPathArgs(ctx *cli.Context) (string, string, error) {
 	// We'll now fetch the loopdir so we can make a decision on how to
 	// properly read the macaroons and also the cert. This will either be
 	// the default, or will have been overwritten by the end user.
-	loopDir := lncfg.CleanAndExpandPath(ctx.GlobalString(loopDirFlag.Name))
+	loopDir := lncfg.CleanAndExpandPath(cmd.String(loopDirFlag.Name))
 
-	tlsCertPathRaw := ctx.GlobalString(tlsCertFlag.Name)
+	tlsCertPathRaw := cmd.String(tlsCertFlag.Name)
 	tlsCertPath := lncfg.CleanAndExpandPath(tlsCertPathRaw)
 
-	macPathRaw := ctx.GlobalString(macaroonPathFlag.Name)
+	macPathRaw := cmd.String(macaroonPathFlag.Name)
 	macPath := lncfg.CleanAndExpandPath(macPathRaw)
 
 	// If a custom loop directory or network was set, we'll also check if
@@ -361,8 +366,13 @@ func displayOutDetails(l *outLimits, warning string, req *looprpc.QuoteRequest,
 func parseAmt(text string) (btcutil.Amount, error) {
 	amtInt64, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid amt value")
+		return 0, fmt.Errorf("invalid amt value %q", text)
 	}
+
+	if amtInt64 < 0 {
+		return 0, fmt.Errorf("negative amount %d", amtInt64)
+	}
+
 	return btcutil.Amount(amtInt64), nil
 }
 
@@ -405,7 +415,7 @@ func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Println()
 }
 
-func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
+func getClientConn(ctx context.Context, address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	error) {
 
 	// We always need to send a macaroon.
@@ -427,7 +437,7 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
-	conn, err := grpc.Dial(address, opts...)
+	conn, err := grpc.DialContext(ctx, address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to RPC server: %v",
 			err)

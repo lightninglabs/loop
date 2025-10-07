@@ -6,17 +6,17 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var termsCommand = cli.Command{
+var termsCommand = &cli.Command{
 	Name:   "terms",
 	Usage:  "Display the current swap terms imposed by the server.",
 	Action: terms,
 }
 
-func terms(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func terms(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -31,7 +31,7 @@ func terms(ctx *cli.Context) error {
 	fmt.Println("Loop Out")
 	fmt.Println("--------")
 	req := &looprpc.TermsRequest{}
-	loopOutTerms, err := client.LoopOutTerms(context.Background(), req)
+	loopOutTerms, err := client.LoopOutTerms(ctx, req)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -49,7 +49,7 @@ func terms(ctx *cli.Context) error {
 	fmt.Println("Loop In")
 	fmt.Println("------")
 	loopInTerms, err := client.GetLoopInTerms(
-		context.Background(), &looprpc.TermsRequest{},
+		ctx, &looprpc.TermsRequest{},
 	)
 	if err != nil {
 		fmt.Println(err)

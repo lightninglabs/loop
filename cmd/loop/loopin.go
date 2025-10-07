@@ -3,52 +3,53 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightningnetwork/lnd/routing/route"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
 var (
-	lastHopFlag = cli.StringFlag{
+	lastHopFlag = &cli.StringFlag{
 		Name:  "last_hop",
 		Usage: "the pubkey of the last hop to use for this swap",
 	}
 
-	confTargetFlag = cli.Uint64Flag{
+	confTargetFlag = &cli.Uint64Flag{
 		Name: "conf_target",
 		Usage: "the target number of blocks the on-chain htlc " +
 			"broadcast by the swap client should confirm within",
 	}
 
-	labelFlag = cli.StringFlag{
+	labelFlag = &cli.StringFlag{
 		Name: "label",
 		Usage: fmt.Sprintf("an optional label for this swap,"+
 			"limited to %v characters. The label may not start "+
 			"with our reserved prefix: %v.",
 			labels.MaxLength, labels.Reserved),
 	}
-	routeHintsFlag = cli.StringSliceFlag{
+	routeHintsFlag = &cli.StringSliceFlag{
 		Name: "route_hints",
 		Usage: "route hints that can each be individually used " +
 			"to assist in reaching the invoice's destination",
 	}
-	privateFlag = cli.BoolFlag{
+	privateFlag = &cli.BoolFlag{
 		Name: "private",
 		Usage: "generates and passes routehints. Should be used if " +
 			"the connected node is only reachable via private " +
 			"channels",
 	}
 
-	forceFlag = cli.BoolFlag{
+	forceFlag = &cli.BoolFlag{
 		Name: "force, f",
 		Usage: "Assumes yes during confirmation. Using this option " +
 			"will result in an immediate swap",
 	}
 
-	loopInCommand = cli.Command{
+	loopInCommand = &cli.Command{
 		Name:      "in",
 		Usage:     "perform an on-chain to off-chain swap (loop in)",
 		ArgsUsage: "amt",
@@ -65,14 +66,14 @@ var (
 		conf_target flag.
 		`,
 		Flags: []cli.Flag{
-			cli.Uint64Flag{
+			&cli.Uint64Flag{
 				Name: "amt",
 				Usage: "the amount in satoshis to loop in. " +
 					"To check for the minimum and " +
 					"maximum amounts to loop " +
 					"in please consult \"loop terms\"",
 			},
-			cli.BoolFlag{
+			&cli.BoolFlag{
 				Name:  "external",
 				Usage: "expect htlc to be published externally",
 			},
@@ -88,18 +89,18 @@ var (
 	}
 )
 
-func loopIn(ctx *cli.Context) error {
-	args := ctx.Args()
+func loopIn(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
 
 	var amtStr string
 	switch {
-	case ctx.IsSet("amt"):
-		amtStr = ctx.String("amt")
-	case ctx.NArg() == 1:
-		amtStr = args[0]
+	case cmd.IsSet("amt"):
+		amtStr = strconv.FormatUint(cmd.Uint64("amt"), 10)
+	case cmd.NArg() == 1:
+		amtStr = args.First()
 	default:
 		// Show command help if no arguments and flags were provided.
-		return cli.ShowCommandHelp(ctx, "in")
+		return showCommandHelp(ctx, cmd)
 	}
 
 	amt, err := parseAmt(amtStr)
@@ -107,14 +108,14 @@ func loopIn(ctx *cli.Context) error {
 		return err
 	}
 
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	external := ctx.Bool("external")
-	htlcConfTarget := int32(ctx.Uint64(confTargetFlag.Name))
+	external := cmd.Bool("external")
+	htlcConfTarget := int32(cmd.Uint64(confTargetFlag.Name))
 
 	// External and confirmation target are mutually exclusive; either the
 	// on chain htlc is being externally broadcast, or we are creating the
@@ -125,15 +126,15 @@ func loopIn(ctx *cli.Context) error {
 	}
 
 	// Validate our label early so that we can fail before getting a quote.
-	label := ctx.String(labelFlag.Name)
+	label := cmd.String(labelFlag.Name)
 	if err := labels.Validate(label); err != nil {
 		return err
 	}
 
 	var lastHop []byte
-	if ctx.IsSet(lastHopFlag.Name) {
+	if cmd.IsSet(lastHopFlag.Name) {
 		lastHopVertex, err := route.NewVertexFromStr(
-			ctx.String(lastHopFlag.Name),
+			cmd.String(lastHopFlag.Name),
 		)
 		if err != nil {
 			return err
@@ -144,7 +145,7 @@ func loopIn(ctx *cli.Context) error {
 
 	// Private and routehints are mutually exclusive as setting private
 	// means we retrieve our own routehints from the connected node.
-	hints, err := validateRouteHints(ctx)
+	hints, err := validateRouteHints(cmd)
 	if err != nil {
 		return err
 	}
@@ -155,10 +156,10 @@ func loopIn(ctx *cli.Context) error {
 		ExternalHtlc:     external,
 		LoopInLastHop:    lastHop,
 		LoopInRouteHints: hints,
-		Private:          ctx.Bool(privateFlag.Name),
+		Private:          cmd.Bool(privateFlag.Name),
 	}
 
-	quote, err := client.GetLoopInQuote(context.Background(), quoteReq)
+	quote, err := client.GetLoopInQuote(ctx, quoteReq)
 	if err != nil {
 		return err
 	}
@@ -180,8 +181,8 @@ func loopIn(ctx *cli.Context) error {
 	limits := getInLimits(quote)
 
 	// Skip showing details if configured
-	if !(ctx.Bool("force") || ctx.Bool("f")) {
-		err = displayInDetails(quoteReq, quote, ctx.Bool("verbose"))
+	if !(cmd.Bool("force") || cmd.Bool("f")) {
+		err = displayInDetails(quoteReq, quote, cmd.Bool("verbose"))
 		if err != nil {
 			return err
 		}
@@ -197,10 +198,10 @@ func loopIn(ctx *cli.Context) error {
 		Initiator:      defaultInitiator,
 		LastHop:        lastHop,
 		RouteHints:     hints,
-		Private:        ctx.Bool(privateFlag.Name),
+		Private:        cmd.Bool(privateFlag.Name),
 	}
 
-	resp, err := client.LoopIn(context.Background(), req)
+	resp, err := client.LoopIn(ctx, req)
 	if err != nil {
 		return err
 	}

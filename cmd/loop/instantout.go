@@ -9,10 +9,10 @@ import (
 
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var instantOutCommand = cli.Command{
+var instantOutCommand = &cli.Command{
 	Name:  "instantout",
 	Usage: "perform an instant off-chain to on-chain swap (looping out)",
 	Description: `
@@ -20,12 +20,12 @@ var instantOutCommand = cli.Command{
 	will be chosen via the cli.
 	`,
 	Flags: []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "channel",
 			Usage: "the comma-separated list of short " +
 				"channel IDs of the channels to loop out",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: "addr",
 			Usage: "the optional address that the looped out funds " +
 				"should be sent to, if let blank the funds " +
@@ -35,13 +35,13 @@ var instantOutCommand = cli.Command{
 	Action: instantOut,
 }
 
-func instantOut(ctx *cli.Context) error {
+func instantOut(ctx context.Context, cmd *cli.Command) error {
 	// Parse outgoing channel set. Don't string split if the flag is empty.
 	// Otherwise, strings.Split returns a slice of length one with an empty
 	// element.
 	var outgoingChanSet []uint64
-	if ctx.IsSet("channel") {
-		chanStrings := strings.Split(ctx.String("channel"), ",")
+	if cmd.IsSet("channel") {
+		chanStrings := strings.Split(cmd.String("channel"), ",")
 		for _, chanString := range chanStrings {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
@@ -53,7 +53,7 @@ func instantOut(ctx *cli.Context) error {
 	}
 
 	// First set up the swap client itself.
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func instantOut(ctx *cli.Context) error {
 
 	// Now we fetch all the confirmed reservations.
 	reservations, err := client.ListReservations(
-		context.Background(), &looprpc.ListReservationsRequest{},
+		ctx, &looprpc.ListReservationsRequest{},
 	)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func instantOut(ctx *cli.Context) error {
 	// Now that we have the selected reservations we can estimate the
 	// fee-rates.
 	quote, err := client.InstantOutQuote(
-		context.Background(), &looprpc.InstantOutQuoteRequest{
+		ctx, &looprpc.InstantOutQuoteRequest{
 			Amt:            selectedAmt,
 			ReservationIds: selectedReservations,
 		},
@@ -180,11 +180,11 @@ func instantOut(ctx *cli.Context) error {
 
 	// Now we can request the instant out swap.
 	instantOutRes, err := client.InstantOut(
-		context.Background(),
+		ctx,
 		&looprpc.InstantOutRequest{
 			ReservationIds:  selectedReservations,
 			OutgoingChanSet: outgoingChanSet,
-			DestAddr:        ctx.String("addr"),
+			DestAddr:        cmd.String("addr"),
 		},
 	)
 	if err != nil {
@@ -202,7 +202,7 @@ func instantOut(ctx *cli.Context) error {
 	return nil
 }
 
-var listInstantOutsCommand = cli.Command{
+var listInstantOutsCommand = &cli.Command{
 	Name:  "listinstantouts",
 	Usage: "list all instant out swaps",
 	Description: `
@@ -211,16 +211,16 @@ var listInstantOutsCommand = cli.Command{
 	Action: listInstantOuts,
 }
 
-func listInstantOuts(ctx *cli.Context) error {
+func listInstantOuts(ctx context.Context, cmd *cli.Command) error {
 	// First set up the swap client itself.
-	client, cleanup, err := getClient(ctx)
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	resp, err := client.ListInstantOuts(
-		context.Background(), &looprpc.ListInstantOutsRequest{},
+		ctx, &looprpc.ListInstantOutsRequest{},
 	)
 	if err != nil {
 		return err

@@ -5,25 +5,25 @@ import (
 	"fmt"
 
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
-var monitorCommand = cli.Command{
+var monitorCommand = &cli.Command{
 	Name:        "monitor",
 	Usage:       "monitor progress of any active swaps",
 	Description: "Allows the user to monitor progress of any active swaps",
 	Action:      monitor,
 }
 
-func monitor(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
+func monitor(ctx context.Context, cmd *cli.Command) error {
+	client, cleanup, err := getClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	stream, err := client.Monitor(
-		context.Background(), &looprpc.MonitorRequest{})
+		ctx, &looprpc.MonitorRequest{})
 	if err != nil {
 		return err
 	}
