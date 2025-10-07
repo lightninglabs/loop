@@ -22,6 +22,7 @@ var forceAutoloopCmd = cli.Command{
 	autoloop timer. THIS MUST NOT BE USED IN A PROD ENVIRONMENT.
 	`,
 	Action: forceAutoloop,
+	Hidden: true,
 }
 
 func forceAutoloop(ctx *cli.Context) error {
