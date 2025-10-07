@@ -229,23 +229,22 @@ func printQuoteInResp(req *looprpc.QuoteRequest,
 	resp *looprpc.InQuoteResponse, verbose bool) {
 
 	totalFee := resp.HtlcPublishFeeSat + resp.SwapFeeSat
+	amt := req.Amt
+	if amt == 0 {
+		amt = resp.QuotedAmt
+	}
 
 	if req.DepositOutpoints != nil {
-		if req.Amt == 0 {
-			fmt.Printf(satAmtFmt, "Previously deposited "+
-				"on-chain:", resp.QuotedAmt)
-		} else {
-			fmt.Printf(satAmtFmt, "Previously deposited "+
-				"on-chain:", req.Amt)
-		}
+		fmt.Printf(satAmtFmt, "Previously deposited on-chain:",
+			amt)
 	} else {
-		fmt.Printf(satAmtFmt, "Send on-chain:", req.Amt)
+		fmt.Printf(satAmtFmt, "Send on-chain:", amt)
 	}
-	fmt.Printf(satAmtFmt, "Receive off-chain:", req.Amt-totalFee)
+	fmt.Printf(satAmtFmt, "Receive off-chain:", amt-totalFee)
 
 	switch {
 	case req.ExternalHtlc && !verbose:
-		// If it's external then we don't know the miner fee hence the
+		// If it's external, then we don't know the miner fee hence the
 		// total cost.
 		fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
 
