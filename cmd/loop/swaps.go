@@ -110,11 +110,7 @@ func listSwaps(ctx *cli.Context) error {
 
 	// Parse start timestamp if set.
 	if ctx.IsSet("start_time_ns") {
-		startTimestamp, err := strconv.ParseInt(ctx.String("start_time_ns"), 10, 64)
-		if err != nil {
-			return fmt.Errorf("error parsing start timestamp: %w", err)
-		}
-		filter.StartTimestampNs = startTimestamp
+		filter.StartTimestampNs = ctx.Int64("start_time_ns")
 	}
 
 	resp, err := client.ListSwaps(
