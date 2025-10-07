@@ -1074,6 +1074,11 @@
           "type": "integer",
           "format": "int32",
           "description": "The confirmation target to be used to publish the on-chain HTLC."
+        },
+        "quoted_amt": {
+          "type": "string",
+          "format": "int64",
+          "description": "If the quote request was for a static address loop in and only contained\ndeposit outpoints the quote response will return the total amount of the\nselected deposits."
         }
       }
     },
