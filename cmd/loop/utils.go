@@ -22,10 +22,17 @@ func validateRouteHints(ctx *cli.Context) ([]*swapserverrpc.RouteHint, error) {
 			)
 		}
 
-		stringHints := []byte(ctx.String(routeHintsFlag.Name))
-		err := json.Unmarshal(stringHints, &hints)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse json: %v", err)
+		jsonHints := ctx.StringSlice(routeHintsFlag.Name)
+
+		hints := make([]*swapserverrpc.RouteHint, len(jsonHints))
+		for i, jsonHint := range jsonHints {
+			var h swapserverrpc.RouteHint
+			err := json.Unmarshal([]byte(jsonHint), &h)
+			if err != nil {
+				return nil, fmt.Errorf("unable to parse %d-th "+
+					"hint json %v: %w", i, jsonHint, err)
+			}
+			hints[i] = &h
 		}
 	}
 
