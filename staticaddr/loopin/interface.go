@@ -91,8 +91,8 @@ type QuoteGetter interface {
 	// GetLoopInQuote returns a quote for a loop-in swap.
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
 		pubKey route.Vertex, lastHop *route.Vertex,
-		routeHints [][]zpay32.HopHint,
-		initiator string, numDeposits uint32) (*loop.LoopInQuote, error)
+		routeHints [][]zpay32.HopHint, initiator string,
+		numDeposits uint32, fast bool) (*loop.LoopInQuote, error)
 }
 
 type NotificationManager interface {

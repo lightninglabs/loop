@@ -845,6 +845,13 @@ message QuoteRequest {
     This option only pertains to loop in swaps.
     */
     bool auto_select_deposits = 10;
+
+    /*
+    If set to true the server will immediately publish the swap in exchange for
+    a higher fee. This can be useful if the client expects change from a swap.
+    Note that this feature is only available for static address loop in swaps.
+    */
+    bool fast = 11;
 }
 
 message InQuoteResponse {
@@ -2116,6 +2123,9 @@ message StaticAddressLoopInRequest {
     canceled to allow the user to safe on transaction fees.
     */
     int64 amount = 9;
+
+    // If set, request the server to use fast publication behavior.
+    bool fast = 10;
 }
 
 message StaticAddressLoopInResponse {
