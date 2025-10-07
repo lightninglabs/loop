@@ -881,6 +881,13 @@ message InQuoteResponse {
     The confirmation target to be used to publish the on-chain HTLC.
     */
     int32 conf_target = 6;
+
+    /*
+    If the quote request was for a static address loop in and only contained
+    deposit outpoints the quote response will return the total amount of the
+    selected deposits.
+    */
+    int64 quoted_amt = 7;
 }
 
 message OutQuoteResponse {
