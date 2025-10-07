@@ -1043,6 +1043,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		HtlcPublishFeeSat: int64(quote.MinerFee),
 		SwapFeeSat:        int64(quote.SwapFee),
 		ConfTarget:        htlcConfTarget,
+		QuotedAmt:         int64(selectedAmount),
 	}, nil
 }
 
