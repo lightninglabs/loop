@@ -29,16 +29,16 @@ type testCase struct {
 func TestSelectDeposits(t *testing.T) {
 	d1, d2, d3, d4 := &deposit.Deposit{
 		Value:              1_000_000,
-		ConfirmationHeight: 1000,
+		ConfirmationHeight: 5_000,
 	}, &deposit.Deposit{
 		Value:              2_000_000,
-		ConfirmationHeight: 2000,
+		ConfirmationHeight: 5_001,
 	}, &deposit.Deposit{
 		Value:              3_000_000,
-		ConfirmationHeight: 3000,
+		ConfirmationHeight: 5_002,
 	}, &deposit.Deposit{
 		Value:              3_000_000,
-		ConfirmationHeight: 3001,
+		ConfirmationHeight: 5_003,
 	}
 	d1.Hash = chainhash.Hash{1}
 	d1.Index = 0
@@ -119,6 +119,43 @@ func TestSelectDeposits(t *testing.T) {
 			targetValue: d4.Value - dustLimit, // d3/d4 have the
 			// same value but different expiration.
 			expected:    []*deposit.Deposit{d3},
+			expectedErr: "",
+		},
+		{
+			name: "prefilter filters deposits close to expiry",
+			deposits: func() []*deposit.Deposit {
+				// dClose expires before
+				// htlcExpiry+DepositHtlcDelta and must be
+				// filtered out. dOK expires exactly at the
+				// threshold and must be eligible.
+				dClose := &deposit.Deposit{
+					Value:              3_000_000,
+					ConfirmationHeight: 3000,
+				}
+				dClose.Hash = chainhash.Hash{5}
+				dClose.Index = 0
+				dOK := &deposit.Deposit{
+					Value:              2_000_000,
+					ConfirmationHeight: 3050,
+				}
+				dOK.Hash = chainhash.Hash{6}
+				dOK.Index = 0
+				return []*deposit.Deposit{dClose, dOK}
+			}(),
+			targetValue: 1_000_000,
+			csvExpiry:   1000,
+			blockHeight: 3000,
+			expected: func() []*deposit.Deposit {
+				// Only dOK should be considered.
+				// dClose is filtered.
+				dOK := &deposit.Deposit{
+					Value:              2_000_000,
+					ConfirmationHeight: 3050,
+				}
+				dOK.Hash = chainhash.Hash{6}
+				dOK.Index = 0
+				return []*deposit.Deposit{dOK}
+			}(),
 			expectedErr: "",
 		},
 	}

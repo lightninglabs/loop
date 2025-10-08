@@ -862,8 +862,25 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 // are needed to cover the amount requested without leaving a dust change. It
 // returns an error if the sum of deposits minus dust is less than the requested
 // amount.
-func SelectDeposits(targetAmount btcutil.Amount, deposits []*deposit.Deposit,
-	csvExpiry uint32, blockHeight uint32) ([]*deposit.Deposit, error) {
+func SelectDeposits(targetAmount btcutil.Amount,
+	unfilteredDeposits []*deposit.Deposit, csvExpiry uint32,
+	blockHeight uint32) ([]*deposit.Deposit, error) {
+
+	// Filter out deposits that are too close to expiry to be swapped.
+	var deposits []*deposit.Deposit
+	for _, d := range unfilteredDeposits {
+		if !IsSwappable(
+			uint32(d.ConfirmationHeight), blockHeight, csvExpiry,
+		) {
+
+			log.Debugf("Skipping deposit %s as it expires before "+
+				"the htlc", d.OutPoint.String())
+
+			continue
+		}
+
+		deposits = append(deposits, d)
+	}
 
 	// Sort the deposits by amount in descending order, then by
 	// blocks-until-expiry in ascending order.
@@ -899,6 +916,25 @@ func SelectDeposits(targetAmount btcutil.Amount, deposits []*deposit.Deposit,
 	return nil, fmt.Errorf("not enough deposits to cover "+
 		"requested amount or prevent dust change, have %d but need %d",
 		selectedAmount, targetAmount)
+}
+
+// IsSwappable checks if a deposit is swappable. It returns true if the deposit
+// is not expired and the htlc is not too close to expiry.
+func IsSwappable(confirmationHeight, blockHeight, csvExpiry uint32) bool {
+	// The deposit expiry height is the confirmation height plus the csv
+	// expiry.
+	depositExpiryHeight := confirmationHeight + csvExpiry
+
+	// The htlc expiry height is the current height plus the htlc
+	// cltv delta.
+	htlcExpiryHeight := blockHeight + DefaultLoopInOnChainCltvDelta
+
+	// Ensure that the deposit doesn't expire before the htlc.
+	if depositExpiryHeight < htlcExpiryHeight+DepositHtlcDelta {
+		return false
+	}
+
+	return true
 }
 
 // DeduceSwapAmount calculates the swap amount based on the selected amount and
