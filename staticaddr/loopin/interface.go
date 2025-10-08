@@ -15,6 +15,17 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
+const (
+	// DefaultLoopInOnChainCltvDelta is the time lock relative to current
+	// block height that swap server will accept on the swap initiation
+	// call.
+	DefaultLoopInOnChainCltvDelta = 1000
+
+	// DepositHtlcDelta is a safety buffer of blocks that needs to exist
+	// between the deposit expiry height and the htlc expiry height.
+	DepositHtlcDelta = 50
+)
+
 type (
 	// ValidateLoopInContract validates the contract parameters against our
 	// request.
