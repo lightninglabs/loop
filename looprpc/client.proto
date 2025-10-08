@@ -1280,6 +1280,13 @@ message LiquidityParameters {
      * not be able to be batched with other swaps.
      */
     bool fast_swap_publication = 26;
+
+    /*
+    A list of peers (their public keys) that should be excluded from the easy
+    autoloop run. If set, channels connected to these peers won't be
+    considered for easy autoloop swaps.
+    */
+    repeated bytes easy_autoloop_excluded_peers = 27;
 }
 
 message EasyAssetAutoloopParams {
