@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/looprpc"
@@ -350,6 +351,12 @@ var setParamsCommand = &cli.Command{
 			Usage: "the target size of total local balance in " +
 				"satoshis, used by easy autoloop.",
 		},
+		&cli.StringSliceFlag{
+			Name: "easyautoloop_excludepeer",
+			Usage: "list of peer pubkeys (hex) to exclude from " +
+				"easy autoloop channel selection; repeat " +
+				"--easyautoloop_excludepeer for multiple peers",
+		},
 		&cli.BoolFlag{
 			Name: "asset_easyautoloop",
 			Usage: "set to true to enable asset easy autoloop, which " +
@@ -564,6 +571,27 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("localbalancesat") {
 		params.EasyAutoloopLocalTargetSat = cmd.Uint64("localbalancesat")
+		flagSet = true
+	}
+
+	if cmd.IsSet("easyautoloop_excludepeer") {
+		peers := cmd.StringSlice("easyautoloop_excludepeer")
+		// Reset and set according to a provided list.
+		params.EasyAutoloopExcludedPeers = make([][]byte, 0, len(peers))
+		for _, s := range peers {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			v, err := route.NewVertexFromStr(s)
+			if err != nil {
+				return fmt.Errorf("invalid peer pubkey "+
+					"%s: %v", s, err)
+			}
+			params.EasyAutoloopExcludedPeers = append(
+				params.EasyAutoloopExcludedPeers, v[:],
+			)
+		}
 		flagSet = true
 	}
 
