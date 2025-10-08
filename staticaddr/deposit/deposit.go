@@ -70,7 +70,8 @@ func (d *Deposit) IsInFinalState() bool {
 	defer d.Unlock()
 
 	return d.state == Expired || d.state == Withdrawn ||
-		d.state == LoopedIn || d.state == HtlcTimeoutSwept
+		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
+		d.state == ChannelPublished
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
