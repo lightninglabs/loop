@@ -1878,6 +1878,27 @@
           "type": "integer",
           "format": "int64",
           "description": "The swap payment timeout allows the user to specify an upper limit for the\namount of time the server is allowed to take to fulfill the off-chain swap\npayment. If the timeout is reached the swap will be aborted on the server\nside and the client can retry the swap with different parameters."
+        },
+        "used_deposits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcDeposit"
+          },
+          "description": "The deposits that are used for this swap."
+        },
+        "swap_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount that is being swapped (may be less than total deposit value if\nchange is returned)."
+        },
+        "change": {
+          "type": "string",
+          "format": "int64",
+          "description": "The change amount that will be returned to the static address."
+        },
+        "fast": {
+          "type": "boolean",
+          "description": "If set, indicates that the server was requested to use fast publication\nbehavior."
         }
       }
     },

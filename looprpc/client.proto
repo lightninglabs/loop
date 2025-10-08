@@ -2197,6 +2197,28 @@ message StaticAddressLoopInResponse {
     side and the client can retry the swap with different parameters.
     */
     uint32 payment_timeout_seconds = 11;
+
+    /*
+    The deposits that are used for this swap.
+    */
+    repeated Deposit used_deposits = 12;
+
+    /*
+    The amount that is being swapped (may be less than total deposit value if
+    change is returned).
+    */
+    uint64 swap_amount = 13;
+
+    /*
+    The change amount that will be returned to the static address.
+    */
+    int64 change = 14;
+
+    /*
+    If set, indicates that the server was requested to use fast publication
+    behavior.
+    */
+    bool fast = 15;
 }
 
 message AssetLoopOutRequest {
