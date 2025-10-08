@@ -35,6 +35,8 @@ var (
 		fsm.OnError:           {},
 		OnWithdrawInitiated:   {},
 		OnWithdrawn:           {},
+		OnOpeningChannel:      {},
+		OnChannelPublished:    {},
 	}
 )
 
@@ -50,6 +52,15 @@ var (
 
 	// Withdrawn signals that the withdrawal transaction has been confirmed.
 	Withdrawn = fsm.StateType("Withdrawn")
+
+	// OpeningChannel signals that the open channel transaction has been
+	// broadcast.
+	OpeningChannel = fsm.StateType("OpeningChannel")
+
+	// ChannelPublished signals that the open channel transaction has been
+	// published and that the channel should be managed from lnd from now
+	// on.
+	ChannelPublished = fsm.StateType("ChannelPublished")
 
 	// LoopingIn signals that the deposit is locked for a loop in swap.
 	LoopingIn = fsm.StateType("LoopingIn")
@@ -92,6 +103,15 @@ var (
 
 	// OnWithdrawn is sent to the fsm when a withdrawal has been confirmed.
 	OnWithdrawn = fsm.EventType("OnWithdrawn")
+
+	// OnOpeningChannel is sent to the fsm when a channel open has been
+	// initiated.
+	OnOpeningChannel = fsm.EventType("OnOpeningChannel")
+
+	// OnChannelPublished is sent to the fsm when a channel open has been
+	// published. Loop has done its work here and the channel should now be
+	// managed from lnd.
+	OnChannelPublished = fsm.EventType("OnChannelPublished")
 
 	// OnLoopInInitiated is sent to the fsm when a loop in has been
 	// initiated.
@@ -137,15 +157,13 @@ type FSM struct {
 
 	params *address.Parameters
 
-	address *script.StaticAddress
-
 	blockNtfnChan chan uint32
 
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
 	// finalizedDepositChan is used to signal that the deposit has been
-	// finalized and the FSM can be removed from the manager's memory.
+	// finalized, and the FSM can be removed from the manager's memory.
 	finalizedDepositChan chan wire.OutPoint
 }
 
@@ -155,29 +173,17 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
-	}
-
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address: %w", err)
-	}
-
 	depoFsm := &FSM{
 		cfg:                  cfg,
 		deposit:              deposit,
-		params:               params,
-		address:              address,
+		params:               deposit.AddressParams,
 		blockNtfnChan:        make(chan uint32),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
 
 	depositStates := depoFsm.DepositStatesV0()
-	switch params.ProtocolVersion {
+	switch deposit.AddressParams.ProtocolVersion {
 	case version.ProtocolVersion_V0:
 
 	default:
@@ -253,6 +259,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnExpiry:            PublishExpirySweep,
 				OnWithdrawInitiated: Withdrawing,
 				OnLoopInInitiated:   LoopingIn,
+				OnOpeningChannel:    OpeningChannel,
 				// We encounter OnSweepingHtlcTimeout if the
 				// server published the htlc tx without paying
 				// us. We then need to monitor for the timeout
@@ -366,6 +373,17 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			},
 			Action: f.FinalizeDepositAction,
 		},
+		OpeningChannel: fsm.State{
+			Transitions: fsm.Transitions{
+				fsm.OnError:        Deposited,
+				OnChannelPublished: ChannelPublished,
+				OnRecover:          OpeningChannel,
+			},
+			Action: fsm.NoOpAction,
+		},
+		ChannelPublished: fsm.State{
+			Action: fsm.NoOpAction,
+		},
 	}
 }
 
@@ -464,16 +482,15 @@ func (f *FSM) Errorf(format string, args ...interface{}) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
-	error) {
+func (f *FSM) SignDescriptor(addressScript *script.StaticAddress) (
+	*lndclient.SignDescriptor, error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, err
+	if addressScript == nil {
+		return nil, fmt.Errorf("address script is nil")
 	}
 
 	return &lndclient.SignDescriptor{
-		WitnessScript: address.TimeoutLeaf.Script,
+		WitnessScript: addressScript.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
 			PubKey: f.params.ClientPubkey,
 		},
