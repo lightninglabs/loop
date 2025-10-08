@@ -2078,10 +2078,34 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		return nil, err
 	}
 
+	// Build a list of used deposits for the response.
+	usedDeposits := filter(
+		loopIn.Deposits, func(d *deposit.Deposit) bool { return true },
+	)
+
+	// Determine the actual swap amount and change based on the selected
+	// amount and the total value of the selected deposits.
+	total := loopIn.TotalDepositAmount()
+	swapAmt := total
+	var changeAmt btcutil.Amount
+	if loopIn.SelectedAmount > 0 {
+		amt, err := loopin.DeduceSwapAmount(
+			total, loopIn.SelectedAmount,
+		)
+		if err == nil {
+			swapAmt = amt
+			changeAmt = total - amt
+		}
+	}
+
 	return &looprpc.StaticAddressLoopInResponse{
 		SwapHash:              loopIn.SwapHash[:],
 		State:                 string(loopIn.GetState()),
-		Amount:                uint64(loopIn.TotalDepositAmount()),
+		Amount:                uint64(total),
+		SwapAmount:            uint64(swapAmt),
+		Change:                int64(changeAmt),
+		QuotedSwapFeeSatoshis: int64(loopIn.QuotedSwapFee),
+		Fast:                  loopIn.Fast,
 		HtlcCltv:              loopIn.HtlcCltvExpiry,
 		MaxSwapFeeSatoshis:    int64(loopIn.MaxSwapFee),
 		InitiationHeight:      loopIn.InitiationHeight,
@@ -2089,7 +2113,7 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Initiator:             loopIn.Initiator,
 		Label:                 loopIn.Label,
 		PaymentTimeoutSeconds: loopIn.PaymentTimeoutSeconds,
-		QuotedSwapFeeSatoshis: int64(loopIn.QuotedSwapFee),
+		UsedDeposits:          usedDeposits,
 	}, nil
 }
 
