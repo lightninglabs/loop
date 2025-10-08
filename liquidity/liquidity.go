@@ -1666,9 +1666,27 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 		return channels[i].LocalBalance > channels[j].LocalBalance
 	})
 
-	// Check each channel, since channels are already sorted we return the
+	// Build a set of excluded peers for a quick lookup.
+	excluded := make(
+		map[route.Vertex]struct{},
+		len(m.params.EasyAutoloopExcludedPeers),
+	)
+	for _, v := range m.params.EasyAutoloopExcludedPeers {
+		excluded[v] = struct{}{}
+	}
+
+	// Check each channel, since channels are already sorted, we return the
 	// first channel that passes all checks.
 	for _, channel := range channels {
+		// Skip channels whose remote peer is excluded for easy autoloop.
+		if _, ok := excluded[channel.PubKeyBytes]; ok {
+			log.Debugf("Channel %v cannot be used for easy "+
+				"autoloop: peer %v manually excluded",
+				channel.ChannelID, channel.PubKeyBytes)
+
+			continue
+		}
+
 		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 
 		if !channel.Active {

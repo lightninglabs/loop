@@ -116,6 +116,10 @@ type Parameters struct {
 	// maintain in our channels.
 	EasyAutoloopTarget btcutil.Amount
 
+	// EasyAutoloopExcludedPeers is an optional list of peers that should be
+	// excluded from being selected for easy autoloop swaps.
+	EasyAutoloopExcludedPeers []route.Vertex
+
 	// AssetAutoloopParams maps an asset id hex encoded string to its
 	// easy autoloop parameters.
 	AssetAutoloopParams map[string]AssetParams
@@ -481,6 +485,21 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 				time.Second
 	}
 
+	// Map excluded peers for easy autoloop, if any.
+	excludedPeersRPC := req.GetEasyAutoloopExcludedPeers()
+	params.EasyAutoloopExcludedPeers = make(
+		[]route.Vertex, 0, len(excludedPeersRPC),
+	)
+	for _, p := range excludedPeersRPC {
+		v, err := route.NewVertexFromBytes(p)
+		if err != nil {
+			return nil, err
+		}
+		params.EasyAutoloopExcludedPeers = append(
+			params.EasyAutoloopExcludedPeers, v,
+		)
+	}
+
 	// If an old-style budget was written to storage then express it by
 	// using the new auto budget parameters. If the newly added parameters
 	// have the 0 default value, but a budget was defined that means the
@@ -602,6 +621,15 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		AccountAddrType:            addrType,
 		EasyAssetParams:            easyAssetMap,
 		FastSwapPublication:        cfg.FastSwapPublication,
+	}
+	// Set excluded peers for easy autoloop.
+	rpcCfg.EasyAutoloopExcludedPeers = make(
+		[][]byte, 0, len(cfg.EasyAutoloopExcludedPeers),
+	)
+	for _, v := range cfg.EasyAutoloopExcludedPeers {
+		rpcCfg.EasyAutoloopExcludedPeers = append(
+			rpcCfg.EasyAutoloopExcludedPeers, v[:],
+		)
 	}
 
 	switch f := cfg.FeeLimit.(type) {
