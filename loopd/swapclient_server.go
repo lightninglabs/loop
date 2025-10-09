@@ -1788,20 +1788,9 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	}
 
 	// Calculate the blocks until expiry for each deposit.
-	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	err = s.populateBlocksUntilExpiry(ctx, filteredDeposits)
 	if err != nil {
-		return nil, err
-	}
-
-	bestBlockHeight := int64(lndInfo.BlockHeight)
-	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < len(filteredDeposits); i++ {
-		filteredDeposits[i].BlocksUntilExpiry =
-			filteredDeposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		infof("Failed to populate blocks until expiry: %v", err)
 	}
 
 	return &looprpc.ListStaticAddressDepositsResponse{
@@ -2083,6 +2072,11 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		loopIn.Deposits, func(d *deposit.Deposit) bool { return true },
 	)
 
+	err = s.populateBlocksUntilExpiry(ctx, usedDeposits)
+	if err != nil {
+		infof("Failed to populate blocks until expiry: %v", err)
+	}
+
 	// Determine the actual swap amount and change based on the selected
 	// amount and the total value of the selected deposits.
 	total := loopIn.TotalDepositAmount()
@@ -2115,6 +2109,29 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		PaymentTimeoutSeconds: loopIn.PaymentTimeoutSeconds,
 		UsedDeposits:          usedDeposits,
 	}, nil
+}
+
+// Calculate the blocks until expiry for each deposit and return the modified
+// StaticAddressLoopInResponse.
+func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
+	deposits []*looprpc.Deposit) error {
+
+	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	if err != nil {
+		return err
+	}
+
+	bestBlockHeight := int64(lndInfo.BlockHeight)
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(deposits); i++ {
+		deposits[i].BlocksUntilExpiry =
+			deposits[i].ConfirmationHeight +
+				int64(params.Expiry) - bestBlockHeight
+	}
+	return nil
 }
 
 type filterFunc func(deposits *deposit.Deposit) bool
