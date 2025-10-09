@@ -358,6 +358,12 @@ var setParamsCommand = &cli.Command{
 				"--easyautoloop_excludepeer for multiple peers",
 		},
 		&cli.BoolFlag{
+			Name: "easyatutoloop_includeallpeers",
+			Usage: "include all peers back into easy autoloop by " +
+				"clearing the exclusion list. It cannot be " +
+				"combined with --easyautoloop_excludepeer",
+		},
+		&cli.BoolFlag{
 			Name: "asset_easyautoloop",
 			Usage: "set to true to enable asset easy autoloop, which " +
 				"will automatically dispatch asset swaps in order " +
@@ -571,6 +577,18 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("localbalancesat") {
 		params.EasyAutoloopLocalTargetSat = cmd.Uint64("localbalancesat")
+		flagSet = true
+	}
+
+	// If easyatutoloop_includeallpeers is set, clear the entire exclusion
+	// list.
+	if cmd.IsSet("easyatutoloop_includeallpeers") {
+		if cmd.IsSet("easyautoloop_excludepeer") {
+			return fmt.Errorf("easyatutoloop_includeallpeers " +
+				"cannot be used with " +
+				"--easyautoloop_excludepeer")
+		}
+		params.EasyAutoloopExcludedPeers = nil
 		flagSet = true
 	}
 
