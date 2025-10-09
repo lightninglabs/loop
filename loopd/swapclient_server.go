@@ -1788,20 +1788,9 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	}
 
 	// Calculate the blocks until expiry for each deposit.
-	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	err = s.populateBlocksUntilExpiry(ctx, filteredDeposits)
 	if err != nil {
-		return nil, err
-	}
-
-	bestBlockHeight := int64(lndInfo.BlockHeight)
-	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < len(filteredDeposits); i++ {
-		filteredDeposits[i].BlocksUntilExpiry =
-			filteredDeposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		infof("Failed to populate blocks until expiry: %v", err)
 	}
 
 	return &looprpc.ListStaticAddressDepositsResponse{
@@ -2078,10 +2067,39 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		return nil, err
 	}
 
+	// Build a list of used deposits for the response.
+	usedDeposits := filter(
+		loopIn.Deposits, func(d *deposit.Deposit) bool { return true },
+	)
+
+	err = s.populateBlocksUntilExpiry(ctx, usedDeposits)
+	if err != nil {
+		infof("Failed to populate blocks until expiry: %v", err)
+	}
+
+	// Determine the actual swap amount and change based on the selected
+	// amount and the total value of the selected deposits.
+	total := loopIn.TotalDepositAmount()
+	swapAmt := total
+	var changeAmt btcutil.Amount
+	if loopIn.SelectedAmount > 0 {
+		amt, err := loopin.DeduceSwapAmount(
+			total, loopIn.SelectedAmount,
+		)
+		if err == nil {
+			swapAmt = amt
+			changeAmt = total - amt
+		}
+	}
+
 	return &looprpc.StaticAddressLoopInResponse{
 		SwapHash:              loopIn.SwapHash[:],
 		State:                 string(loopIn.GetState()),
-		Amount:                uint64(loopIn.TotalDepositAmount()),
+		Amount:                uint64(total),
+		SwapAmount:            uint64(swapAmt),
+		Change:                int64(changeAmt),
+		QuotedSwapFeeSatoshis: int64(loopIn.QuotedSwapFee),
+		Fast:                  loopIn.Fast,
 		HtlcCltv:              loopIn.HtlcCltvExpiry,
 		MaxSwapFeeSatoshis:    int64(loopIn.MaxSwapFee),
 		InitiationHeight:      loopIn.InitiationHeight,
@@ -2089,8 +2107,31 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Initiator:             loopIn.Initiator,
 		Label:                 loopIn.Label,
 		PaymentTimeoutSeconds: loopIn.PaymentTimeoutSeconds,
-		QuotedSwapFeeSatoshis: int64(loopIn.QuotedSwapFee),
+		UsedDeposits:          usedDeposits,
 	}, nil
+}
+
+// Calculate the blocks until expiry for each deposit and return the modified
+// StaticAddressLoopInResponse.
+func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
+	deposits []*looprpc.Deposit) error {
+
+	lndInfo, err := s.lnd.Client.GetInfo(ctx)
+	if err != nil {
+		return err
+	}
+
+	bestBlockHeight := int64(lndInfo.BlockHeight)
+	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(deposits); i++ {
+		deposits[i].BlocksUntilExpiry =
+			deposits[i].ConfirmationHeight +
+				int64(params.Expiry) - bestBlockHeight
+	}
+	return nil
 }
 
 type filterFunc func(deposits *deposit.Deposit) bool
