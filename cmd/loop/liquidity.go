@@ -354,8 +354,14 @@ var setParamsCommand = &cli.Command{
 		&cli.StringSliceFlag{
 			Name: "excludeeasypeer",
 			Usage: "list of peer pubkeys (hex) to exclude from " +
-				"easy autoloop channel selection; repeat " +
+				"easy autoloop channel selection. Repeat " +
 				"--excludeeasypeer for multiple peers",
+		},
+		&cli.BoolFlag{
+			Name: "includealleasypeers",
+			Usage: "include all peers back into easy autoloop by " +
+				"clearing the exclusion list. It cannot be " +
+				"combined with --excludeeasypeer",
 		},
 		&cli.BoolFlag{
 			Name: "asset_easyautoloop",
@@ -571,6 +577,15 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("localbalancesat") {
 		params.EasyAutoloopLocalTargetSat = cmd.Uint64("localbalancesat")
+		flagSet = true
+	}
+
+	// If includealleasypeers is set, clear the entire exclusion list.
+	if cmd.IsSet("includealleasypeers") {
+		if cmd.IsSet("excludeeasypeer") {
+			return fmt.Errorf("includealleasypeers cannot be used with --excludeeasypeer")
+		}
+		params.EasyAutoloopExcludedPeers = nil
 		flagSet = true
 	}
 
