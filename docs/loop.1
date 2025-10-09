@@ -333,7 +333,13 @@ update the parameters set for the liquidity manager
 \fB--destaddr\fP="": custom address to be used as destination for autoloop loop out, set to "default" in order to revert to default behavior.
 
 .PP
+\fB--easyatutoloop_includeallpeers\fP: include all peers back into easy autoloop by clearing the exclusion list. It cannot be combined with --easyautoloop_excludepeer
+
+.PP
 \fB--easyautoloop\fP: set to true to enable easy autoloop, which will automatically dispatch swaps in order to meet the target local balance.
+
+.PP
+\fB--easyautoloop_excludepeer\fP="": list of peer pubkeys (hex) to exclude from easy autoloop channel selection; repeat --easyautoloop_excludepeer for multiple peers (default: [])
 
 .PP
 \fB--failurebackoff\fP="": the amount of time, in seconds, that should pass before a channel that previously had a failed swap will be included in suggestions. (default: 0)
