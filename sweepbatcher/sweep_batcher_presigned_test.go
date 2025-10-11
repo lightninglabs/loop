@@ -1,6 +1,7 @@
 package sweepbatcher
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -1268,6 +1269,147 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	require.NoError(t, lnd.NotifyHeight(601))
 }
 
+// testPresigned_fee_portion_with_change ensures that the fee portion reported
+// to clients accounts for change outputs in the presigned transaction.
+func testPresigned_fee_portion_with_change(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	customFeeRate := func(_ context.Context, _ lntypes.Hash,
+		_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.SatPerKWeight(10_000), nil
+	}
+
+	presignedHelper := newMockPresignedHelper()
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, presignedHelper,
+		WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
+
+	go func() {
+		err := batcher.Run(ctx)
+		checkBatcherError(t, err)
+	}()
+
+	swapHash := lntypes.Hash{2, 2, 2}
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	group := []Input{
+		{
+			Outpoint: op,
+			Value:    1_000_000,
+		},
+	}
+	change := &wire.TxOut{
+		Value:    250_000,
+		PkScript: []byte{0xca, 0xfe},
+	}
+
+	presignedHelper.setChangeForPrimaryDeposit(op, change)
+	presignedHelper.SetOutpointOnline(op, true)
+
+	require.NoError(t, batcher.PresignSweepsGroup(
+		ctx, group, sweepTimeout, destAddr, change,
+	))
+
+	spendChan := make(chan *SpendDetail, 1)
+	confChan := make(chan *ConfDetail, 1)
+	notifier := &SpendNotifier{
+		SpendChan:    spendChan,
+		SpendErrChan: make(chan error, 1),
+		ConfChan:     confChan,
+		ConfErrChan:  make(chan error, 1),
+		QuitChan:     make(chan bool, 1),
+	}
+
+	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash,
+		Inputs:   group,
+		Notifier: notifier,
+	}))
+
+	spendReg := <-lnd.RegisterSpendChannel
+	require.NotNil(t, spendReg)
+	require.NotNil(t, spendReg.Outpoint)
+	require.Equal(t, op, *spendReg.Outpoint)
+
+	tx := <-lnd.TxPublishChannel
+	require.Len(t, tx.TxIn, 1)
+	require.Len(t, tx.TxOut, 2)
+
+	var (
+		outputSum   int64
+		foundChange bool
+	)
+	for _, txOut := range tx.TxOut {
+		outputSum += txOut.Value
+		if txOut.Value != change.Value {
+			continue
+		}
+
+		if !bytes.Equal(txOut.PkScript, change.PkScript) {
+			continue
+		}
+
+		foundChange = true
+	}
+
+	require.True(t, foundChange)
+
+	totalInput := int64(group[0].Value)
+	require.LessOrEqual(t, outputSum, totalInput)
+
+	expectedFee := btcutil.Amount(totalInput - outputSum)
+	require.Greater(t, expectedFee, btcutil.Amount(0))
+
+	txHash := tx.TxHash()
+	spendDetail := &chainntnfs.SpendDetail{
+		SpentOutPoint:     &op,
+		SpendingTx:        tx,
+		SpenderTxHash:     &txHash,
+		SpenderInputIndex: 0,
+		SpendingHeight:    spendReg.HeightHint + 1,
+	}
+	lnd.SpendChannel <- spendDetail
+
+	spend := <-spendChan
+	require.Equal(t, expectedFee, spend.OnChainFeePortion)
+
+	confReg := <-lnd.RegisterConfChannel
+	require.True(t, bytes.Equal(tx.TxOut[0].PkScript, confReg.PkScript) ||
+		bytes.Equal(tx.TxOut[1].PkScript, confReg.PkScript))
+
+	require.NoError(
+		t, lnd.NotifyHeight(spendReg.HeightHint+batchConfHeight+1),
+	)
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{Tx: tx}
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-presignedHelper.cleanupCalled:
+			return true
+		default:
+			return false
+		}
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	conf := <-confChan
+	require.Equal(t, expectedFee, conf.OnChainFeePortion)
+}
+
 // testPresigned_presigned_group_with_identical_change_pkscript tests passing multiple sweeps to
 // the method PresignSweepsGroup. It tests that a change output of a primary
 // deposit sweep is properly added to the presigned transaction.
@@ -2354,6 +2496,10 @@ func TestPresigned(t *testing.T) {
 
 	t.Run("change", func(t *testing.T) {
 		testPresigned_presigned_group_with_change(t, NewStoreMock())
+	})
+
+	t.Run("fee_portion_change", func(t *testing.T) {
+		testPresigned_fee_portion_with_change(t, NewStoreMock())
 	})
 
 	t.Run("identical change pkscript", func(t *testing.T) {
