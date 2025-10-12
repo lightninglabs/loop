@@ -1270,7 +1270,8 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 }
 
 // testPresigned_fee_portion_with_change ensures that the fee portion reported
-// to clients accounts for change outputs in the presigned transaction.
+// to clients accounts for change outputs in the presigned transaction. It also
+// is a regression test for feerate overestimation when tx is published.
 func testPresigned_fee_portion_with_change(t *testing.T,
 	batcherStore testBatcherStore) {
 
@@ -1349,6 +1350,14 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 	tx := <-lnd.TxPublishChannel
 	require.Len(t, tx.TxIn, 1)
 	require.Len(t, tx.TxOut, 2)
+
+	// Mine a blocks to trigger republishing.
+	require.NoError(t, lnd.NotifyHeight(601))
+
+	// Make sure it is the same tx.
+	tx2 := <-lnd.TxPublishChannel
+	require.Len(t, tx2.TxOut, len(tx.TxOut))
+	require.Equal(t, tx.TxOut[0].Value, tx2.TxOut[0].Value)
 
 	var (
 		outputSum   int64
