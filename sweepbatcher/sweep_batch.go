@@ -2071,8 +2071,8 @@ func getFeePortionForSweep(spendTx *wire.MsgTx, numSweeps int,
 	totalSweptAmt btcutil.Amount) (btcutil.Amount, btcutil.Amount) {
 
 	totalFee := int64(totalSweptAmt)
-	if len(spendTx.TxOut) > 0 {
-		totalFee -= spendTx.TxOut[0].Value
+	for _, txOut := range spendTx.TxOut {
+		totalFee -= txOut.Value
 	}
 	feePortionPerSweep := totalFee / int64(numSweeps)
 	roundingDiff := totalFee - (int64(numSweeps) * feePortionPerSweep)

@@ -506,7 +506,10 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Find actual fee rate of the signed transaction. It may differ from
 	// the desired fee rate, because SignTx may return a presigned tx.
-	output := btcutil.Amount(tx.TxOut[0].Value)
+	var output btcutil.Amount
+	for _, txOut := range tx.TxOut {
+		output += btcutil.Amount(txOut.Value)
+	}
 	fee = batchAmt - output
 	signedFeeRate := chainfee.NewSatPerKWeight(fee, realWeight)
 
