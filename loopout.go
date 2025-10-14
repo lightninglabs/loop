@@ -24,9 +24,9 @@ import (
 	"github.com/lightninglabs/taproot-assets/fn"
 	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -968,7 +968,7 @@ func (s *loopOutSwap) awaitSendPayment(ctx context.Context, hash lntypes.Hash,
 		// payment error from TrackPayment is no longer expected
 		// here.
 		case err := <-payErrChan:
-			if err != channeldb.ErrAlreadyPaid {
+			if err != paymentsdb.ErrAlreadyPaid {
 				return nil, err
 			}
 
