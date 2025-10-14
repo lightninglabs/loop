@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -630,6 +631,9 @@ type mockPresigner struct {
 
 	// failAt is optional index of a call at which it fails, 1 based.
 	failAt int
+
+	// mu protects the state.
+	mu sync.Mutex
 }
 
 // SignTx memorizes the value of the output and fails if the number of
@@ -638,6 +642,9 @@ func (p *mockPresigner) SignTx(ctx context.Context,
 	primarySweepID wire.OutPoint, tx *wire.MsgTx, inputAmt btcutil.Amount,
 	minRelayFee, feeRate chainfee.SatPerKWeight,
 	loadOnly bool) (*wire.MsgTx, error) {
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -1037,7 +1044,8 @@ func TestPresign(t *testing.T) {
 		},
 
 		{
-			name:           "small amount => fewer steps until clamped",
+			name: "small amount => fewer steps until " +
+				"clamped",
 			presigner:      &mockPresigner{},
 			primarySweepID: op1,
 			sweeps: []sweep{
@@ -1085,8 +1093,27 @@ func TestPresign(t *testing.T) {
 			destAddr:         destAddr,
 			nextBlockFeeRate: chainfee.FeePerKwFloor,
 			minRelayFeeRate:  chainfee.FeePerKwFloor,
-			wantErr:          "for feeRate 363 sat/kw",
+			wantErr:          "test error in SignTx",
 		},
+	}
+
+	type pair struct {
+		output   btcutil.Amount
+		lockTime uint32
+	}
+
+	zip := func(outputs []btcutil.Amount, lockTimes []uint32) []pair {
+		require.Equal(t, len(outputs), len(lockTimes))
+
+		pairs := make([]pair, len(outputs))
+		for i, output := range outputs {
+			pairs[i] = pair{
+				output:   output,
+				lockTime: lockTimes[i],
+			}
+		}
+
+		return pairs
 	}
 
 	for _, tc := range cases {
@@ -1102,8 +1129,11 @@ func TestPresign(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				p := tc.presigner.(*mockPresigner)
-				require.Equal(t, tc.wantOutputs, p.outputs)
-				require.Equal(t, tc.wantLockTimes, p.lockTimes)
+				require.ElementsMatch(
+					t,
+					zip(tc.wantOutputs, tc.wantLockTimes),
+					zip(p.outputs, p.lockTimes),
+				)
 			}
 		})
 	}
