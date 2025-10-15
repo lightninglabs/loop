@@ -1120,10 +1120,10 @@ github.com/lightninglabs/neutrino/cache v1.1.2 h1:C9DY/DAPaPxbFC+xNNEI/z1SJY9GS3
 github.com/lightninglabs/neutrino/cache v1.1.2/go.mod h1:XJNcgdOw1LQnanGjw8Vj44CvguYA25IMKjWFZczwZuo=
 github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display h1:w7FM5LH9Z6CpKxl13mS48idsu6F+cEZf0lkyiV+Dq9g=
 github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display/go.mod h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=
-github.com/lightninglabs/taproot-assets v0.7.0-rc1.0.20250925100956-c44e078c33e0 h1:NkPYeGOwPNITNQ9nLFJgLzD2Ig56S3NhD+NuHLV98nA=
-github.com/lightninglabs/taproot-assets v0.7.0-rc1.0.20250925100956-c44e078c33e0/go.mod h1:qC9TBmn7gV+6LrDhacCe2DD0MnMbD1FgUzJ14LLb7E8=
-github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20250925100956-c44e078c33e0 h1:l4EQ6+oBbbPubipKhX1vLLwNWkTRgPOPqGjtKnPO9qM=
-github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20250925100956-c44e078c33e0/go.mod h1:ufuKxkMNdfRnv4IcnLw7ken69DcCUxO79WSpC8mIvdM=
+github.com/lightninglabs/taproot-assets v0.7.0-rc1.0.20251014172227-e6ae082c0b4b h1:wXE4vhZlZGXLHzei+rj6lnWsCaxjJCfCAHJlcs3dZH4=
+github.com/lightninglabs/taproot-assets v0.7.0-rc1.0.20251014172227-e6ae082c0b4b/go.mod h1:qC9TBmn7gV+6LrDhacCe2DD0MnMbD1FgUzJ14LLb7E8=
+github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20251014172227-e6ae082c0b4b h1:qT27GPShJpH3A/aK7VVi8Onn11GIjEnL/xbqbHMDz/U=
+github.com/lightninglabs/taproot-assets/taprpc v1.0.10-0.20251014172227-e6ae082c0b4b/go.mod h1:ufuKxkMNdfRnv4IcnLw7ken69DcCUxO79WSpC8mIvdM=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 h1:6D3LrdagJweLLdFm1JNodZsBk6iU4TTsBBFLQ4yiXfI=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9/go.mod h1:EDqJ3MuZIbMq0QI1czTIKDJ/GS8S14RXPwapHw8cw6w=
 github.com/lightningnetwork/lnd v0.20.0-beta.rc1 h1:8Rm3/pcSLQI+tpCjKfYADfMjmEVFkrtoEom470siKRA=
