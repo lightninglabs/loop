@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"golang.org/x/sync/errgroup"
 )
 
 // ensurePresigned checks that there is a presigned transaction spending the
@@ -371,6 +372,8 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 	// Set LockTime to 0. It is not critical.
 	const currentHeight = 0
 
+	eg, grCtx := errgroup.WithContext(ctx)
+
 	for fr := start; fr <= stop; fr = (fr * factorPPM) / 1_000_000 {
 		// Construct an unsigned transaction for this fee rate.
 		tx, _, feeForWeight, fee, err := constructUnsignedTx(
@@ -389,19 +392,29 @@ func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
 
 		// Try to presign this transaction.
 		const loadOnly = false
-		_, err = presigner.SignTx(
-			ctx, primarySweepID, tx, batchAmt, minRelayFeeRate, fr,
-			loadOnly,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to presign unsigned tx %v "+
-				"for feeRate %v: %w", tx.TxHash(), fr, err)
-		}
+		eg.Go(func() error {
+			_, err := presigner.SignTx(
+				grCtx, primarySweepID, tx, batchAmt,
+				minRelayFeeRate, fr, loadOnly,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to presign unsigned "+
+					"tx %v for feeRate %v: %w", tx.TxHash(),
+					fr, err)
+			}
+
+			return nil
+		})
 
 		// If fee was clamped, stop here, because fee rate won't grow.
 		if fee < feeForWeight {
 			break
 		}
+	}
+
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("presigning of batch of primarySweepID %v "+
+			"failed: %w", primarySweepID, err)
 	}
 
 	return nil
