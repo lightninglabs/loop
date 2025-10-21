@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -217,7 +218,9 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := l.toPrevOuts(l.Deposits, l.AddressParams.PkScript)
+	prevOuts, err := staticutil.ToPrevOuts(
+		l.Deposits, l.AddressParams.PkScript,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -521,29 +524,6 @@ func (l *StaticAddressLoopIn) Outpoints() []wire.OutPoint {
 	}
 
 	return outpoints
-}
-
-func (l *StaticAddressLoopIn) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
-
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
-		outpoint := wire.OutPoint{
-			Hash:  d.Hash,
-			Index: d.Index,
-		}
-		txOut := &wire.TxOut{
-			Value:    int64(d.Value),
-			PkScript: pkScript,
-		}
-		if _, ok := prevOuts[outpoint]; ok {
-			return nil, fmt.Errorf("duplicate outpoint %v",
-				outpoint)
-		}
-		prevOuts[outpoint] = txOut
-	}
-
-	return prevOuts, nil
 }
 
 // GetState returns the current state of the loop-in swap.

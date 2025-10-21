@@ -215,6 +215,17 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 		args.Get(1).(chan error), args.Error(2)
 }
 
+func (m *mockStaticAddressClient) SignOpenChannelPsbt(ctx context.Context,
+	in *swapserverrpc.SignOpenChannelPsbtRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.SignOpenChannelPsbtResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.SignOpenChannelPsbtResponse),
+		args.Error(1)
+}
+
 // TestManager checks that the manager processes the right channel notifications
 // while a deposit is expiring.
 func TestManager(t *testing.T) {
