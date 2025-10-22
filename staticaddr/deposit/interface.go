@@ -3,10 +3,7 @@ package deposit
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
@@ -36,19 +33,15 @@ type Store interface {
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
+	// GetStaticAddressID the ID of the static address for the given
+	// pkScript.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
 
-	// GetStaticAddress returns the deposit address for the given
-	// client and server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+	// GetParameters returns the static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
 
 	// ListUnspent returns a list of utxos at the static address.
 	ListUnspent(ctx context.Context, minConfs,
 		maxConfs int32) ([]*lnwallet.Utxo, error)
-
-	// GetTaprootAddress returns a taproot address.
-	GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
-		expiry int64) (*btcutil.AddressTaproot, error)
 }

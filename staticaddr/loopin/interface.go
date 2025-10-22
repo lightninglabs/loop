@@ -8,7 +8,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -34,13 +33,12 @@ type (
 
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
-	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
+	// NewAddress returns a new static address.
+	NewAddress(ctx context.Context) (*address.Parameters, error)
 
-	// GetStaticAddress returns the deposit address for the given client and
-	// server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+	// IsOutPkScript returns true if the given pkScript is our static
+	// address script.
+	IsOutPkScript(pkScript []byte) (bool, error)
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.

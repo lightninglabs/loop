@@ -12,8 +12,9 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/test"
+	loop_test "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -28,15 +29,32 @@ func TestDepositSwapHashMigration(t *testing.T) {
 	// Set up test context objects.
 	ctxb := context.Background()
 	testDb := loopdb.NewTestDB(t)
+	db := loopdb.NewStoreMock(t)
 	testClock := clock.NewTestClock(time.Now())
 	defer testDb.Close()
 
-	db := loopdb.NewStoreMock(t)
+	addressStore := address.NewSqlStore(testDb.BaseDB)
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	swapStore := NewSqlStore(
 		loopdb.NewTypedStore[Querier](testDb), testClock,
 		&chaincfg.RegressionNetParams,
 	)
+
+	_, client := loop_test.CreateKey(1)
+	_, server := loop_test.CreateKey(2)
+	pkScript := []byte("pkscript")
+	addrParams := &address.Parameters{
+		ClientPubkey: client,
+		ServerPubkey: server,
+		Expiry:       10,
+		PkScript:     pkScript,
+	}
+
+	err := addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
+	addrParams.PkScript = []byte("pkscript2")
+	err = addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()
@@ -55,6 +73,7 @@ func TestDepositSwapHashMigration(t *testing.T) {
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
+		AddressID: 1,
 	},
 		&deposit.Deposit{
 			ID: newID(),
@@ -66,9 +85,10 @@ func TestDepositSwapHashMigration(t *testing.T) {
 			TimeOutSweepPkScript: []byte{
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
+			AddressID: 2,
 		}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)
@@ -77,8 +97,8 @@ func TestDepositSwapHashMigration(t *testing.T) {
 		d1.OutPoint.String(),
 		d2.OutPoint.String(),
 	}
-	_, clientPubKey := test.CreateKey(1)
-	_, serverPubKey := test.CreateKey(2)
+	_, clientPubKey := loop_test.CreateKey(1)
+	_, serverPubKey := loop_test.CreateKey(2)
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
@@ -115,9 +135,9 @@ func TestDepositSwapHashMigration(t *testing.T) {
 				ClientKeyIndex:       int32(loopIn.HtlcKeyLocator.Index),
 			}
 
-			// Sanity check, if any of the outpoints contain the outpoint separator.
-			// If so, we reject the loop-in to prevent potential issues with
-			// parsing.
+			// Sanity check, if any of the outpoints contain the
+			// outpoint separator. If so, we reject the loop-in to
+			// prevent potential issues with parsing.
 			for _, outpoint := range loopIn.DepositOutpoints {
 				if strings.Contains(outpoint, OutpointSeparator) {
 					return ErrInvalidOutpoint

@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -30,6 +31,17 @@ var (
 
 type mockStaticAddressClient struct {
 	mock.Mock
+}
+
+func (m *mockStaticAddressClient) SignOpenChannelPsbt(ctx context.Context,
+	in *swapserverrpc.SignOpenChannelPsbtRequest,
+	opts ...grpc.CallOption) (
+	*swapserverrpc.SignOpenChannelPsbtResponse, error) {
+
+	args := m.Called(ctx, in, opts)
+
+	return args.Get(0).(*swapserverrpc.SignOpenChannelPsbtResponse),
+		args.Error(1)
 }
 
 func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
@@ -108,14 +120,19 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new static address.
-	taprootAddress, expiry, err := testContext.manager.NewAddress(ctxb)
+	params, err := testContext.manager.NewAddress(ctxb)
+	require.NoError(t, err)
+
+	address, err := testContext.manager.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
 	require.NoError(t, err)
 
 	// The addresses have to match.
-	require.Equal(t, expectedAddress.String(), taprootAddress.String())
+	require.Equal(t, expectedAddress.String(), address.String())
 
 	// The expiry has to match.
-	require.EqualValues(t, defaultExpiry, expiry)
+	require.EqualValues(t, defaultExpiry, params.Expiry)
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that
@@ -189,7 +206,10 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 		ChainParams:   mockLnd.ChainParams,
 		AddressClient: mockStaticAddressClient,
 		ChainNotifier: mockLnd.ChainNotifier,
-		FetchL402:     func(context.Context) error { return nil },
+		CurrentToken: func() (*l402.Token, error) {
+			return nil, nil
+		},
+		FetchL402: func(context.Context) error { return nil },
 	}
 
 	getInfo, err := mockLnd.Client.GetInfo(ctxb)
