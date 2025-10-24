@@ -590,8 +590,8 @@ The following flags are supported:
 | `--utxo="…"`          | specify utxos as outpoints(tx:idx) which willbe withdrawn                                                                 | string |     `[]`      |
 | `--all`               | withdraws all static address deposits                                                                                     | bool   |    `false`    |
 | `--dest_addr="…"`     | the optional address that the withdrawn funds should be sent to, if let blank the funds will go to lnd's wallet           | string |
-| `--sat_per_vbyte="…"` | (optional) a manual fee expressed in sat/vbyte that should be used when crafting the transaction                          | int    |      `0`      |
-| `--amount="…"`        | the number of satoshis that should be withdrawn from the selected deposits. The change is sent back to the static address | int    |      `0`      |
+| `--sat_per_vbyte="…"` | (optional) a manual fee expressed in sat/vbyte that should be used when crafting the transaction                          | uint   |      `0`      |
+| `--amount="…"`        | the number of satoshis that should be withdrawn from the selected deposits. The change is sent back to the static address | uint   |      `0`      |
 | `--help` (`-h`)       | show help                                                                                                                 | bool   |    `false`    |
 
 ### `static summary` subcommand (aliases: `s`)
