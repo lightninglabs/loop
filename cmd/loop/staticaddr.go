@@ -151,13 +151,13 @@ var withdrawalCommand = &cli.Command{
 				"funds should be sent to, if let blank the " +
 				"funds will go to lnd's wallet",
 		},
-		&cli.Int64Flag{
+		&cli.Uint64Flag{
 			Name: "sat_per_vbyte",
 			Usage: "(optional) a manual fee expressed in " +
 				"sat/vbyte that should be used when crafting " +
 				"the transaction",
 		},
-		&cli.IntFlag{
+		&cli.Uint64Flag{
 			Name: "amount",
 			Usage: "the number of satoshis that should be " +
 				"withdrawn from the selected deposits. The " +
@@ -211,7 +211,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 			All:         isAllSelected,
 			DestAddr:    destAddr,
 			SatPerVbyte: int64(cmd.Uint64("sat_per_vbyte")),
-			Amount:      cmd.Int64("amount"),
+			Amount:      int64(cmd.Uint64("amount")),
 		})
 	if err != nil {
 		return err
@@ -514,7 +514,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 			"allowed")
 
 	default:
-		selectedAmount = cmd.Int64("amount")
+		selectedAmount = int64(cmd.Uint64("amount"))
 	}
 
 	client, cleanup, err := getClient(ctx, cmd)
