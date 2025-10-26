@@ -158,7 +158,8 @@ var withdrawalCommand = &cli.Command{
 				"the transaction",
 		},
 		&cli.Uint64Flag{
-			Name: "amount",
+			Name:    "amt",
+			Aliases: []string{"amount"},
 			Usage: "the number of satoshis that should be " +
 				"withdrawn from the selected deposits. The " +
 				"change is sent back to the static address",
@@ -211,7 +212,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 			All:         isAllSelected,
 			DestAddr:    destAddr,
 			SatPerVbyte: int64(cmd.Uint64("sat_per_vbyte")),
-			Amount:      int64(cmd.Uint64("amount")),
+			Amount:      int64(cmd.Uint64("amt")),
 		})
 	if err != nil {
 		return err
@@ -473,7 +474,8 @@ var staticAddressLoopInCommand = &cli.Command{
 				"parameters after the payment timed out.",
 		},
 		&cli.Uint64Flag{
-			Name: "amount",
+			Name:    "amt",
+			Aliases: []string{"amount"},
 			Usage: "the number of satoshis that should be " +
 				"swapped from the selected deposits. If there" +
 				"is change it is sent back to the static " +
@@ -514,7 +516,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 			"allowed")
 
 	default:
-		selectedAmount = int64(cmd.Uint64("amount"))
+		selectedAmount = int64(cmd.Uint64("amt"))
 	}
 
 	client, cleanup, err := getClient(ctx, cmd)

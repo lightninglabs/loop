@@ -585,14 +585,14 @@ $ loop [GLOBAL FLAGS] static withdraw [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name                  | Description                                                                                                               | Type   | Default value |
-|-----------------------|---------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
-| `--utxo="…"`          | specify utxos as outpoints(tx:idx) which willbe withdrawn                                                                 | string |     `[]`      |
-| `--all`               | withdraws all static address deposits                                                                                     | bool   |    `false`    |
-| `--dest_addr="…"`     | the optional address that the withdrawn funds should be sent to, if let blank the funds will go to lnd's wallet           | string |
-| `--sat_per_vbyte="…"` | (optional) a manual fee expressed in sat/vbyte that should be used when crafting the transaction                          | uint   |      `0`      |
-| `--amount="…"`        | the number of satoshis that should be withdrawn from the selected deposits. The change is sent back to the static address | uint   |      `0`      |
-| `--help` (`-h`)       | show help                                                                                                                 | bool   |    `false`    |
+| Name                     | Description                                                                                                               | Type   | Default value |
+|--------------------------|---------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--utxo="…"`             | specify utxos as outpoints(tx:idx) which willbe withdrawn                                                                 | string |     `[]`      |
+| `--all`                  | withdraws all static address deposits                                                                                     | bool   |    `false`    |
+| `--dest_addr="…"`        | the optional address that the withdrawn funds should be sent to, if let blank the funds will go to lnd's wallet           | string |
+| `--sat_per_vbyte="…"`    | (optional) a manual fee expressed in sat/vbyte that should be used when crafting the transaction                          | uint   |      `0`      |
+| `--amt="…"` (`--amount`) | the number of satoshis that should be withdrawn from the selected deposits. The change is sent back to the static address | uint   |      `0`      |
+| `--help` (`-h`)          | show help                                                                                                                 | bool   |    `false`    |
 
 ### `static summary` subcommand (aliases: `s`)
 
@@ -626,18 +626,18 @@ $ loop [GLOBAL FLAGS] static in [COMMAND FLAGS] [amt] [--all | --utxo xxx:xx]
 
 The following flags are supported:
 
-| Name                    | Description                                                                                                                                                             | Type     | Default value |
-|-------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|:-------------:|
-| `--utxo="…"`            | specify the utxos of deposits as outpoints(tx:idx) that should be looped in                                                                                             | string   |     `[]`      |
-| `--all`                 | loop in all static address deposits                                                                                                                                     | bool     |    `false`    |
-| `--payment_timeout="…"` | the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out | duration |     `0s`      |
-| `--amount="…"`          | the number of satoshis that should be swapped from the selected deposits. If thereis change it is sent back to the static address                                       | uint     |      `0`      |
-| `--fast`                | Usage: complete the swap faster by paying a higher fee, so the change output is available sooner                                                                        | bool     |    `false`    |
-| `--last_hop="…"`        | the pubkey of the last hop to use for this swap                                                                                                                         | string   |
-| `--label="…"`           | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                 | string   |
-| `--route_hints="…"`     | route hints that can each be individually used to assist in reaching the invoice's destination                                                                          | string   |     `[]`      |
-| `--private`             | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                            | bool     |    `false`    |
-| `--force`               | Assumes yes during confirmation. Using this option will result in an immediate swap                                                                                     | bool     |    `false`    |
-| `--verbose` (`-v`)      | show expanded details                                                                                                                                                   | bool     |    `false`    |
-| `--help` (`-h`)         | show help                                                                                                                                                               | bool     |    `false`    |
+| Name                     | Description                                                                                                                                                             | Type     | Default value |
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|:-------------:|
+| `--utxo="…"`             | specify the utxos of deposits as outpoints(tx:idx) that should be looped in                                                                                             | string   |     `[]`      |
+| `--all`                  | loop in all static address deposits                                                                                                                                     | bool     |    `false`    |
+| `--payment_timeout="…"`  | the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out | duration |     `0s`      |
+| `--amt="…"` (`--amount`) | the number of satoshis that should be swapped from the selected deposits. If thereis change it is sent back to the static address                                       | uint     |      `0`      |
+| `--fast`                 | Usage: complete the swap faster by paying a higher fee, so the change output is available sooner                                                                        | bool     |    `false`    |
+| `--last_hop="…"`         | the pubkey of the last hop to use for this swap                                                                                                                         | string   |
+| `--label="…"`            | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                 | string   |
+| `--route_hints="…"`      | route hints that can each be individually used to assist in reaching the invoice's destination                                                                          | string   |     `[]`      |
+| `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                            | bool     |    `false`    |
+| `--force`                | Assumes yes during confirmation. Using this option will result in an immediate swap                                                                                     | bool     |    `false`    |
+| `--verbose` (`-v`)       | show expanded details                                                                                                                                                   | bool     |    `false`    |
+| `--help` (`-h`)          | show help                                                                                                                                                               | bool     |    `false`    |
 
