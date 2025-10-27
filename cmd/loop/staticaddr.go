@@ -35,6 +35,7 @@ var staticAddressCommands = &cli.Command{
 		withdrawalCommand,
 		summaryCommand,
 		staticAddressLoopInCommand,
+		openChannelCommand,
 	},
 }
 
@@ -238,6 +239,7 @@ var listDepositsCommand = &cli.Command{
 				"of the following: \n" +
 				"deposited\nwithdrawing\nwithdrawn\n" +
 				"looping_in\nlooped_in\n" +
+				"opening_channel\nchannel_published\n" +
 				"publish_expired_deposit\n" +
 				"sweep_htlc_timeout\nhtlc_timeout_swept\n" +
 				"wait_for_expiry_sweep\nexpired\nfailed\n.",
@@ -276,6 +278,12 @@ func listDeposits(ctx context.Context, cmd *cli.Command) error {
 
 	case "looped_in":
 		filterState = looprpc.DepositState_LOOPED_IN
+
+	case "opening_channel":
+		filterState = looprpc.DepositState_OPENING_CHANNEL
+
+	case "channel_published":
+		filterState = looprpc.DepositState_CHANNEL_PUBLISHED
 
 	case "publish_expired_deposit":
 		filterState = looprpc.DepositState_PUBLISH_EXPIRED
@@ -378,7 +386,7 @@ var summaryCommand = &cli.Command{
 	Usage:   "Display a summary of static address related information.",
 	Description: `
 	Displays various static address related information about deposits, 
-	withdrawals and swaps. 
+	withdrawals, swaps and channel openings. 
 	`,
 	Action: summary,
 }

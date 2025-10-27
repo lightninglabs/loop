@@ -35,6 +35,10 @@ type StaticAddressServerClient interface {
 	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
 	// sigs to the server.
 	PushStaticAddressSweeplessSigs(ctx context.Context, in *PushStaticAddressSweeplessSigsRequest, opts ...grpc.CallOption) (*PushStaticAddressSweeplessSigsResponse, error)
+	// SignOpenChannelPsbt signs the open channel psbt with the server's key.
+	// The server will respond with the txid of the psbt and the signing info
+	// that the client needs to coop-sign the open channel transaction.
+	SignOpenChannelPsbt(ctx context.Context, in *SignOpenChannelPsbtRequest, opts ...grpc.CallOption) (*SignOpenChannelPsbtResponse, error)
 }
 
 type staticAddressServerClient struct {
@@ -90,6 +94,15 @@ func (c *staticAddressServerClient) PushStaticAddressSweeplessSigs(ctx context.C
 	return out, nil
 }
 
+func (c *staticAddressServerClient) SignOpenChannelPsbt(ctx context.Context, in *SignOpenChannelPsbtRequest, opts ...grpc.CallOption) (*SignOpenChannelPsbtResponse, error) {
+	out := new(SignOpenChannelPsbtResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/SignOpenChannelPsbt", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StaticAddressServerServer is the server API for StaticAddressServer service.
 // All implementations must embed UnimplementedStaticAddressServerServer
 // for forward compatibility
@@ -111,6 +124,10 @@ type StaticAddressServerServer interface {
 	// PushStaticAddressSweeplessSigs pushes the client's sweepless sweep tx
 	// sigs to the server.
 	PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error)
+	// SignOpenChannelPsbt signs the open channel psbt with the server's key.
+	// The server will respond with the txid of the psbt and the signing info
+	// that the client needs to coop-sign the open channel transaction.
+	SignOpenChannelPsbt(context.Context, *SignOpenChannelPsbtRequest) (*SignOpenChannelPsbtResponse, error)
 	mustEmbedUnimplementedStaticAddressServerServer()
 }
 
@@ -132,6 +149,9 @@ func (UnimplementedStaticAddressServerServer) PushStaticAddressHtlcSigs(context.
 }
 func (UnimplementedStaticAddressServerServer) PushStaticAddressSweeplessSigs(context.Context, *PushStaticAddressSweeplessSigsRequest) (*PushStaticAddressSweeplessSigsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PushStaticAddressSweeplessSigs not implemented")
+}
+func (UnimplementedStaticAddressServerServer) SignOpenChannelPsbt(context.Context, *SignOpenChannelPsbtRequest) (*SignOpenChannelPsbtResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignOpenChannelPsbt not implemented")
 }
 func (UnimplementedStaticAddressServerServer) mustEmbedUnimplementedStaticAddressServerServer() {}
 
@@ -236,6 +256,24 @@ func _StaticAddressServer_PushStaticAddressSweeplessSigs_Handler(srv interface{}
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StaticAddressServer_SignOpenChannelPsbt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignOpenChannelPsbtRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StaticAddressServerServer).SignOpenChannelPsbt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.StaticAddressServer/SignOpenChannelPsbt",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StaticAddressServerServer).SignOpenChannelPsbt(ctx, req.(*SignOpenChannelPsbtRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StaticAddressServer_ServiceDesc is the grpc.ServiceDesc for StaticAddressServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -262,6 +300,10 @@ var StaticAddressServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushStaticAddressSweeplessSigs",
 			Handler:    _StaticAddressServer_PushStaticAddressSweeplessSigs_Handler,
+		},
+		{
+			MethodName: "SignOpenChannelPsbt",
+			Handler:    _StaticAddressServer_SignOpenChannelPsbt_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
