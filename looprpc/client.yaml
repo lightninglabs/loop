@@ -37,3 +37,32 @@ http:
       body: "*"
     - selector: looprpc.SwapClient.SuggestSwaps
       get: "/v1/auto/suggest"
+    - selector: looprpc.SwapClient.ListReservations
+      get: "/v1/instantout/reservations"
+    - selector: looprpc.SwapClient.InstantOut
+      post: "/v1/instantout"
+      body: "*"
+    - selector: looprpc.SwapClient.InstantOutQuote
+      post: "/v1/instantout/quote"
+      body: "*"
+    - selector: looprpc.SwapClient.ListInstantOuts
+      get: "/v1/instantout/swaps"
+    - selector: looprpc.SwapClient.NewStaticAddress
+      post: "/v1/staticaddr"
+      body: "*"
+    - selector: looprpc.SwapClient.ListUnspentDeposits
+      get: "/v1/staticaddr/deposits/unspent"
+    - selector: looprpc.SwapClient.WithdrawDeposits
+      post: "/v1/staticaddr/withdraw"
+      body: "*"
+    - selector: looprpc.SwapClient.ListStaticAddressDeposits
+      get: "/v1/staticaddr/deposits"
+    - selector: looprpc.SwapClient.ListStaticAddressWithdrawals
+      get: "/v1/staticaddr/withdrawals"
+    - selector: looprpc.SwapClient.ListStaticAddressSwaps
+      get: "/v1/staticaddr/swaps"
+    - selector: looprpc.SwapClient.GetStaticAddressSummary
+      get: "/v1/staticaddr/summary"
+    - selector: looprpc.SwapClient.StaticAddressLoopIn
+      post: "/v1/staticaddr/loopin"
+      body: "*"

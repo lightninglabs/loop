@@ -39,6 +39,118 @@
         ]
       }
     },
+    "/v1/instantout": {
+      "post": {
+        "summary": "loop: `instantout`\nInstantOut initiates an instant out swap with the given parameters.",
+        "operationId": "SwapClient_InstantOut",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcInstantOutResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcInstantOutRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/instantout/quote": {
+      "post": {
+        "summary": "loop: `instantoutquote`\nInstantOutQuote returns a quote for an instant out swap with the provided\nparameters.",
+        "operationId": "SwapClient_InstantOutQuote",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcInstantOutQuoteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcInstantOutQuoteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/instantout/reservations": {
+      "get": {
+        "summary": "loop: `listreservations`\nListReservations returns a list of all reservations the server opened to us.",
+        "operationId": "SwapClient_ListReservations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListReservationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/instantout/swaps": {
+      "get": {
+        "summary": "loop: `listinstantouts`\nListInstantOuts returns a list of all currently known instant out swaps and\ntheir current status.",
+        "operationId": "SwapClient_ListInstantOuts",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListInstantOutsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/l402/tokens": {
       "get": {
         "summary": "loop: `listauth`\nGetL402Tokens returns all L402 tokens the daemon ever paid for.",
@@ -698,6 +810,272 @@
           "SwapClient"
         ]
       }
+    },
+    "/v1/staticaddr": {
+      "post": {
+        "summary": "loop: `static newstaticaddress`\nNewStaticAddress requests a new static address for loop-ins from the server.",
+        "operationId": "SwapClient_NewStaticAddress",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcNewStaticAddressResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcNewStaticAddressRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/deposits": {
+      "get": {
+        "summary": "loop:`listdeposits`\nListStaticAddressDeposits returns a list of filtered static address\ndeposits.",
+        "operationId": "SwapClient_ListStaticAddressDeposits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListStaticAddressDepositsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "state_filter",
+            "description": "Filters the list of all stored deposits by deposit state.\n\n - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - LOOPING_IN: LOOPING_IN indicates that the deposit is currently being used in a static\naddress loop-in swap.\n - LOOPED_IN: LOOPED_IN indicates that the deposit was used in a static address loop-in\nswap.\n - SWEEP_HTLC_TIMEOUT: SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in\nof which the respective htlc was published by the server and the timeout\npath has opened up for the client to sweep.\n - HTLC_TIMEOUT_SWEPT: HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been\nswept by the client.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "UNKNOWN_STATE",
+              "DEPOSITED",
+              "WITHDRAWING",
+              "WITHDRAWN",
+              "LOOPING_IN",
+              "LOOPED_IN",
+              "SWEEP_HTLC_TIMEOUT",
+              "HTLC_TIMEOUT_SWEPT",
+              "PUBLISH_EXPIRED",
+              "WAIT_FOR_EXPIRY_SWEEP",
+              "EXPIRED"
+            ],
+            "default": "UNKNOWN_STATE"
+          },
+          {
+            "name": "outpoints",
+            "description": "Filters the list of all stored deposits by the outpoint.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/deposits/unspent": {
+      "get": {
+        "summary": "loop: `static listunspentdeposits`\nListUnspentDeposits returns a list of utxos deposited at a static address.",
+        "operationId": "SwapClient_ListUnspentDeposits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListUnspentDepositsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "min_confs",
+            "description": "The number of minimum confirmations a utxo must have to be listed.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "max_confs",
+            "description": "The number of maximum confirmations a utxo may have to be listed. A zero\nvalue indicates that there is no maximum.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/loopin": {
+      "post": {
+        "summary": "loop:`static`\nStaticAddressLoopIn initiates a static address loop-in swap.",
+        "operationId": "SwapClient_StaticAddressLoopIn",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcStaticAddressLoopInResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcStaticAddressLoopInRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/summary": {
+      "get": {
+        "summary": "loop:`static summary`\nGetStaticAddressSummary returns a summary of static address related\nstatistics.",
+        "operationId": "SwapClient_GetStaticAddressSummary",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcStaticAddressSummaryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/swaps": {
+      "get": {
+        "summary": "loop:`listswaps`\nListStaticAddressSwaps returns a list of filtered static address\nswaps.",
+        "operationId": "SwapClient_ListStaticAddressSwaps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListStaticAddressSwapsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/withdraw": {
+      "post": {
+        "summary": "loop:`static withdraw`\nWithdrawDeposits withdraws a selection or all deposits of a static address.",
+        "operationId": "SwapClient_WithdrawDeposits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcWithdrawDepositsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcWithdrawDepositsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/withdrawals": {
+      "get": {
+        "summary": "loop:`listwithdrawals`\nListStaticAddressWithdrawals returns a list of static address withdrawals.",
+        "operationId": "SwapClient_ListStaticAddressWithdrawals",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListStaticAddressWithdrawalResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
     }
   },
   "definitions": {
@@ -1128,6 +1506,29 @@
         }
       }
     },
+    "looprpcInstantOutQuoteRequest": {
+      "type": "object",
+      "properties": {
+        "amt": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount to swap in satoshis."
+        },
+        "num_reservations": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Deprecated: use 'reservation_ids' instead.\nThe amount of reservations to use for the swap."
+        },
+        "reservation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The reservations to use for the swap."
+        }
+      }
+    },
     "looprpcInstantOutQuoteResponse": {
       "type": "object",
       "properties": {
@@ -1140,6 +1541,31 @@
           "type": "string",
           "format": "int64",
           "description": "The estimated on-chain fee that needs to be paid to publish the Sweepless\nSweep."
+        }
+      }
+    },
+    "looprpcInstantOutRequest": {
+      "type": "object",
+      "properties": {
+        "reservation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The reservations to use for the swap."
+        },
+        "outgoing_chan_set": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "A restriction on the channel set that may be used to loop out. The actual\nchannel(s) that will be used are selected based on the lowest routing fee\nfor the swap payment to the server."
+        },
+        "dest_addr": {
+          "type": "string",
+          "description": "An optional address to sweep the onchain funds to. If not set, the funds\nwill be swept to the wallet's internal address."
         }
       }
     },
@@ -1701,6 +2127,16 @@
         }
       }
     },
+    "looprpcNewStaticAddressRequest": {
+      "type": "object",
+      "properties": {
+        "client_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The client's public key for the 2-of-2 MuSig2 taproot static address."
+        }
+      }
+    },
     "looprpcNewStaticAddressResponse": {
       "type": "object",
       "properties": {
@@ -1824,6 +2260,61 @@
     },
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
+    },
+    "looprpcStaticAddressLoopInRequest": {
+      "type": "object",
+      "properties": {
+        "outpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The outpoints of the deposits to loop-in."
+        },
+        "max_swap_fee_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "Maximum satoshis we are willing to pay the server for the swap. This value\nis not disclosed in the swap initiation call, but if the server asks for a\nhigher fee, we abort the swap. Typically this value is taken from the\nresponse of the GetQuote call."
+        },
+        "last_hop": {
+          "type": "string",
+          "format": "byte",
+          "description": "Optionally the client can specify the last hop pubkey when requesting a\nloop-in quote. This is useful to get better off-chain routing fee from the\nserver."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label for this swap. This field is limited to 500 characters and\nmay not be one of the reserved values in loop/labels Reserved list."
+        },
+        "initiator": {
+          "type": "string",
+          "description": "An optional identification string that will be appended to the user agent\nstring sent to the server to give information about the usage of loop. This\ninitiator part is meant for user interfaces to add their name to give the\nfull picture of the binary used (loopd, LiT) and the method used for\ntriggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI)."
+        },
+        "route_hints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcRouteHint"
+          },
+          "description": "Optional route hints to reach the destination through private channels."
+        },
+        "private": {
+          "type": "boolean",
+          "description": "Private indicates whether the destination node should be considered private.\nIn which case, loop will generate hop hints to assist with probing and\npayment."
+        },
+        "payment_timeout_seconds": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The swap payment timeout allows the user to specify an upper limit for the\namount of time the server is allowed to take to fulfill the off-chain swap\npayment. If the timeout is reached the swap will be aborted on the server\nside and the client can retry the swap with different parameters."
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64",
+          "description": "The optional swap amount the client is attempting to swap. It can be\nprovided in combination with the outpoints or separately. If provided with\noutpoints the client takes out this amount from the sum of provided\noutpoints and sends the change back to the static address. If the amount is\nprovided without outpoints, the client will select deposits automatically.\nThe coin selection strategy is simplified by sorting all available deposits\nin descending order by amount, and equal amounts in ascending order of\nblocks until expiry, and then selecting the largest deposits first until the\namount is reached. The change will be sent back to the static address. If a\nsubset of outpoints suffice to cover the specified amount the swap will be\ncanceled to allow the user to safe on transaction fees."
+        },
+        "fast": {
+          "type": "boolean",
+          "description": "If set, request the server to use fast publication behavior."
+        }
+      }
     },
     "looprpcStaticAddressLoopInResponse": {
       "type": "object",
@@ -2240,6 +2731,36 @@
           "type": "string",
           "format": "int64",
           "description": "The number of confirmations for the Utxo."
+        }
+      }
+    },
+    "looprpcWithdrawDepositsRequest": {
+      "type": "object",
+      "properties": {
+        "outpoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcOutPoint"
+          },
+          "description": "The outpoints of the deposits to withdraw."
+        },
+        "all": {
+          "type": "boolean",
+          "description": "If set to true, all deposits will be withdrawn."
+        },
+        "dest_addr": {
+          "type": "string",
+          "description": "The address to withdraw the funds to."
+        },
+        "sat_per_vbyte": {
+          "type": "string",
+          "format": "int64",
+          "description": "The fee rate in sat/vbyte to use for the withdrawal transaction."
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64",
+          "description": "The amount in satoshis that should be withdrawn from the selected deposits.\nIf there is change, it will be sent back to the static address. The fees for\nthe transaction are taken from the change output. If the change is below\nthe dust limit, there won't be a change output and the dust goes towards\nfees."
         }
       }
     },
