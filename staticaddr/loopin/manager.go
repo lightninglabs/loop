@@ -276,15 +276,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	ignoreUnknownOutpoints := false
-	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
-		ctx, loopIn.DepositOutpoints, ignoreUnknownOutpoints,
-	)
-	if err != nil {
-		return err
-	}
-	loopIn.Deposits = deposits
-
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
 	if err != nil {
