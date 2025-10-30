@@ -1,6 +1,6 @@
 version: "2"
 run:
-  go: "1.24"
+  go: "1.23"
 
   # timeout for analysis
   timeout: 4m
