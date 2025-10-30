@@ -993,6 +993,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	loop.Resume(
+		d.mainCtx, notificationManager, swapClient.Store, d.impl.Conn, d.lnd,
+	)
+
 	// Last, start our internal error handler. This will return exactly one
 	// error or nil on the main error channel to inform the caller that
 	// something went wrong or that shutdown is complete. We don't add to
