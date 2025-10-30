@@ -170,15 +170,6 @@ sqlc-check: sqlc
 	@$(call print, "Verifying sql code generation.")
 	if test -n "$$(git status --porcelain '*.go')"; then echo "SQL models not properly generated!"; git status --porcelain '*.go'; exit 1; fi
 
-docs: build
-	@$(call print, "Building man and markdown files in docs/")
-	./loop-debug man > docs/loop.1
-	./loop-debug markdown > docs/loop.md
-
-docs-check: docs
-	@$(call print, "Verifying man and markdown files in docs/")
-	if test -n "$$(git status --porcelain 'docs/loop.*')"; then echo "Man and markdown files not properly generated!"; git diff; exit 1; fi
-
 fsm:
 	@$(call print, "Generating state machine docs")
 	./scripts/fsm-generate.sh;
