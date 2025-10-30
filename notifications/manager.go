@@ -36,6 +36,9 @@ const (
 	// connection to the server needs to be alive before we consider it a
 	// successful connection.
 	defaultMinAliveConnTime = time.Minute
+
+	// current_version is the current version of the notification listener.
+	current_version = swapserverrpc.SubscribeNotificationsRequest_V1
 )
 
 // Client is the interface that the notification manager needs to implement in
@@ -260,7 +263,9 @@ func (m *Manager) subscribeNotifications(ctx context.Context) error {
 	defer cancel()
 
 	notifStream, err := m.cfg.Client.SubscribeNotifications(
-		callCtx, &swapserverrpc.SubscribeNotificationsRequest{},
+		callCtx, &swapserverrpc.SubscribeNotificationsRequest{
+			Version: current_version,
+		},
 	)
 	if err != nil {
 		return err

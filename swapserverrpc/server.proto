@@ -664,6 +664,12 @@ message FetchL402Response {
 
 // SubscribeNotificationsRequest is a request to subscribe to notifications.
 message SubscribeNotificationsRequest {
+    enum ListenerVersion {
+        LEGACY = 0;
+        V1 = 1;
+    }
+
+    ListenerVersion version = 1;
 }
 
 // SubscribeNotificationsResponse is a response to a
