@@ -336,6 +336,9 @@ update the parameters set for the liquidity manager
 \fB--easyautoloop\fP: set to true to enable easy autoloop, which will automatically dispatch swaps in order to meet the target local balance.
 
 .PP
+\fB--excludeeasypeer\fP="": list of peer pubkeys (hex) to exclude from easy autoloop channel selection. Repeat --excludeeasypeer for multiple peers (default: [])
+
+.PP
 \fB--failurebackoff\fP="": the amount of time, in seconds, that should pass before a channel that previously had a failed swap will be included in suggestions. (default: 0)
 
 .PP
@@ -349,6 +352,9 @@ update the parameters set for the liquidity manager
 
 .PP
 \fB--htlc_conf\fP="": the confirmation target for loop in on-chain htlcs. (default: 0)
+
+.PP
+\fB--includealleasypeers\fP: include all peers back into easy autoloop by clearing the exclusion list. It cannot be combined with --excludeeasypeer
 
 .PP
 \fB--localbalancesat\fP="": the target size of total local balance in satoshis, used by easy autoloop. (default: 0)
