@@ -56,7 +56,7 @@ func printMarkdown(_ context.Context, cmd *cli.Command) error {
 
 	md, err := docs.ToTabularMarkdown(root, "loop")
 	if err != nil {
-		return fmt.Errorf("failed to produce man: %w", err)
+		return fmt.Errorf("failed to produce markdown: %w", err)
 	}
 
 	fmt.Println(md)

@@ -74,7 +74,7 @@ Success. You may now run 'go1.24.6'
 $ go1.24.6 version
 go version go1.24.6 linux/amd64
 
-$ GO_CMD=/home/user/go/bin/go1.24.6 ./release.sh v0.31.3
+$ GO_CMD=/home/user/go/bin/go1.24.6 ./release.sh v0.31.5
 ```
 
 On MacOS, you will need to install GNU tar and GNU gzip, which can be done with
