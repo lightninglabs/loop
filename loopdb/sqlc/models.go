@@ -20,6 +20,7 @@ type Deposit struct {
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
 	SwapHash              []byte
+	StaticAddressID       sql.NullInt32
 }
 
 type DepositUpdate struct {
@@ -149,6 +150,7 @@ type StaticAddressSwap struct {
 	HtlcTimeoutSweepAddress string
 	SelectedAmount          int64
 	Fast                    bool
+	ChangeAddress           string
 }
 
 type StaticAddressSwapUpdate struct {

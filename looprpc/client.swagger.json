@@ -1203,6 +1203,62 @@
       "default": "AUTO_REASON_UNKNOWN",
       "description": " - AUTO_REASON_BUDGET_NOT_STARTED: Budget not started indicates that we do not recommend any swaps because\nthe start time for our budget has not arrived yet.\n - AUTO_REASON_SWEEP_FEES: Sweep fees indicates that the estimated fees to sweep swaps are too high\nright now.\n - AUTO_REASON_BUDGET_ELAPSED: Budget elapsed indicates that the autoloop budget for the period has been\nelapsed.\n - AUTO_REASON_IN_FLIGHT: In flight indicates that the limit on in-flight automatically dispatched\nswaps has already been reached.\n - AUTO_REASON_SWAP_FEE: Swap fee indicates that the server fee for a specific swap is too high.\n - AUTO_REASON_MINER_FEE: Miner fee indicates that the miner fee for a specific swap is to high.\n - AUTO_REASON_PREPAY: Prepay indicates that the prepay fee for a specific swap is too high.\n - AUTO_REASON_FAILURE_BACKOFF: Failure backoff indicates that a swap has recently failed for this target,\nand the backoff period has not yet passed.\n - AUTO_REASON_LOOP_OUT: Loop out indicates that a loop out swap is currently utilizing the channel,\nso it is not eligible.\n - AUTO_REASON_LOOP_IN: Loop In indicates that a loop in swap is currently in flight for the peer,\nso it is not eligible.\n - AUTO_REASON_LIQUIDITY_OK: Liquidity ok indicates that a target meets the liquidity balance expressed\nin its rule, so no swap is needed.\n - AUTO_REASON_BUDGET_INSUFFICIENT: Budget insufficient indicates that we cannot perform a swap because we do\nnot have enough pending budget available. This differs from budget elapsed,\nbecause we still have some budget available, but we have allocated it to\nother swaps.\n - AUTO_REASON_FEE_INSUFFICIENT: Fee insufficient indicates that the fee estimate for a swap is higher than\nthe portion of total swap amount that we allow fees to consume."
     },
+    "looprpcChanPointShim": {
+      "type": "object",
+      "properties": {
+        "amt": {
+          "type": "string",
+          "format": "int64",
+          "description": "The size of the pre-crafted output to be used as the channel point for this\nchannel funding."
+        },
+        "chan_point": {
+          "$ref": "#/definitions/looprpcChannelPoint",
+          "description": "The target channel point to refrence in created commitment transactions."
+        },
+        "local_key": {
+          "$ref": "#/definitions/looprpcKeyDescriptor",
+          "description": "Our local key to use when creating the multi-sig output."
+        },
+        "remote_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The key of the remote party to use when creating the multi-sig output."
+        },
+        "pending_chan_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "If non-zero, then this will be used as the pending channel ID on the wire\nprotocol to initate the funding request. This is an optional field, and\nshould only be set if the responder is already expecting a specific pending\nchannel ID."
+        },
+        "thaw_height": {
+          "type": "integer",
+          "format": "int64",
+          "description": "This uint32 indicates if this channel is to be considered 'frozen'. A frozen\nchannel does not allow a cooperative channel close by the initiator. The\nthaw_height is the height that this restriction stops applying to the\nchannel. The height can be interpreted in two ways: as a relative height if\nthe value is less than 500,000, or as an absolute height otherwise."
+        },
+        "musig2": {
+          "type": "boolean",
+          "description": "Indicates that the funding output is using a MuSig2 multi-sig output."
+        }
+      }
+    },
+    "looprpcChannelPoint": {
+      "type": "object",
+      "properties": {
+        "funding_txid_bytes": {
+          "type": "string",
+          "format": "byte",
+          "description": "Txid of the funding transaction. When using REST, this field must be\nencoded as base64."
+        },
+        "funding_txid_str": {
+          "type": "string",
+          "description": "Hex-encoded string representing the byte-reversed hash of the funding\ntransaction."
+        },
+        "output_index": {
+          "type": "integer",
+          "format": "int64",
+          "title": "The index of the output of the funding transaction"
+        }
+      }
+    },
     "looprpcClientReservation": {
       "type": "object",
       "properties": {
@@ -1235,6 +1291,17 @@
           "description": "The expiry of the reservation."
         }
       }
+    },
+    "looprpcCommitmentType": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN_COMMITMENT_TYPE",
+        "STATIC_REMOTE_KEY",
+        "ANCHORS",
+        "SIMPLE_TAPROOT"
+      ],
+      "default": "UNKNOWN_COMMITMENT_TYPE",
+      "description": " - UNKNOWN_COMMITMENT_TYPE: Returned when the commitment type isn't known or unavailable.\n - STATIC_REMOTE_KEY: A channel that uses the modern commitment format where the key in the\noutput of the remote party does not change each state. This makes back\nup and recovery easier as when the channel is closed, the funds go\ndirectly to that key.\n - ANCHORS: A channel that uses a commitment format that has anchor outputs on the\ncommitments, allowing fee bumping after a force close transaction has\nbeen broadcast.\n - SIMPLE_TAPROOT: A channel that uses musig2 for the funding output, and the new tapscript\nfeatures where relevant."
     },
     "looprpcDeposit": {
       "type": "object",
@@ -1271,6 +1338,10 @@
           "type": "string",
           "format": "byte",
           "description": "The swap hash of the swap that this deposit is part of. This field is only\nset if the deposit is part of a loop-in swap."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address for the deposit's address parameters."
         }
       }
     },
@@ -1287,10 +1358,12 @@
         "HTLC_TIMEOUT_SWEPT",
         "PUBLISH_EXPIRED",
         "WAIT_FOR_EXPIRY_SWEEP",
-        "EXPIRED"
+        "EXPIRED",
+        "OPENING_CHANNEL",
+        "CHANNEL_PUBLISHED"
       ],
       "default": "UNKNOWN_STATE",
-      "description": " - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - LOOPING_IN: LOOPING_IN indicates that the deposit is currently being used in a static\naddress loop-in swap.\n - LOOPED_IN: LOOPED_IN indicates that the deposit was used in a static address loop-in\nswap.\n - SWEEP_HTLC_TIMEOUT: SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in\nof which the respective htlc was published by the server and the timeout\npath has opened up for the client to sweep.\n - HTLC_TIMEOUT_SWEPT: HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been\nswept by the client.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed."
+      "description": " - UNKNOWN_STATE: UNKNOWN_STATE is the default state of a deposit.\n - DEPOSITED: DEPOSITED indicates that the deposit has been sufficiently confirmed on\nchain.\n - WITHDRAWING: WITHDRAWING indicates that the deposit is currently being withdrawn. It\nflips to WITHDRAWN once the withdrawal transaction has been sufficiently\nconfirmed.\n - WITHDRAWN: WITHDRAWN indicates that the deposit has been withdrawn.\n - LOOPING_IN: LOOPING_IN indicates that the deposit is currently being used in a static\naddress loop-in swap.\n - LOOPED_IN: LOOPED_IN indicates that the deposit was used in a static address loop-in\nswap.\n - SWEEP_HTLC_TIMEOUT: SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in\nof which the respective htlc was published by the server and the timeout\npath has opened up for the client to sweep.\n - HTLC_TIMEOUT_SWEPT: HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been\nswept by the client.\n - PUBLISH_EXPIRED: PUBLISH_EXPIRED indicates that the deposit has expired and the sweep\ntransaction has been published.\n - WAIT_FOR_EXPIRY_SWEEP: WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep\ntransaction has not yet been sufficiently confirmed.\n - EXPIRED: EXPIRED indicates that the deposit has expired and the sweep transaction\nhas been sufficiently confirmed.\n - OPENING_CHANNEL: OPENING_CHANNEL indicates that the channel open in which the deposit was\nused is in progress.\n - CHANNEL_PUBLISHED: CHANNEL_PUBLISHED indicates that the channel open was finalized and\npublished and that it should be managed from lnd from now on."
     },
     "looprpcDisqualified": {
       "type": "object",
@@ -1359,6 +1432,19 @@
         }
       },
       "description": "FixedPoint is a scaled integer representation of a fractional number.\n\nThis type consists of two integer fields: a coefficient and a scale.\nUsing this format enables precise and consistent representation of fractional\nnumbers while avoiding floating-point data types, which are prone to\nprecision errors.\n\nThe relationship between the fractional representation and its fixed-point\nrepresentation is expressed as:\n```\nV = F_c / (10^F_s)\n```\nwhere:\n\n* `V` is the fractional value.\n\n* `F_c` is the coefficient component of the fixed-point representation. It is\n   the scaled-up fractional value represented as an integer.\n\n* `F_s` is the scale component. It is an integer specifying how\n  many decimal places `F_c` should be divided by to obtain the fractional\n  representation."
+    },
+    "looprpcFundingShim": {
+      "type": "object",
+      "properties": {
+        "chan_point_shim": {
+          "$ref": "#/definitions/looprpcChanPointShim",
+          "description": "A channel shim where the channel point was fully constructed outside\nof lnd's wallet and the transaction might already be published."
+        },
+        "psbt_shim": {
+          "$ref": "#/definitions/looprpcPsbtShim",
+          "description": "A channel shim that uses a PSBT to fund and sign the channel funding\ntransaction."
+        }
+      }
     },
     "looprpcGetInfoResponse": {
       "type": "object",
@@ -1584,6 +1670,35 @@
         "state": {
           "type": "string",
           "description": "The state of the swap."
+        }
+      }
+    },
+    "looprpcKeyDescriptor": {
+      "type": "object",
+      "properties": {
+        "raw_key_bytes": {
+          "type": "string",
+          "format": "byte",
+          "description": "The raw bytes of the key being identified."
+        },
+        "key_loc": {
+          "$ref": "#/definitions/looprpcKeyLocator",
+          "description": "The key locator that identifies which key to use for signing."
+        }
+      }
+    },
+    "looprpcKeyLocator": {
+      "type": "object",
+      "properties": {
+        "key_family": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The family of key being identified."
+        },
+        "key_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The precise index of the key being identified."
         }
       }
     },
@@ -2237,6 +2352,25 @@
     "looprpcProbeResponse": {
       "type": "object"
     },
+    "looprpcPsbtShim": {
+      "type": "object",
+      "properties": {
+        "pending_chan_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "A unique identifier of 32 random bytes that will be used as the pending\nchannel ID to identify the PSBT state machine when interacting with it and\non the wire protocol to initiate the funding request."
+        },
+        "base_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "An optional base PSBT the new channel output will be added to. If this is\nnon-empty, it must be a binary serialized PSBT."
+        },
+        "no_publish": {
+          "type": "boolean",
+          "description": "If a channel should be part of a batch (multiple channel openings in one\ntransaction), it can be dangerous if the whole batch transaction is\npublished too early before all channel opening negotiations are completed.\nThis flag prevents this particular channel from broadcasting the transaction\nafter the negotiation with the remote peer. In a batch of channel openings\nthis flag should be set to true for every channel but the very last."
+        }
+      }
+    },
     "looprpcRouteHint": {
       "type": "object",
       "properties": {
@@ -2447,7 +2581,7 @@
       ],
       "default": "UNKNOWN_STATIC_ADDRESS_SWAP_STATE"
     },
-    "looprpcStaticAddressSummaryResponse": {
+    "looprpcStaticAddressSummary": {
       "type": "object",
       "properties": {
         "static_address": {
@@ -2493,6 +2627,72 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all htlc timeout sweeps that the client swept."
+        },
+        "value_channels_opened": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been used for channel openings."
+        }
+      }
+    },
+    "looprpcStaticAddressSummaryResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address of the client.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "relative_expiry_blocks": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The CSV expiry of the static address.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "total_num_deposits": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total number of deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_unconfirmed_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of unconfirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_deposited_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of confirmed deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_expired_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all expired deposits.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_withdrawn_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been withdrawn.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_looped_in_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all loop-ins that have been finalized.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_htlc_timeout_sweeps_satoshis": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all htlc timeout sweeps that the client swept.\nDeprecated: use the per_address_summaries field instead."
+        },
+        "value_channels_opened": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total value of all deposits that have been used for channel openings."
+        },
+        "per_address_summaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/looprpcStaticAddressSummary"
+          },
+          "description": "A per-address summary of all static addresses known to the client."
         }
       }
     },
@@ -2529,6 +2729,19 @@
           "type": "integer",
           "format": "int64",
           "description": "The confirmation block height of the withdrawal transaction."
+        }
+      }
+    },
+    "looprpcStaticOpenChannelResponse": {
+      "type": "object",
+      "properties": {
+        "channel_open_tx_hash": {
+          "type": "string",
+          "description": "The transaction hash of the channel opening transaction."
+        },
+        "error": {
+          "type": "string",
+          "description": "An optional error string."
         }
       }
     },

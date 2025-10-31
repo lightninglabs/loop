@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -26,6 +27,7 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 	defer testDb.Close()
 
 	db := loopdb.NewStoreMock(t)
+	addressStore := address.NewSqlStore(testDb.BaseDB)
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	swapStore := NewSqlStore(
 		loopdb.NewTypedStore[Querier](testDb), testClock,
@@ -38,7 +40,8 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 
 		return did
 	}
-
+	_, pubClient := test.CreateKey(1)
+	_, pubServer := test.CreateKey(2)
 	d1, d2 := &deposit.Deposit{
 		ID: newID(),
 		OutPoint: wire.OutPoint{
@@ -48,6 +51,13 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 		Value: btcutil.Amount(100_000),
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+		AddressID: 1,
+		AddressParams: &address.Parameters{
+			ClientPubkey: pubClient,
+			ServerPubkey: pubServer,
+			PkScript:     []byte{0x00, 0x14, 0x1a, 0x2b, 0x3c},
+			Expiry:       10_000,
 		},
 	},
 		&deposit.Deposit{
@@ -60,9 +70,22 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 			TimeOutSweepPkScript: []byte{
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
+			AddressID: 2,
+			AddressParams: &address.Parameters{
+				ClientPubkey: pubClient,
+				ServerPubkey: pubServer,
+				PkScript:     []byte{0x00, 0x14, 0x1a, 0x2b, 0x3d},
+				Expiry:       20_000,
+			},
 		}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err := addressStore.CreateStaticAddress(ctxb, d1.AddressParams)
+	require.NoError(t, err)
+
+	err = addressStore.CreateStaticAddress(ctxb, d2.AddressParams)
+	require.NoError(t, err)
+
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)
