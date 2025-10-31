@@ -67,14 +67,14 @@ for a release using the following commands:
 ```bash
 $ go version
 go version go1.25.0 linux/amd64
-$ go install golang.org/dl/go1.23.12@latest
-$ go1.23.12 download
-Unpacking /home/user/sdk/go1.23.12/go1.23.12.linux-amd64.tar.gz ...
-Success. You may now run 'go1.23.12'
-$ go1.23.12 version
-go version go1.23.12 linux/amd64
+$ go install golang.org/dl/go1.24.6@latest
+$ go1.24.6 download
+Unpacking /home/user/sdk/go1.24.6/go1.24.6.linux-amd64.tar.gz ...
+Success. You may now run 'go1.24.6'
+$ go1.24.6 version
+go version go1.24.6 linux/amd64
 
-$ GO_CMD=/home/user/go/bin/go1.23.12 ./release.sh v0.31.5
+$ GO_CMD=/home/user/go/bin/go1.24.6 ./release.sh v0.31.3
 ```
 
 On MacOS, you will need to install GNU tar and GNU gzip, which can be done with
