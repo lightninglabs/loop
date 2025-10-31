@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
@@ -28,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
 	"github.com/lightningnetwork/lnd/tlv"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -1523,4 +1525,221 @@ func (s *loopOutSwap) fillAssetOffchainPaymentResult(ctx context.Context,
 // isAssetSwap returns true if the swap is an asset swap.
 func (s *loopOutSwap) isAssetSwap() bool {
 	return s.AssetSwapInfo != nil
+}
+
+const (
+	ResumeSwapInitiator = "resume_swap"
+)
+
+// NotificationManager handles subscribing to incoming unfinished swaps from the
+// swap server.
+type NotificationManager interface {
+	SubscribeUnfinishedSwaps(ctx context.Context,
+	) <-chan *swapserverrpc.ServerUnfinishedSwapNotification
+}
+
+// resumeManager is responsible for recovering unfinished swaps after a
+// client data loss event.
+type resumeManager struct {
+	ntfnManager NotificationManager
+	swapStore   loopdb.SwapStore
+	swapClient  swapserverrpc.SwapServerClient
+	lnd         *lndclient.GrpcLndServices
+
+	reqChan chan *swapserverrpc.ServerUnfinishedSwapNotification
+}
+
+// Resume starts the resume manager which listens for unfinished swaps
+// from the server and attempts to recover them.
+func Resume(ctx context.Context, ntfnManager NotificationManager,
+	swapStore loopdb.SwapStore,
+	swapClientConn *grpc.ClientConn,
+	lnd *lndclient.GrpcLndServices) {
+
+	resumeManager := &resumeManager{
+		ntfnManager: ntfnManager,
+		swapStore:   swapStore,
+		swapClient:  swapserverrpc.NewSwapServerClient(swapClientConn),
+		lnd:         lnd,
+		reqChan:     make(chan *swapserverrpc.ServerUnfinishedSwapNotification, 1),
+	}
+	go resumeManager.start(ctx)
+}
+
+// start begins listening for unfinished swap notifications from the server.
+func (m *resumeManager) start(ctx context.Context) {
+	ntfnChan := m.ntfnManager.SubscribeUnfinishedSwaps(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case ntfn, ok := <-ntfnChan:
+			if !ok {
+				return
+			}
+			m.reqChan <- ntfn
+
+		case req := <-m.reqChan:
+			err := m.handleUnfinishedSwap(ctx, req)
+			if err != nil {
+				go func() {
+					// wait a bit before retrying
+					time.Sleep(time.Second * 10)
+					m.reqChan <- req
+				}() // retry
+			}
+		}
+	}
+}
+
+// handleUnfinishedSwap processes an unfinished swap notification from the
+// server.
+func (m *resumeManager) handleUnfinishedSwap(ctx context.Context,
+	ntfn *swapserverrpc.ServerUnfinishedSwapNotification) error {
+
+	swapHash, err := lntypes.MakeHash(ntfn.SwapHash)
+	if err != nil {
+		return err
+	}
+
+	if ntfn.IsLoopIn {
+		return fmt.Errorf("loop in recovery not supported")
+	}
+
+	return m.handleUnfinishedLoopOut(ctx, swapHash)
+}
+
+func (m *resumeManager) handleUnfinishedLoopOut(ctx context.Context,
+	swapHash lntypes.Hash) error {
+
+	// Fetch the swap from the local store.
+	swap, err := m.swapStore.FetchLoopOutSwap(ctx, swapHash)
+	if err != nil {
+		return err
+	}
+
+	typ := swap.State().State.Type()
+	// Check the state of the swap and take appropriate action.
+	if typ == loopdb.StateTypePending || typ == loopdb.StateTypeFail {
+		return nil
+	}
+	trackChanCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Check if the swap offchain htlc went through.
+	trackChan, errChan, err := m.lnd.Router.TrackPayment(
+		trackChanCtx, swap.Hash,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Omit errors here as the payment may not have been
+	// initiated from this client.
+trackChanLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+
+		case trackResp := <-trackChan:
+			if trackResp.State != lnrpc.Payment_FAILED {
+				return nil
+			}
+			break trackChanLoop
+
+		case <-errChan:
+			return err
+		}
+	}
+
+	if swap.LastUpdate().Cost.Server == 0 {
+		// If the server cost is zero resume the payment.
+		return m.resumeLoopOutPayment(ctx, swap)
+	}
+
+	return nil
+}
+
+// resumeLoopOutPayment attempts to resume the loop out payment for the
+// specified swap.
+func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
+	swap *loopdb.LoopOut) error {
+
+	swapRes, err := m.swapClient.NewLoopOutSwap(
+		ctx, &swapserverrpc.ServerLoopOutRequest{
+			SwapHash:  swap.Hash[:],
+			UserAgent: ResumeSwapInitiator,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	paymentReq := swapRes.SwapInvoice
+	// Verify the payment request before attempting payment.
+	inv, err := m.lnd.Client.DecodePaymentRequest(ctx, paymentReq)
+	if err != nil {
+		return fmt.Errorf("failed to decode loop out invoice: %v", err)
+	}
+
+	if swap.Hash != inv.Hash {
+		return fmt.Errorf("invoice payment hash %v does not match "+
+			"swap hash %v", inv.Hash, swap.Hash)
+	}
+
+	amtRequested := swap.Contract.AmountRequested
+
+	if inv.Value.ToSatoshis() > swap.Contract.MaxSwapFee*2+amtRequested {
+		return fmt.Errorf("invoice amount %v exceeds max "+
+			"allowed %v", inv.Value.ToSatoshis(),
+			swap.Contract.MaxSwapFee+amtRequested)
+	}
+
+	payChan, errChan, err := m.lnd.Router.SendPayment(
+		ctx,
+		lndclient.SendPaymentRequest{
+			Invoice: paymentReq,
+			Timeout: time.Hour,
+			MaxFee:  swap.Contract.MaxSwapFee,
+		})
+	if err != nil {
+		return err
+	}
+	for {
+		select {
+		case payResp := <-payChan:
+			if payResp.FailureReason.String() != "" {
+				return fmt.Errorf("payment error: %v", payResp.FailureReason)
+			}
+			if payResp.State == lnrpc.Payment_SUCCEEDED {
+				cost := swap.LastUpdate().Cost
+				cost.Server = payResp.Value.ToSatoshis() - amtRequested
+				cost.Offchain = payResp.Fee.ToSatoshis()
+				// Payment succeeded.
+				updateTime := time.Now()
+
+				// Update state in store.
+				err = m.swapStore.UpdateLoopOut(
+					ctx, swap.Hash, updateTime,
+					loopdb.SwapStateData{
+						State:      loopdb.StateSuccess,
+						Cost:       cost,
+						HtlcTxHash: swap.LastUpdate().HtlcTxHash,
+					},
+				)
+				if err != nil {
+					return err
+				}
+			}
+
+		case err := <-errChan:
+			return fmt.Errorf("payment error: %v", err)
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }

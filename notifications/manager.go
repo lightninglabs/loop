@@ -25,6 +25,10 @@ const (
 	// NotificationTypeStaticLoopInSweepRequest is the notification type for
 	// static loop in sweep requests.
 	NotificationTypeStaticLoopInSweepRequest
+
+	// NotificationTypeUnfinishedSwap is the notification type for unfinished
+	// swap notifications.
+	NotificationTypeUnfinishedSwap
 )
 
 const (
@@ -32,6 +36,9 @@ const (
 	// connection to the server needs to be alive before we consider it a
 	// successful connection.
 	defaultMinAliveConnTime = time.Minute
+
+	// current_version is the current version of the notification listener.
+	current_version = swapserverrpc.SubscribeNotificationsRequest_V1
 )
 
 // Client is the interface that the notification manager needs to implement in
@@ -101,13 +108,10 @@ func (m *Manager) SubscribeReservations(ctx context.Context,
 
 	m.addSubscriber(NotificationTypeReservation, sub)
 
-	// Start a goroutine to remove the subscriber when the context is
-	// canceled.
-	go func() {
-		<-ctx.Done()
+	context.AfterFunc(ctx, func() {
 		m.removeSubscriber(NotificationTypeReservation, sub)
 		close(notifChan)
-	}()
+	})
 
 	return notifChan
 }
@@ -120,6 +124,7 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 	notifChan := make(
 		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 1,
 	)
+
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
@@ -127,15 +132,34 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 
 	m.addSubscriber(NotificationTypeStaticLoopInSweepRequest, sub)
 
-	// Start a goroutine to remove the subscriber when the context is
-	// canceled.
-	go func() {
-		<-ctx.Done()
+	context.AfterFunc(ctx, func() {
 		m.removeSubscriber(
-			NotificationTypeStaticLoopInSweepRequest, sub,
+			NotificationTypeStaticLoopInSweepRequest,
+			sub,
 		)
 		close(notifChan)
-	}()
+	})
+
+	return notifChan
+}
+
+// SubscribeUnfinishedSwaps subscribes to the unfinished swap notifications.
+func (m *Manager) SubscribeUnfinishedSwaps(ctx context.Context,
+) <-chan *swapserverrpc.ServerUnfinishedSwapNotification {
+
+	notifChan := make(
+		chan *swapserverrpc.ServerUnfinishedSwapNotification, 1,
+	)
+	sub := subscriber{
+		subCtx:   ctx,
+		recvChan: notifChan,
+	}
+
+	m.addSubscriber(NotificationTypeUnfinishedSwap, sub)
+	context.AfterFunc(ctx, func() {
+		m.removeSubscriber(NotificationTypeUnfinishedSwap, sub)
+		close(notifChan)
+	})
 
 	return notifChan
 }
@@ -239,7 +263,9 @@ func (m *Manager) subscribeNotifications(ctx context.Context) error {
 	defer cancel()
 
 	notifStream, err := m.cfg.Client.SubscribeNotifications(
-		callCtx, &swapserverrpc.SubscribeNotificationsRequest{},
+		callCtx, &swapserverrpc.SubscribeNotificationsRequest{
+			Version: current_version,
+		},
 	)
 	if err != nil {
 		return err
@@ -291,6 +317,20 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 				ServerStaticLoopInSweepNotification)
 
 			recvChan <- staticLoopInSweepRequestNtfn
+		}
+
+	case *swapserverrpc.SubscribeNotificationsResponse_UnfinishedSwap: // nolint: lll
+		// We'll forward the unfinished swap notification to all
+		// subscribers.
+		unfinishedSwapNtfn := ntfn.GetUnfinishedSwap()
+		m.Lock()
+		defer m.Unlock()
+
+		for _, sub := range m.subscribers[NotificationTypeUnfinishedSwap] {
+			recvChan := sub.recvChan.(chan *swapserverrpc.
+				ServerUnfinishedSwapNotification)
+
+			recvChan <- unfinishedSwapNtfn
 		}
 
 	default:
