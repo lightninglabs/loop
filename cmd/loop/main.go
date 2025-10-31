@@ -90,7 +90,6 @@ var (
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,
 		instantOutCommand, listInstantOutsCommand,
-		printManCommand, printMarkdownCommand,
 	}
 )
 

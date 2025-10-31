@@ -25,9 +25,9 @@ import (
 	"github.com/lightninglabs/taproot-assets/fn"
 	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
-	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
 	"github.com/lightningnetwork/lnd/tlv"
 	"google.golang.org/grpc"
 )
@@ -843,17 +843,7 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 			return nil, fmt.Errorf("rfq id has wrong length: %v", n)
 		}
 
-		// In order to still be compatible with the old wire format for
-		// asset HTLCs, we populate both fields.
-		//
-		// Older versions of tapd will ignore the new field and only use
-		// the old one.
-		//
-		// Newer versions will ignore the old field and only use the new
-		// field.
-		htlc := rfqmsg.NewHtlc(
-			nil, fn.Some(rfq), fn.Some([]rfqmsg.ID{rfq}),
-		)
+		htlc := rfqmsg.NewHtlc(nil, fn.Some(rfq))
 		htlcMapRecords, err := tlv.RecordsToMap(htlc.Records())
 		if err != nil {
 			return nil, err
@@ -970,7 +960,7 @@ func (s *loopOutSwap) awaitSendPayment(ctx context.Context, hash lntypes.Hash,
 		// payment error from TrackPayment is no longer expected
 		// here.
 		case err := <-payErrChan:
-			if err != paymentsdb.ErrAlreadyPaid {
+			if err != channeldb.ErrAlreadyPaid {
 				return nil, err
 			}
 
