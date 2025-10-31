@@ -1490,6 +1490,11 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 	req *looprpc.InstantOutRequest) (*looprpc.InstantOutResponse,
 	error) {
 
+	if s.instantOutManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
+
 	reservationIds := make([]reservation.ID, len(req.ReservationIds))
 	for i, id := range req.ReservationIds {
 		if len(id) != reservation.IdLength {
@@ -1529,6 +1534,11 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 	req *looprpc.InstantOutQuoteRequest) (
 	*looprpc.InstantOutQuoteResponse, error) {
 
+	if s.instantOutManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
+
 	quote, err := s.instantOutManager.GetInstantOutQuote(
 		ctx, btcutil.Amount(req.Amt), req.ReservationIds,
 	)
@@ -1547,6 +1557,11 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 func (s *swapClientServer) ListInstantOuts(ctx context.Context,
 	_ *looprpc.ListInstantOutsRequest) (
 	*looprpc.ListInstantOutsResponse, error) {
+
+	if s.instantOutManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
 
 	instantOuts, err := s.instantOutManager.ListInstantOuts(ctx)
 	if err != nil {
