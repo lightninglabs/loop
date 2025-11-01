@@ -59,17 +59,11 @@ check_tag() {
 
     TAG=$1
 
-    # If a tag is specified, ensure that tag is present and checked out.
-    if [[ $TAG != $(git describe --abbrev=10) ]]; then
-        red "tag $TAG not checked out"
-        exit 1
-    fi
-
     # Verify that it is signed if it is a real tag. If the tag looks like the
     # output of "git describe" for an untagged commit, skip verification.
     # The pattern is: <tag_name>-<number_of_commits>-g<abbreviated_commit_hash>
     # Example: "v0.31.2-beta-122-g8c6b73c".
-    if [[ $TAG =~ -[0-9]+-g([0-9a-f]{10})$ ]]; then
+    if [[ $TAG =~ -[0-9]+-g([0-9a-f]{7,40})$ ]]; then
         # This looks like a "git describe" output. Make sure the hash
         # described is a prefix of the current commit.
         DESCRIBED_HASH=${BASH_REMATCH[1]}
@@ -80,6 +74,25 @@ check_tag() {
         fi
 
         return
+    fi
+
+    # Release tags must start with 'v' (for example v0.31.5-beta).
+    if [[ $TAG != v* ]]; then
+        red "tag $TAG must start with 'v'"
+        exit 1
+    fi
+
+    # Ensure the tag exists in the repository.
+    if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+        red "tag $TAG not found"
+        exit 1
+    fi
+
+    # Ensure the current commit is tagged with the requested tag, even when
+    # multiple tags point at HEAD.
+    if ! git tag --points-at HEAD | grep -Fxq "$TAG"; then
+        red "tag $TAG not checked out on the current commit"
+        exit 1
     fi
 
     if ! git verify-tag $TAG; then
