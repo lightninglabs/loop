@@ -20,7 +20,7 @@ env:
 
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
-  GO_VERSION: 1.23.12
+  GO_VERSION: 1.24.6
 
 jobs:
   ########################
@@ -102,6 +102,26 @@ jobs:
 
       - name: lint
         run: make lint
+
+  ########################
+  # Verify documentation
+  ########################
+  docs-check:
+    name: verify that auto-generated documentation is up-to-date
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '~${{ env.GO_VERSION }}'
+
+      - name: check
+        run: make docs-check
 
   ########################
   # run unit tests
