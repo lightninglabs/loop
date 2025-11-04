@@ -219,4 +219,10 @@ replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
 
+// Avoid fetching gonum vanity domains. The domain is unstable and causes
+// "go mod check" failures in CI.
+replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
+
+replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
+
 go 1.24.6
