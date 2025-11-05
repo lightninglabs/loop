@@ -2,24 +2,11 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 
 	docs "github.com/urfave/cli-docs/v3"
 	"github.com/urfave/cli/v3"
 )
-
-//go:embed markdown_tabular.md.gotmpl
-var markdownTabularDocTemplate string
-
-// We have a copy of this template taken from
-// https://github.com/urfave/cli-docs where we remove column
-// "Environment variables" if it has no values.
-// TODO: remove this when https://github.com/urfave/cli-docs/pull/15
-// is merged.
-func init() {
-	docs.MarkdownTabularDocTemplate = markdownTabularDocTemplate
-}
 
 var printManCommand = &cli.Command{
 	Name:        "man",
