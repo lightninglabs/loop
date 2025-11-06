@@ -5,6 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"google.golang.org/grpc/status"
 )
 
@@ -26,6 +30,23 @@ type BlockEpochRegistrar interface {
 		error)
 }
 
+// ConfirmationsRegistrar represents the ability to subscribe to confirmation
+// notifications.
+type ConfirmationsRegistrar interface {
+	RegisterConfirmationsNtfn(ctx context.Context, txid *chainhash.Hash,
+		pkScript []byte, numConfs, heightHint int32,
+		opts ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
+		chan error, error)
+}
+
+// SpendRegistrar represents the ability to subscribe to spend notifications.
+type SpendRegistrar interface {
+	RegisterSpendNtfn(ctx context.Context,
+		outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
+		optFuncs ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+		chan error, error)
+}
+
 // RegisterBlockEpochNtfnWithRetry keeps retrying block epoch subscriptions as
 // long as lnd reports that the chain notifier sub-server is still starting.
 func RegisterBlockEpochNtfnWithRetry(ctx context.Context,
@@ -35,6 +56,70 @@ func RegisterBlockEpochNtfnWithRetry(ctx context.Context,
 		blockChan, errChan, err := registrar.RegisterBlockEpochNtfn(ctx)
 		if err == nil {
 			return blockChan, errChan, nil
+		}
+
+		if !isChainNotifierStartingErr(err) {
+			return nil, nil, err
+		}
+
+		log.Warnf("Chain notifier RPC not ready yet, retrying: %v",
+			err)
+
+		select {
+		case <-time.After(chainNotifierRetryBackoff):
+			continue
+
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
+}
+
+// RegisterConfirmationsNtfnWithRetry keeps retrying confirmation subscriptions
+// while lnd reports that the chain notifier sub-server is still starting.
+func RegisterConfirmationsNtfnWithRetry(ctx context.Context,
+	registrar ConfirmationsRegistrar, txid *chainhash.Hash, pkScript []byte,
+	numConfs, heightHint int32, opts ...lndclient.NotifierOption) (
+	chan *chainntnfs.TxConfirmation, chan error, error) {
+
+	for {
+		confChan, errChan, err := registrar.RegisterConfirmationsNtfn(
+			ctx, txid, pkScript, numConfs, heightHint, opts...,
+		)
+		if err == nil {
+			return confChan, errChan, nil
+		}
+
+		if !isChainNotifierStartingErr(err) {
+			return nil, nil, err
+		}
+
+		log.Warnf("Chain notifier RPC not ready yet, retrying: %v",
+			err)
+
+		select {
+		case <-time.After(chainNotifierRetryBackoff):
+			continue
+
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
+}
+
+// RegisterSpendNtfnWithRetry keeps retrying spend subscriptions while lnd
+// reports that the chain notifier sub-server is still starting.
+func RegisterSpendNtfnWithRetry(ctx context.Context,
+	registrar SpendRegistrar, outpoint *wire.OutPoint, pkScript []byte,
+	heightHint int32, optFuncs ...lndclient.NotifierOption) (
+	chan *chainntnfs.SpendDetail, chan error, error) {
+
+	for {
+		spendChan, errChan, err := registrar.RegisterSpendNtfn(
+			ctx, outpoint, pkScript, heightHint, optFuncs...,
+		)
+		if err == nil {
+			return spendChan, errChan, nil
 		}
 
 		if !isChainNotifierStartingErr(err) {

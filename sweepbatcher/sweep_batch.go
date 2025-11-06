@@ -1996,9 +1996,9 @@ func (b *batch) monitorSpend(ctx context.Context, primarySweep sweep) error {
 
 	reorgChan := make(chan struct{}, 1)
 
-	spendChan, spendErrChan, err := b.chainNotifier.RegisterSpendNtfn(
-		ctx, &primarySweep.outpoint, primarySweep.htlc.PkScript,
-		primarySweep.initiationHeight,
+	spendChan, spendErrChan, err := utils.RegisterSpendNtfnWithRetry(
+		ctx, b.chainNotifier, &primarySweep.outpoint,
+		primarySweep.htlc.PkScript, primarySweep.initiationHeight,
 		lndclient.WithReOrgChan(reorgChan),
 	)
 	if err != nil {
@@ -2030,9 +2030,9 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 
 	confCtx, cancel := context.WithCancel(ctx)
 
-	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
-		confCtx, b.batchTxid, b.batchPkScript, batchConfHeight,
-		primarySweep.initiationHeight,
+	confChan, errChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		confCtx, b.chainNotifier, b.batchTxid, b.batchPkScript,
+		batchConfHeight, primarySweep.initiationHeight,
 	)
 	if err != nil {
 		cancel()

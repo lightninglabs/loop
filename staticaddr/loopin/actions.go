@@ -482,9 +482,9 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	registerHtlcConf := func() (chan *chainntnfs.TxConfirmation, chan error,
 		error) {
 
-		return f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, htlc.PkScript, defaultConfTarget,
-			int32(f.loopIn.InitiationHeight),
+		return utils.RegisterConfirmationsNtfnWithRetry(
+			ctx, f.cfg.ChainNotifier, nil, htlc.PkScript,
+			defaultConfTarget, int32(f.loopIn.InitiationHeight),
 			lndclient.WithReOrgChan(reorgChan),
 		)
 	}
@@ -732,8 +732,8 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 	}
 
 	htlcTimeoutTxidChan, errChan, err :=
-		f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, f.loopIn.HtlcTimeoutSweepTxHash,
+		utils.RegisterConfirmationsNtfnWithRetry(
+			ctx, f.cfg.ChainNotifier, f.loopIn.HtlcTimeoutSweepTxHash,
 			timeoutSweepPkScript, defaultConfTarget,
 			int32(f.loopIn.InitiationHeight),
 		)

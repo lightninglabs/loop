@@ -640,8 +640,8 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	}
 
 	d := deposits[0]
-	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &d.OutPoint, addrParams.PkScript,
+	spentChan, errChan, err := utils.RegisterSpendNtfnWithRetry(
+		ctx, m.cfg.ChainNotifier, &d.OutPoint, addrParams.PkScript,
 		int32(d.ConfirmationHeight),
 	)
 
@@ -654,8 +654,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// confirmations.
 			var confChan chan *chainntnfs.TxConfirmation
 			confChan, errChan, err =
-				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-					ctx, spentTx.SpenderTxHash,
+				utils.RegisterConfirmationsNtfnWithRetry(
+					ctx, m.cfg.ChainNotifier,
+					spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)

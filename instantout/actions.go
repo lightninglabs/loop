@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -460,11 +461,10 @@ func (f *FSM) WaitForSweeplessSweepConfirmedAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	confChan, confErrChan, err := f.cfg.ChainNotifier.
-		RegisterConfirmationsNtfn(
-			ctx, f.InstantOut.SweepTxHash, pkscript,
-			1, f.InstantOut.initiationHeight,
-		)
+	confChan, confErrChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		ctx, f.cfg.ChainNotifier, f.InstantOut.SweepTxHash, pkscript,
+		1, f.InstantOut.initiationHeight,
+	)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -505,12 +505,11 @@ func (f *FSM) PublishHtlcAction(ctx context.Context,
 	f.Debugf("published htlc tx: %v", txHash)
 
 	// We'll now wait for the htlc to be confirmed.
-	confChan, confErrChan, err := f.cfg.ChainNotifier.
-		RegisterConfirmationsNtfn(
-			ctx, &txHash,
-			f.InstantOut.finalizedHtlcTx.TxOut[0].PkScript,
-			1, f.InstantOut.initiationHeight,
-		)
+	confChan, confErrChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		ctx, f.cfg.ChainNotifier, &txHash,
+		f.InstantOut.finalizedHtlcTx.TxOut[0].PkScript,
+		1, f.InstantOut.initiationHeight,
+	)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -575,9 +574,9 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	confChan, confErrChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		ctx, f.InstantOut.SweepTxHash, sweepPkScript,
-		1, f.InstantOut.initiationHeight,
+	confChan, confErrChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		ctx, f.cfg.ChainNotifier, f.InstantOut.SweepTxHash,
+		sweepPkScript, 1, f.InstantOut.initiationHeight,
 	)
 	if err != nil {
 		return f.HandleError(err)

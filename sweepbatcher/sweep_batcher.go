@@ -1284,8 +1284,8 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 
 	sweep := sweeps[0]
 
-	spendChan, spendErr, err := b.chainNotifier.RegisterSpendNtfn(
-		spendCtx, &sweep.outpoint, sweep.htlc.PkScript,
+	spendChan, spendErr, err := utils.RegisterSpendNtfnWithRetry(
+		spendCtx, b.chainNotifier, &sweep.outpoint, sweep.htlc.PkScript,
 		sweep.initiationHeight,
 	)
 	if err != nil {
@@ -1412,9 +1412,10 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 
 	confCtx, cancel := context.WithCancel(ctx)
 
-	confChan, errChan, err := b.chainNotifier.RegisterConfirmationsNtfn(
-		confCtx, &batchTxid, batchPkScript, batchConfHeight,
-		sweep.initiationHeight, lndclient.WithReOrgChan(reorgChan),
+	confChan, errChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		confCtx, b.chainNotifier, &batchTxid, batchPkScript,
+		batchConfHeight, sweep.initiationHeight,
+		lndclient.WithReOrgChan(reorgChan),
 	)
 	if err != nil {
 		cancel()

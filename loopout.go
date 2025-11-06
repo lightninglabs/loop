@@ -1012,9 +1012,10 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 	ctx, cancel := context.WithCancel(globalCtx)
 	defer cancel()
 	htlcConfChan, htlcErrChan, err :=
-		s.lnd.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, s.htlcTxHash, s.htlc.PkScript,
-			int32(s.HtlcConfirmations), s.InitiationHeight,
+		utils.RegisterConfirmationsNtfnWithRetry(
+			ctx, s.lnd.ChainNotifier, s.htlcTxHash,
+			s.htlc.PkScript, int32(s.HtlcConfirmations),
+			s.InitiationHeight,
 		)
 	if err != nil {
 		return nil, err

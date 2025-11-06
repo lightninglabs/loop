@@ -95,9 +95,9 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 		"initiation height: %v", f.reservation.ID, pkscript,
 		f.reservation.InitiationHeight)
 
-	confChan, errConfChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		callCtx, nil, pkscript, DefaultConfTarget,
-		f.reservation.InitiationHeight,
+	confChan, errConfChan, err := utils.RegisterConfirmationsNtfnWithRetry(
+		callCtx, f.cfg.ChainNotifier, nil, pkscript,
+		DefaultConfTarget, f.reservation.InitiationHeight,
 	)
 	if err != nil {
 		f.Errorf("unable to subscribe to conf notification: %v", err)
@@ -173,8 +173,8 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
-		notifCtx, f.reservation.Outpoint, pkScript,
+	spendChan, errSpendChan, err := utils.RegisterSpendNtfnWithRetry(
+		notifCtx, f.cfg.ChainNotifier, f.reservation.Outpoint, pkScript,
 		f.reservation.InitiationHeight,
 	)
 	if err != nil {

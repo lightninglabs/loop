@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -123,8 +124,9 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 		txID = &f.deposit.ExpirySweepTxid
 	}
 
-	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
+	spendChan, errSpendChan, err := utils.RegisterConfirmationsNtfnWithRetry( //nolint:lll
+		ctx, f.cfg.ChainNotifier, txID,
+		f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.ConfirmationHeight),
 	)
 	if err != nil {

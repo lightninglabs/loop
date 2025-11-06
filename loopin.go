@@ -702,8 +702,9 @@ func (s *loopInSwap) waitForHtlcConf(globalCtx context.Context) (
 			return nil, nil, nil
 		}
 
-		return notifier.RegisterConfirmationsNtfn(
-			ctx, s.htlcTxHash, htlc.PkScript, 1, s.InitiationHeight,
+		return utils.RegisterConfirmationsNtfnWithRetry(
+			ctx, notifier, s.htlcTxHash, htlc.PkScript, 1,
+			s.InitiationHeight,
 		)
 	}
 
@@ -867,8 +868,9 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	// Register the htlc spend notification.
 	rpcCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	spendChan, spendErr, err := s.lnd.ChainNotifier.RegisterSpendNtfn(
-		rpcCtx, htlcOutpoint, s.htlc.PkScript, s.InitiationHeight,
+	spendChan, spendErr, err := utils.RegisterSpendNtfnWithRetry(
+		rpcCtx, s.lnd.ChainNotifier, htlcOutpoint, s.htlc.PkScript,
+		s.InitiationHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("register spend ntfn: %v", err)
