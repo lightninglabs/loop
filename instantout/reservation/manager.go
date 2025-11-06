@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
 	reservationrpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 )
 
 // Manager manages the reservation state machines.
@@ -49,8 +50,8 @@ func (m *Manager) Run(ctx context.Context, height int32,
 		return err
 	}
 
-	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(runCtx)
+	newBlockChan, newBlockErrChan, err :=
+		utils.RegisterBlockEpochNtfnWithRetry(runCtx, m.cfg.ChainNotifier)
 	if err != nil {
 		return err
 	}

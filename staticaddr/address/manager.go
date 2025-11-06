@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -69,7 +70,7 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
-		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		utils.RegisterBlockEpochNtfnWithRetry(ctx, m.cfg.ChainNotifier)
 
 	if err != nil {
 		return err

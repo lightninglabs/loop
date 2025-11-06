@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
@@ -497,8 +498,9 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	}
 
 	// Subscribe to new blocks.
-	registerBlocks := f.cfg.ChainNotifier.RegisterBlockEpochNtfn
-	blockChan, blockChanErr, err := registerBlocks(ctx)
+	blockChan, blockChanErr, err := utils.RegisterBlockEpochNtfnWithRetry(
+		ctx, f.cfg.ChainNotifier,
+	)
 	if err != nil {
 		err = fmt.Errorf("unable to subscribe to new blocks: %w", err)
 

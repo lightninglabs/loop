@@ -842,8 +842,9 @@ func (b *batch) Run(ctx context.Context) error {
 	clock := b.cfg.clock
 	startTime := clock.Now()
 
-	blockChan, blockErrChan, err :=
-		b.chainNotifier.RegisterBlockEpochNtfn(runCtx)
+	blockChan, blockErrChan, err := utils.RegisterBlockEpochNtfnWithRetry(
+		runCtx, b.chainNotifier,
+	)
 	if err != nil {
 		return fmt.Errorf("block registration error: %w", err)
 	}

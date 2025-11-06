@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -158,8 +159,8 @@ func NewManager(cfg *Config, currentHeight uint32) *Manager {
 
 // Run runs the static address loop-in manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
-	registerBlockNtfn := m.cfg.ChainNotifier.RegisterBlockEpochNtfn
-	newBlockChan, newBlockErrChan, err := registerBlockNtfn(ctx)
+	newBlockChan, newBlockErrChan, err :=
+		utils.RegisterBlockEpochNtfnWithRetry(ctx, m.cfg.ChainNotifier)
 	if err != nil {
 		log.Errorf("unable to register for block notifications: %v",
 			err)

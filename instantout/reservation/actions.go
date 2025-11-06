@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 )
 
@@ -103,8 +104,8 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	blockChan, errBlockChan, err := f.cfg.ChainNotifier.RegisterBlockEpochNtfn(
-		callCtx,
+	blockChan, errBlockChan, err := utils.RegisterBlockEpochNtfnWithRetry(
+		callCtx, f.cfg.ChainNotifier,
 	)
 	if err != nil {
 		f.Errorf("unable to subscribe to block notifications: %v", err)
@@ -158,8 +159,9 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 
 	notifCtx, cancel := context.WithCancel(ctx)
 
-	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(notifCtx)
+	blockHeightChan, errEpochChan, err := utils.RegisterBlockEpochNtfnWithRetry(
+		notifCtx, f.cfg.ChainNotifier,
+	)
 	if err != nil {
 		cancel()
 		return f.HandleError(err)

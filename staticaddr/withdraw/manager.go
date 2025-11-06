@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -154,7 +155,7 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
 // Run runs the deposit withdrawal manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
-		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		utils.RegisterBlockEpochNtfnWithRetry(ctx, m.cfg.ChainNotifier)
 
 	if err != nil {
 		log.Errorf("unable to register for block epoch "+

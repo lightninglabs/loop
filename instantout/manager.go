@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -68,8 +69,8 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(ctx)
+	newBlockChan, newBlockErrChan, err :=
+		utils.RegisterBlockEpochNtfnWithRetry(ctx, m.cfg.ChainNotifier)
 	if err != nil {
 		close(initChan)
 		return err
