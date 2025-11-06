@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
 )
@@ -67,39 +67,14 @@ func (s *executor) run(mainCtx context.Context,
 	statusChan chan<- SwapInfo,
 	abandonChans map[lntypes.Hash]chan struct{}) error {
 
-	var (
-		err            error
-		blockEpochChan <-chan int32
-		blockErrorChan <-chan error
-		batcherErrChan chan error
+	blockEpochChan, blockErrorChan, err := utils.RegisterBlockEpochNtfnWithRetry(
+		mainCtx, s.lnd.ChainNotifier,
 	)
-
-	for {
-		blockEpochChan, blockErrorChan, err =
-			s.lnd.ChainNotifier.RegisterBlockEpochNtfn(mainCtx)
-		if err == nil {
-			break
-		}
-
-		if strings.Contains(err.Error(),
-			"in the process of starting") {
-
-			log.Warnf("LND chain notifier server not ready yet, " +
-				"retrying with delay")
-
-			// Give chain notifier some time to start and try to
-			// re-attempt block epoch subscription.
-			select {
-			case <-time.After(500 * time.Millisecond):
-				continue
-
-			case <-mainCtx.Done():
-				return err
-			}
-		}
-
+	if err != nil {
 		return err
 	}
+
+	var batcherErrChan chan error
 
 	// Before starting, make sure we have an up-to-date block height.
 	// Otherwise, we might reveal a preimage for a swap that is already
