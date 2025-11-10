@@ -225,4 +225,6 @@ replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
 replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
 
+replace github.com/lightninglabs/lndclient => github.com/starius/lndclient v0.20.0-1-ports.0.20251110204322-be4fd2c52ae3
+
 go 1.24.6

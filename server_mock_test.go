@@ -181,7 +181,9 @@ func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 	// cancel the probe payment.
 	probeSub := <-s.lnd.SingleInvoiceSubcribeChannel
 	probeSub.Update <- lndclient.InvoiceUpdate{
-		State: invpkg.ContractAccepted,
+		Invoice: lndclient.Invoice{
+			State: invpkg.ContractAccepted,
+		},
 	}
 	<-s.lnd.FailInvoiceChannel
 
