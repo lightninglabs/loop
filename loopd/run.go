@@ -88,15 +88,17 @@ func NewListenerConfig(config *Config, rpcCfg RPCConfig) *ListenerCfg {
 			defer cancel()
 
 			svcCfg := &lndclient.LndServicesConfig{
-				LndAddress:            cfg.Host,
-				Network:               network,
-				CustomMacaroonPath:    cfg.MacaroonPath,
-				TLSPath:               cfg.TLSPath,
-				CheckVersion:          LoopMinRequiredLndVersion,
-				BlockUntilChainSynced: true,
-				CallerCtx:             callerCtx,
-				BlockUntilUnlocked:    true,
-				RPCTimeout:            cfg.RPCTimeout,
+				LndAddress:         cfg.Host,
+				Network:            network,
+				CustomMacaroonPath: cfg.MacaroonPath,
+				TLSPath:            cfg.TLSPath,
+				CheckVersion:       LoopMinRequiredLndVersion,
+				CallerCtx:          callerCtx,
+				RPCTimeout:         cfg.RPCTimeout,
+
+				BlockUntilChainSynced:   true,
+				BlockUntilUnlocked:      true,
+				BlockUntilChainNotifier: true,
 			}
 
 			// If a custom lnd connection is specified we use that
