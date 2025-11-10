@@ -82,7 +82,9 @@ func (c *loopInTestContext) updateInvoiceState(amount btcutil.Amount,
 
 	c.swapInvoiceSubscription.Update <- lndclient.InvoiceUpdate{
 		AmtPaid: amount,
-		State:   state,
+		Invoice: lndclient.Invoice{
+			State: state,
+		},
 	}
 
 	// If we're in a final state, close our update channels as lndclient
