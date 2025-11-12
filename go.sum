@@ -1107,8 +1107,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3 h1:NuDp6Z+QNMSzZ/+RzWsjgAgQSr/REDxTiHmTczZxlXA=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3/go.mod h1:bDnEKRN1u13NFBuy/C+bFLhxA5bfd3clT25y76QY0AM=
-github.com/lightninglabs/lndclient v0.20.0-1 h1:xwDoh7z3bszXc4mkMO6ksEcXhkQw9v0XHJ7fB0LKDNo=
-github.com/lightninglabs/lndclient v0.20.0-1/go.mod h1:LcbsTCCd0Qw5C4zlv/YqrPY81XUVA6wN1lA/qEWIs+Y=
+github.com/lightninglabs/lndclient v0.20.0-4 h1:oSdoAtCcGJrlr6Pwi6jgzawBRpFFZKauyL+IzwV1iGc=
+github.com/lightninglabs/lndclient v0.20.0-4/go.mod h1:VxIakyBmTIy4tmg2zqj45YrDkJi53PQLwW0lmFzRR6k=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2 h1:eFjp1dIB2BhhQp/THKrjLdlYuPugO9UU4kDqu91OX/Q=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2/go.mod h1:99BKpIi6ruaaXRM1A77eqZ+FWPQ3cfRa+ZVy5bmWMaY=
 github.com/lightninglabs/neutrino v0.16.1 h1:5Kz4ToxncEVkpKC6fwUjXKtFKJhuxlG3sBB3MdJTJjs=
