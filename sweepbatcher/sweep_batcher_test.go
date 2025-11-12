@@ -4149,9 +4149,9 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 	go func() {
 		defer addWG.Done()
 
-		// After this goroutine completes, stop the goroutine that handles
-		// registrations as well. Give it one second to finish the last
-		// AddSweep to prevent goroutine leaks.
+		// After this goroutine completes, stop the goroutine that
+		// handles registrations as well. Give it one second to finish
+		// the last AddSweep to prevent goroutine leaks.
 		defer time.AfterFunc(time.Second, confCancel)
 
 		for {

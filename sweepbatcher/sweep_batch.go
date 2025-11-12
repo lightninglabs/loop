@@ -2439,6 +2439,7 @@ func (b *batch) isComplete() bool {
 	if err != nil && err != ErrBatchShuttingDown {
 		return false
 	}
+
 	return b.state == Confirmed
 }
 
