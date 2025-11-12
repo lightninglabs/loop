@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -119,6 +120,30 @@ func (s *SQLStore) CancelBatch(ctx context.Context, id int32) error {
 // UpdateSweepBatch updates a batch in the database.
 func (s *SQLStore) UpdateSweepBatch(ctx context.Context, batch *dbBatch) error {
 	return s.baseDb.UpdateBatch(ctx, batchToUpdateArgs(*batch))
+}
+
+// ConfirmBatchWithSweeps atomically confirms the batch and updates its sweeps.
+func (s *SQLStore) ConfirmBatchWithSweeps(ctx context.Context, batch *dbBatch,
+	sweeps []*dbSweep) error {
+
+	writeOpts := loopdb.NewSqlWriteOpts()
+
+	return s.baseDb.ExecTx(ctx, writeOpts, func(tx Querier) error {
+		err := tx.UpdateBatch(ctx, batchToUpdateArgs(*batch))
+		if err != nil {
+			return fmt.Errorf("update batch %d: %w", batch.ID, err)
+		}
+
+		for _, sweep := range sweeps {
+			err := tx.UpsertSweep(ctx, sweepToUpsertArgs(*sweep))
+			if err != nil {
+				return fmt.Errorf("upsert sweep %v: %w",
+					sweep.Outpoint, err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // FetchBatchSweeps fetches all the sweeps that are part a batch.

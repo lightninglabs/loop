@@ -59,6 +59,11 @@ type BatcherStore interface {
 	// UpdateSweepBatch updates a batch in the database.
 	UpdateSweepBatch(ctx context.Context, batch *dbBatch) error
 
+	// ConfirmBatchWithSweeps atomically marks the batch as confirmed and
+	// updates the provided sweeps in the database.
+	ConfirmBatchWithSweeps(ctx context.Context, batch *dbBatch,
+		sweeps []*dbSweep) error
+
 	// FetchBatchSweeps fetches all the sweeps that belong to a batch.
 	FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep, error)
 
@@ -975,9 +980,8 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 			"sweeps with primarySweep %x: confirmed=%v",
 			len(sweeps), sweep.swapHash[:6], parentBatch.Confirmed)
 
-		// Note that sweeps are marked completed after the batch is
-		// marked confirmed because here we check the sweep status
-		// first and then check the batch status.
+		// Batch + sweeps are persisted atomically, so if the sweep
+		// shows as completed its parent batch must be confirmed.
 		if parentBatch.Confirmed {
 			debugf("Sweep group of %d sweeps with primarySweep %x "+
 				"is fully confirmed, switching directly to "+

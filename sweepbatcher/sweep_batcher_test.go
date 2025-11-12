@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/build"
@@ -4391,6 +4392,255 @@ func testSweepBatcherHandleBatchShutdown(t *testing.T, store testStore,
 
 	err = testBatcher.handleSweeps(ctx, []*sweep{testSweep}, nil, false)
 	require.NoError(t, err)
+}
+
+// failingBaseDB wraps a BaseDB and injects a failure after the batch row is
+// marked confirmed but before the sweeps are persisted, emulating a crash.
+type failingBaseDB struct {
+	// BaseDB is the actual database implementation we delegate to.
+	BaseDB
+
+	// mu synchronizes access to the failure state.
+	mu sync.Mutex
+
+	// armed is set once we observe the batch row being marked confirmed.
+	armed bool
+
+	// failed ensures we only inject the failure once.
+	failed bool
+
+	// failErr is the error returned to callers when the injection triggers.
+	failErr error
+}
+
+// newFailingBaseDB creates a new failure-injecting wrapper around the provided
+// BaseDB implementation.
+func newFailingBaseDB(inner BaseDB) *failingBaseDB {
+	return &failingBaseDB{
+		BaseDB:  inner,
+		failErr: errors.New("forced failure after confirming batch"),
+	}
+}
+
+// markArmed remembers that the batch row was updated to confirmed so the next
+// sweep update will be forced to fail.
+func (f *failingBaseDB) markArmed() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if !f.failed {
+		f.armed = true
+	}
+}
+
+// shouldFail returns true exactly once after the wrapper has been armed.
+func (f *failingBaseDB) shouldFail() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.armed && !f.failed {
+		f.failed = true
+		f.armed = false
+		return true
+	}
+
+	return false
+}
+
+// UpdateBatch proxies the batch update and arms the failure if the batch was
+// marked confirmed.
+func (f *failingBaseDB) UpdateBatch(ctx context.Context,
+	arg sqlc.UpdateBatchParams) error {
+
+	if arg.Confirmed {
+		f.markArmed()
+	}
+
+	return f.BaseDB.UpdateBatch(ctx, arg)
+}
+
+// UpsertSweep forwards the sweep update unless a failure injection is pending.
+func (f *failingBaseDB) UpsertSweep(ctx context.Context,
+	arg sqlc.UpsertSweepParams) error {
+
+	if f.shouldFail() {
+		return f.failErr
+	}
+
+	return f.BaseDB.UpsertSweep(ctx, arg)
+}
+
+// ExecTx wraps the transactional Querier with failingQuerier so the failure
+// state is respected inside transactions.
+func (f *failingBaseDB) ExecTx(ctx context.Context, opts loopdb.TxOptions,
+	txBody func(Querier) error) error {
+
+	return f.BaseDB.ExecTx(ctx, opts, func(q Querier) error {
+		return txBody(&failingQuerier{
+			Querier: q,
+			parent:  f,
+		})
+	})
+}
+
+// failingQuerier proxies the ExecTx-scoped Querier to propagate the failure
+// injection logic into transactional code paths.
+type failingQuerier struct {
+	// Querier is the underlying transactional view.
+	Querier
+
+	// parent references the owning failingBaseDB so we share the failure
+	// state across transactional calls.
+	parent *failingBaseDB
+}
+
+// UpdateBatch mirrors failingBaseDB.UpdateBatch within a transaction scope.
+func (f *failingQuerier) UpdateBatch(ctx context.Context,
+	arg sqlc.UpdateBatchParams) error {
+
+	if arg.Confirmed {
+		f.parent.markArmed()
+	}
+
+	return f.Querier.UpdateBatch(ctx, arg)
+}
+
+// UpsertSweep mirrors failingBaseDB.UpsertSweep for transactional calls.
+func (f *failingQuerier) UpsertSweep(ctx context.Context,
+	arg sqlc.UpsertSweepParams) error {
+
+	if f.parent.shouldFail() {
+		return f.parent.failErr
+	}
+
+	return f.Querier.UpsertSweep(ctx, arg)
+}
+
+// TestSweepBatcherConfirmedBatchIncompleteSweeps documents the current crash
+// window where a batch can be marked confirmed while its sweeps remain
+// incomplete in the DB. This test runs only against the loopdb backend and
+// injects failures at the BaseDB layer to simulate a crash.
+func TestSweepBatcherConfirmedBatchIncompleteSweeps(t *testing.T) {
+	logger := btclog.NewSLogger(btclog.NewDefaultHandler(os.Stdout))
+	logger.SetLevel(btclog.LevelTrace)
+	UseLogger(logger.SubSystem("SWEEP"))
+
+	// Set up a fresh loopdb instance so we exercise the real SQL backend.
+	sqlDB := loopdb.NewTestDB(t)
+	typedSqlDB := loopdb.NewTypedStore[Querier](sqlDB)
+	faultyDB := newFailingBaseDB(typedSqlDB)
+	lnd := test.NewMockLnd()
+	batcherStore := NewSQLStore(faultyDB, lnd.ChainParams)
+	swapStore := newLoopdbStore(t, sqlDB)
+
+	const (
+		sweepValue btcutil.Amount = 1_000_000
+		confHeight                = 777
+	)
+
+	ctx := context.Background()
+
+	sweepOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0, 0, 0, 3},
+		Index: 7,
+	}
+	swapHash := lntypes.Hash{3, 3, 3}
+
+	notifier := &SpendNotifier{
+		SpendChan: make(chan *SpendDetail, ntfnBufferSize),
+		ConfChan:  make(chan *ConfDetail, ntfnBufferSize),
+		QuitChan:  make(chan bool, ntfnBufferSize),
+	}
+
+	sweepReq := SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    sweepValue,
+			Outpoint: sweepOutpoint,
+		}},
+		Notifier: notifier,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      144,
+			AmountRequested: sweepValue,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+			Preimage:        lntypes.Preimage{3},
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	// Seed the DB with an initiated Loop Out swap so AddSweep can load it.
+	require.NoError(t, swapStore.CreateLoopOut(ctx, swapHash, swap))
+	swapStore.AssertLoopOutStored()
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(
+		swapStore, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+
+	// The failing DB wrapper will arm itself when the batch row is updated,
+	// then abort the first sweep update performed in the same transaction,
+	// mimicking a crash between those two steps.
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx1)
+	}()
+
+	<-batcher.initDone
+
+	// Add the sweep once so the batcher spins up a batch.
+	require.NoError(t, batcher.AddSweep(ctx1, &sweepReq))
+
+	<-lnd.RegisterSpendChannel
+	publishedTx := <-lnd.TxPublishChannel
+
+	spendDetail := &chainntnfs.SpendDetail{
+		SpentOutPoint:     &sweepOutpoint,
+		SpendingTx:        publishedTx,
+		SpenderTxHash:     new(chainhash.Hash),
+		SpenderInputIndex: 0,
+	}
+	*spendDetail.SpenderTxHash = publishedTx.TxHash()
+	lnd.SpendChannel <- spendDetail
+
+	<-lnd.RegisterConfChannel
+	require.NoError(t, lnd.NotifyHeight(confHeight))
+	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		BlockHeight: confHeight,
+		Tx:          publishedTx,
+	}
+
+	// The failing BaseDB injects its error while handleConf stores the
+	// confirmed batch/sweeps. Observe that error, then verify the DB was
+	// left consistent (both the batch and sweeps remain unconfirmed).
+	wg.Wait()
+	require.ErrorIs(t, runErr, faultyDB.failErr)
+
+	completed, err := batcherStore.GetSweepStatus(ctx, sweepOutpoint)
+	require.NoError(t, err)
+
+	parentBatch, err := batcherStore.GetParentBatch(ctx, sweepOutpoint)
+	require.NoError(t, err)
+
+	require.Equal(t, parentBatch.Confirmed, completed,
+		"inconsistent DB: confirmed batch vs sweep completion")
 }
 
 // testCustomSignMuSig2 tests the operation with custom musig2 signer.
