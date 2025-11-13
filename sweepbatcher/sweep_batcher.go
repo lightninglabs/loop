@@ -906,7 +906,15 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	for _, batch := range b.batches {
 		if batch.sweepExists(sweep.outpoint) {
 			accepted, err := batch.addSweeps(ctx, sweeps)
-			if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
+			if errors.Is(err, ErrBatchShuttingDown) {
+				// The batch finished while we were trying to
+				// re-add the sweep. Leave it in the map for the
+				// lazy cleanup below and fall back to the
+				// monitorSpendAndNotify path below.
+				break
+			}
+
+			if err != nil {
 				return err
 			}
 
