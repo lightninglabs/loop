@@ -7,7 +7,9 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	loop_test "github.com/lightninglabs/loop/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,8 +19,25 @@ func TestSqlStore(t *testing.T) {
 	testDb := loopdb.NewTestDB(t)
 	defer testDb.Close()
 
+	addressStore := address.NewSqlStore(testDb.BaseDB)
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	store := NewSqlStore(loopdb.NewTypedStore[Querier](testDb), depositStore)
+
+	_, client := loop_test.CreateKey(1)
+	_, server := loop_test.CreateKey(2)
+	pkScript := []byte("pkscript")
+	addrParams := &address.Parameters{
+		ClientPubkey: client,
+		ServerPubkey: server,
+		Expiry:       10,
+		PkScript:     pkScript,
+	}
+
+	err := addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
+	addrParams.PkScript = []byte("pkscript2")
+	err = addressStore.CreateStaticAddress(t.Context(), addrParams)
+	require.NoError(t, err)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()
@@ -33,6 +52,7 @@ func TestSqlStore(t *testing.T) {
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
+		AddressID: 1,
 	},
 		&deposit.Deposit{
 			ID:    newID(),
@@ -40,6 +60,7 @@ func TestSqlStore(t *testing.T) {
 			TimeOutSweepPkScript: []byte{
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
+			AddressID: 2,
 		}
 
 	withdrawalTx := &wire.MsgTx{
@@ -60,7 +81,7 @@ func TestSqlStore(t *testing.T) {
 		},
 	}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)

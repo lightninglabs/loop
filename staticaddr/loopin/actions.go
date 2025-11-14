@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -43,12 +44,6 @@ var (
 	// amount.
 	ErrFeeTooHigh = errors.New("server htlc tx fee is higher than the " +
 		"configured allowed maximum")
-
-	// ErrBackupFeeTooHigh is returned if the server sets a fee rate for the
-	// htlc backup tx that is too high. We prevent here against a low htlc
-	// timeout sweep amount.
-	ErrBackupFeeTooHigh = errors.New("server htlc backup tx fee is " +
-		"higher than the configured allowed maximum")
 )
 
 // InitHtlcAction is executed if all loop-in information has been validated. We
@@ -69,15 +64,55 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 
 	// Calculate the swap invoice amount. The server needs to pay us the
 	// swap amount minus the fees that the server charges for the swap. The
-	// swap amount is either the total value of the selected deposits, or
-	// the selected amount if a specific amount was requested.
-	swapAmount := f.loopIn.TotalDepositAmount()
-	var hasChange bool
+	// swap amount is either the total value of the selected deposits or the
+	// selected amount if a specific amount was requested. If the selection
+	// results in change, we create a new static address for it.
+	var (
+		swapAmount       = f.loopIn.TotalDepositAmount()
+		hasChange        bool
+		changeAddrParams *address.Parameters
+		changeAddress    string
+	)
 	if f.loopIn.SelectedAmount > 0 {
 		swapAmount = f.loopIn.SelectedAmount
 		remainingAmount := f.loopIn.TotalDepositAmount() - swapAmount
 		hasChange = remainingAmount > 0 && remainingAmount <
 			f.loopIn.TotalDepositAmount()
+
+		if hasChange {
+			changeAddrParams, err = f.cfg.AddressManager.NewAddress(
+				ctx,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to create change "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			taprootAddress, err := changeAddrParams.TaprootAddress(
+				f.cfg.ChainParams,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to create taproot "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			changeAddr, err := btcutil.DecodeAddress(
+				taprootAddress, f.cfg.ChainParams,
+			)
+			if err != nil {
+				err = fmt.Errorf("unable to decode change "+
+					"address: %w", err)
+
+				return f.HandleError(err)
+			}
+
+			f.loopIn.ChangeAddress = changeAddr
+			changeAddress = changeAddr.String()
+		}
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
@@ -130,6 +165,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		SwapHash:              f.loopIn.SwapHash[:],
 		DepositOutpoints:      f.loopIn.DepositOutpoints,
 		Amount:                uint64(f.loopIn.SelectedAmount),
+		ChangeAddress:         changeAddress,
 		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
 		SwapInvoice:           f.loopIn.SwapInvoice,
 		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
@@ -298,23 +334,6 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	var err error
-
-	f.loopIn.AddressParams, err =
-		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		err = fmt.Errorf("unable to get static address parameters: "+
-			"%w", err)
-
-		return f.HandleError(err)
-	}
-
-	f.loopIn.Address, err = f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		err = fmt.Errorf("unable to get static address: %w", err)
-
-		return f.HandleError(err)
-	}
 
 	// Create a musig2 session for each deposit and different htlc tx fee
 	// rates.

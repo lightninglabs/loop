@@ -130,9 +130,13 @@ type SwapClientClient interface {
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
 	GetStaticAddressSummary(ctx context.Context, in *StaticAddressSummaryRequest, opts ...grpc.CallOption) (*StaticAddressSummaryResponse, error)
-	// loop:`static`
+	// loop:`in`
 	// StaticAddressLoopIn initiates a static address loop-in swap.
 	StaticAddressLoopIn(ctx context.Context, in *StaticAddressLoopInRequest, opts ...grpc.CallOption) (*StaticAddressLoopInResponse, error)
+	// loop:`openchannel`
+	// StaticOpenChannel opens a channel funded by selected static address
+	// deposits.
+	StaticOpenChannel(ctx context.Context, in *OpenChannelRequest, opts ...grpc.CallOption) (*StaticOpenChannelResponse, error)
 }
 
 type swapClientClient struct {
@@ -436,6 +440,15 @@ func (c *swapClientClient) StaticAddressLoopIn(ctx context.Context, in *StaticAd
 	return out, nil
 }
 
+func (c *swapClientClient) StaticOpenChannel(ctx context.Context, in *OpenChannelRequest, opts ...grpc.CallOption) (*StaticOpenChannelResponse, error) {
+	out := new(StaticOpenChannelResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/StaticOpenChannel", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -552,9 +565,13 @@ type SwapClientServer interface {
 	// GetStaticAddressSummary returns a summary of static address related
 	// statistics.
 	GetStaticAddressSummary(context.Context, *StaticAddressSummaryRequest) (*StaticAddressSummaryResponse, error)
-	// loop:`static`
+	// loop:`in`
 	// StaticAddressLoopIn initiates a static address loop-in swap.
 	StaticAddressLoopIn(context.Context, *StaticAddressLoopInRequest) (*StaticAddressLoopInResponse, error)
+	// loop:`openchannel`
+	// StaticOpenChannel opens a channel funded by selected static address
+	// deposits.
+	StaticOpenChannel(context.Context, *OpenChannelRequest) (*StaticOpenChannelResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -651,6 +668,9 @@ func (UnimplementedSwapClientServer) GetStaticAddressSummary(context.Context, *S
 }
 func (UnimplementedSwapClientServer) StaticAddressLoopIn(context.Context, *StaticAddressLoopInRequest) (*StaticAddressLoopInResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StaticAddressLoopIn not implemented")
+}
+func (UnimplementedSwapClientServer) StaticOpenChannel(context.Context, *OpenChannelRequest) (*StaticOpenChannelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StaticOpenChannel not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -1208,6 +1228,24 @@ func _SwapClient_StaticAddressLoopIn_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_StaticOpenChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).StaticOpenChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/StaticOpenChannel",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).StaticOpenChannel(ctx, req.(*OpenChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1330,6 +1368,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StaticAddressLoopIn",
 			Handler:    _SwapClient_StaticAddressLoopIn_Handler,
+		},
+		{
+			MethodName: "StaticOpenChannel",
+			Handler:    _SwapClient_StaticOpenChannel_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

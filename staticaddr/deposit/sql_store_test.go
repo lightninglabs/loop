@@ -1,11 +1,13 @@
 package deposit
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	loop_test "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -20,20 +22,26 @@ func TestToDeposit(t *testing.T) {
 	tx := wire.NewMsgTx(2)
 	txHash := tx.TxHash()
 
+	_, client := loop_test.CreateKey(1)
+	_, server := loop_test.CreateKey(2)
+
 	tests := []struct {
 		name       string
-		row        sqlc.Deposit
+		row        sqlc.AllDepositsRow
 		lastUpdate sqlc.DepositUpdate
 		expectErr  bool
 	}{
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,
 				ConfirmationHeight: 123456,
 				SwapHash:           swapHash[:],
+				ClientPubkey:       client.SerializeCompressed(),
+				ServerPubkey:       server.SerializeCompressed(),
+				Expiry:             sql.NullInt32{Int32: 1000, Valid: true},
 			},
 			lastUpdate: sqlc.DepositUpdate{
 				UpdateState: "completed",
@@ -42,11 +50,14 @@ func TestToDeposit(t *testing.T) {
 		},
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,
 				ConfirmationHeight: 123456,
+				ClientPubkey:       client.SerializeCompressed(),
+				ServerPubkey:       server.SerializeCompressed(),
+				Expiry:             sql.NullInt32{Int32: 1000, Valid: true},
 			},
 			lastUpdate: sqlc.DepositUpdate{
 				UpdateState: "completed",
