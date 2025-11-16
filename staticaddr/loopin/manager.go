@@ -143,7 +143,12 @@ type Manager struct {
 }
 
 // NewManager creates a new deposit withdrawal manager.
-func NewManager(cfg *Config, currentHeight uint32) *Manager {
+func NewManager(cfg *Config, currentHeight uint32) (*Manager, error) {
+	if currentHeight == 0 {
+		return nil, fmt.Errorf("invalid current height %d",
+			currentHeight)
+	}
+
 	m := &Manager{
 		cfg:           cfg,
 		newLoopInChan: make(chan *newSwapRequest),
@@ -153,7 +158,7 @@ func NewManager(cfg *Config, currentHeight uint32) *Manager {
 	}
 	m.currentHeight.Store(currentHeight)
 
-	return m
+	return m, nil
 }
 
 // Run runs the static address loop-in manager.

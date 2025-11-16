@@ -57,13 +57,18 @@ type Manager struct {
 }
 
 // NewManager creates a new address manager.
-func NewManager(cfg *ManagerConfig, currentHeight int32) *Manager {
+func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
+	if currentHeight <= 0 {
+		return nil, fmt.Errorf("invalid current height %d",
+			currentHeight)
+	}
+
 	m := &Manager{
 		cfg: cfg,
 	}
 	m.currentHeight.Store(currentHeight)
 
-	return m
+	return m, nil
 }
 
 // Run runs the address manager.

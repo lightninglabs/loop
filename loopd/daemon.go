@@ -451,6 +451,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return fmt.Errorf("failed to get current block height: %w", err)
 	}
 	blockHeight := getInfo.BlockHeight
+	if blockHeight <= 0 {
+		return fmt.Errorf("invalid block height reported by lnd: %d",
+			blockHeight)
+	}
 
 	// If we're running an asset client, we'll log something here.
 	if d.assetClient != nil {
@@ -586,7 +590,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ChainParams:   d.lnd.ChainParams,
 		ChainNotifier: d.lnd.ChainNotifier,
 	}
-	staticAddressManager = address.NewManager(addrCfg, int32(blockHeight))
+	staticAddressManager, err = address.NewManager(
+		addrCfg, int32(blockHeight),
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create static address manager: %w",
+			err)
+	}
 
 	// Static address deposit manager setup.
 	depositStore := deposit.NewSqlStore(baseDb)
@@ -617,7 +627,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		Signer:                    d.lnd.Signer,
 		Store:                     withdrawalStore,
 	}
-	withdrawalManager = withdraw.NewManager(withdrawalCfg, blockHeight)
+	withdrawalManager, err = withdraw.NewManager(
+		withdrawalCfg, blockHeight,
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create withdrawal manager: %w",
+			err)
+	}
 
 	// Static address loop-in manager setup.
 	staticAddressLoopInStore := loopin.NewSqlStore(
@@ -645,7 +661,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
-	staticLoopInManager = loopin.NewManager(&loopin.Config{
+	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
 		LndClient:                            d.lnd.Client,
@@ -663,6 +679,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
 		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
 	}, blockHeight)
+	if err != nil {
+		return fmt.Errorf("unable to create loop-in manager: %w", err)
+	}
 
 	var (
 		reservationManager *reservation.Manager

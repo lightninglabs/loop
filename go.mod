@@ -20,7 +20,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.13-beta
-	github.com/lightninglabs/lndclient v0.20.0-4
+	github.com/lightninglabs/lndclient v0.20.0-6
 	github.com/lightninglabs/loop/looprpc v1.0.7
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.7.0-rc1.0.20251014172227-e6ae082c0b4b
@@ -124,7 +124,7 @@ require (
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
-	github.com/lightningnetwork/lnd/fn/v2 v2.0.8 // indirect
+	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.4.16 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.11 // indirect
@@ -225,4 +225,4 @@ replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
 replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
 
-go 1.24.6
+go 1.24.10
