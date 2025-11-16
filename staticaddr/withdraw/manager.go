@@ -138,7 +138,12 @@ type Manager struct {
 }
 
 // NewManager creates a new deposit withdrawal manager.
-func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
+func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
+	if currentHeight == 0 {
+		return nil, fmt.Errorf("invalid current height %d",
+			currentHeight)
+	}
+
 	m := &Manager{
 		cfg:                      cfg,
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
@@ -148,7 +153,7 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) *Manager {
 	}
 	m.initiationHeight.Store(currentHeight)
 
-	return m
+	return m, nil
 }
 
 // Run runs the deposit withdrawal manager.

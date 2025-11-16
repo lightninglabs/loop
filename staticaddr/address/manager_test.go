@@ -195,7 +195,8 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 	getInfo, err := mockLnd.Client.GetInfo(ctxb)
 	require.NoError(t, err)
 
-	manager := NewManager(cfg, int32(getInfo.BlockHeight))
+	manager, err := NewManager(cfg, int32(getInfo.BlockHeight))
+	require.NoError(t, err)
 
 	return &ManagerTestContext{
 		manager:                 manager,

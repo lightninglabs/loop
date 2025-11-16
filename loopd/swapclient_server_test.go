@@ -1006,12 +1006,13 @@ func TestListUnspentDeposits(t *testing.T) {
 	addrStore := &mockAddressStore{params: []*address.Parameters{addrParams}}
 
 	// Build an address manager using our mock lnd and fake address store.
-	addrMgr := address.NewManager(&address.ManagerConfig{
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
 		WalletKit:   mock.WalletKit,
 		ChainParams: mock.ChainParams,
 		// ChainNotifier and AddressClient are not needed for this test.
-	}, 0)
+	}, 1)
+	require.NoError(t, err)
 
 	// Construct several UTXOs with different confirmation counts.
 	makeUtxo := func(idx uint32, confs int64) *lnwallet.Utxo {
