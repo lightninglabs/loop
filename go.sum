@@ -1107,8 +1107,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3 h1:NuDp6Z+QNMSzZ/+RzWsjgAgQSr/REDxTiHmTczZxlXA=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.3/go.mod h1:bDnEKRN1u13NFBuy/C+bFLhxA5bfd3clT25y76QY0AM=
-github.com/lightninglabs/lndclient v0.20.0-4 h1:oSdoAtCcGJrlr6Pwi6jgzawBRpFFZKauyL+IzwV1iGc=
-github.com/lightninglabs/lndclient v0.20.0-4/go.mod h1:VxIakyBmTIy4tmg2zqj45YrDkJi53PQLwW0lmFzRR6k=
+github.com/lightninglabs/lndclient v0.20.0-6 h1:sh23eZkOpHxe39c4QRYwhsM7qbnJlS++dXVmcwr0BNk=
+github.com/lightninglabs/lndclient v0.20.0-6/go.mod h1:gBtIFPGmC2xIspGIv/G5+HiPSGJsFD8uIow7Oke1HFI=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2 h1:eFjp1dIB2BhhQp/THKrjLdlYuPugO9UU4kDqu91OX/Q=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2/go.mod h1:99BKpIi6ruaaXRM1A77eqZ+FWPQ3cfRa+ZVy5bmWMaY=
 github.com/lightninglabs/neutrino v0.16.1 h1:5Kz4ToxncEVkpKC6fwUjXKtFKJhuxlG3sBB3MdJTJjs=
@@ -1129,8 +1129,8 @@ github.com/lightningnetwork/lnd/cert v1.2.2 h1:71YK6hogeJtxSxw2teq3eGeuy4rHGKcFf
 github.com/lightningnetwork/lnd/cert v1.2.2/go.mod h1:jQmFn/Ez4zhDgq2hnYSw8r35bqGVxViXhX6Cd7HXM6U=
 github.com/lightningnetwork/lnd/clock v1.1.1 h1:OfR3/zcJd2RhH0RU+zX/77c0ZiOnIMsDIBjgjWdZgA0=
 github.com/lightningnetwork/lnd/clock v1.1.1/go.mod h1:mGnAhPyjYZQJmebS7aevElXKTFDuO+uNFFfMXK1W8xQ=
-github.com/lightningnetwork/lnd/fn/v2 v2.0.8 h1:r2SLz7gZYQPVc3IZhU82M66guz3Zk2oY+Rlj9QN5S3g=
-github.com/lightningnetwork/lnd/fn/v2 v2.0.8/go.mod h1:TOzwrhjB/Azw1V7aa8t21ufcQmdsQOQMDtxVOQWNl8s=
+github.com/lightningnetwork/lnd/fn/v2 v2.0.9 h1:ZytG4ltPac/sCyg1EJDn10RGzPIDJeyennUMRdOw7Y8=
+github.com/lightningnetwork/lnd/fn/v2 v2.0.9/go.mod h1:aPUJHJ31S+Lgoo8I5SxDIjnmeCifqujaiTXKZqpav3w=
 github.com/lightningnetwork/lnd/healthcheck v1.2.6 h1:1sWhqr93GdkWy4+6U7JxBfcyZIE78MhIHTJZfPx7qqI=
 github.com/lightningnetwork/lnd/healthcheck v1.2.6/go.mod h1:Mu02um4CWY/zdTOvFje7WJgJcHyX2zq/FG3MhOAiGaQ=
 github.com/lightningnetwork/lnd/kvdb v1.4.16 h1:9BZgWdDfjmHRHLS97cz39bVuBAqMc4/p3HX1xtUdbDI=
