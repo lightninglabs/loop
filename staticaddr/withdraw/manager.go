@@ -696,7 +696,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			}
 
 		case err := <-errChan:
-			log.Errorf("Error waiting for confirmation: %v", err)
+			log.Errorf("Error waiting for spending: %v", err)
 
 		case <-ctx.Done():
 			log.Errorf("Withdrawal tx confirmation wait canceled")
