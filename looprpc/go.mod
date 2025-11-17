@@ -1,6 +1,6 @@
 module github.com/lightninglabs/loop/looprpc
 
-go 1.24.10
+go 1.24.9
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3
