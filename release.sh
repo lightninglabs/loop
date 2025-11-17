@@ -37,7 +37,7 @@ if ! command -v "$GO_CMD" >/dev/null 2>&1; then
 fi
 
 # Make sure we have the expected Go version installed.
-EXPECTED_VERSION="go1.24.10"
+EXPECTED_VERSION="go1.24.9"
 INSTALLED_VERSION=$("$GO_CMD" version 2>/dev/null | awk '{print $3}')
 if [ "$INSTALLED_VERSION" = "$EXPECTED_VERSION" ]; then
     green "Go version matches expected: $INSTALLED_VERSION"
