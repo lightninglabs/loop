@@ -22,9 +22,12 @@ type StaticAddressServerClient interface {
 	// The server will generate the address and return the server key and the
 	// address's CSV expiry.
 	ServerNewAddress(ctx context.Context, in *ServerNewAddressRequest, opts ...grpc.CallOption) (*ServerNewAddressResponse, error)
+	// Deprecated: Do not use.
 	// ServerWithdrawDeposits allows to cooperatively sweep deposits that
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
+	//
+	// Deprecated: use ServerPsbtWithdrawDeposits instead.
 	ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error)
 	// ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
 	// haven't timed out yet to the client's wallet. In contrast to
@@ -60,6 +63,7 @@ func (c *staticAddressServerClient) ServerNewAddress(ctx context.Context, in *Se
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *staticAddressServerClient) ServerWithdrawDeposits(ctx context.Context, in *ServerWithdrawRequest, opts ...grpc.CallOption) (*ServerWithdrawResponse, error) {
 	out := new(ServerWithdrawResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.StaticAddressServer/ServerWithdrawDeposits", in, out, opts...)
@@ -113,9 +117,12 @@ type StaticAddressServerServer interface {
 	// The server will generate the address and return the server key and the
 	// address's CSV expiry.
 	ServerNewAddress(context.Context, *ServerNewAddressRequest) (*ServerNewAddressResponse, error)
+	// Deprecated: Do not use.
 	// ServerWithdrawDeposits allows to cooperatively sweep deposits that
 	// haven't timed out yet to the client's wallet. The server will generate
 	// the partial sigs for the client's selected deposits.
+	//
+	// Deprecated: use ServerPsbtWithdrawDeposits instead.
 	ServerWithdrawDeposits(context.Context, *ServerWithdrawRequest) (*ServerWithdrawResponse, error)
 	// ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
 	// haven't timed out yet to the client's wallet. In contrast to

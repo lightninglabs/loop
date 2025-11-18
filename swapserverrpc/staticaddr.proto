@@ -26,8 +26,12 @@ service StaticAddressServer {
     // ServerWithdrawDeposits allows to cooperatively sweep deposits that
     // haven't timed out yet to the client's wallet. The server will generate
     // the partial sigs for the client's selected deposits.
+    //
+    // Deprecated: use ServerPsbtWithdrawDeposits instead.
     rpc ServerWithdrawDeposits (ServerWithdrawRequest)
-        returns (ServerWithdrawResponse);
+        returns (ServerWithdrawResponse) {
+        option deprecated = true;
+    };
 
     // ServerPsbtWithdrawDeposits allows to cooperatively sweep deposits that
     // haven't timed out yet to the client's wallet. In contrast to
@@ -75,7 +79,10 @@ message ServerAddressParameters {
     uint32 expiry = 2;
 }
 
+// Deprecated: use ServerPsbtWithdrawRequest instead.
 message ServerWithdrawRequest {
+    option deprecated = true;
+
     // The deposit outpoints the client wishes to withdraw.
     repeated PrevoutInfo outpoints = 1;
 
@@ -99,7 +106,10 @@ message ServerWithdrawRequest {
     int64 change_amount = 6;
 }
 
+// Deprecated: use ServerPsbtWithdrawResponse instead.
 message ServerWithdrawResponse {
+    option deprecated = true;
+
     // The sweep sigs that the server generated for the withdrawal tx.
     repeated bytes musig2_sweep_sigs = 1;
 
