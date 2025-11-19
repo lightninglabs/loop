@@ -43,6 +43,12 @@ service StaticAddressServer {
     // sigs to the server.
     rpc PushStaticAddressSweeplessSigs (PushStaticAddressSweeplessSigsRequest)
         returns (PushStaticAddressSweeplessSigsResponse);
+
+    // SignOpenChannelPsbt signs the open channel psbt with the server's key.
+    // The server will respond with the txid of the psbt and the signing info
+    // that the client needs to coop-sign the open channel transaction.
+    rpc SignOpenChannelPsbt (SignOpenChannelPsbtRequest)
+        returns (SignOpenChannelPsbtResponse);
 }
 
 message ServerNewAddressRequest {
@@ -234,4 +240,33 @@ message ClientSweeplessSigningInfo {
 }
 
 message PushStaticAddressSweeplessSigsResponse {
+}
+
+message SignOpenChannelPsbtRequest {
+    // The psbt of the open channel.
+    bytes open_channel_tx_psbt = 1;
+
+    // The map of deposit txid:idx to the nonce used by the client.
+    map<string, bytes> deposit_to_nonces = 2;
+
+    // The prevout information of the open channel psbt.
+    repeated PrevoutInfo prevout_info = 3;
+}
+
+message SignOpenChannelPsbtResponse {
+    // The txid of the psbt that the client wants to push the sweepless
+    // sigs for.
+    bytes txid = 1;
+
+    // A map of deposits in format txid:idx to the nonces.
+    map<string, ServerChannelOpenSigningInfo> signing_info = 3;
+}
+
+message ServerChannelOpenSigningInfo {
+    // The nonces that the client used to generate the partial sweepless tx
+    // sigs.
+    bytes nonce = 1;
+
+    // The musig2 htlc sigs that the client generated for the sweepless tx.
+    bytes sig = 2;
 }
