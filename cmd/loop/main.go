@@ -89,7 +89,7 @@ var (
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
 		setLiquidityRuleCommand, suggestSwapCommand, setParamsCommand,
 		getInfoCommand, abandonSwapCommand, reservationsCommands,
-		instantOutCommand, listInstantOutsCommand,
+		instantOutCommand, listInstantOutsCommand, stopCommand,
 		printManCommand, printMarkdownCommand,
 	}
 )
@@ -190,20 +190,37 @@ func main() {
 	}
 }
 
-func getClient(ctx context.Context, cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
-	rpcServer := cmd.String("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
+// getClient establishes a SwapClient RPC connection and returns the client and
+// a cleanup handler.
+func getClient(ctx context.Context, cmd *cli.Command) (looprpc.SwapClientClient,
+	func(), error) {
+
+	client, _, cleanup, err := getClientWithConn(ctx, cmd)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	return client, cleanup, nil
+}
+
+// getClientWithConn returns both the SwapClient RPC client and the underlying
+// gRPC connection so callers can perform connection-aware actions.
+func getClientWithConn(ctx context.Context, cmd *cli.Command) (
+	looprpc.SwapClientClient, *grpc.ClientConn, func(), error) {
+
+	rpcServer := cmd.String("rpcserver")
+	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	conn, err := getClientConn(ctx, rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	cleanup := func() { conn.Close() }
 
 	loopClient := looprpc.NewSwapClientClient(conn)
-	return loopClient, cleanup, nil
+	return loopClient, conn, cleanup, nil
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {

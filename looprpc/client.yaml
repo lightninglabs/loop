@@ -66,3 +66,5 @@ http:
     - selector: looprpc.SwapClient.StaticAddressLoopIn
       post: "/v1/staticaddr/loopin"
       body: "*"
+    - selector: looprpc.SwapClient.StopDaemon
+      post: "/v1/daemon/stop"

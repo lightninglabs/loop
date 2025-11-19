@@ -104,6 +104,9 @@ type swapClientServer struct {
 	nextSubscriberID     int
 	swapsLock            sync.Mutex
 	mainCtx              context.Context
+
+	// stopDaemon is invoked to trigger a graceful shutdown of the daemon.
+	stopDaemon func()
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -1344,6 +1347,22 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 		LoopOutStats: loopOutStats,
 		LoopInStats:  loopInStats,
 	}, nil
+}
+
+// StopDaemon triggers a graceful shutdown of the daemon process.
+func (s *swapClientServer) StopDaemon(ctx context.Context,
+	_ *looprpc.StopDaemonRequest) (*looprpc.StopDaemonResponse, error) {
+
+	// Ensure we have a shutdown handler to invoke.
+	if s.stopDaemon == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"stop daemon not supported")
+	}
+
+	// Initiate the shutdown sequence.
+	s.stopDaemon()
+
+	return &looprpc.StopDaemonResponse{}, nil
 }
 
 // GetLiquidityParams gets our current liquidity manager's parameters.

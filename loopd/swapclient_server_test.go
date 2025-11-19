@@ -261,6 +261,29 @@ func TestValidateLoopInRequest(t *testing.T) {
 	}
 }
 
+// TestSwapClientServerStopDaemon ensures that calling StopDaemon triggers the
+// daemon shutdown.
+func TestSwapClientServerStopDaemon(t *testing.T) {
+	t.Parallel()
+
+	// Prepare a server instance that tracks whether shutdown is requested.
+	var stopCalled bool
+	server := &swapClientServer{
+		stopDaemon: func() {
+			stopCalled = true
+		},
+	}
+
+	// Request the daemon to stop and assert the callback executed.
+	_, err := server.StopDaemon(
+		context.Background(), &looprpc.StopDaemonRequest{},
+	)
+	require.NoError(t, err)
+
+	// Ensure our shutdown callback executed.
+	require.True(t, stopCalled)
+}
+
 // TestValidateLoopOutRequest tests validation of loop out requests.
 func TestValidateLoopOutRequest(t *testing.T) {
 	tests := []struct {
