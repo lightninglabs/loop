@@ -75,6 +75,9 @@ type SwapClientClient interface {
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
+	// loop: `stop`
+	// StopDaemon instructs the daemon to shut down gracefully.
+	StopDaemon(ctx context.Context, in *StopDaemonRequest, opts ...grpc.CallOption) (*StopDaemonResponse, error)
 	// loop: `getparams`
 	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	// is currently configured with. This may be nil if nothing is configured.
@@ -301,6 +304,15 @@ func (c *swapClientClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts
 	return out, nil
 }
 
+func (c *swapClientClient) StopDaemon(ctx context.Context, in *StopDaemonRequest, opts ...grpc.CallOption) (*StopDaemonResponse, error) {
+	out := new(StopDaemonResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/StopDaemon", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error) {
 	out := new(LiquidityParameters)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetLiquidityParams", in, out, opts...)
@@ -497,6 +509,9 @@ type SwapClientServer interface {
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
+	// loop: `stop`
+	// StopDaemon instructs the daemon to shut down gracefully.
+	StopDaemon(context.Context, *StopDaemonRequest) (*StopDaemonResponse, error)
 	// loop: `getparams`
 	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
 	// is currently configured with. This may be nil if nothing is configured.
@@ -606,6 +621,9 @@ func (UnimplementedSwapClientServer) FetchL402Token(context.Context, *FetchL402T
 }
 func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
+}
+func (UnimplementedSwapClientServer) StopDaemon(context.Context, *StopDaemonRequest) (*StopDaemonResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopDaemon not implemented")
 }
 func (UnimplementedSwapClientServer) GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLiquidityParams not implemented")
@@ -934,6 +952,24 @@ func _SwapClient_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapClientServer).GetInfo(ctx, req.(*GetInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_StopDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopDaemonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).StopDaemon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/StopDaemon",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).StopDaemon(ctx, req.(*StopDaemonRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1270,6 +1306,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInfo",
 			Handler:    _SwapClient_GetInfo_Handler,
+		},
+		{
+			MethodName: "StopDaemon",
+			Handler:    _SwapClient_StopDaemon_Handler,
 		},
 		{
 			MethodName: "GetLiquidityParams",

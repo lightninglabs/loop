@@ -176,4 +176,8 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "swap",
 		Action: "read",
 	}},
+	"/looprpc.SwapClient/StopDaemon": {{
+		Entity: "loop",
+		Action: "admin",
+	}},
 }

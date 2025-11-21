@@ -746,6 +746,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		withdrawalManager:    withdrawalManager,
 		staticLoopInManager:  staticLoopInManager,
 		assetClient:          d.assetClient,
+		stopDaemon:           d.Stop,
 	}
 
 	// Retrieve all currently existing swaps from the database.

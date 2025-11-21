@@ -468,6 +468,25 @@ The following flags are supported:
 |-----------------|-------------|------|:-------------:|
 | `--help` (`-h`) | show help   | bool |    `false`    |
 
+### `stop` command
+
+stop the loop daemon.
+
+Requests loopd to perform a graceful shutdown.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] stop [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description                       | Type | Default value |
+|-----------------|-----------------------------------|------|:-------------:|
+| `--wait`        | wait until loopd fully shuts down | bool |    `false`    |
+| `--help` (`-h`) | show help                         | bool |    `false`    |
+
 ### `static` command (aliases: `s`)
 
 perform on-chain to off-chain swaps using static addresses.

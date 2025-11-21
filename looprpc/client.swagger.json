@@ -39,6 +39,29 @@
         ]
       }
     },
+    "/v1/daemon/stop": {
+      "post": {
+        "summary": "loop: `stop`\nStopDaemon instructs the daemon to shut down gracefully.",
+        "operationId": "SwapClient_StopDaemon",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcStopDaemonResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/instantout": {
       "post": {
         "summary": "loop: `instantout`\nInstantOut initiates an instant out swap with the given parameters.",
@@ -2531,6 +2554,9 @@
           "description": "The confirmation block height of the withdrawal transaction."
         }
       }
+    },
+    "looprpcStopDaemonResponse": {
+      "type": "object"
     },
     "looprpcSuggestSwapsResponse": {
       "type": "object",
