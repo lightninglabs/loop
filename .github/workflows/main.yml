@@ -21,6 +21,7 @@ env:
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
   GO_VERSION: 1.24.9
+  LITD_ITEST_BRANCH: master
 
 jobs:
   ########################
@@ -143,3 +144,41 @@ jobs:
 
       - name: run unit test with postgres
         run: make unit-postgres-race
+
+  ########################
+  # Run LiTd tests
+  ########################
+  run-lit-itests:
+    name: run LiT itests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare LiT workspace
+        uses: ./.github/actions/lit-setup
+
+      - name: Run LiT itests
+        working-directory: ./lightning-terminal
+        run: make itest-no-backward-compat icase='terminal .*'
+
+  ########################
+  # Run LiTd unit tests
+  ########################
+  run-lit-unit:
+    name: run LiT unit tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare LiT workspace
+        uses: ./.github/actions/lit-setup
+
+      - name: Run LiT unit tests
+        working-directory: ./lightning-terminal
+        run: make unit
