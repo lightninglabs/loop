@@ -1787,6 +1787,14 @@
         "fast_swap_publication": {
           "type": "boolean",
           "description": "Set to true to enable fast swap publication. If set, the server will\npublish the HTLC immediately after receiving the swap request. This\nsetting has direct implications on the swap fees, as fast swaps may\nnot be able to be batched with other swaps."
+        },
+        "easy_autoloop_excluded_peers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "A list of peers (their public keys) that should be excluded from the easy\nautoloop run. If set, channels connected to these peers won't be\nconsidered for easy autoloop swaps."
         }
       }
     },
