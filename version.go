@@ -38,7 +38,7 @@ const (
 	// Note: please update release_notes.md when you change these values.
 	appMajor uint = 0
 	appMinor uint = 31
-	appPatch uint = 5
+	appPatch uint = 7
 
 	// appPreRelease MUST only contain characters from semanticAlphabet per
 	// the semantic versioning spec.
