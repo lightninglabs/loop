@@ -21,6 +21,7 @@ env:
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
   GO_VERSION: 1.24.9
+  LITD_ITEST_BRANCH: master
 
 jobs:
   ########################
@@ -31,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
@@ -52,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
@@ -70,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
@@ -88,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -111,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -124,22 +125,75 @@ jobs:
         run: make docs-check
 
   ########################
-  # run unit tests
+  # run unit-test sqlite3 race
   ########################
   unit-test:
-    name: run unit tests
+    name: run unit-test sqlite3 race
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v5
         with:
           go-version: '~${{ env.GO_VERSION }}'
 
-      - name: run unit tests
+      - name: run unit-test sqlite3 race
         run: make unit-race
 
-      - name: run unit test with postgres
+  ########################
+  # run unit-test postgres race
+  ########################
+  unit-test-postgres:
+    name: run unit-test postgres race
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '~${{ env.GO_VERSION }}'
+
+      - name: run unit-test postgres race
         run: make unit-postgres-race
+
+  ########################
+  # Run LiTd tests
+  ########################
+  run-lit-itests:
+    name: run LiT itests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare LiT workspace
+        uses: ./.github/actions/lit-setup
+
+      - name: Run LiT itests
+        working-directory: ./lightning-terminal
+        run: make itest-no-backward-compat icase='terminal .*'
+
+  ########################
+  # Run LiTd unit tests
+  ########################
+  run-lit-unit:
+    name: run LiT unit tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare LiT workspace
+        uses: ./.github/actions/lit-setup
+
+      - name: Run LiT unit tests
+        working-directory: ./lightning-terminal
+        run: make unit

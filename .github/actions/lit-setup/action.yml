@@ -1,0 +1,58 @@
+name: LiT setup
+description: Prepare LiT workspace with Loop replaces, caches, and dependencies
+runs:
+  using: composite
+  steps:
+    - name: setup go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '~${{ env.GO_VERSION }}'
+
+    - name: Clone LiT repository
+      uses: actions/checkout@v4
+      with:
+        repository: lightninglabs/lightning-terminal
+        ref: ${{ env.LITD_ITEST_BRANCH }}
+        path: lightning-terminal
+
+    - name: Update go.mod to use the local Loop repository
+      working-directory: ./lightning-terminal
+      run: |
+        go mod edit -replace=github.com/lightninglabs/loop=../
+        go mod edit -replace=github.com/lightninglabs/loop/looprpc=../looprpc
+        go mod tidy
+      shell: bash
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ env.GOCACHE }}
+          ${{ env.GOPATH }}/pkg/mod
+        key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-lit-${{ hashFiles('lightning-terminal/go.sum', 'go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ env.GO_VERSION }}-lit-
+
+    - name: Install yarn
+      run: npm install -g yarn
+      shell: bash
+
+    - name: setup nodejs
+      uses: ./lightning-terminal/.github/actions/setup-node
+      with:
+        node-version: 16.x
+
+    - name: Cache yarn dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/yarn
+          lightning-terminal/app/node_modules
+        key: ${{ runner.os }}-lit-node16-${{ hashFiles('lightning-terminal/app/yarn.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-lit-node16-
+
+    - name: install LiT app dependencies
+      working-directory: ./lightning-terminal/app
+      run: yarn
+      shell: bash
