@@ -5504,3 +5504,235 @@ func runTests(t *testing.T, testFn func(t *testing.T, store testStore,
 		testFn(t, testStore, testBatcherStore)
 	})
 }
+
+// TestImmediatePublishThreshold tests that batches are published immediately
+// when the cumulative value exceeds the configured threshold.
+func TestImmediatePublishThreshold(t *testing.T) {
+	runTests(t, testImmediatePublishThreshold)
+}
+
+func testImmediatePublishThreshold(t *testing.T, store testStore,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t, test.WithGuardTimeout(10*time.Second))()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweepStore, err := NewSweepFetcherFromSwapStore(store, lnd.ChainParams)
+	require.NoError(t, err)
+
+	// Set up test clock and delays.
+	startTime := time.Date(2018, 11, 1, 0, 0, 0, 0, time.UTC)
+	tickSignal := make(chan time.Duration, 10)
+	testClock := clock.NewTestClockWithTickSignal(startTime, tickSignal)
+
+	const (
+		initialDelay = 10 * time.Second
+		publishDelay = 3 * time.Second
+		threshold    = btcutil.Amount(500_000) // Set threshold at 5000 sats
+	)
+
+	initialDelayProvider := func(_ context.Context, _ int,
+		_ btcutil.Amount, fast bool) (time.Duration, error) {
+
+		return initialDelay, nil
+	}
+
+	// Create batcher with threshold option.
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, sweepStore,
+		WithInitialDelay(initialDelayProvider),
+		WithPublishDelay(publishDelay),
+		WithClock(testClock),
+		WithImmediatePublishThreshold(threshold),
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var runErr error
+	go func() {
+		defer wg.Done()
+		runErr = batcher.Run(ctx)
+	}()
+
+	// Wait for the batcher to be initialized.
+	<-batcher.initDone
+
+	// Scenario 1: Add sweep below threshold, should wait for initial
+	// delay.
+	op1 := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	sweepReq1 := SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Inputs: []Input{{
+			Value:    200_000, // Below threshold
+			Outpoint: op1,
+		}},
+		Notifier: &dummyNotifier,
+	}
+
+	swap1 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 200_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{1},
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq1.SwapHash, swap1)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
+
+	// Consume RegisterSpend and timer registrations in parallel since
+	// order is not deterministic.
+	var wg2 sync.WaitGroup
+	wg2.Add(1)
+	go func() {
+		defer wg2.Done()
+		<-lnd.RegisterSpendChannel
+	}()
+
+	wg2.Add(1)
+	go func() {
+		defer wg2.Done()
+		<-tickSignal // publishDelay
+		<-tickSignal // initialDelay
+	}()
+
+	// Wait for registrations to complete.
+	wg2.Wait()
+
+	// Wait for batch to be created.
+	require.Eventually(t, func() bool {
+		return batcher.numBatches(ctx) == 1
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Get the batch and setup logger to monitor messages.
+	batch1 := getOnlyBatch(t, ctx, batcher)
+	testLogger := &wrappedLogger{
+		Logger: batch1.log(),
+	}
+	batch1.setLog(testLogger)
+
+	// Advance clock to publishDelay - should not publish yet because
+	// initialDelay hasn't ended.
+	now := startTime.Add(publishDelay)
+	testClock.SetTime(now)
+
+	// Wait for batch publishing to be skipped due to initialDelay.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		assert.Contains(c, testLogger.debugMessages, stillWaitingMsg)
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Scenario 2: Add another sweep that pushes total above threshold,
+	// should publish immediately.
+	op2 := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 2,
+	}
+	sweepReq2 := SweepRequest{
+		SwapHash: lntypes.Hash{2, 2, 2},
+		Inputs: []Input{{
+			Value:    400_000, // Total will be 600000 > threshold
+			Outpoint: op2,
+		}},
+		Notifier: &dummyNotifier,
+	}
+
+	swap2 := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      1000,
+			AmountRequested: 400_000,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+
+			// Make preimage unique to pass SQL constraints.
+			Preimage: lntypes.Preimage{2},
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	err = store.CreateLoopOut(ctx, sweepReq2.SwapHash, swap2)
+	require.NoError(t, err)
+	store.AssertLoopOutStored()
+
+	// Deliver second sweep request to batcher.
+	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
+
+	// Wait for sweep to be added to batch.
+	require.Eventually(t, func() bool {
+		return batch1.numSweeps(ctx) == 2
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Check that threshold exceeded message was logged.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		testLogger.mu.Lock()
+		defer testLogger.mu.Unlock()
+
+		found := false
+		expectedMsg := "Batch value (%v) exceeds threshold " +
+			"(%v), publishing immediately"
+		for _, msg := range testLogger.infoMessages {
+			if msg == expectedMsg {
+				found = true
+				break
+			}
+		}
+		assert.True(c, found, "expected threshold exceeded message")
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// The threshold check will have triggered a publishDelay timer.
+	// Wait for it to be registered.
+	var publishDelayTimer time.Duration
+	select {
+	case publishDelayTimer = <-tickSignal:
+		require.Equal(t, publishDelay, publishDelayTimer)
+	case <-time.After(test.Timeout):
+		t.Fatal("expected publishDelay timer to be set")
+	}
+
+	// Advance clock by publishDelay to trigger publishing.
+	testClock.SetTime(testClock.Now().Add(publishDelay))
+
+	// Wait for tx to be published - this proves immediate publishing
+	// worked without waiting for full initialDelay.
+	select {
+	case <-lnd.TxPublishChannel:
+		// Success - batch published immediately after threshold was
+		// exceeded.
+	case <-time.After(test.Timeout):
+		t.Fatal("expected batch to be published immediately")
+	}
+
+	// Verify both sweeps are in the batch.
+	require.Eventually(t, func() bool {
+		return batcherStore.AssertSweepStored(op2)
+	}, test.Timeout, eventuallyCheckFrequency)
+
+	// Clean up.
+	cancel()
+	wg.Wait()
+
+	checkBatcherError(t, runErr)
+}

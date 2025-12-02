@@ -200,6 +200,11 @@ type batchConfig struct {
 	// chainParams are the chain parameters of the chain that is used by
 	// batches.
 	chainParams *chaincfg.Params
+
+	// immediatePublishThreshold is the cumulative value threshold above
+	// which a batch should be published immediately without waiting for
+	// the initial delay grouping period. If 0, the feature is disabled.
+	immediatePublishThreshold btcutil.Amount
 }
 
 // rbfCache stores data related to our last fee bump.
@@ -807,6 +812,24 @@ func (b *batch) sweepExists(outpoint wire.OutPoint) bool {
 	return ok
 }
 
+// totalValue returns the sum of all sweep values in the batch.
+func (b *batch) totalValue() btcutil.Amount {
+	var total btcutil.Amount
+	for _, sweep := range b.sweeps {
+		total += sweep.value
+	}
+	return total
+}
+
+// exceedsThreshold checks if the batch value exceeds the immediate publish
+// threshold. Returns false if the threshold is not configured (0).
+func (b *batch) exceedsThreshold() bool {
+	if b.cfg.immediatePublishThreshold == 0 {
+		return false
+	}
+	return b.totalValue() >= b.cfg.immediatePublishThreshold
+}
+
 // Wait waits for the batch to gracefully stop.
 func (b *batch) Wait() {
 	b.Infof("Stopping")
@@ -919,6 +942,25 @@ func (b *batch) Run(ctx context.Context) error {
 			if skipBefore == nil || delayStop.Before(*skipBefore) {
 				skipBefore = &delayStop
 				skipBeforeUpdated = true
+			}
+
+			// Check if batch exceeds threshold and should publish
+			// immediately. Only override skipBefore if threshold
+			// feature is enabled and exceeded.
+			if b.exceedsThreshold() {
+				b.Infof("Batch value (%v) exceeds threshold "+
+					"(%v), publishing immediately",
+					b.totalValue(),
+					b.cfg.immediatePublishThreshold)
+
+				// Set skipBefore to now to bypass initial
+				// delay.
+				now := clock.Now()
+				skipBefore = &now
+
+				// Trigger immediate publish by setting timer to
+				// fire after batchPublishDelay.
+				timerChan = clock.TickAfter(b.cfg.batchPublishDelay)
 			}
 		}
 

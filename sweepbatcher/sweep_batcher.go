@@ -443,6 +443,11 @@ type Batcher struct {
 	// skippedTxns is the list of previous transactions to ignore when
 	// loading the sweeps from DB. This is needed to fix a historical bug.
 	skippedTxns map[chainhash.Hash]struct{}
+
+	// immediatePublishThreshold is the cumulative value threshold above
+	// which a batch should be published immediately without waiting for
+	// the initial delay grouping period. If 0, the feature is disabled.
+	immediatePublishThreshold btcutil.Amount
 }
 
 // BatcherConfig holds batcher configuration.
@@ -491,6 +496,11 @@ type BatcherConfig struct {
 	// skippedTxns is the list of previous transactions to ignore when
 	// loading the sweeps from DB. This is needed to fix a historical bug.
 	skippedTxns map[chainhash.Hash]struct{}
+
+	// immediatePublishThreshold is the cumulative value threshold above
+	// which a batch should be published immediately without waiting for
+	// the initial delay grouping period. If 0, the feature is disabled.
+	immediatePublishThreshold btcutil.Amount
 }
 
 // BatcherOption configures batcher behaviour.
@@ -581,6 +591,14 @@ func WithSkippedTxns(skippedTxns map[chainhash.Hash]struct{}) BatcherOption {
 	}
 }
 
+// WithImmediatePublishThreshold sets the threshold above which batches are
+// published immediately without waiting for the initial delay grouping period.
+func WithImmediatePublishThreshold(threshold btcutil.Amount) BatcherOption {
+	return func(cfg *BatcherConfig) {
+		cfg.immediatePublishThreshold = threshold
+	}
+}
+
 // NewBatcher creates a new Batcher instance.
 func NewBatcher(wallet lndclient.WalletKitClient,
 	chainNotifier lndclient.ChainNotifierClient,
@@ -626,29 +644,30 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	}
 
 	return &Batcher{
-		batches:              make(map[int32]*batch),
-		addSweepsChan:        make(chan *addSweepsRequest),
-		testReqs:             make(chan *testRequest),
-		errChan:              make(chan error, 1),
-		quit:                 make(chan struct{}),
-		initDone:             make(chan struct{}),
-		wallet:               wallet,
-		chainNotifier:        chainNotifier,
-		signerClient:         signerClient,
-		musig2ServerSign:     musig2ServerSigner,
-		VerifySchnorrSig:     verifySchnorrSig,
-		chainParams:          chainparams,
-		store:                store,
-		sweepStore:           sweepStore,
-		clock:                cfg.clock,
-		initialDelayProvider: cfg.initialDelayProvider,
-		publishDelay:         cfg.publishDelay,
-		customFeeRate:        cfg.customFeeRate,
-		txLabeler:            cfg.txLabeler,
-		customMuSig2Signer:   cfg.customMuSig2Signer,
-		publishErrorHandler:  cfg.publishErrorHandler,
-		presignedHelper:      cfg.presignedHelper,
-		skippedTxns:          cfg.skippedTxns,
+		batches:                   make(map[int32]*batch),
+		addSweepsChan:             make(chan *addSweepsRequest),
+		testReqs:                  make(chan *testRequest),
+		errChan:                   make(chan error, 1),
+		quit:                      make(chan struct{}),
+		initDone:                  make(chan struct{}),
+		wallet:                    wallet,
+		chainNotifier:             chainNotifier,
+		signerClient:              signerClient,
+		musig2ServerSign:          musig2ServerSigner,
+		VerifySchnorrSig:          verifySchnorrSig,
+		chainParams:               chainparams,
+		store:                     store,
+		sweepStore:                sweepStore,
+		clock:                     cfg.clock,
+		initialDelayProvider:      cfg.initialDelayProvider,
+		publishDelay:              cfg.publishDelay,
+		customFeeRate:             cfg.customFeeRate,
+		txLabeler:                 cfg.txLabeler,
+		customMuSig2Signer:        cfg.customMuSig2Signer,
+		publishErrorHandler:       cfg.publishErrorHandler,
+		presignedHelper:           cfg.presignedHelper,
+		skippedTxns:               cfg.skippedTxns,
+		immediatePublishThreshold: cfg.immediatePublishThreshold,
 	}
 }
 
@@ -1683,14 +1702,15 @@ func minimumSweepFeeRate(ctx context.Context, customFeeRate FeeRateProvider,
 // newBatchConfig creates new batch config.
 func (b *Batcher) newBatchConfig(maxTimeoutDistance int32) batchConfig {
 	return batchConfig{
-		maxTimeoutDistance: maxTimeoutDistance,
-		customFeeRate:      b.customFeeRate,
-		txLabeler:          b.txLabeler,
-		customMuSig2Signer: b.customMuSig2Signer,
-		presignedHelper:    b.presignedHelper,
-		skippedTxns:        b.skippedTxns,
-		clock:              b.clock,
-		chainParams:        b.chainParams,
+		maxTimeoutDistance:        maxTimeoutDistance,
+		customFeeRate:             b.customFeeRate,
+		txLabeler:                 b.txLabeler,
+		customMuSig2Signer:        b.customMuSig2Signer,
+		presignedHelper:           b.presignedHelper,
+		skippedTxns:               b.skippedTxns,
+		clock:                     b.clock,
+		chainParams:               b.chainParams,
+		immediatePublishThreshold: b.immediatePublishThreshold,
 	}
 }
 
