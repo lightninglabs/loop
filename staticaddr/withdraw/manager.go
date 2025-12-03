@@ -763,6 +763,24 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 	// Create our digest.
 	var sigHash [32]byte
 
+	if len(sigInfo) != len(depositsToIdx) {
+		return nil, fmt.Errorf("unexpected number of partial " +
+			"signatures from server")
+	}
+
+	for txIndex, input := range tx.TxIn {
+		outpoint := input.PreviousOutPoint.String()
+		if i, ok := depositsToIdx[outpoint]; ok {
+			if i != txIndex {
+				return nil, fmt.Errorf("deposit index maps " +
+					"wrong tx index")
+			}
+			continue
+		}
+
+		return nil, fmt.Errorf("tx outpoint not in deposit index map")
+	}
+
 	// We'll now add the nonce to our session and sign the tx.
 	for deposit, sigAndNonce := range sigInfo {
 		session, ok := sessions[deposit]
