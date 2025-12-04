@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -74,6 +75,32 @@ func (s *StoreMock) UpdateSweepBatch(ctx context.Context,
 	defer s.mu.Unlock()
 
 	s.batches[batch.ID] = *batch
+	return nil
+}
+
+// ConfirmBatchWithSweeps updates the batch and the provided sweeps atomically.
+func (s *StoreMock) ConfirmBatchWithSweeps(ctx context.Context,
+	batch *dbBatch, sweeps []*dbSweep) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.batches[batch.ID] = *batch
+
+	for _, sweep := range sweeps {
+		sweepCopy := *sweep
+
+		old, exists := s.sweeps[sweep.Outpoint]
+		if !exists {
+			return fmt.Errorf("confirming unknown sweep %v",
+				sweep.Outpoint)
+		}
+
+		sweepCopy.ID = old.ID
+
+		s.sweeps[sweep.Outpoint] = sweepCopy
+	}
+
 	return nil
 }
 

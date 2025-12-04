@@ -2224,10 +2224,6 @@ func (b *batch) handleConf(ctx context.Context,
 	b.Infof("confirmed in txid %s", b.batchTxid)
 	b.state = Confirmed
 
-	if err := b.persist(ctx); err != nil {
-		return fmt.Errorf("saving batch failed: %w", err)
-	}
-
 	// If the batch is in presigned mode, cleanup presignedHelper.
 	presigned, err := b.isPresigned()
 	if err != nil {
@@ -2261,18 +2257,16 @@ func (b *batch) handleConf(ctx context.Context,
 		confirmedSweeps = []wire.OutPoint{}
 		purgeList       = make([]SweepRequest, 0, len(b.sweeps))
 		totalSweptAmt   btcutil.Amount
+		dbConfirmed     = make([]*dbSweep, 0, len(allSweeps))
 	)
 	for _, sweep := range allSweeps {
 		_, found := confirmedSet[sweep.outpoint]
 		if found {
-			// Save the sweep as completed. Note that sweeps are
-			// marked completed after the batch is marked confirmed
-			// because the check in handleSweeps checks sweep's
-			// status first and then checks the batch status.
-			err := b.persistSweep(ctx, sweep, true)
-			if err != nil {
-				return err
-			}
+			// Save the sweep as completed; the batch row and all
+			// sweeps are persisted atomically below.
+			dbConfirmed = append(
+				dbConfirmed, b.dbSweepFrom(sweep, true),
+			)
 
 			confirmedSweeps = append(
 				confirmedSweeps, sweep.outpoint,
@@ -2328,8 +2322,15 @@ func (b *batch) handleConf(ctx context.Context,
 		}
 	}
 
-	b.Infof("fully confirmed sweeps: %v, purged sweeps: %v, "+
-		"purged swaps: %v", confirmedSweeps, purgedSweeps, purgedSwaps)
+	b.Infof("Fully confirmed sweeps: %v, purged sweeps: %v, "+
+		"purged swaps: %v. Saving the batch and sweeps to DB",
+		confirmedSweeps, purgedSweeps, purgedSwaps)
+
+	if err := b.persistConfirmedBatch(ctx, dbConfirmed); err != nil {
+		return fmt.Errorf("saving confirmed batch failed: %w", err)
+	}
+
+	b.Infof("Successfully saved the batch and confirmed sweeps to DB")
 
 	// Proceed with purging the sweeps. This will feed the sweeps that
 	// didn't make it to the confirmed batch transaction back to the batcher
@@ -2445,6 +2446,11 @@ func (b *batch) isComplete() bool {
 
 // persist updates the batch in the database.
 func (b *batch) persist(ctx context.Context) error {
+	return b.store.UpdateSweepBatch(ctx, b.dbBatch())
+}
+
+// dbBatch builds the dbBatch representation for the current in-memory state.
+func (b *batch) dbBatch() *dbBatch {
 	bch := &dbBatch{}
 
 	bch.ID = b.id
@@ -2459,7 +2465,7 @@ func (b *batch) persist(ctx context.Context) error {
 	bch.LastRbfSatPerKw = int32(b.rbfCache.FeeRate)
 	bch.MaxTimeoutDistance = b.cfg.maxTimeoutDistance
 
-	return b.store.UpdateSweepBatch(ctx, bch)
+	return bch
 }
 
 // getBatchDestAddr returns the batch's destination address. If the batch
@@ -2612,16 +2618,31 @@ func (b *batch) writeToConfErrChan(ctx context.Context, confErr error) {
 	}
 }
 
+// persistSweep upserts the given sweep into the backing store and optionally
+// marks it as completed.
 func (b *batch) persistSweep(ctx context.Context, sweep sweep,
 	completed bool) error {
 
-	return b.store.UpsertSweep(ctx, &dbSweep{
+	return b.store.UpsertSweep(ctx, b.dbSweepFrom(sweep, completed))
+}
+
+// dbSweepFrom builds the dbSweep representation for a batch sweep.
+func (b *batch) dbSweepFrom(sweep sweep, completed bool) *dbSweep {
+	return &dbSweep{
 		BatchID:   b.id,
 		SwapHash:  sweep.swapHash,
 		Outpoint:  sweep.outpoint,
 		Amount:    sweep.value,
 		Completed: completed,
-	})
+	}
+}
+
+// persistConfirmedBatch atomically records the batch confirmation metadata
+// along with all sweeps that confirmed in the same transaction.
+func (b *batch) persistConfirmedBatch(ctx context.Context,
+	sweeps []*dbSweep) error {
+
+	return b.store.ConfirmBatchWithSweeps(ctx, b.dbBatch(), sweeps)
 }
 
 // clampBatchFee takes the fee amount and total amount of the sweeps in the
