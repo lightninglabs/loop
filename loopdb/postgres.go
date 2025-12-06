@@ -20,10 +20,10 @@ const (
 
 var (
 	// DefaultPostgresFixtureLifetime is the default maximum time a Postgres
-	// test fixture is being kept alive. After that time the docker
-	// container will be terminated forcefully, even if the tests aren't
-	// fully executed yet. So this time needs to be chosen correctly to be
-	// longer than the longest expected individual test run time.
+	// test fixture is being kept alive. After that time the embedded
+	// Postgres process will be terminated forcefully, even if the tests
+	// aren't fully executed yet. So this time needs to be chosen correctly
+	// to be longer than the longest expected individual test run time.
 	DefaultPostgresFixtureLifetime = 10 * time.Minute
 )
 

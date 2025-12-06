@@ -3,15 +3,15 @@ package loopdb
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"strconv"
-	"strings"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,85 +19,70 @@ const (
 	testPgUser   = "test"
 	testPgPass   = "test"
 	testPgDBName = "test"
-	PostgresTag  = "11"
 )
 
-// TestPgFixture is a test fixture that starts a Postgres 11 instance in a
-// docker container.
+// TestPgFixture is a test fixture that starts a Postgres 11 instance using an
+// embedded Postgres runtime.
 type TestPgFixture struct {
-	db       *sql.DB
-	pool     *dockertest.Pool
-	resource *dockertest.Resource
-	host     string
-	port     int
+	db          *sql.DB
+	pg          *embeddedpostgres.EmbeddedPostgres
+	host        string
+	port        int
+	expiryTimer *time.Timer
+	stopOnce    sync.Once
 }
 
-// NewTestPgFixture constructs a new TestPgFixture starting up a docker
-// container running Postgres 11. The started container will expire in after
-// the passed duration.
+// NewTestPgFixture constructs a new TestPgFixture starting up an embedded
+// Postgres 11 server. The process will be auto-stopped after the specified
+// expiry if TearDown is not called first.
 func NewTestPgFixture(t *testing.T, expiry time.Duration) *TestPgFixture {
-	// Use a sensible default on Windows (tcp/http) and linux/osx (socket)
-	// by specifying an empty endpoint.
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err, "Could not connect to docker")
+	port := getFreePort(t)
+	runtimePath := t.TempDir()
+	logDir := filepath.Join(runtimePath, "logs")
+	require.NoError(t, os.MkdirAll(logDir, 0o755))
+	config := embeddedpostgres.DefaultConfig().
+		Version(embeddedpostgres.V11).
+		Database(testPgDBName).
+		Username(testPgUser).
+		Password(testPgPass).
+		Port(uint32(port)).
+		RuntimePath(runtimePath).
+		StartParameters(map[string]string{
+			"listen_addresses": "127.0.0.1",
 
-	// Pulls an image, creates a container based on it and runs it.
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        PostgresTag,
-		Env: []string{
-			fmt.Sprintf("POSTGRES_USER=%v", testPgUser),
-			fmt.Sprintf("POSTGRES_PASSWORD=%v", testPgPass),
-			fmt.Sprintf("POSTGRES_DB=%v", testPgDBName),
-			"listen_addresses='*'",
-		},
-		Cmd: []string{
-			"postgres",
-			"-c", "log_statement=all",
-			"-c", "log_destination=stderr",
-		},
-	}, func(config *docker.HostConfig) {
-		// Set AutoRemove to true so that stopped container goes away
-		// by itself.
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-	})
-	require.NoError(t, err, "Could not start resource")
+			// Logging collector only captures stderr output, so
+			// keep this destination in sync with the log file
+			// settings below.
+			"log_statement":     "all",
+			"log_destination":   "stderr",
+			"logging_collector": "on",
+			"log_directory":     logDir,
+			"log_filename":      "postgres.log",
+		})
 
-	hostAndPort := resource.GetHostPort("5432/tcp")
-	parts := strings.Split(hostAndPort, ":")
-	host := parts[0]
-	port, err := strconv.ParseInt(parts[1], 10, 64)
-	require.NoError(t, err)
+	pg := embeddedpostgres.NewDatabase(config)
+	require.NoError(t, pg.Start(), "Could not start embedded Postgres")
 
 	fixture := &TestPgFixture{
-		host: host,
-		port: int(port),
+		host: "127.0.0.1",
+		port: port,
+		pg:   pg,
 	}
+
+	if expiry > 0 {
+		fixture.expiryTimer = time.AfterFunc(expiry, func() {
+			log.Warnf("Postgres fixture exceeded lifetime; tearing down")
+			fixture.TearDown(t)
+		})
+	}
+
 	databaseURL := fixture.GetDSN()
 	log.Infof("Connecting to Postgres fixture: %v\n", databaseURL)
 
-	// Tell docker to hard kill the container in "expiry" seconds.
-	require.NoError(t, resource.Expire(uint(expiry.Seconds())))
-
-	// Exponential backoff-retry, because the application in the container
-	// might not be ready to accept connections yet.
-	pool.MaxWait = 120 * time.Second
-
-	var testDB *sql.DB
-	err = pool.Retry(func() error {
-		testDB, err = sql.Open("postgres", databaseURL)
-		if err != nil {
-			return err
-		}
-		return testDB.Ping()
-	})
-	require.NoError(t, err, "Could not connect to docker")
-
-	// Now fill in the rest of the fixture.
+	testDB, err := sql.Open("postgres", databaseURL)
+	require.NoError(t, err, "Could not open connection to Postgres fixture")
+	require.NoError(t, testDB.Ping(), "Could not connect to embedded Postgres")
 	fixture.db = testDB
-	fixture.pool = pool
-	fixture.resource = resource
 
 	return fixture
 }
@@ -119,10 +104,26 @@ func (f *TestPgFixture) GetConfig() *PostgresConfig {
 	}
 }
 
-// TearDown stops the underlying docker container.
+// TearDown stops the embedded Postgres process and releases resources.
 func (f *TestPgFixture) TearDown(t *testing.T) {
-	err := f.pool.Purge(f.resource)
-	require.NoError(t, err, "Could not purge resource")
+	if f.expiryTimer != nil {
+		f.expiryTimer.Stop()
+	}
+
+	f.stopOnce.Do(func() {
+		if f.db != nil {
+			err := f.db.Close()
+			require.NoErrorf(t, err, "failed to close postgres")
+		}
+
+		if f.pg != nil {
+			err := f.pg.Stop()
+			require.NoErrorf(t, err, "failed to stop postgres")
+		}
+
+		f.db = nil
+		f.pg = nil
+	})
 }
 
 // ClearDB clears the database.
@@ -136,4 +137,16 @@ func (f *TestPgFixture) ClearDB(t *testing.T) {
 		 CREATE SCHEMA public;`,
 	)
 	require.NoError(t, err)
+}
+
+// getFreePort returns an available TCP port on localhost.
+func getFreePort(t *testing.T) int {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, listener.Close())
+	}()
+
+	return listener.Addr().(*net.TCPAddr).Port
 }

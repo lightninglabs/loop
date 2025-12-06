@@ -11,6 +11,7 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
+	github.com/fergusstrange/embedded-postgres v1.25.0
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
@@ -32,7 +33,6 @@ require (
 	github.com/lightningnetwork/lnd/ticker v1.1.1
 	github.com/lightningnetwork/lnd/tlv v1.3.2
 	github.com/lightningnetwork/lnd/tor v1.1.6
-	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli-docs/v3 v3.1.1-0.20251020101624-bec07369b4f6
 	github.com/urfave/cli/v3 v3.4.1
@@ -81,7 +81,6 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fergusstrange/embedded-postgres v1.25.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
@@ -142,6 +141,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opencontainers/runc v1.2.8 // indirect
+	github.com/ory/dockertest/v3 v3.10.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
