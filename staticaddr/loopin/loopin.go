@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -169,47 +170,6 @@ func (l *StaticAddressLoopIn) getHtlc(chainParams *chaincfg.Params) (*swap.Htlc,
 	)
 }
 
-// createMusig2Sessions creates a musig2 session for a number of deposits.
-func (l *StaticAddressLoopIn) createMusig2Sessions(ctx context.Context,
-	signer lndclient.SignerClient) ([]*input.MuSig2SessionInfo, [][]byte,
-	error) {
-
-	musig2Sessions := make([]*input.MuSig2SessionInfo, len(l.Deposits))
-	clientNonces := make([][]byte, len(l.Deposits))
-
-	// Create the sessions and nonces from the deposits.
-	for i := 0; i < len(l.Deposits); i++ {
-		session, err := l.createMusig2Session(ctx, signer)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		musig2Sessions[i] = session
-		clientNonces[i] = session.PublicNonce[:]
-	}
-
-	return musig2Sessions, clientNonces, nil
-}
-
-// Musig2CreateSession creates a musig2 session for the deposit.
-func (l *StaticAddressLoopIn) createMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient) (*input.MuSig2SessionInfo, error) {
-
-	signers := [][]byte{
-		l.AddressParams.ClientPubkey.SerializeCompressed(),
-		l.AddressParams.ServerPubkey.SerializeCompressed(),
-	}
-
-	expiryLeaf := l.Address.TimeoutLeaf
-
-	rootHash := expiryLeaf.TapHash()
-
-	return signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &l.AddressParams.KeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
-	)
-}
-
 // signMusig2Tx adds the server nonces to the musig2 sessions and signs the
 // transaction.
 func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
@@ -217,7 +177,9 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := l.toPrevOuts(l.Deposits, l.AddressParams.PkScript)
+	prevOuts, err := staticutil.ToPrevOuts(
+		l.Deposits, l.AddressParams.PkScript,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -521,29 +483,6 @@ func (l *StaticAddressLoopIn) Outpoints() []wire.OutPoint {
 	}
 
 	return outpoints
-}
-
-func (l *StaticAddressLoopIn) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
-
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
-		outpoint := wire.OutPoint{
-			Hash:  d.Hash,
-			Index: d.Index,
-		}
-		txOut := &wire.TxOut{
-			Value:    int64(d.Value),
-			PkScript: pkScript,
-		}
-		if _, ok := prevOuts[outpoint]; ok {
-			return nil, fmt.Errorf("duplicate outpoint %v",
-				outpoint)
-		}
-		prevOuts[outpoint] = txOut
-	}
-
-	return prevOuts, nil
 }
 
 // GetState returns the current state of the loop-in swap.

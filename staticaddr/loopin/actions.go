@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -318,8 +319,11 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 
 	// Create a musig2 session for each deposit and different htlc tx fee
 	// rates.
-	createSession := f.loopIn.createMusig2Sessions
-	htlcSessions, clientHtlcNonces, err := createSession(ctx, f.cfg.Signer)
+	createSession := staticutil.CreateMusig2Sessions
+	htlcSessions, clientHtlcNonces, err := createSession(
+		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
+		f.loopIn.Address,
+	)
 	if err != nil {
 		err = fmt.Errorf("unable to create musig2 sessions: %w", err)
 
@@ -328,7 +332,8 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessions)
 
 	htlcSessionsHighFee, highFeeNonces, err := createSession(
-		ctx, f.cfg.Signer,
+		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
+		f.loopIn.Address,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -336,7 +341,8 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessionsHighFee)
 
 	htlcSessionsExtremelyHighFee, extremelyHighNonces, err := createSession(
-		ctx, f.cfg.Signer,
+		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
+		f.loopIn.Address,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)

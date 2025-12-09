@@ -1,10 +1,10 @@
 package withdraw
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -19,9 +20,12 @@ import (
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -329,7 +333,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 
 	// If not all passed outpoints are in state Deposited, we'll check if
 	// they are all in state Withdrawing. If they are, then the user is
-	// requesting a fee bump, if not we'll return an error as we only allow
+	// requesting a fee bump, if not, we'll return an error as we only allow
 	// fee bumping deposits in state Withdrawing.
 	if !allDeposited {
 		deposits, allWithdrawing = m.cfg.DepositManager.AllOutpointsActiveDeposits(
@@ -406,7 +410,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	finalizedTx, err := m.createFinalizedWithdrawalTx(
+	finalizedTx, _, err := m.CreateFinalizedWithdrawalTx(
 		ctx, deposits, withdrawalAddress, satPerVbyte, amount,
 	)
 	if err != nil {
@@ -501,17 +505,30 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
 }
 
-func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
+// CreateFinalizedWithdrawalTx creates and signs a finalized withdrawal
+// transaction that can be broadcast to the network. It returns the
+// signed *wire.MsgTx representation and the unsigned psbt.
+func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
-	satPerVbyte int64, selectedWithdrawalAmount int64) (*wire.MsgTx,
+	satPerVbyte int64, selectedWithdrawalAmount int64) (*wire.MsgTx, []byte,
 	error) {
 
 	// Create a musig2 session for each deposit.
-	withdrawalSessions, clientNonces, err := m.createMusig2Sessions(
-		ctx, deposits,
+	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sessions, clientNonces, idx, err := staticutil.CreateMusig2SessionsPerDeposit(
+		ctx, m.cfg.Signer, deposits, addrParams, staticAddress,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var withdrawalSweepFeeRate chainfee.SatPerKWeight
@@ -521,7 +538,7 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 			ctx, defaultConfTarget,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	} else {
 		withdrawalSweepFeeRate = chainfee.SatPerKVByte(
@@ -531,19 +548,23 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 
 	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+		return nil, nil, fmt.Errorf("couldn't get confirmation "+
+			"height for deposit, %w", err)
 	}
 
 	outpoints := toOutpoints(deposits)
-	prevOuts := m.toPrevOuts(deposits, params.PkScript)
-	withdrawalTx, withdrawAmount, changeAmount, err := m.createWithdrawalTx(
-		ctx, outpoints, prevOuts,
+	prevOuts, err := staticutil.ToPrevOuts(deposits, params.PkScript)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	withdrawalTx, unsignedPsbt, err := m.createWithdrawalTx(
+		ctx, outpoints, deposits, prevOuts,
 		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
 		withdrawalSweepFeeRate,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Request the server to sign the withdrawal transaction.
@@ -552,45 +573,50 @@ func (m *Manager) createFinalizedWithdrawalTx(ctx context.Context,
 	// expectation that the server just signs the transaction, without
 	// performing fee calculations and dust considerations. The client is
 	// responsible for that.
-	resp, err := m.cfg.StaticAddressServerClient.ServerWithdrawDeposits(
-		ctx, &staticaddressrpc.ServerWithdrawRequest{
-			Outpoints:       toPrevoutInfo(outpoints),
-			ClientNonces:    clientNonces,
-			ClientSweepAddr: withdrawalAddress.String(),
-			TxFeeRate:       uint64(withdrawalSweepFeeRate),
-			WithdrawAmount:  int64(withdrawAmount),
-			ChangeAmount:    int64(changeAmount),
+	// nolint:lll
+	sigResp, err := m.cfg.StaticAddressServerClient.ServerPsbtWithdrawDeposits(
+		ctx, &staticaddressrpc.ServerPsbtWithdrawRequest{
+			WithdrawalPsbt:  unsignedPsbt,
+			DepositToNonces: clientNonces,
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	coopServerNonces, err := toNonces(resp.ServerNonces)
-	if err != nil {
-		return nil, err
+	// Do some sanity checks.
+	txHash := withdrawalTx.TxHash()
+	if !bytes.Equal(txHash.CloneBytes(), sigResp.Txid) {
+		return nil, nil, errors.New("txid doesn't match")
+	}
+
+	if len(sigResp.SigningInfo) != len(deposits) {
+		return nil, nil, errors.New("invalid number of " +
+			"deposit signatures")
+	}
+
+	// Verify 1:1 matching between deposits and SigningInfo entries.
+	// Each deposit must have exactly one corresponding entry in
+	// SigningInfo.
+	for _, d := range deposits {
+		depositKey := d.OutPoint.String()
+		if _, ok := sigResp.SigningInfo[depositKey]; !ok {
+			return nil, nil, fmt.Errorf("missing signature for "+
+				"deposit %s", depositKey)
+		}
 	}
 
 	// Next we'll get our sweep tx signatures.
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
-	_, err = m.signMusig2Tx(
-		ctx, prevOutFetcher, outpoints, m.cfg.Signer, withdrawalTx,
-		withdrawalSessions, coopServerNonces,
+	finalizedTx, err := m.signMusig2Tx(
+		ctx, prevOutFetcher, m.cfg.Signer, withdrawalTx, sessions,
+		sigResp.SigningInfo, idx,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Now we'll finalize the sweepless sweep transaction.
-	finalizedTx, err := m.finalizeMusig2Transaction(
-		ctx, outpoints, m.cfg.Signer, withdrawalSessions,
-		withdrawalTx, resp.Musig2SweepSigs,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return finalizedTx, nil
+	return finalizedTx, unsignedPsbt, nil
 }
 
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
@@ -726,105 +752,105 @@ func toOutpoints(deposits []*deposit.Deposit) []wire.OutPoint {
 // signMusig2Tx adds the server nonces to the musig2 sessions and signs the
 // transaction.
 func (m *Manager) signMusig2Tx(ctx context.Context,
-	prevOutFetcher *txscript.MultiPrevOutFetcher, outpoints []wire.OutPoint,
+	prevOutFetcher *txscript.MultiPrevOutFetcher,
 	signer lndclient.SignerClient, tx *wire.MsgTx,
-	musig2sessions []*input.MuSig2SessionInfo,
-	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
+	sessions map[string]*input.MuSig2SessionInfo,
+	sigInfo map[string]*staticaddressrpc.ServerPsbtWithdrawSigningInfo,
+	depositsToIdx map[string]int) (*wire.MsgTx, error) {
 
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
-	sigs := make([][]byte, len(outpoints))
 
-	for idx, outpoint := range outpoints {
-		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
-			outpoint) {
+	// Create our digest.
+	var sigHash [32]byte
 
-			return nil, fmt.Errorf("tx input does not match " +
-				"deposits")
+	if len(sigInfo) != len(depositsToIdx) {
+		return nil, fmt.Errorf("unexpected number of partial " +
+			"signatures from server")
+	}
+
+	for txIndex, input := range tx.TxIn {
+		outpoint := input.PreviousOutPoint.String()
+		if i, ok := depositsToIdx[outpoint]; ok {
+			if i != txIndex {
+				return nil, fmt.Errorf("deposit index maps " +
+					"wrong tx index")
+			}
+			continue
+		}
+
+		return nil, fmt.Errorf("tx outpoint not in deposit index map")
+	}
+
+	// We'll now add the nonce to our session and sign the tx.
+	for deposit, sigAndNonce := range sigInfo {
+		session, ok := sessions[deposit]
+		if !ok {
+			return nil, errors.New("session not found")
+		}
+
+		nonce := [musig2.PubNonceSize]byte{}
+		copy(nonce[:], sigAndNonce.Nonce)
+		haveAllNonces, err := signer.MuSig2RegisterNonces(
+			ctx, session.SessionID,
+			[][musig2.PubNonceSize]byte{nonce},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error registering nonces: "+
+				"%w", err)
+		}
+
+		if !haveAllNonces {
+			return nil, errors.New("expected all nonces to be " +
+				"registered")
 		}
 
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
-			sigHashes, txscript.SigHashDefault, tx, idx,
-			prevOutFetcher,
+			sigHashes, txscript.SigHashDefault, tx,
+			depositsToIdx[deposit], prevOutFetcher,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error calculating taproot "+
+				"sig hash: %w", err)
 		}
 
-		var digest [32]byte
-		copy(digest[:], taprootSigHash)
+		copy(sigHash[:], taprootSigHash)
 
-		// Register the server's nonce before attempting to create our
-		// partial signature.
-		haveAllNonces, err := signer.MuSig2RegisterNonces(
-			ctx, musig2sessions[idx].SessionID,
-			[][musig2.PubNonceSize]byte{counterPartyNonces[idx]},
+		// Sign the tx.
+		_, err = signer.MuSig2Sign(
+			ctx, session.SessionID, sigHash, false,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error signing tx: %w", err)
 		}
 
-		// Sanity check that we have all the nonces.
-		if !haveAllNonces {
-			return nil, fmt.Errorf("invalid MuSig2 session: " +
-				"nonces missing")
-		}
-
-		// Since our MuSig2 session has all nonces, we can now create
-		// the local partial signature by signing the sig hash.
-		sig, err := signer.MuSig2Sign(
-			ctx, musig2sessions[idx].SessionID, digest, false,
+		// Combine the signature with the client signature.
+		haveAllSigs, sig, err := signer.MuSig2CombineSig(
+			ctx, session.SessionID,
+			[][]byte{sigAndNonce.Sig},
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error combining signature: "+
+				"%w", err)
 		}
 
-		sigs[idx] = sig
-	}
-
-	return sigs, nil
-}
-
-func withdrawalValue(prevOuts map[wire.OutPoint]*wire.TxOut) btcutil.Amount {
-	var totalValue btcutil.Amount
-	for _, prevOut := range prevOuts {
-		totalValue += btcutil.Amount(prevOut.Value)
-	}
-	return totalValue
-}
-
-// toNonces converts a byte slice to a 66 byte slice.
-func toNonces(nonces [][]byte) ([][musig2.PubNonceSize]byte, error) {
-	res := make([][musig2.PubNonceSize]byte, 0, len(nonces))
-	for _, n := range nonces {
-		nonce, err := byteSliceTo66ByteSlice(n)
-		if err != nil {
-			return nil, err
+		if !haveAllSigs {
+			return nil, errors.New("expected all signatures to " +
+				"be combined")
 		}
 
-		res = append(res, nonce)
+		tx.TxIn[depositsToIdx[deposit]].Witness = wire.TxWitness{
+			sig,
+		}
 	}
 
-	return res, nil
-}
-
-// byteSliceTo66ByteSlice converts a byte slice to a 66 byte slice.
-func byteSliceTo66ByteSlice(b []byte) ([musig2.PubNonceSize]byte, error) {
-	if len(b) != musig2.PubNonceSize {
-		return [musig2.PubNonceSize]byte{},
-			fmt.Errorf("invalid byte slice length")
-	}
-
-	var res [musig2.PubNonceSize]byte
-	copy(res[:], b)
-
-	return res, nil
+	return tx, nil
 }
 
 func (m *Manager) createWithdrawalTx(ctx context.Context,
-	outpoints []wire.OutPoint, prevOuts map[wire.OutPoint]*wire.TxOut,
+	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
+	prevOuts map[wire.OutPoint]*wire.TxOut,
 	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
-	feeRate chainfee.SatPerKWeight) (*wire.MsgTx, btcutil.Amount,
-	btcutil.Amount, error) {
+	feeRate chainfee.SatPerKWeight) (*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)
@@ -837,81 +863,23 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		})
 	}
 
-	var (
-		hasChange        bool
-		dustLimit        = lnwallet.DustLimitForSize(input.P2TRSize)
-		withdrawalAmount btcutil.Amount
-		changeAmount     btcutil.Amount
+	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
+		deposits, selectedWithdrawalAmount, feeRate,
+		withdrawAddr, lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
 	)
-
-	// Estimate the transaction weight without change.
-	weight, err := withdrawalTxWeight(len(outpoints), withdrawAddr, false)
 	if err != nil {
-		return nil, 0, 0, err
-	}
-	feeWithoutChange := feeRate.FeeForWeightRoundUp(weight)
-
-	// If the user selected a fraction of the sum of the selected deposits
-	// to withdraw, check if a change output is needed.
-	totalWithdrawalAmount := withdrawalValue(prevOuts)
-	if selectedWithdrawalAmount > 0 {
-		// Estimate the transaction weight with change.
-		weight, err = withdrawalTxWeight(
-			len(outpoints), withdrawAddr, true,
-		)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		feeWithChange := feeRate.FeeForWeightRoundUp(weight)
-
-		// The available change that can cover fees is the total
-		// selected deposit amount minus the selected withdrawal amount.
-		change := totalWithdrawalAmount - selectedWithdrawalAmount
-
-		switch {
-		case change-feeWithChange >= dustLimit:
-			// If the change can cover the fees without turning into
-			// dust, add a non-dust change output.
-			hasChange = true
-			changeAmount = change - feeWithChange
-			withdrawalAmount = selectedWithdrawalAmount
-
-		case change-feeWithoutChange >= 0:
-			// If the change is dust, we give it to the miners.
-			hasChange = false
-			withdrawalAmount = selectedWithdrawalAmount
-
-		default:
-			// If the fees eat into our withdrawal amount, we fail
-			// the withdrawal.
-			return nil, 0, 0, fmt.Errorf("the change doesn't " +
-				"cover for fees. Consider lowering the fee " +
-				"rate or decrease the withdrawal amount")
-		}
-	} else {
-		// If the user wants to withdraw the full amount, we don't need
-		// a change output.
-		hasChange = false
-		withdrawalAmount = totalWithdrawalAmount - feeWithoutChange
+		return nil, nil, fmt.Errorf("error calculating funding tx "+
+			"values: %w", err)
 	}
 
-	if withdrawalAmount < dustLimit {
-		return nil, 0, 0, fmt.Errorf("withdrawal amount is below " +
-			"dust limit")
-	}
-
-	if changeAmount < 0 {
-		return nil, 0, 0, fmt.Errorf("change amount is negative")
-	}
-
-	// For the users convenience we check that the change amount is lower
+	// For the user's convenience, we check that the change amount is lower
 	// than each input's value. If the change amount is higher than an
-	// input's value, we wouldn't have to include that input into the
+	// input's value, we wouldn't have to include that input in the
 	// transaction, saving fees.
 	for outpoint, txOut := range prevOuts {
 		if changeAmount >= btcutil.Amount(txOut.Value) {
-			return nil, 0, 0, fmt.Errorf("change amount %v is "+
-				"higher than an input value %v of input %v",
+			return nil, nil, fmt.Errorf("change amount %v "+
+				"is higher than an input value %v of input %v",
 				changeAmount, btcutil.Amount(txOut.Value),
 				outpoint)
 		}
@@ -919,7 +887,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 
 	withdrawScript, err := txscript.PayToAddrScript(withdrawAddr)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, nil, err
 	}
 
 	// Create the withdrawal output.
@@ -928,13 +896,13 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		PkScript: withdrawScript,
 	})
 
-	if hasChange {
+	if changeAmount > 0 {
 		// Send change back to the same static address.
 		staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
 		if err != nil {
 			log.Errorf("error retrieving taproot address %v", err)
 
-			return nil, 0, 0, fmt.Errorf("withdrawal failed")
+			return nil, nil, fmt.Errorf("withdrawal failed")
 		}
 
 		changeAddress, err := btcutil.NewAddressTaproot(
@@ -942,12 +910,12 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 			m.cfg.ChainParams,
 		)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, nil, err
 		}
 
 		changeScript, err := txscript.PayToAddrScript(changeAddress)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, nil, err
 		}
 
 		msgTx.AddTxOut(&wire.TxOut{
@@ -956,11 +924,146 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		})
 	}
 
-	return msgTx, withdrawalAmount, changeAmount, nil
+	// Create psbt for the withdrawal.
+	psbtx, err := psbt.NewFromUnsignedTx(msgTx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pInputs := make([]psbt.PInput, len(outpoints))
+	for i, op := range outpoints {
+		prevOut := prevOuts[op]
+		pInputs[i] = psbt.PInput{
+			WitnessUtxo: &wire.TxOut{
+				Value:    prevOut.Value,
+				PkScript: prevOut.PkScript,
+			},
+		}
+	}
+	psbtx.Inputs = pInputs
+
+	// Serialize the psbt to send it to the client.
+	var psbtBuf bytes.Buffer
+	err = psbtx.Serialize(&psbtBuf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return msgTx, psbtBuf.Bytes(), nil
 }
 
-// withdrawalFee returns the weight for the withdrawal transaction.
-func withdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
+func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
+	localAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
+	withdrawalAddress btcutil.Address,
+	commitmentType lnrpc.CommitmentType) (btcutil.Amount, btcutil.Amount,
+	error) {
+
+	if withdrawalAddress == nil &&
+		commitmentType == lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE {
+
+		return 0, 0, fmt.Errorf("either address or commitment type " +
+			"must be specified")
+	}
+
+	var (
+		err                  error
+		withdrawalFundingAmt btcutil.Amount
+		changeAmount         btcutil.Amount
+		dustLimit            = lnwallet.DustLimitForSize(input.P2TRSize)
+		isChannelOpen        = commitmentType != lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE
+	)
+
+	totalDepositAmount := btcutil.Amount(0)
+	for _, d := range deposits {
+		totalDepositAmount += d.Value
+	}
+
+	// Estimate the open channel transaction fee without change.
+	hasChange := false
+	weight, err := WithdrawalTxWeight(
+		len(deposits), withdrawalAddress, commitmentType, hasChange,
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+	feeWithoutChange := feeRate.FeeForWeight(weight)
+
+	// If the user selected a local amount for the channel, check if a
+	// change output is needed.
+	if localAmount > 0 {
+		// Estimate the transaction weight with change.
+		hasChange = true
+		weightWithChange, err := WithdrawalTxWeight(
+			len(deposits), withdrawalAddress, commitmentType,
+			hasChange,
+		)
+		if err != nil {
+			return 0, 0, err
+		}
+		feeWithChange := feeRate.FeeForWeight(weightWithChange)
+
+		// The available change that can cover fees is the total
+		// selected deposit amount minus the local channel amount.
+		change := totalDepositAmount - localAmount
+
+		switch {
+		case change-feeWithChange >= dustLimit:
+			// If the change can cover the fees without turning into
+			// dust, add a non-dust change output.
+			changeAmount = change - feeWithChange
+			withdrawalFundingAmt = localAmount
+
+		case change-feeWithoutChange >= 0:
+			// If the change is dust, we give it to the miners.
+			withdrawalFundingAmt = localAmount
+
+		default:
+			// If the fees eat into our local channel amount, we
+			// fail to open the channel.
+			return 0, 0, fmt.Errorf("the change doesn't " +
+				"cover for fees. Consider lowering the fee " +
+				"rate or decrease the local amount")
+		}
+	} else {
+		// If the user wants to open the channel with the total value of
+		// deposits, we don't need a change output.
+		withdrawalFundingAmt = totalDepositAmount - feeWithoutChange
+	}
+
+	if withdrawalFundingAmt < dustLimit {
+		return 0, 0, fmt.Errorf("withdrawal amount is below dust limit")
+	}
+
+	if changeAmount < 0 {
+		return 0, 0, fmt.Errorf("change amount is negative")
+	}
+
+	// Ensure that the channel funding amount is at least in the amount of
+	// lnd's minimum channel size.
+	if isChannelOpen && withdrawalFundingAmt < funding.MinChanFundingSize {
+		return 0, 0, fmt.Errorf("channel funding amount %v is lower "+
+			"than the minimum channel funding size %v",
+			withdrawalFundingAmt, funding.MinChanFundingSize)
+	}
+
+	// For the user's convenience, we check that the change amount is lower
+	// than each input's value. If the change amount is higher than an
+	// input's value, we wouldn't have to include that input in the
+	// transaction, saving fees.
+	for _, d := range deposits {
+		if changeAmount >= d.Value {
+			return 0, 0, fmt.Errorf("change amount %v is "+
+				"higher than an input value %v of input %v",
+				changeAmount, d.Value, d.OutPoint.String())
+		}
+	}
+
+	return withdrawalFundingAmt, changeAmount, nil
+}
+
+// WithdrawalTxWeight returns the weight for the withdrawal transaction.
+func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
+	commitmentType lnrpc.CommitmentType,
 	hasChange bool) (lntypes.WeightUnit, error) {
 
 	var weightEstimator input.TxWeightEstimator
@@ -970,17 +1073,30 @@ func withdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 		)
 	}
 
-	// Get the weight of the sweep output.
-	switch sweepAddress.(type) {
-	case *btcutil.AddressWitnessPubKeyHash:
-		weightEstimator.AddP2WKHOutput()
+	if commitmentType != lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE {
+		switch commitmentType {
+		case lnrpc.CommitmentType_SIMPLE_TAPROOT:
+			weightEstimator.AddP2TROutput()
 
-	case *btcutil.AddressTaproot:
-		weightEstimator.AddP2TROutput()
+		default:
+			weightEstimator.AddP2WSHOutput()
+		}
+	} else {
+		// Get the weight of the sweep output.
+		switch sweepAddress.(type) {
+		case *btcutil.AddressWitnessPubKeyHash:
+			weightEstimator.AddP2WKHOutput()
 
-	default:
-		return 0, fmt.Errorf("invalid sweep address type %T",
-			sweepAddress)
+		case *btcutil.AddressWitnessScriptHash:
+			weightEstimator.AddP2WSHOutput()
+
+		case *btcutil.AddressTaproot:
+			weightEstimator.AddP2TROutput()
+
+		default:
+			return 0, fmt.Errorf("invalid sweep address type %T",
+				sweepAddress)
+		}
 	}
 
 	// If there's a change output add the weight of the static address.
@@ -989,120 +1105,6 @@ func withdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 	}
 
 	return weightEstimator.Weight(), nil
-}
-
-// finalizeMusig2Transaction creates the finalized transactions for either
-// the htlc or the cooperative close.
-func (m *Manager) finalizeMusig2Transaction(ctx context.Context,
-	outpoints []wire.OutPoint, signer lndclient.SignerClient,
-	musig2Sessions []*input.MuSig2SessionInfo,
-	tx *wire.MsgTx, serverSigs [][]byte) (*wire.MsgTx, error) {
-
-	for idx := range outpoints {
-		haveAllSigs, finalSig, err := signer.MuSig2CombineSig(
-			ctx, musig2Sessions[idx].SessionID,
-			[][]byte{serverSigs[idx]},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if !haveAllSigs {
-			return nil, fmt.Errorf("missing sigs")
-		}
-
-		tx.TxIn[idx].Witness = wire.TxWitness{finalSig}
-	}
-
-	return tx, nil
-}
-
-func toPrevoutInfo(outpoints []wire.OutPoint) []*staticaddressrpc.PrevoutInfo {
-	var result []*staticaddressrpc.PrevoutInfo
-	for _, o := range outpoints {
-		outP := o
-		outpoint := &staticaddressrpc.PrevoutInfo{
-			TxidBytes:   outP.Hash[:],
-			OutputIndex: outP.Index,
-		}
-		result = append(result, outpoint)
-	}
-
-	return result
-}
-
-// createMusig2Sessions creates a musig2 session for a number of deposits.
-func (m *Manager) createMusig2Sessions(ctx context.Context,
-	deposits []*deposit.Deposit) ([]*input.MuSig2SessionInfo, [][]byte,
-	error) {
-
-	musig2Sessions := make([]*input.MuSig2SessionInfo, len(deposits))
-	clientNonces := make([][]byte, len(deposits))
-
-	// Create the sessions and nonces from the deposits.
-	for i := 0; i < len(deposits); i++ {
-		session, err := m.createMusig2Session(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		musig2Sessions[i] = session
-		clientNonces[i] = session.PublicNonce[:]
-	}
-
-	return musig2Sessions, clientNonces, nil
-}
-
-// Musig2CreateSession creates a musig2 session for the deposit.
-func (m *Manager) createMusig2Session(ctx context.Context) (
-	*input.MuSig2SessionInfo, error) {
-
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	signers := [][]byte{
-		addressParams.ClientPubkey.SerializeCompressed(),
-		addressParams.ServerPubkey.SerializeCompressed(),
-	}
-
-	address, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
-	}
-
-	expiryLeaf := address.TimeoutLeaf
-
-	rootHash := expiryLeaf.TapHash()
-
-	return m.cfg.Signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &addressParams.KeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
-	)
-}
-
-func (m *Manager) toPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) map[wire.OutPoint]*wire.TxOut {
-
-	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
-		outpoint := wire.OutPoint{
-			Hash:  d.Hash,
-			Index: d.Index,
-		}
-		txOut := &wire.TxOut{
-			Value:    int64(d.Value),
-			PkScript: pkScript,
-		}
-		prevOuts[outpoint] = txOut
-	}
-
-	return prevOuts
 }
 
 func (m *Manager) republishWithdrawals(ctx context.Context) error {
