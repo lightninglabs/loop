@@ -638,7 +638,7 @@ type testTransactionPublisher struct {
 	attempts int
 }
 
-var testPublishError = errors.New("test publish error")
+var errTestPublish = errors.New("test publish error")
 
 // PublishTransaction publishes the transaction or fails it's the first attempt.
 func (p *testTransactionPublisher) PublishTransaction(ctx context.Context,
@@ -646,7 +646,7 @@ func (p *testTransactionPublisher) PublishTransaction(ctx context.Context,
 
 	p.attempts++
 	if p.attempts == 1 {
-		return testPublishError
+		return errTestPublish
 	}
 
 	return p.WalletKitClient.PublishTransaction(ctx, tx, label)
@@ -733,7 +733,7 @@ func testPublishErrorHandler(t *testing.T, store testStore,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// The first attempt to publish the batch tx is expected to fail.
-	require.ErrorIs(t, <-publishErrorChan, testPublishError)
+	require.ErrorIs(t, <-publishErrorChan, errTestPublish)
 
 	// Mine a block to trigger another publishing attempt.
 	err = lnd.NotifyHeight(601)
@@ -4072,8 +4072,8 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 	<-batcher.initDone
 
 	const (
-		sweepValue btcutil.Amount = 1_000_000
-		confHeight                = 605
+		sweepValue = btcutil.Amount(1_000_000)
+		confHeight = 605
 	)
 
 	sweepOutpoint := wire.OutPoint{
@@ -4534,8 +4534,8 @@ func TestSweepBatcherConfirmedBatchIncompleteSweeps(t *testing.T) {
 	swapStore := newLoopdbStore(t, sqlDB)
 
 	const (
-		sweepValue btcutil.Amount = 1_000_000
-		confHeight                = 777
+		sweepValue = btcutil.Amount(1_000_000)
+		confHeight = 777
 	)
 
 	ctx := context.Background()
