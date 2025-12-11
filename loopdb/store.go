@@ -194,7 +194,7 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	bdb, err := bbolt.Open(path, 0600, &bbolt.Options{
 		Timeout: DefaultLoopDBTimeout,
 	})
-	if err == bbolt.ErrTimeout {
+	if errors.Is(err, bbolt.ErrTimeout) {
 		return nil, fmt.Errorf("%w: couldn't obtain exclusive lock on "+
 			"%s, timed out after %v", bbolt.ErrTimeout, path,
 			DefaultLoopDBTimeout)
