@@ -892,7 +892,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address manager stopped")
 
 			err := staticAddressManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -924,7 +924,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address deposit manager stopped")
 
 			err := depositManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -956,7 +956,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address withdrawal manager stopped")
 
 			err := withdrawalManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -992,7 +992,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			infof("Starting static address loop-in manager...")
 			defer infof("Static address loop-in manager stopped")
 			err := staticLoopInManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 		}()

@@ -760,7 +760,7 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 }
 
 func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
-	*swapConfig, error, *loopInSwap) {
+	*swapConfig, *loopInSwap, error) {
 
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
@@ -783,5 +783,5 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 		}
 		ctx.errChan <- err
 	}()
-	return cfg, err, inSwap
+	return cfg, inSwap, err
 }
