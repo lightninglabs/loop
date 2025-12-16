@@ -575,6 +575,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			f.Errorf("htlc tx conf chan error, re-registering: "+
 				"%v", err)
 
+			// A previous confirmation may no longer be valid if the
+			// subscription failed, so reset and wait for a fresh one.
+			htlcConfirmed = false
+
 			// Re-register for htlc confirmation.
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
