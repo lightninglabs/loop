@@ -20,6 +20,7 @@ runs:
       run: |
         go mod edit -replace=github.com/lightninglabs/loop=../
         go mod edit -replace=github.com/lightninglabs/loop/looprpc=../looprpc
+        go mod edit -replace=github.com/lightninglabs/loop/swapserverrpc=../swapserverrpc
         go mod tidy
       shell: bash
 
