@@ -572,7 +572,21 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			htlcConfirmed = true
 
 		case err = <-htlcErrConfChan:
-			f.Errorf("htlc tx conf chan error: %v", err)
+			f.Errorf("htlc tx conf chan error, re-registering: "+
+				"%v", err)
+
+			// A previous confirmation may no longer be valid if the
+			// subscription failed, so reset and wait for a fresh one.
+			htlcConfirmed = false
+
+			// Re-register for htlc confirmation.
+			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
+			if err != nil {
+				err = fmt.Errorf("unable to re-register for "+
+					"htlc tx confirmation: %w", err)
+
+				return f.HandleError(err)
+			}
 
 		case <-reorgChan:
 			// A reorg happened. We invalidate a previous htlc
@@ -582,8 +596,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
-				f.Errorf("unable to monitor htlc tx "+
+				err = fmt.Errorf("unable to monitor htlc tx "+
 					"confirmation: %v", err)
+
+				return f.HandleError(err)
 			}
 
 		case <-deadlineChan:
