@@ -192,10 +192,10 @@ func main() {
 
 // getClient establishes a SwapClient RPC connection and returns the client and
 // a cleanup handler.
-func getClient(ctx context.Context, cmd *cli.Command) (looprpc.SwapClientClient,
+func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
 	func(), error) {
 
-	client, _, cleanup, err := getClientWithConn(ctx, cmd)
+	client, _, cleanup, err := getClientWithConn(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -205,15 +205,15 @@ func getClient(ctx context.Context, cmd *cli.Command) (looprpc.SwapClientClient,
 
 // getClientWithConn returns both the SwapClient RPC client and the underlying
 // gRPC connection so callers can perform connection-aware actions.
-func getClientWithConn(ctx context.Context, cmd *cli.Command) (
-	looprpc.SwapClientClient, *grpc.ClientConn, func(), error) {
+func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
+	*grpc.ClientConn, func(), error) {
 
 	rpcServer := cmd.String("rpcserver")
 	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	conn, err := getClientConn(ctx, rpcServer, tlsCertPath, macaroonPath)
+	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -432,7 +432,7 @@ func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Println()
 }
 
-func getClientConn(ctx context.Context, address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
+func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	error) {
 
 	// We always need to send a macaroon.
@@ -446,7 +446,7 @@ func getClientConn(ctx context.Context, address, tlsCertPath, macaroonPath strin
 		macOption,
 	}
 
-	// TLS cannot be disabled, we'll always have a cert file to read.
+	// Since TLS cannot be disabled, we'll always have a cert file to read.
 	creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
 	if err != nil {
 		return nil, err
@@ -454,9 +454,9 @@ func getClientConn(ctx context.Context, address, tlsCertPath, macaroonPath strin
 
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
-	conn, err := grpc.DialContext(ctx, address, opts...)
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+		return nil, fmt.Errorf("unable to create RPC client: %v",
 			err)
 	}
 

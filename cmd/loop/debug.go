@@ -48,7 +48,7 @@ func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient,
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := getClientConn(ctx, rpcServer, tlsCertPath, macaroonPath)
+	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}

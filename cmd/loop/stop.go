@@ -29,7 +29,7 @@ func stopDaemon(ctx context.Context, cmd *cli.Command) error {
 	waitForShutdown := cmd.Bool("wait")
 
 	// Establish a client connection to loopd.
-	client, conn, cleanup, err := getClientWithConn(ctx, cmd)
+	client, conn, cleanup, err := getClientWithConn(cmd)
 	if err != nil {
 		return err
 	}

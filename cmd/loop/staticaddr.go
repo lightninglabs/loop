@@ -62,7 +62,7 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func listUnspent(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func listDeposits(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func listWithdrawals(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -354,7 +354,7 @@ func listStaticAddressSwaps(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func summary(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -519,7 +519,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		selectedAmount = int64(cmd.Uint64("amt"))
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}

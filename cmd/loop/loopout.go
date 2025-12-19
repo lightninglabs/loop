@@ -237,7 +237,7 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
