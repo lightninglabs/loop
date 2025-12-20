@@ -25,7 +25,7 @@ var getLiquidityParamsCommand = &cli.Command{
 }
 
 func getParams(ctx context.Context, cmd *cli.Command) error {
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func setRule(ctx context.Context, cmd *cli.Command) error {
 		pubkeyRule = true
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func setRule(ctx context.Context, cmd *cli.Command) error {
 
 	// We need to set the full set of current parameters every time we call
 	// SetParameters. To allow users to set only individual fields on the
-	// cli, we lookup our current params, then update individual values.
+	// cli, we look up our current params, then update individual values.
 	params, err := client.GetLiquidityParams(
 		ctx, &looprpc.GetLiquidityParamsRequest{},
 	)
@@ -395,7 +395,7 @@ var setParamsCommand = &cli.Command{
 }
 
 func setParams(ctx context.Context, cmd *cli.Command) error {
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	// We need to set the full set of current parameters every time we call
 	// SetParameters. To allow users to set only individual fields on the
-	// cli, we lookup our current params, then update individual values.
+	// cli, we look up our current params, then update individual values.
 	params, err := client.GetLiquidityParams(
 		ctx, &looprpc.GetLiquidityParamsRequest{},
 	)
@@ -693,7 +693,7 @@ var suggestSwapCommand = &cli.Command{
 }
 
 func suggestSwap(ctx context.Context, cmd *cli.Command) error {
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -896,7 +897,7 @@ func rpcRouteCancel(details *outCancelDetails) (
 // getSwapServerConn returns a connection to the swap server. A non-empty
 // proxyAddr indicates that a SOCKS proxy found at the address should be used to
 // establish the connection.
-func getSwapServerConn(address, proxyAddress string, insecure bool,
+func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
 	tlsPath string, interceptor *l402.ClientInterceptor) (*grpc.ClientConn,
 	error) {
 
@@ -914,8 +915,9 @@ func getSwapServerConn(address, proxyAddress string, insecure bool,
 	// using a self-signed certificate or with a certificate signed by a
 	// public CA.
 	switch {
-	case insecure:
-		opts = append(opts, grpc.WithInsecure())
+	case skipCertCheck:
+		creds := insecure.NewCredentials()
+		opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	case tlsPath != "":
 		// Load the specified TLS certificate and build
@@ -945,7 +947,7 @@ func getSwapServerConn(address, proxyAddress string, insecure bool,
 		opts = append(opts, grpc.WithContextDialer(torDialer))
 	}
 
-	conn, err := grpc.Dial(address, opts...)
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to RPC server: %v",
 			err)

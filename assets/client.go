@@ -306,7 +306,7 @@ func getClientConn(config *TapdConfig) (*grpc.ClientConn, error) {
 	}
 
 	// Dial the gRPC server.
-	conn, err := grpc.Dial(config.Host, opts...)
+	conn, err := grpc.NewClient(config.Host, opts...)
 	if err != nil {
 		return nil, err
 	}

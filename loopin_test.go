@@ -593,7 +593,7 @@ func TestAbandonPublishedHtlcState(t *testing.T) {
 
 	height := int32(600)
 
-	cfg, err, inSwap := startNewLoopIn(t, ctx, height)
+	cfg, inSwap, err := startNewLoopIn(t, ctx, height)
 	require.NoError(t, err)
 
 	advanceToPublishedHtlc(t, ctx)
@@ -663,7 +663,7 @@ func TestAbandonSettledInvoiceState(t *testing.T) {
 
 	height := int32(600)
 
-	cfg, err, inSwap := startNewLoopIn(t, ctx, height)
+	cfg, inSwap, err := startNewLoopIn(t, ctx, height)
 	require.NoError(t, err)
 
 	advanceToPublishedHtlc(t, ctx)
@@ -760,7 +760,7 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 }
 
 func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
-	*swapConfig, error, *loopInSwap) {
+	*swapConfig, *loopInSwap, error) {
 
 	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
 
@@ -783,5 +783,6 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 		}
 		ctx.errChan <- err
 	}()
-	return cfg, err, inSwap
+
+	return cfg, inSwap, err
 }

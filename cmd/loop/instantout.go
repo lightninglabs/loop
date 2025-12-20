@@ -53,7 +53,7 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	// First set up the swap client itself.
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ var listInstantOutsCommand = &cli.Command{
 
 func listInstantOuts(ctx context.Context, cmd *cli.Command) error {
 	// First set up the swap client itself.
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}

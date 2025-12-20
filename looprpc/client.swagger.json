@@ -1663,6 +1663,7 @@
         "rules": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcLiquidityRule"
           },
           "description": "A set of liquidity rules that describe the desired liquidity balance."
@@ -1845,6 +1846,7 @@
         "swaps": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcInstantOut"
           },
           "description": "The list of all currently known instant out swaps and their status."
@@ -1857,6 +1859,7 @@
         "reservations": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcClientReservation"
           },
           "description": "The list of all currently known reservations and their status."
@@ -1869,6 +1872,7 @@
         "filtered_deposits": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "A list of all deposits that match the filtered state."
@@ -1881,6 +1885,7 @@
         "swaps": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcStaticAddressLoopInSwap"
           },
           "description": "A list of all swaps known static address loop-in swaps."
@@ -1893,6 +1898,7 @@
         "withdrawals": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcStaticAddressWithdrawal"
           },
           "description": "A list of all static address withdrawals."
@@ -1944,6 +1950,7 @@
         "swaps": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcSwapStatus"
           },
           "description": "The list of all currently known swaps and their status."
@@ -1961,6 +1968,7 @@
         "utxos": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcUtxo"
           },
           "description": "A list of utxos behind the static address."
@@ -2010,6 +2018,7 @@
         "route_hints": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcRouteHint"
           },
           "description": "Optional route hints to reach the destination through private channels."
@@ -2274,6 +2283,7 @@
         "hop_hints": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcHopHint"
           },
           "description": "A list of hop hints that when chained together can assist in reaching a\nspecific destination."
@@ -2323,6 +2333,7 @@
         "route_hints": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcRouteHint"
           },
           "description": "Optional route hints to reach the destination through private channels."
@@ -2404,6 +2415,7 @@
         "used_deposits": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "The deposits that are used for this swap."
@@ -2454,6 +2466,7 @@
         "deposits": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "The deposits that were used for this swap."
@@ -2537,6 +2550,7 @@
         "deposits": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "The selected deposits that is withdrawn from."
@@ -2572,6 +2586,7 @@
         "loop_out": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcLoopOutRequest"
           },
           "description": "The set of recommended loop outs."
@@ -2579,6 +2594,7 @@
         "loop_in": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcLoopInRequest"
           },
           "title": "The set of recommended loop in swaps"
@@ -2586,6 +2602,7 @@
         "disqualified": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcDisqualified"
           },
           "description": "Disqualified contains the set of channels that swaps are not recommended\nfor."
@@ -2739,6 +2756,7 @@
         "tokens": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcL402Token"
           },
           "description": "List of all tokens the daemon knows of, including old/expired tokens."
@@ -2774,6 +2792,7 @@
         "outpoints": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/looprpcOutPoint"
           },
           "description": "The outpoints of the deposits to withdraw."
@@ -2833,6 +2852,7 @@
         "details": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/protobufAny"
           }
         }

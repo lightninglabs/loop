@@ -3,6 +3,7 @@ package loopdb
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -49,6 +50,33 @@ var (
 
 	testTime = time.Date(2018, time.January, 9, 14, 00, 00, 0, time.UTC)
 )
+
+// TestNewBoltSwapStoreTimeout ensures a wrapped bbolt timeout is detected
+// correctly when opening the store.
+func TestNewBoltSwapStoreTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Override the bbolt open function to return a wrapped timeout.
+	origOpen := bboltOpen
+	t.Cleanup(func() {
+		bboltOpen = origOpen
+	})
+
+	wrappedErr := fmt.Errorf("wrapped: %w", bbolt.ErrTimeout)
+	bboltOpen = func(path string, mode os.FileMode,
+		options *bbolt.Options) (*bbolt.DB, error) {
+
+		require.NotNil(t, options)
+		require.Equal(t, filepath.Join(tempDir, dbFileName), path)
+
+		return nil, wrappedErr
+	}
+
+	store, err := NewBoltSwapStore(tempDir, &chaincfg.MainNetParams)
+	require.Nil(t, store)
+	require.ErrorIs(t, err, bbolt.ErrTimeout)
+	require.ErrorContains(t, err, "couldn't obtain exclusive lock")
+}
 
 // TestLoopOutStore tests all the basic functionality of the current bbolt
 // swap store.

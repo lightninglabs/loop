@@ -48,7 +48,7 @@ var listSwapsCommand = &cli.Command{
 }
 
 func listSwaps(ctx context.Context, cmd *cli.Command) error {
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func swapInfo(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("cannot hex decode id: %v", err)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func abandonSwap(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("cannot hex decode id: %v", err)
 	}
 
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}

@@ -47,6 +47,13 @@ var (
 	errOnlyStartOnce = fmt.Errorf("daemon can only be started once")
 )
 
+// shouldReportManagerErr determines whether a manager error should be forwarded
+// to the internal error channel. Context cancellations are treated as
+// non-fatal.
+func shouldReportManagerErr(err error) bool {
+	return err != nil && !errors.Is(err, context.Canceled)
+}
+
 // ListenerCfg holds closures used to retrieve listeners for the gRPC services.
 type ListenerCfg struct {
 	// grpcListener returns a TLS listener to use for the gRPC server, based
@@ -892,7 +899,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address manager stopped")
 
 			err := staticAddressManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -924,7 +931,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address deposit manager stopped")
 
 			err := depositManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -956,7 +963,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			defer infof("Static address withdrawal manager stopped")
 
 			err := withdrawalManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
 		}()
@@ -992,7 +999,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			infof("Starting static address loop-in manager...")
 			defer infof("Static address loop-in manager stopped")
 			err := staticLoopInManager.Run(d.mainCtx, initChan)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
 		}()

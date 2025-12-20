@@ -18,6 +18,9 @@ import (
 )
 
 var (
+	// bboltOpen allows overriding the open function in tests.
+	bboltOpen = bbolt.Open
+
 	// dbFileName is the default file name of the client-side loop sub-swap
 	// database.
 	dbFileName = "loop.db"
@@ -191,10 +194,10 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	// Now that we know that path exists, we'll open up bolt, which
 	// implements our default swap store.
 	path := filepath.Join(dbPath, dbFileName)
-	bdb, err := bbolt.Open(path, 0600, &bbolt.Options{
+	bdb, err := bboltOpen(path, 0600, &bbolt.Options{
 		Timeout: DefaultLoopDBTimeout,
 	})
-	if err == bbolt.ErrTimeout {
+	if errors.Is(err, bbolt.ErrTimeout) {
 		return nil, fmt.Errorf("%w: couldn't obtain exclusive lock on "+
 			"%s, timed out after %v", bbolt.ErrTimeout, path,
 			DefaultLoopDBTimeout)

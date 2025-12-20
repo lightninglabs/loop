@@ -17,7 +17,7 @@ var getInfoCommand = &cli.Command{
 }
 
 func getInfo(ctx context.Context, cmd *cli.Command) error {
-	client, cleanup, err := getClient(ctx, cmd)
+	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
