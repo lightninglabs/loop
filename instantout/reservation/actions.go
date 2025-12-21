@@ -123,7 +123,7 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 			return f.HandleError(err)
 
 		case confInfo := <-confChan:
-			f.Debugf("confirmed in tx: %v", confInfo.Tx)
+			f.Debugf("confirmed in txid: %v", confInfo.Tx.TxHash())
 			outpoint, err := f.reservation.findReservationOutput(
 				confInfo.Tx,
 			)
