@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -433,9 +434,18 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		psbtFinalized bool
 		basePsbtBytes []byte
 		quit          = make(chan struct{})
+		closeQuitOnce sync.Once
 		srvMsg        = make(chan *lnrpc.OpenStatusUpdate, 1)
 		srvErr        = make(chan error, 1)
 	)
+
+	// closeQuit safely closes the quit channel using sync.Once to prevent
+	// panic from closing an already-closed channel.
+	closeQuit := func() {
+		closeQuitOnce.Do(func() {
+			close(quit)
+		})
+	}
 
 	// Make sure the user didn't supply any command line flags that are
 	// incompatible with PSBT funding.
@@ -541,7 +551,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		select {
 		case <-ctx.Done():
 			log.Infof("OpenChannel context cancel.")
-			close(quit)
+			closeQuit()
 
 		case err := <-srvErr:
 			log.Errorf("OpenChannel lnd server error received: "+
@@ -558,7 +568,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 
 				shimPending = false
 			}
-			close(quit)
+			closeQuit()
 
 		case <-quit:
 		}
@@ -694,7 +704,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 
 			// We can now close the quit channel to stop the
 			// goroutine that reads from the server.
-			close(quit)
+			closeQuit()
 
 			// Nil indicates that the channel was successfully
 			// published.
