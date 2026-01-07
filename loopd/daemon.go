@@ -24,6 +24,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/openchannel"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
@@ -584,6 +585,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticAddressManager *address.Manager
 		depositManager       *deposit.Manager
 		withdrawalManager    *withdraw.Manager
+		openChannelManager   *openchannel.Manager
 		staticLoopInManager  *loopin.Manager
 	)
 
@@ -641,6 +643,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return fmt.Errorf("unable to create withdrawal manager: %w",
 			err)
 	}
+
+	// Static address deposit open channel manager setup.
+	openChannelCfg := &openchannel.Config{
+		Server:            staticAddressClient,
+		AddressManager:    staticAddressManager,
+		DepositManager:    depositManager,
+		WithdrawalManager: withdrawalManager,
+		WalletKit:         d.lnd.WalletKit,
+		ChainParams:       d.lnd.ChainParams,
+		ChainNotifier:     d.lnd.ChainNotifier,
+		Signer:            d.lnd.Signer,
+		LightningClient:   d.lnd.Client,
+	}
+	openChannelManager = openchannel.NewManager(openChannelCfg)
 
 	// Static address loop-in manager setup.
 	staticAddressLoopInStore := loopin.NewSqlStore(
@@ -752,6 +768,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		depositManager:       depositManager,
 		withdrawalManager:    withdrawalManager,
 		staticLoopInManager:  staticLoopInManager,
+		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
 		stopDaemon:           d.Stop,
 	}
@@ -987,6 +1004,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
+	}
+	// Start the static address open channel manager.
+	if openChannelManager != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+
+			infof("Starting static address open channel manager")
+			err := openChannelManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(context.Canceled, err) {
+				d.internalErrChan <- err
+			}
+			infof("Static address open channel manager stopped")
+		}()
 	}
 
 	// Start the static address loop-in manager.

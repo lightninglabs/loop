@@ -2,18 +2,16 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
 )
@@ -35,6 +33,7 @@ var staticAddressCommands = &cli.Command{
 		withdrawalCommand,
 		summaryCommand,
 		staticAddressLoopInCommand,
+		openChannelCommand,
 	},
 }
 
@@ -182,7 +181,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 	var (
 		isAllSelected  = cmd.IsSet("all")
 		isUtxoSelected = cmd.IsSet("utxo")
-		outpoints      []*looprpc.OutPoint
+		outpoints      []*lnrpc.OutPoint
 		destAddr       string
 	)
 
@@ -193,7 +192,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 	case isAllSelected:
 	case isUtxoSelected:
 		utxos := cmd.StringSlice("utxo")
-		outpoints, err = utxosToOutpoints(utxos)
+		outpoints, err = lndcommands.UtxosToOutpoints(utxos)
 		if err != nil {
 			return err
 		}
@@ -238,6 +237,7 @@ var listDepositsCommand = &cli.Command{
 				"of the following: \n" +
 				"deposited\nwithdrawing\nwithdrawn\n" +
 				"looping_in\nlooped_in\n" +
+				"opening_channel\nchannel_published\n" +
 				"publish_expired_deposit\n" +
 				"sweep_htlc_timeout\nhtlc_timeout_swept\n" +
 				"wait_for_expiry_sweep\nexpired\nfailed\n.",
@@ -276,6 +276,12 @@ func listDeposits(ctx context.Context, cmd *cli.Command) error {
 
 	case "looped_in":
 		filterState = looprpc.DepositState_LOOPED_IN
+
+	case "opening_channel":
+		filterState = looprpc.DepositState_OPENING_CHANNEL
+
+	case "channel_published":
+		filterState = looprpc.DepositState_CHANNEL_PUBLISHED
 
 	case "publish_expired_deposit":
 		filterState = looprpc.DepositState_PUBLISH_EXPIRED
@@ -378,7 +384,7 @@ var summaryCommand = &cli.Command{
 	Usage:   "Display a summary of static address related information.",
 	Description: `
 	Displays various static address related information about deposits, 
-	withdrawals and swaps. 
+	withdrawals, swaps and channel openings. 
 	`,
 	Action: summary,
 }
@@ -404,46 +410,6 @@ func summary(ctx context.Context, cmd *cli.Command) error {
 	printRespJSON(resp)
 
 	return nil
-}
-
-func utxosToOutpoints(utxos []string) ([]*looprpc.OutPoint, error) {
-	outpoints := make([]*looprpc.OutPoint, 0, len(utxos))
-	if len(utxos) == 0 {
-		return nil, fmt.Errorf("no utxos specified")
-	}
-
-	for _, utxo := range utxos {
-		outpoint, err := NewProtoOutPoint(utxo)
-		if err != nil {
-			return nil, err
-		}
-		outpoints = append(outpoints, outpoint)
-	}
-
-	return outpoints, nil
-}
-
-// NewProtoOutPoint parses an OutPoint into its corresponding lnrpc.OutPoint
-// type.
-func NewProtoOutPoint(op string) (*looprpc.OutPoint, error) {
-	parts := strings.Split(op, ":")
-	if len(parts) != 2 {
-		return nil, errors.New("outpoint should be of the form " +
-			"txid:index")
-	}
-	txid := parts[0]
-	if hex.DecodedLen(len(txid)) != chainhash.HashSize {
-		return nil, fmt.Errorf("invalid hex-encoded txid %v", txid)
-	}
-	outputIndex, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("invalid output index: %v", err)
-	}
-
-	return &looprpc.OutPoint{
-		TxidStr:     txid,
-		OutputIndex: uint32(outputIndex),
-	}, nil
 }
 
 var staticAddressLoopInCommand = &cli.Command{
