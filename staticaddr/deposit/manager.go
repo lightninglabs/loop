@@ -23,7 +23,7 @@ const (
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered available for loop-ins, coop-spends and
 	// timeouts.
-	MinConfs = 6
+	MinConfs = 3
 
 	// MaxConfs is unset since we don't require a max number of
 	// confirmations for deposits.
