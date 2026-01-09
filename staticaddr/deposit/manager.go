@@ -22,8 +22,10 @@ import (
 const (
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered available for loop-ins, coop-spends and
-	// timeouts.
-	MinConfs = 6
+	// timeouts. The server enforces dynamic confirmation requirements
+	// based on risk assessment, so the client uses 1 conf as the minimum
+	// to enable faster swap attempts for small amounts.
+	MinConfs = 1
 
 	// MaxConfs is unset since we don't require a max number of
 	// confirmations for deposits.

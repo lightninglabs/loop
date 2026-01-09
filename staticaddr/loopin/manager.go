@@ -888,18 +888,31 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		deposits = append(deposits, d)
 	}
 
-	// Sort the deposits by amount in descending order, then by
-	// blocks-until-expiry in ascending order.
+	// Sort deposits to optimize for successful swaps with dynamic
+	// confirmation requirements:
+	// 1. More confirmations first (higher chance of server acceptance)
+	// 2. Larger amounts first (to minimize number of deposits used)
+	// 3. Expiring sooner first (to use time-sensitive deposits)
 	sort.Slice(deposits, func(i, j int) bool {
-		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
-				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
-				csvExpiry - blockHeight
-
-			return iExp < jExp
+		// Primary: more confirmations first.
+		iConfs := blockHeight - uint32(deposits[i].ConfirmationHeight)
+		jConfs := blockHeight - uint32(deposits[j].ConfirmationHeight)
+		if iConfs != jConfs {
+			return iConfs > jConfs
 		}
-		return deposits[i].Value > deposits[j].Value
+
+		// Secondary: larger amounts first.
+		if deposits[i].Value != deposits[j].Value {
+			return deposits[i].Value > deposits[j].Value
+		}
+
+		// Tertiary: expiring sooner first.
+		iExp := uint32(deposits[i].ConfirmationHeight) +
+			csvExpiry - blockHeight
+		jExp := uint32(deposits[j].ConfirmationHeight) +
+			csvExpiry - blockHeight
+
+		return iExp < jExp
 	})
 
 	// Select the deposits that are needed to cover the swap amount without
