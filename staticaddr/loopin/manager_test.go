@@ -26,10 +26,14 @@ type testCase struct {
 
 // TestSelectDeposits tests the selectDeposits function, which selects
 // deposits that can cover a target value while respecting the dust limit.
+// Sorting priority: 1) more confirmations first, 2) larger amounts first,
+// 3) expiring sooner first.
 func TestSelectDeposits(t *testing.T) {
+	// Note: confirmations = blockHeight - ConfirmationHeight
+	// Lower ConfirmationHeight means more confirmations at a given block.
 	d1, d2, d3, d4 := &deposit.Deposit{
 		Value:              1_000_000,
-		ConfirmationHeight: 5_000,
+		ConfirmationHeight: 5_000, // most confs at height 5100
 	}, &deposit.Deposit{
 		Value:              2_000_000,
 		ConfirmationHeight: 5_001,
@@ -38,7 +42,7 @@ func TestSelectDeposits(t *testing.T) {
 		ConfirmationHeight: 5_002,
 	}, &deposit.Deposit{
 		Value:              3_000_000,
-		ConfirmationHeight: 5_003,
+		ConfirmationHeight: 5_003, // fewest confs at height 5100
 	}
 	d1.Hash = chainhash.Hash{1}
 	d1.Index = 0
@@ -58,17 +62,20 @@ func TestSelectDeposits(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name:        "prefer larger deposit when both cover",
+			// d1 has more confirmations, so it's preferred even
+			// though d2 is larger.
+			name:        "prefer more confirmed deposit over larger",
 			deposits:    []*deposit.Deposit{d1, d2},
 			targetValue: 1_000_000,
-			expected:    []*deposit.Deposit{d2},
+			expected:    []*deposit.Deposit{d1},
 			expectedErr: "",
 		},
 		{
-			name:        "prefer largest among three when one is enough",
+			// d1 has the most confirmations among d1, d2, d3.
+			name:        "prefer most confirmed among three",
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: 1_000_000,
-			expected:    []*deposit.Deposit{d3},
+			expected:    []*deposit.Deposit{d1},
 			expectedErr: "",
 		},
 		{
