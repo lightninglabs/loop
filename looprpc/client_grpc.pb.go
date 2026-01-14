@@ -37,6 +37,10 @@ type SwapClientClient interface {
 	// ListSwaps returns a list of all currently known swaps and their current
 	// status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
+	// loop: `sweephtlc`
+	// SweepHtlc spends a swap HTLC output via the preimage (success) path using
+	// the swap's known preimage or an optionally supplied one.
+	SweepHtlc(ctx context.Context, in *SweepHtlcRequest, opts ...grpc.CallOption) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
 	// SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
@@ -199,6 +203,15 @@ func (x *swapClientMonitorClient) Recv() (*SwapStatus, error) {
 func (c *swapClientClient) ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error) {
 	out := new(ListSwapsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListSwaps", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) SweepHtlc(ctx context.Context, in *SweepHtlcRequest, opts ...grpc.CallOption) (*SweepHtlcResponse, error) {
+	out := new(SweepHtlcResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/SweepHtlc", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -471,6 +484,10 @@ type SwapClientServer interface {
 	// ListSwaps returns a list of all currently known swaps and their current
 	// status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
+	// loop: `sweephtlc`
+	// SweepHtlc spends a swap HTLC output via the preimage (success) path using
+	// the swap's known preimage or an optionally supplied one.
+	SweepHtlc(context.Context, *SweepHtlcRequest) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
 	// SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
@@ -588,6 +605,9 @@ func (UnimplementedSwapClientServer) Monitor(*MonitorRequest, SwapClient_Monitor
 }
 func (UnimplementedSwapClientServer) ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSwaps not implemented")
+}
+func (UnimplementedSwapClientServer) SweepHtlc(context.Context, *SweepHtlcRequest) (*SweepHtlcResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SweepHtlc not implemented")
 }
 func (UnimplementedSwapClientServer) SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SwapInfo not implemented")
@@ -754,6 +774,24 @@ func _SwapClient_ListSwaps_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapClientServer).ListSwaps(ctx, req.(*ListSwapsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_SweepHtlc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SweepHtlcRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).SweepHtlc(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/SweepHtlc",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).SweepHtlc(ctx, req.(*SweepHtlcRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1262,6 +1300,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSwaps",
 			Handler:    _SwapClient_ListSwaps_Handler,
+		},
+		{
+			MethodName: "SweepHtlc",
+			Handler:    _SwapClient_SweepHtlc_Handler,
 		},
 		{
 			MethodName: "SwapInfo",
