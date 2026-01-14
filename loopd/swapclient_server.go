@@ -1365,6 +1365,17 @@ func (s *swapClientServer) StopDaemon(ctx context.Context,
 	return &looprpc.StopDaemonResponse{}, nil
 }
 
+// SweepHtlc spends a Loop HTLC output using the success path and a known
+// preimage.
+func (s *swapClientServer) SweepHtlc(ctx context.Context,
+	req *looprpc.SweepHtlcRequest) (*looprpc.SweepHtlcResponse, error) {
+
+	return sweepHtlc(
+		ctx, req, s.lnd.ChainParams, s.impl.Store,
+		s.lnd.ChainNotifier, s.lnd.WalletKit, s.lnd.Signer,
+	)
+}
+
 // GetLiquidityParams gets our current liquidity manager's parameters.
 func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 	_ *looprpc.GetLiquidityParamsRequest) (*looprpc.LiquidityParameters,
