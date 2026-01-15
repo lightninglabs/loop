@@ -53,6 +53,28 @@ The following flags are supported:
 | `--channel="…"`              | the comma-separated list of short channel IDs of the channels to loop out                                                                                                                                                                                                      | string   |
 | `--help` (`-h`)              | show help                                                                                                                                                                                                                                                                      | bool     |    `false`    |
 
+### `out sweephtlc` subcommand
+
+sweep an HTLC output using the preimage success path.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] out sweephtlc [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name             | Description                                                    | Type   | Default value |
+|------------------|----------------------------------------------------------------|--------|:-------------:|
+| `--outpoint="…"` | htlc outpoint to sweep (format: txid:vout)                     | string |
+| `--htlcaddr="…"` | htlc address corresponding to the outpoint                     | string |
+| `--feerate="…"`  | fee rate to use in sat/vbyte                                   | uint   |      `0`      |
+| `--destaddr="…"` | optional destination address; defaults to a new wallet address | string |
+| `--preimage="…"` | optional preimage hex to override stored swap preimage         | string |
+| `--publish`      | publish the sweep transaction immediately                      | bool   |    `false`    |
+| `--help` (`-h`)  | show help                                                      | bool   |    `false`    |
+
 ### `in` command
 
 perform an on-chain to off-chain swap (loop in).
