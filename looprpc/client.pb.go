@@ -3018,6 +3018,23 @@ type LiquidityParameters struct {
 	// autoloop run. If set, channels connected to these peers won't be
 	// considered for easy autoloop swaps.
 	EasyAutoloopExcludedPeers [][]byte `protobuf:"bytes,27,rep,name=easy_autoloop_excluded_peers,json=easyAutoloopExcludedPeers,proto3" json:"easy_autoloop_excluded_peers,omitempty"`
+	// Set to true to enable scriptable autoloop using Starlark scripts. If set,
+	// all channel/peer rules and easy autoloop will be overridden and the client
+	// will evaluate the configured Starlark script on each tick to determine
+	// swaps. This mode is mutually exclusive with easy_autoloop and threshold
+	// rules. Starlark is a Python-like language that supports variables,
+	// functions, loops, and sorting - making it much more readable and powerful
+	// than simple expressions.
+	ScriptableAutoloop bool `protobuf:"varint,28,opt,name=scriptable_autoloop,json=scriptableAutoloop,proto3" json:"scriptable_autoloop,omitempty"`
+	// The Starlark script to evaluate on each autoloop tick. Required if
+	// scriptable_autoloop is true. The script must set a 'decisions' variable
+	// to a list of swap decisions using the loop_out() and loop_in() helper
+	// functions. See documentation for available context variables (channels,
+	// peers, total_local, restrictions, etc.) and helper functions.
+	ScriptableScript string `protobuf:"bytes,29,opt,name=scriptable_script,json=scriptableScript,proto3" json:"scriptable_script,omitempty"`
+	// Optional custom tick interval in seconds for scriptable autoloop mode.
+	// If 0 or not set, uses the default 20-minute interval.
+	ScriptableTickIntervalSec uint64 `protobuf:"varint,30,opt,name=scriptable_tick_interval_sec,json=scriptableTickIntervalSec,proto3" json:"scriptable_tick_interval_sec,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -3240,6 +3257,27 @@ func (x *LiquidityParameters) GetEasyAutoloopExcludedPeers() [][]byte {
 		return x.EasyAutoloopExcludedPeers
 	}
 	return nil
+}
+
+func (x *LiquidityParameters) GetScriptableAutoloop() bool {
+	if x != nil {
+		return x.ScriptableAutoloop
+	}
+	return false
+}
+
+func (x *LiquidityParameters) GetScriptableScript() string {
+	if x != nil {
+		return x.ScriptableScript
+	}
+	return ""
+}
+
+func (x *LiquidityParameters) GetScriptableTickIntervalSec() uint64 {
+	if x != nil {
+		return x.ScriptableTickIntervalSec
+	}
+	return 0
 }
 
 type EasyAssetAutoloopParams struct {
@@ -6327,7 +6365,7 @@ const file_client_proto_rawDesc = "" +
 	"\rloop_in_stats\x18\b \x01(\v2\x12.looprpc.LoopStatsR\vloopInStats\x12\x1f\n" +
 	"\vcommit_hash\x18\t \x01(\tR\n" +
 	"commitHash\"\x1b\n" +
-	"\x19GetLiquidityParamsRequest\"\xce\v\n" +
+	"\x19GetLiquidityParamsRequest\"\xed\f\n" +
 	"\x13LiquidityParameters\x12,\n" +
 	"\x05rules\x18\x01 \x03(\v2\x16.looprpc.LiquidityRuleR\x05rules\x12\x17\n" +
 	"\afee_ppm\x18\x10 \x01(\x04R\x06feePpm\x12=\n" +
@@ -6356,7 +6394,10 @@ const file_client_proto_rawDesc = "" +
 	"\x11account_addr_type\x18\x18 \x01(\x0e2\x14.looprpc.AddressTypeR\x0faccountAddrType\x12]\n" +
 	"\x11easy_asset_params\x18\x19 \x03(\v21.looprpc.LiquidityParameters.EasyAssetParamsEntryR\x0feasyAssetParams\x122\n" +
 	"\x15fast_swap_publication\x18\x1a \x01(\bR\x13fastSwapPublication\x12?\n" +
-	"\x1ceasy_autoloop_excluded_peers\x18\x1b \x03(\fR\x19easyAutoloopExcludedPeers\x1ad\n" +
+	"\x1ceasy_autoloop_excluded_peers\x18\x1b \x03(\fR\x19easyAutoloopExcludedPeers\x12/\n" +
+	"\x13scriptable_autoloop\x18\x1c \x01(\bR\x12scriptableAutoloop\x12+\n" +
+	"\x11scriptable_script\x18\x1d \x01(\tR\x10scriptableScript\x12?\n" +
+	"\x1cscriptable_tick_interval_sec\x18\x1e \x01(\x04R\x19scriptableTickIntervalSec\x1ad\n" +
 	"\x14EasyAssetParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x126\n" +
 	"\x05value\x18\x02 \x01(\v2 .looprpc.EasyAssetAutoloopParamsR\x05value:\x028\x01\"h\n" +

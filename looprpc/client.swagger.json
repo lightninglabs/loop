@@ -1796,6 +1796,19 @@
             "format": "byte"
           },
           "description": "A list of peers (their public keys) that should be excluded from the easy\nautoloop run. If set, channels connected to these peers won't be\nconsidered for easy autoloop swaps."
+        },
+        "scriptable_autoloop": {
+          "type": "boolean",
+          "description": "Set to true to enable scriptable autoloop using Starlark scripts. If set,\nall channel/peer rules and easy autoloop will be overridden and the client\nwill evaluate the configured Starlark script on each tick to determine\nswaps. This mode is mutually exclusive with easy_autoloop and threshold\nrules. Starlark is a Python-like language that supports variables,\nfunctions, loops, and sorting - making it much more readable and powerful\nthan simple expressions."
+        },
+        "scriptable_script": {
+          "type": "string",
+          "description": "The Starlark script to evaluate on each autoloop tick. Required if\nscriptable_autoloop is true. The script must set a 'decisions' variable\nto a list of swap decisions using the loop_out() and loop_in() helper\nfunctions. See documentation for available context variables (channels,\npeers, total_local, restrictions, etc.) and helper functions."
+        },
+        "scriptable_tick_interval_sec": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Optional custom tick interval in seconds for scriptable autoloop mode.\nIf 0 or not set, uses the default 20-minute interval."
         }
       }
     },
