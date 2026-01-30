@@ -293,7 +293,15 @@ func (m *Manager) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-m.cfg.AutoloopTicker.Ticks():
-			if m.params.EasyAutoloop {
+			// Check which autoloop mode to use.
+			// Priority: scriptable > easy > threshold rules.
+			if m.params.ScriptableAutoloop {
+				err := m.scriptableAutoLoop(ctx)
+				if err != nil {
+					log.Errorf("scriptable autoloop "+
+						"failed: %v", err)
+				}
+			} else if m.params.EasyAutoloop {
 				err := m.easyAutoLoop(ctx)
 				if err != nil {
 					log.Errorf("easy autoloop failed: %v",
