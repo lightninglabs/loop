@@ -7,7 +7,7 @@ import (
 )
 
 // loopOutBuiltin creates a loop out swap decision.
-// Usage: loop_out(amount, channel_ids) or loop_out(amount, channel_ids, priority)
+// Usage: loop_out(amount, channel_ids) or loop_out(amount, channel_ids, priority).
 func loopOutBuiltin(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 
@@ -65,7 +65,7 @@ func loopOutBuiltin(thread *starlark.Thread, fn *starlark.Builtin,
 }
 
 // loopInBuiltin creates a loop in swap decision.
-// Usage: loop_in(amount, peer_pubkey) or loop_in(amount, peer_pubkey, priority)
+// Usage: loop_in(amount, peer_pubkey) or loop_in(amount, peer_pubkey, priority).
 func loopInBuiltin(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 

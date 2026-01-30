@@ -20,7 +20,7 @@ import (
 )
 
 // EasyAutoloopStarlarkScript is a Starlark script that replicates easy-autoloop.
-// Target: 100000 sats (embedded in script)
+// Target: 100000 sats (embedded in script).
 const EasyAutoloopStarlarkScript = `
 # Easy autoloop equivalent script in Starlark
 # Target: 100000 sats
@@ -58,7 +58,7 @@ def autoloop():
     swap_amount = min(best.local_balance, amount)
     return [loop_out(swap_amount, [best.channel_id])]
 
-# Execute and return decisions
+# Execute and store result.
 decisions = autoloop()
 `
 
@@ -335,6 +335,7 @@ func TestScriptableAutoloopIntegration(t *testing.T) {
 		},
 		Restrictions: func(ctx context.Context, swapType swap.Type,
 			initiator string) (*Restrictions, error) {
+
 			return &Restrictions{
 				Minimum: 10000,
 				Maximum: 1000000,
@@ -342,6 +343,7 @@ func TestScriptableAutoloopIntegration(t *testing.T) {
 		},
 		LoopOutQuote: func(ctx context.Context,
 			req *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote, error) {
+
 			return &loop.LoopOutQuote{
 				SwapFee:      100,
 				PrepayAmount: 1000,

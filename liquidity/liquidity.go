@@ -295,19 +295,22 @@ func (m *Manager) Run(ctx context.Context) error {
 		case <-m.cfg.AutoloopTicker.Ticks():
 			// Check which autoloop mode to use.
 			// Priority: scriptable > easy > threshold rules.
-			if m.params.ScriptableAutoloop {
+			switch {
+			case m.params.ScriptableAutoloop:
 				err := m.scriptableAutoLoop(ctx)
 				if err != nil {
 					log.Errorf("scriptable autoloop "+
 						"failed: %v", err)
 				}
-			} else if m.params.EasyAutoloop {
+
+			case m.params.EasyAutoloop:
 				err := m.easyAutoLoop(ctx)
 				if err != nil {
 					log.Errorf("easy autoloop failed: %v",
 						err)
 				}
-			} else {
+
+			default:
 				err := m.autoloop(ctx)
 				switch err {
 				case ErrNoRules:
@@ -1503,6 +1506,8 @@ func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
 
 // dispatchStickyLoopOut attempts to dispatch a loop out swap that will
 // automatically retry its execution with an amount based backoff.
+//
+//nolint:unparam
 func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 	out loop.OutRequest, retryCount uint16, amountBackoff float64) {
 

@@ -129,11 +129,11 @@ type Parameters struct {
 	// If set to false, the deadline is set to 30 minutes.
 	FastSwapPublication bool
 
-	// ScriptableAutoloop enables CEL-based scriptable autoloop mode.
+	// ScriptableAutoloop enables Starlark-based scriptable autoloop mode.
 	// This mode is mutually exclusive with EasyAutoloop and threshold rules.
 	ScriptableAutoloop bool
 
-	// ScriptableScript is the CEL expression to evaluate on each tick.
+	// ScriptableScript is the Starlark script to evaluate on each tick.
 	// Required when ScriptableAutoloop is true.
 	ScriptableScript string
 
@@ -653,13 +653,13 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		HtlcConfTarget:             cfg.HtlcConfTarget,
 		EasyAutoloop:               cfg.EasyAutoloop,
 		EasyAutoloopLocalTargetSat: uint64(cfg.EasyAutoloopTarget),
-		Account:                      cfg.Account,
-		AccountAddrType:              addrType,
-		EasyAssetParams:              easyAssetMap,
-		FastSwapPublication:          cfg.FastSwapPublication,
-		ScriptableAutoloop:           cfg.ScriptableAutoloop,
-		ScriptableScript:             cfg.ScriptableScript,
-		ScriptableTickIntervalSec:    uint64(cfg.ScriptableTickInterval / time.Second),
+		Account:                    cfg.Account,
+		AccountAddrType:            addrType,
+		EasyAssetParams:            easyAssetMap,
+		FastSwapPublication:        cfg.FastSwapPublication,
+		ScriptableAutoloop:         cfg.ScriptableAutoloop,
+		ScriptableScript:           cfg.ScriptableScript,
+		ScriptableTickIntervalSec:  uint64(cfg.ScriptableTickInterval / time.Second),
 	}
 	// Set excluded peers for easy autoloop.
 	rpcCfg.EasyAutoloopExcludedPeers = make(
