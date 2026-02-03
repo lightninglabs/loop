@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest",
+      "--filter",
+      "looped_in"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 169458759
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "LOOPED_IN",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 168,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "j71tovlF3ikFqn+pOGB0TZOH00ZEhDYOluRnpR3jvJ0=",
+              "state": "LOOPED_IN",
+              "outpoint": "9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0",
+              "value": "500000",
+              "confirmation_height": "148",
+              "blocks_until_expiry": "14383",
+              "swap_hash": "hDAjN0JANkGTlqt5ZN14uFsaSBqfHbc9tc3e5XwkQ+c="
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 168,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": [\n        {\n            \"blocks_until_expiry\": \"14383\",\n            \"confirmation_height\": \"148\",\n            \"id\": \"8fbd6da2f945de2905aa7fa93860744d9387d3464484360e96e467a51de3bc9d\",\n            \"outpoint\": \"9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0\",\n            \"state\": \"LOOPED_IN\",\n            \"swap_hash\": \"84302337424036419396ab7964dd78b85b1a481a9f1db73db5cddee57c2443e7\",\n            \"value\": \"500000\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 169,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

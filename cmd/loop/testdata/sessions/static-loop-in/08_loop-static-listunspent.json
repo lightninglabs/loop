@@ -1,0 +1,60 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "listunspent",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 20894580
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListUnspentDepositsRequest",
+        "payload": {
+          "min_confs": 0,
+          "max_confs": 0
+        }
+      }
+    },
+    {
+      "time_ms": 20,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListUnspentDepositsResponse",
+        "payload": {
+          "utxos": [
+            {
+              "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+              "amount_sat": "2500000",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "confirmations": "1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 20,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"utxos\": [\n        {\n            \"amount_sat\": \"2500000\",\n            \"confirmations\": \"1\",\n            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n            \"static_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 20,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "in",
+      "--all",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "run_error": "rpc error: code = Unknown desc = swap amount too high",
+    "duration": 29949728
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "6mq78FccC6ghF66fIIZhTqzqiykT3AVEtwwA3ng1PnE=",
+              "state": "DEPOSITED",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "value": "2500000",
+              "confirmation_height": "131",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "0",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [
+            "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 29,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = swap amount too high"
+      }
+    },
+    {
+      "time_ms": 29,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] rpc error: code = Unknown desc = swap amount too high\n"
+      }
+    },
+    {
+      "time_ms": 29,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = swap amount too high"
+      }
+    }
+  ]
+}

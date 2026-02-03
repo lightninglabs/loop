@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest",
+      "--filter",
+      "htlc_timeout_swept"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 211493641
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "HTLC_TIMEOUT_SWEPT",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 211,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": []
+        }
+      }
+    },
+    {
+      "time_ms": 211,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 211,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

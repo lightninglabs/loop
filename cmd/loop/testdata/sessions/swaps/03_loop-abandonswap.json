@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "abandonswap",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 2764352
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "NAME:\n   loop abandonswap - abandon a swap with a given swap hash\n\nUSAGE:\n   loop abandonswap ID\n\nDESCRIPTION:\n   This command overrides the database and abandons a swap with a given swap hash.\n\n   !!! This command might potentially lead to loss of funds if it is applied to swaps that are still waiting for pending user funds. Before executing this command make sure that no funds are locked by the swap.\n\nOPTIONS:\n   --i_know_what_i_am_doing  Specify this flag if you made sure that you read and understood the following consequence of applying this command. (default: false)\n   --help, -h                show help\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 20668519
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "UNKNOWN_STATE",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": []
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 20,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "swapinfo",
+      "--network",
+      "regtest",
+      "--id",
+      "46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "invalid value \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\" for flag -id: strconv.ParseUint: parsing \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\": invalid syntax",
+    "duration": 2097605
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "text": "Incorrect Usage: invalid value \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\" for flag -id: strconv.ParseUint: parsing \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\": invalid syntax\n\n[loop] invalid value \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\" for flag -id: strconv.ParseUint: parsing \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\": invalid syntax\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "exit",
+      "data": {
+        "run_error": "invalid value \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\" for flag -id: strconv.ParseUint: parsing \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\": invalid syntax"
+      }
+    }
+  ]
+}

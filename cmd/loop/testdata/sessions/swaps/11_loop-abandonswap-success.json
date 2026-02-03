@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "abandonswap",
+      "--network",
+      "regtest",
+      "--i_know_what_i_am_doing",
+      "2f46a232e0f584fadf2abc7e7aaeefab0176f21e0fba5344a10e21838ec390fe"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 194305706
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/AbandonSwap",
+        "event": "request",
+        "message_type": "looprpc.AbandonSwapRequest",
+        "payload": {
+          "id": "L0aiMuD1hPrfKrx+eq7vqwF28h4PulNEoQ4hg47DkP4=",
+          "i_know_what_i_am_doing": true
+        }
+      }
+    },
+    {
+      "time_ms": 193,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/AbandonSwap",
+        "event": "response",
+        "message_type": "looprpc.AbandonSwapResponse",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 193,
+      "kind": "stdout",
+      "data": {
+        "text": "{}\n"
+      }
+    },
+    {
+      "time_ms": 194,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

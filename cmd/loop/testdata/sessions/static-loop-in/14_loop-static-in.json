@@ -1,0 +1,106 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "in",
+      "--help",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 2400415
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "NAME:\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "   loop static in - Loop in funds from static address deposits."
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "\n\nUSAGE:\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "   loop static in [options] [amt] [--all | --utxo xxx:xx]\n\nDESCRIPTION:\n   "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "\n     Requests a loop-in swap based on static address deposits. After the\n     creation of a static address funds can be sent to it. Once the funds are\n   "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "  confirmed on-chain they can be swapped instantaneously. If deposited\n     funds are not needed they can we withdrawn back to the local lnd wallet.\n     \n\nOPTIONS:\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "   --utxo string [ --utxo string ]                specify the utxos of deposits as outpoints(tx:idx) that should be looped in.\n   --all                                          loop in all static address deposits. (default: false)\n   --payment_timeout duration                "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "     the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out. (default: 0s)\n   --amt uint, --amount uint                      the number of satoshis that should be swapped from the selected deposits. If thereis change it is sent back to the static address. (default: 0)\n   --fast                                         Usage: complete the swap faster by paying a higher fee, so the change output is available sooner (default: false)\n   --last_hop string                              the pubkey of the last hop to use for this swap\n   --label string                                 an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].\n   --route_hints string [ --route_hints string ]"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "  route hints that can each be individually used to assist in reaching the invoice's destination\n   --private                                      generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n   --force                                        Assumes yes during confirmation. Using this option will result in an immediate swap (default: false)\n   --verbose, -v                                  show expanded details (default: false)\n   --help, -h                                     show help\n\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "GLOBAL OPTIONS:\n   --rpcserver string           "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "loopd daemon address host:port (default: \"localhost:11010\") [$LOOPCLI_RPCSERVER]\n   --network string, -n string  the network loop is running on e.g. mainnet, testnet, etc. (default: \"mainnet\") [$LOOPCLI_NETWORK]\n   --loopdir string             path to loop's base directory (default: ~/.loop) [$LOOPCLI_LOOPDIR]\n   --tlscertpath string"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "         path to loop's TLS certificate (default: ~/.loop/mainnet/tls.cert) [$LOOPCLI_TLSCERTPATH]\n   --macaroonpath string        path to macaroon file (default: ~/.loop/mainnet/loop.macaroon) [$LOOPCLI_MACAROONPATH]\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

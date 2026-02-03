@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "withdraw",
+      "--network",
+      "regtest",
+      "--utxo",
+      "56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0",
+      "--dest_addr",
+      "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 308497131
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/WithdrawDeposits",
+        "event": "request",
+        "message_type": "looprpc.WithdrawDepositsRequest",
+        "payload": {
+          "outpoints": [
+            {
+              "txid_bytes": "",
+              "txid_str": "56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313",
+              "output_index": 0
+            }
+          ],
+          "all": false,
+          "dest_addr": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "sat_per_vbyte": "0",
+          "amount": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 308,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/WithdrawDeposits",
+        "event": "response",
+        "message_type": "looprpc.WithdrawDepositsResponse",
+        "payload": {
+          "withdrawal_tx_hash": "4578dde9139327e5122960b778fe09f426cf6c1df5fa276cca18d72ccb3d88ba",
+          "address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw"
+        }
+      }
+    },
+    {
+      "time_ms": 308,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n    \"withdrawal_tx_hash\": \"4578dde9139327e5122960b778fe09f426cf6c1df5fa276cca18d72ccb3d88ba\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 308,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
