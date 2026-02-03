@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "in",
+      "--network",
+      "regtest",
+      "--external",
+      "--amt",
+      "500000",
+      "--force"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 1067066878
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 0,
+          "external_htlc": true,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 561,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1824",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "500000"
+        }
+      }
+    },
+    {
+      "time_ms": 561,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopIn",
+        "event": "request",
+        "message_type": "looprpc.LoopInRequest",
+        "payload": {
+          "amt": "500000",
+          "max_swap_fee": "1824",
+          "max_miner_fee": "0",
+          "last_hop": "",
+          "external_htlc": true,
+          "htlc_conf_target": 0,
+          "label": "",
+          "initiator": "loop-cli",
+          "route_hints": [],
+          "private": false
+        }
+      }
+    },
+    {
+      "time_ms": 1065,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopIn",
+        "event": "response",
+        "message_type": "looprpc.SwapResponse",
+        "payload": {
+          "id": "2f46a232e0f584fadf2abc7e7aaeefab0176f21e0fba5344a10e21838ec390fe",
+          "id_bytes": "L0aiMuD1hPrfKrx+eq7vqwF28h4PulNEoQ4hg47DkP4=",
+          "htlc_address": "bcrt1pcred99xc9l2cxphneej4ph6d6mczc0442d6ulyh3a9ad389z2aaq4n775y",
+          "htlc_address_p2wsh": "",
+          "htlc_address_p2tr": "bcrt1pcred99xc9l2cxphneej4ph6d6mczc0442d6ulyh3a9ad389z2aaq4n775y",
+          "server_message": ""
+        }
+      }
+    },
+    {
+      "time_ms": 1066,
+      "kind": "stdout",
+      "data": {
+        "text": "Swap initiated\nID:           2f46a232e0f584fadf2abc7e7aaeefab0176f21e0fba5344a10e21838ec390fe\nHTLC address (P2TR): bcrt1pcred99xc9l2cxphneej4ph6d6mczc0442d6ulyh3a9ad389z2aaq4n775y\n\nRun `loop monitor` to monitor progress.\n"
+      }
+    },
+    {
+      "time_ms": 1067,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

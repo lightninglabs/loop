@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "in",
+      "--external",
+      "--conf_target",
+      "6",
+      "--network",
+      "regtest",
+      "10000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "external and conf_target both set",
+    "duration": 13741983
+  },
+  "events": [
+    {
+      "time_ms": 13,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] external and conf_target both set\n"
+      }
+    },
+    {
+      "time_ms": 13,
+      "kind": "exit",
+      "data": {
+        "run_error": "external and conf_target both set"
+      }
+    }
+  ]
+}

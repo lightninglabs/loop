@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--deposit_outpoint",
+      "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 622954327
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "UNKNOWN_STATE",
+          "outpoints": [
+            "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0"
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 165,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "aCYqEEyewyXea+w3uOMb2HW70vXwuc4togzwvWNvxEg=",
+              "state": "DEPOSITED",
+              "outpoint": "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0",
+              "value": "500000",
+              "confirmation_height": "125",
+              "blocks_until_expiry": "14394",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 165,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "0",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [
+            "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 622,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1825",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "500000"
+        }
+      }
+    },
+    {
+      "time_ms": 622,
+      "kind": "stdout",
+      "data": {
+        "text": "Previously deposited on-chain:             500000 sat\nReceive off-chain:                         498175 sat\nEstimated total fee:                         1825 sat\n"
+      }
+    },
+    {
+      "time_ms": 622,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
