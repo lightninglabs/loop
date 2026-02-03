@@ -52,10 +52,11 @@ var (
 	defaultInitiator = "loop-cli"
 
 	loopDirFlag = &cli.StringFlag{
-		Name:    "loopdir",
-		Value:   loopd.LoopDirBase,
-		Usage:   "path to loop's base directory",
-		Sources: cli.EnvVars(envVarLoopDir),
+		Name:        "loopdir",
+		Value:       loopd.LoopDirBase,
+		DefaultText: defaultPathText(loopd.LoopDirBase, os.UserHomeDir),
+		Usage:       "path to loop's base directory",
+		Sources:     cli.EnvVars(envVarLoopDir),
 	}
 	networkFlag = &cli.StringFlag{
 		Name:    "network",
@@ -66,15 +67,21 @@ var (
 	}
 
 	tlsCertFlag = &cli.StringFlag{
-		Name:    "tlscertpath",
-		Usage:   "path to loop's TLS certificate",
-		Value:   loopd.DefaultTLSCertPath,
+		Name:  "tlscertpath",
+		Usage: "path to loop's TLS certificate",
+		Value: loopd.DefaultTLSCertPath,
+		DefaultText: defaultPathText(
+			loopd.DefaultTLSCertPath, os.UserHomeDir,
+		),
 		Sources: cli.EnvVars(envVarTLSCertPath),
 	}
 	macaroonPathFlag = &cli.StringFlag{
-		Name:    "macaroonpath",
-		Usage:   "path to macaroon file",
-		Value:   loopd.DefaultMacaroonPath,
+		Name:  "macaroonpath",
+		Usage: "path to macaroon file",
+		Value: loopd.DefaultMacaroonPath,
+		DefaultText: defaultPathText(
+			loopd.DefaultMacaroonPath, os.UserHomeDir,
+		),
 		Sources: cli.EnvVars(envVarMacaroonPath),
 	}
 	verboseFlag = &cli.BoolFlag{
@@ -131,6 +138,38 @@ const (
 	envVarTLSCertPath  = "LOOPCLI_TLSCERTPATH"
 	envVarMacaroonPath = "LOOPCLI_MACAROONPATH"
 )
+
+// defaultPathText returns a help-friendly path string that replaces the user's
+// home directory with "~". The homeDir function is injected so callers can
+// control environment-dependent behavior in tests.
+func defaultPathText(value string, homeDir func() (string, error)) string {
+	if value == "" {
+		return value
+	}
+
+	if homeDir == nil {
+		return value
+	}
+
+	home, err := homeDir()
+	if err != nil || home == "" {
+		return value
+	}
+
+	cleanHome := filepath.Clean(home)
+	cleanValue := filepath.Clean(value)
+	if cleanValue == cleanHome {
+		return "~"
+	}
+
+	prefix := cleanHome + string(filepath.Separator)
+	if strings.HasPrefix(cleanValue, prefix) {
+		return "~" + string(filepath.Separator) +
+			strings.TrimPrefix(cleanValue, prefix)
+	}
+
+	return value
+}
 
 func printJSON(resp interface{}) {
 	b, err := json.Marshal(resp)
