@@ -1,0 +1,118 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "in",
+      "--network",
+      "regtest",
+      "500000"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-69-g057ef82340ab279a5659ab6ae7edab61448a2acd commit_hash=057ef82340ab279a5659ab6ae7edab61448a2acd",
+    "duration": 2146386627
+  },
+  "events": [
+    {
+      "time_ms": 5,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 444,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1825",
+          "htlc_publish_fee_sat": "3875",
+          "cltv_delta": 0,
+          "conf_target": 6,
+          "quoted_amt": "500000"
+        }
+      }
+    },
+    {
+      "time_ms": 445,
+      "kind": "stdout",
+      "data": {
+        "text": "Send on-chain:                             500000 sat\nReceive off-chain:                         494300 sat\nEstimated total fee:                         5700 sat\n\nCONTINUE SWAP? (y/n): "
+      }
+    },
+    {
+      "time_ms": 1682,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 1682,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopIn",
+        "event": "request",
+        "message_type": "looprpc.LoopInRequest",
+        "payload": {
+          "amt": "500000",
+          "max_swap_fee": "1825",
+          "max_miner_fee": "11625",
+          "last_hop": "",
+          "external_htlc": false,
+          "htlc_conf_target": 0,
+          "label": "",
+          "initiator": "loop-cli",
+          "route_hints": [],
+          "private": false
+        }
+      }
+    },
+    {
+      "time_ms": 2140,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopIn",
+        "event": "response",
+        "message_type": "looprpc.SwapResponse",
+        "payload": {
+          "id": "33b431ce62ab7f8f3ff5e2aee9452ec9aa18713e734ecd79fc9cfb4bd77cc7d8",
+          "id_bytes": "M7QxzmKrf48/9eKu6UUuyaoYcT5zTs15/Jz7S9d8x9g=",
+          "htlc_address": "bcrt1pmtw7fch8de39wxfqunuucudgulkvyxm59epz9p0ph673squ7l2ns3gpcsu",
+          "htlc_address_p2wsh": "",
+          "htlc_address_p2tr": "bcrt1pmtw7fch8de39wxfqunuucudgulkvyxm59epz9p0ph673squ7l2ns3gpcsu",
+          "server_message": ""
+        }
+      }
+    },
+    {
+      "time_ms": 2141,
+      "kind": "stdout",
+      "data": {
+        "text": "Swap initiated\nID:           33b431ce62ab7f8f3ff5e2aee9452ec9aa18713e734ecd79fc9cfb4bd77cc7d8\nHTLC address (P2TR): bcrt1pmtw7fch8de39wxfqunuucudgulkvyxm59epz9p0ph673squ7l2ns3gpcsu\n\nRun `loop monitor` to monitor progress.\n"
+      }
+    },
+    {
+      "time_ms": 2146,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

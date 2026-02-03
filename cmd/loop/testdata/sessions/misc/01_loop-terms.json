@@ -1,0 +1,91 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "terms",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 199188467
+  },
+  "events": [
+    {
+      "time_ms": 7,
+      "kind": "stdout",
+      "data": {
+        "text": "Loop Out\n--------\n"
+      }
+    },
+    {
+      "time_ms": 7,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutTerms",
+        "event": "request",
+        "message_type": "looprpc.TermsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 156,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutTerms",
+        "event": "response",
+        "message_type": "looprpc.OutTermsResponse",
+        "payload": {
+          "min_swap_amount": "50000",
+          "max_swap_amount": "1000000",
+          "min_cltv_delta": 50,
+          "max_cltv_delta": 250
+        }
+      }
+    },
+    {
+      "time_ms": 156,
+      "kind": "stdout",
+      "data": {
+        "text": "Amount: 50000 - 1000000\nCltv delta: 50 - 250\n\nLoop In\n------\n"
+      }
+    },
+    {
+      "time_ms": 156,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInTerms",
+        "event": "request",
+        "message_type": "looprpc.TermsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 198,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInTerms",
+        "event": "response",
+        "message_type": "looprpc.InTermsResponse",
+        "payload": {
+          "min_swap_amount": "50000",
+          "max_swap_amount": "1000000"
+        }
+      }
+    },
+    {
+      "time_ms": 198,
+      "kind": "stdout",
+      "data": {
+        "text": "Amount: 50000 - 1000000\n"
+      }
+    },
+    {
+      "time_ms": 199,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
