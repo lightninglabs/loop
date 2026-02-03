@@ -121,6 +121,9 @@ var loopOutCommand = &cli.Command{
 		verboseFlag,
 		channelFlag,
 	},
+	Commands: []*cli.Command{
+		sweepHtlcCommand,
+	},
 	Action: loopOut,
 }
 

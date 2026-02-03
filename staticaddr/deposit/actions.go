@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -47,12 +48,25 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 			"estimation failed: %w", err))
 	}
 
+	minRelayFeeRate, err := f.cfg.WalletKit.MinRelayFee(ctx)
+	if err != nil {
+		return f.HandleError(fmt.Errorf("timeout sweep min relay "+
+			"query failed: %w", err))
+	}
+
 	weight := script.ExpirySpendWeight()
 
 	fee := feeRateEstimator.FeeForWeight(lntypes.WeightUnit(weight))
 
 	// We cap the fee at 20% of the deposit value.
-	if fee > f.deposit.Value/5 {
+	_, clamped, err := utils.ClampSweepFee(
+		fee, f.deposit.Value, utils.MaxFeeToAmountRatio,
+		minRelayFeeRate, lntypes.WeightUnit(weight),
+	)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	if clamped {
 		return f.HandleError(errors.New("fee is greater than 20% of " +
 			"the deposit value"))
 	}

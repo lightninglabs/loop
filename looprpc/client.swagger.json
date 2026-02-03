@@ -660,6 +660,40 @@
         ]
       }
     },
+    "/v1/loop/out/sweephtlc": {
+      "post": {
+        "summary": "loop: `sweephtlc`\nSweepHtlc spends a swap HTLC output via the preimage (success) path using\nthe swap's known preimage or an optionally supplied one.",
+        "operationId": "SwapClient_SweepHtlc",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcSweepHtlcResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC via its success path.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcSweepHtlcRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/loop/out/terms": {
       "get": {
         "summary": "loop: `terms`\nLoopOutTerms returns the terms that the server enforces for a loop out swap.",
@@ -2277,6 +2311,23 @@
     "looprpcProbeResponse": {
       "type": "object"
     },
+    "looprpcPublishFailed": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      },
+      "description": "PublishFailed is returned by SweepHtlc if publishing was requested in\nSweepHtlcRequest, but failed. It includes the error message."
+    },
+    "looprpcPublishNotRequested": {
+      "type": "object",
+      "description": "PublishNotRequested is returned by SweepHtlc if publishing was not requested\nin SweepHtlcRequest."
+    },
+    "looprpcPublishSucceeded": {
+      "type": "object",
+      "description": "PublishSucceeded is returned by SweepHtlc if publishing was requested in\nSweepHtlcRequest and it succeeded."
+    },
     "looprpcRouteHint": {
       "type": "object",
       "properties": {
@@ -2749,6 +2800,63 @@
       ],
       "default": "LOOP_OUT",
       "title": "- LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)"
+    },
+    "looprpcSweepHtlcRequest": {
+      "type": "object",
+      "properties": {
+        "dest_address": {
+          "type": "string",
+          "description": "Optional override for the sweep destination; defaults to a new address\nderived from the connected lnd wallet."
+        },
+        "sat_per_vbyte": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Fee rate used for the sweep transaction in sat/vByte."
+        },
+        "outpoint": {
+          "type": "string",
+          "description": "HTLC outpoint to sweep, formatted as \"txid:vout\"."
+        },
+        "preimage": {
+          "type": "string",
+          "format": "byte",
+          "description": "Optional override for the stored swap preimage."
+        },
+        "publish": {
+          "type": "boolean",
+          "description": "If true, publish the sweep transaction immediately."
+        },
+        "htlc_address": {
+          "type": "string",
+          "description": "The HTLC address whose output is being swept; used to derive the\nexpected pkScript."
+        }
+      },
+      "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC via its success path."
+    },
+    "looprpcSweepHtlcResponse": {
+      "type": "object",
+      "properties": {
+        "sweep_tx": {
+          "type": "string",
+          "format": "byte",
+          "description": "Raw sweep transaction bytes."
+        },
+        "fee_sats": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Miner fee paid by the sweep transaction."
+        },
+        "not_requested": {
+          "$ref": "#/definitions/looprpcPublishNotRequested"
+        },
+        "published": {
+          "$ref": "#/definitions/looprpcPublishSucceeded"
+        },
+        "failed": {
+          "$ref": "#/definitions/looprpcPublishFailed"
+        }
+      },
+      "description": "SweepHtlcResponse returns the broadcast sweep transaction."
     },
     "looprpcTokensResponse": {
       "type": "object",

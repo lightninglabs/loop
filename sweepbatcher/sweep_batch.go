@@ -46,10 +46,6 @@ const (
 	// transaction.
 	batchConfHeight = 3
 
-	// maxFeeToSwapAmtRatio is the maximum fee to swap amount ratio that
-	// we allow for a batch transaction.
-	maxFeeToSwapAmtRatio = 0.2
-
 	// MaxSweepsPerBatch is the maximum number of sweeps in a single batch.
 	// It is needed to prevent sweep tx from becoming non-standard. Max
 	// standard transaction is 400k wu, a non-cooperative input is 393 wu.
@@ -1414,9 +1410,9 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	}
 
 	// Clamp the calculated fee to the max allowed fee amount for the batch.
-	fee, err := clampBatchFee(
+	fee, _, err := utils.ClampSweepFee(
 		feeForWeight, batchAmt-btcutil.Amount(sumChange),
-		minRelayFeeRate, weight,
+		utils.MaxFeeToAmountRatio, minRelayFeeRate, weight,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to clamp batch "+
@@ -2643,29 +2639,4 @@ func (b *batch) persistConfirmedBatch(ctx context.Context,
 	sweeps []*dbSweep) error {
 
 	return b.store.ConfirmBatchWithSweeps(ctx, b.dbBatch(), sweeps)
-}
-
-// clampBatchFee takes the fee amount and total amount of the sweeps in the
-// batch and makes sure the fee is not too high. If the fee is too high, it is
-// clamped to the maximum allowed fee. If the clamped fee results in a fee rate
-// below the minimum relay fee, an error is returned.
-func clampBatchFee(fee btcutil.Amount, totalAmount btcutil.Amount,
-	minRelayFeeRate chainfee.SatPerKWeight,
-	weight lntypes.WeightUnit) (btcutil.Amount, error) {
-
-	maxFeeAmount := btcutil.Amount(float64(totalAmount) *
-		maxFeeToSwapAmtRatio)
-
-	clampedFee := fee
-	if fee > maxFeeAmount {
-		clampedFee = maxFeeAmount
-	}
-
-	clampedFeeRate := chainfee.NewSatPerKWeight(clampedFee, weight)
-	if clampedFeeRate < minRelayFeeRate {
-		return 0, fmt.Errorf("clamped fee rate %v is less than "+
-			"minimum relay fee %v", clampedFeeRate, minRelayFeeRate)
-	}
-
-	return clampedFee, nil
 }

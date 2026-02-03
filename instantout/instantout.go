@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -145,8 +146,8 @@ func (i *InstantOut) getInputReservations() (InputReservations, error) {
 }
 
 // createHtlcTransaction creates the htlc transaction for the instant out.
-func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params) (
-	*wire.MsgTx, error) {
+func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params,
+	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
 
 	if network == nil {
 		return nil, errors.New("no network provided")
@@ -170,7 +171,16 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params) (
 	// Estimate the fee
 	weight := htlcWeight(len(inputReservations))
 	fee := i.htlcFeeRate.FeeForWeight(weight)
-	if fee > i.Value/5 {
+
+	// We cap the fee at 20% of the deposit value.
+	_, clamped, err := utils.ClampSweepFee(
+		fee, i.Value, utils.MaxFeeToAmountRatio, minRelayFeeRate,
+		weight,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if clamped {
 		return nil, errors.New("fee is higher than 20% of " +
 			"sweep value")
 	}
@@ -193,8 +203,8 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params) (
 
 // createSweeplessSweepTx creates the sweepless sweep transaction for the
 // instant out.
-func (i *InstantOut) createSweeplessSweepTx(feerate chainfee.SatPerKWeight) (
-	*wire.MsgTx, error) {
+func (i *InstantOut) createSweeplessSweepTx(feerate,
+	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
 
 	inputReservations, err := i.getInputReservations()
 	if err != nil {
@@ -214,7 +224,14 @@ func (i *InstantOut) createSweeplessSweepTx(feerate chainfee.SatPerKWeight) (
 	// Estimate the fee
 	weight := sweeplessSweepWeight(len(inputReservations))
 	fee := feerate.FeeForWeight(weight)
-	if fee > i.Value/5 {
+	_, clamped, err := utils.ClampSweepFee(
+		fee, i.Value, utils.MaxFeeToAmountRatio, minRelayFeeRate,
+		weight,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if clamped {
 		return nil, errors.New("fee is higher than 20% of " +
 			"sweep value")
 	}

@@ -18,6 +18,9 @@ http:
       get: "/v1/loop/out/terms"
     - selector: looprpc.SwapClient.LoopOutQuote
       get: "/v1/loop/out/quote/{amt}"
+    - selector: looprpc.SwapClient.SweepHtlc
+      post: "/v1/loop/out/sweephtlc"
+      body: "*"
     - selector: looprpc.SwapClient.GetLoopInTerms
       get: "/v1/loop/in/terms"
     - selector: looprpc.SwapClient.GetLoopInQuote

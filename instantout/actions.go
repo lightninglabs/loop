@@ -317,9 +317,16 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 		return f.handleErrorAndUnlockReservations(ctx, err)
 	}
 
+	minRelayFee, err := f.cfg.Wallet.MinRelayFee(ctx)
+	if err != nil {
+		return f.handleErrorAndUnlockReservations(ctx, err)
+	}
+
 	// Now that our nonces are set, we can create and sign the htlc
 	// transaction.
-	htlcTx, err := f.InstantOut.createHtlcTransaction(f.cfg.Network)
+	htlcTx, err := f.InstantOut.createHtlcTransaction(
+		f.cfg.Network, minRelayFee,
+	)
 	if err != nil {
 		return f.handleErrorAndUnlockReservations(ctx, err)
 	}
@@ -382,6 +389,11 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 		return f.handleErrorAndUnlockReservations(ctx, err)
 	}
 
+	minRelayFee, err := f.cfg.Wallet.MinRelayFee(ctx)
+	if err != nil {
+		return f.handleErrorAndUnlockReservations(ctx, err)
+	}
+
 	pushPreImageRes, err := f.cfg.InstantOutClient.PushPreimage(
 		ctx,
 		&swapserverrpc.PushPreimageRequest{
@@ -400,7 +412,9 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 
 	// Now that we have the sweepless sweep signatures we can build and
 	// publish the sweepless sweep transaction.
-	sweepTx, err := f.InstantOut.createSweeplessSweepTx(feeRate)
+	sweepTx, err := f.InstantOut.createSweeplessSweepTx(
+		feeRate, minRelayFee,
+	)
 	if err != nil {
 		f.LastActionError = err
 		return OnErrorPublishHtlc
