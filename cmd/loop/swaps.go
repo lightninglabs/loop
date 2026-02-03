@@ -207,9 +207,6 @@ func abandonSwap(ctx context.Context, cmd *cli.Command) error {
 
 	var id string
 	switch {
-	case cmd.IsSet("id"):
-		id = cmd.String("id")
-
 	case cmd.NArg() > 0:
 		id = args.First()
 
