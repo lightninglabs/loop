@@ -153,6 +153,12 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 			// Reconcile new deposits that might have just gotten
 			// confirmed.
+			// Before reconciling our in-mem view of deposits with
+			// lnd we give the wallet extra time to index
+			// transactions of interest in the new block. This
+			// mitigates a race between wallet indexing and
+			// reconciling deposits.
+			time.Sleep(500 * time.Millisecond)
 			if err = m.reconcileDeposits(ctx); err != nil {
 				log.Errorf("unable to reconcile deposits: %v",
 					err)
