@@ -252,11 +252,10 @@ func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, cleanup, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	cleanup := func() { conn.Close() }
 
 	loopClient := looprpc.NewSwapClientClient(conn)
 	return loopClient, conn, cleanup, nil
@@ -472,12 +471,12 @@ func logSwap(swap *looprpc.SwapStatus) {
 }
 
 func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
-	error) {
+	func(), error) {
 
 	// We always need to send a macaroon.
 	macOption, err := readMacaroon(macaroonPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	opts := []grpc.DialOption{
@@ -488,18 +487,22 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	// Since TLS cannot be disabled, we'll always have a cert file to read.
 	creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create RPC client: %v",
+		return nil, nil, fmt.Errorf("unable to create RPC client: %v",
 			err)
 	}
 
-	return conn, nil
+	cleanup := func() {
+		_ = conn.Close()
+	}
+
+	return conn, cleanup, nil
 }
 
 // readMacaroon tries to read the macaroon file at the specified path and create

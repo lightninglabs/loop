@@ -48,11 +48,10 @@ func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient,
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, cleanup, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	cleanup := func() { conn.Close() }
 
 	debugClient := looprpc.NewDebugClient(conn)
 	return debugClient, cleanup, nil
