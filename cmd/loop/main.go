@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/loopd"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -99,6 +100,9 @@ var (
 		instantOutCommand, listInstantOutsCommand, stopCommand,
 		printManCommand, printMarkdownCommand,
 	}
+
+	// cliClock provides the time source used by CLI commands.
+	cliClock clock.Clock = clock.NewDefaultClock()
 )
 
 const (
@@ -263,6 +267,16 @@ func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
 
 	loopClient := looprpc.NewSwapClientClient(conn)
 	return loopClient, conn, cleanup, nil
+}
+
+// hookClock overrides cliClock until the returned callback is called.
+func hookClock(c clock.Clock) func() {
+	prev := cliClock
+	cliClock = c
+
+	return func() {
+		cliClock = prev
+	}
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
