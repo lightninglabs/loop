@@ -202,7 +202,15 @@ func fatal(err error) {
 }
 
 func main() {
-	rootCmd := &cli.Command{
+	rootCmd := newRootCommand()
+	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
+		fatal(err)
+	}
+}
+
+// newRootCommand constructs the CLI root command for loop.
+func newRootCommand() *cli.Command {
+	return &cli.Command{
 		Name:    "loop",
 		Usage:   "control plane for your loopd",
 		Version: loop.RichVersion(),
@@ -222,10 +230,6 @@ func main() {
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return cli.ShowRootCommandHelp(cmd)
 		},
-	}
-
-	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
-		fatal(err)
 	}
 }
 
