@@ -253,14 +253,9 @@ func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
 // getClientWithConn returns both the SwapClient RPC client and the underlying
 // gRPC connection so callers can perform connection-aware actions.
 func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
-	*grpc.ClientConn, func(), error) {
+	daemonConn, func(), error) {
 
-	rpcServer := cmd.String("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	conn, cleanup, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, cleanup, err := sessionTransport.Dial(cmd)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -488,7 +483,8 @@ func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Println()
 }
 
-func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
+// getClientConn dials the loopd gRPC server with TLS and macaroon auth.
+func getClientConn(address, tlsCertPath, macaroonPath string) (daemonConn,
 	func(), error) {
 
 	// We always need to send a macaroon.
@@ -500,6 +496,14 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 		macOption,
+	}
+
+	// Install gRPC interceptors for session recording if needed.
+	if unary := sessionTransport.UnaryInterceptor(); unary != nil {
+		opts = append(opts, grpc.WithChainUnaryInterceptor(unary))
+	}
+	if stream := sessionTransport.StreamInterceptor(); stream != nil {
+		opts = append(opts, grpc.WithChainStreamInterceptor(stream))
 	}
 
 	// Since TLS cannot be disabled, we'll always have a cert file to read.

@@ -43,12 +43,7 @@ func forceAutoloop(ctx context.Context, cmd *cli.Command) error {
 }
 
 func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient, func(), error) {
-	rpcServer := cmd.String("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
-	if err != nil {
-		return nil, nil, err
-	}
-	conn, cleanup, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
+	conn, cleanup, err := sessionTransport.Dial(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
