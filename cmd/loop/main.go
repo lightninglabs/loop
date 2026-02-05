@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -103,7 +105,47 @@ var (
 
 	// cliClock provides the time source used by CLI commands.
 	cliClock clock.Clock = clock.NewDefaultClock()
+
+	// sessionRec is the active recorder when session capture is enabled.
+	sessionRec *sessionRecorder
+
+	// forceDeterministicJSON is enabled by tests to obtain stable JSON
+	// output.
+	forceDeterministicJSON bool
 )
+
+// installSessionSignalHandler records signals and cancels the root context.
+func installSessionSignalHandler(cancel context.CancelFunc) func() {
+	if sessionRec == nil {
+		return func() {}
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		interrupted := false
+		for sig := range sigCh {
+			sessionRec.LogSignal(sig)
+			if !interrupted {
+				interrupted = true
+				cancel()
+				continue
+			}
+
+			_ = sessionRec.Finalize(fmt.Errorf("signal: %s", sig))
+			os.Exit(130)
+		}
+	}()
+
+	return func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+		<-done
+	}
+}
 
 const (
 
@@ -187,7 +229,8 @@ func printJSON(resp interface{}) {
 		fatal(err)
 	}
 	out.WriteString("\n")
-	_, _ = out.WriteTo(os.Stdout)
+	printBytes := maybeNormalizeJSON(out.Bytes())
+	_, _ = os.Stdout.Write(printBytes)
 }
 
 func printRespJSON(resp proto.Message) {
@@ -197,18 +240,70 @@ func printRespJSON(resp proto.Message) {
 		return
 	}
 
-	fmt.Println(string(jsonBytes))
+	fmt.Println(string(maybeNormalizeJSON(jsonBytes)))
 }
 
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "[loop] %v\n", err)
+	if sessionRec != nil {
+		if finalizeErr := sessionRec.Finalize(err); finalizeErr != nil {
+			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
+				"session: %v\n", finalizeErr)
+		}
+	}
 	os.Exit(1)
 }
 
 func main() {
-	rootCmd := newRootCommand()
-	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
+	var err error
+	sessionRec, err = newSessionRecorder(os.Args)
+	if err != nil {
 		fatal(err)
+	}
+
+	// Intercept clock and stdio if needed.
+	if sessionRec != nil {
+		restoreClock := hookClock(
+			clock.NewTestClock(time.Unix(sessionClockStartUnix, 0)),
+		)
+		defer restoreClock()
+
+		if err := sessionRec.Start(nil, nil, nil); err != nil {
+			fatal(err)
+		}
+	}
+
+	// Intercept clock calls if needed.
+	var restoreTransport func()
+	if sessionRec != nil {
+		restoreTransport = hookGrpc(sessionRec)
+		defer restoreTransport()
+	}
+
+	rootCmd := newRootCommand()
+
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if sessionRec != nil {
+		ctx = sessionRec.InjectContext(ctx)
+	}
+
+	if sessionRec != nil {
+		signalStop := installSessionSignalHandler(cancel)
+		defer signalStop()
+	}
+
+	if err := rootCmd.Run(ctx, os.Args); err != nil {
+		fatal(err)
+	}
+
+	if sessionRec != nil {
+		if err := sessionRec.Finalize(nil); err != nil {
+			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
+				"session: %v\n", err)
+		}
 	}
 }
 
@@ -239,9 +334,7 @@ func newRootCommand() *cli.Command {
 
 // getClient establishes a SwapClient RPC connection and returns the client and
 // a cleanup handler.
-func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
-	func(), error) {
-
+func getClient(cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
 	client, _, cleanup, err := getClientWithConn(cmd)
 	if err != nil {
 		return nil, nil, err
@@ -272,6 +365,33 @@ func hookClock(c clock.Clock) func() {
 	return func() {
 		cliClock = prev
 	}
+}
+
+// maybeNormalizeJSON rewrites JSON output to avoid the build-dependent spacing
+// introduced by google.golang.org/protobuf/internal/encoding/json (see
+// WriteName in protobuf-go-hex-display/internal/encoding/json/encode.go, which
+// uses internal/detrand.Bool). When recording or replaying sessions we ensure
+// stable output by re-encoding with the standard library.
+func maybeNormalizeJSON(raw []byte) []byte {
+	if sessionRec == nil && !forceDeterministicJSON {
+		return raw
+	}
+
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return raw
+	}
+
+	normalized, err := json.MarshalIndent(parsed, "", "    ")
+	if err != nil {
+		return raw
+	}
+
+	if len(raw) > 0 && raw[len(raw)-1] == '\n' {
+		normalized = append(normalized, '\n')
+	}
+
+	return normalized
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
