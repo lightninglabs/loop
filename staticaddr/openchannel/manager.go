@@ -430,6 +430,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 
 	var (
 		pendingChanID [32]byte
+		shimMu        sync.Mutex
 		shimPending   = true
 		psbtFinalized bool
 		basePsbtBytes []byte
@@ -466,6 +467,9 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 	// maybeCancelShim is a helper function that cancels the funding shim
 	// with the RPC server in case we end up aborting early.
 	maybeCancelShim := func() {
+		shimMu.Lock()
+		defer shimMu.Unlock()
+
 		// If the user canceled while there was still a shim registered
 		// with the wallet, release the resources now.
 		if shimPending {
@@ -566,7 +570,9 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				err.Error(), cancelErr,
 			) {
 
+				shimMu.Lock()
 				shimPending = false
+				shimMu.Unlock()
 			}
 			closeQuit()
 
@@ -679,7 +685,9 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			// As soon as the channel is pending, there is no more
 			// shim that needs to be canceled. If the user
 			// interrupts now, we don't need to clean up anything.
+			shimMu.Lock()
 			shimPending = false
+			shimMu.Unlock()
 
 			hash, err := chainhash.NewHash(
 				update.ChanPending.Txid,
