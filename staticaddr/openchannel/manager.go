@@ -398,9 +398,17 @@ func (m *Manager) OpenChannel(ctx context.Context,
 
 		// If the PSBT was already finalized and sent to lnd, the
 		// funding transaction may have been broadcast. In that case
-		// we must not roll back the deposits to Deposited as they
-		// may already be spent on-chain.
-		if !errors.Is(err, errPsbtFinalized) {
+		// we must not blindly roll back. Instead, try to recover
+		// the deposits now so they don't remain stuck in
+		// OpeningChannel until the next restart.
+		if errors.Is(err, errPsbtFinalized) {
+			recoverErr := m.recoverOpeningChannelDeposits(ctx)
+			if recoverErr != nil {
+				log.Errorf("failed recovering deposits "+
+					"after PSBT finalize: %v",
+					recoverErr)
+			}
+		} else {
 			err2 := m.cfg.DepositManager.TransitionDeposits(
 				ctx, deposits, fsm.OnError,
 				deposit.Deposited,
