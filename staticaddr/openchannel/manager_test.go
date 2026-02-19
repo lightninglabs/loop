@@ -210,6 +210,34 @@ func testOutPoint(b byte) wire.OutPoint {
 	}
 }
 
+func TestOpenChannelDuplicateOutpoints(t *testing.T) {
+	t.Parallel()
+
+	op := testOutPoint(1)
+	manager := &Manager{
+		cfg: &Config{},
+	}
+
+	req := &lnrpc.OpenChannelRequest{
+		NodePubkey:         make([]byte, 33),
+		LocalFundingAmount: 100000,
+		SatPerVbyte:        10,
+		Outpoints: []*lnrpc.OutPoint{
+			{
+				TxidStr:     op.Hash.String(),
+				OutputIndex: op.Index,
+			},
+			{
+				TxidStr:     op.Hash.String(),
+				OutputIndex: op.Index,
+			},
+		},
+	}
+
+	_, err := manager.OpenChannel(context.Background(), req)
+	require.ErrorContains(t, err, "duplicate outpoint")
+}
+
 func TestValidateInitialPsbtFlags(t *testing.T) {
 	t.Parallel()
 
