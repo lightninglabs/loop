@@ -392,10 +392,22 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				fsm.OnError:        Deposited,
 				OnChannelPublished: ChannelPublished,
 				OnRecover:          OpeningChannel,
+				// OnExpiry can arrive on every block once
+				// the deposit is expired. Since the channel
+				// open is still in progress we absorb the
+				// event as a self-transition.
+				OnExpiry: OpeningChannel,
 			},
 			Action: fsm.NoOpAction,
 		},
 		ChannelPublished: fsm.State{
+			Transitions: fsm.Transitions{
+				// OnExpiry can arrive on every block once
+				// the deposit is expired. Since the channel
+				// is already published we absorb the event
+				// as a self-transition.
+				OnExpiry: ChannelPublished,
+			},
 			Action: f.FinalizeDepositAction,
 		},
 	}
