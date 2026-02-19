@@ -693,8 +693,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				update.ChanPending.Txid,
 			)
 			if err != nil {
-				log.Infof("Error creating hash for channel "+
-					"open tx: %v", err)
+				return nil, fmt.Errorf("error creating "+
+					"hash for channel open tx: %w", err)
 			}
 
 			chanOutpoint := &wire.OutPoint{
