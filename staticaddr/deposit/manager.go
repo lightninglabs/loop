@@ -239,10 +239,6 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
-	if err != nil {
-		return fmt.Errorf("unable to filter new deposits: %w", err)
-	}
-
 	if len(newDeposits) == 0 {
 		log.Tracef("No new deposits...")
 		return nil
