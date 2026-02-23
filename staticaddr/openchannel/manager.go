@@ -23,6 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -366,64 +367,55 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		return nil, err
 	}
 
-	openChanRequest := &lnrpc.OpenChannelRequest{
-		NodePubkey:                 req.NodePubkey,
-		LocalFundingAmount:         int64(chanFundingAmt),
-		PushSat:                    req.PushSat,
-		Private:                    req.Private,
-		MinHtlcMsat:                req.MinHtlcMsat,
-		RemoteCsvDelay:             req.RemoteCsvDelay,
-		MinConfs:                   defaultUtxoMinConf,
-		SpendUnconfirmed:           false,
-		CloseAddress:               req.CloseAddress,
-		RemoteMaxValueInFlightMsat: req.RemoteMaxValueInFlightMsat,
-		RemoteMaxHtlcs:             req.RemoteMaxHtlcs,
-		MaxLocalCsv:                req.MaxLocalCsv,
-		CommitmentType:             chanCommitmentType,
-		ZeroConf:                   req.ZeroConf,
-		ScidAlias:                  req.ScidAlias,
-		BaseFee:                    req.BaseFee,
-		FeeRate:                    req.FeeRate,
-		UseBaseFee:                 req.UseBaseFee,
-		UseFeeRate:                 req.UseFeeRate,
-		RemoteChanReserveSat:       req.RemoteChanReserveSat,
-		Memo:                       req.Memo,
+	// Clone the request message and set mandatory parameters.
+	reqClone := proto.Clone(req).(*lnrpc.OpenChannelRequest)
+
+	// Override fields consumed locally or incompatible with PSBT funding.
+	reqClone.LocalFundingAmount = int64(chanFundingAmt)
+
+	// TODO: Once lnd's PSBT channel open flow supports fundmax natively,
+	// we can pass FundMax through to lnd and remove Loop's local coin
+	// selection for the fundmax case.
+	reqClone.FundMax = false
+	reqClone.MinConfs = defaultUtxoMinConf
+	reqClone.SpendUnconfirmed = false
+	// In the lnd PSBT flow, fee estimation params on the request are
+	// explicitly disallowed.
+	reqClone.SatPerVbyte = 0
+	reqClone.CommitmentType = chanCommitmentType
+
+	chanOutpoint, err := m.openChannelPsbt(ctx, reqClone, deposits, feeRate)
+	if err == nil {
+		return chanOutpoint, nil
 	}
 
-	chanOutpoint, err := m.openChannelPsbt(
-		ctx, openChanRequest, deposits, feeRate,
-	)
-	if err != nil {
-		log.Infof("error opening channel: %v", err)
+	log.Infof("error opening channel: %v", err)
 
-		// If the PSBT was already finalized and sent to lnd, the
-		// funding transaction may have been broadcast. In that case
-		// we must not blindly roll back. Instead, try to recover
-		// the deposits now so they don't remain stuck in
-		// OpeningChannel until the next restart.
-		if errors.Is(err, errPsbtFinalized) {
-			recoverErr := m.recoverOpeningChannelDeposits(ctx)
-			if recoverErr != nil {
-				log.Errorf("failed recovering deposits "+
-					"after PSBT finalize: %v",
-					recoverErr)
-			}
-		} else {
-			err2 := m.cfg.DepositManager.TransitionDeposits(
-				ctx, deposits, fsm.OnError,
-				deposit.Deposited,
-			)
-			if err2 != nil {
-				log.Errorf("failed transitioning deposits "+
-					"after failed channel open: %v",
-					err2)
-			}
+	// If the PSBT was already finalized and sent to lnd, the
+	// funding transaction may have been broadcast. In that case
+	// we must not blindly roll back. Instead, try to recover
+	// the deposits now so they don't remain stuck in
+	// OpeningChannel until the next restart.
+	if errors.Is(err, errPsbtFinalized) {
+		recoverErr := m.recoverOpeningChannelDeposits(ctx)
+		if recoverErr != nil {
+			log.Errorf("failed recovering deposits "+
+				"after PSBT finalize: %v",
+				recoverErr)
 		}
-
-		return nil, err
+	} else {
+		err2 := m.cfg.DepositManager.TransitionDeposits(
+			ctx, deposits, fsm.OnError,
+			deposit.Deposited,
+		)
+		if err2 != nil {
+			log.Errorf("failed transitioning deposits "+
+				"after failed channel open: %v",
+				err2)
+		}
 	}
 
-	return chanOutpoint, nil
+	return nil, err
 }
 
 // openChannelPsbt starts an interactive channel open protocol that uses a
@@ -455,6 +447,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		psbtFinalized bool
 		basePsbtBytes []byte
 		quit          = make(chan struct{})
+		quitCause     error
 		closeQuitOnce sync.Once
 		srvMsg        = make(chan *lnrpc.OpenStatusUpdate, 1)
 		srvErr        = make(chan error, 1)
@@ -594,6 +587,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				shimPending = false
 				shimMu.Unlock()
 			}
+
+			quitCause = err
 			closeQuit()
 
 		case <-quit:
@@ -606,6 +601,9 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		case srvResponse = <-srvMsg:
 		case <-quit:
 			cancelErr := fmt.Errorf("open channel flow canceled")
+			if quitCause != nil {
+				cancelErr = quitCause
+			}
 			if psbtFinalized {
 				return nil, fmt.Errorf("%w: %v",
 					errPsbtFinalized, cancelErr)
@@ -755,6 +753,26 @@ func validateInitialPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 	if req.SpendUnconfirmed {
 		return fmt.Errorf("SpendUnconfirmed is not supported " +
 			"for PSBT funding")
+	}
+
+	if req.TargetConf != 0 {
+		return fmt.Errorf("TargetConf is not supported for PSBT " +
+			"funding, use SatPerVbyte to specify fee rate")
+	}
+
+	if req.SatPerByte != 0 { //nolint:staticcheck
+		return fmt.Errorf("SatPerByte is deprecated and not " +
+			"supported for PSBT funding, use SatPerVbyte")
+	}
+
+	if req.NodePubkeyString != "" { //nolint:staticcheck
+		return fmt.Errorf("NodePubkeyString is not supported, " +
+			"use NodePubkey instead")
+	}
+
+	if req.FundingShim != nil {
+		return fmt.Errorf("FundingShim is not supported, it is " +
+			"managed internally for PSBT funding")
 	}
 
 	return nil

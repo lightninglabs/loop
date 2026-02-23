@@ -471,42 +471,67 @@ func TestValidateInitialPsbtFlags(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		minConfs          int32
-		spendUnconfirmed  bool
+		req               *lnrpc.OpenChannelRequest
 		expectedErrSubstr string
 	}{
 		{
-			name:             "default min confs accepted",
-			minConfs:         0,
-			spendUnconfirmed: false,
+			name: "default min confs accepted",
+			req:  &lnrpc.OpenChannelRequest{},
 		},
 		{
-			name:             "explicit default min confs accepted",
-			minConfs:         defaultUtxoMinConf,
-			spendUnconfirmed: false,
+			name: "explicit default min confs accepted",
+			req: &lnrpc.OpenChannelRequest{
+				MinConfs: defaultUtxoMinConf,
+			},
 		},
 		{
-			name:              "custom min confs rejected",
-			minConfs:          defaultUtxoMinConf + 1,
-			spendUnconfirmed:  false,
+			name: "custom min confs rejected",
+			req: &lnrpc.OpenChannelRequest{
+				MinConfs: defaultUtxoMinConf + 1,
+			},
 			expectedErrSubstr: "custom MinConfs not supported",
 		},
 		{
-			name:              "spend unconfirmed rejected",
-			minConfs:          defaultUtxoMinConf,
-			spendUnconfirmed:  true,
+			name: "spend unconfirmed rejected",
+			req: &lnrpc.OpenChannelRequest{
+				MinConfs:         defaultUtxoMinConf,
+				SpendUnconfirmed: true,
+			},
 			expectedErrSubstr: "SpendUnconfirmed is not supported",
+		},
+		{
+			name: "target conf rejected",
+			req: &lnrpc.OpenChannelRequest{
+				TargetConf: 6,
+			},
+			expectedErrSubstr: "TargetConf is not supported",
+		},
+		{
+			name: "sat per byte rejected",
+			req: &lnrpc.OpenChannelRequest{
+				SatPerByte: 10, //nolint:staticcheck
+			},
+			expectedErrSubstr: "SatPerByte is deprecated",
+		},
+		{
+			name: "node pubkey string rejected",
+			req: &lnrpc.OpenChannelRequest{
+				NodePubkeyString: "abc", //nolint:staticcheck
+			},
+			expectedErrSubstr: "NodePubkeyString is not supported",
+		},
+		{
+			name: "funding shim rejected",
+			req: &lnrpc.OpenChannelRequest{
+				FundingShim: &lnrpc.FundingShim{},
+			},
+			expectedErrSubstr: "FundingShim is not supported",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := &lnrpc.OpenChannelRequest{
-				MinConfs:         tc.minConfs,
-				SpendUnconfirmed: tc.spendUnconfirmed,
-			}
-
-			err := validateInitialPsbtFlags(req)
+			err := validateInitialPsbtFlags(tc.req)
 			if tc.expectedErrSubstr == "" {
 				require.NoError(t, err)
 				return
