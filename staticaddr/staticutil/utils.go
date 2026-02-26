@@ -8,6 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -15,7 +16,9 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // ToPrevOuts converts a slice of deposits to a map of outpoints to TxOuts.
@@ -166,20 +169,23 @@ func bip69inputLess(input1, input2 *swapserverrpc.PrevoutInfo) bool {
 }
 
 // SelectDeposits sorts the deposits by amount in descending order. It then
-// selects the deposits that are needed to cover the amount requested without
-// leaving a dust change. It returns an error if the sum of deposits minus dust
-// is less than the requested amount.
-func SelectDeposits(deposits []*deposit.Deposit, amount int64) (
-	[]*deposit.Deposit, error) {
+// selects the deposits that are needed to cover the requested amount plus
+// transaction fees and dust. The fee rate and commitment type are used to
+// estimate the transaction fee for the current selection, since each
+// additional input increases the fee.
+func SelectDeposits(deposits []*deposit.Deposit, amount int64,
+	feeRate chainfee.SatPerKWeight,
+	commitmentType lnrpc.CommitmentType) ([]*deposit.Deposit, error) {
 
-	// Check that sum of deposits covers the swap amount while leaving no
-	// dust change.
 	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+
+	// Quick check: if total deposits can't even cover amount + dust
+	// (ignoring fees), there's no way to succeed.
 	var depositSum btcutil.Amount
-	for _, deposit := range deposits {
-		depositSum += deposit.Value
+	for _, d := range deposits {
+		depositSum += d.Value
 	}
-	if depositSum-dustLimit < btcutil.Amount(amount) {
+	if depositSum < btcutil.Amount(amount)+dustLimit {
 		return nil, fmt.Errorf("insufficient funds to cover swap " +
 			"amount, try manually selecting deposits")
 	}
@@ -189,17 +195,52 @@ func SelectDeposits(deposits []*deposit.Deposit, amount int64) (
 		return deposits[i].Value > deposits[j].Value
 	})
 
-	// Select the deposits that are needed to cover the swap amount without
-	// leaving a dust change.
+	// Select deposits until the total covers the requested amount plus
+	// the estimated fee and dust reserve. We estimate the fee
+	// pessimistically with a change output to ensure we always select
+	// enough.
 	var selectedDeposits []*deposit.Deposit
 	var selectedAmount btcutil.Amount
-	for _, deposit := range deposits {
-		if selectedAmount >= btcutil.Amount(amount)+dustLimit {
-			break
+	for _, d := range deposits {
+		selectedDeposits = append(selectedDeposits, d)
+		selectedAmount += d.Value
+
+		fee := estimateFee(
+			len(selectedDeposits), feeRate, commitmentType,
+		)
+
+		if selectedAmount >= btcutil.Amount(amount)+fee+dustLimit {
+			return selectedDeposits, nil
 		}
-		selectedDeposits = append(selectedDeposits, deposit)
-		selectedAmount += deposit.Value
 	}
 
-	return selectedDeposits, nil
+	// We exhausted all deposits without meeting the threshold.
+	return nil, fmt.Errorf("insufficient funds to cover swap " +
+		"amount plus fees, try manually selecting deposits")
+}
+
+// estimateFee returns the estimated fee for a transaction with the given
+// number of taproot keyspend inputs and a single output determined by
+// the commitment type. It includes a change output in the estimate to
+// be conservative.
+func estimateFee(numInputs int, feeRate chainfee.SatPerKWeight,
+	commitmentType lnrpc.CommitmentType) btcutil.Amount {
+
+	var we input.TxWeightEstimator
+	for i := 0; i < numInputs; i++ {
+		we.AddTaprootKeySpendInput(txscript.SigHashDefault)
+	}
+
+	// Add the funding output based on commitment type.
+	switch commitmentType {
+	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
+		we.AddP2TROutput()
+	default:
+		we.AddP2WSHOutput()
+	}
+
+	// Add a change output (P2TR) to be conservative.
+	we.AddP2TROutput()
+
+	return feeRate.FeeForWeight(we.Weight())
 }

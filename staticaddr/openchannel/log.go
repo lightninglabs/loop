@@ -1,17 +1,12 @@
-package staticaddr
+package openchannel
 
 import (
 	"github.com/btcsuite/btclog/v2"
-	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/loopin"
-	"github.com/lightninglabs/loop/staticaddr/openchannel"
-	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightningnetwork/lnd/build"
 )
 
 // Subsystem defines the sub system name of this package.
-const Subsystem = "SADDR"
+const Subsystem = "SCHOPEN"
 
 // log is a logger that is initialized with no output filters. This means the
 // package will not perform any logging by default until the caller requests it.
@@ -26,9 +21,4 @@ func init() {
 // be used in preference to SetLogWriter if the caller is also using btclog.
 func UseLogger(logger btclog.Logger) {
 	log = logger
-	address.UseLogger(log)
-	deposit.UseLogger(log)
-	withdraw.UseLogger(log)
-	loopin.UseLogger(log)
-	openchannel.UseLogger(log)
 }

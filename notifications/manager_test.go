@@ -142,9 +142,11 @@ func TestManager_ReservationNotification(t *testing.T) {
 		return mockClient.timesCalled > 0
 	}, time.Second*5, 10*time.Millisecond)
 
-	mockClient.Lock()
-	require.Equal(t, 1, mockClient.timesCalled)
-	mockClient.Unlock()
+	require.Eventually(t, func() bool {
+		mockClient.Lock()
+		defer mockClient.Unlock()
+		return mockClient.timesCalled == 1
+	}, time.Second*5, 10*time.Millisecond)
 
 	// Send a test notification
 	testNotif := getTestNotification(testReservationId)

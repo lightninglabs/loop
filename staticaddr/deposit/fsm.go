@@ -35,6 +35,8 @@ var (
 		fsm.OnError:           {},
 		OnWithdrawInitiated:   {},
 		OnWithdrawn:           {},
+		OnOpeningChannel:      {},
+		OnChannelPublished:    {},
 	}
 )
 
@@ -50,6 +52,15 @@ var (
 
 	// Withdrawn signals that the withdrawal transaction has been confirmed.
 	Withdrawn = fsm.StateType("Withdrawn")
+
+	// OpeningChannel signals that the open channel transaction has been
+	// broadcast.
+	OpeningChannel = fsm.StateType("OpeningChannel")
+
+	// ChannelPublished signals that the open channel transaction has been
+	// published and that the channel should be managed from lnd from now
+	// on.
+	ChannelPublished = fsm.StateType("ChannelPublished")
 
 	// LoopingIn signals that the deposit is locked for a loop in swap.
 	LoopingIn = fsm.StateType("LoopingIn")
@@ -92,6 +103,15 @@ var (
 
 	// OnWithdrawn is sent to the fsm when a withdrawal has been confirmed.
 	OnWithdrawn = fsm.EventType("OnWithdrawn")
+
+	// OnOpeningChannel is sent to the fsm when a channel open has been
+	// initiated.
+	OnOpeningChannel = fsm.EventType("OnOpeningChannel")
+
+	// OnChannelPublished is sent to the fsm when a channel open has been
+	// published. Loop has done its work here and the channel should now be
+	// managed from lnd.
+	OnChannelPublished = fsm.EventType("OnChannelPublished")
 
 	// OnLoopInInitiated is sent to the fsm when a loop in has been
 	// initiated.
@@ -253,6 +273,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnExpiry:            PublishExpirySweep,
 				OnWithdrawInitiated: Withdrawing,
 				OnLoopInInitiated:   LoopingIn,
+				OnOpeningChannel:    OpeningChannel,
 				// We encounter OnSweepingHtlcTimeout if the
 				// server published the htlc tx without paying
 				// us. We then need to monitor for the timeout
@@ -363,6 +384,29 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnExpiry:    Expired,
 				OnWithdrawn: Withdrawn,
+			},
+			Action: f.FinalizeDepositAction,
+		},
+		OpeningChannel: fsm.State{
+			Transitions: fsm.Transitions{
+				fsm.OnError:        Deposited,
+				OnChannelPublished: ChannelPublished,
+				OnRecover:          OpeningChannel,
+				// OnExpiry can arrive on every block once
+				// the deposit is expired. Since the channel
+				// open is still in progress we absorb the
+				// event as a self-transition.
+				OnExpiry: OpeningChannel,
+			},
+			Action: fsm.NoOpAction,
+		},
+		ChannelPublished: fsm.State{
+			Transitions: fsm.Transitions{
+				// OnExpiry can arrive on every block once
+				// the deposit is expired. Since the channel
+				// is already published we absorb the event
+				// as a self-transition.
+				OnExpiry: ChannelPublished,
 			},
 			Action: f.FinalizeDepositAction,
 		},
