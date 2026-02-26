@@ -1,6 +1,6 @@
 module github.com/lightninglabs/loop/tools
 
-go 1.24.9
+go 1.26
 
 require (
 	// Once golangci-lint v2.4.1 update it here.

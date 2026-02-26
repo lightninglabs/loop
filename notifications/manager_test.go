@@ -133,11 +133,13 @@ func TestManager_ReservationNotification(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	// Wait a bit to ensure manager is running and has subscribed
+	// Wait a bit to ensure manager is running and has subscribed to the
+	// server notifications stream.
 	require.Eventually(t, func() bool {
-		mgr.Lock()
-		defer mgr.Unlock()
-		return len(mgr.subscribers[NotificationTypeReservation]) > 0
+		mockClient.Lock()
+		defer mockClient.Unlock()
+
+		return mockClient.timesCalled > 0
 	}, time.Second*5, 10*time.Millisecond)
 
 	mockClient.Lock()

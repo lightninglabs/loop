@@ -1,20 +1,26 @@
 #!/bin/bash
 
+# The script uses the following env var:
+# LND_DIR - the place where it can find LND of the pinned version, to use its
+# lnrpc/ subdir for .proto imports.
+
 set -e
 
 # generate compiles the *.pb.go stubs from the *.proto files.
 function generate() {
+  proto_paths=(-I/usr/local/include -I. -I.. -I"$LND_DIR")
+
   # Generate the gRPC bindings for all proto files.
   for file in ./*.proto
   do
-    protoc -I/usr/local/include -I. -I.. \
+    protoc "${proto_paths[@]}" \
       --go_out . --go_opt paths=source_relative \
       --go-grpc_out . --go-grpc_opt paths=source_relative \
       "${file}"
   done
-  
+
   # Generate the REST reverse proxy for the client only.
-  protoc -I/usr/local/include -I. -I.. \
+  protoc "${proto_paths[@]}" \
     --grpc-gateway_out . \
     --grpc-gateway_opt logtostderr=true \
     --grpc-gateway_opt paths=source_relative \
@@ -22,7 +28,7 @@ function generate() {
     client.proto
 
   # Finally, generate the swagger file which describes the REST API in detail.
-  protoc -I/usr/local/include -I. -I.. \
+  protoc "${proto_paths[@]}" \
     --openapiv2_out . \
     --openapiv2_opt logtostderr=true \
     --openapiv2_opt grpc_api_configuration=client.yaml \
@@ -33,7 +39,7 @@ function generate() {
   falafel=$(which falafel)
   pkg="looprpc"
   opts="package_name=$pkg,js_stubs=1"
-  protoc -I/usr/local/include -I. -I.. \
+  protoc "${proto_paths[@]}" \
     --plugin=protoc-gen-custom=$falafel\
     --custom_out=. \
     --custom_opt="$opts" \
@@ -46,7 +52,13 @@ function format() {
 }
 
 # Compile and format the looprpc package.
-pushd looprpc
-format
-generate
-popd
+# Check if we're already in the looprpc directory.
+if [[ $(basename "$PWD") == "looprpc" ]]; then
+  format
+  generate
+else
+  pushd looprpc
+  format
+  generate
+  popd
+fi
