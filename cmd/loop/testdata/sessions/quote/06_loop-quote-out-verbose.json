@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "out",
+      "--network",
+      "regtest",
+      "--verbose",
+      "50000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 273326957
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "50000",
+          "conf_target": 9,
+          "external_htlc": false,
+          "swap_publication_deadline": "1769408886",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 272,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "response",
+        "message_type": "looprpc.OutQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "3828",
+          "prepay_amt_sat": "1337",
+          "htlc_sweep_fee_sat": "3791",
+          "swap_payment_dest": "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3",
+          "cltv_delta": 0,
+          "conf_target": 9,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 273,
+      "kind": "stdout",
+      "data": {
+        "text": "Send off-chain:                             50000 sat\nReceive on-chain:                           42381 sat\n\nEstimated on-chain fee:                      3791 sat\nLoop service fee:                            3828 sat\nEstimated total fee:                         7619 sat\n\n"
+      }
+    },
+    {
+      "time_ms": 273,
+      "kind": "stdout",
+      "data": {
+        "text": "No show penalty (prepay):                    1337 sat\nConf target:                                    9 block\nCLTV expiry delta:                              0 block\nPublication deadline:                  2026-01-26 01:28:06 -0500 EST\n"
+      }
+    },
+    {
+      "time_ms": 273,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

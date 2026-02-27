@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest",
+      "--filter",
+      "expired"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 224807103
+  },
+  "events": [
+    {
+      "time_ms": 4,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "EXPIRED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 224,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": []
+        }
+      }
+    },
+    {
+      "time_ms": 224,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 224,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

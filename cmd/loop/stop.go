@@ -6,7 +6,6 @@ import (
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli/v3"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
@@ -63,7 +62,7 @@ func stopDaemon(ctx context.Context, cmd *cli.Command) error {
 // waitForDaemonShutdown monitors the gRPC connectivity state until the daemon
 // disappears. To avoid getting stuck in idle mode we nudge the connection to
 // reconnect when needed.
-func waitForDaemonShutdown(ctx context.Context, conn *grpc.ClientConn) error {
+func waitForDaemonShutdown(ctx context.Context, conn daemonConn) error {
 	for {
 		state := conn.GetState()
 

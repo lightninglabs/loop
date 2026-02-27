@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "withdraw",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "must select either all or some utxos",
+    "duration": 1520351
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] must select either all or some utxos\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "must select either all or some utxos"
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "listinstantouts",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 142800927
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListInstantOuts",
+        "event": "request",
+        "message_type": "looprpc.ListInstantOutsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 142,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListInstantOuts",
+        "event": "response",
+        "message_type": "looprpc.ListInstantOutsResponse",
+        "payload": {
+          "swaps": [
+            {
+              "swap_hash": "uxbiybKoHjn4B4b+yHRFGI9e12jMMtTLEvNnF7wYriU=",
+              "state": "WaitForSweeplessSweepConfirmed",
+              "amount": "2400000",
+              "reservation_ids": [
+                "s/RD6Lj/eXdmtFCtd/6AvrJQrP14h1YrblyZZMWITYc=",
+                "Wl+CTsY+V2zUvkK5bs9WIttkvKLrKM8A1kpZ5VZ/MHs=",
+                "Mu65fbhayEtRzougKLBnoeRN8f+tEM1+O9QuNvUIfbI="
+              ],
+              "sweep_tx_id": "a1650cb339118e58f317bbbbd8cff720e0cc02a9fe159c9286724d6f5722fef2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 142,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"swaps\": [\n        {\n            \"amount\": \"2400000\",\n            \"reservation_ids\": [\n                \"b3f443e8b8ff797766b450ad77fe80beb250acfd7887562b6e5c9964c5884d87\",\n                \"5a5f824ec63e576cd4be42b96ecf5622db64bca2eb28cf00d64a59e5567f307b\",\n                \"32eeb97db85ac84b51ce8ba028b067a1e44df1ffad10cd7e3bd42e36f5087db2\"\n            ],\n            \"state\": \"WaitForSweeplessSweepConfirmed\",\n            \"swap_hash\": \"bb16e2c9b2a81e39f80786fec87445188f5ed768cc32d4cb12f36717bc18ae25\",\n            \"sweep_tx_id\": \"a1650cb339118e58f317bbbbd8cff720e0cc02a9fe159c9286724d6f5722fef2\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 142,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

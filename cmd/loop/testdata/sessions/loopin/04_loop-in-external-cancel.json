@@ -1,0 +1,89 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "in",
+      "--network",
+      "regtest",
+      "--external",
+      "--amt",
+      "50000",
+      "--last_hop",
+      "0271d6e29301159d9e1cc5d3983479a51f3b3c0c682eda7f16aa1f47dfe09b22f7"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "swap canceled",
+    "duration": 539895736
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdin",
+      "data": {
+        "text": "n\n"
+      }
+    },
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "50000",
+          "conf_target": 0,
+          "external_htlc": true,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 539,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1801",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "50000"
+        }
+      }
+    },
+    {
+      "time_ms": 539,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] swap canceled\n"
+      }
+    },
+    {
+      "time_ms": 539,
+      "kind": "stdout",
+      "data": {
+        "text": "On-chain fee for external loop in is not included.\nSufficient fees will need to be paid when constructing the transaction in the external wallet.\n\nSend on-chain:                              50000 sat\nReceive off-chain:                          48199 sat\nLoop service fee:                            1801 sat\n\nCONTINUE SWAP? (y/n): "
+      }
+    },
+    {
+      "time_ms": 539,
+      "kind": "exit",
+      "data": {
+        "run_error": "swap canceled"
+      }
+    }
+  ]
+}

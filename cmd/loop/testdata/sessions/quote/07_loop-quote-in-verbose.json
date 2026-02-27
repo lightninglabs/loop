@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--verbose",
+      "50000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 380680881
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "50000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 379,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1800",
+          "htlc_publish_fee_sat": "3871",
+          "cltv_delta": 0,
+          "conf_target": 6,
+          "quoted_amt": "50000"
+        }
+      }
+    },
+    {
+      "time_ms": 380,
+      "kind": "stdout",
+      "data": {
+        "text": "Send on-chain:                              50000 sat\nReceive off-chain:                          44329 sat\n\nEstimated on-chain fee:                      3871 sat\nLoop service fee:                            1800 sat\nEstimated total fee:                         5671 sat\n\nConf target:                                    6 block\nCLTV expiry delta:                              0 block\n"
+      }
+    },
+    {
+      "time_ms": 380,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

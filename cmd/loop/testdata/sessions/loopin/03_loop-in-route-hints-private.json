@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "in",
+      "--route_hints",
+      "{}",
+      "--private",
+      "--network",
+      "regtest",
+      "10000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "private and route_hints both set",
+    "duration": 2834558
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] private and route_hints both set\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "exit",
+      "data": {
+        "run_error": "private and route_hints both set"
+      }
+    }
+  ]
+}

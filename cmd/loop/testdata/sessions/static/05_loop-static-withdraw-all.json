@@ -1,0 +1,60 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "withdraw",
+      "--all",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 582593010
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/WithdrawDeposits",
+        "event": "request",
+        "message_type": "looprpc.WithdrawDepositsRequest",
+        "payload": {
+          "outpoints": [],
+          "all": true,
+          "dest_addr": "",
+          "sat_per_vbyte": "0",
+          "amount": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 582,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/WithdrawDeposits",
+        "event": "response",
+        "message_type": "looprpc.WithdrawDepositsResponse",
+        "payload": {
+          "withdrawal_tx_hash": "849b3e491dd45688fe66fc05fc0b7a89a147cad749486c46f515b1e815a16d31",
+          "address": "bcrt1pk2jdgms8l67x6mp2kjq45k2sd7mdpfcf988lckk774uguxzh0x5scddya7"
+        }
+      }
+    },
+    {
+      "time_ms": 582,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"address\": \"bcrt1pk2jdgms8l67x6mp2kjq45k2sd7mdpfcf988lckk774uguxzh0x5scddya7\",\n    \"withdrawal_tx_hash\": \"849b3e491dd45688fe66fc05fc0b7a89a147cad749486c46f515b1e815a16d31\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 582,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

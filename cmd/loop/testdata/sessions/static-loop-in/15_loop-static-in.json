@@ -1,0 +1,179 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "in",
+      "--amt",
+      "500000",
+      "--all",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 2826015164
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 22,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "6mq78FccC6ghF66fIIZhTqzqiykT3AVEtwwA3ng1PnE=",
+              "state": "DEPOSITED",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "value": "2500000",
+              "confirmation_height": "131",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 22,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [
+            "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 65,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1824",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "500000"
+        }
+      }
+    },
+    {
+      "time_ms": 65,
+      "kind": "stdout",
+      "data": {
+        "text": "On-chain fees for static address loop-ins are not included.\nThey were already paid when the deposits were created.\n\nPreviously deposited on-chain:             500000 sat\nReceive off-chain:                         498176 sat\nEstimated total fee:                         1824 sat\n\nCONTINUE SWAP? (y/n): "
+      }
+    },
+    {
+      "time_ms": 2358,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 2358,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticAddressLoopIn",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressLoopInRequest",
+        "payload": {
+          "outpoints": [
+            "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0"
+          ],
+          "max_swap_fee_satoshis": "1824",
+          "last_hop": "",
+          "label": "",
+          "initiator": "loop-cli",
+          "route_hints": [],
+          "private": false,
+          "payment_timeout_seconds": 60,
+          "amount": "500000",
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 2824,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticAddressLoopIn",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressLoopInResponse",
+        "payload": {
+          "swap_hash": "nxn7UEKl3m2i8c4YPF4iT9eALbQI6a/dWY7oF0srzj8=",
+          "state": "SignHtlcTx",
+          "amount": "2500000",
+          "htlc_cltv": 1136,
+          "quoted_swap_fee_satoshis": "1824",
+          "max_swap_fee_satoshis": "1824",
+          "initiation_height": 136,
+          "protocol_version": "V0",
+          "label": "",
+          "initiator": "loop-cli",
+          "payment_timeout_seconds": 60,
+          "used_deposits": [
+            {
+              "id": "6mq78FccC6ghF66fIIZhTqzqiykT3AVEtwwA3ng1PnE=",
+              "state": "LOOPING_IN",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "value": "2500000",
+              "confirmation_height": "131",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ],
+          "swap_amount": "500000",
+          "change": "2000000",
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 2825,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"amount\": \"2500000\",\n    \"change\": \"2000000\",\n    \"fast\": false,\n    \"htlc_cltv\": 1136,\n    \"initiation_height\": 136,\n    \"initiator\": \"loop-cli\",\n    \"label\": \"\",\n    \"max_swap_fee_satoshis\": \"1824\",\n    \"payment_timeout_seconds\": 60,\n    \"protocol_version\": \"V0\",\n    \"quoted_swap_fee_satoshis\": \"1824\",\n    \"state\": \"SignHtlcTx\",\n    \"swap_amount\": \"500000\",\n    \"swap_hash\": \"9f19fb5042a5de6da2f1ce183c5e224fd7802db408e9afdd598ee8174b2bce3f\",\n    \"used_deposits\": [\n        {\n            \"blocks_until_expiry\": \"14395\",\n            \"confirmation_height\": \"131\",\n            \"id\": \"ea6abbf0571c0ba82117ae9f2086614eacea8b2913dc0544b70c00de78353e71\",\n            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n            \"state\": \"LOOPING_IN\",\n            \"swap_hash\": \"\",\n            \"value\": \"2500000\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 2826,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

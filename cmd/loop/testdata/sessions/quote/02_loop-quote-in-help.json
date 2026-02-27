@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 1248128
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "NAME:\n   loop quote in - get a quote for the cost of a loop in swap\n\nUSAGE:\n   loop quote in amt\n\nDESCRIPTION:\n   Allows to determine the cost of a swap up front.Either specify an amount or deposit outpoints.\n\nOPTIONS:\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "   --last_hop string                                        the pubkey of the last hop to use for the quote\n   --conf_target uint                                       the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)\n   --verbose, -v                                            show expanded details (default: false)\n   --private                                                generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n   --route_hints string [ --route_hints string ]        "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "    route hints that can each be individually used to assist in reaching the invoice's destination\n   --deposit_outpoint string [ --deposit_outpoint string ]  one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "   --help, -h                        "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "                       "
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "show help\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

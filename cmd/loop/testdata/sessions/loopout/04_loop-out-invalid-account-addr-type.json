@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "out",
+      "--account",
+      "testacct",
+      "--account_addr_type",
+      "foo",
+      "--network",
+      "regtest",
+      "50000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "unknown account address type",
+    "duration": 1107998
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] unknown account address type\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "unknown account address type"
+      }
+    }
+  ]
+}
