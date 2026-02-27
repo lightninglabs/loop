@@ -279,3 +279,30 @@ message ClientSweeplessSigningInfo {
 
 message PushStaticAddressSweeplessSigsResponse {
 }
+
+// InsufficientConfirmationsDetails provides structured information about
+// deposits that don't meet dynamic confirmation requirements. This is
+// attached as error details to FailedPrecondition errors.
+message InsufficientConfirmationsDetails {
+    // Status of each deposit that has insufficient confirmations.
+    repeated DepositConfirmationStatus deposits = 1;
+
+    // Maximum blocks to wait across all deposits.
+    int32 max_blocks_to_wait = 2;
+}
+
+// DepositConfirmationStatus reports the confirmation state of a single deposit
+// that does not meet the required confirmation threshold.
+message DepositConfirmationStatus {
+    // The deposit outpoint in format txid:idx.
+    string outpoint = 1;
+
+    // Current number of confirmations the deposit has.
+    int32 current_confirmations = 2;
+
+    // Required number of confirmations based on risk assessment.
+    int32 required_confirmations = 3;
+
+    // Estimated blocks to wait until requirement is met.
+    int32 blocks_to_wait = 4;
+}
