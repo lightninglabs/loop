@@ -208,7 +208,7 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		go func(fsm *FSM) {
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
-				log.Errorf("Error sending OnStart event: %v",
+				log.Errorf("Error sending OnRecover event: %v",
 					err)
 			}
 		}(fsm)
@@ -393,7 +393,7 @@ func (m *Manager) startDepositFsm(ctx context.Context, deposit *Deposit) error {
 
 	// Send the start event to the state machine.
 	go func() {
-		err = fsm.SendEvent(ctx, OnStart, nil)
+		err := fsm.SendEvent(ctx, OnStart, nil)
 		if err != nil {
 			log.Errorf("Error sending OnStart event: %v", err)
 		}

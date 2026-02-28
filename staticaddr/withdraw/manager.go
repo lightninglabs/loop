@@ -666,7 +666,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
-		log.Errorf("error retrieving address params %w", err)
+		log.Errorf("error retrieving address params: %v", err)
 
 		return fmt.Errorf("withdrawal failed")
 	}
@@ -676,6 +676,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		ctx, &d.OutPoint, addrParams.PkScript,
 		int32(d.ConfirmationHeight),
 	)
+	if err != nil {
+		return fmt.Errorf("unable to register spend ntfn: %w", err)
+	}
 
 	go func() {
 		select {
@@ -684,13 +687,21 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
-			var confChan chan *chainntnfs.TxConfirmation
-			confChan, errChan, err =
+			var (
+				confChan    chan *chainntnfs.TxConfirmation
+				confErrChan chan error
+			)
+			confChan, confErrChan, err =
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
+			if err != nil {
+				log.Errorf("Error registering confirmation "+
+					"notification: %v", err)
+				return
+			}
 			select {
 			case tx := <-confChan:
 				err = m.cfg.DepositManager.TransitionDeposits(
@@ -719,7 +730,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						"withdrawal: %v", err)
 				}
 
-			case err := <-errChan:
+			case err := <-confErrChan:
 				log.Errorf("Error waiting for confirmation: %v",
 					err)
 

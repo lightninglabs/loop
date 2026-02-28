@@ -718,14 +718,13 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 		}
 
 		f.Errorf("unable to create and publish htlc timeout sweep "+
-			"tx: %v, retrying in  %v", err, time.Hour.String())
+			"tx: %v, retrying in %v", err, time.Hour.String())
 
 		select {
 		case <-ctx.Done():
-			f.Errorf("%v", ctx.Err())
+			return f.HandleError(ctx.Err())
 
-		default:
-			<-time.After(1 * time.Hour)
+		case <-time.After(1 * time.Hour):
 		}
 	}
 
