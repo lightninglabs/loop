@@ -687,13 +687,21 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
-			var confChan chan *chainntnfs.TxConfirmation
-			confChan, errChan, err =
+			var (
+				confChan    chan *chainntnfs.TxConfirmation
+				confErrChan chan error
+			)
+			confChan, confErrChan, err =
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
+			if err != nil {
+				log.Errorf("Error registering confirmation "+
+					"notification: %v", err)
+				return
+			}
 			select {
 			case tx := <-confChan:
 				err = m.cfg.DepositManager.TransitionDeposits(
@@ -722,7 +730,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						"withdrawal: %v", err)
 				}
 
-			case err := <-errChan:
+			case err := <-confErrChan:
 				log.Errorf("Error waiting for confirmation: %v",
 					err)
 
