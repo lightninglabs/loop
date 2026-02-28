@@ -666,7 +666,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
-		log.Errorf("error retrieving address params %w", err)
+		log.Errorf("error retrieving address params: %v", err)
 
 		return fmt.Errorf("withdrawal failed")
 	}
