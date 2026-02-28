@@ -402,7 +402,7 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[0].Value
+	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
