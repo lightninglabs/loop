@@ -497,7 +497,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				},
 			}
 			_, err := m.cfg.LightningClient.FundingStateStep(
-				ctx, cancelMsg,
+				context.WithoutCancel(ctx), cancelMsg,
 			)
 			if err != nil {
 				log.Errorf("Error canceling shim: %v\n", err)
