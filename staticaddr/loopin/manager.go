@@ -575,16 +575,18 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 			return err
 		}
 
+		// Add the FSM to the active loop-ins map before sending
+		// the recover event to avoid a data race.
+		m.activeLoopIns[loopIn.SwapHash] = fsm
+
 		// Send the OnRecover event to the state machine.
-		go func(fsm *FSM, swapHash lntypes.Hash) {
+		go func(fsm *FSM) {
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
-				log.Errorf("Error sending OnStart event: %v",
-					err)
+				log.Errorf("Error sending OnRecover "+
+					"event: %v", err)
 			}
-
-			m.activeLoopIns[swapHash] = fsm
-		}(fsm, loopIn.SwapHash)
+		}(fsm)
 	}
 
 	return nil
