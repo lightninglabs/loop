@@ -409,7 +409,7 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*SwapRule, error) {
 	}
 }
 
-// rpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
+// RpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
 // from it.
 func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 	error) {

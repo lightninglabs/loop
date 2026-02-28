@@ -135,8 +135,8 @@ type Manager struct {
 	// initiationHeight stores the currently best known block height.
 	initiationHeight atomic.Uint32
 
-	// finalizedWithdrawalTx are the finalized withdrawal transactions that
-	// are published to the network and re-published on block arrivals.
+	// finalizedWithdrawalTxns are the finalized withdrawal transactions
+	// that are published to the network and re-published on block arrivals.
 	finalizedWithdrawalTxns map[chainhash.Hash]*wire.MsgTx
 }
 

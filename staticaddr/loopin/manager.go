@@ -60,10 +60,10 @@ type Config struct {
 	// cancel invoices.
 	InvoicesClient lndclient.InvoicesClient
 
-	// SwapClient is used to get loop in quotes.
+	// QuoteGetter is used to get loop-in quotes.
 	QuoteGetter QuoteGetter
 
-	// NodePubKey is used to get a loo-in quote.
+	// NodePubkey is used to get a loop-in quote.
 	NodePubkey route.Vertex
 
 	// WalletKit is the wallet client that is used to derive new keys from
@@ -74,7 +74,7 @@ type Config struct {
 	// manager uses.
 	ChainParams *chaincfg.Params
 
-	// Chain is the chain notifier that is used to listen for new
+	// ChainNotifier is the chain notifier that is used to listen for new
 	// blocks.
 	ChainNotifier lndclient.ChainNotifierClient
 

@@ -40,7 +40,7 @@ func TestLoopOutPaymentParameters(t *testing.T) {
 	})
 }
 
-// TestLoopOutPaymentParameters tests the first part of the loop out process up
+// testLoopOutPaymentParameters tests the first part of the loop out process up
 // to the point where the off-chain payments are made.
 func testLoopOutPaymentParameters(t *testing.T) {
 	defer test.Guard(t)()

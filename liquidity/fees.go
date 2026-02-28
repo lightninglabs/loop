@@ -19,8 +19,8 @@ const (
 	// 1%.
 	defaultRoutingFeePPM = 10000
 
-	// defaultRoutingFeePPM is the default limit we place on routing fees
-	// for the prepay invoice, expressed as parts per million of prepay
+	// defaultPrepayRoutingFeePPM is the default limit we place on routing
+	// fees for the prepay invoice, expressed as parts per million of prepay
 	// volume, 0.5%.
 	defaultPrepayRoutingFeePPM = 5000
 

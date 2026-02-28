@@ -477,7 +477,7 @@ func (h *HtlcScriptV2) SuccessSequence() uint32 {
 	return 1
 }
 
-// Sighash is the signature hash to use for transactions spending from the htlc.
+// SigHash is the signature hash to use for transactions spending from the htlc.
 func (h *HtlcScriptV2) SigHash() txscript.SigHashType {
 	return txscript.SigHashAll
 }
@@ -785,7 +785,7 @@ func (h *HtlcScriptV3) SuccessSequence() uint32 {
 	return 1
 }
 
-// Sighash is the signature hash to use for transactions spending from the htlc.
+// SigHash is the signature hash to use for transactions spending from the htlc.
 func (h *HtlcScriptV3) SigHash() txscript.SigHashType {
 	return txscript.SigHashDefault
 }

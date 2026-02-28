@@ -18,7 +18,7 @@ type OutRequest struct {
 	// include the swap and miner fee.
 	Amount btcutil.Amount
 
-	// Destination address for the swap.
+	// DestAddr is the destination address for the swap.
 	DestAddr btcutil.Address
 
 	// IsExternalAddr indicates whether the provided destination address
@@ -428,8 +428,8 @@ type LoopInQuote struct {
 	// sweep the htlc.
 	MinerFee btcutil.Amount
 
-	// Time lock delta relative to current block height that swap server
-	// will accept on the swap initiation call.
+	// CltvDelta is the time lock delta relative to current block height
+	// that the swap server will accept on the swap initiation call.
 	CltvDelta int32
 }
 
@@ -533,7 +533,7 @@ type ProbeRequest struct {
 	// LastHop is the last hop along the route.
 	LastHop *route.Vertex
 
-	// Optional hop hints.
+	// RouteHints are optional hop hints.
 	RouteHints [][]zpay32.HopHint
 }
 

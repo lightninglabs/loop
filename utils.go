@@ -368,9 +368,9 @@ func sufficientHints(numHints, maxHints, scalingFactor int, amount,
 	return false
 }
 
-// SelectHopHints will select up to numMaxHophints from the set of passed open
-// channels. The set of hop hints will be returned as a slice of functional
-// options that'll append the route hint to the set of all route hints.
+// invoicesrpcSelectHopHints will select up to numMaxHophints from the set of
+// passed open channels. The set of hop hints will be returned as a slice of
+// functional options that'll append the route hint to the set of all hints.
 //
 // TODO(sputn1ck): remove when https://github.com/lightningnetwork/lnd/pull/7065
 // is merged to a new lnd release.

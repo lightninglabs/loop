@@ -277,7 +277,7 @@ type addSweepsRequest struct {
 	// source.
 	sweeps []*sweep
 
-	// Notifier is a notifier that is used to notify the requester of this
+	// notifier is a notifier that is used to notify the requester of this
 	// sweep that the sweep was successful.
 	notifier *SpendNotifier
 
