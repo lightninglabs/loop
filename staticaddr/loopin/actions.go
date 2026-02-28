@@ -705,6 +705,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	}
 }
 
+// htlcTimeoutSweepRetryDelay is the delay between retries when publishing the
+// htlc timeout sweep transaction fails.
+const htlcTimeoutSweepRetryDelay = time.Hour
+
 // SweepHtlcTimeoutAction is called if the server published the htlc tx without
 // paying the invoice. We wait for the timeout path to open up and sweep the
 // funds back to us.
@@ -714,22 +718,22 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 	for {
 		err := f.createAndPublishHtlcTimeoutSweepTx(ctx)
 		if err == nil {
-			break
+			return OnHtlcTimeoutSweepPublished
 		}
 
 		f.Errorf("unable to create and publish htlc timeout sweep "+
-			"tx: %v, retrying in  %v", err, time.Hour.String())
+			"tx: %v, retrying in %v", err, htlcTimeoutSweepRetryDelay)
 
 		select {
+		// The context is cancelled when the server is shutting
+		// down. In that case we give up broadcasting attempts
+		// and return an error.
 		case <-ctx.Done():
-			f.Errorf("%v", ctx.Err())
+			return f.HandleError(ctx.Err())
 
-		default:
-			<-time.After(1 * time.Hour)
+		case <-time.After(htlcTimeoutSweepRetryDelay):
 		}
 	}
-
-	return OnHtlcTimeoutSweepPublished
 }
 
 // MonitorHtlcTimeoutSweepAction is called after the htlc timeout sweep tx has
