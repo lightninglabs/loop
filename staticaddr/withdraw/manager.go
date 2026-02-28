@@ -676,6 +676,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		ctx, &d.OutPoint, addrParams.PkScript,
 		int32(d.ConfirmationHeight),
 	)
+	if err != nil {
+		return fmt.Errorf("unable to register spend ntfn: %w", err)
+	}
 
 	go func() {
 		select {
