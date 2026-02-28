@@ -291,7 +291,8 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 		return nil, err
 	}
 
-	// Create the sweep output
+	// Create the sweep output. NOTE: The HTLC output must be added at
+	// index 0. createHtlcSweepTx relies on this layout invariant.
 	sweepOutput := &wire.TxOut{
 		Value:    int64(swapAmt - fee),
 		PkScript: pkscript,
@@ -370,17 +371,18 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
-	// Check if the htlc tx has a change output. If so we need to select the
-	// non-change output index to construct the sweep with.
-	htlcInputIndex := uint32(0)
+	// The HTLC output is always at index 0 (createHtlcTx adds it first).
+	// If there is a change output, it is at index 1. Verify this invariant
+	// so we fail fast if createHtlcTx's layout ever changes.
+	const htlcInputIndex = uint32(0)
 	if len(htlcTx.TxOut) == 2 {
-		// If the first htlc tx output matches our static address
-		// script we need to select the second output to sweep from.
 		if bytes.Equal(
 			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
 		) {
 
-			htlcInputIndex = 1
+			return nil, fmt.Errorf("htlc tx output layout " +
+				"invariant violated: expected HTLC output " +
+				"at index 0, got change output")
 		}
 	}
 
@@ -402,7 +404,7 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[0].Value
+	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
