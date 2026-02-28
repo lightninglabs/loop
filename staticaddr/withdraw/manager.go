@@ -22,7 +22,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
-	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -687,13 +686,21 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
-			var confChan chan *chainntnfs.TxConfirmation
-			confChan, errChan, err =
+			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
+			if err != nil {
+				// TODO(#1087): Retry registration on
+				// next block instead of giving up.
+				log.Errorf("Error registering confirmation "+
+					"notification: %v", err)
+
+				return
+			}
+
 			select {
 			case tx := <-confChan:
 				err = m.cfg.DepositManager.TransitionDeposits(
@@ -722,7 +729,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						"withdrawal: %v", err)
 				}
 
-			case err := <-errChan:
+			case err := <-confErrChan:
+				// TODO(#1087): Handle reorgs by retrying
+				// confirmation registration on next block.
 				log.Errorf("Error waiting for confirmation: %v",
 					err)
 
