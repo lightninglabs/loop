@@ -458,9 +458,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 	log.Infof("Starting PSBT funding flow with pending channel ID %x.\n",
 		pendingChanID)
 
-	// maybeCancelShim is a helper function that cancels the funding shim
-	// with the RPC server in case we end up aborting early.
-	maybeCancelShim := func() {
+	defer func() {
 		shimMu.Lock()
 		defer shimMu.Unlock()
 
@@ -478,15 +476,14 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				},
 			}
 			_, err := m.cfg.LightningClient.FundingStateStep(
-				ctx, cancelMsg,
+				context.WithoutCancel(ctx), cancelMsg,
 			)
 			if err != nil {
 				log.Errorf("Error canceling shim: %v\n", err)
 			}
 			shimPending = false
 		}
-	}
-	defer maybeCancelShim()
+	}()
 
 	// Create the PSBT funding shim that will tell the funding manager we
 	// want to use a PSBT.
