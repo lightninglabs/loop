@@ -658,7 +658,7 @@ type routeCancelMetadata struct {
 
 // outCancelDetails contains the information required to cancel a loop out swap.
 type outCancelDetails struct {
-	// Hash is the swap's hash.
+	// hash is the swap's hash.
 	hash lntypes.Hash
 
 	// paymentAddr is the payment address for the swap's invoice.

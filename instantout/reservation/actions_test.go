@@ -313,7 +313,8 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 	}
 }
 
-// AsyncWaitForExpiredOrSweptAction tests the AsyncWaitForExpiredOrSweptAction
+// TestAsyncWaitForExpiredOrSweptAction tests the
+// AsyncWaitForExpiredOrSweptAction
 // of the reservation state machine.
 func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 	tests := []struct {
@@ -375,7 +376,7 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 	}
 }
 
-// TesthandleSubcriptions tests the handleSubcriptions function of the
+// TestHandleSubcriptions tests the handleSubcriptions function of the
 // reservation state machine.
 func TestHandleSubcriptions(t *testing.T) {
 	var (

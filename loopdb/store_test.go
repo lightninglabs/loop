@@ -387,8 +387,8 @@ func TestVersionNew(t *testing.T) {
 	}
 }
 
-// TestVersionNew tests that an existing version zero database is migrated to
-// the latest version.
+// TestVersionMigrated tests that an existing version zero database is migrated
+// to the latest version.
 func TestVersionMigrated(t *testing.T) {
 	tempDirName, err := ioutil.TempDir("", "clientstore")
 	if err != nil {

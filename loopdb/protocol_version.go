@@ -43,7 +43,7 @@ const (
 	// canceling loop out swaps.
 	ProtocolVersionLoopOutCancel = 7
 
-	// ProtocolVerionProbe indicates that the client is able to request
+	// ProtocolVersionProbe indicates that the client is able to request
 	// the server to perform a probe to test inbound liquidty.
 	ProtocolVersionProbe ProtocolVersion = 8
 

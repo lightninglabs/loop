@@ -50,10 +50,12 @@ func newSwapKit(hash lntypes.Hash, swapType swap.Type, cfg *swapConfig,
 	}
 }
 
-// IsTaproot returns true if the swap referenced by the passed swap contract
+// IsTaprootSwap returns true if the swap referenced by the passed swap contract
 // uses the v3 (taproot) htlc.
 func IsTaprootSwap(swapContract *loopdb.SwapContract) bool {
-	return utils.GetHtlcScriptVersion(swapContract.ProtocolVersion) == swap.HtlcV3
+	version := utils.GetHtlcScriptVersion(swapContract.ProtocolVersion)
+
+	return version == swap.HtlcV3
 }
 
 // swapInfo constructs and returns a filled SwapInfo from

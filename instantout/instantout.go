@@ -122,7 +122,7 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	return musig2Sessions, clientNonces, nil
 }
 
-// getInputReservation returns the input reservation for the instant out.
+// getInputReservations returns the input reservations for the instant out.
 func (i *InstantOut) getInputReservations() (InputReservations, error) {
 	if len(i.Reservations) == 0 {
 		return nil, errors.New("no reservations")

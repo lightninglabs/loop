@@ -124,8 +124,8 @@ type StaticAddressLoopIn struct {
 	// probing and payment.
 	Private bool
 
-	// Optional route hints to reach the destination through private
-	// channels.
+	// RouteHints are optional route hints to reach the destination through
+	// private channels.
 	RouteHints [][]zpay32.HopHint
 
 	// Deposits are the deposits that are part of the loop-in swap. They

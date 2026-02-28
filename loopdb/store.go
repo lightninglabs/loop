@@ -98,7 +98,7 @@ var (
 	// value: uint32 confirmation value
 	confirmationsKey = []byte("confirmations")
 
-	// liquidtyBucket is a root bucket used to save liquidity manager
+	// liquidityBucket is a root bucket used to save liquidity manager
 	// related info.
 	liquidityBucket = []byte("liquidity")
 

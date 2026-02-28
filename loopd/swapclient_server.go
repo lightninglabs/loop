@@ -2753,7 +2753,7 @@ func toClientReservation(
 	}
 }
 
-// marshalFixedpoint marshals a fixed point from the tap rfqmath package to the
+// marshalFixedPoint marshals a fixed point from the tap rfqmath package to the
 // looprpc package.
 func marshalFixedPoint(bigIntFixedPoint *rfqmath.BigIntFixedPoint,
 ) *looprpc.FixedPoint {

@@ -33,7 +33,7 @@ type Parameters struct {
 	// timeout path.
 	ClientPubkey *btcec.PublicKey
 
-	// ClientPubkey is the client's pubkey for the static address. It is
+	// ServerPubkey is the server's pubkey for the static address. It is
 	// used for the 2-of-2 funding output.
 	ServerPubkey *btcec.PublicKey
 

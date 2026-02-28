@@ -7,14 +7,22 @@ import (
 	"sync"
 )
 
-// ErrEventRejected is the error returned when the state machine cannot process
-// an event in the state that it is in.
 var (
-	ErrEventRejected        = errors.New("event rejected")
+	// ErrEventRejected is the error returned when the state machine cannot
+	// process an event in the state that it is in.
+	ErrEventRejected = errors.New("event rejected")
+
+	// ErrWaitForStateTimedOut is returned when waiting for state times out.
 	ErrWaitForStateTimedOut = errors.New(
 		"timed out while waiting for event",
 	)
-	ErrInvalidContextType             = errors.New("invalid context")
+
+	// ErrInvalidContextType is returned when an invalid context type is
+	// passed.
+	ErrInvalidContextType = errors.New("invalid context")
+
+	// ErrWaitingForStateEarlyAbortError is returned when waiting for state
+	// is aborted early.
 	ErrWaitingForStateEarlyAbortError = errors.New(
 		"waiting for state early abort",
 	)
@@ -91,7 +99,7 @@ type Observer interface {
 
 // StateMachine represents the state machine.
 type StateMachine struct {
-	// Context represents the state machine context.
+	// States represents the state machine states.
 	States States
 
 	// ActionEntryFunc is a function that is called before an action is

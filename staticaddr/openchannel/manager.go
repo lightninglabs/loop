@@ -31,7 +31,8 @@ const (
 	// channel opening.
 	defaultUtxoMinConf = 1
 
-	// Is the default confirmation target for a channel open transaction.
+	// defaultConfTarget is the default confirmation target for a channel
+	// open transaction.
 	defaultConfTarget int32 = 3
 )
 
@@ -47,8 +48,8 @@ var (
 
 // Config is the configuration struct for the open channel manager.
 type Config struct {
-	// StaticAddressServerClient is the client that calls the swap server
-	// rpcs to negotiate static address withdrawals.
+	// Server is the client that calls the swap server rpcs to negotiate
+	// static address withdrawals.
 	Server serverrpc.StaticAddressServerClient
 
 	// AddressManager gives the withdrawal manager access to static address
@@ -91,7 +92,7 @@ type newOpenChannelResponse struct {
 	// ChanOutpoint is the outpoint of the channel open transaction.
 	ChanOutpoint *wire.OutPoint
 
-	// Err is the error that occurred during the channel open process.
+	// err is the error that occurred during the channel open process.
 	err error
 }
 

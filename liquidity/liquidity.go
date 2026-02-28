@@ -369,7 +369,7 @@ func (m *Manager) SetParameters(ctx context.Context,
 	return m.saveParams(ctx, req)
 }
 
-// SetParameters updates our current set of parameters if the new parameters
+// setParameters updates our current set of parameters if the new parameters
 // provided are valid.
 func (m *Manager) setParameters(ctx context.Context,
 	params Parameters) error {
