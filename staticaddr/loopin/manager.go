@@ -809,7 +809,7 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 
 	// Send the start event to the state machine.
 	go func() {
-		err = loopInFsm.SendEvent(ctx, OnInitHtlc, nil)
+		err := loopInFsm.SendEvent(ctx, OnInitHtlc, nil)
 		if err != nil {
 			log.Errorf("Error sending OnNewRequest event: %v", err)
 		}
