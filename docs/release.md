@@ -17,32 +17,32 @@ checksums for all release files.
 For example:
 
 ```bash
-make docker-release tag=v0.31.3-beta
+make docker-release tag=v0.32.1-beta
 ```
 
-This will create the release artifacts in the `loop-v0.31.3-beta` directory.
+This will create the release artifacts in the `loop-v0.32.1-beta` directory.
 
 If you want to build from an untagged commit, first check it out, then use the
 output of `git describe --abbrev=10` as the tag:
 
 ```bash
 git describe --abbrev=10
-# v0.31.2-beta-135-g35d0fa26ac
+# v0.32.1-beta-135-g35d0fa26ac
 
-make docker-release tag=v0.31.2-beta-135-g35d0fa26ac
+make docker-release tag=v0.32.1-beta-135-g35d0fa26ac
 ```
 
 You can filter the target platforms to speed up the build process. For example,
 to build only for `linux-amd64`:
 
 ```bash
-make docker-release buildsys=linux-amd64 tag=v0.31.3-beta
+make docker-release buildsys=linux-amd64 tag=v0.32.1-beta
 ```
 
 Or for multiple platforms:
 
 ```bash
-make docker-release buildsys='linux-amd64 windows-amd64' tag=v0.31.3-beta
+make docker-release buildsys='linux-amd64 windows-amd64' tag=v0.32.1-beta
 ```
 
 Note: inside Docker the current directory is mapped as `/repo` and it might
@@ -67,14 +67,14 @@ for a release using the following commands:
 ```bash
 $ go version
 go version go1.25.0 linux/amd64
-$ go install golang.org/dl/go1.24.9@latest
-$ go1.24.9 download
-Unpacking /home/user/sdk/go1.24.9/go1.24.9.linux-amd64.tar.gz ...
-Success. You may now run 'go1.24.9'
-$ go1.24.9 version
-go version go1.24.9 linux/amd64
+$ go install golang.org/dl/go1.26.0@latest
+$ go1.26.0 download
+Unpacking /home/user/sdk/go1.26.0/go1.26.0.linux-amd64.tar.gz ...
+Success. You may now run 'go1.26.0'
+$ go1.26.0 version
+go version go1.26.0 linux/amd64
 
-$ GO_CMD=/home/user/go/bin/go1.24.9 ./release.sh v0.31.5
+$ GO_CMD=/home/user/go/bin/go1.26.0 ./release.sh v0.32.1
 ```
 
 On MacOS, you will need to install GNU tar and GNU gzip, which can be done with
@@ -99,7 +99,7 @@ To filter the target platforms, pass them as a space-separated list in the
 `LOOPBUILDSYS` environment variable:
 
 ```bash
-LOOPBUILDSYS='linux-amd64 windows-amd64' ./release.sh v0.31.3-beta
+LOOPBUILDSYS='linux-amd64 windows-amd64' ./release.sh v0.32.1-beta
 ```
 
 This will produce the same artifacts in a `loop-<tag-of-release>` directory as
