@@ -362,7 +362,8 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 					// server will know that its probe was
 					// successful.
 					err := lnd.Invoices.CancelInvoice(
-						ctx, probeHash,
+						context.WithoutCancel(ctx),
+						probeHash,
 					)
 					if err != nil {
 						log.Errorf("Cancel probe "+
