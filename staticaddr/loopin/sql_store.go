@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/jackc/pgx/v5"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
@@ -422,9 +421,7 @@ func (s *SqlStore) SwapHashesForDepositIDs(ctx context.Context,
 	for _, id := range depositIDs {
 		swapHash, err := s.baseDB.SwapHashForDepositID(ctx, id[:])
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) ||
-				errors.Is(err, pgx.ErrNoRows) {
-
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil
 			}
 
