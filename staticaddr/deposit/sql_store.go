@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/jackc/pgx/v5"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
@@ -176,9 +175,7 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 			}
 			row, err := q.DepositForOutpoint(ctx, params)
 			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) ||
-					errors.Is(err, pgx.ErrNoRows) {
-
+				if errors.Is(err, sql.ErrNoRows) {
 					return ErrDepositNotFound
 				}
 
