@@ -134,13 +134,8 @@ type Manager struct {
 	// has been canceled.
 	exitChan chan struct{}
 
-	// errChan forwards errors from the loop-in manager to the server.
-	errChan chan error
-
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
-
-	activeLoopIns map[lntypes.Hash]*FSM
 }
 
 // NewManager creates a new deposit withdrawal manager.
@@ -154,8 +149,6 @@ func NewManager(cfg *Config, currentHeight uint32) (*Manager, error) {
 		cfg:           cfg,
 		newLoopInChan: make(chan *newSwapRequest),
 		exitChan:      make(chan struct{}),
-		errChan:       make(chan error),
-		activeLoopIns: make(map[lntypes.Hash]*FSM),
 	}
 	m.currentHeight.Store(currentHeight)
 
@@ -566,18 +559,11 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}
 
 		// Create a state machine for a given loop-in.
-		var (
-			recovery = true
-			fsm      *FSM
-		)
-		fsm, err = NewFSM(ctx, loopIn, m.cfg, recovery)
+		recovery := true
+		fsm, err := NewFSM(ctx, loopIn, m.cfg, recovery)
 		if err != nil {
 			return err
 		}
-
-		// Add the FSM to the active loop-ins map before sending
-		// the recover event to avoid a data race.
-		m.activeLoopIns[loopIn.SwapHash] = fsm
 
 		// Send the OnRecover event to the state machine.
 		go func() {
@@ -824,8 +810,6 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-
-	m.activeLoopIns[loopIn.SwapHash] = loopInFsm
 
 	return loopIn, nil
 }

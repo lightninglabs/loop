@@ -610,12 +610,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Static address deposit manager setup.
 	depositStore := deposit.NewSqlStore(baseDb)
 	depoCfg := &deposit.ManagerConfig{
-		AddressClient:  staticAddressClient,
 		AddressManager: staticAddressManager,
-		SwapClient:     swapClient,
 		Store:          depositStore,
 		WalletKit:      d.lnd.WalletKit,
-		ChainParams:    d.lnd.ChainParams,
 		ChainNotifier:  d.lnd.ChainNotifier,
 		Signer:         d.lnd.Signer,
 	}
@@ -646,14 +643,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Static address deposit open channel manager setup.
 	openChannelCfg := &openchannel.Config{
-		Server:            staticAddressClient,
-		AddressManager:    staticAddressManager,
 		DepositManager:    depositManager,
 		WithdrawalManager: withdrawalManager,
 		WalletKit:         d.lnd.WalletKit,
 		ChainParams:       d.lnd.ChainParams,
-		ChainNotifier:     d.lnd.ChainNotifier,
-		Signer:            d.lnd.Signer,
 		LightningClient:   d.lnd.Client,
 	}
 	openChannelManager = openchannel.NewManager(openChannelCfg)
