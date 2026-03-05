@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
-	serverrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
@@ -48,14 +47,6 @@ var (
 
 // Config is the configuration struct for the open channel manager.
 type Config struct {
-	// Server is the client that calls the swap server rpcs to negotiate
-	// static address withdrawals.
-	Server serverrpc.StaticAddressServerClient
-
-	// AddressManager gives the withdrawal manager access to static address
-	// parameters.
-	AddressManager AddressManager
-
 	// DepositManager gives the withdrawal manager access to the deposits
 	// enabling it to create and manage withdrawals.
 	DepositManager DepositManager
@@ -71,13 +62,6 @@ type Config struct {
 	// ChainParams is the chain configuration(mainnet, testnet...) this
 	// manager uses.
 	ChainParams *chaincfg.Params
-
-	// ChainNotifier is the chain notifier that is used to listen for new
-	// blocks.
-	ChainNotifier lndclient.ChainNotifierClient
-
-	// Signer is the signer client that is used to sign transactions.
-	Signer lndclient.SignerClient
 
 	// LightningClient is the lnd client that is used to open channels.
 	LightningClient lndclient.LightningClient
@@ -104,9 +88,6 @@ type Manager struct {
 
 	// exitChan signals subroutines that the open channel is exiting.
 	exitChan chan struct{}
-
-	// errChan forwards errors from the open channel to the server.
-	errChan chan error
 }
 
 // NewManager creates a new manager instance.
@@ -115,7 +96,6 @@ func NewManager(cfg *Config) *Manager {
 		cfg:                       cfg,
 		exitChan:                  make(chan struct{}),
 		newOpenChannelRequestChan: make(chan newOpenChannelRequest),
-		errChan:                   make(chan error),
 	}
 
 	return m

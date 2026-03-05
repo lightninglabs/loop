@@ -345,11 +345,9 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	)
 
 	cfg := &ManagerConfig{
-		AddressClient:  mockStaticAddressClient,
 		AddressManager: mockAddressManager,
 		Store:          mockStore,
 		WalletKit:      mockLnd.WalletKit,
-		ChainParams:    mockLnd.ChainParams,
 		ChainNotifier:  mockChainNotifier,
 		Signer:         mockLnd.Signer,
 	}

@@ -129,9 +129,6 @@ type Manager struct {
 	// exitChan signals subroutines that the withdrawal manager is exiting.
 	exitChan chan struct{}
 
-	// errChan forwards errors from the withdrawal manager to the server.
-	errChan chan error
-
 	// initiationHeight stores the currently best known block height.
 	initiationHeight atomic.Uint32
 
@@ -152,7 +149,6 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
 		exitChan:                 make(chan struct{}),
 		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
-		errChan:                  make(chan error),
 	}
 	m.initiationHeight.Store(currentHeight)
 

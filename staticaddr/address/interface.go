@@ -15,11 +15,6 @@ type Store interface {
 	// into the store.
 	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
-	// GetStaticAddress fetches static address parameters for a given
-	// address ID.
-	GetStaticAddress(ctx context.Context, pkScript []byte) (*Parameters,
-		error)
-
 	// GetAllStaticAddresses retrieves all static addresses from the store.
 	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 		error)
