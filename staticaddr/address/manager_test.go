@@ -100,8 +100,7 @@ func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 // TestManager tests the static address manager generates the corerct static
 // taproot address from the given test parameters.
 func TestManager(t *testing.T) {
-	ctxb, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctxb := t.Context()
 
 	testContext := NewAddressManagerTestContext(t)
 

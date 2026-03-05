@@ -574,10 +574,7 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 	updateChan := make(chan *ServerUpdate)
 
 	// Create a goroutine that will pipe updates in to our updates channel.
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-
+	s.wg.Go(func() {
 		for {
 			// Try to receive from our stream. If there are no items
 			// to consume, this call will block. If our stream is
@@ -623,7 +620,7 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 				return
 			}
 		}
-	}()
+	})
 
 	return updateChan, errChan
 }

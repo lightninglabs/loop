@@ -31,10 +31,10 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 
 	// Next we'll pass around all public nonces to all MuSig2 sessions so
 	// that they become usable for creating the partial signatures.
-	for i := 0; i < len(privKeys); i++ {
+	for i := range len(privKeys) {
 		nonce := sessions[i].PublicNonce()
 
-		for j := 0; j < len(privKeys); j++ {
+		for j := range len(privKeys) {
 			if i == j {
 				// Step over if it's the same session.
 				continue

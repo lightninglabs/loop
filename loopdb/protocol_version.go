@@ -47,8 +47,9 @@ const (
 	// the server to perform a probe to test inbound liquidty.
 	ProtocolVersionProbe ProtocolVersion = 8
 
-	// The client may ask the server to use a custom routing helper plugin
-	// in order to enhance off-chain payments corresponding to a swap.
+	// ProtocolVersionRoutingPlugin indicates that the client may ask the
+	// server to use a custom routing helper plugin in order to enhance
+	// off-chain payments corresponding to a swap.
 	ProtocolVersionRoutingPlugin = 9
 
 	// ProtocolVersionHtlcV3 indicates that the client will now use the new

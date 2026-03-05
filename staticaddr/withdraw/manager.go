@@ -1081,7 +1081,7 @@ func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 	hasChange bool) (lntypes.WeightUnit, error) {
 
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -986,14 +987,7 @@ func mapDepositsToIndices(
 
 	depositToIdxMap := make(map[string]int)
 	for reqOutpoint := range req.DepositToNonces {
-		hasDeposit := false
-		for _, depositOutpoint := range loopIn.DepositOutpoints {
-			if depositOutpoint == reqOutpoint {
-				hasDeposit = true
-				break
-			}
-		}
-		if !hasDeposit {
+		if !slices.Contains(loopIn.DepositOutpoints, reqOutpoint) {
 			return nil, fmt.Errorf("deposit outpoint not part of " +
 				"loop-in")
 		}

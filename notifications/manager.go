@@ -93,7 +93,7 @@ func NewManager(cfg *Config) *Manager {
 
 type subscriber struct {
 	subCtx   context.Context
-	recvChan interface{}
+	recvChan any
 }
 
 // SubscribeReservations subscribes to the reservation notifications.

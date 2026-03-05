@@ -569,14 +569,14 @@ func randomBytes(length int) []byte {
 	return b
 }
 
-func randomStruct(v interface{}) error {
+func randomStruct(v any) error {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
 		return errors.New("Input should be a pointer to a struct type")
 	}
 
 	val = val.Elem()
-	for i := 0; i < val.NumField(); i++ {
+	for i := range val.NumField() {
 		field := val.Field(i)
 
 		switch field.Kind() {
@@ -598,12 +598,12 @@ func randomStruct(v interface{}) error {
 			}
 
 		case reflect.Struct:
-			if field.Type() == reflect.TypeOf(time.Time{}) {
+			if field.Type() == reflect.TypeFor[time.Time]() {
 				if field.CanSet() {
 					field.Set(reflect.ValueOf(time.Now()))
 				}
 			}
-			if field.Type() == reflect.TypeOf(route.Vertex{}) {
+			if field.Type() == reflect.TypeFor[route.Vertex]() {
 				if field.CanSet() {
 					vertex, err := route.NewVertexFromBytes(
 						randomBytes(route.VertexSize),

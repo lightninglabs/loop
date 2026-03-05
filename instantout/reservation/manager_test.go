@@ -21,8 +21,7 @@ var (
 )
 
 func TestManager(t *testing.T) {
-	ctxb, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctxb := t.Context()
 
 	testContext := newManagerTestContext(t)
 

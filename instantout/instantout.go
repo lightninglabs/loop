@@ -443,7 +443,7 @@ func (i *InstantOut) generateHtlcSweepTx(ctx context.Context,
 // htlcWeight returns the weight for the htlc transaction.
 func htlcWeight(numInputs int) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)
@@ -457,7 +457,7 @@ func htlcWeight(numInputs int) lntypes.WeightUnit {
 // sweeplessSweepWeight returns the weight for the sweepless sweep transaction.
 func sweeplessSweepWeight(numInputs int) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)
