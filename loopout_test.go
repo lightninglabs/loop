@@ -330,7 +330,8 @@ func testCustomSweepConfTarget(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx := t.Context()
+	tctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
 	go func() {
 		err := batcher.Run(tctx)
@@ -484,6 +485,9 @@ func testCustomSweepConfTarget(t *testing.T) {
 	// confirmations.
 	ctx.AssertRegisterConf(true, 3)
 
+	// Send the batch confirmation so the batch exits cleanly.
+	ctx.NotifyConf(sweepTx)
+
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(loopdb.StateSuccess)
 	status = <-statusChan
 	require.Equal(t, loopdb.StateSuccess, status.State)
@@ -567,7 +571,8 @@ func testPreimagePush(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx := t.Context()
+	tctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
 	go func() {
 		err := batcher.Run(tctx)
@@ -577,7 +582,7 @@ func testPreimagePush(t *testing.T) {
 	}()
 
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(tctx, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
@@ -986,7 +991,8 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx := t.Context()
+	tctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
 	go func() {
 		err := batcher.Run(tctx)
@@ -996,7 +1002,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	}()
 
 	go func() {
-		err := swap.execute(context.Background(), &executeConfig{
+		err := swap.execute(tctx, &executeConfig{
 			statusChan:       statusChan,
 			blockEpochChan:   blockEpochChan,
 			timerFactory:     timerFactory,
