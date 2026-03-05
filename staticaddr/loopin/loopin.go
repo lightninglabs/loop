@@ -320,7 +320,7 @@ func (l *StaticAddressLoopIn) isHtlcTimedOut(height int32) bool {
 // htlcWeight returns the weight for the htlc transaction.
 func (l *StaticAddressLoopIn) htlcWeight(hasChange bool) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < len(l.Deposits); i++ {
+	for range len(l.Deposits) {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)

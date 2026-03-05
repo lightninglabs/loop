@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -335,10 +336,7 @@ func (d *Daemon) startWebServers() error {
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 
-		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("REST proxy listening on %s",
 				d.restListener.Addr())
 			err := d.restServer.Serve(d.restListener)
@@ -351,16 +349,13 @@ func (d *Daemon) startWebServers() error {
 				// channel is sufficiently buffered.
 				d.internalErrChan <- err
 			}
-		}()
+		})
 	} else {
 		infof("REST proxy disabled")
 	}
 
 	// Start the grpc server.
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-
+	d.wg.Go(func() {
 		infof("RPC server listening on %s", d.grpcListener.Addr())
 		err = d.grpcServer.Serve(d.grpcListener)
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
@@ -370,7 +365,7 @@ func (d *Daemon) startWebServers() error {
 			// channel is sufficiently buffered.
 			d.internalErrChan <- err
 		}
-	}()
+	})
 
 	return nil
 }
@@ -511,9 +506,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Add our debug permissions to our main set of required permissions
 	// if compiled in.
-	for endpoint, perm := range debugRequiredPermissions {
-		loop_looprpc.RequiredPermissions[endpoint] = perm
-	}
+	maps.Copy(loop_looprpc.RequiredPermissions, debugRequiredPermissions)
 
 	rks, db, err := lndclient.NewBoltMacaroonStore(
 		d.cfg.DataDir, "macaroons.db", loopdb.DefaultLoopDBTimeout,
@@ -569,17 +562,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 	notificationManager := notifications.NewManager(notificationCfg)
 
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-
+	d.wg.Go(func() {
 		infof("Starting notification manager")
 		err := notificationManager.Run(d.mainCtx)
 		if err != nil {
 			d.internalErrChan <- err
 			errorf("Notification manager stopped: %v", err)
 		}
-	}()
+	})
 
 	var (
 		staticAddressManager *address.Manager
@@ -752,7 +742,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		liquidityMgr:         getLiquidityManager(swapClient),
 		lnd:                  &d.lnd.LndServices,
 		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
-		subscribers:          make(map[int]chan<- interface{}),
+		subscribers:          make(map[int]chan<- any),
 		statusChan:           make(chan loop.SwapInfo),
 		mainCtx:              d.mainCtx,
 		reservationManager:   reservationManager,
@@ -792,10 +782,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	// Start the swap client itself.
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-
+	d.wg.Go(func() {
 		infof("Starting swap client")
 		err := d.impl.Run(d.mainCtx, d.statusChan)
 		if err != nil {
@@ -806,21 +793,15 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			d.internalErrChan <- err
 		}
 		infof("Swap client stopped")
-	}()
+	})
 
 	// Start a goroutine that broadcasts swap updates to clients.
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-
+	d.wg.Go(func() {
 		infof("Waiting for updates")
 		d.processStatusUpdates(d.mainCtx)
-	}()
+	})
 
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-
+	d.wg.Go(func() {
 		infof("Starting liquidity manager")
 		err := d.liquidityMgr.Run(d.mainCtx)
 		if err != nil && !errors.Is(err, context.Canceled) {
@@ -828,17 +809,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 
 		infof("Liquidity manager stopped")
-	}()
+	})
 
 	initManagerTimeout := 10 * time.Second
 
 	// Start the reservation manager.
 	if d.reservationManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting reservation manager")
 			defer infof("Reservation manager stopped")
 
@@ -848,7 +826,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// Wait for the reservation server to be ready before starting
 		// the grpc server.
@@ -868,11 +846,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Start the instant out manager.
 	if d.instantOutManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting instantout manager")
 			defer infof("Instantout manager stopped")
 
@@ -880,7 +855,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// Wait for the instantout server to be ready before starting
 		// the grpc server.
@@ -900,11 +875,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Start the static address manager.
 	if staticAddressManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting static address manager...")
 			defer infof("Static address manager stopped")
 
@@ -912,7 +884,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// Wait for the static address manager to be ready before
 		// starting the grpc server.
@@ -932,11 +904,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Start the static address deposit manager.
 	if depositManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting static address deposit manager...")
 			defer infof("Static address deposit manager stopped")
 
@@ -944,7 +913,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// Wait for the static address manager to be ready before
 		// starting the grpc server.
@@ -964,11 +933,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Start the static address deposit withdrawal manager.
 	if withdrawalManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting static address withdrawal manager...")
 			defer infof("Static address withdrawal manager stopped")
 
@@ -976,7 +942,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// We need a higher timeout here, because withdrawalManager
 		// publishes transactions and each PublishTransaction call can
@@ -1000,33 +966,27 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 	// Start the static address open channel manager.
 	if openChannelManager != nil {
-		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting static address open channel manager")
 			err := openChannelManager.Run(d.mainCtx)
 			if err != nil && !errors.Is(context.Canceled, err) {
 				d.internalErrChan <- err
 			}
 			infof("Static address open channel manager stopped")
-		}()
+		})
 	}
 
 	// Start the static address loop-in manager.
 	if staticLoopInManager != nil {
-		d.wg.Add(1)
 		initChan := make(chan struct{})
-		go func() {
-			defer d.wg.Done()
-
+		d.wg.Go(func() {
 			infof("Starting static address loop-in manager...")
 			defer infof("Static address loop-in manager stopped")
 			err := staticLoopInManager.Run(d.mainCtx, initChan)
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
-		}()
+		})
 
 		// Wait for the static address loop-in manager to be ready before
 		// starting the grpc server.

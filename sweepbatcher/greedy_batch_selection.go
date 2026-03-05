@@ -273,10 +273,7 @@ func (e feeDetails) fee() btcutil.Amount {
 // combine returns new feeDetails, combining properties.
 func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 	// The fee rate is max of two fee rates.
-	feeRate := e1.FeeRate
-	if feeRate < e2.FeeRate {
-		feeRate = e2.FeeRate
-	}
+	feeRate := max(e1.FeeRate, e2.FeeRate)
 
 	return feeDetails{
 		FeeRate:        feeRate,

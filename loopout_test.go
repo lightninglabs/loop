@@ -66,7 +66,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
 
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 
 	const maxParts = uint32(5)
@@ -205,7 +205,7 @@ func testLateHtlcPublish(t *testing.T) {
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
 
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 
 	errChan := make(chan error)
@@ -308,7 +308,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 	//
 	// TODO: create test context similar to loopInTestContext.
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 	expiryChan := make(chan time.Time)
 	timerFactory := func(expiry time.Duration) <-chan time.Time {
@@ -330,8 +330,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	tctx := t.Context()
 
 	go func() {
 		err := batcher.Run(tctx)
@@ -415,7 +414,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 		// Try MuSig2 signing first and fail it so that we go for a
 		// normal sweep.
-		for i := 0; i < maxMusigSweepRetries; i++ {
+		for range maxMusigSweepRetries {
 			expiryChan <- time.Now()
 			preimage := <-server.preimagePush
 			require.Equal(t, swap.Preimage, preimage)
@@ -546,7 +545,7 @@ func testPreimagePush(t *testing.T) {
 
 	// Set up the required dependencies to execute the swap.
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 	expiryChan := make(chan time.Time)
 	timerFactory := func(_ time.Duration) <-chan time.Time {
@@ -568,8 +567,7 @@ func testPreimagePush(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	tctx := t.Context()
 
 	go func() {
 		err := batcher.Run(tctx)
@@ -804,7 +802,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 
 	// Set up the required dependencies to execute the swap.
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 	expiryChan := make(chan time.Time)
 	timerFactory := func(_ time.Duration) <-chan time.Time {
@@ -958,7 +956,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	// Set up the required dependencies to execute the swap.
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 	expiryChan := make(chan time.Time)
 	timerFactory := func(_ time.Duration) <-chan time.Time {
@@ -988,8 +986,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 
-	tctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	tctx := t.Context()
 
 	go func() {
 		err := batcher.Run(tctx)

@@ -39,22 +39,22 @@ func setLogger(logger btclog.Logger) {
 }
 
 // tracef logs a message with level TRACE.
-func tracef(format string, params ...interface{}) {
+func tracef(format string, params ...any) {
 	log().Tracef(format, params...)
 }
 
 // infof logs a message with level INFO.
-func infof(format string, params ...interface{}) {
+func infof(format string, params ...any) {
 	log().Infof(format, params...)
 }
 
 // warnf logs a message with level WARN.
-func warnf(format string, params ...interface{}) {
+func warnf(format string, params ...any) {
 	log().Warnf(format, params...)
 }
 
 // errorf logs a message with level ERROR.
-func errorf(format string, params ...interface{}) {
+func errorf(format string, params ...any) {
 	log().Errorf(format, params...)
 }
 

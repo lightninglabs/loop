@@ -438,7 +438,7 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 	// or if the sum of available bandwidth in the routing hints exceeds 2x
 	// the payment amount. We do 2x here to account for a margin of error
 	// if some of the selected channels no longer become operable.
-	for i := 0; i < len(openChannels); i++ {
+	for i := range len(openChannels) {
 		enoughHopHints := sufficientHints(
 			len(hopHints), numMaxHophints, hopHintFactor, amtMSat,
 			totalHintBandwidth,

@@ -51,7 +51,7 @@ type EventType string
 
 // EventContext represents the context to be passed to the action
 // implementation.
-type EventContext interface{}
+type EventContext = any
 
 // Action represents the action to be executed in a given state.
 type Action func(ctx context.Context, eventCtx EventContext) EventType

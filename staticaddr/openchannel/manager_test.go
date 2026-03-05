@@ -660,8 +660,8 @@ func (m *mockClientStream) CloseSend() error     { return nil }
 func (m *mockClientStream) Context() context.Context {
 	return context.Background()
 }
-func (m *mockClientStream) SendMsg(_ interface{}) error { return nil }
-func (m *mockClientStream) RecvMsg(_ interface{}) error { return nil }
+func (m *mockClientStream) SendMsg(_ any) error { return nil }
+func (m *mockClientStream) RecvMsg(_ any) error { return nil }
 
 // mockOpenChanStream implements lnrpc.Lightning_OpenChannelClient. It returns
 // queued messages from Recv(), then returns finalErr once the queue is

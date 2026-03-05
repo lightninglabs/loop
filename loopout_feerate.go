@@ -155,10 +155,7 @@ func (p *loopOutSweepFeerateProvider) GetConfTargetAndFeeRate(
 	if confTarget <= DefaultSweepConfTargetDelta {
 		// If confTarget is already <= urgentSweepConfTarget, don't
 		// increase it.
-		newConfTarget := int32(urgentSweepConfTarget)
-		if confTarget < newConfTarget {
-			newConfTarget = confTarget
-		}
+		newConfTarget := min(confTarget, int32(urgentSweepConfTarget))
 
 		log.Infof("Swap %x is about to expire (blocksUntilExpiry=%d), "+
 			"reducing its confTarget from %d to %d and multiplying"+

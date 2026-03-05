@@ -475,33 +475,33 @@ func isUpdateSkipped(notification fsm.Notification,
 }
 
 // Infof logs an info message with the deposit outpoint.
-func (f *FSM) Infof(format string, args ...interface{}) {
+func (f *FSM) Infof(format string, args ...any) {
 	log.Infof(
 		"Deposit %v: "+format,
 		append(
-			[]interface{}{f.deposit.OutPoint},
+			[]any{f.deposit.OutPoint},
 			args...,
 		)...,
 	)
 }
 
 // Debugf logs a debug message with the deposit outpoint.
-func (f *FSM) Debugf(format string, args ...interface{}) {
+func (f *FSM) Debugf(format string, args ...any) {
 	log.Debugf(
 		"Deposit %v: "+format,
 		append(
-			[]interface{}{f.deposit.OutPoint},
+			[]any{f.deposit.OutPoint},
 			args...,
 		)...,
 	)
 }
 
 // Errorf logs an error message with the deposit outpoint.
-func (f *FSM) Errorf(format string, args ...interface{}) {
+func (f *FSM) Errorf(format string, args ...any) {
 	log.Errorf(
 		"Deposit %v: "+format,
 		append(
-			[]interface{}{f.deposit.OutPoint},
+			[]any{f.deposit.OutPoint},
 			args...,
 		)...,
 	)

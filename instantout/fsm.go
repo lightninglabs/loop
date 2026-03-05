@@ -352,33 +352,33 @@ func (f *FSM) updateInstantOut(ctx context.Context,
 }
 
 // Infof logs an info message with the reservation hash as prefix.
-func (f *FSM) Infof(format string, args ...interface{}) {
+func (f *FSM) Infof(format string, args ...any) {
 	log.Infof(
 		"InstantOut %v: "+format,
 		append(
-			[]interface{}{f.InstantOut.swapPreimage.Hash()},
+			[]any{f.InstantOut.swapPreimage.Hash()},
 			args...,
 		)...,
 	)
 }
 
 // Debugf logs a debug message with the reservation hash as prefix.
-func (f *FSM) Debugf(format string, args ...interface{}) {
+func (f *FSM) Debugf(format string, args ...any) {
 	log.Debugf(
 		"InstantOut %v: "+format,
 		append(
-			[]interface{}{f.InstantOut.swapPreimage.Hash()},
+			[]any{f.InstantOut.swapPreimage.Hash()},
 			args...,
 		)...,
 	)
 }
 
 // Errorf logs an error message with the reservation hash as prefix.
-func (f *FSM) Errorf(format string, args ...interface{}) {
+func (f *FSM) Errorf(format string, args ...any) {
 	log.Errorf(
 		"InstantOut %v: "+format,
 		append(
-			[]interface{}{f.InstantOut.swapPreimage.Hash()},
+			[]any{f.InstantOut.swapPreimage.Hash()},
 			args...,
 		)...,
 	)

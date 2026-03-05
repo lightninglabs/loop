@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"testing"
@@ -166,10 +167,7 @@ func (b *batch) snapshot(ctx context.Context) *batch {
 	var snapshot *batch
 	b.testRunInEventLoop(ctx, func() {
 		// Deep copy sweeps.
-		sweeps := make(map[wire.OutPoint]sweep, len(b.sweeps))
-		for o, s := range b.sweeps {
-			sweeps[o] = s
-		}
+		sweeps := maps.Clone(b.sweeps)
 
 		// Deep copy cfg.
 		cfg := *b.cfg
@@ -527,11 +525,9 @@ func testTxLabeler(t *testing.T, store testStore,
 		wg     sync.WaitGroup
 	)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Create a sweep request.
 	op1 := wire.OutPoint{
@@ -609,11 +605,9 @@ func testTxLabeler(t *testing.T, store testStore,
 		batcherStore, sweepStore, WithTxLabeler(txLabeler))
 
 	ctx, cancel = context.WithCancel(context.Background())
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Expect batch to register for spending.
 	<-lnd.RegisterSpendChannel
@@ -684,11 +678,9 @@ func testPublishErrorHandler(t *testing.T, store testStore,
 		wg     sync.WaitGroup
 	)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Create a sweep request.
 	sweepReq1 := SweepRequest{
@@ -1195,12 +1187,10 @@ func testSweepBatcherSkippedTxns(t *testing.T, store testStore,
 		batcherStore, sweepStore,
 	)
 	var wg sync.WaitGroup
-	wg.Add(1)
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
 
@@ -1278,11 +1268,9 @@ func testSweepBatcherSkippedTxns(t *testing.T, store testStore,
 			op1.Hash: {},
 		}),
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
 
@@ -1341,7 +1329,7 @@ type wrappedLogger struct {
 }
 
 // Debugf logs debug message.
-func (l *wrappedLogger) Debugf(format string, params ...interface{}) {
+func (l *wrappedLogger) Debugf(format string, params ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -1350,7 +1338,7 @@ func (l *wrappedLogger) Debugf(format string, params ...interface{}) {
 }
 
 // Infof logs info message.
-func (l *wrappedLogger) Infof(format string, params ...interface{}) {
+func (l *wrappedLogger) Infof(format string, params ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -1359,7 +1347,7 @@ func (l *wrappedLogger) Infof(format string, params ...interface{}) {
 }
 
 // Warnf logs a warning message.
-func (l *wrappedLogger) Warnf(format string, params ...interface{}) {
+func (l *wrappedLogger) Warnf(format string, params ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -1402,13 +1390,11 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -1452,24 +1438,18 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// so catch these actions from two separate goroutines.
 	var wg2 sync.WaitGroup
 
-	wg2.Add(1)
-	go func() {
-		defer wg2.Done()
-
+	wg2.Go(func() {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
-	}()
+	})
 
-	wg2.Add(1)
 	var delays []time.Duration
-	go func() {
-		defer wg2.Done()
-
+	wg2.Go(func() {
 		// Expect two timers: initialDelay and publishDelay.
 		delays = append(delays, <-tickSignal)
 		delays = append(delays, <-tickSignal)
-	}()
+	})
 
 	// Wait for RegisterSpend and for timer registrations.
 	wg2.Wait()
@@ -1560,11 +1540,9 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -1574,26 +1552,20 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// these actions from two separate goroutines.
 	var wg3 sync.WaitGroup
 
-	wg3.Add(1)
-	go func() {
-		defer wg3.Done()
-
+	wg3.Go(func() {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
 
 		// Wait for tx to be published.
 		<-lnd.TxPublishChannel
-	}()
+	})
 
-	wg3.Add(1)
 	delays = nil
-	go func() {
-		defer wg3.Done()
-
+	wg3.Go(func() {
 		// Expect one timer: publishDelay (0).
 		delays = append(delays, <-tickSignal)
-	}()
+	})
 
 	// Wait for RegisterSpend and for timer registration.
 	wg3.Wait()
@@ -1667,11 +1639,9 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 		WithPublishDelay(publishDelay), WithClock(testClock),
 	)
 	ctx, cancel = context.WithCancel(context.Background())
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -1682,23 +1652,17 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// these actions from two separate goroutines.
 	var wg4 sync.WaitGroup
 
-	wg4.Add(1)
-	go func() {
-		defer wg4.Done()
-
+	wg4.Go(func() {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
-	}()
+	})
 
-	wg4.Add(1)
 	delays = nil
-	go func() {
-		defer wg4.Done()
-
+	wg4.Go(func() {
 		// Expect one timer: publishDelay (0).
 		delays = append(delays, <-tickSignal)
-	}()
+	})
 
 	// Wait for RegisterSpend and for timer registration.
 	wg4.Wait()
@@ -1754,24 +1718,18 @@ func testDelays(t *testing.T, store testStore, batcherStore testBatcherStore) {
 	// parallel, so catch these actions from two separate goroutines.
 	var wg5 sync.WaitGroup
 
-	wg5.Add(1)
-	go func() {
-		defer wg5.Done()
-
+	wg5.Go(func() {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
-	}()
+	})
 
-	wg5.Add(1)
 	delays = nil
-	go func() {
-		defer wg5.Done()
-
+	wg5.Go(func() {
 		// Expect two timer: largeInitialDelay, publishDelay.
 		delays = append(delays, <-tickSignal)
 		delays = append(delays, <-tickSignal)
-	}()
+	})
 
 	// Wait for RegisterSpend and for timers' registrations.
 	wg5.Wait()
@@ -1920,13 +1878,11 @@ func testCustomDelays(t *testing.T, store testStore,
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -1968,24 +1924,18 @@ func testCustomDelays(t *testing.T, store testStore,
 	// so catch these actions from two separate goroutines.
 	var wg2 sync.WaitGroup
 
-	wg2.Add(1)
-	go func() {
-		defer wg2.Done()
-
+	wg2.Go(func() {
 		// Since a batch was created we check that it registered for its
 		// primary sweep's spend.
 		<-lnd.RegisterSpendChannel
-	}()
+	})
 
-	wg2.Add(1)
 	var delays []time.Duration
-	go func() {
-		defer wg2.Done()
-
+	wg2.Go(func() {
 		// Expect two timers: initialDelay and publishDelay.
 		delays = append(delays, <-tickSignal)
 		delays = append(delays, <-tickSignal)
-	}()
+	})
 
 	// Wait for RegisterSpend and for timer registrations.
 	wg2.Wait()
@@ -2124,13 +2074,11 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -2141,7 +2089,7 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 	expectedBatches := (swapsNum + MaxSweepsPerBatch - 1) /
 		MaxSweepsPerBatch
 
-	for i := 0; i < swapsNum; i++ {
+	for i := range swapsNum {
 		preimage := lntypes.Preimage{2, byte(i % 256), byte(i / 256)}
 		swapHash := preimage.Hash()
 
@@ -2212,14 +2160,14 @@ func testMaxSweepsPerBatch(t *testing.T, store testStore,
 
 	// Expect mockSigner.SignOutputRaw calls to sign non-cooperative
 	// sweeps.
-	for i := 0; i < expectedBatches; i++ {
+	for range expectedBatches {
 		<-lnd.SignOutputRawChannel
 	}
 
 	// Wait for txs to be published.
 	inputsNum := 0
 	const maxWeight = lntypes.WeightUnit(400_000)
-	for i := 0; i < expectedBatches; i++ {
+	for range expectedBatches {
 		tx := <-lnd.TxPublishChannel
 		inputsNum += len(tx.TxIn)
 
@@ -3226,13 +3174,11 @@ func testRestoringEmptyBatch(t *testing.T, store testStore,
 		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -3407,13 +3353,11 @@ func testHandleSweepTwice(t *testing.T, backend testStore,
 		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -3613,13 +3557,11 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 		batcherStore, sweepStore)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -3707,11 +3649,9 @@ func testRestoringPreservesConfTarget(t *testing.T, store testStore,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
 		batcherStore, sweepStore)
 	ctx, cancel = context.WithCancel(context.Background())
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -3862,13 +3802,11 @@ func testSweepFetcher(t *testing.T, store testStore,
 		WithCustomSignMuSig2(testSignMuSig2func))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -3976,9 +3914,7 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Add many sweeps.
 		for i := byte(1); i < 255; i++ {
 			// Create a sweep request.
@@ -4007,15 +3943,13 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 			}
 			require.NoError(t, err)
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Close sweepbatcher during addings.
 		time.Sleep(1 * time.Millisecond)
 		cancel()
-	}()
+	})
 
 	// We don't know how many spend notification registrations will be
 	// issued, so accept them while waiting for two goroutines to stop.
@@ -4063,11 +3997,9 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 
 	var wg sync.WaitGroup
 	var runErr error
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	<-batcher.initDone
 
@@ -4147,10 +4079,7 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 	confCtx, confCancel := context.WithCancel(ctx)
 	defer confCancel()
 
-	addWG.Add(1)
-	go func() {
-		defer addWG.Done()
-
+	addWG.Go(func() {
 		// After this goroutine completes, stop the goroutine that
 		// handles registrations as well. Give it one second to finish
 		// the last AddSweep to prevent goroutine leaks.
@@ -4170,7 +4099,7 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 				return
 			}
 		}
-	}()
+	})
 
 	// Wait a bit so the AddSweep loop runs and keeps handleSweep busy.
 	time.Sleep(100 * time.Millisecond)
@@ -4178,9 +4107,7 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 	// This goroutine handles spending and confirmation registrations.
 	// One spending registration has been created above, so the loop starts
 	// with the next step - notifying about spending.
-	addWG.Add(1)
-	go func() {
-		defer addWG.Done()
+	addWG.Go(func() {
 		for {
 			spendingTx := publishedTx
 			spendingHash := spendingTx.TxHash()
@@ -4230,7 +4157,7 @@ func testSweepBatcherHandleSweepRace(t *testing.T, store testStore,
 				return
 			}
 		}
-	}()
+	})
 
 	addWG.Wait()
 
@@ -4596,12 +4523,10 @@ func TestSweepBatcherConfirmedBatchIncompleteSweeps(t *testing.T) {
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx1)
-	}()
+	})
 
 	<-batcher.initDone
 
@@ -4661,13 +4586,11 @@ func testCustomSignMuSig2(t *testing.T, store testStore,
 		sweepStore, WithCustomSignMuSig2(testSignMuSig2func))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -4786,13 +4709,11 @@ func testWithMixedBatch(t *testing.T, store testStore,
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone
@@ -4969,13 +4890,11 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	var runErr error
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runErr = batcher.Run(ctx)
-	}()
+	})
 
 	// Wait for the batcher to be initialized.
 	<-batcher.initDone

@@ -530,13 +530,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	subCtx, cancel := context.WithCancel(mainCtx)
 	defer cancel()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		subscribeAndLogUpdates(
 			subCtx, s.hash, s.log, s.server.SubscribeLoopInUpdates,
 		)
-	}()
+	})
 
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(mainCtx)

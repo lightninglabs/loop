@@ -85,11 +85,11 @@ func (m *mockSubscribeNotificationsClient) Context() context.Context {
 	return context.TODO()
 }
 
-func (m *mockSubscribeNotificationsClient) SendMsg(interface{}) error {
+func (m *mockSubscribeNotificationsClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockSubscribeNotificationsClient) RecvMsg(interface{}) error {
+func (m *mockSubscribeNotificationsClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -125,8 +125,7 @@ func TestManager_ReservationNotification(t *testing.T) {
 	subChan := mgr.SubscribeReservations(subCtx)
 
 	// Run the manager.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := mgr.Run(ctx)
@@ -229,13 +228,11 @@ func TestManager_Backoff(t *testing.T) {
 	defer cancel()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// We ignore the returned error because the Manager returns
 		// nil on context cancel.
 		_ = mgr.Run(ctx)
-	}()
+	})
 
 	// Wait long enough to see at least 3 subscription attempts using
 	// the Manager's default pattern.
@@ -318,11 +315,9 @@ func TestManager_MinAliveConnTime(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_ = mgr.Run(ctx)
-	}()
+	})
 
 	// Let the subscription stay alive for 2s, which is >1s (minAlive).
 	// Then force an error to end the subscription. The manager sees
@@ -407,13 +402,11 @@ func TestManager_Backoff_Pending_Token(t *testing.T) {
 	defer cancel()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// We ignore the returned error because the Manager returns
 		// nil on context cancel.
 		_ = mgr.Run(ctx)
-	}()
+	})
 
 	// Wait long enough to see at least 3 token calls, so we can see that
 	// we'll indeed backoff when the token is pending.

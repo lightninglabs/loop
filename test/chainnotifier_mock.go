@@ -71,10 +71,7 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	spendChan := make(chan *chainntnfs.SpendDetail, 1)
 	errChan := make(chan error, 1)
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-
+	c.wg.Go(func() {
 		select {
 		case m := <-c.lnd.SpendChannel:
 			select {
@@ -96,7 +93,7 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 
 		case <-ctx.Done():
 		}
-	}()
+	})
 
 	return spendChan, errChan, nil
 }
@@ -117,13 +114,11 @@ func (c *mockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 	)
 	c.lnd.lock.Unlock()
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		defer func() {
 			c.lnd.lock.Lock()
 			defer c.lnd.lock.Unlock()
-			for i := 0; i < len(c.lnd.blockHeightListeners); i++ {
+			for i := range len(c.lnd.blockHeightListeners) {
 				if c.lnd.blockHeightListeners[i] == blockEpochChan {
 					c.lnd.blockHeightListeners = append(
 						c.lnd.blockHeightListeners[:i],
@@ -143,7 +138,7 @@ func (c *mockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 		c.lnd.lock.Unlock()
 
 		<-ctx.Done()
-	}()
+	})
 
 	return blockEpochChan, blockErrorChan, nil
 }
@@ -170,10 +165,7 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 
 	errChan := make(chan error, 1)
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-
+	c.wg.Go(func() {
 		select {
 		case m := <-c.lnd.ConfChannel:
 			c.Lock()
@@ -205,7 +197,7 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 
 		case <-ctx.Done():
 		}
-	}()
+	})
 
 	select {
 	case c.lnd.RegisterConfChannel <- reg:

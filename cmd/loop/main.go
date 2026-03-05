@@ -132,7 +132,7 @@ const (
 	envVarMacaroonPath = "LOOPCLI_MACAROONPATH"
 )
 
-func printJSON(resp interface{}) {
+func printJSON(resp any) {
 	b, err := json.Marshal(resp)
 	if err != nil {
 		fatal(err)
