@@ -189,3 +189,5 @@ require (
 replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
 replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
+
+replace lukechampine.com/uint128 => github.com/lukechampine/uint128 v1.2.0
