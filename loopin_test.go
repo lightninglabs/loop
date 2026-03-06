@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +27,86 @@ var (
 		Initiator:      "test",
 	}
 )
+
+// probeInvoicesMock is a controllable InvoicesClient mock used by probe tests.
+// It allows the test to block and inspect CancelInvoice context behavior.
+type probeInvoicesMock struct {
+	lndclient.InvoicesClient
+
+	updateChan chan lndclient.InvoiceUpdate
+	errChan    chan error
+
+	cancelCalled chan struct{}
+	cancelBlock  chan struct{}
+	cancelCtxErr chan error
+}
+
+// SubscribeSingleInvoice returns the mock's preconfigured channels.
+func (p *probeInvoicesMock) SubscribeSingleInvoice(_ context.Context,
+	_ lntypes.Hash) (<-chan lndclient.InvoiceUpdate, <-chan error, error) {
+
+	return p.updateChan, p.errChan, nil
+}
+
+// CancelInvoice signals that cancellation was requested, blocks until released
+// by the test, then reports ctx.Err() so the test can assert context liveness.
+func (p *probeInvoicesMock) CancelInvoice(ctx context.Context,
+	_ lntypes.Hash) error {
+
+	close(p.cancelCalled)
+	<-p.cancelBlock
+	p.cancelCtxErr <- ctx.Err()
+
+	return nil
+}
+
+// TestAwaitProbeCancelInvoiceUsesLiveContext checks that probe-invoice cleanup
+// runs with a live context. Specifically, after probe success we cancel the
+// parent context before allowing CancelInvoice to proceed, and verify the
+// CancelInvoice call still observes ctx.Err() == nil.
+func TestAwaitProbeCancelInvoiceUsesLiveContext(t *testing.T) {
+	t.Parallel()
+
+	invoices := &probeInvoicesMock{
+		updateChan:   make(chan lndclient.InvoiceUpdate, 1),
+		errChan:      make(chan error, 1),
+		cancelCalled: make(chan struct{}),
+		cancelBlock:  make(chan struct{}),
+		cancelCtxErr: make(chan error, 1),
+	}
+	lnd := lndclient.LndServices{
+		Invoices: invoices,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	probeResult, err := awaitProbe(ctx, lnd, lntypes.Hash{1})
+	require.NoError(t, err)
+
+	invoices.updateChan <- lndclient.InvoiceUpdate{
+		Invoice: lndclient.Invoice{
+			State: invpkg.ContractAccepted,
+		},
+	}
+
+	require.NoError(t, <-probeResult)
+
+	select {
+	case <-invoices.cancelCalled:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for CancelInvoice call")
+	}
+
+	cancel()
+	close(invoices.cancelBlock)
+
+	select {
+	case cancelCtxErr := <-invoices.cancelCtxErr:
+		require.NoError(t, cancelCtxErr)
+
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for CancelInvoice to return")
+	}
+}
 
 // TestLoopInSuccess tests the success scenario where the swap completes the
 // happy flow.

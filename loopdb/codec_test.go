@@ -24,7 +24,7 @@ func TestProtocolVersionMarshalUnMarshal(t *testing.T) {
 	bogusVersion := []byte{0xFF, 0xFF, 0xFF, 0xFF}
 	invalidSlice := []byte{0xFF, 0xFF, 0xFF}
 
-	for i := 0; i < len(testVersions); i++ {
+	for i := range len(testVersions) {
 		testVersion := testVersions[i]
 
 		// Test that unmarshal(marshal(v)) == v.

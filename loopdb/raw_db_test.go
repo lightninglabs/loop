@@ -14,8 +14,8 @@ import (
 //
 // Example output:
 //
-//	map[string]interface{}{
-//	     Hex("1234"): map[string]interface{}{
+//	map[string]any{
+//	     Hex("1234"): map[string]any{
 //	             "human-readable": Hex("102030"),
 //	             Hex("1111"): Hex("5783492373"),
 //	     },
@@ -36,7 +36,7 @@ func DumpDB(tx *bbolt.Tx) error { // nolint: unused
 }
 
 func dumpBucket(bucket *bbolt.Bucket) error { // nolint: unused
-	fmt.Printf("map[string]interface{} {\n")
+	fmt.Printf("map[string]any {\n")
 	err := bucket.ForEach(func(k, v []byte) error {
 		key := toString(k)
 		fmt.Printf("%v: ", key)
@@ -63,11 +63,11 @@ func dumpBucket(bucket *bbolt.Bucket) error { // nolint: unused
 }
 
 // RestoreDB primes the database with the given data set.
-func RestoreDB(tx *bbolt.Tx, data map[string]interface{}) error {
+func RestoreDB(tx *bbolt.Tx, data map[string]any) error {
 	for k, v := range data {
 		key := []byte(k)
 
-		value := v.(map[string]interface{})
+		value := v.(map[string]any)
 
 		subBucket, err := tx.CreateBucket(key)
 		if err != nil {
@@ -83,7 +83,7 @@ func RestoreDB(tx *bbolt.Tx, data map[string]interface{}) error {
 	return nil
 }
 
-func restoreDB(bucket *bbolt.Bucket, data map[string]interface{}) error {
+func restoreDB(bucket *bbolt.Bucket, data map[string]any) error {
 	for k, v := range data {
 		key := []byte(k)
 
@@ -104,7 +104,7 @@ func restoreDB(bucket *bbolt.Bucket, data map[string]interface{}) error {
 			}
 
 		// Key contains a sub-bucket.
-		case map[string]interface{}:
+		case map[string]any:
 			subBucket, err := bucket.CreateBucket(key)
 			if err != nil {
 				return err

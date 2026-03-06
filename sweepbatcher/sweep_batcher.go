@@ -277,7 +277,7 @@ type addSweepsRequest struct {
 	// source.
 	sweeps []*sweep
 
-	// Notifier is a notifier that is used to notify the requester of this
+	// notifier is a notifier that is used to notify the requester of this
 	// sweep that the sweep was successful.
 	notifier *SpendNotifier
 
@@ -1093,17 +1093,14 @@ func (b *Batcher) spinUpBatch(ctx context.Context, fast bool) (*batch, error) {
 	// We add the batch to our map of batches and start it.
 	b.batches[id] = batch
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-
+	b.wg.Go(func() {
 		err := batch.Run(ctx)
 		if err != nil {
 			b.writeToErrChan(
 				ctx, fmt.Errorf("new batch failed: %w", err),
 			)
 		}
-	}()
+	})
 
 	return batch, nil
 }
@@ -1201,17 +1198,14 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	// We add the batch to our map of batches and start it.
 	b.batches[batch.id] = newBatch
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-
+	b.wg.Go(func() {
 		err := newBatch.Run(ctx)
 		if err != nil {
 			b.writeToErrChan(
 				ctx, fmt.Errorf("db batch failed: %w", err),
 			)
 		}
-	}()
+	})
 
 	return nil
 }
@@ -1306,10 +1300,8 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 		return err
 	}
 
-	b.wg.Add(1)
-	go func() {
+	b.wg.Go(func() {
 		defer cancel()
-		defer b.wg.Done()
 		infof("Batcher monitoring spend for swap %x",
 			sweep.swapHash[:6])
 
@@ -1395,7 +1387,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 		case <-ctx.Done():
 			return
 		}
-	}()
+	})
 
 	return nil
 }
@@ -1433,10 +1425,8 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 		return err
 	}
 
-	b.wg.Add(1)
-	go func() {
+	b.wg.Go(func() {
 		defer cancel()
-		defer b.wg.Done()
 
 		select {
 		case conf := <-confChan:
@@ -1472,7 +1462,7 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 
 		case <-ctx.Done():
 		}
-	}()
+	})
 
 	return nil
 }

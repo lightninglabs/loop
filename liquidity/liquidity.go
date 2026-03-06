@@ -369,7 +369,7 @@ func (m *Manager) SetParameters(ctx context.Context,
 	return m.saveParams(ctx, req)
 }
 
-// SetParameters updates our current set of parameters if the new parameters
+// setParameters updates our current set of parameters if the new parameters
 // provided are valid.
 func (m *Manager) setParameters(ctx context.Context,
 	params Parameters) error {
@@ -622,9 +622,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// Calculate the amount that we want to loop out. If it exceeds the max
 	// allowed clamp it to max.
 	amount := localTotal - m.params.EasyAutoloopTarget
-	if amount > restrictions.Maximum {
-		amount = restrictions.Maximum
-	}
+	amount = min(amount, restrictions.Maximum)
 
 	// If the amount we want to loop out is less than the minimum we can't
 	// proceed with a swap, so we return early.
@@ -1516,7 +1514,7 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 		m.activeStickyLock.Unlock()
 	}()
 
-	for i := 0; i < int(retryCount); i++ {
+	for range int(retryCount) {
 		// Dispatch the swap.
 		swap, err := m.cfg.LoopOut(ctx, &out)
 		if err != nil {

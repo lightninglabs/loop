@@ -390,7 +390,7 @@ func NewMigrationError(err error) *migrationError {
 	return &migrationError{Err: err}
 }
 
-func equalValues(src interface{}, dst interface{}) error {
+func equalValues(src any, dst any) error {
 	mt := &mockTesting{}
 
 	require.EqualValues(mt, src, dst)
@@ -405,14 +405,14 @@ type mockTesting struct {
 	failNow bool
 	fail    bool
 	format  string
-	args    []interface{}
+	args    []any
 }
 
 func (m *mockTesting) FailNow() {
 	m.failNow = true
 }
 
-func (m *mockTesting) Errorf(format string, args ...interface{}) {
+func (m *mockTesting) Errorf(format string, args ...any) {
 	m.format = format
 	m.args = args
 }

@@ -123,10 +123,7 @@ func (s *executor) run(mainCtx context.Context,
 
 	batcherErrChan = make(chan error, 1)
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-
+	s.wg.Go(func() {
 		err := s.batcher.Run(mainCtx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			select {
@@ -134,7 +131,7 @@ func (s *executor) run(mainCtx context.Context,
 			case <-mainCtx.Done():
 			}
 		}
-	}()
+	})
 
 	// Start main event loop.
 	log.Infof("Starting event loop at height %v", height)
@@ -164,10 +161,7 @@ func (s *executor) run(mainCtx context.Context,
 			swapID := nextSwapID
 			blockEpochQueues[swapID] = queue
 
-			s.wg.Add(1)
-			go func() {
-				defer s.wg.Done()
-
+			s.wg.Go(func() {
 				err := newSwap.execute(mainCtx, &executeConfig{
 					statusChan:          statusChan,
 					sweeper:             s.sweeper,
@@ -200,7 +194,7 @@ func (s *executor) run(mainCtx context.Context,
 				case swapDoneChan <- swapID:
 				case <-mainCtx.Done():
 				}
-			}()
+			})
 
 			nextSwapID++
 

@@ -23,7 +23,7 @@ type loopInTestContext struct {
 	cfg            *executeConfig
 	statusChan     chan SwapInfo
 	errChan        chan error
-	blockEpochChan chan interface{}
+	blockEpochChan chan any
 
 	swapInvoiceSubscription *test.SingleInvoiceSubscription
 }
@@ -34,7 +34,7 @@ func newLoopInTestContext(t *testing.T) *loopInTestContext {
 	store := loopdb.NewStoreMock(t)
 	sweeper := sweep.Sweeper{Lnd: &lnd.LndServices}
 
-	blockEpochChan := make(chan interface{})
+	blockEpochChan := make(chan any)
 	statusChan := make(chan SwapInfo)
 	errChan := make(chan error)
 

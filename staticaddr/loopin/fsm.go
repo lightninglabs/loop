@@ -303,7 +303,7 @@ func isUpdateSkipped(notification fsm.Notification,
 }
 
 // Infof logs an info message with the loop-in swap hash.
-func (f *FSM) Infof(format string, args ...interface{}) {
+func (f *FSM) Infof(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Infof(format, args...)
 		return
@@ -315,7 +315,7 @@ func (f *FSM) Infof(format string, args ...interface{}) {
 }
 
 // Debugf logs a debug message with the loop-in swap hash.
-func (f *FSM) Debugf(format string, args ...interface{}) {
+func (f *FSM) Debugf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Debugf(format, args...)
 		return
@@ -327,7 +327,7 @@ func (f *FSM) Debugf(format string, args ...interface{}) {
 }
 
 // Warnf logs a warning message with the loop-in swap hash.
-func (f *FSM) Warnf(format string, args ...interface{}) {
+func (f *FSM) Warnf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Warnf(format, args...)
 		return
@@ -339,7 +339,7 @@ func (f *FSM) Warnf(format string, args ...interface{}) {
 }
 
 // Errorf logs an error message with the loop-in swap hash.
-func (f *FSM) Errorf(format string, args ...interface{}) {
+func (f *FSM) Errorf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Errorf(format, args...)
 		return

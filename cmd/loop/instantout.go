@@ -41,8 +41,7 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 	// element.
 	var outgoingChanSet []uint64
 	if cmd.IsSet("channel") {
-		chanStrings := strings.Split(cmd.String("channel"), ",")
-		for _, chanString := range chanStrings {
+		for chanString := range strings.SplitSeq(cmd.String("channel"), ",") {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
 				return fmt.Errorf("error parsing channel id "+

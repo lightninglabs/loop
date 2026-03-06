@@ -465,22 +465,22 @@ func (b *batch) setLog(logger btclog.Logger) {
 }
 
 // Debugf logs a message with level DEBUG.
-func (b *batch) Debugf(format string, params ...interface{}) {
+func (b *batch) Debugf(format string, params ...any) {
 	b.log().Debugf(format, params...)
 }
 
 // Infof logs a message with level INFO.
-func (b *batch) Infof(format string, params ...interface{}) {
+func (b *batch) Infof(format string, params ...any) {
 	b.log().Infof(format, params...)
 }
 
 // Warnf logs a message with level WARN.
-func (b *batch) Warnf(format string, params ...interface{}) {
+func (b *batch) Warnf(format string, params ...any) {
 	b.log().Warnf(format, params...)
 }
 
 // Errorf logs a message with level ERROR.
-func (b *batch) Errorf(format string, params ...interface{}) {
+func (b *batch) Errorf(format string, params ...any) {
 	b.log().Errorf(format, params...)
 }
 
@@ -2034,10 +2034,8 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		return err
 	}
 
-	b.wg.Add(1)
-	go func() {
+	b.wg.Go(func() {
 		defer cancel()
-		defer b.wg.Done()
 
 		select {
 		case conf := <-confChan:
@@ -2055,7 +2053,7 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 
 		case <-ctx.Done():
 		}
-	}()
+	})
 
 	return nil
 }

@@ -56,7 +56,7 @@ func CreateMusig2Sessions(ctx context.Context,
 	clientNonces := make([][]byte, len(deposits))
 
 	// Create the sessions and nonces from the deposits.
-	for i := 0; i < len(deposits); i++ {
+	for i := range len(deposits) {
 		session, err := CreateMusig2Session(
 			ctx, signer, addrParams, staticAddress,
 		)
@@ -161,7 +161,7 @@ func bip69inputLess(input1, input2 *swapserverrpc.PrevoutInfo) bool {
 	// At this point, the hashes are not equal, so reverse them to
 	// big-endian and return the result of the comparison.
 	const hashSize = chainhash.HashSize
-	for b := 0; b < hashSize/2; b++ {
+	for b := range hashSize / 2 {
 		ihash[b], ihash[hashSize-1-b] = ihash[hashSize-1-b], ihash[b]
 		jhash[b], jhash[hashSize-1-b] = jhash[hashSize-1-b], jhash[b]
 	}
@@ -227,7 +227,7 @@ func estimateFee(numInputs int, feeRate chainfee.SatPerKWeight,
 	commitmentType lnrpc.CommitmentType) btcutil.Amount {
 
 	var we input.TxWeightEstimator
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		we.AddTaprootKeySpendInput(txscript.SigHashDefault)
 	}
 

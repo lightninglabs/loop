@@ -15,11 +15,6 @@ type Store interface {
 	// into the store.
 	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
-	// GetStaticAddress fetches static address parameters for a given
-	// address ID.
-	GetStaticAddress(ctx context.Context, pkScript []byte) (*Parameters,
-		error)
-
 	// GetAllStaticAddresses retrieves all static addresses from the store.
 	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 		error)
@@ -33,7 +28,7 @@ type Parameters struct {
 	// timeout path.
 	ClientPubkey *btcec.PublicKey
 
-	// ClientPubkey is the client's pubkey for the static address. It is
+	// ServerPubkey is the server's pubkey for the static address. It is
 	// used for the 2-of-2 funding output.
 	ServerPubkey *btcec.PublicKey
 

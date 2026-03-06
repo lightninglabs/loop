@@ -8,13 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
-	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -40,16 +37,9 @@ const (
 
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
-	// AddressClient is the client that communicates with the loop server
-	// to manage static addresses.
-	AddressClient staticaddressrpc.StaticAddressServerClient
-
 	// AddressManager is the address manager that is used to fetch static
 	// address parameters.
 	AddressManager AddressManager
-
-	// SwapClient provides loop rpc functionality.
-	SwapClient *loop.Client
 
 	// Store is the database store that is used to store static address
 	// related records.
@@ -58,10 +48,6 @@ type ManagerConfig struct {
 	// WalletKit is the wallet client that is used to derive new keys from
 	// lnd's wallet.
 	WalletKit lndclient.WalletKitClient
-
-	// ChainParams is the chain configuration(mainnet, testnet...) this
-	// manager uses.
-	ChainParams *chaincfg.Params
 
 	// ChainNotifier is the chain notifier that is used to listen for new
 	// blocks.
@@ -208,7 +194,7 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		go func(fsm *FSM) {
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
-				log.Errorf("Error sending OnStart event: %v",
+				log.Errorf("Error sending OnRecover event: %v",
 					err)
 			}
 		}(fsm)
@@ -393,7 +379,7 @@ func (m *Manager) startDepositFsm(ctx context.Context, deposit *Deposit) error {
 
 	// Send the start event to the state machine.
 	go func() {
-		err = fsm.SendEvent(ctx, OnStart, nil)
+		err := fsm.SendEvent(ctx, OnStart, nil)
 		if err != nil {
 			log.Errorf("Error sending OnStart event: %v", err)
 		}

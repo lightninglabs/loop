@@ -77,8 +77,7 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 	// element.
 	var outgoingChanSet []uint64
 	if cmd.IsSet(channelFlag.Name) {
-		chanStrings := strings.Split(cmd.String(channelFlag.Name), ",")
-		for _, chanString := range chanStrings {
+		for chanString := range strings.SplitSeq(cmd.String(channelFlag.Name), ",") {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
 				return fmt.Errorf("error parsing channel id "+

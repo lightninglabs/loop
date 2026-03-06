@@ -80,7 +80,7 @@ func (s *StoreMock) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error) {
 	return result, nil
 }
 
-// FetchLoopOutSwaps returns all swaps currently in the store.
+// FetchLoopOutSwap returns a swap currently in the store.
 //
 // NOTE: Part of the SwapStore interface.
 func (s *StoreMock) FetchLoopOutSwap(ctx context.Context,
@@ -261,7 +261,7 @@ func (s *StoreMock) Close() error {
 	return nil
 }
 
-// isDone asserts that the store mock has no pending operations.
+// IsDone asserts that the store mock has no pending operations.
 func (s *StoreMock) IsDone() error {
 	select {
 	case <-s.loopOutStoreChan:
@@ -312,7 +312,7 @@ func (s *StoreMock) AssertLoopInStored() {
 	}
 }
 
-// assertLoopInState asserts that a specified state transition is persisted to
+// AssertLoopInState asserts that a specified state transition is persisted to
 // disk.
 func (s *StoreMock) AssertLoopInState(
 	expectedState SwapState) SwapStateData {

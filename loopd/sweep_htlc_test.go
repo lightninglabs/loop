@@ -545,37 +545,37 @@ func (f *formatLogger) record(format string) {
 }
 
 // Tracef logs a trace and records its format.
-func (f *formatLogger) Tracef(format string, params ...interface{}) {
+func (f *formatLogger) Tracef(format string, params ...any) {
 	f.record(format)
 	f.Logger.Tracef(format, params...)
 }
 
 // Debugf logs a debug message and records its format.
-func (f *formatLogger) Debugf(format string, params ...interface{}) {
+func (f *formatLogger) Debugf(format string, params ...any) {
 	f.record(format)
 	f.Logger.Debugf(format, params...)
 }
 
 // Infof logs an info message and records its format.
-func (f *formatLogger) Infof(format string, params ...interface{}) {
+func (f *formatLogger) Infof(format string, params ...any) {
 	f.record(format)
 	f.Logger.Infof(format, params...)
 }
 
 // Warnf logs a warning and records its format.
-func (f *formatLogger) Warnf(format string, params ...interface{}) {
+func (f *formatLogger) Warnf(format string, params ...any) {
 	f.record(format)
 	f.Logger.Warnf(format, params...)
 }
 
 // Errorf logs an error and records its format.
-func (f *formatLogger) Errorf(format string, params ...interface{}) {
+func (f *formatLogger) Errorf(format string, params ...any) {
 	f.record(format)
 	f.Logger.Errorf(format, params...)
 }
 
 // Criticalf logs a critical message and records its format.
-func (f *formatLogger) Criticalf(format string, params ...interface{}) {
+func (f *formatLogger) Criticalf(format string, params ...any) {
 	f.record(format)
 	f.Logger.Criticalf(format, params...)
 }

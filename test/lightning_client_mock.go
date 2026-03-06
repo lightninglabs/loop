@@ -280,9 +280,7 @@ func (h *mockLightningClient) ListPayments(_ context.Context,
 	}
 
 	lastIndexOffset := req.Offset + req.MaxPayments
-	if lastIndexOffset > uint64(len(h.lnd.Payments)) {
-		lastIndexOffset = uint64(len(h.lnd.Payments))
-	}
+	lastIndexOffset = min(lastIndexOffset, uint64(len(h.lnd.Payments)))
 
 	result := h.lnd.Payments[req.Offset:lastIndexOffset]
 

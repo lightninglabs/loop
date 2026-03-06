@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	// metaBucket stores all the meta information concerning the state of
+	// metaBucketKey stores all the meta information concerning the state of
 	// the database.
 	metaBucketKey = []byte("metadata")
 

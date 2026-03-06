@@ -324,7 +324,7 @@ func (c *autoloopTestCtx) autoloop(step *autoloopStep) {
 		amt2expected[expected.request.Amount] = expected
 	}
 
-	for i := 0; i < len(step.quotesIn); i++ {
+	for range len(step.quotesIn) {
 		request := <-c.quoteRequestIn
 
 		// Get the expected item, using amount as a key.
@@ -459,7 +459,7 @@ func (c *autoloopTestCtx) matchLoopOuts(swaps []loopOutRequestResp,
 
 	length := len(swapsCopy)
 
-	for i := 0; i < length; i++ {
+	for range length {
 		actual := <-c.outRequest
 
 		if !keepDestAddr {
@@ -494,7 +494,7 @@ func (c *autoloopTestCtx) matchLoopIns(
 	swapsCopy := make([]loopInRequestResp, len(swaps))
 	copy(swapsCopy, swaps)
 
-	for i := 0; i < len(swapsCopy); i++ {
+	for range len(swapsCopy) {
 		actual := <-c.inRequest
 
 	inner:

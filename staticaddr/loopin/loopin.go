@@ -124,8 +124,8 @@ type StaticAddressLoopIn struct {
 	// probing and payment.
 	Private bool
 
-	// Optional route hints to reach the destination through private
-	// channels.
+	// RouteHints are optional route hints to reach the destination through
+	// private channels.
 	RouteHints [][]zpay32.HopHint
 
 	// Deposits are the deposits that are part of the loop-in swap. They
@@ -320,7 +320,7 @@ func (l *StaticAddressLoopIn) isHtlcTimedOut(height int32) bool {
 // htlcWeight returns the weight for the htlc transaction.
 func (l *StaticAddressLoopIn) htlcWeight(hasChange bool) lntypes.WeightUnit {
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < len(l.Deposits); i++ {
+	for range len(l.Deposits) {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)
@@ -402,7 +402,7 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[0].Value
+	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,

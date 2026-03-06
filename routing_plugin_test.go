@@ -692,3 +692,51 @@ func TestRoutingPluginAcquireRelease(t *testing.T) {
 	require.NotNil(t, plugin2)
 	require.NoError(t, err)
 }
+
+// mockRoutingPlugin is a minimal RoutingPlugin used to capture the context
+// passed to Done.
+type mockRoutingPlugin struct {
+	doneCtxErr error
+}
+
+// Init is a no-op initializer for the mock plugin.
+func (m *mockRoutingPlugin) Init(_ context.Context, _ route.Vertex,
+	_ [][]zpay32.HopHint, _ btcutil.Amount) error {
+
+	return nil
+}
+
+// Done records ctx.Err() so tests can assert whether teardown ran with a live
+// context.
+func (m *mockRoutingPlugin) Done(ctx context.Context) error {
+	m.doneCtxErr = ctx.Err()
+	return nil
+}
+
+// BeforePayment is a no-op hook for the mock plugin.
+func (m *mockRoutingPlugin) BeforePayment(_ context.Context, _, _ int) error {
+	return nil
+}
+
+// TestReleaseRoutingPluginUsesLiveContext checks that ReleaseRoutingPlugin does
+// not propagate caller cancellation to plugin teardown. The test cancels the
+// caller context before release and verifies mock Done still sees nil ctx.Err.
+func TestReleaseRoutingPluginUsesLiveContext(t *testing.T) {
+	ReleaseRoutingPlugin(context.Background())
+	t.Cleanup(func() {
+		ReleaseRoutingPlugin(context.Background())
+	})
+
+	mockPlugin := &mockRoutingPlugin{}
+
+	routingPluginMx.Lock()
+	routingPluginInstance = mockPlugin
+	routingPluginMx.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ReleaseRoutingPlugin(ctx)
+
+	require.NoError(t, mockPlugin.doneCtxErr)
+}
