@@ -30,6 +30,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -146,6 +147,10 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		ctx, loopInReq,
 	)
 	if err != nil {
+		// Check if this is an insufficient confirmations error and log
+		// the details to help the user understand what's needed.
+		logInsufficientConfirmationsDetails(err)
+
 		err = fmt.Errorf("unable to initiate the loop-in with the "+
 			"server: %w", err)
 
@@ -909,4 +914,32 @@ func byteSliceTo66ByteSlice(b []byte) ([musig2.PubNonceSize]byte, error) {
 	copy(res[:], b)
 
 	return res, nil
+}
+
+// logInsufficientConfirmationsDetails extracts and logs the per-deposit
+// confirmation details from a gRPC error if present.
+func logInsufficientConfirmationsDetails(err error) {
+	st, ok := status.FromError(err)
+	if !ok {
+		return
+	}
+
+	for _, detail := range st.Details() {
+		confDetails, ok :=
+			detail.(*swapserverrpc.InsufficientConfirmationsDetails)
+
+		if !ok {
+			continue
+		}
+
+		log.Warnf("Insufficient deposit confirmations, max wait: "+
+			"%d blocks", confDetails.MaxBlocksToWait)
+
+		for _, dep := range confDetails.Deposits {
+			log.Warnf("  Deposit %s: %d/%d confirmations "+
+				"(need %d more blocks)",
+				dep.Outpoint, dep.CurrentConfirmations,
+				dep.RequiredConfirmations, dep.BlocksToWait)
+		}
+	}
 }
