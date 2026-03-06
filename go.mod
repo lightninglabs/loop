@@ -221,6 +221,8 @@ replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate
 
 replace lukechampine.com/uint128 => github.com/lukechampine/uint128 v1.2.0
 
+replace git.sr.ht/~sbinet/gg => ./third_party/gg
+
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc
