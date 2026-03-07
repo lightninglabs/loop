@@ -305,8 +305,8 @@ func getClientConn(config *TapdConfig) (*grpc.ClientConn, error) {
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
-	// Dial the gRPC server.
-	conn, err := grpc.Dial(config.Host, opts...)
+	// Create the gRPC client connection.
+	conn, err := grpc.NewClient(config.Host, opts...)
 	if err != nil {
 		return nil, err
 	}
