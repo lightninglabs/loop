@@ -381,6 +381,18 @@ update the parameters set for the liquidity manager
 \fB--minamt\fP="": the minimum amount in satoshis that the autoloop client will dispatch per-swap. (default: 0)
 
 .PP
+\fB--script\fP="": inline Starlark script for scriptable autoloop. For simple scripts only; use --scriptfile for complex scripts.
+
+.PP
+\fB--scriptautoloop\fP: set to true to enable scriptable autoloop using Starlark scripts. This allows custom swap logic with variables, functions, loops, and sorting. Mutually exclusive with easyautoloop and threshold rules.
+
+.PP
+\fB--scriptfile\fP="": path to a Starlark script file for scriptable autoloop. The script must set a 'decisions' variable to a list of swaps. Recommended for production use as it allows version control and proper editing.
+
+.PP
+\fB--scripttickinterval\fP="": custom tick interval in seconds for scriptable autoloop. If not set, uses the default 20-minute interval. (default: 0)
+
+.PP
 \fB--sweepconf\fP="": the number of blocks from htlc height that swap suggestion sweeps should target, used to estimate max miner fee. (default: 0)
 
 .PP
