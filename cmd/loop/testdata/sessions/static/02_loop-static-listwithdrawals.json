@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listwithdrawals",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 164024932
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressWithdrawals",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressWithdrawalRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 163,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressWithdrawals",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressWithdrawalResponse",
+        "payload": {
+          "withdrawals": [
+            {
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "deposits": [
+                {
+                  "id": "aCYqEEyewyXea+w3uOMb2HW70vXwuc4togzwvWNvxEg=",
+                  "state": "WITHDRAWING",
+                  "outpoint": "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0",
+                  "value": "500000",
+                  "confirmation_height": "125",
+                  "blocks_until_expiry": "0",
+                  "swap_hash": ""
+                }
+              ],
+              "total_deposit_amount_satoshis": "500000",
+              "withdrawn_amount_satoshis": "0",
+              "change_amount_satoshis": "0",
+              "confirmation_height": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 163,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"withdrawals\": [\n        {\n            \"change_amount_satoshis\": \"0\",\n            \"confirmation_height\": 0,\n            \"deposits\": [\n                {\n                    \"blocks_until_expiry\": \"0\",\n                    \"confirmation_height\": \"125\",\n                    \"id\": \"68262a104c9ec325de6bec37b8e31bd875bbd2f5f0b9ce2da20cf0bd636fc448\",\n                    \"outpoint\": \"edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0\",\n                    \"state\": \"WITHDRAWING\",\n                    \"swap_hash\": \"\",\n                    \"value\": \"500000\"\n                }\n            ],\n            \"total_deposit_amount_satoshis\": \"500000\",\n            \"tx_id\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n            \"withdrawn_amount_satoshis\": \"0\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 164,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

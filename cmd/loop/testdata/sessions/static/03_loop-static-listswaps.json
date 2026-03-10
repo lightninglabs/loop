@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listswaps",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 152223840
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressSwaps",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressSwapsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 151,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressSwaps",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressSwapsResponse",
+        "payload": {
+          "swaps": []
+        }
+      }
+    },
+    {
+      "time_ms": 151,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"swaps\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 152,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

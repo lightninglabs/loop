@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "suggestswaps",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 137916583
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SuggestSwaps",
+        "event": "request",
+        "message_type": "looprpc.SuggestSwapsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 137,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SuggestSwaps",
+        "event": "response",
+        "message_type": "looprpc.SuggestSwapsResponse",
+        "payload": {
+          "loop_out": [],
+          "loop_in": [],
+          "disqualified": []
+        }
+      }
+    },
+    {
+      "time_ms": 137,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"disqualified\": [],\n    \"loop_in\": [],\n    \"loop_out\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 137,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

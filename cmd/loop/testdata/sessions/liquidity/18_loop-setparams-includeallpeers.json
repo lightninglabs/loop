@@ -1,0 +1,141 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "setparams",
+      "--network",
+      "regtest",
+      "--easyatutoloop_includeallpeers"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 304215261
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.GetLiquidityParamsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 263,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.LiquidityParameters",
+        "payload": {
+          "rules": [
+            {
+              "channel_id": "0",
+              "swap_type": "LOOP_OUT",
+              "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
+              "type": "THRESHOLD",
+              "incoming_threshold": 10,
+              "outgoing_threshold": 0
+            }
+          ],
+          "fee_ppm": "0",
+          "sweep_fee_rate_sat_per_vbyte": "2",
+          "max_swap_fee_ppm": "1000",
+          "max_routing_fee_ppm": "1000",
+          "max_prepay_routing_fee_ppm": "1000",
+          "max_prepay_sat": "1000",
+          "max_miner_fee_sat": "1000",
+          "sweep_conf_target": 10,
+          "failure_backoff_sec": "60",
+          "autoloop": true,
+          "autoloop_budget_sat": "1000",
+          "autoloop_budget_start_sec": "0",
+          "auto_max_in_flight": "2",
+          "min_swap_amount": "500000",
+          "max_swap_amount": "1000000",
+          "htlc_conf_target": 2,
+          "autoloop_dest_address": "",
+          "autoloop_budget_refresh_period_sec": "3600",
+          "autoloop_budget_last_refresh": "1770076824",
+          "easy_autoloop": true,
+          "easy_autoloop_local_target_sat": "1000000",
+          "account": "default",
+          "account_addr_type": "TAPROOT_PUBKEY",
+          "easy_asset_params": {},
+          "fast_swap_publication": true,
+          "easy_autoloop_excluded_peers": [
+            "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3"
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 271,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.SetLiquidityParamsRequest",
+        "payload": {
+          "parameters": {
+            "rules": [
+              {
+                "channel_id": "0",
+                "swap_type": "LOOP_OUT",
+                "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
+                "type": "THRESHOLD",
+                "incoming_threshold": 10,
+                "outgoing_threshold": 0
+              }
+            ],
+            "fee_ppm": "0",
+            "sweep_fee_rate_sat_per_vbyte": "2",
+            "max_swap_fee_ppm": "1000",
+            "max_routing_fee_ppm": "1000",
+            "max_prepay_routing_fee_ppm": "1000",
+            "max_prepay_sat": "1000",
+            "max_miner_fee_sat": "1000",
+            "sweep_conf_target": 10,
+            "failure_backoff_sec": "60",
+            "autoloop": true,
+            "autoloop_budget_sat": "1000",
+            "autoloop_budget_start_sec": "0",
+            "auto_max_in_flight": "2",
+            "min_swap_amount": "500000",
+            "max_swap_amount": "1000000",
+            "htlc_conf_target": 2,
+            "autoloop_dest_address": "",
+            "autoloop_budget_refresh_period_sec": "3600",
+            "autoloop_budget_last_refresh": "1770076824",
+            "easy_autoloop": true,
+            "easy_autoloop_local_target_sat": "1000000",
+            "account": "default",
+            "account_addr_type": "TAPROOT_PUBKEY",
+            "easy_asset_params": {},
+            "fast_swap_publication": true,
+            "easy_autoloop_excluded_peers": []
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 303,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.SetLiquidityParamsResponse",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 304,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

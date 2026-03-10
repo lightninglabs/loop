@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "summary",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 16058920
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 15,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressSummaryResponse",
+        "payload": {
+          "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "relative_expiry_blocks": "14400",
+          "total_num_deposits": 1,
+          "value_unconfirmed_satoshis": "0",
+          "value_deposited_satoshis": "2500000",
+          "value_expired_satoshis": "0",
+          "value_withdrawn_satoshis": "0",
+          "value_looped_in_satoshis": "0",
+          "value_htlc_timeout_sweeps_satoshis": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 15,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"relative_expiry_blocks\": \"14400\",\n    \"static_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n    \"total_num_deposits\": 1,\n    \"value_deposited_satoshis\": \"2500000\",\n    \"value_expired_satoshis\": \"0\",\n    \"value_htlc_timeout_sweeps_satoshis\": \"0\",\n    \"value_looped_in_satoshis\": \"0\",\n    \"value_unconfirmed_satoshis\": \"0\",\n    \"value_withdrawn_satoshis\": \"0\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 16,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

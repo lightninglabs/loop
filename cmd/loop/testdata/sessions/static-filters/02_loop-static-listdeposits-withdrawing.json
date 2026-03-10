@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest",
+      "--filter",
+      "withdrawing"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 210052149
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "WITHDRAWING",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 209,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "u38FDfC3w+H+YQEOEK1F4w3fes0wH6bgWi3bgltcLvs=",
+              "state": "WITHDRAWING",
+              "outpoint": "56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0",
+              "value": "500000",
+              "confirmation_height": "160",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 209,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": [\n        {\n            \"blocks_until_expiry\": \"14395\",\n            \"confirmation_height\": \"160\",\n            \"id\": \"bb7f050df0b7c3e1fe61010e10ad45e30ddf7acd301fa6e05a2ddb825b5c2efb\",\n            \"outpoint\": \"56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0\",\n            \"state\": \"WITHDRAWING\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 210,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

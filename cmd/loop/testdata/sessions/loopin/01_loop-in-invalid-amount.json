@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "in",
+      "--network",
+      "regtest",
+      "notanumber"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "invalid amt value \"notanumber\"",
+    "duration": 3964079
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] invalid amt value \"notanumber\"\n"
+      }
+    },
+    {
+      "time_ms": 3,
+      "kind": "exit",
+      "data": {
+        "run_error": "invalid amt value \"notanumber\""
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "new",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 2871791649
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "\nWARNING: Be aware that loosing your l402.token file in .loop under your home directory will take your ability to spend funds sent to the static address via loop-ins or withdrawals. You will have to wait until the deposit expires and your loop client sweeps the funds back to your lnd wallet. The deposit expiry could be months in the future.\n\nCONTINUE WITH NEW ADDRESS? (y/n): "
+      }
+    },
+    {
+      "time_ms": 2685,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 2686,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/NewStaticAddress",
+        "event": "request",
+        "message_type": "looprpc.NewStaticAddressRequest",
+        "payload": {
+          "client_key": ""
+        }
+      }
+    },
+    {
+      "time_ms": 2868,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/NewStaticAddress",
+        "event": "response",
+        "message_type": "looprpc.NewStaticAddressResponse",
+        "payload": {
+          "address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "expiry": 14400
+        }
+      }
+    },
+    {
+      "time_ms": 2869,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n    \"expiry\": 14400\n}\n"
+      }
+    },
+    {
+      "time_ms": 2871,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

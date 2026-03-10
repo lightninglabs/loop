@@ -206,9 +206,9 @@ func quoteOut(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	fast := cmd.Bool("fast")
-	swapDeadline := time.Now()
+	swapDeadline := cliClock.Now()
 	if !fast {
-		swapDeadline = time.Now().Add(defaultSwapWaitTime)
+		swapDeadline = cliClock.Now().Add(defaultSwapWaitTime)
 	}
 
 	quoteReq := &looprpc.QuoteRequest{

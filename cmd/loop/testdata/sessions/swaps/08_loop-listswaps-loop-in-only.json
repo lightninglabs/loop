@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "listswaps",
+      "--network",
+      "regtest",
+      "--loop_in_only"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 237970153
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListSwaps",
+        "event": "request",
+        "message_type": "looprpc.ListSwapsRequest",
+        "payload": {
+          "list_swap_filter": {
+            "swap_type": "LOOP_IN",
+            "pending_only": false,
+            "outgoing_chan_set": [],
+            "label": "",
+            "loop_in_last_hop": "",
+            "asset_swap_only": false,
+            "start_timestamp_ns": "0"
+          },
+          "max_swaps": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 236,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListSwaps",
+        "event": "response",
+        "message_type": "looprpc.ListSwapsResponse",
+        "payload": {
+          "swaps": [],
+          "next_start_time": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 236,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"next_start_time\": \"0\",\n    \"swaps\": []\n}\n"
+      }
+    },
+    {
+      "time_ms": 237,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

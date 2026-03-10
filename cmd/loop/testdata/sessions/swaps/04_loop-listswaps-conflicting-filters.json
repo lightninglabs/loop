@@ -1,0 +1,34 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "listswaps",
+      "--network",
+      "regtest",
+      "--loop_out_only",
+      "--loop_in_only"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "only one of loop_out_only and loop_in_only can be set",
+    "duration": 1714263
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] only one of loop_out_only and loop_in_only can be set\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "only one of loop_out_only and loop_in_only can be set"
+      }
+    }
+  ]
+}

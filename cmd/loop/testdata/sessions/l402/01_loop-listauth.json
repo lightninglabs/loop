@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "listauth",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 157631491
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetL402Tokens",
+        "event": "request",
+        "message_type": "looprpc.TokensRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 157,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetL402Tokens",
+        "event": "response",
+        "message_type": "looprpc.TokensResponse",
+        "payload": {
+          "tokens": [
+            {
+              "base_macaroon": "AgEEbHNhdAJCAAAkJPkWepsd1GgURnFywD7MZi7yoPZC/BjJHNrIs6en83L1T2GVJqpTIlrcw09RnFx5xHfjsNDjLRIekGAPVN/oAAIPc2VydmljZXM9bG9vcDowAAISbG9vcF9jYXBhYmlsaXRpZXM9AAAGIGIkKNbF9/LxQzqEKurnzP7lkGJbA2CsVbkwrKXyUTx/",
+              "payment_hash": "JCT5FnqbHdRoFEZxcsA+zGYu8qD2QvwYyRzayLOnp/M=",
+              "payment_preimage": "pSZZqEORw/4tPCPPS3sTDeh/2mq3EAzwqqWor/xwTmM=",
+              "amount_paid_msat": "1000000",
+              "routing_fee_paid_msat": "0",
+              "time_created": "1770076917",
+              "expired": false,
+              "storage_name": "/home/user/.loop/regtest/l402.token",
+              "id": "72f54f619526aa53225adcc34f519c5c79c477e3b0d0e32d121e90600f54dfe8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 157,
+      "kind": "stdout",
+      "data": {
+        "text": "[\n    {\n        \"amount_paid_msat\": 1000000,\n        \"base_macaroon\": \"0201046c736174024200002424f9167a9b1dd46814467172c03ecc662ef2a0f642fc18c91cdac8b3a7a7f372f54f619526aa53225adcc34f519c5c79c477e3b0d0e32d121e90600f54dfe800020f73657276696365733d6c6f6f703a300002126c6f6f705f6361706162696c69746965733d00000620622428d6c5f7f2f1433a842aeae7ccfee590625b0360ac55b930aca5f2513c7f\",\n        \"expired\": false,\n        \"file_name\": \"/home/user/.loop/regtest/l402.token\",\n        \"id\": \"72f54f619526aa53225adcc34f519c5c79c477e3b0d0e32d121e90600f54dfe8\",\n        \"payment_hash\": \"2424f9167a9b1dd46814467172c03ecc662ef2a0f642fc18c91cdac8b3a7a7f3\",\n        \"payment_preimage\": \"a52659a84391c3fe2d3c23cf4b7b130de87fda6ab7100cf0aaa5a8affc704e63\",\n        \"routing_fee_paid_msat\": 0,\n        \"time_created\": \"2026-02-02T19:01:57-05:00\",\n        \"valid_until\": \"\"\n    }\n]\n"
+      }
+    },
+    {
+      "time_ms": 157,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

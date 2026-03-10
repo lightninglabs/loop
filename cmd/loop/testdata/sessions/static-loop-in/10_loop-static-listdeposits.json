@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 18981734
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "UNKNOWN_STATE",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "6mq78FccC6ghF66fIIZhTqzqiykT3AVEtwwA3ng1PnE=",
+              "state": "DEPOSITED",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "value": "2500000",
+              "confirmation_height": "131",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": [\n        {\n            \"blocks_until_expiry\": \"14395\",\n            \"confirmation_height\": \"131\",\n            \"id\": \"ea6abbf0571c0ba82117ae9f2086614eacea8b2913dc0544b70c00de78353e71\",\n            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n            \"state\": \"DEPOSITED\",\n            \"swap_hash\": \"\",\n            \"value\": \"2500000\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

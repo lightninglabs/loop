@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "getparams",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 213058408
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.GetLiquidityParamsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 212,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.LiquidityParameters",
+        "payload": {
+          "rules": [],
+          "fee_ppm": "20000",
+          "sweep_fee_rate_sat_per_vbyte": "0",
+          "max_swap_fee_ppm": "0",
+          "max_routing_fee_ppm": "0",
+          "max_prepay_routing_fee_ppm": "0",
+          "max_prepay_sat": "0",
+          "max_miner_fee_sat": "0",
+          "sweep_conf_target": 100,
+          "failure_backoff_sec": "86400",
+          "autoloop": false,
+          "autoloop_budget_sat": "335544",
+          "autoloop_budget_start_sec": "0",
+          "auto_max_in_flight": "1",
+          "min_swap_amount": "0",
+          "max_swap_amount": "0",
+          "htlc_conf_target": 6,
+          "autoloop_dest_address": "",
+          "autoloop_budget_refresh_period_sec": "604800",
+          "autoloop_budget_last_refresh": "1770076824",
+          "easy_autoloop": false,
+          "easy_autoloop_local_target_sat": "0",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "easy_asset_params": {},
+          "fast_swap_publication": true,
+          "easy_autoloop_excluded_peers": []
+        }
+      }
+    },
+    {
+      "time_ms": 212,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"account\": \"\",\n    \"account_addr_type\": \"ADDRESS_TYPE_UNKNOWN\",\n    \"auto_max_in_flight\": \"1\",\n    \"autoloop\": false,\n    \"autoloop_budget_last_refresh\": \"1770076824\",\n    \"autoloop_budget_refresh_period_sec\": \"604800\",\n    \"autoloop_budget_sat\": \"335544\",\n    \"autoloop_budget_start_sec\": \"0\",\n    \"autoloop_dest_address\": \"\",\n    \"easy_asset_params\": {},\n    \"easy_autoloop\": false,\n    \"easy_autoloop_excluded_peers\": [],\n    \"easy_autoloop_local_target_sat\": \"0\",\n    \"failure_backoff_sec\": \"86400\",\n    \"fast_swap_publication\": true,\n    \"fee_ppm\": \"20000\",\n    \"htlc_conf_target\": 6,\n    \"max_miner_fee_sat\": \"0\",\n    \"max_prepay_routing_fee_ppm\": \"0\",\n    \"max_prepay_sat\": \"0\",\n    \"max_routing_fee_ppm\": \"0\",\n    \"max_swap_amount\": \"0\",\n    \"max_swap_fee_ppm\": \"0\",\n    \"min_swap_amount\": \"0\",\n    \"rules\": [],\n    \"sweep_conf_target\": 100,\n    \"sweep_fee_rate_sat_per_vbyte\": \"0\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 213,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

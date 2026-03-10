@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "out",
+      "--network",
+      "regtest",
+      "500000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 159166421
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 9,
+          "external_htlc": false,
+          "swap_publication_deadline": "1769408886",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 158,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "response",
+        "message_type": "looprpc.OutQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "3875",
+          "prepay_amt_sat": "1337",
+          "htlc_sweep_fee_sat": "3793",
+          "swap_payment_dest": "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3",
+          "cltv_delta": 0,
+          "conf_target": 9,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 158,
+      "kind": "stdout",
+      "data": {
+        "text": "Send off-chain:                            500000 sat\nReceive on-chain:                          492332 sat\nEstimated total fee:                         7668 sat\n"
+      }
+    },
+    {
+      "time_ms": 159,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

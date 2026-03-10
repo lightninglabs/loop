@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "out",
+      "--network",
+      "regtest",
+      "500000",
+      "--fast"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-64-g3b735173216470e023b3b72949dd82af9adbebe1 commit_hash=3b735173216470e023b3b72949dd82af9adbebe1",
+    "duration": 1332472129
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 9,
+          "external_htlc": false,
+          "swap_publication_deadline": "1769407086",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 22,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "response",
+        "message_type": "looprpc.OutQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "3875",
+          "prepay_amt_sat": "1337",
+          "htlc_sweep_fee_sat": "3793",
+          "swap_payment_dest": "AhbcGtFvFiW2ru6gxtm66Xv9DpxBdSBXK4a7EX7jbSWd",
+          "cltv_delta": 0,
+          "conf_target": 9,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 23,
+      "kind": "stdout",
+      "data": {
+        "text": "Send off-chain:                            500000 sat\nReceive on-chain:                          492332 sat\nEstimated total fee:                         7668 sat\n\nFast swap requested.\n\nCONTINUE SWAP? (y/n): "
+      }
+    },
+    {
+      "time_ms": 1240,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 1241,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOut",
+        "event": "request",
+        "message_type": "looprpc.LoopOutRequest",
+        "payload": {
+          "amt": "500000",
+          "dest": "",
+          "max_swap_routing_fee": "10010",
+          "max_prepay_routing_fee": "36",
+          "max_swap_fee": "3875",
+          "max_prepay_amt": "1337",
+          "max_miner_fee": "948250",
+          "loop_out_channel": "0",
+          "outgoing_chan_set": [],
+          "sweep_conf_target": 9,
+          "htlc_confirmations": 1,
+          "swap_publication_deadline": "1769407086",
+          "label": "",
+          "initiator": "loop-cli",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "is_external_addr": false,
+          "reservation_ids": [],
+          "payment_timeout": 0,
+          "asset_info": null,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 1327,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOut",
+        "event": "response",
+        "message_type": "looprpc.SwapResponse",
+        "payload": {
+          "id": "e5f3a1d5cee33e239571d0c1e8cbc6926cbc1d784b9fe185ff6589e949db4549",
+          "id_bytes": "5fOh1c7jPiOVcdDB6MvGkmy8HXhLn+GF/2WJ6UnbRUk=",
+          "htlc_address": "bcrt1p69ekm32epfcy8ymkqdj5clvh37vmlgw76k9x5nfs76c7qgghnpqqmtf80x",
+          "htlc_address_p2wsh": "",
+          "htlc_address_p2tr": "bcrt1p69ekm32epfcy8ymkqdj5clvh37vmlgw76k9x5nfs76c7qgghnpqqmtf80x",
+          "server_message": ""
+        }
+      }
+    },
+    {
+      "time_ms": 1329,
+      "kind": "stdout",
+      "data": {
+        "text": "Swap initiated\nID:             e5f3a1d5cee33e239571d0c1e8cbc6926cbc1d784b9fe185ff6589e949db4549\n\nRun `loop monitor` to monitor progress.\n"
+      }
+    },
+    {
+      "time_ms": 1332,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

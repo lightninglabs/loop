@@ -1,0 +1,34 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
+    "duration": 2504188
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "stdout",
+      "data": {
+        "text": "NAME:\n   loop static - perform on-chain to off-chain swaps using static addresses.\n\nUSAGE:\n   loop static [command [command options]]\n\nCOMMANDS:\n   new, n           Create a new static loop in address.\n   listunspent, l   List unspent static address outputs.\n   listdeposits     Displays static address deposits. A filter can be applied to only show deposits in a specific state.\n   listwithdrawals  Display a summary of past withdrawals.\n   listswaps        Shows a list of finalized static address swaps.\n   withdraw, w      Withdraw from static address deposits.\n   summary, s       Display a summary of static address related information.\n   in               Loop in funds from static address deposits.\n\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "stdout",
+      "data": {
+        "text": "OPTIONS:\n   --help, -h  show help\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

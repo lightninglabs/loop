@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "out",
+      "--network",
+      "regtest",
+      "--force",
+      "--fast",
+      "500000"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 228730686
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "500000",
+          "conf_target": 9,
+          "external_htlc": false,
+          "swap_publication_deadline": "1769407086",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 139,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOutQuote",
+        "event": "response",
+        "message_type": "looprpc.OutQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "3875",
+          "prepay_amt_sat": "1337",
+          "htlc_sweep_fee_sat": "3793",
+          "swap_payment_dest": "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3",
+          "cltv_delta": 0,
+          "conf_target": 9,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 139,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOut",
+        "event": "request",
+        "message_type": "looprpc.LoopOutRequest",
+        "payload": {
+          "amt": "500000",
+          "dest": "",
+          "max_swap_routing_fee": "10010",
+          "max_prepay_routing_fee": "36",
+          "max_swap_fee": "3875",
+          "max_prepay_amt": "1337",
+          "max_miner_fee": "948250",
+          "loop_out_channel": "0",
+          "outgoing_chan_set": [],
+          "sweep_conf_target": 9,
+          "htlc_confirmations": 1,
+          "swap_publication_deadline": "1769407086",
+          "label": "",
+          "initiator": "loop-cli",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "is_external_addr": false,
+          "reservation_ids": [],
+          "payment_timeout": 0,
+          "asset_info": null,
+          "asset_rfq_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 228,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/LoopOut",
+        "event": "response",
+        "message_type": "looprpc.SwapResponse",
+        "payload": {
+          "id": "46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b",
+          "id_bytes": "RrjbZBEKYAi9NrQjQ5y7oejnbAJk6KaPRC/CKjwrT2s=",
+          "htlc_address": "bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv",
+          "htlc_address_p2wsh": "",
+          "htlc_address_p2tr": "bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv",
+          "server_message": ""
+        }
+      }
+    },
+    {
+      "time_ms": 228,
+      "kind": "stdout",
+      "data": {
+        "text": "Swap initiated\nID:             46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\n\nRun `loop monitor` to monitor progress.\n"
+      }
+    },
+    {
+      "time_ms": 228,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

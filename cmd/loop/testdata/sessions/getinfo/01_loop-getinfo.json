@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "getinfo",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 200590737
+  },
+  "events": [
+    {
+      "time_ms": 4,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetInfo",
+        "event": "request",
+        "message_type": "looprpc.GetInfoRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 200,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetInfo",
+        "event": "response",
+        "message_type": "looprpc.GetInfoResponse",
+        "payload": {
+          "version": "0.31.7-beta",
+          "network": "regtest",
+          "rpc_listen": "localhost:11010",
+          "rest_listen": "localhost:8081",
+          "macaroon_path": "/home/user/.loop/regtest/loop.macaroon",
+          "tls_cert_path": "/home/user/.loop/regtest/tls.cert",
+          "loop_out_stats": {
+            "pending_count": "0",
+            "success_count": "0",
+            "fail_count": "0",
+            "sum_pending_amt": "0",
+            "sum_succeeded_amt": "0"
+          },
+          "loop_in_stats": {
+            "pending_count": "0",
+            "success_count": "0",
+            "fail_count": "0",
+            "sum_pending_amt": "0",
+            "sum_succeeded_amt": "0"
+          },
+          "commit_hash": "579ea31979e0cdb1ee6049ab97cc2768888eac40"
+        }
+      }
+    },
+    {
+      "time_ms": 200,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"commit_hash\": \"579ea31979e0cdb1ee6049ab97cc2768888eac40\",\n    \"loop_in_stats\": {\n        \"fail_count\": \"0\",\n        \"pending_count\": \"0\",\n        \"success_count\": \"0\",\n        \"sum_pending_amt\": \"0\",\n        \"sum_succeeded_amt\": \"0\"\n    },\n    \"loop_out_stats\": {\n        \"fail_count\": \"0\",\n        \"pending_count\": \"0\",\n        \"success_count\": \"0\",\n        \"sum_pending_amt\": \"0\",\n        \"sum_succeeded_amt\": \"0\"\n    },\n    \"macaroon_path\": \"/home/user/.loop/regtest/loop.macaroon\",\n    \"network\": \"regtest\",\n    \"rest_listen\": \"localhost:8081\",\n    \"rpc_listen\": \"localhost:11010\",\n    \"tls_cert_path\": \"/home/user/.loop/regtest/tls.cert\",\n    \"version\": \"0.31.7-beta\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 200,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

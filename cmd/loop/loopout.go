@@ -249,9 +249,9 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 	// Set our maximum swap wait time. If a fast swap is requested we set
 	// it to now, otherwise to 30 minutes in the future.
 	fast := cmd.Bool("fast")
-	swapDeadline := time.Now()
+	swapDeadline := cliClock.Now()
 	if !fast {
-		swapDeadline = time.Now().Add(defaultSwapWaitTime)
+		swapDeadline = cliClock.Now().Add(defaultSwapWaitTime)
 	}
 
 	sweepConfTarget := int32(cmd.Uint64("conf_target"))

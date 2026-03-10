@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "quote",
+      "out",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 1687027
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "NAME:"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "text": "\n   loop quote out - get a quote for the cost of a loop out swap\n\nUSAGE:\n   loop quote out amt\n\nDESCRIPTION:\n   Allows to determine the cost of a swap up front\n\nOPTIONS:\n   --conf_target uint  the number of blocks from the swap initiation height that the on-chain HTLC should be swept within in a Loop Out (default: 9)\n   --fast              Indicate you want to swap immediately, paying potentially a higher fee. If not set the swap server might choose to wait up to 30 minutes before publishing the swap HTLC on-chain, to save on chain fees. Not setting this flag might result in a lower swap fee. (default: false)\n   --verbose, -v       show expanded details (default: false)\n   --help, -h          show help\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

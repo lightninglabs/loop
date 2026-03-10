@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -19,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/loopd"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -52,10 +55,11 @@ var (
 	defaultInitiator = "loop-cli"
 
 	loopDirFlag = &cli.StringFlag{
-		Name:    "loopdir",
-		Value:   loopd.LoopDirBase,
-		Usage:   "path to loop's base directory",
-		Sources: cli.EnvVars(envVarLoopDir),
+		Name:        "loopdir",
+		Value:       loopd.LoopDirBase,
+		DefaultText: defaultPathText(loopd.LoopDirBase, os.UserHomeDir),
+		Usage:       "path to loop's base directory",
+		Sources:     cli.EnvVars(envVarLoopDir),
 	}
 	networkFlag = &cli.StringFlag{
 		Name:    "network",
@@ -66,15 +70,21 @@ var (
 	}
 
 	tlsCertFlag = &cli.StringFlag{
-		Name:    "tlscertpath",
-		Usage:   "path to loop's TLS certificate",
-		Value:   loopd.DefaultTLSCertPath,
+		Name:  "tlscertpath",
+		Usage: "path to loop's TLS certificate",
+		Value: loopd.DefaultTLSCertPath,
+		DefaultText: defaultPathText(
+			loopd.DefaultTLSCertPath, os.UserHomeDir,
+		),
 		Sources: cli.EnvVars(envVarTLSCertPath),
 	}
 	macaroonPathFlag = &cli.StringFlag{
-		Name:    "macaroonpath",
-		Usage:   "path to macaroon file",
-		Value:   loopd.DefaultMacaroonPath,
+		Name:  "macaroonpath",
+		Usage: "path to macaroon file",
+		Value: loopd.DefaultMacaroonPath,
+		DefaultText: defaultPathText(
+			loopd.DefaultMacaroonPath, os.UserHomeDir,
+		),
 		Sources: cli.EnvVars(envVarMacaroonPath),
 	}
 	verboseFlag = &cli.BoolFlag{
@@ -92,7 +102,50 @@ var (
 		instantOutCommand, listInstantOutsCommand, stopCommand,
 		printManCommand, printMarkdownCommand,
 	}
+
+	// cliClock provides the time source used by CLI commands.
+	cliClock clock.Clock = clock.NewDefaultClock()
+
+	// sessionRec is the active recorder when session capture is enabled.
+	sessionRec *sessionRecorder
+
+	// forceDeterministicJSON is enabled by tests to obtain stable JSON
+	// output.
+	forceDeterministicJSON bool
 )
+
+// installSessionSignalHandler records signals and cancels the root context.
+func installSessionSignalHandler(cancel context.CancelFunc) func() {
+	if sessionRec == nil {
+		return func() {}
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		interrupted := false
+		for sig := range sigCh {
+			sessionRec.LogSignal(sig)
+			if !interrupted {
+				interrupted = true
+				cancel()
+				continue
+			}
+
+			_ = sessionRec.Finalize(fmt.Errorf("signal: %s", sig))
+			os.Exit(130)
+		}
+	}()
+
+	return func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+		<-done
+	}
+}
 
 const (
 
@@ -132,6 +185,38 @@ const (
 	envVarMacaroonPath = "LOOPCLI_MACAROONPATH"
 )
 
+// defaultPathText returns a help-friendly path string that replaces the user's
+// home directory with "~". The homeDir function is injected so callers can
+// control environment-dependent behavior in tests.
+func defaultPathText(value string, homeDir func() (string, error)) string {
+	if value == "" {
+		return value
+	}
+
+	if homeDir == nil {
+		return value
+	}
+
+	home, err := homeDir()
+	if err != nil || home == "" {
+		return value
+	}
+
+	cleanHome := filepath.Clean(home)
+	cleanValue := filepath.Clean(value)
+	if cleanValue == cleanHome {
+		return "~"
+	}
+
+	prefix := cleanHome + string(filepath.Separator)
+	if strings.HasPrefix(cleanValue, prefix) {
+		return "~" + string(filepath.Separator) +
+			strings.TrimPrefix(cleanValue, prefix)
+	}
+
+	return value
+}
+
 func printJSON(resp interface{}) {
 	b, err := json.Marshal(resp)
 	if err != nil {
@@ -144,7 +229,8 @@ func printJSON(resp interface{}) {
 		fatal(err)
 	}
 	out.WriteString("\n")
-	_, _ = out.WriteTo(os.Stdout)
+	printBytes := maybeNormalizeJSON(out.Bytes())
+	_, _ = os.Stdout.Write(printBytes)
 }
 
 func printRespJSON(resp proto.Message) {
@@ -154,16 +240,76 @@ func printRespJSON(resp proto.Message) {
 		return
 	}
 
-	fmt.Println(string(jsonBytes))
+	fmt.Println(string(maybeNormalizeJSON(jsonBytes)))
 }
 
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "[loop] %v\n", err)
+	if sessionRec != nil {
+		if finalizeErr := sessionRec.Finalize(err); finalizeErr != nil {
+			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
+				"session: %v\n", finalizeErr)
+		}
+	}
 	os.Exit(1)
 }
 
 func main() {
-	rootCmd := &cli.Command{
+	var err error
+	sessionRec, err = newSessionRecorder(os.Args)
+	if err != nil {
+		fatal(err)
+	}
+
+	// Intercept clock and stdio if needed.
+	if sessionRec != nil {
+		restoreClock := hookClock(
+			clock.NewTestClock(time.Unix(sessionClockStartUnix, 0)),
+		)
+		defer restoreClock()
+
+		if err := sessionRec.Start(nil, nil, nil); err != nil {
+			fatal(err)
+		}
+	}
+
+	// Intercept clock calls if needed.
+	var restoreTransport func()
+	if sessionRec != nil {
+		restoreTransport = hookGrpc(sessionRec)
+		defer restoreTransport()
+	}
+
+	rootCmd := newRootCommand()
+
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if sessionRec != nil {
+		ctx = sessionRec.InjectContext(ctx)
+	}
+
+	if sessionRec != nil {
+		signalStop := installSessionSignalHandler(cancel)
+		defer signalStop()
+	}
+
+	if err := rootCmd.Run(ctx, os.Args); err != nil {
+		fatal(err)
+	}
+
+	if sessionRec != nil {
+		if err := sessionRec.Finalize(nil); err != nil {
+			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
+				"session: %v\n", err)
+		}
+	}
+}
+
+// newRootCommand constructs the CLI root command for loop.
+func newRootCommand() *cli.Command {
+	return &cli.Command{
 		Name:    "loop",
 		Usage:   "control plane for your loopd",
 		Version: loop.RichVersion(),
@@ -184,17 +330,11 @@ func main() {
 			return cli.ShowRootCommandHelp(cmd)
 		},
 	}
-
-	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
-		fatal(err)
-	}
 }
 
 // getClient establishes a SwapClient RPC connection and returns the client and
 // a cleanup handler.
-func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
-	func(), error) {
-
+func getClient(cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
 	client, _, cleanup, err := getClientWithConn(cmd)
 	if err != nil {
 		return nil, nil, err
@@ -206,21 +346,52 @@ func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
 // getClientWithConn returns both the SwapClient RPC client and the underlying
 // gRPC connection so callers can perform connection-aware actions.
 func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
-	*grpc.ClientConn, func(), error) {
+	daemonConn, func(), error) {
 
-	rpcServer := cmd.String("rpcserver")
-	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
+	conn, cleanup, err := sessionTransport.Dial(cmd)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	conn, err := getClientConn(rpcServer, tlsCertPath, macaroonPath)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	cleanup := func() { conn.Close() }
 
 	loopClient := looprpc.NewSwapClientClient(conn)
 	return loopClient, conn, cleanup, nil
+}
+
+// hookClock overrides cliClock until the returned callback is called.
+func hookClock(c clock.Clock) func() {
+	prev := cliClock
+	cliClock = c
+
+	return func() {
+		cliClock = prev
+	}
+}
+
+// maybeNormalizeJSON rewrites JSON output to avoid the build-dependent spacing
+// introduced by google.golang.org/protobuf/internal/encoding/json (see
+// WriteName in protobuf-go-hex-display/internal/encoding/json/encode.go, which
+// uses internal/detrand.Bool). When recording or replaying sessions we ensure
+// stable output by re-encoding with the standard library.
+func maybeNormalizeJSON(raw []byte) []byte {
+	if sessionRec == nil && !forceDeterministicJSON {
+		return raw
+	}
+
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return raw
+	}
+
+	normalized, err := json.MarshalIndent(parsed, "", "    ")
+	if err != nil {
+		return raw
+	}
+
+	if len(raw) > 0 && raw[len(raw)-1] == '\n' {
+		normalized = append(normalized, '\n')
+	}
+
+	return normalized
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
@@ -432,13 +603,14 @@ func logSwap(swap *looprpc.SwapStatus) {
 	fmt.Println()
 }
 
-func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
-	error) {
+// getClientConn dials the loopd gRPC server with TLS and macaroon auth.
+func getClientConn(address, tlsCertPath, macaroonPath string) (daemonConn,
+	func(), error) {
 
 	// We always need to send a macaroon.
 	macOption, err := readMacaroon(macaroonPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	opts := []grpc.DialOption{
@@ -446,21 +618,33 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 		macOption,
 	}
 
+	// Install gRPC interceptors for session recording if needed.
+	if unary := sessionTransport.UnaryInterceptor(); unary != nil {
+		opts = append(opts, grpc.WithChainUnaryInterceptor(unary))
+	}
+	if stream := sessionTransport.StreamInterceptor(); stream != nil {
+		opts = append(opts, grpc.WithChainStreamInterceptor(stream))
+	}
+
 	// Since TLS cannot be disabled, we'll always have a cert file to read.
 	creds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create RPC client: %v",
+		return nil, nil, fmt.Errorf("unable to create RPC client: %v",
 			err)
 	}
 
-	return conn, nil
+	cleanup := func() {
+		_ = conn.Close()
+	}
+
+	return conn, cleanup, nil
 }
 
 // readMacaroon tries to read the macaroon file at the specified path and create

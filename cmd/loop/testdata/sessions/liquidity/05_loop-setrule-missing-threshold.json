@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "setrule",
+      "--network",
+      "regtest",
+      "034fa8802fdc9f8c137e8f2cce2e4d30e590a1314e16bd060ac7d772dc698ff4bc"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "provide at least one flag to set rules or use the --clear flag to remove rules",
+    "duration": 143258905
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.GetLiquidityParamsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 142,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.LiquidityParameters",
+        "payload": {
+          "rules": [
+            {
+              "channel_id": "0",
+              "swap_type": "LOOP_OUT",
+              "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
+              "type": "THRESHOLD",
+              "incoming_threshold": 10,
+              "outgoing_threshold": 0
+            }
+          ],
+          "fee_ppm": "20000",
+          "sweep_fee_rate_sat_per_vbyte": "0",
+          "max_swap_fee_ppm": "0",
+          "max_routing_fee_ppm": "0",
+          "max_prepay_routing_fee_ppm": "0",
+          "max_prepay_sat": "0",
+          "max_miner_fee_sat": "0",
+          "sweep_conf_target": 100,
+          "failure_backoff_sec": "86400",
+          "autoloop": false,
+          "autoloop_budget_sat": "335544",
+          "autoloop_budget_start_sec": "0",
+          "auto_max_in_flight": "1",
+          "min_swap_amount": "0",
+          "max_swap_amount": "0",
+          "htlc_conf_target": 6,
+          "autoloop_dest_address": "",
+          "autoloop_budget_refresh_period_sec": "604800",
+          "autoloop_budget_last_refresh": "1770076824",
+          "easy_autoloop": false,
+          "easy_autoloop_local_target_sat": "0",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "easy_asset_params": {},
+          "fast_swap_publication": true,
+          "easy_autoloop_excluded_peers": []
+        }
+      }
+    },
+    {
+      "time_ms": 143,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] provide at least one flag to set rules or use the --clear flag to remove rules\n"
+      }
+    },
+    {
+      "time_ms": 143,
+      "kind": "exit",
+      "data": {
+        "run_error": "provide at least one flag to set rules or use the --clear flag to remove rules"
+      }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "swapinfo",
+      "--network",
+      "regtest",
+      "46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 191339781
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SwapInfo",
+        "event": "request",
+        "message_type": "looprpc.SwapInfoRequest",
+        "payload": {
+          "id": "RrjbZBEKYAi9NrQjQ5y7oejnbAJk6KaPRC/CKjwrT2s="
+        }
+      }
+    },
+    {
+      "time_ms": 191,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SwapInfo",
+        "event": "response",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b",
+          "id_bytes": "RrjbZBEKYAi9NrQjQ5y7oejnbAJk6KaPRC/CKjwrT2s=",
+          "type": "LOOP_OUT",
+          "state": "INITIATED",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1770081011767003660",
+          "last_update_time": "1770081011767003660",
+          "htlc_address": "bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv",
+          "htlc_address_p2wsh": "",
+          "htlc_address_p2tr": "bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv",
+          "cost_server": "0",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 191,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"amt\": \"500000\",\n    \"asset_info\": null,\n    \"cost_offchain\": \"0\",\n    \"cost_onchain\": \"0\",\n    \"cost_server\": \"0\",\n    \"failure_reason\": \"FAILURE_REASON_NONE\",\n    \"htlc_address\": \"bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv\",\n    \"htlc_address_p2tr\": \"bcrt1pj90ffd4j9hc2a58xpl3q77c6pf8ckhqhv9w9m2529kqsk77f6lksrca9pv\",\n    \"htlc_address_p2wsh\": \"\",\n    \"id\": \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\",\n    \"id_bytes\": \"46b8db64110a6008bd36b423439cbba1e8e76c0264e8a68f442fc22a3c2b4f6b\",\n    \"initiation_time\": \"1770081011767003660\",\n    \"label\": \"\",\n    \"last_hop\": \"\",\n    \"last_update_time\": \"1770081011767003660\",\n    \"outgoing_chan_set\": [],\n    \"state\": \"INITIATED\",\n    \"type\": \"LOOP_OUT\"\n}\n"
+      }
+    },
+    {
+      "time_ms": 191,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

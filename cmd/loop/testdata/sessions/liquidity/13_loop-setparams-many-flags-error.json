@@ -1,0 +1,182 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "setparams",
+      "--network",
+      "regtest",
+      "--maxswapfee",
+      "0.1",
+      "--maxroutingfee",
+      "0.1",
+      "--maxprepayfee",
+      "0.1",
+      "--maxprepay",
+      "1000",
+      "--maxminer",
+      "1000",
+      "--sweepconf",
+      "10",
+      "--failurebackoff",
+      "60",
+      "--autoloop",
+      "--autobudget",
+      "1000",
+      "--autobudgetrefreshperiod",
+      "1h",
+      "--autoinflight",
+      "2",
+      "--minamt",
+      "1000",
+      "--maxamt",
+      "200000",
+      "--htlc_conf",
+      "2",
+      "--easyautoloop",
+      "--localbalancesat",
+      "1000000",
+      "--easyautoloop_excludepeer",
+      "0271d6e29301159d9e1cc5d3983479a51f3b3c0c682eda7f16aa1f47dfe09b22f7",
+      "--fast"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "rpc error: code = Unknown desc = sweep fee rate limit must be \u003e 1 sat/vByte",
+    "duration": 325173938
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.GetLiquidityParamsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 276,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.LiquidityParameters",
+        "payload": {
+          "rules": [
+            {
+              "channel_id": "0",
+              "swap_type": "LOOP_OUT",
+              "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
+              "type": "THRESHOLD",
+              "incoming_threshold": 10,
+              "outgoing_threshold": 0
+            }
+          ],
+          "fee_ppm": "20000",
+          "sweep_fee_rate_sat_per_vbyte": "0",
+          "max_swap_fee_ppm": "0",
+          "max_routing_fee_ppm": "0",
+          "max_prepay_routing_fee_ppm": "0",
+          "max_prepay_sat": "0",
+          "max_miner_fee_sat": "0",
+          "sweep_conf_target": 100,
+          "failure_backoff_sec": "86400",
+          "autoloop": false,
+          "autoloop_budget_sat": "335544",
+          "autoloop_budget_start_sec": "0",
+          "auto_max_in_flight": "1",
+          "min_swap_amount": "0",
+          "max_swap_amount": "0",
+          "htlc_conf_target": 6,
+          "autoloop_dest_address": "",
+          "autoloop_budget_refresh_period_sec": "604800",
+          "autoloop_budget_last_refresh": "1770076824",
+          "easy_autoloop": false,
+          "easy_autoloop_local_target_sat": "0",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "easy_asset_params": {},
+          "fast_swap_publication": true,
+          "easy_autoloop_excluded_peers": []
+        }
+      }
+    },
+    {
+      "time_ms": 276,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.SetLiquidityParamsRequest",
+        "payload": {
+          "parameters": {
+            "rules": [
+              {
+                "channel_id": "0",
+                "swap_type": "LOOP_OUT",
+                "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
+                "type": "THRESHOLD",
+                "incoming_threshold": 10,
+                "outgoing_threshold": 0
+              }
+            ],
+            "fee_ppm": "0",
+            "sweep_fee_rate_sat_per_vbyte": "0",
+            "max_swap_fee_ppm": "1000",
+            "max_routing_fee_ppm": "1000",
+            "max_prepay_routing_fee_ppm": "1000",
+            "max_prepay_sat": "1000",
+            "max_miner_fee_sat": "1000",
+            "sweep_conf_target": 10,
+            "failure_backoff_sec": "60",
+            "autoloop": true,
+            "autoloop_budget_sat": "1000",
+            "autoloop_budget_start_sec": "0",
+            "auto_max_in_flight": "2",
+            "min_swap_amount": "1000",
+            "max_swap_amount": "200000",
+            "htlc_conf_target": 2,
+            "autoloop_dest_address": "",
+            "autoloop_budget_refresh_period_sec": "3600",
+            "autoloop_budget_last_refresh": "1770076824",
+            "easy_autoloop": true,
+            "easy_autoloop_local_target_sat": "1000000",
+            "account": "",
+            "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+            "easy_asset_params": {},
+            "fast_swap_publication": true,
+            "easy_autoloop_excluded_peers": [
+              "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 324,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = sweep fee rate limit must be \u003e 1 sat/vByte"
+      }
+    },
+    {
+      "time_ms": 325,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] rpc error: code = Unknown desc = sweep fee rate limit must be \u003e 1 sat/vByte\n"
+      }
+    },
+    {
+      "time_ms": 325,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = sweep fee rate limit must be \u003e 1 sat/vByte"
+      }
+    }
+  ]
+}

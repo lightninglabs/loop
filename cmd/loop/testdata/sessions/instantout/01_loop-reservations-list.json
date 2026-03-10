@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "reservations",
+      "list",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 177945855
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListReservations",
+        "event": "request",
+        "message_type": "looprpc.ListReservationsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 177,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListReservations",
+        "event": "response",
+        "message_type": "looprpc.ListReservationsResponse",
+        "payload": {
+          "reservations": [
+            {
+              "reservation_id": "s/RD6Lj/eXdmtFCtd/6AvrJQrP14h1YrblyZZMWITYc=",
+              "state": "Confirmed",
+              "amount": "800000",
+              "tx_id": "8b3b5e235ad24be42bc3802c6694566964c394df247b4ae1f2f4fd785e5acd17",
+              "vout": 0,
+              "expiry": 1619
+            },
+            {
+              "reservation_id": "Wl+CTsY+V2zUvkK5bs9WIttkvKLrKM8A1kpZ5VZ/MHs=",
+              "state": "Confirmed",
+              "amount": "800000",
+              "tx_id": "beb447976c6c1a93fdadee41280b912e62b305c7c30815dc172d58732b6c3836",
+              "vout": 0,
+              "expiry": 1623
+            },
+            {
+              "reservation_id": "Mu65fbhayEtRzougKLBnoeRN8f+tEM1+O9QuNvUIfbI=",
+              "state": "Confirmed",
+              "amount": "800000",
+              "tx_id": "5f898ca1b3852c62889f1113e07c73d0a3d721fd98d0a5433c6b7122cc706952",
+              "vout": 0,
+              "expiry": 1626
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 177,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"reservations\": [\n        {\n            \"amount\": \"800000\",\n            \"expiry\": 1619,\n            \"reservation_id\": \"b3f443e8b8ff797766b450ad77fe80beb250acfd7887562b6e5c9964c5884d87\",\n            \"state\": \"Confirmed\",\n            \"tx_id\": \"8b3b5e235ad24be42bc3802c6694566964c394df247b4ae1f2f4fd785e5acd17\",\n            \"vout\": 0\n        },\n        {\n            \"amount\": \"800000\",\n            \"expiry\": 1623,\n            \"reservation_id\": \"5a5f824ec63e576cd4be42b96ecf5622db64bca2eb28cf00d64a59e5567f307b\",\n            \"state\": \"Confirmed\",\n            \"tx_id\": \"beb447976c6c1a93fdadee41280b912e62b305c7c30815dc172d58732b6c3836\",\n            \"vout\": 0\n        },\n        {\n            \"amount\": \"800000\",\n            \"expiry\": 1626,\n            \"reservation_id\": \"32eeb97db85ac84b51ce8ba028b067a1e44df1ffad10cd7e3bd42e36f5087db2\",\n            \"state\": \"Confirmed\",\n            \"tx_id\": \"5f898ca1b3852c62889f1113e07c73d0a3d721fd98d0a5433c6b7122cc706952\",\n            \"vout\": 0\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 177,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

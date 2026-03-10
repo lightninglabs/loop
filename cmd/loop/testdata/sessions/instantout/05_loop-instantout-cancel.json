@@ -1,0 +1,137 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "instantout",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "swap canceled",
+    "duration": 229272887
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stdin",
+      "data": {
+        "text": "ALL\nn\n"
+      }
+    },
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListReservations",
+        "event": "request",
+        "message_type": "looprpc.ListReservationsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 188,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListReservations",
+        "event": "response",
+        "message_type": "looprpc.ListReservationsResponse",
+        "payload": {
+          "reservations": [
+            {
+              "reservation_id": "s/RD6Lj/eXdmtFCtd/6AvrJQrP14h1YrblyZZMWITYc=",
+              "state": "Spent",
+              "amount": "800000",
+              "tx_id": "8b3b5e235ad24be42bc3802c6694566964c394df247b4ae1f2f4fd785e5acd17",
+              "vout": 0,
+              "expiry": 1619
+            },
+            {
+              "reservation_id": "Wl+CTsY+V2zUvkK5bs9WIttkvKLrKM8A1kpZ5VZ/MHs=",
+              "state": "Spent",
+              "amount": "800000",
+              "tx_id": "beb447976c6c1a93fdadee41280b912e62b305c7c30815dc172d58732b6c3836",
+              "vout": 0,
+              "expiry": 1623
+            },
+            {
+              "reservation_id": "Mu65fbhayEtRzougKLBnoeRN8f+tEM1+O9QuNvUIfbI=",
+              "state": "Spent",
+              "amount": "800000",
+              "tx_id": "5f898ca1b3852c62889f1113e07c73d0a3d721fd98d0a5433c6b7122cc706952",
+              "vout": 0,
+              "expiry": 1626
+            },
+            {
+              "reservation_id": "/AslVrUe/D6Eum+CZsg1x+EalEVACi6ICfc8rVURH3U=",
+              "state": "Confirmed",
+              "amount": "800000",
+              "tx_id": "322d031e9ab55e0bcdac421c57d2d5d7705b80d01d3217a672aa1bf73edfc963",
+              "vout": 0,
+              "expiry": 1632
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 188,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/InstantOutQuote",
+        "event": "request",
+        "message_type": "looprpc.InstantOutQuoteRequest",
+        "payload": {
+          "amt": "800000",
+          "num_reservations": 0,
+          "reservation_ids": [
+            "/AslVrUe/D6Eum+CZsg1x+EalEVACi6ICfc8rVURH3U="
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 188,
+      "kind": "stdout",
+      "data": {
+        "text": "Available reservations: \n\nReservation 1: shortid fc0b25, amt 800000, expiry height 1632 \n\nMax amount to instant out: 800000\n\nSelect reservations for instantout (e.g. '1,2,3')\nType 'ALL' to use all available reservations.\n"
+      }
+    },
+    {
+      "time_ms": 228,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/InstantOutQuote",
+        "event": "response",
+        "message_type": "looprpc.InstantOutQuoteResponse",
+        "payload": {
+          "service_fee_sat": "1600",
+          "sweep_fee_sat": "2773"
+        }
+      }
+    },
+    {
+      "time_ms": 228,
+      "kind": "stdout",
+      "data": {
+        "text": "\nEstimated on-chain fee:                      2773 sat\nService fee:                                 1600 sat\n\nCONTINUE SWAP? (y/n): "
+      }
+    },
+    {
+      "time_ms": 229,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] swap canceled\n"
+      }
+    },
+    {
+      "time_ms": 229,
+      "kind": "exit",
+      "data": {
+        "run_error": "swap canceled"
+      }
+    }
+  ]
+}

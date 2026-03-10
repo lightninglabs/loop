@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "listdeposits",
+      "--network",
+      "regtest",
+      "--filter",
+      "failed"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "duration": 140385482
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "UNKNOWN_STATE",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 139,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "aCYqEEyewyXea+w3uOMb2HW70vXwuc4togzwvWNvxEg=",
+              "state": "WITHDRAWN",
+              "outpoint": "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0",
+              "value": "500000",
+              "confirmation_height": "125",
+              "blocks_until_expiry": "14360",
+              "swap_hash": ""
+            },
+            {
+              "id": "hrXizflpTI5zmOQq/eEJdm180hQiA5Bbpj+9DrE3DvM=",
+              "state": "WITHDRAWN",
+              "outpoint": "bb358e4f73ae97c4e2d99c6d64e852bba7cf56e13105b05d1200b8ae1796665e:0",
+              "value": "500000",
+              "confirmation_height": "127",
+              "blocks_until_expiry": "14362",
+              "swap_hash": ""
+            },
+            {
+              "id": "bCkPdTbqUJeUav/6xqaZBqJtd1gj67rO3+by1pwHReQ=",
+              "state": "WITHDRAWN",
+              "outpoint": "5eaa7dd7a291665393eddf5dece91feef901f22665933cce7a0732a9b81c3001:0",
+              "value": "500000",
+              "confirmation_height": "128",
+              "blocks_until_expiry": "14363",
+              "swap_hash": ""
+            },
+            {
+              "id": "AYK02JWxxGcpCue1xsQv92sqQiWAepQhHJcxcNWog+s=",
+              "state": "WITHDRAWN",
+              "outpoint": "7e6360d6e6a394cfd096adf0bfe1275c5a83541eb573e90e463a78dc715f8894:0",
+              "value": "500000",
+              "confirmation_height": "142",
+              "blocks_until_expiry": "14377",
+              "swap_hash": ""
+            },
+            {
+              "id": "j71tovlF3ikFqn+pOGB0TZOH00ZEhDYOluRnpR3jvJ0=",
+              "state": "LOOPED_IN",
+              "outpoint": "9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0",
+              "value": "500000",
+              "confirmation_height": "148",
+              "blocks_until_expiry": "14383",
+              "swap_hash": "hDAjN0JANkGTlqt5ZN14uFsaSBqfHbc9tc3e5XwkQ+c="
+            },
+            {
+              "id": "u38FDfC3w+H+YQEOEK1F4w3fes0wH6bgWi3bgltcLvs=",
+              "state": "WITHDRAWING",
+              "outpoint": "56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0",
+              "value": "500000",
+              "confirmation_height": "160",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 139,
+      "kind": "stdout",
+      "data": {
+        "text": "{\n    \"filtered_deposits\": [\n        {\n            \"blocks_until_expiry\": \"14360\",\n            \"confirmation_height\": \"125\",\n            \"id\": \"68262a104c9ec325de6bec37b8e31bd875bbd2f5f0b9ce2da20cf0bd636fc448\",\n            \"outpoint\": \"edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0\",\n            \"state\": \"WITHDRAWN\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        },\n        {\n            \"blocks_until_expiry\": \"14362\",\n            \"confirmation_height\": \"127\",\n            \"id\": \"86b5e2cdf9694c8e7398e42afde109766d7cd2142203905ba63fbd0eb1370ef3\",\n            \"outpoint\": \"bb358e4f73ae97c4e2d99c6d64e852bba7cf56e13105b05d1200b8ae1796665e:0\",\n            \"state\": \"WITHDRAWN\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        },\n        {\n            \"blocks_until_expiry\": \"14363\",\n            \"confirmation_height\": \"128\",\n            \"id\": \"6c290f7536ea5097946afffac6a69906a26d775823ebbacedfe6f2d69c0745e4\",\n            \"outpoint\": \"5eaa7dd7a291665393eddf5dece91feef901f22665933cce7a0732a9b81c3001:0\",\n            \"state\": \"WITHDRAWN\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        },\n        {\n            \"blocks_until_expiry\": \"14377\",\n            \"confirmation_height\": \"142\",\n            \"id\": \"0182b4d895b1c467290ae7b5c6c42ff76b2a4225807a94211c973170d5a883eb\",\n            \"outpoint\": \"7e6360d6e6a394cfd096adf0bfe1275c5a83541eb573e90e463a78dc715f8894:0\",\n            \"state\": \"WITHDRAWN\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        },\n        {\n            \"blocks_until_expiry\": \"14383\",\n            \"confirmation_height\": \"148\",\n            \"id\": \"8fbd6da2f945de2905aa7fa93860744d9387d3464484360e96e467a51de3bc9d\",\n            \"outpoint\": \"9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0\",\n            \"state\": \"LOOPED_IN\",\n            \"swap_hash\": \"84302337424036419396ab7964dd78b85b1a481a9f1db73db5cddee57c2443e7\",\n            \"value\": \"500000\"\n        },\n        {\n            \"blocks_until_expiry\": \"14395\",\n            \"confirmation_height\": \"160\",\n            \"id\": \"bb7f050df0b7c3e1fe61010e10ad45e30ddf7acd301fa6e05a2ddb825b5c2efb\",\n            \"outpoint\": \"56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0\",\n            \"state\": \"WITHDRAWING\",\n            \"swap_hash\": \"\",\n            \"value\": \"500000\"\n        }\n    ]\n}\n"
+      }
+    },
+    {
+      "time_ms": 140,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

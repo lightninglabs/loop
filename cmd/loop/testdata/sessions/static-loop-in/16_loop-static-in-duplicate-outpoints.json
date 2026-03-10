@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "static",
+      "in",
+      "--utxo",
+      "9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0",
+      "--utxo",
+      "9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0",
+      "--network",
+      "regtest"
+    ],
+    "env": {
+      "HOME": "/home/user"
+    },
+    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
+    "run_error": "duplicate outpoints detected",
+    "duration": 174401375
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 173,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "j71tovlF3ikFqn+pOGB0TZOH00ZEhDYOluRnpR3jvJ0=",
+              "state": "DEPOSITED",
+              "outpoint": "9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0",
+              "value": "500000",
+              "confirmation_height": "148",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 174,
+      "kind": "stderr",
+      "data": {
+        "text": "[loop] duplicate outpoints detected\n"
+      }
+    },
+    {
+      "time_ms": 174,
+      "kind": "exit",
+      "data": {
+        "run_error": "duplicate outpoints detected"
+      }
+    }
+  ]
+}
