@@ -10,6 +10,7 @@ GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
 
 GO_BIN := ${GOPATH}/bin
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
+VERSION_GO_FILE := "version.go"
 
 GOBUILD := CGO_ENABLED=0 GO111MODULE=on go build -v
 GOINSTALL := CGO_ENABLED=0 GO111MODULE=on go install -v
@@ -85,6 +86,22 @@ docker-release: docker-release-builder
 	@$(call print, "Building release binaries in docker.")
 	@if [ "$(tag)" = "" ]; then echo "Must specify tag=<commit_or_tag>!"; exit 1; fi
 	$(DOCKER_RELEASE_BUILDER) bash release.sh $(tag)
+
+# release-tag: Create a signed Git tag from version.go if valid
+# Derives the tag name from version.go, validates that it conforms to
+# Semantic Versioning (SemVer), and creates a signed Git tag. Ensures
+# the tag matches the version declared in version.go to avoid accidental
+# or incorrect releases.
+release-tag:
+	@$(call print, "Adding release tag.")
+
+	tag=$$(./scripts/get-git-tag-name.sh ${VERSION_GO_FILE}); \
+	exit_status=$$?; \
+	if [ $$exit_status -ne 0 ]; then \
+		echo "Script encountered an error with exit status $$exit_status."; \
+	fi; \
+	echo "Adding git tag: $$tag"; \
+	git tag -as -m "Tag generated using command \`make release-tag\`." "$$tag";
 
 rpc:
 	@$(call print, "Compiling protos.")
