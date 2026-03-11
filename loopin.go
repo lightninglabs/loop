@@ -362,7 +362,8 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 					// server will know that its probe was
 					// successful.
 					err := lnd.Invoices.CancelInvoice(
-						ctx, probeHash,
+						context.WithoutCancel(ctx),
+						probeHash,
 					)
 					if err != nil {
 						log.Errorf("Cancel probe "+
@@ -529,13 +530,11 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 	subCtx, cancel := context.WithCancel(mainCtx)
 	defer cancel()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		subscribeAndLogUpdates(
 			subCtx, s.hash, s.log, s.server.SubscribeLoopInUpdates,
 		)
-	}()
+	})
 
 	// Announce swap by sending out an initial update.
 	err := s.sendUpdate(mainCtx)

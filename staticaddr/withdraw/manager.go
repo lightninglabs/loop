@@ -22,7 +22,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
-	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -130,14 +129,11 @@ type Manager struct {
 	// exitChan signals subroutines that the withdrawal manager is exiting.
 	exitChan chan struct{}
 
-	// errChan forwards errors from the withdrawal manager to the server.
-	errChan chan error
-
 	// initiationHeight stores the currently best known block height.
 	initiationHeight atomic.Uint32
 
-	// finalizedWithdrawalTx are the finalized withdrawal transactions that
-	// are published to the network and re-published on block arrivals.
+	// finalizedWithdrawalTxns are the finalized withdrawal transactions
+	// that are published to the network and re-published on block arrivals.
 	finalizedWithdrawalTxns map[chainhash.Hash]*wire.MsgTx
 }
 
@@ -153,7 +149,6 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
 		exitChan:                 make(chan struct{}),
 		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
-		errChan:                  make(chan error),
 	}
 	m.initiationHeight.Store(currentHeight)
 
@@ -666,7 +661,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
-		log.Errorf("error retrieving address params %w", err)
+		log.Errorf("error retrieving address params: %v", err)
 
 		return fmt.Errorf("withdrawal failed")
 	}
@@ -676,6 +671,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		ctx, &d.OutPoint, addrParams.PkScript,
 		int32(d.ConfirmationHeight),
 	)
+	if err != nil {
+		return fmt.Errorf("unable to register spend ntfn: %w", err)
+	}
 
 	go func() {
 		select {
@@ -684,13 +682,21 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
-			var confChan chan *chainntnfs.TxConfirmation
-			confChan, errChan, err =
+			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
+			if err != nil {
+				// TODO(#1087): Retry registration on
+				// next block instead of giving up.
+				log.Errorf("Error registering confirmation "+
+					"notification: %v", err)
+
+				return
+			}
+
 			select {
 			case tx := <-confChan:
 				err = m.cfg.DepositManager.TransitionDeposits(
@@ -719,7 +725,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						"withdrawal: %v", err)
 				}
 
-			case err := <-errChan:
+			case err := <-confErrChan:
+				// TODO(#1087): Handle reorgs by retrying
+				// confirmation registration on next block.
 				log.Errorf("Error waiting for confirmation: %v",
 					err)
 
@@ -1073,7 +1081,7 @@ func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 	hasChange bool) (lntypes.WeightUnit, error) {
 
 	var weightEstimator input.TxWeightEstimator
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		weightEstimator.AddTaprootKeySpendInput(
 			txscript.SigHashDefault,
 		)

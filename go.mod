@@ -219,6 +219,8 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // did not yet make it into the upstream repository.
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
 
+replace lukechampine.com/uint128 => github.com/lukechampine/uint128 v1.2.0
+
 replace github.com/lightninglabs/loop/swapserverrpc => ./swapserverrpc
 
 replace github.com/lightninglabs/loop/looprpc => ./looprpc

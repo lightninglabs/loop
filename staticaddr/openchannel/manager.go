@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
-	serverrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
@@ -31,7 +30,8 @@ const (
 	// channel opening.
 	defaultUtxoMinConf = 1
 
-	// Is the default confirmation target for a channel open transaction.
+	// defaultConfTarget is the default confirmation target for a channel
+	// open transaction.
 	defaultConfTarget int32 = 3
 )
 
@@ -47,14 +47,6 @@ var (
 
 // Config is the configuration struct for the open channel manager.
 type Config struct {
-	// StaticAddressServerClient is the client that calls the swap server
-	// rpcs to negotiate static address withdrawals.
-	Server serverrpc.StaticAddressServerClient
-
-	// AddressManager gives the withdrawal manager access to static address
-	// parameters.
-	AddressManager AddressManager
-
 	// DepositManager gives the withdrawal manager access to the deposits
 	// enabling it to create and manage withdrawals.
 	DepositManager DepositManager
@@ -71,13 +63,6 @@ type Config struct {
 	// manager uses.
 	ChainParams *chaincfg.Params
 
-	// ChainNotifier is the chain notifier that is used to listen for new
-	// blocks.
-	ChainNotifier lndclient.ChainNotifierClient
-
-	// Signer is the signer client that is used to sign transactions.
-	Signer lndclient.SignerClient
-
 	// LightningClient is the lnd client that is used to open channels.
 	LightningClient lndclient.LightningClient
 }
@@ -91,7 +76,7 @@ type newOpenChannelResponse struct {
 	// ChanOutpoint is the outpoint of the channel open transaction.
 	ChanOutpoint *wire.OutPoint
 
-	// Err is the error that occurred during the channel open process.
+	// err is the error that occurred during the channel open process.
 	err error
 }
 
@@ -103,9 +88,6 @@ type Manager struct {
 
 	// exitChan signals subroutines that the open channel is exiting.
 	exitChan chan struct{}
-
-	// errChan forwards errors from the open channel to the server.
-	errChan chan error
 }
 
 // NewManager creates a new manager instance.
@@ -114,7 +96,6 @@ func NewManager(cfg *Config) *Manager {
 		cfg:                       cfg,
 		exitChan:                  make(chan struct{}),
 		newOpenChannelRequestChan: make(chan newOpenChannelRequest),
-		errChan:                   make(chan error),
 	}
 
 	return m
@@ -477,9 +458,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 	log.Infof("Starting PSBT funding flow with pending channel ID %x.\n",
 		pendingChanID)
 
-	// maybeCancelShim is a helper function that cancels the funding shim
-	// with the RPC server in case we end up aborting early.
-	maybeCancelShim := func() {
+	defer func() {
 		shimMu.Lock()
 		defer shimMu.Unlock()
 
@@ -497,15 +476,14 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				},
 			}
 			_, err := m.cfg.LightningClient.FundingStateStep(
-				ctx, cancelMsg,
+				context.WithoutCancel(ctx), cancelMsg,
 			)
 			if err != nil {
 				log.Errorf("Error canceling shim: %v\n", err)
 			}
 			shimPending = false
 		}
-	}
-	defer maybeCancelShim()
+	}()
 
 	// Create the PSBT funding shim that will tell the funding manager we
 	// want to use a PSBT.

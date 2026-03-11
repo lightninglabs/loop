@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btclog/v2"
@@ -124,9 +125,17 @@ func ReleaseRoutingPlugin(ctx context.Context) {
 		return
 	}
 
-	if err := routingPluginInstance.Done(ctx); err != nil {
-		log.Errorf("Error while releasing routing plugin: %v",
-			err)
+	// Use a timeout so a hanging Done call does not block the mutex
+	// indefinitely, which would prevent other loop-outs from acquiring
+	// the routing plugin.
+	releaseCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), 30*time.Second,
+	)
+	defer cancel()
+
+	err := routingPluginInstance.Done(releaseCtx)
+	if err != nil {
+		log.Errorf("Error while releasing routing plugin: %v", err)
 	}
 
 	routingPluginInstance = nil

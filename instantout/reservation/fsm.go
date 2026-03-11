@@ -259,26 +259,26 @@ func (r *FSM) updateReservation(ctx context.Context,
 	}
 }
 
-func (r *FSM) Infof(format string, args ...interface{}) {
+func (r *FSM) Infof(format string, args ...any) {
 	log.Infof(
 		"Reservation %v %x: "+format,
-		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
 			args...)...,
 	)
 }
 
-func (r *FSM) Debugf(format string, args ...interface{}) {
+func (r *FSM) Debugf(format string, args ...any) {
 	log.Debugf(
 		"Reservation %v %x: "+format,
-		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
 			args...)...,
 	)
 }
 
-func (r *FSM) Errorf(format string, args ...interface{}) {
+func (r *FSM) Errorf(format string, args ...any) {
 	log.Errorf(
 		"Reservation %v %x: "+format,
-		append([]interface{}{r.reservation.ProtocolVersion, r.reservation.ID},
+		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
 			args...)...,
 	)
 }

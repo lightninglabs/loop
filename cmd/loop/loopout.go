@@ -159,8 +159,7 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 			return fmt.Errorf("channel flag is not supported when " +
 				"looping out assets")
 		}
-		chanStrings := strings.Split(cmd.String("channel"), ",")
-		for _, chanString := range chanStrings {
+		for chanString := range strings.SplitSeq(cmd.String("channel"), ",") {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
 				return fmt.Errorf("error parsing channel id "+

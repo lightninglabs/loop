@@ -18,7 +18,7 @@ type PrefixLog struct {
 
 // Infof formats message according to format specifier and writes to
 // log with LevelInfo.
-func (s *PrefixLog) Infof(format string, params ...interface{}) {
+func (s *PrefixLog) Infof(format string, params ...any) {
 	s.Logger.Infof(
 		fmt.Sprintf("%v %s", ShortHash(&s.Hash), format),
 		params...,
@@ -27,7 +27,7 @@ func (s *PrefixLog) Infof(format string, params ...interface{}) {
 
 // Warnf formats message according to format specifier and writes to log with
 // LevelError.
-func (s *PrefixLog) Warnf(format string, params ...interface{}) {
+func (s *PrefixLog) Warnf(format string, params ...any) {
 	s.Logger.Warnf(
 		fmt.Sprintf("%v %s", ShortHash(&s.Hash), format),
 		params...,
@@ -36,7 +36,7 @@ func (s *PrefixLog) Warnf(format string, params ...interface{}) {
 
 // Errorf formats message according to format specifier and writes to log with
 // LevelError.
-func (s *PrefixLog) Errorf(format string, params ...interface{}) {
+func (s *PrefixLog) Errorf(format string, params ...any) {
 	s.Logger.Errorf(
 		fmt.Sprintf("%v %s", ShortHash(&s.Hash), format),
 		params...,

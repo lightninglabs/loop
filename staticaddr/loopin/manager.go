@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -60,10 +61,10 @@ type Config struct {
 	// cancel invoices.
 	InvoicesClient lndclient.InvoicesClient
 
-	// SwapClient is used to get loop in quotes.
+	// QuoteGetter is used to get loop-in quotes.
 	QuoteGetter QuoteGetter
 
-	// NodePubKey is used to get a loo-in quote.
+	// NodePubkey is used to get a loop-in quote.
 	NodePubkey route.Vertex
 
 	// WalletKit is the wallet client that is used to derive new keys from
@@ -74,7 +75,7 @@ type Config struct {
 	// manager uses.
 	ChainParams *chaincfg.Params
 
-	// Chain is the chain notifier that is used to listen for new
+	// ChainNotifier is the chain notifier that is used to listen for new
 	// blocks.
 	ChainNotifier lndclient.ChainNotifierClient
 
@@ -134,13 +135,8 @@ type Manager struct {
 	// has been canceled.
 	exitChan chan struct{}
 
-	// errChan forwards errors from the loop-in manager to the server.
-	errChan chan error
-
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
-
-	activeLoopIns map[lntypes.Hash]*FSM
 }
 
 // NewManager creates a new deposit withdrawal manager.
@@ -154,8 +150,6 @@ func NewManager(cfg *Config, currentHeight uint32) (*Manager, error) {
 		cfg:           cfg,
 		newLoopInChan: make(chan *newSwapRequest),
 		exitChan:      make(chan struct{}),
-		errChan:       make(chan error),
-		activeLoopIns: make(map[lntypes.Hash]*FSM),
 	}
 	m.currentHeight.Store(currentHeight)
 
@@ -566,25 +560,20 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}
 
 		// Create a state machine for a given loop-in.
-		var (
-			recovery = true
-			fsm      *FSM
-		)
-		fsm, err = NewFSM(ctx, loopIn, m.cfg, recovery)
+		recovery := true
+		fsm, err := NewFSM(ctx, loopIn, m.cfg, recovery)
 		if err != nil {
 			return err
 		}
 
 		// Send the OnRecover event to the state machine.
-		go func(fsm *FSM, swapHash lntypes.Hash) {
+		go func() {
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
-				log.Errorf("Error sending OnStart event: %v",
-					err)
+				log.Errorf("Error sending OnRecover "+
+					"event: %v", err)
 			}
-
-			m.activeLoopIns[swapHash] = fsm
-		}(fsm, loopIn.SwapHash)
+		}()
 	}
 
 	return nil
@@ -807,9 +796,9 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 
 	// Send the start event to the state machine.
 	go func() {
-		err = loopInFsm.SendEvent(ctx, OnInitHtlc, nil)
+		err := loopInFsm.SendEvent(ctx, OnInitHtlc, nil)
 		if err != nil {
-			log.Errorf("Error sending OnNewRequest event: %v", err)
+			log.Errorf("Error sending OnInitHtlc event: %v", err)
 		}
 	}()
 
@@ -822,8 +811,6 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-
-	m.activeLoopIns[loopIn.SwapHash] = loopInFsm
 
 	return loopIn, nil
 }
@@ -1000,14 +987,7 @@ func mapDepositsToIndices(
 
 	depositToIdxMap := make(map[string]int)
 	for reqOutpoint := range req.DepositToNonces {
-		hasDeposit := false
-		for _, depositOutpoint := range loopIn.DepositOutpoints {
-			if depositOutpoint == reqOutpoint {
-				hasDeposit = true
-				break
-			}
-		}
-		if !hasDeposit {
+		if !slices.Contains(loopIn.DepositOutpoints, reqOutpoint) {
 			return nil, fmt.Errorf("deposit outpoint not part of " +
 				"loop-in")
 		}

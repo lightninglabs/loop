@@ -172,7 +172,7 @@ func (s SwapState) String() string {
 
 // SwapCost is a breakdown of the final swap costs.
 type SwapCost struct {
-	// Swap is the amount paid to the server.
+	// Server is the amount paid to the server.
 	Server btcutil.Amount
 
 	// Onchain is the amount paid to miners for the onchain tx.
@@ -189,7 +189,7 @@ func (s SwapCost) Total() btcutil.Amount {
 
 // SwapStateData is all persistent data to describe the current swap state.
 type SwapStateData struct {
-	// SwapState is the state the swap is in.
+	// State is the state the swap is in.
 	State SwapState
 
 	// Cost are the accrued (final) costs so far.

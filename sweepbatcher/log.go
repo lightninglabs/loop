@@ -37,16 +37,16 @@ func UseLogger(logger btclog.Logger) {
 }
 
 // debugf logs a message with level DEBUG.
-func debugf(format string, params ...interface{}) {
+func debugf(format string, params ...any) {
 	log().Debugf(format, params...)
 }
 
 // infof logs a message with level INFO.
-func infof(format string, params ...interface{}) {
+func infof(format string, params ...any) {
 	log().Infof(format, params...)
 }
 
 // warnf logs a message with level WARN.
-func warnf(format string, params ...interface{}) {
+func warnf(format string, params ...any) {
 	log().Warnf(format, params...)
 }

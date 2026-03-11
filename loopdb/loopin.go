@@ -16,7 +16,7 @@ import (
 type LoopInContract struct {
 	SwapContract
 
-	// SweepConfTarget specifies the targeted confirmation target for the
+	// HtlcConfTarget specifies the targeted confirmation target for the
 	// client sweep tx.
 	HtlcConfTarget int32
 

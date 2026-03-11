@@ -102,7 +102,7 @@ type swapClientServer struct {
 	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
 	swaps                map[lntypes.Hash]loop.SwapInfo
-	subscribers          map[int]chan<- interface{}
+	subscribers          map[int]chan<- any
 	statusChan           chan loop.SwapInfo
 	nextSubscriberID     int
 	swapsLock            sync.Mutex
@@ -678,14 +678,8 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 	if swapInfo.SwapType == swap.TypeOut && filter.OutgoingChanSet != nil {
 		// First we sort both channel sets to make sure we can compare
 		// them.
-		sort.Slice(swapInfo.OutgoingChanSet, func(i, j int) bool {
-			return swapInfo.OutgoingChanSet[i] <
-				swapInfo.OutgoingChanSet[j]
-		})
-		sort.Slice(filter.OutgoingChanSet, func(i, j int) bool {
-			return filter.OutgoingChanSet[i] <
-				filter.OutgoingChanSet[j]
-		})
+		slices.Sort(swapInfo.OutgoingChanSet)
+		slices.Sort(filter.OutgoingChanSet)
 
 		// Compare the outgoing channel set by using reflect.DeepEqual
 		// which compares the underlying arrays.
@@ -1244,6 +1238,7 @@ func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 }
 
 // GetLsatTokens returns all tokens that are contained in the L402 token store.
+//
 // Deprecated: use GetL402Tokens.
 // This API is provided to maintain backward compatibility with gRPC clients
 // (e.g. `loop listauth`, Terminal Web, RTL).
@@ -1809,12 +1804,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	var filteredDeposits []*looprpc.Deposit
 	if len(outpoints) > 0 {
 		f := func(d *deposit.Deposit) bool {
-			for _, outpoint := range outpoints {
-				if outpoint == d.OutPoint.String() {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(outpoints, d.OutPoint.String())
 		}
 		filteredDeposits = filter(allDeposits, f)
 
@@ -2179,7 +2169,7 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	for i := 0; i < len(deposits); i++ {
+	for i := range len(deposits) {
 		deposits[i].BlocksUntilExpiry =
 			deposits[i].ConfirmationHeight +
 				int64(params.Expiry) - bestBlockHeight
@@ -2646,7 +2636,7 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 		tracef("Trying to split %v sats into %v parts", amt, shard)
 
 		paid := false
-		for i := 0; i < len(localBalances); i++ {
+		for i := range len(localBalances) {
 			// TODO(hieblmi): Consider channel reserves because the
 			//      channel can't send its full local balance.
 			if localBalances[i] >= split {
@@ -2753,7 +2743,7 @@ func toClientReservation(
 	}
 }
 
-// marshalFixedpoint marshals a fixed point from the tap rfqmath package to the
+// marshalFixedPoint marshals a fixed point from the tap rfqmath package to the
 // looprpc package.
 func marshalFixedPoint(bigIntFixedPoint *rfqmath.BigIntFixedPoint,
 ) *looprpc.FixedPoint {

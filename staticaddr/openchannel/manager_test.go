@@ -608,9 +608,10 @@ type mockLndClient struct {
 
 	rawClient lnrpc.LightningClient
 
-	mu             sync.Mutex
-	fundingStepIdx int
-	fundingStepErr error
+	mu                 sync.Mutex
+	fundingStepIdx     int
+	fundingStepErr     error
+	fundingStepCtxErrs []error
 }
 
 func (m *mockLndClient) RawClientWithMacAuth(
@@ -620,13 +621,14 @@ func (m *mockLndClient) RawClientWithMacAuth(
 	return ctx, 0, m.rawClient
 }
 
-func (m *mockLndClient) FundingStateStep(_ context.Context,
+func (m *mockLndClient) FundingStateStep(ctx context.Context,
 	_ *lnrpc.FundingTransitionMsg) (*lnrpc.FundingStateStepResp, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.fundingStepIdx++
+	m.fundingStepCtxErrs = append(m.fundingStepCtxErrs, ctx.Err())
 
 	return &lnrpc.FundingStateStepResp{}, m.fundingStepErr
 }
@@ -658,8 +660,8 @@ func (m *mockClientStream) CloseSend() error     { return nil }
 func (m *mockClientStream) Context() context.Context {
 	return context.Background()
 }
-func (m *mockClientStream) SendMsg(_ interface{}) error { return nil }
-func (m *mockClientStream) RecvMsg(_ interface{}) error { return nil }
+func (m *mockClientStream) SendMsg(_ any) error { return nil }
+func (m *mockClientStream) RecvMsg(_ any) error { return nil }
 
 // mockOpenChanStream implements lnrpc.Lightning_OpenChannelClient. It returns
 // queued messages from Recv(), then returns finalErr once the queue is
@@ -746,6 +748,43 @@ func TestStreamOpenError(t *testing.T) {
 	// Verify that the shim was canceled via FundingStateStep.
 	lnClient.mu.Lock()
 	require.Equal(t, 1, lnClient.fundingStepIdx)
+	require.Len(t, lnClient.fundingStepCtxErrs, 1)
+	require.NoError(t, lnClient.fundingStepCtxErrs[0])
+	lnClient.mu.Unlock()
+}
+
+// TestStreamOpenErrorWithCanceledContext verifies that deferred shim cleanup
+// still uses a live context even if the caller canceled the original request.
+func TestStreamOpenErrorWithCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	mockRaw := &mockRawLnrpcClient{
+		openErr: errors.New("connection refused"),
+	}
+	lnClient := &mockLndClient{rawClient: mockRaw}
+
+	manager := &Manager{
+		cfg: &Config{
+			LightningClient: lnClient,
+			ChainParams:     &chaincfg.RegressionNetParams,
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := &lnrpc.OpenChannelRequest{
+		LocalFundingAmount: 100000,
+		MinConfs:           defaultUtxoMinConf,
+	}
+
+	_, err := manager.openChannelPsbt(ctx, req, nil, 0)
+	require.ErrorContains(t, err, "opening stream to server failed")
+
+	lnClient.mu.Lock()
+	require.Equal(t, 1, lnClient.fundingStepIdx)
+	require.Len(t, lnClient.fundingStepCtxErrs, 1)
+	require.NoError(t, lnClient.fundingStepCtxErrs[0])
 	lnClient.mu.Unlock()
 }
 

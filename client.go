@@ -442,10 +442,7 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 	}
 
 	// Start goroutine to deliver all pending swaps to the main loop.
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-
+	s.wg.Go(func() {
 		s.resumeSwaps(mainCtx, pendingLoopOutSwaps, pendingLoopInSwaps)
 
 		// Signal that new requests can be accepted. Otherwise, the new
@@ -453,7 +450,7 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 		// this goroutine as being a swap that needs to be resumed.
 		// Resulting in two goroutines executing the same swap.
 		close(s.resumeReady)
-	}()
+	})
 
 	// Main event loop.
 	err = s.executor.run(mainCtx, statusChan, s.abandonChans)

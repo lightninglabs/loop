@@ -740,7 +740,7 @@ func (db *BaseDB) convertLoopInRow(row sqlc.GetLoopInSwapsRow,
 func getSwapEvents(updates []sqlc.SwapUpdate) ([]*LoopEvent, error) {
 	events := make([]*LoopEvent, len(updates))
 
-	for i := 0; i < len(events); i++ {
+	for i := range len(events) {
 		events[i] = &LoopEvent{
 			SwapStateData: SwapStateData{
 				State: SwapState(updates[i].UpdateState),

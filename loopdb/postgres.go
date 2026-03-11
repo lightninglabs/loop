@@ -33,7 +33,7 @@ type PostgresConfig struct {
 	Host               string `long:"host" description:"Database server hostname."`
 	Port               int    `long:"port" description:"Database server port."`
 	User               string `long:"user" description:"Database user."`
-	Password           string `long:"password" description:"Database user's password."`
+	Password           string `long:"password" description:"Database user's password."` //nolint:gosec
 	DBName             string `long:"dbname" description:"Database name to use."`
 	MaxOpenConnections int32  `long:"maxconnections" description:"Max open connections to keep alive to the database server."`
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`

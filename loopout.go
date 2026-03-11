@@ -104,7 +104,7 @@ type executeConfig struct {
 	sweeper             *sweep.Sweeper
 	batcher             *sweepbatcher.Batcher
 	statusChan          chan<- SwapInfo
-	blockEpochChan      <-chan interface{}
+	blockEpochChan      <-chan any
 	timerFactory        func(time.Duration) <-chan time.Time
 	loopOutMaxParts     uint32
 	totalPaymentTimeout time.Duration
@@ -386,13 +386,11 @@ func (s *loopOutSwap) execute(mainCtx context.Context,
 	subCtx, cancel := context.WithCancel(mainCtx)
 	defer cancel()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		subscribeAndLogUpdates(
 			subCtx, s.hash, s.log, s.server.SubscribeLoopOutUpdates,
 		)
-	}()
+	})
 
 	// Execute swap.
 	err := s.executeAndFinalize(mainCtx)

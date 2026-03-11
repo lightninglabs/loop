@@ -368,9 +368,9 @@ func sufficientHints(numHints, maxHints, scalingFactor int, amount,
 	return false
 }
 
-// SelectHopHints will select up to numMaxHophints from the set of passed open
-// channels. The set of hop hints will be returned as a slice of functional
-// options that'll append the route hint to the set of all route hints.
+// invoicesrpcSelectHopHints will select up to numMaxHophints from the set of
+// passed open channels. The set of hop hints will be returned as a slice of
+// functional options that'll append the route hint to the set of all hints.
 //
 // TODO(sputn1ck): remove when https://github.com/lightningnetwork/lnd/pull/7065
 // is merged to a new lnd release.
@@ -438,7 +438,7 @@ func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsC
 	// or if the sum of available bandwidth in the routing hints exceeds 2x
 	// the payment amount. We do 2x here to account for a margin of error
 	// if some of the selected channels no longer become operable.
-	for i := 0; i < len(openChannels); i++ {
+	for i := range len(openChannels) {
 		enoughHopHints := sufficientHints(
 			len(hopHints), numMaxHophints, hopHintFactor, amtMSat,
 			totalHintBandwidth,
