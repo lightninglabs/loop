@@ -1,12 +1,19 @@
 name: Claude Code Review
 
 on:
+  issue_comment:
+    types: [created]
   pull_request:
     types: [labeled, synchronize]
 
 jobs:
   claude-review:
-    if: contains(github.event.pull_request.labels.*.name, 'claude-review')
+    if: |
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       github.event.issue.pull_request) ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'claude-review'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,7 +34,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
 
             Please review this pull request and provide feedback on:
             - Code quality and best practices
