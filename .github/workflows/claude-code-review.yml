@@ -11,7 +11,10 @@ jobs:
     if: |
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body, '@claude') &&
-       github.event.issue.pull_request) ||
+       github.event.issue.pull_request &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR')) ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'claude-review'))
     runs-on: ubuntu-latest
