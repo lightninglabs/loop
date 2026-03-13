@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -83,15 +84,18 @@ type swapConfig struct {
 	store  loopdb.SwapStore
 	server swapServerClient
 	assets *assets.TapdClient
+	clock  clock.Clock
 }
 
 func newSwapConfig(lnd *lndclient.LndServices, store loopdb.SwapStore,
-	server swapServerClient, assets *assets.TapdClient) *swapConfig {
+	server swapServerClient, assets *assets.TapdClient,
+	clock clock.Clock) *swapConfig {
 
 	return &swapConfig{
 		lnd:    lnd,
 		store:  store,
 		server: server,
 		assets: assets,
+		clock:  clock,
 	}
 }

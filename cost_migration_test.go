@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,7 @@ func TestCalculateLoopOutCost(t *testing.T) {
 		lnd:    &lnd.LndServices,
 		store:  store,
 		server: server,
+		clock:  clock.NewTestClock(time.Unix(123, 0)),
 	}
 
 	height := int32(600)
@@ -118,6 +120,7 @@ func TestCostMigration(t *testing.T) {
 		lnd:    &lnd.LndServices,
 		store:  store,
 		server: server,
+		clock:  clock.NewTestClock(time.Unix(123, 0)),
 	}
 
 	height := int32(600)

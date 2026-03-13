@@ -850,11 +850,13 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 	return swaps, nil
 }
 
-// SelectDeposits sorts the deposits by amount in descending order, then by
-// blocks-until-expiry in ascending order. It then selects the deposits that
-// are needed to cover the amount requested without leaving a dust change. It
-// returns an error if the sum of deposits minus dust is less than the requested
-// amount.
+// SelectDeposits sorts the deposits to optimize for successful swaps with
+// dynamic confirmation requirements: 1) more confirmations first (higher chance
+// of server acceptance), 2) larger amounts first (to minimize number of deposits
+// used), 3) expiring sooner first (to use time-sensitive deposits). It then
+// selects the deposits that are needed to cover the amount requested without
+// leaving a dust change. It returns an error if the sum of deposits minus dust
+// is less than the requested amount.
 func SelectDeposits(targetAmount btcutil.Amount,
 	unfilteredDeposits []*deposit.Deposit, csvExpiry uint32,
 	blockHeight uint32) ([]*deposit.Deposit, error) {
@@ -875,17 +877,28 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		deposits = append(deposits, d)
 	}
 
-	// Sort the deposits by amount in descending order, then by
-	// blocks-until-expiry in ascending order.
+	// Sort deposits to optimize for successful swaps with dynamic
+	// confirmation requirements:
+	// 1. More confirmations first (higher chance of server acceptance)
+	// 2. Larger amounts first (to minimize number of deposits used)
 	sort.Slice(deposits, func(i, j int) bool {
-		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
-				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
-				csvExpiry - blockHeight
-
-			return iExp < jExp
+		// Primary: more confirmations first. Guard against the
+		// theoretical case where ConfirmationHeight > blockHeight
+		// (e.g. during a transient reorg inconsistency).
+		var iConfs, jConfs uint32
+		if blockHeight > uint32(deposits[i].ConfirmationHeight) {
+			iConfs = blockHeight -
+				uint32(deposits[i].ConfirmationHeight)
 		}
+		if blockHeight > uint32(deposits[j].ConfirmationHeight) {
+			jConfs = blockHeight -
+				uint32(deposits[j].ConfirmationHeight)
+		}
+		if iConfs != jConfs {
+			return iConfs > jConfs
+		}
+
+		// Secondary: larger amounts first.
 		return deposits[i].Value > deposits[j].Value
 	})
 

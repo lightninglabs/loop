@@ -25,6 +25,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/fn"
 	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
@@ -192,7 +193,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Instantiate a struct that contains all required data to start the
 	// swap.
-	initiationTime := time.Now()
+	initiationTime := cfg.clock.Now()
 
 	contract := loopdb.LoopOutContract{
 		SwapInvoice:             swapResp.swapInvoice,
@@ -633,7 +634,7 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 
 // persistState updates the swap state and sends out an update notification.
 func (s *loopOutSwap) persistState(ctx context.Context) error {
-	updateTime := time.Now()
+	updateTime := s.clock.Now()
 
 	s.lastUpdateTime = updateTime
 
@@ -864,12 +865,12 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	payCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	start := time.Now()
+	start := s.clock.Now()
 	paymentStatus, attempts, err := s.sendPaymentWithRetry(
 		payCtx, hash, &req, maxRetries, routingPlugin, pluginType,
 	)
 
-	dt := time.Since(start)
+	dt := s.clock.Now().Sub(start)
 	paymentSuccess := err == nil &&
 		paymentStatus.State == lnrpc.Payment_SUCCEEDED
 
@@ -1543,6 +1544,7 @@ type resumeManager struct {
 	swapStore   loopdb.SwapStore
 	swapClient  swapserverrpc.SwapServerClient
 	lnd         *lndclient.GrpcLndServices
+	clock       clock.Clock
 
 	reqChan chan *swapserverrpc.ServerUnfinishedSwapNotification
 }
@@ -1552,13 +1554,14 @@ type resumeManager struct {
 func Resume(ctx context.Context, ntfnManager NotificationManager,
 	swapStore loopdb.SwapStore,
 	swapClientConn *grpc.ClientConn,
-	lnd *lndclient.GrpcLndServices) {
+	lnd *lndclient.GrpcLndServices, clock clock.Clock) {
 
 	resumeManager := &resumeManager{
 		ntfnManager: ntfnManager,
 		swapStore:   swapStore,
 		swapClient:  swapserverrpc.NewSwapServerClient(swapClientConn),
 		lnd:         lnd,
+		clock:       clock,
 		reqChan:     make(chan *swapserverrpc.ServerUnfinishedSwapNotification, 1),
 	}
 	go resumeManager.start(ctx)
@@ -1717,7 +1720,7 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 				cost.Server = payResp.Value.ToSatoshis() - amtRequested
 				cost.Offchain = payResp.Fee.ToSatoshis()
 				// Payment succeeded.
-				updateTime := time.Now()
+				updateTime := m.clock.Now()
 
 				// Update state in store.
 				err = m.swapStore.UpdateLoopOut(

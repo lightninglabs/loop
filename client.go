@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightninglabs/taproot-assets/rpcutils"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"google.golang.org/grpc"
@@ -485,7 +486,10 @@ func (s *Client) Run(ctx context.Context, statusChan chan<- SwapInfo) error {
 func (s *Client) resumeSwaps(ctx context.Context,
 	loopOutSwaps []*loopdb.LoopOut, loopInSwaps []*loopdb.LoopIn) {
 
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.AssetClient)
+	swapCfg := newSwapConfig(
+		s.lndServices, s.Store, s.Server, s.AssetClient,
+		clock.NewDefaultClock(),
+	)
 
 	for _, pend := range loopOutSwaps {
 		if pend.State().State.Type() != loopdb.StateTypePending {
@@ -578,6 +582,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
+		clock.NewDefaultClock(),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -759,7 +764,10 @@ func (s *Client) LoopIn(globalCtx context.Context,
 
 	// Create a new swap object for this swap.
 	initiationHeight := s.executor.height()
-	swapCfg := newSwapConfig(s.lndServices, s.Store, s.Server, s.AssetClient)
+	swapCfg := newSwapConfig(
+		s.lndServices, s.Store, s.Server, s.AssetClient,
+		clock.NewDefaultClock(),
+	)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
 	)

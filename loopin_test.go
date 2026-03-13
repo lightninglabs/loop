@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -129,8 +130,12 @@ func testLoopInSuccess(t *testing.T) {
 	ctx := newLoopInTestContext(t)
 
 	height := int32(600)
+	startTime := time.Unix(123, 0)
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(startTime),
+	)
 
 	expectedLastHop := &route.Vertex{0x02}
 
@@ -144,6 +149,7 @@ func testLoopInSuccess(t *testing.T) {
 	require.NoError(t, err)
 
 	inSwap := initResult.swap
+	require.Equal(t, startTime, inSwap.InitiationTime)
 
 	ctx.store.AssertLoopInStored()
 
@@ -279,7 +285,10 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
 
 	req := testLoopInRequest
 	if externalValue != 0 {
@@ -490,7 +499,10 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	ctxb := context.Background()
 
 	ctx := newLoopInTestContext(t)
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
 
 	// Create sender and receiver keys.
 	_, senderPubKey := test.CreateKey(1)
@@ -845,7 +857,10 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 	*swapConfig, *loopInSwap, error) {
 
-	cfg := newSwapConfig(&ctx.lnd.LndServices, ctx.store, ctx.server, nil)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
 
 	req := &testLoopInRequest
 

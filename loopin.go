@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -264,7 +263,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Instantiate a struct that contains all required data to start the
 	// swap.
-	initiationTime := time.Now()
+	initiationTime := cfg.clock.Now()
 
 	contract := loopdb.LoopInContract{
 		HtlcConfTarget: request.HtlcConfTarget,
@@ -837,7 +836,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// the fee for publishing the htlc.
 	s.cost.Onchain = fee
 
-	s.lastUpdateTime = time.Now()
+	s.lastUpdateTime = s.clock.Now()
 	if err := s.persistState(ctx); err != nil {
 		return false, fmt.Errorf("persist htlc tx: %v", err)
 	}
@@ -1210,7 +1209,7 @@ func (s *loopInSwap) persistState(ctx context.Context) error {
 
 // setState updates the swap state and last update timestamp.
 func (s *loopInSwap) setState(state loopdb.SwapState) {
-	s.lastUpdateTime = time.Now()
+	s.lastUpdateTime = s.clock.Now()
 	s.state = state
 }
 

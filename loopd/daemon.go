@@ -1005,7 +1005,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	loop.Resume(
-		d.mainCtx, notificationManager, swapClient.Store, d.impl.Conn, d.lnd,
+		d.mainCtx, notificationManager, swapClient.Store,
+		d.impl.Conn, d.lnd, clock.NewDefaultClock(),
 	)
 
 	// Last, start our internal error handler. This will return exactly one
