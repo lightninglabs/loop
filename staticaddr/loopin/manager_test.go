@@ -26,14 +26,10 @@ type testCase struct {
 
 // TestSelectDeposits tests the selectDeposits function, which selects
 // deposits that can cover a target value while respecting the dust limit.
-// Sorting priority: 1) more confirmations first, 2) larger amounts first,
-// 3) expiring sooner first.
 func TestSelectDeposits(t *testing.T) {
-	// Note: confirmations = blockHeight - ConfirmationHeight
-	// Lower ConfirmationHeight means more confirmations at a given block.
 	d1, d2, d3, d4 := &deposit.Deposit{
 		Value:              1_000_000,
-		ConfirmationHeight: 5_000, // most confs at height 5100
+		ConfirmationHeight: 5_000,
 	}, &deposit.Deposit{
 		Value:              2_000_000,
 		ConfirmationHeight: 5_001,
@@ -42,7 +38,7 @@ func TestSelectDeposits(t *testing.T) {
 		ConfirmationHeight: 5_002,
 	}, &deposit.Deposit{
 		Value:              3_000_000,
-		ConfirmationHeight: 5_003, // fewest confs at height 5100
+		ConfirmationHeight: 5_003,
 	}
 	d1.Hash = chainhash.Hash{1}
 	d1.Index = 0
@@ -53,51 +49,32 @@ func TestSelectDeposits(t *testing.T) {
 	d4.Hash = chainhash.Hash{4}
 	d4.Index = 0
 
-	// Use a realistic block height and csv expiry for all standard
-	// test cases. csvExpiry must be large enough that deposits remain
-	// swappable at this block height.
-	const (
-		testBlockHeight uint32 = 5_100
-		testCsvExpiry   uint32 = 2_500
-	)
-
 	testCases := []testCase{
 		{
 			name:        "single deposit exact target",
 			deposits:    []*deposit.Deposit{d1},
 			targetValue: 1_000_000,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{d1},
 			expectedErr: "",
 		},
 		{
-			// d1 has more confirmations, so it's preferred even
-			// though d2 is larger.
-			name:        "prefer more confirmed deposit over larger",
+			name:        "prefer larger deposit when both cover",
 			deposits:    []*deposit.Deposit{d1, d2},
 			targetValue: 1_000_000,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
-			expected:    []*deposit.Deposit{d1},
+			expected:    []*deposit.Deposit{d2},
 			expectedErr: "",
 		},
 		{
-			// d1 has the most confirmations among d1, d2, d3.
-			name:        "prefer most confirmed among three",
+			name:        "prefer largest among three when one is enough",
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: 1_000_000,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
-			expected:    []*deposit.Deposit{d1},
+			expected:    []*deposit.Deposit{d3},
 			expectedErr: "",
 		},
 		{
 			name:        "single deposit insufficient by 1",
 			deposits:    []*deposit.Deposit{d1},
 			targetValue: 1_000_001,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
@@ -105,8 +82,6 @@ func TestSelectDeposits(t *testing.T) {
 			name:        "target leaves exact dust limit change",
 			deposits:    []*deposit.Deposit{d1},
 			targetValue: 1_000_000 - dustLimit,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{d1},
 			expectedErr: "",
 		},
@@ -114,8 +89,6 @@ func TestSelectDeposits(t *testing.T) {
 			name:        "target leaves dust change (just over)",
 			deposits:    []*deposit.Deposit{d1},
 			targetValue: 1_000_000 - dustLimit + 1,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
@@ -123,8 +96,6 @@ func TestSelectDeposits(t *testing.T) {
 			name:        "all deposits exactly match target",
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: d1.Value + d2.Value + d3.Value,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{d1, d2, d3},
 			expectedErr: "",
 		},
@@ -132,8 +103,6 @@ func TestSelectDeposits(t *testing.T) {
 			name:        "sum minus dust limit is allowed (change == dust)",
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: d1.Value + d2.Value + d3.Value - dustLimit,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{d1, d2, d3},
 			expectedErr: "",
 		},
@@ -141,20 +110,14 @@ func TestSelectDeposits(t *testing.T) {
 			name:        "sum minus dust limit plus 1 is not allowed (dust change)",
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: d1.Value + d2.Value + d3.Value - dustLimit + 1,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
 		{
-			// d3 and d4 have the same value but d3 has more
-			// confirmations (lower ConfirmationHeight), so it
-			// wins at the primary sort level.
-			name:        "same value, prefer more confirmed",
+			name:        "tie by value, prefer earlier expiry",
 			deposits:    []*deposit.Deposit{d3, d4},
-			targetValue: d4.Value - dustLimit,
-			csvExpiry:   testCsvExpiry,
-			blockHeight: testBlockHeight,
+			targetValue: d4.Value - dustLimit, // d3/d4 have the
+			// same value but different expiration.
 			expected:    []*deposit.Deposit{d3},
 			expectedErr: "",
 		},
