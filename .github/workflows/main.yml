@@ -179,6 +179,26 @@ jobs:
         working-directory: ./lightning-terminal
         run: make itest-no-backward-compat icase='terminal .*'
 
+      - name: Print LiT itest output on failure
+        if: failure()
+        run: |
+          if [ -f lightning-terminal/itest/.logs/output.log ]; then
+            echo "::group::LiT itest output.log (last 2000 lines)"
+            tail -n 2000 lightning-terminal/itest/.logs/output.log
+            echo "::endgroup::"
+          fi
+
+      - name: Upload LiT itest logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lit-itest-logs-attempt-${{ github.run_attempt }}
+          path: |
+            lightning-terminal/itest/.logs/**
+            lightning-terminal/itest/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
   ########################
   # Run LiTd unit tests
   ########################
