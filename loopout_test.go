@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -57,11 +58,13 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	}
 
 	height := int32(600)
+	startTime := time.Unix(123, 0)
 
 	cfg := &swapConfig{
 		lnd:    &lnd.LndServices,
 		store:  store,
 		server: server,
+		clock:  clock.NewTestClock(startTime),
 	}
 
 	sweeper := &sweep.Sweeper{Lnd: &lnd.LndServices}
@@ -82,6 +85,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	)
 	require.NoError(t, err)
 	swap := initResult.swap
+	require.Equal(t, startTime, swap.InitiationTime)
 
 	// Execute the swap in its own goroutine.
 	errChan := make(chan error)
@@ -193,7 +197,10 @@ func testLateHtlcPublish(t *testing.T) {
 
 	height := int32(600)
 
-	cfg := newSwapConfig(&lnd.LndServices, store, server, nil)
+	cfg := newSwapConfig(
+		&lnd.LndServices, store, server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
 
 	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
 
@@ -296,6 +303,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -539,6 +547,7 @@ func testPreimagePush(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -797,6 +806,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -951,6 +961,7 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
 	initResult, err := newLoopOutSwap(
