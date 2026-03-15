@@ -1370,6 +1370,32 @@ message LiquidityParameters {
     considered for easy autoloop swaps.
     */
     repeated bytes easy_autoloop_excluded_peers = 27;
+
+    /*
+    Set to true to enable scriptable autoloop using Starlark scripts. If set,
+    all channel/peer rules and easy autoloop will be overridden and the client
+    will evaluate the configured Starlark script on each tick to determine
+    swaps. This mode is mutually exclusive with easy_autoloop and threshold
+    rules. Starlark is a Python-like language that supports variables,
+    functions, loops, and sorting - making it much more readable and powerful
+    than simple expressions.
+    */
+    bool scriptable_autoloop = 28;
+
+    /*
+    The Starlark script to evaluate on each autoloop tick. Required if
+    scriptable_autoloop is true. The script must set a 'decisions' variable
+    to a list of swap decisions using the loop_out() and loop_in() helper
+    functions. See documentation for available context variables (channels,
+    peers, total_local, restrictions, etc.) and helper functions.
+    */
+    string scriptable_script = 29;
+
+    /*
+    Optional custom tick interval in seconds for scriptable autoloop mode.
+    If 0 or not set, uses the default 20-minute interval.
+    */
+    uint64 scriptable_tick_interval_sec = 30;
 }
 
 message EasyAssetAutoloopParams {

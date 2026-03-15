@@ -128,6 +128,18 @@ type Parameters struct {
 	// swaps. If set to true, the deadline is set to immediate publication.
 	// If set to false, the deadline is set to 30 minutes.
 	FastSwapPublication bool
+
+	// ScriptableAutoloop enables Starlark-based scriptable autoloop mode.
+	// This mode is mutually exclusive with EasyAutoloop and threshold rules.
+	ScriptableAutoloop bool
+
+	// ScriptableScript is the Starlark script to evaluate on each tick.
+	// Required when ScriptableAutoloop is true.
+	ScriptableScript string
+
+	// ScriptableTickInterval overrides the default tick interval for
+	// scriptable mode. Zero means use DefaultAutoloopTicker.
+	ScriptableTickInterval time.Duration
 }
 
 // AssetParams define the asset specific autoloop parameters.
@@ -194,6 +206,27 @@ func (p Parameters) haveRules() bool {
 // TODO(carla): prune channels that have been closed from rules.
 func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 	server *Restrictions) error {
+
+	// Check scriptable autoloop constraints first.
+	if p.ScriptableAutoloop {
+		// Scriptable autoloop is mutually exclusive with easy autoloop.
+		if p.EasyAutoloop {
+			return errors.New("scriptable_autoloop and easy_autoloop " +
+				"are mutually exclusive")
+		}
+
+		// Scriptable autoloop is mutually exclusive with rules.
+		if len(p.ChannelRules) > 0 || len(p.PeerRules) > 0 {
+			return errors.New("scriptable_autoloop cannot be used " +
+				"with channel/peer rules")
+		}
+
+		// Script is required when scriptable autoloop is enabled.
+		if p.ScriptableScript == "" {
+			return errors.New("scriptable_script is required when " +
+				"scriptable_autoloop is enabled")
+		}
+	}
 
 	// First, we check that the rules on a per peer and per channel do not
 	// overlap, since this could lead to contractions.
@@ -475,8 +508,11 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		EasyAutoloopTarget: btcutil.Amount(
 			req.EasyAutoloopLocalTargetSat,
 		),
-		AssetAutoloopParams: easyAssetParams,
-		FastSwapPublication: req.FastSwapPublication,
+		AssetAutoloopParams:    easyAssetParams,
+		FastSwapPublication:    req.FastSwapPublication,
+		ScriptableAutoloop:     req.ScriptableAutoloop,
+		ScriptableScript:       req.ScriptableScript,
+		ScriptableTickInterval: time.Duration(req.ScriptableTickIntervalSec) * time.Second,
 	}
 
 	if req.AutoloopBudgetRefreshPeriodSec != 0 {
@@ -621,6 +657,9 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		AccountAddrType:            addrType,
 		EasyAssetParams:            easyAssetMap,
 		FastSwapPublication:        cfg.FastSwapPublication,
+		ScriptableAutoloop:         cfg.ScriptableAutoloop,
+		ScriptableScript:           cfg.ScriptableScript,
+		ScriptableTickIntervalSec:  uint64(cfg.ScriptableTickInterval / time.Second),
 	}
 	// Set excluded peers for easy autoloop.
 	rpcCfg.EasyAutoloopExcludedPeers = make(

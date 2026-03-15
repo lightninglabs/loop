@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -390,6 +391,34 @@ var setParamsCommand = &cli.Command{
 				"save on chain fees. Not setting this flag " +
 				"therefore might result in a lower swap fees",
 		},
+		&cli.BoolFlag{
+			Name: "scriptautoloop",
+			Usage: "set to true to enable scriptable autoloop " +
+				"using Starlark scripts. This allows custom " +
+				"swap logic with variables, functions, loops, " +
+				"and sorting. Mutually exclusive with " +
+				"easyautoloop and threshold rules.",
+		},
+		&cli.StringFlag{
+			Name: "scriptfile",
+			Usage: "path to a Starlark script file for " +
+				"scriptable autoloop. The script must set " +
+				"a 'decisions' variable to a list of swaps. " +
+				"Recommended for production use as it allows " +
+				"version control and proper editing.",
+		},
+		&cli.StringFlag{
+			Name: "script",
+			Usage: "inline Starlark script for scriptable " +
+				"autoloop. For simple scripts only; use " +
+				"--scriptfile for complex scripts.",
+		},
+		&cli.Uint64Flag{
+			Name: "scripttickinterval",
+			Usage: "custom tick interval in seconds for " +
+				"scriptable autoloop. If not set, uses " +
+				"the default 20-minute interval.",
+		},
 	},
 	Action: setParams,
 }
@@ -635,6 +664,48 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("fast") {
 		params.FastSwapPublication = true
+	}
+
+	// Handle scriptable autoloop flags.
+	if cmd.IsSet("scriptautoloop") {
+		params.ScriptableAutoloop = cmd.Bool("scriptautoloop")
+		flagSet = true
+	}
+
+	// Handle script content from file or inline.
+	scriptFileSet := cmd.IsSet("scriptfile")
+	scriptInlineSet := cmd.IsSet("script")
+
+	if scriptFileSet && scriptInlineSet {
+		return fmt.Errorf("cannot set both --scriptfile and --script; " +
+			"use one or the other")
+	}
+
+	if scriptFileSet {
+		scriptPath := cmd.String("scriptfile")
+		scriptBytes, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return fmt.Errorf("failed to read script file %s: %w",
+				scriptPath, err)
+		}
+		params.ScriptableScript = string(scriptBytes)
+		flagSet = true
+	}
+
+	if scriptInlineSet {
+		params.ScriptableScript = cmd.String("script")
+		flagSet = true
+	}
+
+	if cmd.IsSet("scripttickinterval") {
+		params.ScriptableTickIntervalSec = cmd.Uint64("scripttickinterval")
+		flagSet = true
+	}
+
+	// Validate that scriptable autoloop is not used with easyautoloop.
+	if params.ScriptableAutoloop && params.EasyAutoloop {
+		return fmt.Errorf("scriptable autoloop cannot be used with " +
+			"easy autoloop; disable one before enabling the other")
 	}
 
 	if !flagSet {
