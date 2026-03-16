@@ -19,12 +19,12 @@ type balances struct {
 	// outgoing is the local balance of the channel.
 	outgoing btcutil.Amount
 
-	// channels is the channel that has these balances represent. This may
+	// channels are the channels that these balances represent. This may
 	// be more than one channel in the case where we are examining a peer's
 	// liquidity as a whole.
 	channels []lnwire.ShortChannelID
 
-	// pubkey is the public key of the peer we have this balances set with.
+	// pubkey is the public key of the peer we have these balances set with.
 	pubkey route.Vertex
 }
 
