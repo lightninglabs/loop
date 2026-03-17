@@ -177,7 +177,7 @@ jobs:
 
       - name: Run LiT itests
         working-directory: ./lightning-terminal
-        run: make itest-no-backward-compat icase='terminal .*'
+        run: make itest icase='terminal .*'
 
   ########################
   # Run LiTd unit tests
