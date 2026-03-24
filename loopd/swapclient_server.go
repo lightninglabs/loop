@@ -1937,9 +1937,10 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			protoDeposits = make([]*looprpc.Deposit, 0, len(ds))
 			for _, d := range ds {
 				state := toClientDepositState(d.GetState())
-				blocksUntilExpiry := d.ConfirmationHeight +
-					int64(addrParams.Expiry) -
-					int64(lndInfo.BlockHeight)
+				blocksUntilExpiry := depositBlocksUntilExpiry(
+					d.ConfirmationHeight, addrParams.Expiry,
+					int64(lndInfo.BlockHeight),
+				)
 
 				pd := &looprpc.Deposit{
 					Id:                 d.ID[:],
@@ -2000,23 +2001,16 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		htlcTimeoutSwept    int64
 	)
 
-	// Value unconfirmed.
-	utxos, err := s.staticAddressManager.ListUnspent(
-		ctx, 0, deposit.MinConfs-1,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, u := range utxos {
-		valueUnconfirmed += int64(u.Value)
-	}
-
-	// Confirmed total values by category.
+	// Total values by category.
 	for _, d := range allDeposits {
 		value := int64(d.Value)
 		switch d.GetState() {
 		case deposit.Deposited:
-			valueDeposited += value
+			if d.ConfirmationHeight <= 0 {
+				valueUnconfirmed += value
+			} else {
+				valueDeposited += value
+			}
 
 		case deposit.Expired:
 			valueExpired += value
@@ -2159,11 +2153,24 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 		return err
 	}
 	for i := range len(deposits) {
-		deposits[i].BlocksUntilExpiry =
-			deposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		deposits[i].BlocksUntilExpiry = depositBlocksUntilExpiry(
+			deposits[i].ConfirmationHeight, params.Expiry,
+			bestBlockHeight,
+		)
 	}
 	return nil
+}
+
+// depositBlocksUntilExpiry returns the remaining blocks until a deposit
+// expires. Unconfirmed deposits return 0 because the CSV has not started yet.
+func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
+	bestBlockHeight int64) int64 {
+
+	if confirmationHeight <= 0 {
+		return 0
+	}
+
+	return confirmationHeight + int64(expiry) - bestBlockHeight
 }
 
 // StaticOpenChannel initiates an open channel request using static address
