@@ -325,6 +325,14 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		}
 	}
 
+	for _, d := range deposits {
+		// Deposited now includes mempool outputs for static loop-ins, but
+		// channel opens still require the deposit input to be confirmed.
+		if d.ConfirmationHeight <= 0 {
+			return nil, ErrOpeningChannelUnavailableDeposits
+		}
+	}
+
 	// Pre-check: calculate the channel funding amount and the optional
 	// change before locking deposits. This ensures the selected deposits
 	// can cover the funding amount plus fees.
