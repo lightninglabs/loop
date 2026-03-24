@@ -7,7 +7,6 @@ import (
 
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
@@ -537,11 +536,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	allDeposits := depositList.FilteredDeposits
 
 	if len(allDeposits) == 0 {
-		errString := fmt.Sprintf("no confirmed deposits available, "+
-			"deposits need at least %v confirmations",
-			deposit.MinConfs)
-
-		return errors.New(errString)
+		return errors.New("no deposited outputs available")
 	}
 
 	var depositOutpoints []string
