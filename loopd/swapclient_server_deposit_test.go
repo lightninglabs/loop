@@ -6,8 +6,8 @@ import "testing"
 // confirmed and unconfirmed deposits.
 func TestDepositBlocksUntilExpiry(t *testing.T) {
 	t.Run("unconfirmed", func(t *testing.T) {
-		if blocks := depositBlocksUntilExpiry(0, 144, 500); blocks != 0 {
-			t.Fatalf("expected 0 blocks for unconfirmed deposit, got %d",
+		if blocks := depositBlocksUntilExpiry(0, 144, 500); blocks != 144 {
+			t.Fatalf("expected 144 blocks for unconfirmed deposit, got %d",
 				blocks)
 		}
 	})

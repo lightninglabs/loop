@@ -2162,12 +2162,13 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 }
 
 // depositBlocksUntilExpiry returns the remaining blocks until a deposit
-// expires. Unconfirmed deposits return 0 because the CSV has not started yet.
+// expires. Unconfirmed deposits return the full CSV value because the timeout
+// has not started yet.
 func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
 	bestBlockHeight int64) int64 {
 
 	if confirmationHeight <= 0 {
-		return 0
+		return int64(expiry)
 	}
 
 	return confirmationHeight + int64(expiry) - bestBlockHeight
