@@ -1002,7 +1002,7 @@ func (s *mockDepositStore) DepositForOutpoint(_ context.Context,
 	if d, ok := s.byOutpoint[outpoint]; ok {
 		return d, nil
 	}
-	return nil, nil
+	return nil, deposit.ErrDepositNotFound
 }
 func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 	error) {
@@ -1051,11 +1051,11 @@ func TestListUnspentDeposits(t *testing.T) {
 		}
 	}
 
-	minConfs := int64(deposit.MinConfs)
-	utxoBelow := makeUtxo(0, minConfs-1) // always included
-	utxoAt := makeUtxo(1, minConfs)      // included only if Deposited
-	utxoAbove1 := makeUtxo(2, minConfs+1)
-	utxoAbove2 := makeUtxo(3, minConfs+2)
+	utxoUnknown := makeUtxo(0, 0)
+	utxoDeposited := makeUtxo(1, 1)
+	utxoWithdrawn := makeUtxo(2, 2)
+	utxoLoopingIn := makeUtxo(3, 5)
+	utxoConfirmedUnknown := makeUtxo(4, 3)
 
 	// Helper to build the deposit manager with specific states.
 	buildDepositMgr := func(
@@ -1073,17 +1073,19 @@ func TestListUnspentDeposits(t *testing.T) {
 		return deposit.NewManager(&deposit.ManagerConfig{Store: store})
 	}
 
-	// Include below-min-conf and >=min with Deposited; exclude others.
-	t.Run("below min conf always, Deposited included, others excluded",
+	// Unknown deposits are available, Deposited is available and known
+	// non-Deposited states are excluded.
+	t.Run("unknown and Deposited included, locked states excluded",
 		func(t *testing.T) {
 			mock.SetListUnspent([]*lnwallet.Utxo{
-				utxoBelow, utxoAt, utxoAbove1, utxoAbove2,
+				utxoUnknown, utxoDeposited, utxoWithdrawn,
+				utxoLoopingIn,
 			})
 
 			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Deposited,
-				utxoAbove1.OutPoint: deposit.Withdrawn,
-				utxoAbove2.OutPoint: deposit.LoopingIn,
+				utxoDeposited.OutPoint: deposit.Deposited,
+				utxoWithdrawn.OutPoint: deposit.Withdrawn,
+				utxoLoopingIn.OutPoint: deposit.LoopingIn,
 			})
 
 			server := &swapClientServer{
@@ -1096,7 +1098,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			// Expect utxoBelow and utxoAt only.
+			// Expect the unknown utxo and the Deposited utxo only.
 			require.Len(t, resp.Utxos, 2)
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
@@ -1105,25 +1107,25 @@ func TestListUnspentDeposits(t *testing.T) {
 				// same across utxos.
 				require.NotEmpty(t, u.StaticAddress)
 			}
-			_, ok1 := got[utxoBelow.OutPoint.String()]
-			_, ok2 := got[utxoAt.OutPoint.String()]
+			_, ok1 := got[utxoUnknown.OutPoint.String()]
+			_, ok2 := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok1)
 			require.True(t, ok2)
 		})
 
-	// Swap states, now include utxoBelow and utxoAbove1.
-	t.Run("Deposited on >=min included; non-Deposited excluded",
+	// Confirmation depth no longer changes availability; state does.
+	t.Run("availability ignores conf depth once deposit state is known",
 		func(t *testing.T) {
 			mock.SetListUnspent(
 				[]*lnwallet.Utxo{
-					utxoBelow, utxoAt, utxoAbove1,
-					utxoAbove2,
+					utxoUnknown, utxoDeposited,
+					utxoWithdrawn, utxoLoopingIn,
 				})
 
 			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Withdrawn,
-				utxoAbove1.OutPoint: deposit.Deposited,
-				utxoAbove2.OutPoint: deposit.Withdrawn,
+				utxoDeposited.OutPoint: deposit.Deposited,
+				utxoWithdrawn.OutPoint: deposit.Withdrawn,
+				utxoLoopingIn.OutPoint: deposit.LoopingIn,
 			})
 
 			server := &swapClientServer{
@@ -1141,8 +1143,8 @@ func TestListUnspentDeposits(t *testing.T) {
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
 			}
-			_, ok1 := got[utxoBelow.OutPoint.String()]
-			_, ok2 := got[utxoAbove1.OutPoint.String()]
+			_, ok1 := got[utxoUnknown.OutPoint.String()]
+			_, ok2 := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok1)
 			require.True(t, ok2)
 		})
@@ -1151,7 +1153,7 @@ func TestListUnspentDeposits(t *testing.T) {
 	t.Run("confirmed utxo not in store is included", func(t *testing.T) {
 		// Only return a confirmed UTXO from lnd and make sure the
 		// deposit manager/store doesn't know about it.
-		mock.SetListUnspent([]*lnwallet.Utxo{utxoAbove2})
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoConfirmedUnknown})
 
 		// Empty store (no states for any outpoint).
 		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{})
@@ -1170,7 +1172,8 @@ func TestListUnspentDeposits(t *testing.T) {
 		// doesn't exist in the store yet.
 		require.Len(t, resp.Utxos, 1)
 		require.Equal(
-			t, utxoAbove2.OutPoint.String(), resp.Utxos[0].Outpoint,
+			t, utxoConfirmedUnknown.OutPoint.String(),
+			resp.Utxos[0].Outpoint,
 		)
 		require.NotEmpty(t, resp.Utxos[0].StaticAddress)
 	})
