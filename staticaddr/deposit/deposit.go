@@ -78,6 +78,10 @@ func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.ConfirmationHeight <= 0 {
+		return false
+	}
+
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
 
