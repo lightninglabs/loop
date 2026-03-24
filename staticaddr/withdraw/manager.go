@@ -238,20 +238,11 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 		return err
 	}
 
-	// Group the deposits by their finalized withdrawal transaction.
-	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
-	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
-	for _, d := range withdrawingDeposits {
-		withdrawalTx := d.FinalizedWithdrawalTx
-		if withdrawalTx == nil {
-			continue
-		}
-		txid := withdrawalTx.TxHash()
-		hash2tx[txid] = withdrawalTx
-
-		depositsByWithdrawalTx[txid] = append(
-			depositsByWithdrawalTx[txid], d,
-		)
+	depositsByWithdrawalTx, hash2tx, err := m.groupWithdrawingDepositsByTx(
+		ctx, withdrawingDeposits,
+	)
+	if err != nil {
+		return err
 	}
 
 	// Publishing a transaction can take a while in neutrino mode, so
@@ -298,6 +289,98 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 	// Wait for all goroutines to report back.
 	if err := eg.Wait(); err != nil {
 		return fmt.Errorf("error recovering withdrawals: %w", err)
+	}
+
+	return nil
+}
+
+// groupWithdrawingDepositsByTx clusters withdrawing deposits by their finalized
+// withdrawal transaction hash.
+func (m *Manager) groupWithdrawingDepositsByTx(ctx context.Context,
+	withdrawingDeposits []*deposit.Deposit) (
+	map[chainhash.Hash][]*deposit.Deposit, map[chainhash.Hash]*wire.MsgTx,
+	error) {
+
+	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
+	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
+
+	// Build an index of all known finalized withdrawal transactions.
+	for _, d := range withdrawingDeposits {
+		if d.FinalizedWithdrawalTx == nil {
+			continue
+		}
+
+		txid := d.FinalizedWithdrawalTx.TxHash()
+		hash2tx[txid] = d.FinalizedWithdrawalTx
+	}
+
+	// If exactly one tx hash is present, we can recover missing tx pointers
+	// from that single cluster.
+	var fallbackTx *wire.MsgTx
+	if len(hash2tx) == 1 {
+		for _, tx := range hash2tx {
+			fallbackTx = tx
+		}
+	}
+
+	for _, d := range withdrawingDeposits {
+		withdrawalTx := d.FinalizedWithdrawalTx
+		if withdrawalTx == nil {
+			if fallbackTx == nil {
+				log.Warnf("Skipping withdrawing deposit %v "+
+					"during recovery: missing finalized "+
+					"withdrawal tx", d.OutPoint)
+
+				continue
+			}
+
+			// Persist the recovered tx pointer so future restarts
+			// don't depend on in-memory fallback recovery.
+			d.Lock()
+			d.FinalizedWithdrawalTx = fallbackTx
+			d.Unlock()
+
+			err := m.cfg.DepositManager.UpdateDeposit(ctx, d)
+			if err != nil {
+				return nil, nil, fmt.Errorf("unable to "+
+					"persist recovered finalized "+
+					"withdrawal tx for deposit %v: %w",
+					d.OutPoint, err)
+			}
+
+			log.Warnf("Recovered missing finalized withdrawal tx "+
+				"for deposit %v", d.OutPoint)
+
+			withdrawalTx = fallbackTx
+		}
+
+		txid := withdrawalTx.TxHash()
+		hash2tx[txid] = withdrawalTx
+		depositsByWithdrawalTx[txid] = append(
+			depositsByWithdrawalTx[txid], d,
+		)
+	}
+
+	return depositsByWithdrawalTx, hash2tx, nil
+}
+
+// persistFinalizedWithdrawalTx updates the selected deposits with the finalized
+// withdrawal tx and persists the change before state transitions.
+func (m *Manager) persistFinalizedWithdrawalTx(ctx context.Context,
+	deposits []*deposit.Deposit, finalizedTx *wire.MsgTx) error {
+
+	for _, d := range deposits {
+		d.Lock()
+		d.FinalizedWithdrawalTx = finalizedTx
+		d.Unlock()
+	}
+
+	for _, d := range deposits {
+		err := m.cfg.DepositManager.UpdateDeposit(ctx, d)
+		if err != nil {
+			return fmt.Errorf("failed to update deposit %v: %w",
+				d.OutPoint, err)
+		}
 	}
 
 	return nil
@@ -478,14 +561,11 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		m.mu.Unlock()
 	}
 
-	// Attach the finalized withdrawal tx to the deposits. After a client
-	// restart we can use this address as an indicator to republish the
-	// withdrawal tx and continue the withdrawal.
-	// Deposits with the same withdrawal tx are part of the same withdrawal.
-	for _, d := range deposits {
-		d.Lock()
-		d.FinalizedWithdrawalTx = finalizedTx
-		d.Unlock()
+	// Persist the finalized withdrawal tx before state transitions so that
+	// a restart can recover the full withdrawal cluster.
+	err = m.persistFinalizedWithdrawalTx(ctx, deposits, finalizedTx)
+	if err != nil {
+		return "", "", err
 	}
 
 	// Add the new withdrawal tx to the finalized withdrawals to republish
@@ -502,15 +582,6 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	if err != nil {
 		return "", "", fmt.Errorf("failed to transition deposits %w",
 			err)
-	}
-
-	// Update the deposits in the database.
-	for _, d := range deposits {
-		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to update "+
-				"deposit %w", err)
-		}
 	}
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
