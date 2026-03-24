@@ -176,6 +176,12 @@ func TestSelectDeposits(t *testing.T) {
 	}
 }
 
+// TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered
+// swappable because its CSV timeout has not started yet.
+func TestIsSwappableUnconfirmed(t *testing.T) {
+	require.True(t, IsSwappable(0, 5000, 1000))
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
 	byOutpoint map[string]*deposit.Deposit

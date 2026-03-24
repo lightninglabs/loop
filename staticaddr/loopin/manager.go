@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"sync/atomic"
@@ -879,10 +880,14 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// blocks-until-expiry in ascending order.
 	sort.Slice(deposits, func(i, j int) bool {
 		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
-				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
-				csvExpiry - blockHeight
+			iExp := blocksUntilDepositExpiry(
+				uint32(deposits[i].ConfirmationHeight),
+				blockHeight, csvExpiry,
+			)
+			jExp := blocksUntilDepositExpiry(
+				uint32(deposits[j].ConfirmationHeight),
+				blockHeight, csvExpiry,
+			)
 
 			return iExp < jExp
 		}
@@ -914,20 +919,33 @@ func SelectDeposits(targetAmount btcutil.Amount,
 // IsSwappable checks if a deposit is swappable. It returns true if the deposit
 // is not expired and the htlc is not too close to expiry.
 func IsSwappable(confirmationHeight, blockHeight, csvExpiry uint32) bool {
-	// The deposit expiry height is the confirmation height plus the csv
-	// expiry.
-	depositExpiryHeight := confirmationHeight + csvExpiry
-
-	// The htlc expiry height is the current height plus the htlc
-	// cltv delta.
-	htlcExpiryHeight := blockHeight + DefaultLoopInOnChainCltvDelta
-
-	// Ensure that the deposit doesn't expire before the htlc.
-	if depositExpiryHeight < htlcExpiryHeight+DepositHtlcDelta {
-		return false
+	if confirmationHeight == 0 {
+		return true
 	}
 
-	return true
+	// The deposit expiry height is the confirmation height plus the csv
+	// expiry.
+	return blocksUntilDepositExpiry(
+		confirmationHeight, blockHeight, csvExpiry,
+	) >= DefaultLoopInOnChainCltvDelta+DepositHtlcDelta
+}
+
+// blocksUntilDepositExpiry returns the remaining number of blocks until a
+// deposit expires. Unconfirmed deposits return MaxUint32 because their CSV has
+// not started yet.
+func blocksUntilDepositExpiry(confirmationHeight, blockHeight,
+	csvExpiry uint32) uint32 {
+
+	if confirmationHeight == 0 {
+		return math.MaxUint32
+	}
+
+	depositExpiryHeight := confirmationHeight + csvExpiry
+	if depositExpiryHeight <= blockHeight {
+		return 0
+	}
+
+	return depositExpiryHeight - blockHeight
 }
 
 // DeduceSwapAmount calculates the swap amount based on the selected amount and
