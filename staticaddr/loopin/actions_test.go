@@ -271,6 +271,124 @@ func testValidateLoopInContract(_ int32, _ int32) error {
 	return nil
 }
 
+// TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
+// created before a server-side rejection is canceled immediately.
+func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	loopIn := &StaticAddressLoopIn{
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &address.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: &noopDepositManager{},
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInErr: errors.New("server rejected swap"),
+		},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	// The init step should fail and synchronously trigger deferred invoice
+	// cleanup.
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, loopIn.SwapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+}
+
+// TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
+// fee guard also cancels the pre-created invoice before returning an error.
+func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &address.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: &noopDepositManager{},
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInResp: &swapserverrpc.ServerStaticAddressLoopInResponse{
+				HtlcServerPubKey: serverKey.PubKey().
+					SerializeCompressed(),
+				HtlcExpiry: mockLnd.Height +
+					DefaultLoopInOnChainCltvDelta,
+				StandardHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{
+					FeeRate: 1_000_000,
+				},
+				HighFeeHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{},
+				ExtremeFeeHtlcInfo: &swapserverrpc.
+					ServerHtlcSigningInfo{},
+			},
+		},
+		ValidateLoopInContract: func(int32, int32) error {
+			return nil
+		},
+		MaxStaticAddrHtlcFeePercentage:       0,
+		MaxStaticAddrHtlcBackupFeePercentage: 1,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	// The fee guard runs before persistence, so the deferred cleanup must
+	// cancel the invoice on this error path as well.
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, loopIn.SwapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+}
+
 // mockAddressManager is a minimal AddressManager implementation used by the
 // test FSM setup.
 type mockAddressManager struct {
@@ -327,4 +445,30 @@ func (n *noopDepositManager) GetActiveDepositsInState(fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
 	return nil, nil
+}
+
+// initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
+// response without standing up the full gRPC client.
+type initHtlcTestServer struct {
+	swapserverrpc.StaticAddressServerClient
+
+	loopInResp *swapserverrpc.ServerStaticAddressLoopInResponse
+	loopInErr  error
+}
+
+// ServerStaticAddressLoopIn returns the canned response configured by the test.
+func (s *initHtlcTestServer) ServerStaticAddressLoopIn(context.Context,
+	*swapserverrpc.ServerStaticAddressLoopInRequest, ...grpc.CallOption,
+) (*swapserverrpc.ServerStaticAddressLoopInResponse, error) {
+
+	return s.loopInResp, s.loopInErr
+}
+
+// PushStaticAddressHtlcSigs accepts the abandonment signal used by error-path
+// tests without adding additional assertions.
+func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(context.Context,
+	*swapserverrpc.PushStaticAddressHtlcSigsRequest, ...grpc.CallOption,
+) (*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
+
+	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
 }
