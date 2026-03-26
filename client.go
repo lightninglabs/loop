@@ -125,9 +125,9 @@ type ClientConfig struct {
 	// SwapServerNoTLS skips TLS for the swap server connection when set.
 	SwapServerNoTLS bool
 
-	// TLSPathServer is the path to the TLS certificate that is required to
-	// connect to the server.
-	TLSPathServer string
+	// TLSCertPathServer is the path to the TLS certificate that is
+	// required to connect to the server.
+	TLSCertPathServer string
 
 	// Lnd is an instance of the lnd proxy.
 	Lnd *lndclient.LndServices

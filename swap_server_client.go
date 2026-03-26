@@ -174,7 +174,7 @@ func newSwapServerClient(cfg *ClientConfig, l402Store l402.Store) (
 	)
 	serverConn, err := getSwapServerConn(
 		cfg.ServerAddress, cfg.ProxyAddress, cfg.SwapServerNoTLS,
-		cfg.TLSPathServer, clientInterceptor,
+		cfg.TLSCertPathServer, clientInterceptor,
 	)
 	if err != nil {
 		return nil, err

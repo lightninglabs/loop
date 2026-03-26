@@ -24,6 +24,16 @@ var (
 	// LoopDirBase is the default main directory where loop stores its data.
 	LoopDirBase = btcutil.AppDataDir("loop", false)
 
+	// ApertureDirBase is the default main directory where aperture stores
+	// its data.
+	ApertureDirBase = btcutil.AppDataDir("aperture", false)
+
+	// DefaultApertureTLSCertPath is the default path to the TLS
+	// certificate that aperture creates for its proxy.
+	DefaultApertureTLSCertPath = filepath.Join(
+		ApertureDirBase, "tls.cert",
+	)
+
 	// DefaultNetwork is the default bitcoin network loop runs on.
 	DefaultNetwork = "mainnet"
 
@@ -139,8 +149,8 @@ type loopServerConfig struct {
 	Host  string `long:"host" description:"Loop server address host:port"`
 	Proxy string `long:"proxy" description:"The host:port of a SOCKS proxy through which all connections to the loop server will be established over"`
 
-	NoTLS   bool   `long:"notls" description:"Disable tls for communication to the loop server [testing only]"`
-	TLSPath string `long:"tlspath" description:"Path to loop server tls certificate [testing only]"`
+	NoTLS       bool   `long:"notls" description:"Disable tls for communication to the loop server [testing only]"`
+	TLSCertPath string `long:"tlscertpath" description:"Path to the TLS certificate for the loop server's proxy. Defaults to the aperture tls.cert in the default aperture data directory."`
 }
 
 type viewParameters struct{}
@@ -218,7 +228,8 @@ func DefaultConfig() Config {
 		RPCListen:  "localhost:11010",
 		RESTListen: "localhost:8081",
 		Server: &loopServerConfig{
-			NoTLS: false,
+			NoTLS:       false,
+			TLSCertPath: DefaultApertureTLSCertPath,
 		},
 		Tapd:            assets.DefaultTapdConfig(),
 		LoopDir:         LoopDirBase,

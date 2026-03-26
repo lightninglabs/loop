@@ -161,7 +161,7 @@ services:
       - "--network=regtest"
       - "--debuglevel=debug"
       - "--server.host=aperture:11018"
-      - "--server.tlspath=/root/.loop/aperture-tls.cert"
+      - "--server.tlscertpath=/root/.loop/aperture-tls.cert"
       - "--lnd.host=lndclient:10009"
       - "--lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
       - "--lnd.tlspath=/root/.lnd/tls.cert"
