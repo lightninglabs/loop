@@ -1662,54 +1662,43 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	// not spendable because they already have been used but not yet spent
 	// by the server. We filter out such deposits here.
 	var (
-		outpoints []string
-		isUnspent = make(map[wire.OutPoint]struct{})
+		outpoints  []string
+		isUnspent  = make(map[wire.OutPoint]struct{})
+		knownUtxos = make(map[wire.OutPoint]struct{})
 	)
 
-	// Keep track of confirmed outpoints that we need to check against our
-	// database.
-	confirmedToCheck := make(map[wire.OutPoint]struct{})
-
 	for _, utxo := range utxos {
-		if utxo.Confirmations < deposit.MinConfs {
-			// Unconfirmed deposits are always available.
-			isUnspent[utxo.OutPoint] = struct{}{}
-		} else {
-			// Confirmed deposits need to be checked.
-			outpoints = append(outpoints, utxo.OutPoint.String())
-			confirmedToCheck[utxo.OutPoint] = struct{}{}
-		}
+		outpoints = append(outpoints, utxo.OutPoint.String())
+		knownUtxos[utxo.OutPoint] = struct{}{}
 	}
 
 	// Check the spent status of the deposits by looking at their states.
-	ignoreUnknownOutpoints := false
+	ignoreUnknownOutpoints := true
 	deposits, err := s.depositManager.DepositsForOutpoints(
 		ctx, outpoints, ignoreUnknownOutpoints,
 	)
 	if err != nil {
 		return nil, err
 	}
+
+	knownDeposits := make(map[wire.OutPoint]struct{}, len(deposits))
 	for _, d := range deposits {
-		// A nil deposit means we don't have a record for it. We'll
-		// handle this case after the loop.
 		if d == nil {
 			continue
 		}
 
-		// If the deposit is in the "Deposited" state, it's available.
+		knownDeposits[d.OutPoint] = struct{}{}
 		if d.IsInState(deposit.Deposited) {
 			isUnspent[d.OutPoint] = struct{}{}
 		}
-
-		// We have a record for this deposit, so we no longer need to
-		// check it.
-		delete(confirmedToCheck, d.OutPoint)
 	}
 
-	// Any remaining outpoints in confirmedToCheck are ones that lnd knows
-	// about but we don't. These are new, unspent deposits.
-	for op := range confirmedToCheck {
-		isUnspent[op] = struct{}{}
+	// Any wallet outpoints that are unknown to the deposit store are new
+	// deposits and therefore still available.
+	for op := range knownUtxos {
+		if _, ok := knownDeposits[op]; !ok {
+			isUnspent[op] = struct{}{}
+		}
 	}
 
 	// Prepare the list of unspent deposits for the rpc response.
@@ -1948,9 +1937,10 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			protoDeposits = make([]*looprpc.Deposit, 0, len(ds))
 			for _, d := range ds {
 				state := toClientDepositState(d.GetState())
-				blocksUntilExpiry := d.ConfirmationHeight +
-					int64(addrParams.Expiry) -
-					int64(lndInfo.BlockHeight)
+				blocksUntilExpiry := depositBlocksUntilExpiry(
+					d.ConfirmationHeight, addrParams.Expiry,
+					int64(lndInfo.BlockHeight),
+				)
 
 				pd := &looprpc.Deposit{
 					Id:                 d.ID[:],
@@ -2011,23 +2001,16 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		htlcTimeoutSwept    int64
 	)
 
-	// Value unconfirmed.
-	utxos, err := s.staticAddressManager.ListUnspent(
-		ctx, 0, deposit.MinConfs-1,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, u := range utxos {
-		valueUnconfirmed += int64(u.Value)
-	}
-
-	// Confirmed total values by category.
+	// Total values by category.
 	for _, d := range allDeposits {
 		value := int64(d.Value)
 		switch d.GetState() {
 		case deposit.Deposited:
-			valueDeposited += value
+			if d.ConfirmationHeight <= 0 {
+				valueUnconfirmed += value
+			} else {
+				valueDeposited += value
+			}
 
 		case deposit.Expired:
 			valueExpired += value
@@ -2170,11 +2153,25 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 		return err
 	}
 	for i := range len(deposits) {
-		deposits[i].BlocksUntilExpiry =
-			deposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		deposits[i].BlocksUntilExpiry = depositBlocksUntilExpiry(
+			deposits[i].ConfirmationHeight, params.Expiry,
+			bestBlockHeight,
+		)
 	}
 	return nil
+}
+
+// depositBlocksUntilExpiry returns the remaining blocks until a deposit
+// expires. Unconfirmed deposits return the full CSV value because the timeout
+// has not started yet.
+func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
+	bestBlockHeight int64) int64 {
+
+	if confirmationHeight <= 0 {
+		return int64(expiry)
+	}
+
+	return confirmationHeight + int64(expiry) - bestBlockHeight
 }
 
 // StaticOpenChannel initiates an open channel request using static address

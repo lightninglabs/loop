@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
@@ -537,11 +537,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	allDeposits := depositList.FilteredDeposits
 
 	if len(allDeposits) == 0 {
-		errString := fmt.Sprintf("no confirmed deposits available, "+
-			"deposits need at least %v confirmations",
-			deposit.MinConfs)
-
-		return errors.New(errString)
+		return errors.New("no deposited outputs available")
 	}
 
 	var depositOutpoints []string
@@ -586,6 +582,19 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	limits := getInLimits(quote)
+
+	// Warn the user if any selected deposits have fewer than 6
+	// confirmations, as the swap payment won't be received immediately
+	// for those.
+	depositsToCheck := depositOutpoints
+	if autoSelectDepositsForQuote {
+		// When auto-selecting, any deposit could be chosen.
+		depositsToCheck = depositsToOutpoints(allDeposits)
+	}
+	warning := lowConfDepositWarning(allDeposits, depositsToCheck)
+	if warning != "" {
+		fmt.Println(warning)
+	}
 
 	if !(cmd.Bool("force") || cmd.Bool("f")) {
 		err = displayInDetails(quoteReq, quote, cmd.Bool("verbose"))
@@ -640,6 +649,91 @@ func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
 	}
 
 	return outpoints
+}
+
+// minImmediateConfs is the minimum number of confirmations a deposit needs
+// for the swap payment to be executed immediately.
+const minImmediateConfs = 6
+
+// lowConfDepositWarning checks the selected deposits for fewer than 6
+// confirmations and returns a warning string if any are found. The swap
+// payment for such deposits won't be received immediately.
+func lowConfDepositWarning(allDeposits []*looprpc.Deposit,
+	selectedOutpoints []string) string {
+
+	depositMap := make(map[string]*looprpc.Deposit, len(allDeposits))
+	for _, d := range allDeposits {
+		depositMap[d.Outpoint] = d
+	}
+
+	// Derive CSV expiry from any unconfirmed deposit. For unconfirmed
+	// deposits, BlocksUntilExpiry equals the full CSV expiry value since
+	// the timeout hasn't started counting yet.
+	var csvExpiry int64
+	for _, d := range allDeposits {
+		if d.ConfirmationHeight <= 0 && d.BlocksUntilExpiry > 0 {
+			csvExpiry = d.BlocksUntilExpiry
+			break
+		}
+	}
+
+	var lowConfEntries []string
+	for _, op := range selectedOutpoints {
+		d, ok := depositMap[op]
+		if !ok {
+			continue
+		}
+
+		var confs int64
+		switch {
+		case d.ConfirmationHeight <= 0:
+			confs = 0
+
+		case csvExpiry > 0:
+			// For confirmed deposits we can compute
+			// confirmations as CSVExpiry - BlocksUntilExpiry + 1.
+			confs = csvExpiry - d.BlocksUntilExpiry + 1
+
+		default:
+			// Can't determine confirmations without a reference
+			// unconfirmed deposit to derive CSVExpiry.
+			continue
+		}
+
+		if confs >= minImmediateConfs {
+			continue
+		}
+
+		if confs == 0 {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf("  - %s (unconfirmed)", op),
+			)
+		} else {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf(
+					"  - %s (%d confirmations)", op,
+					confs,
+				),
+			)
+		}
+	}
+
+	if len(lowConfEntries) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"\nWARNING: The following deposits have fewer than %d "+
+			"confirmations:\n%s\n"+
+			"The swap payment for these deposits may not be "+
+			"received immediately.\nOnly deposits with %d or "+
+			"more confirmations are executed immediately.\n",
+		minImmediateConfs,
+		strings.Join(lowConfEntries, "\n"),
+		minImmediateConfs,
+	)
 }
 
 func displayNewAddressWarning() error {

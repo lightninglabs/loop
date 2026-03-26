@@ -240,6 +240,10 @@ func TestManager(t *testing.T) {
 		require.NoError(t, testContext.manager.Run(ctx, initChan))
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	<-initChan
 
