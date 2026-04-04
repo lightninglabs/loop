@@ -62,7 +62,7 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 
 	// Now that we have all partial sigs we can just combine them to
 	// get the final signature.
-	var haveAllSigs bool
+	haveAllSigs := len(signatures) == 1
 	for i := 1; i < len(signatures); i++ {
 		var err error
 		haveAllSigs, err = input.MuSig2CombineSig(
