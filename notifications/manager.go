@@ -385,8 +385,7 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 		}
 
 	default:
-		log.Warnf("Received unknown notification type: %v",
-			ntfn)
+		log.Debugf("Received unknown notification type: %v", ntfn)
 	}
 }
 
