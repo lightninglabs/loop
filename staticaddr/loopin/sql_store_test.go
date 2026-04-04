@@ -2,6 +2,7 @@ package loopin
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
@@ -270,4 +272,151 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, d2.OutPoint, swap.Deposits[1].OutPoint)
 	require.Equal(t, d2.Value, swap.Deposits[1].Value)
 	require.Equal(t, deposit.LoopingIn, swap.Deposits[1].GetState())
+}
+
+// TestGetLoopInByHashRejectsTruncatedTimeoutSweepTxID verifies that a
+// persisted short timeout sweep txid is rejected during swap loading.
+func TestGetLoopInByHashRejectsTruncatedTimeoutSweepTxID(t *testing.T) {
+	ctxb := t.Context()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	depositRecord := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Index: 0,
+		},
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+
+	err = depositStore.CreateDeposit(ctxb, depositRecord)
+	require.NoError(t, err)
+
+	depositRecord.SetState(deposit.LoopingIn)
+	err = depositStore.UpdateDeposit(ctxb, depositRecord)
+	require.NoError(t, err)
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
+	loopIn := StaticAddressLoopIn{
+		SwapHash:     swapHash,
+		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
+		DepositOutpoints: []string{
+			depositRecord.OutPoint.String(),
+		},
+		Deposits:                []*deposit.Deposit{depositRecord},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	loopIn.SetState(SignHtlcTx)
+
+	err = swapStore.CreateLoopIn(ctxb, &loopIn)
+	require.NoError(t, err)
+
+	err = testDb.Queries.UpdateStaticAddressLoopIn(
+		ctxb, sqlc.UpdateStaticAddressLoopInParams{
+			SwapHash: swapHash[:],
+			HtlcTimeoutSweepTxID: sql.NullString{
+				String: "abcd",
+				Valid:  true,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.ErrorContains(t, err, "invalid htlc timeout sweep txid")
+}
+
+// TestGetLoopInByHashAllowsEmptyTimeoutSweepTxID verifies that empty persisted
+// timeout sweep txids are tolerated for recovery robustness.
+func TestGetLoopInByHashAllowsEmptyTimeoutSweepTxID(t *testing.T) {
+	ctxb := t.Context()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	depositRecord := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Index: 0,
+		},
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+
+	err = depositStore.CreateDeposit(ctxb, depositRecord)
+	require.NoError(t, err)
+
+	depositRecord.SetState(deposit.LoopingIn)
+	err = depositStore.UpdateDeposit(ctxb, depositRecord)
+	require.NoError(t, err)
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
+	loopIn := StaticAddressLoopIn{
+		SwapHash:     swapHash,
+		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
+		DepositOutpoints: []string{
+			depositRecord.OutPoint.String(),
+		},
+		Deposits:                []*deposit.Deposit{depositRecord},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	loopIn.SetState(SignHtlcTx)
+
+	err = swapStore.CreateLoopIn(ctxb, &loopIn)
+	require.NoError(t, err)
+
+	err = testDb.Queries.UpdateStaticAddressLoopIn(
+		ctxb, sqlc.UpdateStaticAddressLoopInParams{
+			SwapHash: swapHash[:],
+			HtlcTimeoutSweepTxID: sql.NullString{
+				String: "",
+				Valid:  true,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	swap, err := swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.Nil(t, swap.HtlcTimeoutSweepTxHash)
 }
