@@ -9,10 +9,20 @@ import (
 )
 
 // MuSig2Sign will create a MuSig2 signature for the passed message using the
-// passed private keys.
+// passed private keys. It expects at least two signing keys, and the number of
+// private keys and public keys must match.
 func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 	pubKeys []*btcec.PublicKey, tweaks *input.MuSig2Tweaks,
 	msg [32]byte) ([]byte, error) {
+
+	if len(privKeys) != len(pubKeys) {
+		return nil, fmt.Errorf("number of private keys (%d) must "+
+			"match number of public keys (%d)",
+			len(privKeys), len(pubKeys))
+	}
+	if len(privKeys) < 2 {
+		return nil, fmt.Errorf("need at least two signing keys")
+	}
 
 	// Next we'll create MuSig2 sessions for each individual private
 	// signing key.
@@ -74,7 +84,7 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 	}
 
 	if !haveAllSigs {
-		return nil, fmt.Errorf("combinging MuSig2 signatures " +
+		return nil, fmt.Errorf("combining MuSig2 signatures " +
 			"failed")
 	}
 
