@@ -4,22 +4,37 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/lightningnetwork/lnd/input"
 )
 
 // MuSig2Sign will create a MuSig2 signature for the passed message using the
-// passed private keys. It expects at least two signing keys, and the number of
-// private keys and public keys must match.
-func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
-	pubKeys []*btcec.PublicKey, tweaks *input.MuSig2Tweaks,
-	msg [32]byte) ([]byte, error) {
+// passed raw private keys. It expects at least two signing keys.
+func MuSig2Sign(version input.MuSig2Version, keys [][32]byte,
+	tweaks *input.MuSig2Tweaks, msg [32]byte) ([]byte, error) {
 
-	if len(privKeys) != len(pubKeys) {
-		return nil, fmt.Errorf("number of private keys (%d) must "+
-			"match number of public keys (%d)",
-			len(privKeys), len(pubKeys))
+	privKeys := make([]*btcec.PrivateKey, len(keys))
+	pubKeys := make([]*btcec.PublicKey, len(keys))
+
+	// First parse the raw private keys and also create the corresponding
+	// public keys.
+	for i, key := range keys {
+		privKeys[i], pubKeys[i] = btcec.PrivKeyFromBytes(key[:])
+
+		// MuSig2 v0.4 expects x-only public keys.
+		if version == input.MuSig2Version040 {
+			pubKey := pubKeys[i].SerializeCompressed()
+			xOnlyPubKey, err := schnorr.ParsePubKey(pubKey[1:])
+			if err != nil {
+				return nil, fmt.Errorf("error parsing x-only "+
+					"pubkey: %v", err)
+			}
+
+			pubKeys[i] = xOnlyPubKey
+		}
 	}
+
 	if len(privKeys) < 2 {
 		return nil, fmt.Errorf("need at least two signing keys")
 	}
