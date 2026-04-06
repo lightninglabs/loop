@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/loop/utils/chainhashutil"
 	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -272,14 +273,9 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	}
 
 	if len(cfg.SkippedTxns) != 0 {
-		skippedTxns := make(map[chainhash.Hash]struct{})
-		for _, txid := range cfg.SkippedTxns {
-			txid, err := chainhash.NewHashFromStr(txid)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to parse "+
-					"txid to skip %v: %w", txid, err)
-			}
-			skippedTxns[*txid] = struct{}{}
+		skippedTxns, err := parseSkippedTxns(cfg.SkippedTxns)
+		if err != nil {
+			return nil, nil, err
 		}
 		batcherOpts = append(batcherOpts, sweepbatcher.WithSkippedTxns(
 			skippedTxns,
@@ -321,6 +317,24 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 	}
 
 	return client, cleanup, nil
+}
+
+// parseSkippedTxns parses the configured skipped transaction IDs and rejects
+// any txid that is not fully specified.
+func parseSkippedTxns(txids []string) (map[chainhash.Hash]struct{}, error) {
+	skippedTxns := make(map[chainhash.Hash]struct{}, len(txids))
+
+	for _, txid := range txids {
+		hash, err := chainhashutil.NewHashFromStrExact(txid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse txid to skip %v: %w",
+				txid, err)
+		}
+
+		skippedTxns[hash] = struct{}{}
+	}
+
+	return skippedTxns, nil
 }
 
 // GetConn returns the gRPC connection to the server.
