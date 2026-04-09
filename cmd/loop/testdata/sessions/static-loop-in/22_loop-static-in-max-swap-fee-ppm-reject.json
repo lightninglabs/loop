@@ -1,0 +1,146 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--network=regtest",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "in",
+      "--utxo",
+      "da52bf383c4fe5c684221c311fc5756ccaee211b6c6e6f5ccc159622a6039271:1",
+      "--max_swap_fee_ppm",
+      "1",
+      "--force",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.0-beta commit=v0.32.1-beta-71-gbed29e41d84c34147ca60fb1aa99ecc6f2c8a079 commit_hash=bed29e41d84c34147ca60fb1aa99ecc6f2c8a079",
+    "run_error": "ppm cap rounds to 0 sat for swap amount 500000; use --max_swap_fee_sat instead",
+    "duration": 40071886,
+    "clock_start_unix": 1769407086
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 14,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "2KWFNthHKHO54uFldGgyg2D9oLlCMc/F4pkAyrc12oQ=",
+              "state": "DEPOSITED",
+              "outpoint": "f2280f0f086273be73bde92fd9b982208338a5ecebbe93b83b00c77c4d2f8d1b:0",
+              "value": "550000",
+              "confirmation_height": "133",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "f3yMP2jfWm1HJvlHui2aqPOJdxVAjN20pkUWgTZzJ4U=",
+              "state": "DEPOSITED",
+              "outpoint": "fc6844a2945bb7201c0acf11080be17f912849d32a3d1e95b4cd3a226b153c29:1",
+              "value": "496150",
+              "confirmation_height": "133",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "gncTI+ldykA9lm9wqIvjnvCkde9qp4aUBEupuHMErGM=",
+              "state": "DEPOSITED",
+              "outpoint": "da52bf383c4fe5c684221c311fc5756ccaee211b6c6e6f5ccc159622a6039271:1",
+              "value": "500000",
+              "confirmation_height": "133",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "KxBwhGgyaujysguxE6F/goisqKhEOM8GCXuWQvlXtrc=",
+              "state": "DEPOSITED",
+              "outpoint": "61d11eb2957092e3e463d5c7295c3f9ff94acdacecad5271dec97baedb3d2da7:1",
+              "value": "1000000",
+              "confirmation_height": "133",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 14,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "0",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [
+            "da52bf383c4fe5c684221c311fc5756ccaee211b6c6e6f5ccc159622a6039271:1"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 39,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1490",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "500000"
+        }
+      }
+    },
+    {
+      "time_ms": 40,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] ppm cap rounds to 0 sat for swap amount 500000; use --max_swap_fee_sat instead\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 40,
+      "kind": "exit",
+      "data": {
+        "run_error": "ppm cap rounds to 0 sat for swap amount 500000; use --max_swap_fee_sat instead"
+      }
+    }
+  ]
+}
