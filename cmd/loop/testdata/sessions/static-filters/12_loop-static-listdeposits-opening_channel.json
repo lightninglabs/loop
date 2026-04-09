@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--network=regtest",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "listdeposits",
+      "--filter",
+      "opening_channel",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.0-beta commit=v0.32.1-beta-71-gbed29e41d84c34147ca60fb1aa99ecc6f2c8a079 commit_hash=bed29e41d84c34147ca60fb1aa99ecc6f2c8a079",
+    "duration": 27158800,
+    "clock_start_unix": 1769407086
+  },
+  "events": [
+    {
+      "time_ms": 9,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "OPENING_CHANNEL",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 26,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": []
+        }
+      }
+    },
+    {
+      "time_ms": 27,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"filtered_deposits\": []\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 27,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
