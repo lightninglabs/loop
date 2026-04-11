@@ -6,9 +6,13 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
@@ -273,4 +277,198 @@ func TestCurrentSwapTrafficStatic(t *testing.T) {
 	require.True(t, traffic.ongoingLoopIn[peer1])
 	require.False(t, traffic.ongoingLoopIn[route.Vertex{3}])
 	require.Equal(t, testTime, traffic.failedLoopIn[peer2])
+}
+
+// TestSuggestSwapsStaticLoopInNoCandidate verifies that the planner surfaces a
+// structured disqualification reason when static selection cannot build a
+// full-deposit candidate for a peer rule.
+func TestSuggestSwapsStaticLoopInNoCandidate(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, lnd := newTestConfig()
+	cfg.PrepareStaticLoopIn = func(context.Context, route.Vertex,
+		btcutil.Amount, btcutil.Amount, string, string,
+		[]string) (*PreparedStaticLoopIn, error) {
+
+		return nil, ErrNoStaticLoopInCandidate
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{
+		{
+			ChannelID:     lnwire.NewShortChanIDFromInt(10).ToUint64(),
+			PubKeyBytes:   peer1,
+			LocalBalance:  1_000,
+			RemoteBalance: 9_000,
+			Capacity:      10_000,
+		},
+	}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	params.LoopInSource = LoopInSourceStaticAddress
+	params.PeerRules = map[route.Vertex]*SwapRule{
+		peer1: {
+			ThresholdRule: NewThresholdRule(0, 50),
+			Type:          swap.TypeIn,
+		},
+	}
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	suggestions, err := manager.SuggestSwaps(ctx)
+	require.NoError(t, err)
+	require.Empty(t, suggestions.StaticInSwaps)
+	require.Equal(
+		t, ReasonStaticLoopInNoCandidate,
+		suggestions.DisqualifiedPeers[peer1],
+	)
+}
+
+// TestSuggestSwapsMixedInFlightCount verifies that static loop-ins consume the
+// same accepted-suggestion slots as legacy swaps during final filtering.
+func TestSuggestSwapsMixedInFlightCount(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, lnd := newTestConfig()
+	cfg.PrepareStaticLoopIn = func(_ context.Context, peer route.Vertex,
+		_, _ btcutil.Amount, label, initiator string,
+		_ []string) (*PreparedStaticLoopIn, error) {
+
+		return &PreparedStaticLoopIn{
+			Request: loop.StaticAddressLoopInRequest{
+				DepositOutpoints: []string{"static:0"},
+				SelectedAmount:   4_000,
+				MaxSwapFee:       20,
+				LastHop:          &peer,
+				Label:            label,
+				Initiator:        initiator,
+			},
+			NumDeposits: 1,
+		}, nil
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{
+		channel1,
+		{
+			ChannelID:     lnwire.NewShortChanIDFromInt(20).ToUint64(),
+			PubKeyBytes:   peer2,
+			LocalBalance:  1_000,
+			RemoteBalance: 9_000,
+			Capacity:      10_000,
+		},
+	}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	params.MaxAutoInFlight = 1
+	params.FeeLimit = NewFeePortion(500000)
+	params.LoopInSource = LoopInSourceStaticAddress
+	params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+		chanID1: chanRule,
+	}
+	params.PeerRules = map[route.Vertex]*SwapRule{
+		peer2: {
+			ThresholdRule: NewThresholdRule(0, 50),
+			Type:          swap.TypeIn,
+		},
+	}
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	suggestions, err := manager.SuggestSwaps(ctx)
+	require.NoError(t, err)
+	require.Len(t, suggestions.OutSwaps, 1)
+	require.Empty(t, suggestions.StaticInSwaps)
+	require.Equal(t, ReasonInFlight, suggestions.DisqualifiedPeers[peer2])
+}
+
+// TestAutoLoopDispatchesStaticLoopIn verifies that the autoloop execution path
+// dispatches prepared static loop-ins once they survive final filtering.
+func TestAutoLoopDispatchesStaticLoopIn(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, lnd := newTestConfig()
+
+	var (
+		prepareCalls     int
+		dispatched       *loop.StaticAddressLoopInRequest
+		prepareInitiator string
+	)
+
+	cfg.PrepareStaticLoopIn = func(_ context.Context, peer route.Vertex,
+		minAmount, amount btcutil.Amount, label, initiator string,
+		excludedOutpoints []string) (*PreparedStaticLoopIn, error) {
+
+		prepareCalls++
+		prepareInitiator = initiator
+		require.Equal(t, peer1, peer)
+		require.Equal(t, testRestrictions.Minimum, minAmount)
+		require.Equal(t, testRestrictions.Maximum, amount)
+		require.Empty(t, excludedOutpoints)
+
+		return &PreparedStaticLoopIn{
+			Request: loop.StaticAddressLoopInRequest{
+				DepositOutpoints: []string{"static:0"},
+				SelectedAmount:   testRestrictions.Maximum,
+				MaxSwapFee:       100,
+				LastHop:          &peer,
+				Label:            label,
+				Initiator:        initiator,
+			},
+			NumDeposits: 1,
+		}, nil
+	}
+	cfg.StaticLoopIn = func(_ context.Context,
+		request *loop.StaticAddressLoopInRequest) (
+		*StaticLoopInDispatchResult, error) {
+
+		requestCopy := *request
+		dispatched = &requestCopy
+
+		return &StaticLoopInDispatchResult{
+			SwapHash: lntypes.Hash{1},
+		}, nil
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{
+		{
+			ChannelID:     lnwire.NewShortChanIDFromInt(10).ToUint64(),
+			PubKeyBytes:   peer1,
+			LocalBalance:  0,
+			RemoteBalance: 100_000,
+			Capacity:      100_000,
+		},
+	}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.Autoloop = true
+	params.AutoFeeBudget = 100_000
+	params.AutoFeeRefreshPeriod = testBudgetRefresh
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	params.MaxAutoInFlight = 1
+	params.FailureBackOff = time.Hour
+	params.FeeLimit = NewFeePortion(500_000)
+	params.LoopInSource = LoopInSourceStaticAddress
+	params.PeerRules = map[route.Vertex]*SwapRule{
+		peer1: {
+			ThresholdRule: NewThresholdRule(0, 60),
+			Type:          swap.TypeIn,
+		},
+	}
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	err := manager.autoloop(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, prepareCalls)
+	require.Equal(t, autoloopSwapInitiator, prepareInitiator)
+	require.NotNil(t, dispatched)
+	require.Equal(t, []string{"static:0"}, dispatched.DepositOutpoints)
+	require.Equal(t, testRestrictions.Maximum, dispatched.SelectedAmount)
+	require.Equal(
+		t, labels.AutoloopLabel(swap.TypeIn), dispatched.Label,
+	)
+	require.Equal(t, autoloopSwapInitiator, dispatched.Initiator)
+	require.NotNil(t, dispatched.LastHop)
+	require.Equal(t, peer1, *dispatched.LastHop)
 }
