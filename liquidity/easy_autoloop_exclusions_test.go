@@ -47,10 +47,11 @@ func TestEasyAutoloopExcludedPeers(t *testing.T) {
 	)
 
 	// Picking a channel should not pick the excluded peer's channel.
-	picked := c.manager.pickEasyAutoloopChannel(
-		[]lndclient.ChannelInfo{ch1, ch2}, &params.ClientRestrictions,
-		nil, nil, 1,
+	picked, err := c.manager.pickEasyAutoloopChannel(
+		t.Context(), []lndclient.ChannelInfo{ch1, ch2},
+		&params.ClientRestrictions, nil, nil, 1,
 	)
+	require.NoError(t, err)
 	require.NotNil(t, picked)
 	require.Equal(
 		t, ch2.ChannelID, picked.ChannelID,
@@ -92,10 +93,11 @@ func TestEasyAutoloopIncludeAllPeers(t *testing.T) {
 	)
 
 	// With exclusion active, peer1 should not be picked.
-	picked := c.manager.pickEasyAutoloopChannel(
-		[]lndclient.ChannelInfo{ch1, ch2}, &params.ClientRestrictions,
-		nil, nil, 1,
+	picked, err := c.manager.pickEasyAutoloopChannel(
+		t.Context(), []lndclient.ChannelInfo{ch1, ch2},
+		&params.ClientRestrictions, nil, nil, 1,
 	)
+	require.NoError(t, err)
 	require.NotNil(t, picked)
 	require.Equal(t, ch2.ChannelID, picked.ChannelID)
 
@@ -103,10 +105,11 @@ func TestEasyAutoloopIncludeAllPeers(t *testing.T) {
 	// CLI does before sending to the server.
 	c.manager.params.EasyAutoloopExcludedPeers = nil
 
-	picked = c.manager.pickEasyAutoloopChannel(
-		[]lndclient.ChannelInfo{ch1, ch2}, &params.ClientRestrictions,
-		nil, nil, 1,
+	picked, err = c.manager.pickEasyAutoloopChannel(
+		t.Context(), []lndclient.ChannelInfo{ch1, ch2},
+		&params.ClientRestrictions, nil, nil, 1,
 	)
+	require.NoError(t, err)
 	require.NotNil(t, picked)
 	require.Equal(
 		t, ch1.ChannelID, picked.ChannelID,

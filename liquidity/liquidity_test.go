@@ -2,6 +2,8 @@ package liquidity
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -167,6 +170,125 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 			return testQuote, nil
 		},
 	}, lnd
+}
+
+// TestSuggestSwapsLoadsStaticLoopInsOnce verifies that SuggestSwaps reuses the
+// same static loop-in snapshot for budget and traffic checks within a single
+// planner pass.
+func TestSuggestSwapsLoadsStaticLoopInsOnce(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, lnd := newTestConfig()
+	staticCalls := 0
+	cfg.ListStaticLoopIn = func(context.Context) ([]*StaticLoopInInfo, error) {
+		staticCalls++
+
+		return nil, nil
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{channel1}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	params.ChannelRules = map[lnwire.ShortChannelID]*SwapRule{
+		chanID1: chanRule,
+	}
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	_, err := manager.SuggestSwaps(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, staticCalls)
+}
+
+// TestEasyAutoloopLoadsStaticLoopInsOnce verifies that easy autoloop reuses
+// the same static loop-in snapshot for budget and traffic checks within one
+// tick.
+func TestEasyAutoloopLoadsStaticLoopInsOnce(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, lnd := newTestConfig()
+	staticCalls := 0
+	cfg.ListStaticLoopIn = func(context.Context) ([]*StaticLoopInInfo, error) {
+		staticCalls++
+
+		return nil, nil
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{
+		{
+			ChannelID:    chanID1.ToUint64(),
+			PubKeyBytes:  peer1,
+			LocalBalance: 90_000,
+			Capacity:     100_000,
+		},
+	}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	params.EasyAutoloop = true
+	params.EasyAutoloopTarget = 50_000
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	err := manager.dispatchBestEasyAutoloopSwap(ctx)
+	require.EqualError(t, err, "no eligible channel for easy autoloop")
+	require.Equal(t, 1, staticCalls)
+}
+
+// TestEasyAssetAutoloopLoadsStaticLoopInsOnce verifies that asset easy
+// autoloop reuses one static loop-in snapshot across budget and traffic
+// checks within the same tick.
+func TestEasyAssetAutoloopLoadsStaticLoopInsOnce(t *testing.T) {
+	ctx := t.Context()
+
+	assetID := [32]byte{1}
+	assetStr := hex.EncodeToString(assetID[:])
+
+	customChanData := rfqmsg.JsonAssetChannel{
+		FundingAssets: []rfqmsg.JsonAssetUtxo{
+			{
+				AssetGenesis: rfqmsg.JsonAssetGenesis{
+					AssetID: assetStr,
+				},
+			},
+		},
+		LocalBalance:  90_000,
+		RemoteBalance: 0,
+		Capacity:      100_000,
+	}
+	customChanDataBytes, err := json.Marshal(customChanData)
+	require.NoError(t, err)
+
+	cfg, lnd := newTestConfig()
+	staticCalls := 0
+	cfg.ListStaticLoopIn = func(context.Context) ([]*StaticLoopInInfo, error) {
+		staticCalls++
+
+		return nil, nil
+	}
+	cfg.GetAssetPrice = func(context.Context, string, []byte, uint64,
+		btcutil.Amount) (btcutil.Amount, error) {
+
+		return 10_000, nil
+	}
+
+	lnd.Channels = []lndclient.ChannelInfo{
+		{
+			ChannelID:         chanID1.ToUint64(),
+			PubKeyBytes:       peer1,
+			CustomChannelData: customChanDataBytes,
+		},
+	}
+
+	manager := NewManager(cfg)
+	params := manager.GetParameters()
+	params.AutoloopBudgetLastRefresh = testBudgetStart
+	require.NoError(t, manager.setParameters(ctx, params))
+
+	err = manager.dispatchBestAssetEasyAutoloopSwap(ctx, assetStr, 50_000)
+	require.EqualError(t, err, "no eligible channel for easy autoloop")
+	require.Equal(t, 1, staticCalls)
 }
 
 // testPPMFees calculates the split of fees between prepay and swap invoice
@@ -2038,12 +2160,14 @@ func TestCurrentTraffic(t *testing.T) {
 	for _, testCase := range tests {
 		cfg, _ := newTestConfig()
 		m := NewManager(cfg)
+		ctx := t.Context()
 
 		params := m.GetParameters()
 		params.FailureBackOff = backoff
-		require.NoError(t, m.setParameters(context.Background(), params))
+		require.NoError(t, m.setParameters(ctx, params))
 
-		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
+		actual, err := m.currentSwapTraffic(ctx, testCase.loopOut, testCase.loopIn)
+		require.NoError(t, err)
 		require.Equal(t, testCase.expected, actual)
 	}
 }

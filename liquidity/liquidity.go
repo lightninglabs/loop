@@ -221,6 +221,11 @@ type Config struct {
 	LoopOutTerms func(ctx context.Context,
 		initiator string) (*loop.LoopOutTerms, error)
 
+	// ListStaticLoopIn returns all static-address loop-ins that liquidity
+	// should consider for budget accounting, in-flight limits, and peer
+	// traffic.
+	ListStaticLoopIn func(context.Context) ([]*StaticLoopInInfo, error)
+
 	// GetAssetPrice returns the price of an asset in satoshis.
 	GetAssetPrice func(ctx context.Context, assetId string,
 		peerPubkey []byte, assetAmt uint64,
@@ -574,9 +579,19 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		return err
 	}
 
+	// Load the static loop-in snapshot once for the whole easy-autoloop
+	// tick so budget and traffic checks cannot drift and do not need to hit
+	// the store twice.
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
+	summary := m.checkExistingAutoLoopsWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
@@ -640,9 +655,13 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
 
-	channel := m.pickEasyAutoloopChannel(
-		usableChannels, restrictions, loopOut, loopIn, 0,
+	channel, err := m.pickEasyAutoloopChannelWithStatic(
+		usableChannels, restrictions, loopOut, loopIn,
+		staticLoopIns, 0,
 	)
+	if err != nil {
+		return err
+	}
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
 	}
@@ -721,9 +740,19 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 		return err
 	}
 
+	// Load the static loop-in snapshot once for the whole easy-autoloop
+	// tick so budget and traffic checks cannot drift and do not need to hit
+	// the store twice.
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
+	summary := m.checkExistingAutoLoopsWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
@@ -829,9 +858,13 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
 
-	channel := m.pickEasyAutoloopChannel(
-		usableChannels, restrictions, loopOut, loopIn, satsPerAsset,
+	channel, err := m.pickEasyAutoloopChannelWithStatic(
+		usableChannels, restrictions, loopOut, loopIn,
+		staticLoopIns, satsPerAsset,
 	)
+	if err != nil {
+		return err
+	}
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
 	}
@@ -990,9 +1023,16 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		return nil, err
 	}
 
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get a summary of our existing swaps so that we can check our autoloop
 	// budget.
-	summary := m.checkExistingAutoLoops(ctx, loopOut, loopIn)
+	summary := m.checkExistingAutoLoopsWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
@@ -1037,7 +1077,9 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 
 	// Get a summary of the channels and peers that are not eligible due
 	// to ongoing swaps.
-	traffic := m.currentSwapTraffic(loopOut, loopIn)
+	traffic := m.currentSwapTrafficWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	)
 
 	var (
 		suggestions []swapSuggestion
@@ -1182,6 +1224,18 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	return resp, nil
 }
 
+// loadStaticLoopIns retrieves the static loop-ins that liquidity uses for
+// shared accounting and traffic calculations.
+func (m *Manager) loadStaticLoopIns(ctx context.Context) (
+	[]*StaticLoopInInfo, error) {
+
+	if m.cfg.ListStaticLoopIn == nil {
+		return nil, nil
+	}
+
+	return m.cfg.ListStaticLoopIn(ctx)
+}
+
 // suggestSwap checks whether we can currently perform a swap, and creates a
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
@@ -1308,12 +1362,28 @@ func (e *existingAutoLoopSummary) totalFees() btcutil.Amount {
 }
 
 // checkExistingAutoLoops calculates the total amount that has been spent by
-// automatically dispatched swaps that have completed, and the worst-case fee
-// total for our set of ongoing, automatically dispatched swaps as well as a
-// current in-flight count.
-func (m *Manager) checkExistingAutoLoops(_ context.Context,
+// automatically dispatched swaps that have completed, the worst-case fee total
+// for our set of ongoing automatically dispatched swaps, and the current
+// in-flight count.
+func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 	loopOuts []*loopdb.LoopOut,
-	loopIns []*loopdb.LoopIn) *existingAutoLoopSummary {
+	loopIns []*loopdb.LoopIn) (*existingAutoLoopSummary, error) {
+
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.checkExistingAutoLoopsWithStatic(
+		loopOuts, loopIns, staticLoopIns,
+	), nil
+}
+
+// checkExistingAutoLoopsWithStatic calculates our autoloop budget summary from
+// the provided swap snapshots.
+func (m *Manager) checkExistingAutoLoopsWithStatic(
+	loopOuts []*loopdb.LoopOut, loopIns []*loopdb.LoopIn,
+	staticLoopIns []*StaticLoopInInfo) *existingAutoLoopSummary {
 
 	var summary existingAutoLoopSummary
 
@@ -1370,14 +1440,72 @@ func (m *Manager) checkExistingAutoLoops(_ context.Context,
 		}
 	}
 
+	for _, in := range staticLoopIns {
+		if !isAutoloopLabel(in.Label) {
+			continue
+		}
+
+		inBudget := !in.LastUpdateTime.Before(
+			m.params.AutoloopBudgetLastRefresh,
+		)
+
+		switch {
+		case in.Pending:
+			summary.inFlightCount++
+			summary.pendingFees += staticLoopInWorstCaseFees(
+				in.NumDeposits, in.HasChange, in.QuotedSwapFee,
+				in.HtlcTxFeeRate, defaultLoopInSweepFee,
+			)
+
+		case !inBudget:
+			continue
+
+		case in.Failed:
+			// Static loop-in failure accounting stays pessimistic
+			// here. Once the swap is terminal we no longer know
+			// from liquidity's persisted view whether the timeout
+			// path actually confirmed, so we reserve the same
+			// worst-case fee shape we used while the swap was in
+			// flight.
+			// TODO: Persist real static-address swap costs,
+			// similar to loopdb.SwapCost, and use that exact
+			// terminal value here instead of the pessimistic
+			// worst-case estimate.
+			summary.spentFees += staticLoopInWorstCaseFees(
+				in.NumDeposits, in.HasChange, in.QuotedSwapFee,
+				in.HtlcTxFeeRate, defaultLoopInSweepFee,
+			)
+
+		default:
+			summary.spentFees += in.QuotedSwapFee
+		}
+	}
+
 	return &summary
 }
 
 // currentSwapTraffic examines our existing swaps and returns a summary of the
 // current activity which can be used to determine whether we should perform
 // any swaps.
-func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
-	loopIn []*loopdb.LoopIn) *swapTraffic {
+func (m *Manager) currentSwapTraffic(ctx context.Context,
+	loopOut []*loopdb.LoopOut,
+	loopIn []*loopdb.LoopIn) (*swapTraffic, error) {
+
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.currentSwapTrafficWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	), nil
+}
+
+// currentSwapTrafficWithStatic builds the shared traffic view from the
+// provided swap snapshots.
+func (m *Manager) currentSwapTrafficWithStatic(loopOut []*loopdb.LoopOut,
+	loopIn []*loopdb.LoopIn,
+	staticLoopIns []*StaticLoopInInfo) *swapTraffic {
 
 	traffic := newSwapTraffic()
 
@@ -1408,9 +1536,7 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 
 			if failedAt.After(failureCutoff) {
 				for _, id := range chanSet {
-					chanID := lnwire.NewShortChanIDFromInt(
-						id,
-					)
+					chanID := lnwire.NewShortChanIDFromInt(id)
 
 					traffic.failedLoopOut[chanID] = failedAt
 				}
@@ -1461,6 +1587,22 @@ func (m *Manager) currentSwapTraffic(loopOut []*loopdb.LoopOut,
 			if failedAt.After(failureCutoff) {
 				traffic.failedLoopIn[pubkey] = failedAt
 			}
+		}
+	}
+
+	for _, in := range staticLoopIns {
+		if in.LastHop == nil {
+			continue
+		}
+
+		pubkey := *in.LastHop
+
+		switch {
+		case in.Pending && in.BlocksLoopIn:
+			traffic.ongoingLoopIn[pubkey] = true
+
+		case in.Failed && in.LastUpdateTime.After(failureCutoff):
+			traffic.failedLoopIn[pubkey] = in.LastUpdateTime
 		}
 	}
 
@@ -1651,11 +1793,34 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 // This function prioritizes channels with high local balance but also consults
 // previous failures and ongoing swaps to avoid temporary channel failures or
 // swap conflicts.
-func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
-	restrictions *Restrictions, loopOut []*loopdb.LoopOut,
-	loopIn []*loopdb.LoopIn, satsPerAsset float64) *lndclient.ChannelInfo {
+func (m *Manager) pickEasyAutoloopChannel(ctx context.Context,
+	channels []lndclient.ChannelInfo, restrictions *Restrictions,
+	loopOut []*loopdb.LoopOut, loopIn []*loopdb.LoopIn,
+	satsPerAsset float64) (*lndclient.ChannelInfo, error) {
 
-	traffic := m.currentSwapTraffic(loopOut, loopIn)
+	staticLoopIns, err := m.loadStaticLoopIns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.pickEasyAutoloopChannelWithStatic(
+		channels, restrictions, loopOut, loopIn, staticLoopIns,
+		satsPerAsset,
+	)
+}
+
+// pickEasyAutoloopChannelWithStatic picks an easy-autoloop channel using a
+// shared static loop-in snapshot so callers can reuse one store load across
+// budget and traffic checks within the same autoloop tick.
+func (m *Manager) pickEasyAutoloopChannelWithStatic(
+	channels []lndclient.ChannelInfo, restrictions *Restrictions,
+	loopOut []*loopdb.LoopOut, loopIn []*loopdb.LoopIn,
+	staticLoopIns []*StaticLoopInInfo,
+	satsPerAsset float64) (*lndclient.ChannelInfo, error) {
+
+	traffic := m.currentSwapTrafficWithStatic(
+		loopOut, loopIn, staticLoopIns,
+	)
 
 	// Sort the candidate channels based on descending local balance. We
 	// want to prioritize picking a channel with the highest possible local
@@ -1722,13 +1887,13 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 				"minimum is %v, skipping remaining channels",
 				channel.ChannelID, channel.LocalBalance,
 				restrictions.Minimum)
-			return nil
+			return nil, nil
 		}
 
-		return &channel
+		return &channel, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (m *Manager) numActiveStickyLoops() int {
