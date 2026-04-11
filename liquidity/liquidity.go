@@ -933,6 +933,10 @@ type Suggestions struct {
 	// InSwaps is the set of loop in swaps that we suggest executing.
 	InSwaps []loop.LoopInRequest
 
+	// StaticInSwaps is the set of static-address loop-ins that we suggest
+	// executing.
+	StaticInSwaps []loop.StaticAddressLoopInRequest
+
 	// DisqualifiedChans maps the set of channels that we do not recommend
 	// swaps on to the reason that we did not recommend a swap.
 	DisqualifiedChans map[lnwire.ShortChannelID]Reason

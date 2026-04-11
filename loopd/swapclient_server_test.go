@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -277,6 +278,20 @@ func TestStaticAddressLoopInRejectsReservedLabel(t *testing.T) {
 		},
 	)
 	require.ErrorContains(t, err, labels.ErrReservedPrefix.Error())
+}
+
+// TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner
+// reason is exposed over rpc.
+func TestRPCAutoloopReasonStaticLoopInNoCandidate(t *testing.T) {
+	reason, err := rpcAutoloopReason(
+		liquidity.ReasonStaticLoopInNoCandidate,
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		looprpc.AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE,
+		reason,
+	)
 }
 
 // TestSwapClientServerStopDaemon ensures that calling StopDaemon triggers the

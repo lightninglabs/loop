@@ -424,6 +424,9 @@ const (
 	// Fee insufficient indicates that the fee estimate for a swap is higher than
 	// the portion of total swap amount that we allow fees to consume.
 	AutoReason_AUTO_REASON_FEE_INSUFFICIENT AutoReason = 13
+	// No static loop-in candidate indicates that static loop-in autoloop was
+	// selected, but no full-deposit static candidate fit the rule.
+	AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE AutoReason = 14
 )
 
 // Enum value maps for AutoReason.
@@ -443,22 +446,24 @@ var (
 		11: "AUTO_REASON_LIQUIDITY_OK",
 		12: "AUTO_REASON_BUDGET_INSUFFICIENT",
 		13: "AUTO_REASON_FEE_INSUFFICIENT",
+		14: "AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE",
 	}
 	AutoReason_value = map[string]int32{
-		"AUTO_REASON_UNKNOWN":             0,
-		"AUTO_REASON_BUDGET_NOT_STARTED":  1,
-		"AUTO_REASON_SWEEP_FEES":          2,
-		"AUTO_REASON_BUDGET_ELAPSED":      3,
-		"AUTO_REASON_IN_FLIGHT":           4,
-		"AUTO_REASON_SWAP_FEE":            5,
-		"AUTO_REASON_MINER_FEE":           6,
-		"AUTO_REASON_PREPAY":              7,
-		"AUTO_REASON_FAILURE_BACKOFF":     8,
-		"AUTO_REASON_LOOP_OUT":            9,
-		"AUTO_REASON_LOOP_IN":             10,
-		"AUTO_REASON_LIQUIDITY_OK":        11,
-		"AUTO_REASON_BUDGET_INSUFFICIENT": 12,
-		"AUTO_REASON_FEE_INSUFFICIENT":    13,
+		"AUTO_REASON_UNKNOWN":                     0,
+		"AUTO_REASON_BUDGET_NOT_STARTED":          1,
+		"AUTO_REASON_SWEEP_FEES":                  2,
+		"AUTO_REASON_BUDGET_ELAPSED":              3,
+		"AUTO_REASON_IN_FLIGHT":                   4,
+		"AUTO_REASON_SWAP_FEE":                    5,
+		"AUTO_REASON_MINER_FEE":                   6,
+		"AUTO_REASON_PREPAY":                      7,
+		"AUTO_REASON_FAILURE_BACKOFF":             8,
+		"AUTO_REASON_LOOP_OUT":                    9,
+		"AUTO_REASON_LOOP_IN":                     10,
+		"AUTO_REASON_LIQUIDITY_OK":                11,
+		"AUTO_REASON_BUDGET_INSUFFICIENT":         12,
+		"AUTO_REASON_FEE_INSUFFICIENT":            13,
+		"AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE": 14,
 	}
 )
 
@@ -4081,6 +4086,8 @@ type SuggestSwapsResponse struct {
 	LoopOut []*LoopOutRequest `protobuf:"bytes,1,rep,name=loop_out,json=loopOut,proto3" json:"loop_out,omitempty"`
 	// The set of recommended loop in swaps
 	LoopIn []*LoopInRequest `protobuf:"bytes,3,rep,name=loop_in,json=loopIn,proto3" json:"loop_in,omitempty"`
+	// The set of recommended static-address loop in swaps.
+	StaticLoopIn []*StaticAddressLoopInRequest `protobuf:"bytes,4,rep,name=static_loop_in,json=staticLoopIn,proto3" json:"static_loop_in,omitempty"`
 	// Disqualified contains the set of channels that swaps are not recommended
 	// for.
 	Disqualified  []*Disqualified `protobuf:"bytes,2,rep,name=disqualified,proto3" json:"disqualified,omitempty"`
@@ -4128,6 +4135,13 @@ func (x *SuggestSwapsResponse) GetLoopOut() []*LoopOutRequest {
 func (x *SuggestSwapsResponse) GetLoopIn() []*LoopInRequest {
 	if x != nil {
 		return x.LoopIn
+	}
+	return nil
+}
+
+func (x *SuggestSwapsResponse) GetStaticLoopIn() []*StaticAddressLoopInRequest {
+	if x != nil {
+		return x.StaticLoopIn
 	}
 	return nil
 }
@@ -6844,10 +6858,11 @@ const file_client_proto_rawDesc = "" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\x04R\tchannelId\x12\x16\n" +
 	"\x06pubkey\x18\x03 \x01(\fR\x06pubkey\x12+\n" +
-	"\x06reason\x18\x02 \x01(\x0e2\x13.looprpc.AutoReasonR\x06reason\"\xb6\x01\n" +
+	"\x06reason\x18\x02 \x01(\x0e2\x13.looprpc.AutoReasonR\x06reason\"\x81\x02\n" +
 	"\x14SuggestSwapsResponse\x122\n" +
 	"\bloop_out\x18\x01 \x03(\v2\x17.looprpc.LoopOutRequestR\aloopOut\x12/\n" +
-	"\aloop_in\x18\x03 \x03(\v2\x16.looprpc.LoopInRequestR\x06loopIn\x129\n" +
+	"\aloop_in\x18\x03 \x03(\v2\x16.looprpc.LoopInRequestR\x06loopIn\x12I\n" +
+	"\x0estatic_loop_in\x18\x04 \x03(\v2#.looprpc.StaticAddressLoopInRequestR\fstaticLoopIn\x129\n" +
 	"\fdisqualified\x18\x02 \x03(\v2\x15.looprpc.DisqualifiedR\fdisqualified\"W\n" +
 	"\x12AbandonSwapRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x121\n" +
@@ -7044,7 +7059,7 @@ const file_client_proto_rawDesc = "" +
 	"\x1dLOOP_IN_SOURCE_STATIC_ADDRESS\x10\x01*/\n" +
 	"\x11LiquidityRuleType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\r\n" +
-	"\tTHRESHOLD\x10\x01*\xa6\x03\n" +
+	"\tTHRESHOLD\x10\x01*\xd3\x03\n" +
 	"\n" +
 	"AutoReason\x12\x17\n" +
 	"\x13AUTO_REASON_UNKNOWN\x10\x00\x12\"\n" +
@@ -7061,7 +7076,8 @@ const file_client_proto_rawDesc = "" +
 	"\x12\x1c\n" +
 	"\x18AUTO_REASON_LIQUIDITY_OK\x10\v\x12#\n" +
 	"\x1fAUTO_REASON_BUDGET_INSUFFICIENT\x10\f\x12 \n" +
-	"\x1cAUTO_REASON_FEE_INSUFFICIENT\x10\r*\x88\x02\n" +
+	"\x1cAUTO_REASON_FEE_INSUFFICIENT\x10\r\x12+\n" +
+	"'AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE\x10\x0e*\x88\x02\n" +
 	"\fDepositState\x12\x11\n" +
 	"\rUNKNOWN_STATE\x10\x00\x12\r\n" +
 	"\tDEPOSITED\x10\x01\x12\x0f\n" +
@@ -7272,95 +7288,96 @@ var file_client_proto_depIdxs = []int32{
 	6,  // 29: looprpc.Disqualified.reason:type_name -> looprpc.AutoReason
 	14, // 30: looprpc.SuggestSwapsResponse.loop_out:type_name -> looprpc.LoopOutRequest
 	15, // 31: looprpc.SuggestSwapsResponse.loop_in:type_name -> looprpc.LoopInRequest
-	51, // 32: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
-	57, // 33: looprpc.ListReservationsResponse.reservations:type_name -> looprpc.ClientReservation
-	64, // 34: looprpc.ListInstantOutsResponse.swaps:type_name -> looprpc.InstantOut
-	69, // 35: looprpc.ListUnspentDepositsResponse.utxos:type_name -> looprpc.Utxo
-	92, // 36: looprpc.WithdrawDepositsRequest.outpoints:type_name -> lnrpc.OutPoint
-	7,  // 37: looprpc.ListStaticAddressDepositsRequest.state_filter:type_name -> looprpc.DepositState
-	80, // 38: looprpc.ListStaticAddressDepositsResponse.filtered_deposits:type_name -> looprpc.Deposit
-	81, // 39: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
-	82, // 40: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
-	7,  // 41: looprpc.Deposit.state:type_name -> looprpc.DepositState
-	80, // 42: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
-	8,  // 43: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
-	80, // 44: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
-	91, // 45: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
-	80, // 46: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
-	87, // 47: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
-	87, // 48: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
-	46, // 49: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
-	14, // 50: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
-	15, // 51: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
-	17, // 52: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
-	19, // 53: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
-	22, // 54: looprpc.SwapClient.SweepHtlc:input_type -> looprpc.SweepHtlcRequest
-	27, // 55: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
-	53, // 56: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
-	28, // 57: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
-	31, // 58: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
-	28, // 59: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
-	31, // 60: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
-	34, // 61: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	36, // 62: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
-	36, // 63: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
-	38, // 64: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
-	42, // 65: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
-	12, // 66: looprpc.SwapClient.StopDaemon:input_type -> looprpc.StopDaemonRequest
-	44, // 67: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
-	48, // 68: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
-	50, // 69: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
-	55, // 70: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
-	58, // 71: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
-	60, // 72: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
-	62, // 73: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
-	65, // 74: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
-	67, // 75: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
-	70, // 76: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
-	72, // 77: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
-	74, // 78: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
-	76, // 79: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
-	78, // 80: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
-	83, // 81: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
-	10, // 82: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.StaticOpenChannelRequest
-	16, // 83: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
-	16, // 84: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
-	18, // 85: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
-	21, // 86: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
-	23, // 87: looprpc.SwapClient.SweepHtlc:output_type -> looprpc.SweepHtlcResponse
-	18, // 88: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
-	54, // 89: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
-	30, // 90: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
-	33, // 91: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
-	29, // 92: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
-	32, // 93: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
-	35, // 94: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	37, // 95: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
-	37, // 96: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
-	39, // 97: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
-	43, // 98: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
-	13, // 99: looprpc.SwapClient.StopDaemon:output_type -> looprpc.StopDaemonResponse
-	45, // 100: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
-	49, // 101: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
-	52, // 102: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
-	56, // 103: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
-	59, // 104: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
-	61, // 105: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
-	63, // 106: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
-	66, // 107: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
-	68, // 108: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
-	71, // 109: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
-	73, // 110: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
-	75, // 111: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
-	77, // 112: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
-	79, // 113: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
-	84, // 114: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
-	11, // 115: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
-	83, // [83:116] is the sub-list for method output_type
-	50, // [50:83] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	83, // 32: looprpc.SuggestSwapsResponse.static_loop_in:type_name -> looprpc.StaticAddressLoopInRequest
+	51, // 33: looprpc.SuggestSwapsResponse.disqualified:type_name -> looprpc.Disqualified
+	57, // 34: looprpc.ListReservationsResponse.reservations:type_name -> looprpc.ClientReservation
+	64, // 35: looprpc.ListInstantOutsResponse.swaps:type_name -> looprpc.InstantOut
+	69, // 36: looprpc.ListUnspentDepositsResponse.utxos:type_name -> looprpc.Utxo
+	92, // 37: looprpc.WithdrawDepositsRequest.outpoints:type_name -> lnrpc.OutPoint
+	7,  // 38: looprpc.ListStaticAddressDepositsRequest.state_filter:type_name -> looprpc.DepositState
+	80, // 39: looprpc.ListStaticAddressDepositsResponse.filtered_deposits:type_name -> looprpc.Deposit
+	81, // 40: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
+	82, // 41: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
+	7,  // 42: looprpc.Deposit.state:type_name -> looprpc.DepositState
+	80, // 43: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
+	8,  // 44: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
+	80, // 45: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
+	91, // 46: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	80, // 47: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
+	87, // 48: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
+	87, // 49: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
+	46, // 50: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
+	14, // 51: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
+	15, // 52: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
+	17, // 53: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
+	19, // 54: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
+	22, // 55: looprpc.SwapClient.SweepHtlc:input_type -> looprpc.SweepHtlcRequest
+	27, // 56: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
+	53, // 57: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
+	28, // 58: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
+	31, // 59: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
+	28, // 60: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
+	31, // 61: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
+	34, // 62: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
+	36, // 63: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
+	36, // 64: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	38, // 65: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
+	42, // 66: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
+	12, // 67: looprpc.SwapClient.StopDaemon:input_type -> looprpc.StopDaemonRequest
+	44, // 68: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
+	48, // 69: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
+	50, // 70: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
+	55, // 71: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
+	58, // 72: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
+	60, // 73: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
+	62, // 74: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
+	65, // 75: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
+	67, // 76: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
+	70, // 77: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
+	72, // 78: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
+	74, // 79: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
+	76, // 80: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
+	78, // 81: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
+	83, // 82: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
+	10, // 83: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.StaticOpenChannelRequest
+	16, // 84: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
+	16, // 85: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
+	18, // 86: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
+	21, // 87: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
+	23, // 88: looprpc.SwapClient.SweepHtlc:output_type -> looprpc.SweepHtlcResponse
+	18, // 89: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
+	54, // 90: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
+	30, // 91: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
+	33, // 92: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
+	29, // 93: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
+	32, // 94: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
+	35, // 95: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
+	37, // 96: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
+	37, // 97: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	39, // 98: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
+	43, // 99: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
+	13, // 100: looprpc.SwapClient.StopDaemon:output_type -> looprpc.StopDaemonResponse
+	45, // 101: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
+	49, // 102: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
+	52, // 103: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
+	56, // 104: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
+	59, // 105: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
+	61, // 106: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
+	63, // 107: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
+	66, // 108: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
+	68, // 109: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
+	71, // 110: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
+	73, // 111: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
+	75, // 112: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
+	77, // 113: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
+	79, // 114: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
+	84, // 115: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
+	11, // 116: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
+	84, // [84:117] is the sub-list for method output_type
+	51, // [51:84] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
