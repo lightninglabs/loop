@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
@@ -161,6 +163,58 @@ func getLiquidityManager(client *loop.Client,
 		return result, nil
 	}
 
+	prepareStaticLoopIn := func(ctx context.Context, peer route.Vertex,
+		minAmount, amount btcutil.Amount, label, initiator string,
+		excludedOutpoints []string) (*liquidity.PreparedStaticLoopIn,
+		error) {
+
+		if staticLoopInManager == nil {
+			return nil, errors.New(
+				"static loop in manager unavailable",
+			)
+		}
+
+		request, numDeposits, hasChange, err :=
+			staticLoopInManager.PrepareAutoloopLoopIn(
+				ctx, peer, minAmount, amount, label,
+				initiator, excludedOutpoints,
+			)
+		if errors.Is(err, loopin.ErrNoAutoloopCandidate) {
+			return nil, liquidity.ErrNoStaticLoopInCandidate
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return &liquidity.PreparedStaticLoopIn{
+			Request:     *request,
+			NumDeposits: numDeposits,
+			HasChange:   hasChange,
+		}, nil
+	}
+
+	staticLoopIn := func(ctx context.Context,
+		request *loop.StaticAddressLoopInRequest) (
+		*liquidity.StaticLoopInDispatchResult, error) {
+
+		if staticLoopInManager == nil {
+			return nil, errors.New(
+				"static loop in manager unavailable",
+			)
+		}
+
+		swapInfo, err := staticLoopInManager.DeliverLoopInRequest(
+			ctx, request,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return &liquidity.StaticLoopInDispatchResult{
+			SwapHash: swapInfo.SwapHash,
+		}, nil
+	}
+
 	mngrCfg := &liquidity.Config{
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
@@ -196,6 +250,8 @@ func getLiquidityManager(client *loop.Client,
 		GetLoopOut:           client.Store.FetchLoopOutSwap,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
 		ListStaticLoopIn:     listStaticLoopIn,
+		PrepareStaticLoopIn:  prepareStaticLoopIn,
+		StaticLoopIn:         staticLoopIn,
 		LoopInTerms:          client.LoopInTerms,
 		LoopOutTerms:         client.LoopOutTerms,
 		GetAssetPrice:        client.AssetClient.GetAssetPrice,

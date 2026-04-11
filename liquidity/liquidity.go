@@ -213,6 +213,19 @@ type Config struct {
 	LoopIn func(ctx context.Context,
 		request *loop.LoopInRequest) (*loop.LoopInSwapInfo, error)
 
+	// PrepareStaticLoopIn builds a static-address-backed loop-in request
+	// for autoloop without dispatching it. The excluded outpoints set lets
+	// the planner avoid reusing deposits across multiple suggestions from
+	// the same pass.
+	PrepareStaticLoopIn func(ctx context.Context, peer route.Vertex,
+		minAmount, amount btcutil.Amount, label, initiator string,
+		excludedOutpoints []string) (*PreparedStaticLoopIn, error)
+
+	// StaticLoopIn dispatches a prepared static-address-backed loop-in.
+	StaticLoopIn func(ctx context.Context,
+		request *loop.StaticAddressLoopInRequest) (
+		*StaticLoopInDispatchResult, error)
+
 	// LoopInTerms returns the terms for a loop in swap.
 	LoopInTerms func(ctx context.Context,
 		initiator string) (*loop.LoopInTerms, error)
@@ -502,6 +515,30 @@ func (m *Manager) autoloop(ctx context.Context) error {
 			loopIn.HtlcAddressP2WSH, loopIn.HtlcAddressP2TR)
 	}
 
+	for _, in := range suggestion.StaticInSwaps {
+		// Static loop-ins follow the same dry-run semantics as the legacy
+		// autoloop suggestions. We only dispatch them when autoloop is
+		// actually enabled.
+		if !m.params.Autoloop {
+			log.Debugf("recommended static autoloop in: %v sats "+
+				"over %v", in.SelectedAmount, in.DepositOutpoints)
+
+			continue
+		}
+
+		if m.cfg.StaticLoopIn == nil {
+			return errors.New("static loop in dispatcher unavailable")
+		}
+
+		loopIn, err := m.cfg.StaticLoopIn(ctx, &in)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("static loop in automatically dispatched: hash: %v",
+			loopIn.SwapHash)
+	}
+
 	return nil
 }
 
@@ -662,6 +699,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
 	}
@@ -865,6 +903,7 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
 	}
@@ -961,11 +1000,33 @@ func (s *Suggestions) addSwap(swap swapSuggestion) error {
 	case *loopInSwapSuggestion:
 		s.InSwaps = append(s.InSwaps, t.LoopInRequest)
 
+	case *staticLoopInSwapSuggestion:
+		s.StaticInSwaps = append(s.StaticInSwaps, t.request)
+
 	default:
 		return fmt.Errorf("unexpected swap type: %T", swap)
 	}
 
 	return nil
+}
+
+// count returns the total number of accepted suggestions regardless of swap
+// type.
+func (s *Suggestions) count() int {
+	return len(s.OutSwaps) + len(s.InSwaps) + len(s.StaticInSwaps)
+}
+
+// suggestionCandidate is the shared view used while ordering suggestions
+// before final budget and in-flight filtering.
+type suggestionCandidate interface {
+	// amount returns the requested swap amount.
+	amount() btcutil.Amount
+
+	// channels returns the channels implicated by the candidate.
+	channels() []lnwire.ShortChannelID
+
+	// peers returns the peers implicated by the candidate.
+	peers(knownChans map[uint64]route.Vertex) []route.Vertex
 }
 
 // singleReasonSuggestion is a helper function which returns a set of
@@ -985,12 +1046,11 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 	return resp
 }
 
-// SuggestSwaps returns a set of swap suggestions based on our current liquidity
-// balance for the set of rules configured for the manager, failing if there are
-// no rules set. It takes an autoloop boolean that indicates whether the
-// suggestions are being used for our internal autolooper. This boolean is used
-// to determine the information we add to our swap suggestion and whether we
-// return any suggestions.
+// SuggestSwaps returns a set of swap suggestions based on our current
+// liquidity balance for the rules configured on the manager. The planner
+// fails when no rules are set and otherwise returns both suggested swaps and
+// structured disqualification reasons for rules that could not be satisfied in
+// the current pass.
 func (m *Manager) SuggestSwaps(ctx context.Context) (
 	*Suggestions, error) {
 
@@ -1086,8 +1146,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	)
 
 	var (
-		suggestions []swapSuggestion
-		resp        = newSuggestions()
+		candidates []suggestionCandidate
+		resp       = newSuggestions()
 	)
 
 	for peer, balances := range peerChannels {
@@ -1110,7 +1170,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			return nil, err
 		}
 
-		suggestions = append(suggestions, suggestion)
+		candidates = append(candidates, suggestion)
 	}
 
 	for _, channel := range channels {
@@ -1145,18 +1205,18 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			return nil, err
 		}
 
-		suggestions = append(suggestions, suggestion)
+		candidates = append(candidates, suggestion)
 	}
 
 	// If we have no swaps to execute after we have applied all of our
 	// limits, just return our set of disqualified swaps.
-	if len(suggestions) == 0 {
+	if len(candidates) == 0 {
 		return resp, nil
 	}
 
 	// Sort suggestions by amount in descending order.
-	sort.SliceStable(suggestions, func(i, j int) bool {
-		return suggestions[i].amount() > suggestions[j].amount()
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].amount() > candidates[j].amount()
 	})
 
 	// Run through our suggested swaps in descending order of amount and
@@ -1165,8 +1225,8 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 
 	// setReason is a helper that adds a swap's channels to our disqualified
 	// list with the reason provided.
-	setReason := func(reason Reason, swap swapSuggestion) {
-		for _, peer := range swap.peers(channelPeers) {
+	setReason := func(reason Reason, candidate suggestionCandidate) {
+		for _, peer := range candidate.peers(channelPeers) {
 			_, ok := m.params.PeerRules[peer]
 			if !ok {
 				continue
@@ -1175,7 +1235,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			resp.DisqualifiedPeers[peer] = reason
 		}
 
-		for _, channel := range swap.channels() {
+		for _, channel := range candidate.channels() {
 			_, ok := m.params.ChannelRules[channel]
 			if !ok {
 				continue
@@ -1185,7 +1245,40 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		}
 	}
 
-	for _, swap := range suggestions {
+	var excludedOutpoints []string
+	for _, candidate := range candidates {
+		var swap swapSuggestion
+
+		switch t := candidate.(type) {
+		case swapSuggestion:
+			swap = t
+
+		case *staticLoopInCandidate:
+			swap, excludedOutpoints, err = m.prepareStaticLoopInSuggestion(
+				ctx, t, excludedOutpoints,
+			)
+			switch {
+			case errors.Is(err, ErrNoStaticLoopInCandidate):
+				setReason(ReasonStaticLoopInNoCandidate, candidate)
+				continue
+
+			case err == nil:
+
+			default:
+				var reasonErr *reasonError
+				if errors.As(err, &reasonErr) {
+					setReason(reasonErr.reason, candidate)
+					continue
+				}
+
+				return nil, err
+			}
+
+		default:
+			return nil, fmt.Errorf("unexpected candidate type: %T",
+				candidate)
+		}
+
 		// If we do not have enough funds available, or we hit our
 		// in flight limit, we record this value for the rest of the
 		// swaps.
@@ -1194,12 +1287,12 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 		case available == 0:
 			reason = ReasonBudgetInsufficient
 
-		case len(resp.OutSwaps) == allowedSwaps:
+		case resp.count() == allowedSwaps:
 			reason = ReasonInFlight
 		}
 
 		if reason != ReasonNone {
-			setReason(reason, swap)
+			setReason(reason, candidate)
 			continue
 		}
 
@@ -1221,7 +1314,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 			log.Infof("Swap fee exceeds budget, remaining budget: "+
 				"%v, swap fee %v, next budget refresh: %v",
 				available, fees, refreshTime)
-			setReason(ReasonBudgetInsufficient, swap)
+			setReason(ReasonBudgetInsufficient, candidate)
 		}
 	}
 
@@ -1240,11 +1333,66 @@ func (m *Manager) loadStaticLoopIns(ctx context.Context) (
 	return m.cfg.ListStaticLoopIn(ctx)
 }
 
+// prepareStaticLoopInSuggestion turns a peer-level static loop-in candidate
+// into a concrete swap suggestion. The helper only runs after all candidates
+// have been sorted so it can carry a mutable excluded-deposit set through the
+// whole planner pass.
+func (m *Manager) prepareStaticLoopInSuggestion(ctx context.Context,
+	candidate *staticLoopInCandidate,
+	excludedOutpoints []string) (swapSuggestion, []string, error) {
+
+	if m.cfg.PrepareStaticLoopIn == nil {
+		return nil, excludedOutpoints, errors.New(
+			"static loop in preparer unavailable",
+		)
+	}
+
+	label := ""
+	if m.params.Autoloop {
+		label = labels.AutoloopLabel(swap.TypeIn)
+		if m.params.EasyAutoloop {
+			label = labels.EasyAutoloopLabel(swap.TypeIn)
+		}
+	}
+
+	prepared, err := m.cfg.PrepareStaticLoopIn(
+		ctx, candidate.peer, candidate.minAmount, candidate.amountHint,
+		label,
+		getInitiator(m.params), excludedOutpoints,
+	)
+	if err != nil {
+		return nil, excludedOutpoints, err
+	}
+
+	// Static loop-ins have a different timeout-risk profile than
+	// wallet-funded loop-ins, so use the dedicated static fee model before
+	// the candidate can compete for budget and in-flight slots.
+	err = staticLoopInFeeLimit(
+		m.params.FeeLimit, prepared.Request.SelectedAmount,
+		prepared.Request.MaxSwapFee, prepared.NumDeposits,
+		prepared.HasChange,
+	)
+	if err != nil {
+		return nil, excludedOutpoints, err
+	}
+
+	nextExcluded := append(
+		append([]string(nil), excludedOutpoints...),
+		prepared.Request.DepositOutpoints...,
+	)
+
+	return &staticLoopInSwapSuggestion{
+		request:     prepared.Request,
+		numDeposits: prepared.NumDeposits,
+		hasChange:   prepared.HasChange,
+	}, nextExcluded, nil
+}
+
 // suggestSwap checks whether we can currently perform a swap, and creates a
 // swap request for the rule provided.
 func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	balance *balances, rule *SwapRule, outRestrictions *Restrictions,
-	inRestrictions *Restrictions) (swapSuggestion, error) {
+	inRestrictions *Restrictions) (suggestionCandidate, error) {
 
 	var (
 		builder      swapBuilder
@@ -1286,6 +1434,23 @@ func (m *Manager) suggestSwap(ctx context.Context, traffic *swapTraffic,
 	amount := rule.swapAmount(balance, restrictions, rule.Type)
 	if amount == 0 {
 		return nil, newReasonError(ReasonLiquidityOk)
+	}
+
+	// Static loop-ins are prepared later, once the planner has a sorted
+	// view of all loop-in candidates. That later step needs a mutable set
+	// of excluded deposits so that two suggestions in the same pass cannot
+	// consume the same static funds.
+	if rule.Type == swap.TypeIn &&
+		m.params.LoopInSource == LoopInSourceStaticAddress {
+
+		return &staticLoopInCandidate{
+			peer:       balance.pubkey,
+			minAmount:  restrictions.Minimum,
+			amountHint: amount,
+			channelSet: append(
+				[]lnwire.ShortChannelID(nil), balance.channels...,
+			),
+		}, nil
 	}
 
 	return builder.buildSwap(
