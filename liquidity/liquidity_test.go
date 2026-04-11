@@ -262,11 +262,12 @@ func TestPersistParams(t *testing.T) {
 		FeePpm:          100,
 		AutoMaxInFlight: 10,
 		HtlcConfTarget:  2,
+		LoopInSource:    clientrpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS,
 	}
 	cfg, _ := newTestConfig()
 	manager := NewManager(cfg)
 
-	ctxb := context.Background()
+	ctx := t.Context()
 
 	var paramsBytes []byte
 
@@ -276,7 +277,7 @@ func TestPersistParams(t *testing.T) {
 	}
 
 	// Test the nil params is returned.
-	req, err := manager.loadParams(ctxb)
+	req, err := manager.loadParams(ctx)
 	require.Nil(t, req)
 	require.NoError(t, err)
 
@@ -289,17 +290,18 @@ func TestPersistParams(t *testing.T) {
 	}
 
 	// Test save the message.
-	err = manager.saveParams(ctxb, rpcParams)
+	err = manager.saveParams(ctx, rpcParams)
 	require.NoError(t, err)
 
 	// Test the nil params is returned.
-	req, err = manager.loadParams(ctxb)
+	req, err = manager.loadParams(ctx)
 	require.NoError(t, err)
 
 	// Check the specified fields are set as expected.
 	require.Equal(t, rpcParams.FeePpm, req.FeePpm)
 	require.Equal(t, rpcParams.AutoMaxInFlight, req.AutoMaxInFlight)
 	require.Equal(t, rpcParams.HtlcConfTarget, req.HtlcConfTarget)
+	require.Equal(t, rpcParams.LoopInSource, req.LoopInSource)
 
 	// Check the unspecified fields are using empty values.
 	require.False(t, req.Autoloop)
@@ -308,8 +310,12 @@ func TestPersistParams(t *testing.T) {
 
 	// Finally, check the loaded request can be used to set params without
 	// error.
-	err = manager.SetParameters(context.Background(), req)
+	err = manager.SetParameters(ctx, req)
 	require.NoError(t, err)
+	require.Equal(
+		t, LoopInSourceStaticAddress,
+		manager.GetParameters().LoopInSource,
+	)
 }
 
 // TestRestrictedSuggestions tests getting of swap suggestions when we have
