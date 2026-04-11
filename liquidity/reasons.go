@@ -73,6 +73,11 @@ const (
 	// ReasonCustomChannelData indicates that the channel is not standard
 	// and should not be used for swaps.
 	ReasonCustomChannelData
+
+	// ReasonStaticLoopInNoCandidate indicates that static loop-in
+	// autoloop was selected, but no full-deposit static candidate was
+	// available for the target peer.
+	ReasonStaticLoopInNoCandidate
 )
 
 // String returns a string representation of a reason.
@@ -122,6 +127,9 @@ func (r Reason) String() string {
 
 	case ReasonLoopInUnreachable:
 		return "loop in unreachable"
+
+	case ReasonStaticLoopInNoCandidate:
+		return "no static loop-in candidate"
 
 	default:
 		return "unknown"

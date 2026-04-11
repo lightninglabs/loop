@@ -1543,6 +1543,12 @@ enum AutoReason {
     the portion of total swap amount that we allow fees to consume.
     */
     AUTO_REASON_FEE_INSUFFICIENT = 13;
+
+    /*
+    No static loop-in candidate indicates that static loop-in autoloop was
+    selected, but no full-deposit static candidate fit the rule.
+    */
+    AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE = 14;
 }
 
 message Disqualified {
@@ -1572,6 +1578,11 @@ message SuggestSwapsResponse {
     The set of recommended loop in swaps
     */
     repeated LoopInRequest loop_in = 3;
+
+    /*
+    The set of recommended static-address loop in swaps.
+    */
+    repeated StaticAddressLoopInRequest static_loop_in = 4;
 
     /*
     Disqualified contains the set of channels that swaps are not recommended
