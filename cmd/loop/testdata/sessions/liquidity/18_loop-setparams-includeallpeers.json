@@ -70,7 +70,8 @@
           "fast_swap_publication": true,
           "easy_autoloop_excluded_peers": [
             "AnHW4pMBFZ2eHMXTmDR5pR87PAxoLtp/FqofR9/gmyL3"
-          ]
+          ],
+          "loop_in_source": "LOOP_IN_SOURCE_WALLET"
         }
       }
     },
@@ -118,7 +119,8 @@
             "account_addr_type": "TAPROOT_PUBKEY",
             "easy_asset_params": {},
             "fast_swap_publication": true,
-            "easy_autoloop_excluded_peers": []
+            "easy_autoloop_excluded_peers": [],
+            "loop_in_source": "LOOP_IN_SOURCE_WALLET"
           }
         }
       }

@@ -2120,6 +2120,10 @@
             "format": "byte"
           },
           "description": "A list of peers (their public keys) that should be excluded from the easy\nautoloop run. If set, channels connected to these peers won't be\nconsidered for easy autoloop swaps."
+        },
+        "loop_in_source": {
+          "$ref": "#/definitions/looprpcLoopInSource",
+          "description": "Selects which source autoloop uses for loop-in rules."
         }
       }
     },
@@ -2352,6 +2356,15 @@
           "description": "Private indicates whether the destination node should be considered\nprivate. In which case, loop will generate hophints to assist with\nprobing and payment."
         }
       }
+    },
+    "looprpcLoopInSource": {
+      "type": "string",
+      "enum": [
+        "LOOP_IN_SOURCE_WALLET",
+        "LOOP_IN_SOURCE_STATIC_ADDRESS"
+      ],
+      "default": "LOOP_IN_SOURCE_WALLET",
+      "description": " - LOOP_IN_SOURCE_WALLET: Use the legacy wallet-funded loop-in flow.\n - LOOP_IN_SOURCE_STATIC_ADDRESS: Use deposited static-address funds for loop-in autoloops."
     },
     "looprpcLoopOutRequest": {
       "type": "object",

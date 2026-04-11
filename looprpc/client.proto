@@ -1192,6 +1192,18 @@ message GetInfoResponse {
 message GetLiquidityParamsRequest {
 }
 
+enum LoopInSource {
+    /*
+    Use the legacy wallet-funded loop-in flow.
+    */
+    LOOP_IN_SOURCE_WALLET = 0;
+
+    /*
+    Use deposited static-address funds for loop-in autoloops.
+    */
+    LOOP_IN_SOURCE_STATIC_ADDRESS = 1;
+}
+
 message LiquidityParameters {
     /*
     A set of liquidity rules that describe the desired liquidity balance.
@@ -1370,6 +1382,11 @@ message LiquidityParameters {
     considered for easy autoloop swaps.
     */
     repeated bytes easy_autoloop_excluded_peers = 27;
+
+    /*
+    Selects which source autoloop uses for loop-in rules.
+    */
+    LoopInSource loop_in_source = 28;
 }
 
 message EasyAssetAutoloopParams {
