@@ -3,6 +3,7 @@ package loopd
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -12,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
@@ -115,7 +117,50 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	return db, &baseDb, nil
 }
 
-func getLiquidityManager(client *loop.Client) *liquidity.Manager {
+func getLiquidityManager(client *loop.Client,
+	staticLoopInManager *loopin.Manager) *liquidity.Manager {
+
+	listStaticLoopIn := func(
+		ctx context.Context) ([]*liquidity.StaticLoopInInfo, error) {
+
+		if staticLoopInManager == nil {
+			return nil, nil
+		}
+
+		swaps, err := staticLoopInManager.GetAllSwaps(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		result := make(
+			[]*liquidity.StaticLoopInInfo, 0, len(swaps),
+		)
+		for _, staticSwap := range swaps {
+			state := staticSwap.GetState()
+			pending := slices.Contains(loopin.PendingStates, state)
+			failed := state == loopin.Failed ||
+				state == loopin.HtlcTimeoutSwept
+
+			result = append(result, &liquidity.StaticLoopInInfo{
+				Label:          staticSwap.Label,
+				QuotedSwapFee:  staticSwap.QuotedSwapFee,
+				HtlcTxFeeRate:  staticSwap.HtlcTxFeeRate,
+				LastHop:        staticSwap.LastHopVertex(),
+				LastUpdateTime: staticSwap.LastUpdateTime,
+				Pending:        pending,
+				Failed:         failed,
+				BlocksLoopIn: pending &&
+					state != loopin.PaymentReceived,
+				NumDeposits: len(staticSwap.Deposits),
+				HasChange: staticSwap.SelectedAmount > 0 &&
+					staticSwap.SelectedAmount <
+						staticSwap.TotalDepositAmount(),
+			})
+		}
+
+		return result, nil
+	}
+
 	mngrCfg := &liquidity.Config{
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
@@ -150,6 +195,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		GetLoopOut:           client.Store.FetchLoopOutSwap,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
+		ListStaticLoopIn:     listStaticLoopIn,
 		LoopInTerms:          client.LoopInTerms,
 		LoopOutTerms:         client.LoopOutTerms,
 		GetAssetPrice:        client.AssetClient.GetAssetPrice,

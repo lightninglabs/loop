@@ -591,6 +591,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	if len(updates) > 0 {
 		lastUpdate := updates[len(updates)-1]
 		loopIn.SetState(fsm.StateType(lastUpdate.UpdateState))
+		loopIn.LastUpdateTime = lastUpdate.UpdateTimestamp
 	}
 
 	return loopIn, nil
