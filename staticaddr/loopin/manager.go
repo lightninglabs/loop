@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
@@ -690,12 +689,6 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("unable to determine swap amount: %w",
 			err)
-	}
-
-	// Check that the label is valid.
-	err = labels.Validate(req.Label)
-	if err != nil {
-		return nil, fmt.Errorf("invalid label: %w", err)
 	}
 
 	// Private and route hints are mutually exclusive as setting private

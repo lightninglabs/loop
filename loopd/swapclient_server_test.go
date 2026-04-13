@@ -261,6 +261,24 @@ func TestValidateLoopInRequest(t *testing.T) {
 	}
 }
 
+// TestStaticAddressLoopInRejectsReservedLabel verifies that external static
+// loop-in requests still reject reserved autoloop labels at the RPC boundary.
+func TestStaticAddressLoopInRejectsReservedLabel(t *testing.T) {
+	logger := btclog.NewSLogger(
+		btclog.NewDefaultHandler(os.Stdout),
+	)
+	setLogger(logger.SubSystem(Subsystem))
+
+	server := &swapClientServer{}
+
+	_, err := server.StaticAddressLoopIn(
+		t.Context(), &looprpc.StaticAddressLoopInRequest{
+			Label: labels.AutoloopLabel(swap.TypeIn),
+		},
+	)
+	require.ErrorContains(t, err, labels.ErrReservedPrefix.Error())
+}
+
 // TestSwapClientServerStopDaemon ensures that calling StopDaemon triggers the
 // daemon shutdown.
 func TestSwapClientServerStopDaemon(t *testing.T) {

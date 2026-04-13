@@ -2097,6 +2097,13 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Fast:                  in.Fast,
 	}
 
+	// External callers must not be able to use reserved autoloop labels.
+	// Internal autoloop dispatch bypasses this RPC and can still use the
+	// reserved labels needed to attribute automated swaps correctly.
+	if err := labels.Validate(req.Label); err != nil {
+		return nil, fmt.Errorf("invalid label: %w", err)
+	}
+
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)
 		if err != nil {
