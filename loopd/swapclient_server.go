@@ -2442,6 +2442,9 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 		return looprpc.AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE,
 			nil
 
+	case liquidity.ReasonCustomChannelData:
+		return looprpc.AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA, nil
+
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
 	}

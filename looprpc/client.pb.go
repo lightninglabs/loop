@@ -427,6 +427,9 @@ const (
 	// No static loop-in candidate indicates that static loop-in autoloop was
 	// selected, but no full-deposit static candidate fit the rule.
 	AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE AutoReason = 14
+	// Custom channel data indicates that the target channel carries custom
+	// channel data and is excluded from the standard autoloop planner.
+	AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA AutoReason = 15
 )
 
 // Enum value maps for AutoReason.
@@ -447,6 +450,7 @@ var (
 		12: "AUTO_REASON_BUDGET_INSUFFICIENT",
 		13: "AUTO_REASON_FEE_INSUFFICIENT",
 		14: "AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE",
+		15: "AUTO_REASON_CUSTOM_CHANNEL_DATA",
 	}
 	AutoReason_value = map[string]int32{
 		"AUTO_REASON_UNKNOWN":                     0,
@@ -464,6 +468,7 @@ var (
 		"AUTO_REASON_BUDGET_INSUFFICIENT":         12,
 		"AUTO_REASON_FEE_INSUFFICIENT":            13,
 		"AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE": 14,
+		"AUTO_REASON_CUSTOM_CHANNEL_DATA":         15,
 	}
 )
 
@@ -7059,7 +7064,7 @@ const file_client_proto_rawDesc = "" +
 	"\x1dLOOP_IN_SOURCE_STATIC_ADDRESS\x10\x01*/\n" +
 	"\x11LiquidityRuleType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\r\n" +
-	"\tTHRESHOLD\x10\x01*\xd3\x03\n" +
+	"\tTHRESHOLD\x10\x01*\xf8\x03\n" +
 	"\n" +
 	"AutoReason\x12\x17\n" +
 	"\x13AUTO_REASON_UNKNOWN\x10\x00\x12\"\n" +
@@ -7077,7 +7082,8 @@ const file_client_proto_rawDesc = "" +
 	"\x18AUTO_REASON_LIQUIDITY_OK\x10\v\x12#\n" +
 	"\x1fAUTO_REASON_BUDGET_INSUFFICIENT\x10\f\x12 \n" +
 	"\x1cAUTO_REASON_FEE_INSUFFICIENT\x10\r\x12+\n" +
-	"'AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE\x10\x0e*\x88\x02\n" +
+	"'AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE\x10\x0e\x12#\n" +
+	"\x1fAUTO_REASON_CUSTOM_CHANNEL_DATA\x10\x0f*\x88\x02\n" +
 	"\fDepositState\x12\x11\n" +
 	"\rUNKNOWN_STATE\x10\x00\x12\r\n" +
 	"\tDEPOSITED\x10\x01\x12\x0f\n" +
