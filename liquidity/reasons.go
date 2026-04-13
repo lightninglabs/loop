@@ -128,6 +128,9 @@ func (r Reason) String() string {
 	case ReasonLoopInUnreachable:
 		return "loop in unreachable"
 
+	case ReasonCustomChannelData:
+		return "custom channel data"
+
 	case ReasonStaticLoopInNoCandidate:
 		return "no static loop-in candidate"
 

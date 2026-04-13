@@ -1549,6 +1549,12 @@ enum AutoReason {
     selected, but no full-deposit static candidate fit the rule.
     */
     AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE = 14;
+
+    /*
+    Custom channel data indicates that the target channel carries custom
+    channel data and is excluded from the standard autoloop planner.
+    */
+    AUTO_REASON_CUSTOM_CHANNEL_DATA = 15;
 }
 
 message Disqualified {

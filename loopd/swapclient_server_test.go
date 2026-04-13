@@ -295,6 +295,16 @@ func TestRPCAutoloopReasonStaticLoopInNoCandidate(t *testing.T) {
 	)
 }
 
+// TestRPCAutoloopReasonCustomChannelData verifies that custom-channel
+// disqualifications are exposed over rpc instead of failing the whole dry run.
+func TestRPCAutoloopReasonCustomChannelData(t *testing.T) {
+	reason, err := rpcAutoloopReason(liquidity.ReasonCustomChannelData)
+	require.NoError(t, err)
+	require.Equal(
+		t, looprpc.AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA, reason,
+	)
+}
+
 // TestSwapClientServerStopDaemon ensures that calling StopDaemon triggers the
 // daemon shutdown.
 func TestSwapClientServerStopDaemon(t *testing.T) {
