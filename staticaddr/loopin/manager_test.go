@@ -189,7 +189,8 @@ func TestSelectDeposits(t *testing.T) {
 func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	ctx := t.Context()
 
-	selectedDeposit := makeDeposit(1, 0, 9_000)
+	const confirmationHeight = 0
+	selectedDeposit := makeDeposit(1, 0, 9_000, confirmationHeight)
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteErr := errors.New("quote failed")
 	quoteGetter := &mockQuoteGetter{
@@ -367,8 +368,14 @@ func (s *mockStore) SwapHashesForDepositIDs(_ context.Context,
 }
 
 // helper to create a deposit with specific outpoint and value.
-func makeDeposit(h byte, index uint32, value btcutil.Amount) *deposit.Deposit {
-	d := &deposit.Deposit{Value: value}
+func makeDeposit(h byte, index uint32, value btcutil.Amount,
+	confirmationHeight int64) *deposit.Deposit {
+
+	d := &deposit.Deposit{
+		Value:              value,
+		ConfirmationHeight: confirmationHeight,
+	}
+
 	d.Hash = chainhash.Hash{h}
 	d.Index = index
 	var id deposit.ID
@@ -421,11 +428,12 @@ func TestCheckChange(t *testing.T) {
 	}
 
 	// Deposits belonging to different swaps.
-	s1d1 := makeDeposit(1, 0, 1000)
-	s1d2 := makeDeposit(1, 1, 2000)
-	s2d1 := makeDeposit(2, 0, 1500)
-	s3d1 := makeDeposit(3, 0, 800)
-	s4d1 := makeDeposit(4, 0, 900)
+	const confirmationHeight = 0
+	s1d1 := makeDeposit(1, 0, 1000, confirmationHeight)
+	s1d2 := makeDeposit(1, 1, 2000, confirmationHeight)
+	s2d1 := makeDeposit(2, 0, 1500, confirmationHeight)
+	s3d1 := makeDeposit(3, 0, 800, confirmationHeight)
+	s4d1 := makeDeposit(4, 0, 900, confirmationHeight)
 
 	// Swaps:
 	// A: total 3000, selected 3000 => no change.
