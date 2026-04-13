@@ -222,6 +222,9 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
+	// activeDeposits is the set returned by GetActiveDepositsInState.
+	activeDeposits []*deposit.Deposit
+
 	// byOutpoint maps outpoint strings to deposits for direct lookups.
 	byOutpoint map[string]*deposit.Deposit
 }
@@ -277,36 +280,52 @@ func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
 func (m *mockDepositManager) GetActiveDepositsInState(_ fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
-	return nil, nil
+	return m.activeDeposits, nil
 }
 
-// mockQuoteGetter returns either a configured quote or a configured error and
-// records the quoted amount for assertions.
+// mockQuoteGetter records the inputs to quote requests and returns a fixed
+// loop-in quote.
 type mockQuoteGetter struct {
+	// quote is the response returned from GetLoopInQuote.
+	quote *loop.LoopInQuote
+
 	// err is the optional error returned from GetLoopInQuote.
 	err error
 
 	// amount records the quoted amount.
 	amount btcutil.Amount
+
+	// lastHop records the quoted last hop.
+	lastHop *route.Vertex
+
+	// initiator records the quoted initiator string.
+	initiator string
+
+	// numDeposits records the quoted deposit count.
+	numDeposits uint32
+
+	// fast records the quoted fast flag.
+	fast bool
 }
 
-// GetLoopInQuote returns the configured quote result for tests.
+// GetLoopInQuote returns the configured quote and records the request
+// parameters for assertions.
 func (m *mockQuoteGetter) GetLoopInQuote(_ context.Context,
 	amt btcutil.Amount, _ route.Vertex, lastHop *route.Vertex,
 	_ [][]zpay32.HopHint, initiator string, numDeposits uint32,
 	fast bool) (*loop.LoopInQuote, error) {
 
 	m.amount = amt
-	_ = lastHop
-	_ = initiator
-	_ = numDeposits
-	_ = fast
+	m.lastHop = lastHop
+	m.initiator = initiator
+	m.numDeposits = numDeposits
+	m.fast = fast
 
 	if m.err != nil {
 		return nil, m.err
 	}
 
-	return &loop.LoopInQuote{}, nil
+	return m.quote, nil
 }
 
 // mockStore implements StaticAddressLoopInStore for tests.
