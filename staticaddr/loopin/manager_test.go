@@ -2,15 +2,21 @@ package loopin
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -176,8 +182,46 @@ func TestSelectDeposits(t *testing.T) {
 	}
 }
 
+// TestInitiateLoopInAllowsReservedAutoloopLabel verifies that the internal
+// loop-in manager path does not reject reserved autoloop labels. The RPC
+// boundary owns that validation, while internal autoloop dispatch must be able
+// to reuse the reserved labels directly.
+func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
+	ctx := t.Context()
+
+	selectedDeposit := makeDeposit(1, 0, 9_000)
+	selectedOutpoint := selectedDeposit.OutPoint.String()
+	quoteErr := errors.New("quote failed")
+	quoteGetter := &mockQuoteGetter{
+		err: quoteErr,
+	}
+
+	manager, err := NewManager(&Config{
+		DepositManager: &mockDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				selectedOutpoint: selectedDeposit,
+			},
+		},
+		QuoteGetter: quoteGetter,
+		NodePubkey:  route.Vertex{2},
+	}, 200)
+	require.NoError(t, err)
+
+	_, err = manager.initiateLoopIn(ctx, &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: []string{selectedOutpoint},
+		SelectedAmount:   selectedDeposit.Value,
+		MaxSwapFee:       1_000,
+		Label:            labels.AutoloopLabel(swap.TypeIn),
+		Initiator:        "autoloop",
+	})
+	require.ErrorIs(t, err, quoteErr)
+	require.NotContains(t, err.Error(), labels.ErrReservedPrefix.Error())
+	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
+	// byOutpoint maps outpoint strings to deposits for direct lookups.
 	byOutpoint map[string]*deposit.Deposit
 }
 
@@ -187,10 +231,28 @@ func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 	return nil, nil
 }
 
-func (m *mockDepositManager) AllStringOutpointsActiveDeposits(_ []string,
-	_ fsm.StateType) ([]*deposit.Deposit, bool) {
+func (m *mockDepositManager) AllStringOutpointsActiveDeposits(outpoints []string,
+	state fsm.StateType) ([]*deposit.Deposit, bool) {
 
-	return nil, false
+	if state != deposit.Deposited {
+		return nil, false
+	}
+
+	if m.byOutpoint == nil {
+		return nil, false
+	}
+
+	res := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		selectedDeposit, ok := m.byOutpoint[outpoint]
+		if !ok {
+			return nil, false
+		}
+
+		res = append(res, selectedDeposit)
+	}
+
+	return res, true
 }
 
 func (m *mockDepositManager) TransitionDeposits(_ context.Context,
@@ -215,6 +277,35 @@ func (m *mockDepositManager) GetActiveDepositsInState(_ fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
 	return nil, nil
+}
+
+// mockQuoteGetter returns either a configured quote or a configured error and
+// records the quoted amount for assertions.
+type mockQuoteGetter struct {
+	// err is the optional error returned from GetLoopInQuote.
+	err error
+
+	// amount records the quoted amount.
+	amount btcutil.Amount
+}
+
+// GetLoopInQuote returns the configured quote result for tests.
+func (m *mockQuoteGetter) GetLoopInQuote(_ context.Context,
+	amt btcutil.Amount, _ route.Vertex, lastHop *route.Vertex,
+	_ [][]zpay32.HopHint, initiator string, numDeposits uint32,
+	fast bool) (*loop.LoopInQuote, error) {
+
+	m.amount = amt
+	_ = lastHop
+	_ = initiator
+	_ = numDeposits
+	_ = fast
+
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return &loop.LoopInQuote{}, nil
 }
 
 // mockStore implements StaticAddressLoopInStore for tests.
