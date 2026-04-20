@@ -161,14 +161,25 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 
 // FinalizeDepositAction is the final action after a withdrawal. It signals to
 // the manager that the deposit has been swept and the FSM can be removed.
-func (f *FSM) FinalizeDepositAction(ctx context.Context,
+func (f *FSM) FinalizeDepositAction(_ context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	select {
-	case <-ctx.Done():
-		return fsm.OnError
+	outpoint := f.deposit.OutPoint
 
-	case f.finalizedDepositChan <- f.deposit.OutPoint:
-		return fsm.NoOp
-	}
+	// The finalization notification only tells the manager to remove the
+	// deposit from its active set. Send it asynchronously so a busy manager
+	// loop can't stall withdrawal confirmation while deposit locks are held.
+	go func() {
+		select {
+		case <-f.quitChan:
+			// The deposit is already in a final state. If shutdown wins
+			// this race, startup recovery will skip it instead of
+			// re-adding it to the active set.
+			return
+
+		case f.finalizedDepositChan <- outpoint:
+		}
+	}()
+
+	return fsm.NoOp
 }
