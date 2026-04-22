@@ -80,6 +80,10 @@ type Config struct {
 	// blocks.
 	ChainNotifier lndclient.ChainNotifierClient
 
+	// TxOutChecker checks whether selected deposit outpoints are still
+	// available before we sign an HTLC transaction for them.
+	TxOutChecker TxOutChecker
+
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient
 
@@ -760,8 +764,10 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
-		SelectedAmount:        req.SelectedAmount,
-		DepositOutpoints:      selectedOutpoints,
+		SelectedAmount: req.SelectedAmount,
+		DepositOutpoints: append(
+			[]string(nil), selectedOutpoints...,
+		),
 		Deposits:              selectedDeposits,
 		Label:                 req.Label,
 		Initiator:             req.Initiator,
