@@ -93,8 +93,6 @@ type StaticAddressLoopIn struct {
 
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
-	// TODO(hieblmi): Replace this with a getter method that fetches the
-	//      outpoints from the deposits.
 	DepositOutpoints []string
 
 	// SelectedAmount is the amount that the user selected for the swap. If

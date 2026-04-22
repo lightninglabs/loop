@@ -507,9 +507,12 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		}
 	}
 
-	depositOutpoints := strings.Split(
-		swap.DepositOutpoints, OutpointSeparator,
-	)
+	var depositOutpoints []string
+	if swap.DepositOutpoints != "" {
+		depositOutpoints = strings.Split(
+			swap.DepositOutpoints, OutpointSeparator,
+		)
+	}
 
 	timeoutAddressString := swap.HtlcTimeoutSweepAddress
 	var timeoutAddress btcutil.Address

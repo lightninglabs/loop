@@ -348,3 +348,89 @@ func TestReconcileDepositsReactivatesReappearedReplacedDeposit(t *testing.T) {
 	require.Zero(t, deposit.ConfirmationHeight)
 	require.Len(t, manager.activeDeposits, 1)
 }
+
+// TestReconcileReplacementDepositCreatesNewDeposit ensures that a replacement
+// UTXO is retained as a new deposit while an in-flight deposit remains tied to
+// the outpoint selected by a loop-in.
+func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
+	ctx := context.Background()
+	mockLnd := test.NewMockLnd()
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{4},
+		Index: 8,
+	}
+	newOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{5},
+		Index: 9,
+	}
+
+	depositID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	deposit := &Deposit{
+		ID:       depositID,
+		OutPoint: oldOutpoint,
+		Value:    btcutil.Amount(100_000),
+	}
+	deposit.SetState(LoopingIn)
+
+	utxo := &lnwallet.Utxo{
+		OutPoint:      newOutpoint,
+		Value:         deposit.Value,
+		Confirmations: 0,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{utxo}, nil)
+	mockAddressManager.On(
+		"GetStaticAddressParameters", mock.Anything,
+	).Return(&script.Parameters{
+		ProtocolVersion: version.ProtocolVersion_V0,
+	}, nil)
+	mockAddressManager.On(
+		"GetStaticAddress", mock.Anything,
+	).Return((*script.StaticAddress)(nil), nil)
+
+	mockStore := new(mockStore)
+	var createdDeposit *Deposit
+	mockStore.On(
+		"CreateDeposit", mock.Anything, mock.Anything,
+	).Return(nil).Run(func(args mock.Arguments) {
+		createdDeposit = args.Get(1).(*Deposit)
+	})
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          mockStore,
+		WalletKit:      mockLnd.WalletKit,
+		Signer:         mockLnd.Signer,
+	})
+	manager.deposits[oldOutpoint] = deposit
+	fsm := &FSM{}
+	manager.activeDeposits[oldOutpoint] = fsm
+	manager.missingDeposits[oldOutpoint] = 1
+
+	require.NoError(t, manager.reconcileDeposits(ctx))
+
+	require.Same(t, deposit, manager.deposits[oldOutpoint])
+	require.Equal(t, oldOutpoint, deposit.OutPoint)
+	require.Equal(t, LoopingIn, deposit.GetState())
+
+	replacement, ok := manager.deposits[newOutpoint]
+	require.True(t, ok)
+	require.Same(t, createdDeposit, replacement)
+	require.NotEqual(t, depositID, replacement.ID)
+	require.Equal(t, newOutpoint, replacement.OutPoint)
+	require.Equal(t, Deposited, replacement.GetState())
+	require.Zero(t, replacement.ConfirmationHeight)
+
+	require.Same(t, fsm, manager.activeDeposits[oldOutpoint])
+	require.NotSame(t, fsm, manager.activeDeposits[newOutpoint])
+	require.Empty(t, manager.missingDeposits)
+
+	mockStore.AssertNotCalled(
+		t, "UpdateDeposit", mock.Anything, mock.Anything,
+	)
+}
