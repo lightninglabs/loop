@@ -40,7 +40,9 @@ const (
 	//
 	// A single miss can happen during a transient wallet-view gap while lnd is
 	// processing a replacement or reorg. Requiring two misses keeps that narrow
-	// race recoverable without leaving vanished deposits selectable forever.
+	// race recoverable without leaving vanished deposits selectable forever. At
+	// the default PollInterval, this means a vanished deposit can remain active
+	// for up to roughly 20 seconds.
 	vanishedDepositThreshold = 2
 )
 
@@ -416,6 +418,7 @@ func (m *Manager) listUnspentWithBestHeight(ctx context.Context) (
 	return nil, 0, errors.New("unable to get stable best block while " +
 		"listing deposits")
 }
+
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
 func (m *Manager) createNewDeposit(ctx context.Context,
