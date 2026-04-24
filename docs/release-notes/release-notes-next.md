@@ -38,6 +38,15 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* Static address withdrawals now retry notification registration and handle
+  reorgs. Previously, if `RegisterSpendNtfn` or `RegisterConfirmationsNtfn`
+  failed, withdrawal monitoring silently stopped, reorgs were not handled, and
+  state was not persisted before monitoring setup, causing recovery failures on
+  restart. Registration failures are now retried on the next block, reorgs are
+  detected via `WithReOrgChan`, and state persistence happens before monitoring
+  setup.
+  [Issue #1087](https://github.com/lightninglabs/loop/issues/1087)
+
 #### Maintenance
 
 * The Docker image build now verifies that every platform of the image index
