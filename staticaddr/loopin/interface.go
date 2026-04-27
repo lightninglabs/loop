@@ -129,4 +129,11 @@ type NotificationManager interface {
 	SubscribeStaticLoopInRiskAccepted(
 		ctx context.Context, swapHash lntypes.Hash,
 	) <-chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification
+
+	// SubscribeStaticLoopInRiskRejected subscribes to static loop in risk
+	// rejected notifications. These are sent by the server if it aborts the
+	// confirmation risk wait before payment.
+	SubscribeStaticLoopInRiskRejected(
+		ctx context.Context, swapHash lntypes.Hash,
+	) <-chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification
 }
