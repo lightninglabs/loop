@@ -216,6 +216,44 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 		args.Get(1).(chan error), args.Error(2)
 }
 
+type MockChainKit struct {
+	mock.Mock
+}
+
+func (m *MockChainKit) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	chainrpc.ChainKitClient) {
+
+	return ctx, 0, nil
+}
+
+func (m *MockChainKit) GetBlock(context.Context, chainhash.Hash) (
+	*wire.MsgBlock, error) {
+
+	panic("unexpected GetBlock call")
+}
+
+func (m *MockChainKit) GetBlockHeader(context.Context, chainhash.Hash) (
+	*wire.BlockHeader, error) {
+
+	panic("unexpected GetBlockHeader call")
+}
+
+func (m *MockChainKit) GetBestBlock(ctx context.Context) (
+	chainhash.Hash, int32, error) {
+
+	args := m.Called(ctx)
+
+	return args.Get(0).(chainhash.Hash), args.Get(1).(int32),
+		args.Error(2)
+}
+
+func (m *MockChainKit) GetBlockHash(context.Context, int64) (
+	chainhash.Hash, error) {
+
+	panic("unexpected GetBlockHash call")
+}
+
 // TestManager checks that the manager processes the right channel notifications
 // while a deposit is expiring.
 func TestManager(t *testing.T) {
