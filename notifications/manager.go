@@ -332,7 +332,13 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerReservationNotification)
 
-			recvChan <- reservationNtfn
+			select {
+			case recvChan <- reservationNtfn:
+			case <-sub.subCtx.Done():
+			default:
+				log.Debugf("Dropping reservation " +
+					"notification for slow subscriber")
+			}
 		}
 	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInSweep: // nolint: lll
 		// We'll forward the static loop in sweep request to all
@@ -345,7 +351,10 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerStaticLoopInSweepNotification)
 
-			recvChan <- staticLoopInSweepRequestNtfn
+			select {
+			case recvChan <- staticLoopInSweepRequestNtfn:
+			case <-sub.subCtx.Done():
+			}
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_UnfinishedSwap: // nolint: lll
@@ -359,7 +368,10 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerUnfinishedSwapNotification)
 
-			recvChan <- unfinishedSwapNtfn
+			select {
+			case recvChan <- unfinishedSwapNtfn:
+			case <-sub.subCtx.Done():
+			}
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_HtlcConfirmed:
