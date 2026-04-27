@@ -679,6 +679,8 @@ message SubscribeNotificationsResponse {
         ServerReservationNotification reservation_notification = 1;
         ServerStaticLoopInSweepNotification static_loop_in_sweep = 2;
         ServerUnfinishedSwapNotification unfinished_swap = 3;
+        ServerStaticLoopInRiskAcceptedNotification
+            static_loop_in_risk_accepted = 4;
     }
 }
 
@@ -697,6 +699,14 @@ message ServerStaticLoopInSweepNotification {
 
     // The prevout information of the sweep txn.
     repeated PrevoutInfo prevout_info = 4;
+}
+
+// ServerStaticLoopInRiskAcceptedNotification tells the client that the server
+// has accepted confirmation risk for a static loop-in and will start attempting
+// the off-chain swap payment.
+message ServerStaticLoopInRiskAcceptedNotification {
+    // The swap hash the accepted risk belongs to.
+    bytes swap_hash = 1;
 }
 
 // ServerUnfinishedSwapNotification notifies the client about an unfinished

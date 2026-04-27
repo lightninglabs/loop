@@ -2787,6 +2787,7 @@ type SubscribeNotificationsResponse struct {
 	//	*SubscribeNotificationsResponse_ReservationNotification
 	//	*SubscribeNotificationsResponse_StaticLoopInSweep
 	//	*SubscribeNotificationsResponse_UnfinishedSwap
+	//	*SubscribeNotificationsResponse_StaticLoopInRiskAccepted
 	Notification  isSubscribeNotificationsResponse_Notification `protobuf_oneof:"notification"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2856,6 +2857,15 @@ func (x *SubscribeNotificationsResponse) GetUnfinishedSwap() *ServerUnfinishedSw
 	return nil
 }
 
+func (x *SubscribeNotificationsResponse) GetStaticLoopInRiskAccepted() *ServerStaticLoopInRiskAcceptedNotification {
+	if x != nil {
+		if x, ok := x.Notification.(*SubscribeNotificationsResponse_StaticLoopInRiskAccepted); ok {
+			return x.StaticLoopInRiskAccepted
+		}
+	}
+	return nil
+}
+
 type isSubscribeNotificationsResponse_Notification interface {
 	isSubscribeNotificationsResponse_Notification()
 }
@@ -2872,6 +2882,10 @@ type SubscribeNotificationsResponse_UnfinishedSwap struct {
 	UnfinishedSwap *ServerUnfinishedSwapNotification `protobuf:"bytes,3,opt,name=unfinished_swap,json=unfinishedSwap,proto3,oneof"`
 }
 
+type SubscribeNotificationsResponse_StaticLoopInRiskAccepted struct {
+	StaticLoopInRiskAccepted *ServerStaticLoopInRiskAcceptedNotification `protobuf:"bytes,4,opt,name=static_loop_in_risk_accepted,json=staticLoopInRiskAccepted,proto3,oneof"`
+}
+
 func (*SubscribeNotificationsResponse_ReservationNotification) isSubscribeNotificationsResponse_Notification() {
 }
 
@@ -2879,6 +2893,9 @@ func (*SubscribeNotificationsResponse_StaticLoopInSweep) isSubscribeNotification
 }
 
 func (*SubscribeNotificationsResponse_UnfinishedSwap) isSubscribeNotificationsResponse_Notification() {
+}
+
+func (*SubscribeNotificationsResponse_StaticLoopInRiskAccepted) isSubscribeNotificationsResponse_Notification() {
 }
 
 // ServerStaticLoopInSweepNotification is a request from the server to the
@@ -2956,6 +2973,54 @@ func (x *ServerStaticLoopInSweepNotification) GetPrevoutInfo() []*PrevoutInfo {
 	return nil
 }
 
+// ServerStaticLoopInRiskAcceptedNotification tells the client that the server
+// has accepted confirmation risk for a static loop-in and will start attempting
+// the off-chain swap payment.
+type ServerStaticLoopInRiskAcceptedNotification struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The swap hash the accepted risk belongs to.
+	SwapHash      []byte `protobuf:"bytes,1,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServerStaticLoopInRiskAcceptedNotification) Reset() {
+	*x = ServerStaticLoopInRiskAcceptedNotification{}
+	mi := &file_server_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServerStaticLoopInRiskAcceptedNotification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServerStaticLoopInRiskAcceptedNotification) ProtoMessage() {}
+
+func (x *ServerStaticLoopInRiskAcceptedNotification) ProtoReflect() protoreflect.Message {
+	mi := &file_server_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServerStaticLoopInRiskAcceptedNotification.ProtoReflect.Descriptor instead.
+func (*ServerStaticLoopInRiskAcceptedNotification) Descriptor() ([]byte, []int) {
+	return file_server_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ServerStaticLoopInRiskAcceptedNotification) GetSwapHash() []byte {
+	if x != nil {
+		return x.SwapHash
+	}
+	return nil
+}
+
 // ServerUnfinishedSwapNotification notifies the client about an unfinished
 // swap that needs attention. This is useful in client data loss scenarios to
 // help the client recover the swap.
@@ -2971,7 +3036,7 @@ type ServerUnfinishedSwapNotification struct {
 
 func (x *ServerUnfinishedSwapNotification) Reset() {
 	*x = ServerUnfinishedSwapNotification{}
-	mi := &file_server_proto_msgTypes[37]
+	mi := &file_server_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2983,7 +3048,7 @@ func (x *ServerUnfinishedSwapNotification) String() string {
 func (*ServerUnfinishedSwapNotification) ProtoMessage() {}
 
 func (x *ServerUnfinishedSwapNotification) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[37]
+	mi := &file_server_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2996,7 +3061,7 @@ func (x *ServerUnfinishedSwapNotification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUnfinishedSwapNotification.ProtoReflect.Descriptor instead.
 func (*ServerUnfinishedSwapNotification) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{37}
+	return file_server_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ServerUnfinishedSwapNotification) GetSwapHash() []byte {
@@ -3181,11 +3246,12 @@ const file_server_proto_rawDesc = "" +
 	"\x0fListenerVersion\x12\n" +
 	"\n" +
 	"\x06LEGACY\x10\x00\x12\x06\n" +
-	"\x02V1\x10\x01\"\xcc\x02\n" +
+	"\x02V1\x10\x01\"\xc3\x03\n" +
 	"\x1eSubscribeNotificationsResponse\x12c\n" +
 	"\x18reservation_notification\x18\x01 \x01(\v2&.looprpc.ServerReservationNotificationH\x00R\x17reservationNotification\x12_\n" +
 	"\x14static_loop_in_sweep\x18\x02 \x01(\v2,.looprpc.ServerStaticLoopInSweepNotificationH\x00R\x11staticLoopInSweep\x12T\n" +
-	"\x0funfinished_swap\x18\x03 \x01(\v2).looprpc.ServerUnfinishedSwapNotificationH\x00R\x0eunfinishedSwapB\x0e\n" +
+	"\x0funfinished_swap\x18\x03 \x01(\v2).looprpc.ServerUnfinishedSwapNotificationH\x00R\x0eunfinishedSwap\x12u\n" +
+	"\x1cstatic_loop_in_risk_accepted\x18\x04 \x01(\v23.looprpc.ServerStaticLoopInRiskAcceptedNotificationH\x00R\x18staticLoopInRiskAcceptedB\x0e\n" +
 	"\fnotification\"\xd2\x02\n" +
 	"#ServerStaticLoopInSweepNotification\x12\"\n" +
 	"\rsweep_tx_psbt\x18\x01 \x01(\fR\vsweepTxPsbt\x12\x1b\n" +
@@ -3194,7 +3260,9 @@ const file_server_proto_rawDesc = "" +
 	"\fprevout_info\x18\x04 \x03(\v2\x14.looprpc.PrevoutInfoR\vprevoutInfo\x1aB\n" +
 	"\x14DepositToNoncesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"I\n" +
+	"*ServerStaticLoopInRiskAcceptedNotification\x12\x1b\n" +
+	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\"]\n" +
 	" ServerUnfinishedSwapNotification\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12\x1c\n" +
 	"\n" +
@@ -3281,7 +3349,7 @@ func file_server_proto_rawDescGZIP() []byte {
 }
 
 var file_server_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_server_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_server_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_server_proto_goTypes = []any{
 	(ProtocolVersion)(0),                               // 0: looprpc.ProtocolVersion
 	(ServerSwapState)(0),                               // 1: looprpc.ServerSwapState
@@ -3326,17 +3394,18 @@ var file_server_proto_goTypes = []any{
 	(*SubscribeNotificationsRequest)(nil),              // 40: looprpc.SubscribeNotificationsRequest
 	(*SubscribeNotificationsResponse)(nil),             // 41: looprpc.SubscribeNotificationsResponse
 	(*ServerStaticLoopInSweepNotification)(nil),        // 42: looprpc.ServerStaticLoopInSweepNotification
-	(*ServerUnfinishedSwapNotification)(nil),           // 43: looprpc.ServerUnfinishedSwapNotification
-	nil,                                                // 44: looprpc.ServerStaticLoopInSweepNotification.DepositToNoncesEntry
-	(*RouteHint)(nil),                                  // 45: looprpc.RouteHint
-	(*ServerReservationNotification)(nil),              // 46: looprpc.ServerReservationNotification
+	(*ServerStaticLoopInRiskAcceptedNotification)(nil), // 43: looprpc.ServerStaticLoopInRiskAcceptedNotification
+	(*ServerUnfinishedSwapNotification)(nil),           // 44: looprpc.ServerUnfinishedSwapNotification
+	nil,                                                // 45: looprpc.ServerStaticLoopInSweepNotification.DepositToNoncesEntry
+	(*RouteHint)(nil),                                  // 46: looprpc.RouteHint
+	(*ServerReservationNotification)(nil),              // 47: looprpc.ServerReservationNotification
 }
 var file_server_proto_depIdxs = []int32{
 	0,  // 0: looprpc.ServerLoopOutRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 1: looprpc.ServerLoopOutQuoteRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 2: looprpc.ServerLoopOutTermsRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 3: looprpc.ServerLoopInRequest.protocol_version:type_name -> looprpc.ProtocolVersion
-	45, // 4: looprpc.ServerLoopInQuoteRequest.route_hints:type_name -> looprpc.RouteHint
+	46, // 4: looprpc.ServerLoopInQuoteRequest.route_hints:type_name -> looprpc.RouteHint
 	0,  // 5: looprpc.ServerLoopInQuoteRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 6: looprpc.ServerLoopInTermsRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	0,  // 7: looprpc.ServerLoopOutPushPreimageRequest.protocol_version:type_name -> looprpc.ProtocolVersion
@@ -3349,7 +3418,7 @@ var file_server_proto_depIdxs = []int32{
 	0,  // 14: looprpc.CancelLoopOutSwapRequest.protocol_version:type_name -> looprpc.ProtocolVersion
 	23, // 15: looprpc.CancelLoopOutSwapRequest.route_cancel:type_name -> looprpc.RouteCancel
 	0,  // 16: looprpc.ServerProbeRequest.protocol_version:type_name -> looprpc.ProtocolVersion
-	45, // 17: looprpc.ServerProbeRequest.route_hints:type_name -> looprpc.RouteHint
+	46, // 17: looprpc.ServerProbeRequest.route_hints:type_name -> looprpc.RouteHint
 	0,  // 18: looprpc.RecommendRoutingPluginReq.protocol_version:type_name -> looprpc.ProtocolVersion
 	4,  // 19: looprpc.RecommendRoutingPluginRes.plugin:type_name -> looprpc.RoutingPlugin
 	0,  // 20: looprpc.ReportRoutingResultReq.protocol_version:type_name -> looprpc.ProtocolVersion
@@ -3358,50 +3427,51 @@ var file_server_proto_depIdxs = []int32{
 	34, // 23: looprpc.MuSig2SignSweepReq.prevout_info:type_name -> looprpc.PrevoutInfo
 	0,  // 24: looprpc.ServerPushKeyReq.protocol_version:type_name -> looprpc.ProtocolVersion
 	5,  // 25: looprpc.SubscribeNotificationsRequest.version:type_name -> looprpc.SubscribeNotificationsRequest.ListenerVersion
-	46, // 26: looprpc.SubscribeNotificationsResponse.reservation_notification:type_name -> looprpc.ServerReservationNotification
+	47, // 26: looprpc.SubscribeNotificationsResponse.reservation_notification:type_name -> looprpc.ServerReservationNotification
 	42, // 27: looprpc.SubscribeNotificationsResponse.static_loop_in_sweep:type_name -> looprpc.ServerStaticLoopInSweepNotification
-	43, // 28: looprpc.SubscribeNotificationsResponse.unfinished_swap:type_name -> looprpc.ServerUnfinishedSwapNotification
-	44, // 29: looprpc.ServerStaticLoopInSweepNotification.deposit_to_nonces:type_name -> looprpc.ServerStaticLoopInSweepNotification.DepositToNoncesEntry
-	34, // 30: looprpc.ServerStaticLoopInSweepNotification.prevout_info:type_name -> looprpc.PrevoutInfo
-	10, // 31: looprpc.SwapServer.LoopOutTerms:input_type -> looprpc.ServerLoopOutTermsRequest
-	6,  // 32: looprpc.SwapServer.NewLoopOutSwap:input_type -> looprpc.ServerLoopOutRequest
-	18, // 33: looprpc.SwapServer.LoopOutPushPreimage:input_type -> looprpc.ServerLoopOutPushPreimageRequest
-	8,  // 34: looprpc.SwapServer.LoopOutQuote:input_type -> looprpc.ServerLoopOutQuoteRequest
-	16, // 35: looprpc.SwapServer.LoopInTerms:input_type -> looprpc.ServerLoopInTermsRequest
-	12, // 36: looprpc.SwapServer.NewLoopInSwap:input_type -> looprpc.ServerLoopInRequest
-	14, // 37: looprpc.SwapServer.LoopInQuote:input_type -> looprpc.ServerLoopInQuoteRequest
-	20, // 38: looprpc.SwapServer.SubscribeLoopOutUpdates:input_type -> looprpc.SubscribeUpdatesRequest
-	20, // 39: looprpc.SwapServer.SubscribeLoopInUpdates:input_type -> looprpc.SubscribeUpdatesRequest
-	25, // 40: looprpc.SwapServer.CancelLoopOutSwap:input_type -> looprpc.CancelLoopOutSwapRequest
-	27, // 41: looprpc.SwapServer.Probe:input_type -> looprpc.ServerProbeRequest
-	29, // 42: looprpc.SwapServer.RecommendRoutingPlugin:input_type -> looprpc.RecommendRoutingPluginReq
-	31, // 43: looprpc.SwapServer.ReportRoutingResult:input_type -> looprpc.ReportRoutingResultReq
-	33, // 44: looprpc.SwapServer.MuSig2SignSweep:input_type -> looprpc.MuSig2SignSweepReq
-	36, // 45: looprpc.SwapServer.PushKey:input_type -> looprpc.ServerPushKeyReq
-	38, // 46: looprpc.SwapServer.FetchL402:input_type -> looprpc.FetchL402Request
-	40, // 47: looprpc.SwapServer.SubscribeNotifications:input_type -> looprpc.SubscribeNotificationsRequest
-	11, // 48: looprpc.SwapServer.LoopOutTerms:output_type -> looprpc.ServerLoopOutTerms
-	7,  // 49: looprpc.SwapServer.NewLoopOutSwap:output_type -> looprpc.ServerLoopOutResponse
-	19, // 50: looprpc.SwapServer.LoopOutPushPreimage:output_type -> looprpc.ServerLoopOutPushPreimageResponse
-	9,  // 51: looprpc.SwapServer.LoopOutQuote:output_type -> looprpc.ServerLoopOutQuote
-	17, // 52: looprpc.SwapServer.LoopInTerms:output_type -> looprpc.ServerLoopInTerms
-	13, // 53: looprpc.SwapServer.NewLoopInSwap:output_type -> looprpc.ServerLoopInResponse
-	15, // 54: looprpc.SwapServer.LoopInQuote:output_type -> looprpc.ServerLoopInQuoteResponse
-	21, // 55: looprpc.SwapServer.SubscribeLoopOutUpdates:output_type -> looprpc.SubscribeLoopOutUpdatesResponse
-	22, // 56: looprpc.SwapServer.SubscribeLoopInUpdates:output_type -> looprpc.SubscribeLoopInUpdatesResponse
-	26, // 57: looprpc.SwapServer.CancelLoopOutSwap:output_type -> looprpc.CancelLoopOutSwapResponse
-	28, // 58: looprpc.SwapServer.Probe:output_type -> looprpc.ServerProbeResponse
-	30, // 59: looprpc.SwapServer.RecommendRoutingPlugin:output_type -> looprpc.RecommendRoutingPluginRes
-	32, // 60: looprpc.SwapServer.ReportRoutingResult:output_type -> looprpc.ReportRoutingResultRes
-	35, // 61: looprpc.SwapServer.MuSig2SignSweep:output_type -> looprpc.MuSig2SignSweepRes
-	37, // 62: looprpc.SwapServer.PushKey:output_type -> looprpc.ServerPushKeyRes
-	39, // 63: looprpc.SwapServer.FetchL402:output_type -> looprpc.FetchL402Response
-	41, // 64: looprpc.SwapServer.SubscribeNotifications:output_type -> looprpc.SubscribeNotificationsResponse
-	48, // [48:65] is the sub-list for method output_type
-	31, // [31:48] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	44, // 28: looprpc.SubscribeNotificationsResponse.unfinished_swap:type_name -> looprpc.ServerUnfinishedSwapNotification
+	43, // 29: looprpc.SubscribeNotificationsResponse.static_loop_in_risk_accepted:type_name -> looprpc.ServerStaticLoopInRiskAcceptedNotification
+	45, // 30: looprpc.ServerStaticLoopInSweepNotification.deposit_to_nonces:type_name -> looprpc.ServerStaticLoopInSweepNotification.DepositToNoncesEntry
+	34, // 31: looprpc.ServerStaticLoopInSweepNotification.prevout_info:type_name -> looprpc.PrevoutInfo
+	10, // 32: looprpc.SwapServer.LoopOutTerms:input_type -> looprpc.ServerLoopOutTermsRequest
+	6,  // 33: looprpc.SwapServer.NewLoopOutSwap:input_type -> looprpc.ServerLoopOutRequest
+	18, // 34: looprpc.SwapServer.LoopOutPushPreimage:input_type -> looprpc.ServerLoopOutPushPreimageRequest
+	8,  // 35: looprpc.SwapServer.LoopOutQuote:input_type -> looprpc.ServerLoopOutQuoteRequest
+	16, // 36: looprpc.SwapServer.LoopInTerms:input_type -> looprpc.ServerLoopInTermsRequest
+	12, // 37: looprpc.SwapServer.NewLoopInSwap:input_type -> looprpc.ServerLoopInRequest
+	14, // 38: looprpc.SwapServer.LoopInQuote:input_type -> looprpc.ServerLoopInQuoteRequest
+	20, // 39: looprpc.SwapServer.SubscribeLoopOutUpdates:input_type -> looprpc.SubscribeUpdatesRequest
+	20, // 40: looprpc.SwapServer.SubscribeLoopInUpdates:input_type -> looprpc.SubscribeUpdatesRequest
+	25, // 41: looprpc.SwapServer.CancelLoopOutSwap:input_type -> looprpc.CancelLoopOutSwapRequest
+	27, // 42: looprpc.SwapServer.Probe:input_type -> looprpc.ServerProbeRequest
+	29, // 43: looprpc.SwapServer.RecommendRoutingPlugin:input_type -> looprpc.RecommendRoutingPluginReq
+	31, // 44: looprpc.SwapServer.ReportRoutingResult:input_type -> looprpc.ReportRoutingResultReq
+	33, // 45: looprpc.SwapServer.MuSig2SignSweep:input_type -> looprpc.MuSig2SignSweepReq
+	36, // 46: looprpc.SwapServer.PushKey:input_type -> looprpc.ServerPushKeyReq
+	38, // 47: looprpc.SwapServer.FetchL402:input_type -> looprpc.FetchL402Request
+	40, // 48: looprpc.SwapServer.SubscribeNotifications:input_type -> looprpc.SubscribeNotificationsRequest
+	11, // 49: looprpc.SwapServer.LoopOutTerms:output_type -> looprpc.ServerLoopOutTerms
+	7,  // 50: looprpc.SwapServer.NewLoopOutSwap:output_type -> looprpc.ServerLoopOutResponse
+	19, // 51: looprpc.SwapServer.LoopOutPushPreimage:output_type -> looprpc.ServerLoopOutPushPreimageResponse
+	9,  // 52: looprpc.SwapServer.LoopOutQuote:output_type -> looprpc.ServerLoopOutQuote
+	17, // 53: looprpc.SwapServer.LoopInTerms:output_type -> looprpc.ServerLoopInTerms
+	13, // 54: looprpc.SwapServer.NewLoopInSwap:output_type -> looprpc.ServerLoopInResponse
+	15, // 55: looprpc.SwapServer.LoopInQuote:output_type -> looprpc.ServerLoopInQuoteResponse
+	21, // 56: looprpc.SwapServer.SubscribeLoopOutUpdates:output_type -> looprpc.SubscribeLoopOutUpdatesResponse
+	22, // 57: looprpc.SwapServer.SubscribeLoopInUpdates:output_type -> looprpc.SubscribeLoopInUpdatesResponse
+	26, // 58: looprpc.SwapServer.CancelLoopOutSwap:output_type -> looprpc.CancelLoopOutSwapResponse
+	28, // 59: looprpc.SwapServer.Probe:output_type -> looprpc.ServerProbeResponse
+	30, // 60: looprpc.SwapServer.RecommendRoutingPlugin:output_type -> looprpc.RecommendRoutingPluginRes
+	32, // 61: looprpc.SwapServer.ReportRoutingResult:output_type -> looprpc.ReportRoutingResultRes
+	35, // 62: looprpc.SwapServer.MuSig2SignSweep:output_type -> looprpc.MuSig2SignSweepRes
+	37, // 63: looprpc.SwapServer.PushKey:output_type -> looprpc.ServerPushKeyRes
+	39, // 64: looprpc.SwapServer.FetchL402:output_type -> looprpc.FetchL402Response
+	41, // 65: looprpc.SwapServer.SubscribeNotifications:output_type -> looprpc.SubscribeNotificationsResponse
+	49, // [49:66] is the sub-list for method output_type
+	32, // [32:49] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_server_proto_init() }
@@ -3418,6 +3488,7 @@ func file_server_proto_init() {
 		(*SubscribeNotificationsResponse_ReservationNotification)(nil),
 		(*SubscribeNotificationsResponse_StaticLoopInSweep)(nil),
 		(*SubscribeNotificationsResponse_UnfinishedSwap)(nil),
+		(*SubscribeNotificationsResponse_StaticLoopInRiskAccepted)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3425,7 +3496,7 @@ func file_server_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_server_proto_rawDesc), len(file_server_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   39,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
