@@ -1667,18 +1667,16 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	// ListUnspentRaw returns the unspent wallet view of the backing lnd
-	// wallet. It might be that deposits show up there that are actually
-	// not spendable because they already have been used but not yet spent
-	// by the server. We filter out such deposits here.
+	// wallet. Static loop-in initiation requires an active deposit record,
+	// so only deposits that are both wallet-visible and tracked as
+	// Deposited are returned here.
 	var (
-		outpoints  []string
-		isUnspent  = make(map[wire.OutPoint]struct{})
-		knownUtxos = make(map[wire.OutPoint]struct{})
+		outpoints []string
+		isUnspent = make(map[wire.OutPoint]struct{})
 	)
 
 	for _, utxo := range utxos {
 		outpoints = append(outpoints, utxo.OutPoint.String())
-		knownUtxos[utxo.OutPoint] = struct{}{}
 	}
 
 	// Check the spent status of the deposits by looking at their states.
@@ -1690,23 +1688,13 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		return nil, err
 	}
 
-	knownDeposits := make(map[wire.OutPoint]struct{}, len(deposits))
 	for _, d := range deposits {
 		if d == nil {
 			continue
 		}
 
-		knownDeposits[d.OutPoint] = struct{}{}
 		if d.IsInState(deposit.Deposited) {
 			isUnspent[d.OutPoint] = struct{}{}
-		}
-	}
-
-	// Any wallet outpoints that are unknown to the deposit store are new
-	// deposits and therefore still available.
-	for op := range knownUtxos {
-		if _, ok := knownDeposits[op]; !ok {
-			isUnspent[op] = struct{}{}
 		}
 	}
 

@@ -1073,9 +1073,9 @@ func TestListUnspentDeposits(t *testing.T) {
 		return deposit.NewManager(&deposit.ManagerConfig{Store: store})
 	}
 
-	// Unknown deposits are available, Deposited is available and known
-	// non-Deposited states are excluded.
-	t.Run("unknown and Deposited included, locked states excluded",
+	// Only known Deposited records are available. Unknown deposits and
+	// known non-Deposited states are excluded.
+	t.Run("only known Deposited included",
 		func(t *testing.T) {
 			mock.SetListUnspent([]*lnwallet.Utxo{
 				utxoUnknown, utxoDeposited, utxoWithdrawn,
@@ -1098,8 +1098,8 @@ func TestListUnspentDeposits(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			// Expect the unknown utxo and the Deposited utxo only.
-			require.Len(t, resp.Utxos, 2)
+			// Expect the Deposited utxo only.
+			require.Len(t, resp.Utxos, 1)
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
@@ -1107,10 +1107,8 @@ func TestListUnspentDeposits(t *testing.T) {
 				// same across utxos.
 				require.NotEmpty(t, u.StaticAddress)
 			}
-			_, ok1 := got[utxoUnknown.OutPoint.String()]
-			_, ok2 := got[utxoDeposited.OutPoint.String()]
-			require.True(t, ok1)
-			require.True(t, ok2)
+			_, ok := got[utxoDeposited.OutPoint.String()]
+			require.True(t, ok)
 		})
 
 	// Confirmation depth no longer changes availability; state does.
@@ -1138,19 +1136,17 @@ func TestListUnspentDeposits(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			require.Len(t, resp.Utxos, 2)
+			require.Len(t, resp.Utxos, 1)
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
 			}
-			_, ok1 := got[utxoUnknown.OutPoint.String()]
-			_, ok2 := got[utxoDeposited.OutPoint.String()]
-			require.True(t, ok1)
-			require.True(t, ok2)
+			_, ok := got[utxoDeposited.OutPoint.String()]
+			require.True(t, ok)
 		})
 
-	// Confirmed UTXO not present in store should be included.
-	t.Run("confirmed utxo not in store is included", func(t *testing.T) {
+	// Confirmed UTXO not present in store should be excluded.
+	t.Run("confirmed utxo not in store is excluded", func(t *testing.T) {
 		// Only return a confirmed UTXO from lnd and make sure the
 		// deposit manager/store doesn't know about it.
 		mock.SetListUnspent([]*lnwallet.Utxo{utxoConfirmedUnknown})
@@ -1168,13 +1164,6 @@ func TestListUnspentDeposits(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// We expect the confirmed UTXO to be included even though it
-		// doesn't exist in the store yet.
-		require.Len(t, resp.Utxos, 1)
-		require.Equal(
-			t, utxoConfirmedUnknown.OutPoint.String(),
-			resp.Utxos[0].Outpoint,
-		)
-		require.NotEmpty(t, resp.Utxos[0].StaticAddress)
+		require.Empty(t, resp.Utxos)
 	})
 }
