@@ -18,9 +18,8 @@ import (
 )
 
 const (
-	// MinConfs is the minimum number of confirmations we require for a
-	// deposit to be considered available for loop-ins, coop-spends and
-	// timeouts.
+	// MinConfs is the legacy minimum confirmation target deposits had to
+	// reach before they were considered ready to be used for swaps.
 	MinConfs = 6
 
 	// MaxConfs is unset since we don't require a max number of
@@ -666,7 +665,6 @@ func (m *Manager) invalidateVanishedDeposits(ctx context.Context,
 
 		m.missingDeposits[outpoint]++
 		if m.missingDeposits[outpoint] < vanishedDepositThreshold {
-
 			log.Debugf("Waiting for another wallet observation before "+
 				"marking deposit %v replaced", outpoint)
 

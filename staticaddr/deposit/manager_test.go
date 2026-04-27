@@ -276,6 +276,10 @@ func TestManager(t *testing.T) {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	select {
 	case <-initChan:
