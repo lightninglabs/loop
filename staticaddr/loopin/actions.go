@@ -690,17 +690,23 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	var (
 		riskAcceptedChan <-chan *swapserverrpc.
 					ServerStaticLoopInRiskAcceptedNotification
-		cancelRiskAcceptedSubscription = func() {}
+		riskRejectedChan <-chan *swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification
+		cancelRiskNotificationSubscriptions = func() {}
 	)
 	if f.cfg.NotificationManager != nil {
-		acceptedCtx, cancel := context.WithCancel(ctx)
-		cancelRiskAcceptedSubscription = cancel
+		notificationCtx, cancel := context.WithCancel(ctx)
+		cancelRiskNotificationSubscriptions = cancel
 		riskAcceptedChan = f.cfg.NotificationManager.
 			SubscribeStaticLoopInRiskAccepted(
-				acceptedCtx, f.loopIn.SwapHash,
+				notificationCtx, f.loopIn.SwapHash,
+			)
+		riskRejectedChan = f.cfg.NotificationManager.
+			SubscribeStaticLoopInRiskRejected(
+				notificationCtx, f.loopIn.SwapHash,
 			)
 	}
-	defer cancelRiskAcceptedSubscription()
+	defer cancelRiskNotificationSubscriptions()
 	htlcConfirmed := false
 	depositsUnlocked := false
 
@@ -826,6 +832,26 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			}
 
 			startPaymentDeadline("risk accepted notification")
+
+		case riskRejected, ok := <-riskRejectedChan:
+			if !ok {
+				riskRejectedChan = nil
+				continue
+			}
+
+			if !bytes.Equal(
+				riskRejected.SwapHash, f.loopIn.SwapHash[:],
+			) {
+
+				continue
+			}
+
+			cancelInvoiceSubscription()
+			f.cancelSwapInvoice(ctx)
+
+			return f.HandleError(errors.New(
+				"server rejected confirmation risk wait",
+			))
 
 		case currentHeight := <-blockChan:
 			depositConfirmationHeights :=

@@ -30,6 +30,10 @@ const (
 	// static loop in confirmation risk acceptance.
 	NotificationTypeStaticLoopInRiskAccepted
 
+	// NotificationTypeStaticLoopInRiskRejected is the notification type for
+	// static loop in confirmation risk rejection.
+	NotificationTypeStaticLoopInRiskRejected
+
 	// NotificationTypeUnfinishedSwap is the notification type for unfinished
 	// swap notifications.
 	NotificationTypeUnfinishedSwap
@@ -91,6 +95,9 @@ type Manager struct {
 
 	staticLoopInRiskAccepted map[lntypes.Hash]*swapserverrpc.
 					ServerStaticLoopInRiskAcceptedNotification
+
+	staticLoopInRiskRejected map[lntypes.Hash]*swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification
 }
 
 // NewManager creates a new notification manager.
@@ -107,12 +114,17 @@ func NewManager(cfg *Config) *Manager {
 			map[lntypes.Hash]*swapserverrpc.
 				ServerStaticLoopInRiskAcceptedNotification,
 		),
+		staticLoopInRiskRejected: make(
+			map[lntypes.Hash]*swapserverrpc.
+				ServerStaticLoopInRiskRejectedNotification,
+		),
 	}
 }
 
 type subscriber struct {
 	subCtx   context.Context
 	recvChan any
+	swapHash *lntypes.Hash
 }
 
 // SubscribeReservations subscribes to the reservation notifications.
@@ -175,6 +187,7 @@ func (m *Manager) SubscribeStaticLoopInRiskAccepted(ctx context.Context,
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
+		swapHash: &swapHash,
 	}
 
 	m.Lock()
@@ -191,6 +204,43 @@ func (m *Manager) SubscribeStaticLoopInRiskAccepted(ctx context.Context,
 		m.removeSubscriber(NotificationTypeStaticLoopInRiskAccepted, sub)
 		m.Lock()
 		delete(m.staticLoopInRiskAccepted, swapHash)
+		m.Unlock()
+		close(notifChan)
+	})
+
+	return notifChan
+}
+
+// SubscribeStaticLoopInRiskRejected subscribes to static loop in risk rejected
+// notifications.
+func (m *Manager) SubscribeStaticLoopInRiskRejected(ctx context.Context,
+	swapHash lntypes.Hash,
+) <-chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification {
+
+	notifChan := make(
+		chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification, 1,
+	)
+
+	sub := subscriber{
+		subCtx:   ctx,
+		recvChan: notifChan,
+		swapHash: &swapHash,
+	}
+
+	m.Lock()
+	m.subscribers[NotificationTypeStaticLoopInRiskRejected] = append(
+		m.subscribers[NotificationTypeStaticLoopInRiskRejected], sub,
+	)
+	if ntfn, ok := m.staticLoopInRiskRejected[swapHash]; ok {
+		notifChan <- ntfn
+		delete(m.staticLoopInRiskRejected, swapHash)
+	}
+	m.Unlock()
+
+	context.AfterFunc(ctx, func() {
+		m.removeSubscriber(NotificationTypeStaticLoopInRiskRejected, sub)
+		m.Lock()
+		delete(m.staticLoopInRiskRejected, swapHash)
 		m.Unlock()
 		close(notifChan)
 	})
@@ -405,24 +455,37 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInRiskAccepted: // nolint: lll
-		// We'll forward the static loop in risk accepted notification to all
-		// subscribers.
+		// We'll forward the static loop in risk accepted notification to the
+		// subscriber for the matching swap.
 		riskAcceptedNtfn := ntfn.GetStaticLoopInRiskAccepted()
 		m.Lock()
 		defer m.Unlock()
 
+		var (
+			swapHash    lntypes.Hash
+			hasSwapHash bool
+		)
 		if riskAcceptedNtfn != nil {
-			swapHash, err := lntypes.MakeHash(riskAcceptedNtfn.SwapHash)
+			hash, err := lntypes.MakeHash(riskAcceptedNtfn.SwapHash)
 			if err != nil {
 				log.Warnf("Received invalid static loop in risk "+
 					"accepted notification: %v", err)
 			} else {
-				m.staticLoopInRiskAccepted[swapHash] =
+				swapHash = hash
+				hasSwapHash = true
+				m.staticLoopInRiskAccepted[hash] =
 					riskAcceptedNtfn
+				delete(m.staticLoopInRiskRejected, hash)
 			}
 		}
 
 		for _, sub := range m.subscribers[NotificationTypeStaticLoopInRiskAccepted] { // nolint: lll
+			if !hasSwapHash || sub.swapHash == nil ||
+				*sub.swapHash != swapHash {
+
+				continue
+			}
+
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerStaticLoopInRiskAcceptedNotification)
 
@@ -432,6 +495,50 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			default:
 				log.Debugf("Dropping static loop in risk " +
 					"accepted notification for slow subscriber")
+			}
+		}
+
+	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInRiskRejected: // nolint: lll
+		// We'll forward the static loop in risk rejected notification to the
+		// subscriber for the matching swap.
+		riskRejectedNtfn := ntfn.GetStaticLoopInRiskRejected()
+		m.Lock()
+		defer m.Unlock()
+
+		var (
+			swapHash    lntypes.Hash
+			hasSwapHash bool
+		)
+		if riskRejectedNtfn != nil {
+			hash, err := lntypes.MakeHash(riskRejectedNtfn.SwapHash)
+			if err != nil {
+				log.Warnf("Received invalid static loop in risk "+
+					"rejected notification: %v", err)
+			} else {
+				swapHash = hash
+				hasSwapHash = true
+				m.staticLoopInRiskRejected[hash] =
+					riskRejectedNtfn
+				delete(m.staticLoopInRiskAccepted, hash)
+			}
+		}
+
+		for _, sub := range m.subscribers[NotificationTypeStaticLoopInRiskRejected] { // nolint: lll
+			if !hasSwapHash || sub.swapHash == nil ||
+				*sub.swapHash != swapHash {
+
+				continue
+			}
+
+			recvChan := sub.recvChan.(chan *swapserverrpc.
+				ServerStaticLoopInRiskRejectedNotification)
+
+			select {
+			case recvChan <- riskRejectedNtfn:
+			case <-sub.subCtx.Done():
+			default:
+				log.Debugf("Dropping static loop in risk " +
+					"rejected notification for slow subscriber")
 			}
 		}
 
