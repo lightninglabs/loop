@@ -299,6 +299,76 @@ func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
 	}
 }
 
+// TestManager_StaticLoopInRiskAcceptedNotification tests that the Manager
+// forwards static loop in risk accepted notifications to subscribers.
+func TestManager_StaticLoopInRiskAcceptedNotification(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	swapHash := lntypes.Hash{0x04, 0x05}
+
+	subChan := mgr.SubscribeStaticLoopInRiskAccepted(subCtx, swapHash)
+
+	mgr.handleNotification(
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskAccepted{
+				StaticLoopInRiskAccepted: &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not receive risk accepted notification")
+	}
+}
+
+// TestManager_StaticLoopInRiskAcceptedNotificationReplay tests that the Manager
+// replays a risk accepted notification that arrives before the swap-specific
+// subscriber is registered.
+func TestManager_StaticLoopInRiskAcceptedNotificationReplay(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	swapHash := lntypes.Hash{0x06, 0x07}
+	mgr.handleNotification(
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskAccepted{
+				StaticLoopInRiskAccepted: &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := mgr.SubscribeStaticLoopInRiskAccepted(subCtx, swapHash)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not replay risk accepted notification")
+	}
+}
+
 // TestManager_Backoff verifies that repeated failures in
 // subscribeNotifications cause the Manager to space out subscription attempts
 // via a predictable incremental backoff.
