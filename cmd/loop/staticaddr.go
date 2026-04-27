@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
 )
@@ -553,11 +556,14 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	allDeposits := depositList.FilteredDeposits
 
 	if len(allDeposits) == 0 {
-		errString := fmt.Sprintf("no confirmed deposits available, "+
-			"deposits need at least %v confirmations",
-			deposit.MinConfs)
+		return errors.New("no deposited outputs available")
+	}
 
-		return errors.New(errString)
+	summary, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{},
+	)
+	if err != nil {
+		return err
 	}
 
 	var depositOutpoints []string
@@ -614,6 +620,21 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Warn the user if any selected deposits have fewer than 6
+	// confirmations, as the swap payment won't be received immediately
+	// for those.
+	depositsToCheck := warningDepositOutpoints(
+		allDeposits, depositOutpoints, autoSelectDepositsForQuote,
+		quoteReq.Amt,
+	)
+	warning := lowConfDepositWarning(
+		allDeposits, depositsToCheck,
+		int64(summary.RelativeExpiryBlocks),
+	)
+	if warning != "" {
+		fmt.Println(warning)
+	}
+
 	if !(cmd.Bool("force") || cmd.Bool("f")) {
 		err = displayInDetails(quoteReq, quote, cmd.Bool("verbose"))
 		if err != nil {
@@ -667,6 +688,162 @@ func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
 	}
 
 	return outpoints
+}
+
+var warningSelectionDustLimit = int64(lnwallet.DustLimitForSize(input.P2TRSize))
+
+// warningDepositOutpoints returns the deposit outpoints to check for
+// low-confirmation warnings.
+func warningDepositOutpoints(allDeposits []*looprpc.Deposit,
+	selectedOutpoints []string, autoSelect bool, targetAmount int64) []string {
+
+	if !autoSelect {
+		return selectedOutpoints
+	}
+
+	return autoSelectedWarningOutpoints(allDeposits, targetAmount)
+}
+
+// autoSelectedWarningOutpoints returns the outpoints selected by the same
+// ordering used for automatic static loop-in deposit selection.
+func autoSelectedWarningOutpoints(allDeposits []*looprpc.Deposit,
+	targetAmount int64) []string {
+
+	if targetAmount <= 0 {
+		return nil
+	}
+
+	// KEEP IN SYNC with staticaddr/loopin.SelectDeposits.
+	deposits := filterSwappableWarningDeposits(allDeposits)
+	sort.Slice(deposits, func(i, j int) bool {
+		iConfirmed := deposits[i].ConfirmationHeight > 0
+		jConfirmed := deposits[j].ConfirmationHeight > 0
+		if iConfirmed != jConfirmed {
+			return iConfirmed
+		}
+
+		if deposits[i].Value == deposits[j].Value {
+			return deposits[i].BlocksUntilExpiry <
+				deposits[j].BlocksUntilExpiry
+		}
+
+		return deposits[i].Value > deposits[j].Value
+	})
+
+	selectedOutpoints := make([]string, 0, len(deposits))
+	var selectedAmount int64
+	for _, deposit := range deposits {
+		selectedOutpoints = append(selectedOutpoints, deposit.Outpoint)
+		selectedAmount += deposit.Value
+		if selectedAmount == targetAmount {
+			return selectedOutpoints
+		}
+
+		if selectedAmount > targetAmount &&
+			selectedAmount-targetAmount >= warningSelectionDustLimit {
+
+			return selectedOutpoints
+		}
+	}
+
+	return nil
+}
+
+// filterSwappableWarningDeposits filters deposits for CLI warning selection.
+func filterSwappableWarningDeposits(
+	allDeposits []*looprpc.Deposit) []*looprpc.Deposit {
+
+	swappable := make([]*looprpc.Deposit, 0, len(allDeposits))
+	minBlocksUntilExpiry := int64(
+		loopin.DefaultLoopInOnChainCltvDelta + loopin.DepositHtlcDelta,
+	)
+	for _, deposit := range allDeposits {
+		// Unconfirmed deposits remain swappable because their CSV timeout has
+		// not started yet. This mirrors loopin.IsSwappable.
+		if deposit.ConfirmationHeight > 0 &&
+			deposit.BlocksUntilExpiry < minBlocksUntilExpiry {
+
+			continue
+		}
+
+		swappable = append(swappable, deposit)
+	}
+
+	return swappable
+}
+
+// conservativeWarningConfs is the highest default confirmation tier used by
+// the server's dynamic confirmation-risk policy.
+//
+// The CLI does not currently know the server's exact policy, so we use this
+// conservative threshold for warnings without promising immediate execution.
+const conservativeWarningConfs = 6
+
+// lowConfDepositWarning checks the selected deposits against a conservative
+// confirmation threshold and returns a warning string if any are found.
+func lowConfDepositWarning(allDeposits []*looprpc.Deposit,
+	selectedOutpoints []string, csvExpiry int64) string {
+
+	depositMap := make(map[string]*looprpc.Deposit, len(allDeposits))
+	for _, d := range allDeposits {
+		depositMap[d.Outpoint] = d
+	}
+
+	var lowConfEntries []string
+	for _, op := range selectedOutpoints {
+		d, ok := depositMap[op]
+		if !ok {
+			continue
+		}
+
+		var confs int64
+		switch {
+		case d.ConfirmationHeight <= 0:
+			confs = 0
+
+		case csvExpiry > 0:
+			// For confirmed deposits we can compute
+			// confirmations as CSVExpiry - BlocksUntilExpiry + 1.
+			confs = csvExpiry - d.BlocksUntilExpiry + 1
+
+		default:
+			// Can't determine confirmations without the CSV expiry.
+			continue
+		}
+
+		if confs >= conservativeWarningConfs {
+			continue
+		}
+
+		if confs == 0 {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf("  - %s (unconfirmed)", op),
+			)
+		} else {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf(
+					"  - %s (%d confirmations)", op,
+					confs,
+				),
+			)
+		}
+	}
+
+	if len(lowConfEntries) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"\nWARNING: The following deposits are below the "+
+			"conservative %d-confirmation threshold:\n%s\n"+
+			"The swap payment for these deposits may wait for "+
+			"more confirmations depending on the server's "+
+			"confirmation-risk policy.\n",
+		conservativeWarningConfs,
+		strings.Join(lowConfEntries, "\n"),
+	)
 }
 
 func displayNewAddressWarning() error {
