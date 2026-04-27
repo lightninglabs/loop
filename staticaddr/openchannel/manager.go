@@ -310,6 +310,10 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			return nil, err
 		}
 
+		// Automatic channel funding must ignore mempool deposits because
+		// they cannot yet be used as funding inputs.
+		deposits = filterConfirmedDeposits(deposits)
+
 		if req.LocalFundingAmount != 0 {
 			deposits, err = staticutil.SelectDeposits(
 				deposits, req.LocalFundingAmount,
@@ -322,6 +326,14 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		} else {
 			// The fundmax flag is set, hence we select all deposits
 			// for funding the channel.
+		}
+	}
+
+	for _, d := range deposits {
+		// Deposited now includes mempool outputs for static loop-ins, but
+		// channel opens still require the deposit input to be confirmed.
+		if d.ConfirmationHeight <= 0 {
+			return nil, ErrOpeningChannelUnavailableDeposits
 		}
 	}
 
@@ -397,6 +409,22 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	}
 
 	return nil, err
+}
+
+// filterConfirmedDeposits filters the given deposits and returns only those
+// that have a positive confirmation height, i.e. deposits that have been
+// confirmed on-chain.
+func filterConfirmedDeposits(deposits []*deposit.Deposit) []*deposit.Deposit {
+	confirmed := make([]*deposit.Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if d.ConfirmationHeight <= 0 {
+			continue
+		}
+
+		confirmed = append(confirmed, d)
+	}
+
+	return confirmed
 }
 
 // openChannelPsbt starts an interactive channel open protocol that uses a
