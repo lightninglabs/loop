@@ -203,7 +203,7 @@ func (s *SqlStore) GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 }
 
 func toJointStringStates(states []fsm.StateType) string {
-	return "{" + strings.Join(toStrings(states), ",") + "}"
+	return strings.Join(toStrings(states), ",")
 }
 
 func toStrings(states []fsm.StateType) []string {
