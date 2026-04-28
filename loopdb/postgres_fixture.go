@@ -113,7 +113,7 @@ func (f *TestPgFixture) GetConfig() *PostgresConfig {
 		Host:       f.host,
 		Port:       f.port,
 		User:       testPgUser,
-		Password:   testPgPass,
+		Password:   Secret(testPgPass),
 		DBName:     testPgDBName,
 		RequireSSL: false,
 	}
