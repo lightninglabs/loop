@@ -41,7 +41,7 @@ type PostgresConfig struct {
 	Host               string `long:"host" description:"Database server hostname."`
 	Port               int    `long:"port" description:"Database server port."`
 	User               string `long:"user" description:"Database user."`
-	Password           string `long:"password" description:"Database user's password."` //nolint:gosec
+	Password           Secret `long:"password" description:"Database user's password. Use @/path/to/file to read the password from a file, or prefix with @@ to escape a password that begins with a literal @."`
 	DBName             string `long:"dbname" description:"Database name to use."`
 	MaxOpenConnections int32  `long:"maxconnections" description:"Maximum number of open connections to the database server. Defaults to 25 if unset."`
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
@@ -54,7 +54,7 @@ func (s *PostgresConfig) DSN(hidePassword bool) string {
 		sslMode = "require"
 	}
 
-	password := s.Password
+	password := string(s.Password)
 	if hidePassword {
 		// Placeholder used for logging the DSN safely.
 		password = "****"
