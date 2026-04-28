@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"maps"
@@ -3709,6 +3710,60 @@ func (f *sweepFetcherMock) FetchSweep(ctx context.Context, _ lntypes.Hash,
 	defer f.mu.Unlock()
 
 	return f.store[outpoint], nil
+}
+
+// cancelingSweepFetcher cancels its caller context while returning a backend
+// fetch error.
+type cancelingSweepFetcher struct {
+	cancel context.CancelFunc
+}
+
+func (f *cancelingSweepFetcher) FetchSweep(context.Context, lntypes.Hash,
+	wire.OutPoint) (*SweepInfo, error) {
+
+	// Simulate the caller canceling while the backend returns a
+	// driver-level error.
+	f.cancel()
+
+	return nil, driver.ErrBadConn
+}
+
+// testAddSweepReturnsContextErrorOnFetchCancellation asserts that AddSweep
+// returns context.Canceled instead of a backend error when sweep fetching races
+// with caller cancellation.
+func testAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &cancelingSweepFetcher{cancel: cancel},
+	)
+
+	err := batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Inputs: []Input{{
+			Value: 1111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, driver.ErrBadConn)
+}
+
+// TestAddSweepReturnsContextErrorOnFetchCancellation asserts that AddSweep
+// returns the context cancellation error if sweep fetching fails while the
+// caller context is being canceled.
+func TestAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T) {
+	runTests(t, testAddSweepReturnsContextErrorOnFetchCancellation)
 }
 
 // testSweepFetcher tests providing custom sweep fetcher to Batcher.
