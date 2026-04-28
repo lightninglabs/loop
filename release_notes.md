@@ -16,6 +16,11 @@ This file tracks release notes for the loop client.
 
 #### New Features
 
+* [Support reading database password from file](https://github.com/lightninglabs/loop/issues/1088).
+  The `--postgres.password` flag now accepts a `@/path/to/file` syntax to read
+  the password from a file instead of passing it directly. This avoids exposing
+  secrets in process listings and shell history.
+
 #### Breaking Changes
 
 #### Bug Fixes
