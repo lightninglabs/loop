@@ -9,9 +9,13 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -19,6 +23,10 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	UseLogger(build.NewSubLogger("WDRW", nil))
+}
 
 // TestNewManagerHeightValidation ensures the constructor rejects zero heights.
 func TestNewManagerHeightValidation(t *testing.T) {
@@ -605,4 +613,191 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+// recoveryDepositManager is a test stub that tracks recovery interactions for
+// deposits in the WITHDRAWING state.
+type recoveryDepositManager struct {
+	withdrawingDeposits []*deposit.Deposit
+	transitioned        [][]wire.OutPoint
+	updated             []wire.OutPoint
+}
+
+// GetActiveDepositsInState returns the preset withdrawing deposits for the
+// recovery test.
+func (m *recoveryDepositManager) GetActiveDepositsInState(
+	_ fsm.StateType) (
+	[]*deposit.Deposit, error) {
+
+	return m.withdrawingDeposits, nil
+}
+
+// AllOutpointsActiveDeposits reports no active deposit set lookup in this
+// test stub.
+func (m *recoveryDepositManager) AllOutpointsActiveDeposits(
+	_ []wire.OutPoint, _ fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	return nil, false
+}
+
+// TransitionDeposits records the outpoints transitioned by recovery.
+func (m *recoveryDepositManager) TransitionDeposits(_ context.Context,
+	deposits []*deposit.Deposit, _ fsm.EventType, _ fsm.StateType) error {
+
+	outpoints := make([]wire.OutPoint, len(deposits))
+	for i, d := range deposits {
+		outpoints[i] = d.OutPoint
+	}
+
+	m.transitioned = append(m.transitioned, outpoints)
+
+	return nil
+}
+
+// UpdateDeposit records which deposits were updated during recovery.
+func (m *recoveryDepositManager) UpdateDeposit(_ context.Context,
+	d *deposit.Deposit) error {
+
+	m.updated = append(m.updated, d.OutPoint)
+
+	return nil
+}
+
+// recoveryAddressManager is a test stub that serves static address parameters
+// needed by withdrawal recovery.
+type recoveryAddressManager struct {
+	params *address.Parameters
+}
+
+// GetStaticAddressParameters returns the preset static address parameters for
+// the recovery test.
+func (m *recoveryAddressManager) GetStaticAddressParameters(
+	_ context.Context) (*address.Parameters, error) {
+
+	return m.params, nil
+}
+
+// GetStaticAddress returns no static address in this test stub.
+func (m *recoveryAddressManager) GetStaticAddress(
+	_ context.Context) (*script.StaticAddress, error) {
+
+	return nil, nil
+}
+
+// TestRecoverWithdrawalsIncludesMissingFinalizedTxDeposits verifies regression
+// coverage for restart recovery where some deposits are in WITHDRAWING but
+// missing FinalizedWithdrawalTx pointers.
+//
+// Without the fix this test still builds, but fails at runtime because the
+// legacy recovery code silently skips those deposits and only reinstates the
+// subset with non-nil FinalizedWithdrawalTx.
+func TestRecoverWithdrawalsIncludesMissingFinalizedTxDeposits(t *testing.T) {
+	t.Parallel()
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{9},
+			Index: 0,
+		},
+	})
+	tx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: []byte{txscript.OP_1},
+	})
+
+	known1 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1},
+			Index: 0,
+		},
+		ConfirmationHeight:    100,
+		FinalizedWithdrawalTx: tx,
+	}
+	known2 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 0,
+		},
+		ConfirmationHeight:    100,
+		FinalizedWithdrawalTx: tx,
+	}
+	missing1 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 0,
+		},
+		ConfirmationHeight: 100,
+	}
+	missing2 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 0,
+		},
+		ConfirmationHeight: 100,
+	}
+
+	depositMgr := &recoveryDepositManager{
+		withdrawingDeposits: []*deposit.Deposit{
+			known1, known2, missing1, missing2,
+		},
+	}
+	addrMgr := &recoveryAddressManager{
+		params: &address.Parameters{
+			PkScript: []byte{txscript.OP_1},
+		},
+	}
+
+	lnd := test.NewMockLnd()
+	go func() {
+		<-lnd.TxPublishChannel
+	}()
+	go func() {
+		<-lnd.RegisterSpendChannel
+	}()
+
+	mgr, err := NewManager(&ManagerConfig{
+		DepositManager: depositMgr,
+		WalletKit:      lnd.WalletKit,
+		ChainNotifier:  lnd.ChainNotifier,
+		AddressManager: addrMgr,
+	}, 101)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = mgr.recoverWithdrawals(ctx)
+	require.NoError(t, err)
+
+	// Assert we re-instated one withdrawal cluster containing all four
+	// deposits. The old buggy behavior re-instated only the two deposits
+	// that already had finalized tx pointers.
+	require.Len(t, depositMgr.transitioned, 1)
+	require.Len(t, depositMgr.transitioned[0], 4)
+
+	transitioned := make(map[wire.OutPoint]struct{})
+	for _, op := range depositMgr.transitioned[0] {
+		transitioned[op] = struct{}{}
+	}
+	_, ok := transitioned[missing1.OutPoint]
+	require.True(t, ok)
+	_, ok = transitioned[missing2.OutPoint]
+	require.True(t, ok)
+
+	// Missing pointers should be recovered and persisted.
+	updated := make(map[wire.OutPoint]struct{})
+	for _, op := range depositMgr.updated {
+		updated[op] = struct{}{}
+	}
+	_, ok = updated[missing1.OutPoint]
+	require.True(t, ok)
+	_, ok = updated[missing2.OutPoint]
+	require.True(t, ok)
+	require.NotNil(t, missing1.FinalizedWithdrawalTx)
+	require.NotNil(t, missing2.FinalizedWithdrawalTx)
+
+	// Shut down notifier goroutines started by recovery.
+	cancel()
+	lnd.WaitForFinished()
 }
