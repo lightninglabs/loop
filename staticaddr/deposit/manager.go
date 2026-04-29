@@ -128,9 +128,11 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
+	var startupHeight uint32
 	select {
 	case height := <-newBlockChan:
-		m.currentHeight.Store(uint32(height))
+		startupHeight = uint32(height)
+		m.currentHeight.Store(startupHeight)
 
 	case err = <-newBlockErrChan:
 		return err
@@ -154,6 +156,13 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		log.Errorf("unable to reconcile deposits: %v", err)
 	}
 
+	// The startup height was consumed before recovered deposit FSMs existed.
+	// Replay it so already-expired recovered deposits can act immediately.
+	err = m.notifyActiveDeposits(ctx, startupHeight)
+	if err != nil {
+		return err
+	}
+
 	// Start the deposit notifier.
 	m.pollDeposits(ctx)
 
@@ -171,24 +180,9 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 				log.Errorf("unable to reconcile deposits: %v", err)
 			}
 
-			// Inform all active deposits about a new block arrival.
-			m.mu.Lock()
-			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
-			for _, fsm := range m.activeDeposits {
-				activeDeposits = append(activeDeposits, fsm)
-			}
-			m.mu.Unlock()
-
-			for _, fsm := range activeDeposits {
-				select {
-				case fsm.blockNtfnChan <- uint32(height):
-
-				case <-fsm.quitChan:
-					continue
-
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			err = m.notifyActiveDeposits(ctx, uint32(height))
+			if err != nil {
+				return err
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
@@ -203,6 +197,33 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// notifyActiveDeposits informs all active deposit FSMs about a new block
+// height.
+func (m *Manager) notifyActiveDeposits(ctx context.Context,
+	height uint32) error {
+
+	m.mu.Lock()
+	activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
+	for _, fsm := range m.activeDeposits {
+		activeDeposits = append(activeDeposits, fsm)
+	}
+	m.mu.Unlock()
+
+	for _, fsm := range activeDeposits {
+		select {
+		case fsm.blockNtfnChan <- height:
+
+		case <-fsm.quitChan:
+			continue
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 // recoverDeposits recovers static address parameters, previous deposits and
