@@ -12,7 +12,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -63,7 +62,7 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 	pkScript, err := staticAddr.StaticAddressScript()
 	require.NoError(t, err)
 
-	addrParams := &address.Parameters{
+	addrParams := &script.Parameters{
 		ClientPubkey:    clientKey.PubKey(),
 		ServerPubkey:    serverKey.PubKey(),
 		PkScript:        pkScript,
