@@ -45,6 +45,18 @@ Base URL: `http://127.0.0.1:12345`
 - Session replay now clones the CLI command tree per run, so flag state (`IsSet`) does not leak between sessions.
 - Historical warning: earlier replays could have sticky flags across runs; if you see odd ordering-dependent failures, re-check that the replay uses the cloned command path.
 
+## Bless mode for CLI text changes
+- Use `LOOP_UPDATE_RECORDED_SESSIONS=true` to let `TestRecordedSessions` rewrite recorded `stdout`, `stderr`, and `run_error` values after a successful offline replay.
+- Always run bless mode with `-count=1` so the Go test cache does not skip the update:
+  - `LOOP_UPDATE_RECORDED_SESSIONS=true go test ./cmd/loop -run TestRecordedSessions -count=1 -v`
+- You can target a narrower subset with `-run`, for example:
+  - `LOOP_UPDATE_RECORDED_SESSIONS=true go test ./cmd/loop -run 'TestRecordedSessions/static-openchannel' -count=1 -v`
+- Bless mode is intentionally narrow:
+  - it reuses the recorded gRPC stream, stdin, and env,
+  - it refuses to bless a session if the command changes from success to failure or vice versa,
+  - and it refuses to bless a session if replay no longer consumes the same recorded gRPC interaction.
+- Use live recording, not bless mode, when a command’s behavior or RPC flow changed.
+
 ## Session coverage map
 | Subdir | Commands / scenarios |
 | --- | --- |
