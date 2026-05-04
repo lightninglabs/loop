@@ -636,6 +636,9 @@ func compareJSONWithContext(method, event string, idx int, actual []byte,
 // NOTE: Do not add t.Parallel() here; the replay harness mutates package-level
 // globals such as the active transport, clock, and JSON normalization mode.
 func TestRecordedSessions(t *testing.T) {
+	updateSessions, err := updateRecordedSessionsEnabled()
+	require.NoError(t, err)
+
 	restoreHelpDefaults := hookRecordedHelpDefaults()
 	defer restoreHelpDefaults()
 
@@ -670,6 +673,20 @@ func TestRecordedSessions(t *testing.T) {
 
 	for _, path := range sessionFiles {
 		t.Run(path, func(t *testing.T) {
+			var (
+				fixture     sessionFile
+				fixturePath string
+			)
+			if updateSessions {
+				fixturePath, err = sessionFixturePath(path)
+				require.NoErrorf(t, err,
+					"resolve fixture path for %s", path)
+
+				fixture, err = loadSessionFilePath(fixturePath)
+				require.NoErrorf(t, err,
+					"load fixture for update %s", path)
+			}
+
 			// Force deterministic JSON output for replay.
 			prevDeterministic := forceDeterministicJSON
 			forceDeterministicJSON = true
@@ -683,14 +700,17 @@ func TestRecordedSessions(t *testing.T) {
 
 			// Capture replay output for comparison.
 			var (
-				stdoutBuf bytes.Buffer
-				stderrBuf bytes.Buffer
+				stdoutBuf    bytes.Buffer
+				stderrBuf    bytes.Buffer
+				stdoutChunks []string
+				stderrChunks []string
 			)
 
 			// Hook stdout for capture.
 			stdoutUnhook, err := hookStdout(
 				os.Stdout, nil, func(p []byte) {
 					stdoutBuf.Write(p)
+					stdoutChunks = append(stdoutChunks, string(p))
 				},
 			)
 			require.NoErrorf(t, err, "hook stdout for %s", path)
@@ -699,6 +719,7 @@ func TestRecordedSessions(t *testing.T) {
 			stderrUnhook, err := hookStderr(
 				os.Stderr, nil, func(p []byte) {
 					stderrBuf.Write(p)
+					stderrChunks = append(stderrChunks, string(p))
 				},
 			)
 			require.NoErrorf(t, err, "hook stderr for %s", path)
@@ -751,16 +772,41 @@ func TestRecordedSessions(t *testing.T) {
 				t, stdinUnhook(), "unhook stdin for %s", path,
 			)
 
-			if replay.runError != nil {
-				require.Error(t, err, "expected run error")
+			// Validate the recorded error status matches the
+			// replay result.
+			actualRunError := errorString(err)
+			requireReplayOutcomeClass(
+				t, path, replay.runError, actualRunError,
+			)
 
-				require.Equalf(
-					t, *replay.runError, err.Error(),
-					"run error mismatch for %s", path,
-				)
-			} else {
+			if updateSessions {
 				require.NoErrorf(
-					t, err, "command failed for %s", path,
+					t, replay.conn.assertFullyConsumed(),
+					"grpc replay incomplete for %s", path,
+				)
+
+				updated, updateErr := maybeUpdateSessionFixture(
+					fixturePath, fixture, replayedSessionOutput{
+						stdout:       stdoutBuf.String(),
+						stderr:       stderrBuf.String(),
+						stdoutChunks: stdoutChunks,
+						stderrChunks: stderrChunks,
+						runError:     actualRunError,
+					},
+				)
+				require.NoErrorf(t, updateErr,
+					"update fixture %s", path)
+				if updated {
+					t.Logf("updated %s", path)
+				}
+
+				return
+			}
+
+			if replay.runError != nil {
+				require.Equalf(
+					t, *replay.runError, *actualRunError,
+					"run error mismatch for %s", path,
 				)
 			}
 
@@ -817,6 +863,36 @@ func TestHookRecordedHelpDefaults(t *testing.T) {
 	require.Equal(t, origLoopDir, loopDirFlag.DefaultText)
 	require.Equal(t, origTLSCert, tlsCertFlag.DefaultText)
 	require.Equal(t, origMacaroon, macaroonPathFlag.DefaultText)
+}
+
+// errorString converts an error to an optional string pointer.
+func errorString(err error) *string {
+	if err == nil {
+		return nil
+	}
+
+	msg := err.Error()
+
+	return &msg
+}
+
+// requireReplayOutcomeClass verifies that replay preserved the recorded
+// success/failure shape even when bless mode is updating user-visible text.
+func requireReplayOutcomeClass(t *testing.T, path string, expected,
+	actual *string) {
+
+	t.Helper()
+
+	switch {
+	case expected == nil && actual == nil:
+		return
+
+	case expected == nil && actual != nil:
+		t.Fatalf("command failed for %s: %v", path, *actual)
+
+	case expected != nil && actual == nil:
+		t.Fatalf("expected run error for %s", path)
+	}
 }
 
 // newRootCommandForReplay returns a root command clone with fresh flag state.
