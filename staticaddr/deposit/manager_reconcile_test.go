@@ -78,14 +78,16 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 	errs := make(chan error, 2)
 	go func() {
 		defer wg.Done()
-		errs <- manager.reconcileDeposits(ctx)
+		_, err := manager.ReconcileDeposits(ctx)
+		errs <- err
 	}()
 
 	<-createEntered
 
 	go func() {
 		defer wg.Done()
-		errs <- manager.reconcileDeposits(ctx)
+		_, err := manager.ReconcileDeposits(ctx)
+		errs <- err
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -166,7 +168,7 @@ func TestReconcileConfirmedDepositUsesBestBlockHeight(t *testing.T) {
 		Signer:         mockLnd.Signer,
 	})
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to start new deposit FSM")
 }
 
@@ -233,7 +235,7 @@ func TestReconcileConfirmedDepositRelistsOnBlockChange(t *testing.T) {
 		Signer:         mockLnd.Signer,
 	})
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to start new deposit FSM")
 	mockAddressManager.AssertExpectations(t)
 	mockChainKit.AssertExpectations(t)
@@ -316,7 +318,8 @@ func TestReconcileDepositsDeactivatesVanishedUnconfirmedDeposit(t *testing.T) {
 	}()
 	manager.activeDeposits[outpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	_, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Empty(t, manager.activeDeposits)
 	select {
@@ -364,7 +367,8 @@ func TestReconcileDepositsDeactivatesVanishedConfirmedDeposit(t *testing.T) {
 	}()
 	manager.activeDeposits[outpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	_, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.EqualValues(t, 123, deposit.ConfirmationHeight)
 	require.Empty(t, manager.activeDeposits)
@@ -550,7 +554,8 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 
 	// Reconciliation should reactivate the existing record instead of
 	// creating a second deposit entry for the same outpoint.
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	_, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Zero(t, deposit.ConfirmationHeight)
 	require.Len(t, manager.activeDeposits, 1)
@@ -608,7 +613,7 @@ func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
 	})
 	manager.deposits[outpoint] = deposit
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to sync active deposits")
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Zero(t, deposit.ConfirmationHeight)
@@ -675,7 +680,7 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 	}()
 	manager.activeDeposits[vanishedOutpoint] = vanishedFsm
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to sync active deposits")
 	require.Empty(t, manager.activeDeposits)
 
@@ -749,7 +754,8 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 	fsm := &FSM{}
 	manager.activeDeposits[oldOutpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	_, err = manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
 
 	require.Same(t, deposit, manager.deposits[oldOutpoint])
 	require.Equal(t, oldOutpoint, deposit.OutPoint)

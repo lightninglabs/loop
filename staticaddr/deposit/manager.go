@@ -74,7 +74,8 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
+	// reconcileMu serializes deposit recovery and reconciliation so restore
+	// requests can't race the background polling loop, and new deposits are
 	// discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
@@ -138,7 +139,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 	// Reconcile immediately on startup so deposits are available
 	// before the first ticker fires.
-	err = m.reconcileDeposits(ctx)
+	_, err = m.ReconcileDeposits(ctx)
 	if err != nil {
 		log.Errorf("unable to reconcile deposits: %v", err)
 	}
@@ -162,7 +163,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case height := <-newBlockChan:
 			m.currentHeight.Store(uint32(height))
 
-			err := m.reconcileDeposits(ctx)
+			_, err := m.ReconcileDeposits(ctx)
 			if err != nil {
 				log.Errorf("unable to reconcile deposits: %v", err)
 			}
@@ -216,6 +217,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -274,7 +278,7 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				err := m.reconcileDeposits(ctx)
+				_, err := m.ReconcileDeposits(ctx)
 				if err != nil {
 					log.Errorf("unable to reconcile "+
 						"deposits: %v", err)
@@ -293,57 +297,66 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 // an unconfirmed funding transaction is replaced, a confirmed deposit is
 // reorged out, or the output was spent outside the active manager path.
 func (m *Manager) EnsureDepositsFresh(ctx context.Context) error {
-	return m.reconcileDeposits(ctx)
+	_, err := m.ReconcileDeposits(ctx)
+	return err
 }
 
 // reconcileDeposits fetches all spends to our static addresses from our lnd
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
 // deposit to track its progress.
-func (m *Manager) reconcileDeposits(ctx context.Context) error {
-	m.reconcileMu.Lock()
-	defer m.reconcileMu.Unlock()
-
+func (m *Manager) reconcileDeposits(ctx context.Context) (int, error) {
 	log.Tracef("Reconciling new deposits...")
 
 	utxos, bestHeight, err := m.listUnspentWithBestHeight(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	err = m.updateDepositConfirmations(ctx, utxos, bestHeight)
 	if err != nil {
-		return fmt.Errorf("unable to update deposit "+
+		return 0, fmt.Errorf("unable to update deposit "+
 			"confirmations: %w", err)
 	}
 
 	err = m.syncActiveDeposits(ctx, utxos)
 	if err != nil {
-		return fmt.Errorf("unable to sync active deposits: %w", err)
+		return 0, fmt.Errorf("unable to sync active deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
 	if len(newDeposits) == 0 {
 		log.Tracef("No new deposits...")
-		return nil
+		return 0, nil
 	}
 
 	for _, utxo := range newDeposits {
 		deposit, err := m.createNewDeposit(ctx, utxo, bestHeight)
 		if err != nil {
-			return fmt.Errorf("unable to retain new deposit: %w",
+			return 0, fmt.Errorf("unable to retain new deposit: %w",
 				err)
 		}
 
 		log.Debugf("Received deposit: %v", deposit)
 		err = m.startDepositFsm(ctx, deposit)
 		if err != nil {
-			return fmt.Errorf("unable to start new deposit FSM: %w",
+			return 0, fmt.Errorf("unable to start new deposit FSM: %w",
 				err)
 		}
 	}
 
-	return nil
+	return len(newDeposits), nil
+}
+
+// ReconcileDeposits triggers a best-effort reconciliation pass and returns the
+// number of newly discovered deposits. Recovery calls this after restoring the
+// address because deposit FSM state is not serialized in backups; it must be
+// rebuilt from lnd's current wallet view.
+func (m *Manager) ReconcileDeposits(ctx context.Context) (int, error) {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
+	return m.reconcileDeposits(ctx)
 }
 
 // listUnspentWithBestHeight returns the wallet's current static-address UTXOs

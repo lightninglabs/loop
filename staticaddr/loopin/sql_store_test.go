@@ -11,8 +11,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -316,9 +318,13 @@ func TestCreateLoopIn(t *testing.T) {
 		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
 		DepositOutpoints: []string{d1.OutPoint.String(),
 			d2.OutPoint.String()},
-		Deposits:                []*deposit.Deposit{d1, d2},
-		ClientPubkey:            clientPubKey,
-		ServerPubkey:            serverPubKey,
+		Deposits:     []*deposit.Deposit{d1, d2},
+		ClientPubkey: clientPubKey,
+		ServerPubkey: serverPubKey,
+		HtlcKeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  37,
+		},
 		HtlcTimeoutSweepAddress: addr,
 	}
 	swapPending.SetState(SignHtlcTx)
@@ -349,6 +355,7 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
 		swap.DepositOutpoints)
 	require.Equal(t, SignHtlcTx, swap.GetState())
+	require.Equal(t, swapPending.HtlcKeyLocator, swap.HtlcKeyLocator)
 	require.Equal(
 		t, ConfirmationRiskDecisionNone,
 		swap.ConfirmationRiskDecision,

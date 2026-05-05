@@ -151,6 +151,13 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "auth",
 		Action: "write",
 	}},
+	"/looprpc.SwapClient/Recover": {{
+		Entity: "auth",
+		Action: "write",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
 	"/looprpc.SwapClient/SuggestSwaps": {{
 		Entity: "suggestions",
 		Action: "read",

@@ -3,7 +3,9 @@ package address
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -27,6 +29,12 @@ const (
 	// from the server for a static address timeout path: 200 days at 144
 	// blocks per day.
 	maxStaticAddressCSVExpiry = uint32(200 * 144)
+)
+
+var (
+	// ErrNoStaticAddress is returned when no static address parameters are
+	// present in the store.
+	ErrNoStaticAddress = errors.New("no static address parameters found")
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -79,6 +87,13 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
 	return m, nil
 }
 
+// CurrentHeight returns the manager's latest observed block height. Recovery
+// stores this height as the scan floor for the future multi-address generation
+// rooted in the current paid L402.
+func (m *Manager) CurrentHeight() int32 {
+	return m.currentHeight.Load()
+}
+
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
@@ -122,11 +137,27 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return nil, 0, err
 	}
 	if len(addresses) > 0 {
-		clientPubKey := addresses[0].ClientPubkey
-		serverPubKey := addresses[0].ServerPubkey
-		expiry := int64(addresses[0].Expiry)
+		addrParams := addresses[0]
+		clientPubKey := addrParams.ClientPubkey
+		serverPubKey := addrParams.ServerPubkey
+		expiry := int64(addrParams.Expiry)
+		m.Unlock()
 
-		defer m.Unlock()
+		// Re-import the tapscript even when the address row already exists.
+		// This keeps the call idempotent while repairing cases where restore
+		// or startup left the DB populated before lnd imported the script.
+		staticAddress, err := script.NewStaticAddress(
+			input.MuSig2Version100RC2, expiry, clientPubKey,
+			serverPubKey,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		_, err = m.importAddressTapscript(ctx, staticAddress)
+		if err != nil {
+			return nil, 0, err
+		}
 
 		address, err := m.GetTaprootAddress(
 			clientPubKey, serverPubKey, expiry,
@@ -209,23 +240,19 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		),
 		InitiationHeight: m.currentHeight.Load(),
 	}
+
+	// Import before persisting the address row. If lnd rejects the
+	// script import, a later startup/recovery attempt should still see a
+	// clean missing-address state instead of a DB-only static address.
+	_, err = m.importAddressTapscript(ctx, staticAddress)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	// Import the static address tapscript into our lnd wallet, so we can
-	// track unspent outputs of it.
-	tapScript := input.TapscriptFullTree(
-		staticAddress.InternalPubKey, *staticAddress.TimeoutLeaf,
-	)
-	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	log.Infof("Imported static address taproot script to lnd wallet: %v",
-		addr)
 
 	address, err := m.GetTaprootAddress(
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
@@ -270,6 +297,158 @@ func validateServerAddressParams(
 	}
 
 	return nil
+}
+
+// RestoreAddress recreates a static address record locally and makes sure the
+// corresponding tapscript is imported into lnd. Recovery passes already-derived
+// address parameters here; this method owns the DB/import ordering so a failed
+// lnd import cannot leave behind an untracked DB-only address. If the same
+// address already exists locally, the call is idempotent.
+func (m *Manager) RestoreAddress(ctx context.Context,
+	addrParams *Parameters) (*btcutil.AddressTaproot, bool, error) {
+
+	if addrParams == nil {
+		return nil, false, fmt.Errorf("missing static address parameters")
+	}
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(addrParams.Expiry),
+		addrParams.ClientPubkey, addrParams.ServerPubkey,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(addrParams.PkScript) != 0 &&
+		!bytes.Equal(addrParams.PkScript, pkScript) {
+
+		return nil, false, fmt.Errorf("static address pk script mismatch")
+	}
+
+	addrParams.PkScript = pkScript
+	if addrParams.InitiationHeight <= 0 {
+		addrParams.InitiationHeight = m.currentHeight.Load()
+	}
+
+	m.Lock()
+	existing, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	if err != nil {
+		m.Unlock()
+
+		return nil, false, err
+	}
+
+	var changed bool
+	switch {
+	case len(existing) == 0:
+		// Import before creating the restored DB row. If import fails, the
+		// next recovery attempt should still treat the address as missing
+		// instead of getting stuck on an untracked DB-only address.
+		_, err := m.importAddressTapscript(ctx, staticAddress)
+		if err != nil {
+			m.Unlock()
+
+			return nil, false, err
+		}
+
+		err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
+		if err != nil {
+			m.Unlock()
+
+			return nil, false, err
+		}
+		changed = true
+
+	case len(existing) > 1:
+		m.Unlock()
+
+		return nil, false, fmt.Errorf("more than one static address found")
+
+	case !sameAddressParameters(existing[0], addrParams):
+		m.Unlock()
+
+		return nil, false, fmt.Errorf("existing static address differs from " +
+			"backup")
+
+	default:
+		m.Unlock()
+
+		// The DB row already matches the backup. Re-import anyway so
+		// restore is idempotent and can repair a prior partial restore where
+		// lnd never learned the tapscript.
+		imported, err := m.importAddressTapscript(ctx, staticAddress)
+		if err != nil {
+			return nil, false, err
+		}
+
+		changed = imported
+
+		addr, err := m.GetTaprootAddress(
+			addrParams.ClientPubkey, addrParams.ServerPubkey,
+			int64(addrParams.Expiry),
+		)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return addr, changed, nil
+	}
+	m.Unlock()
+
+	addr, err := m.GetTaprootAddress(
+		addrParams.ClientPubkey, addrParams.ServerPubkey,
+		int64(addrParams.Expiry),
+	)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return addr, changed, nil
+}
+
+func (m *Manager) importAddressTapscript(ctx context.Context,
+	staticAddress *script.StaticAddress) (bool, error) {
+
+	// Import the static address tapscript into our lnd wallet, so we can
+	// track unspent outputs of it.
+	tapScript := input.TapscriptFullTree(
+		staticAddress.InternalPubKey, *staticAddress.TimeoutLeaf,
+	)
+	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
+	if err != nil {
+		// Restoring into an lnd instance that already imported the script is
+		// expected. Treat the duplicate import as success.
+		if strings.Contains(err.Error(), "already exists") {
+			log.Infof("Static address tapscript already imported")
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	log.Infof("Imported static address taproot script to lnd wallet: %v",
+		addr)
+
+	return true, nil
+}
+
+func sameAddressParameters(a, b *Parameters) bool {
+	if a == nil || b == nil {
+		return false
+	}
+
+	return a.ClientPubkey.IsEqual(b.ClientPubkey) &&
+		a.ServerPubkey.IsEqual(b.ServerPubkey) &&
+		a.Expiry == b.Expiry &&
+		bytes.Equal(a.PkScript, b.PkScript) &&
+		a.KeyLocator == b.KeyLocator &&
+		a.ProtocolVersion == b.ProtocolVersion &&
+		a.InitiationHeight == b.InitiationHeight
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server
@@ -337,9 +516,11 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 	return taprootAddress, filteredUtxos, nil
 }
 
-// GetStaticAddressParameters returns the parameters of the static address.
-func (m *Manager) GetStaticAddressParameters(ctx context.Context) (
-	*script.Parameters, error) {
+// GetStaticAddressParameters returns the single concrete static-address row
+// currently supported by the legacy address manager. Recovery treats the row as
+// the V0 address that can be backed up and restored directly.
+func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
+	error) {
 
 	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
 	if err != nil {
@@ -347,7 +528,7 @@ func (m *Manager) GetStaticAddressParameters(ctx context.Context) (
 	}
 
 	if len(params) == 0 {
-		return nil, fmt.Errorf("no static address parameters found")
+		return nil, ErrNoStaticAddress
 	}
 
 	return params[0], nil
