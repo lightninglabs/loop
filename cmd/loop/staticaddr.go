@@ -9,6 +9,7 @@ import (
 
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
@@ -43,13 +44,15 @@ var staticAddressCommands = &cli.Command{
 var newStaticAddressCommand = &cli.Command{
 	Name:    "new",
 	Aliases: []string{"n"},
-	Usage:   "Create a new static loop in address.",
+	Usage:   "Return the static loop in address.",
 	Description: `
-	Requests a new static loop in address from the server. Funds that are
-	sent to this address will be locked by a 2:2 multisig between us and the
-	loop server, or a timeout path that we can sweep once it opens up. The 
-	funds can either be cooperatively spent with a signature from the server
-	or looped in.
+	Returns the current static loop in address. On a fresh installation loopd
+	initializes the current static-address generation during startup. If the
+	address is still missing, this call will create it on demand. Funds sent
+	to the address will be locked by a 2:2 multisig between us and the loop
+	server, or a timeout path that we can sweep once it opens up. The funds
+	can either be cooperatively spent with a signature from the server or
+	looped in.
 	`,
 	Action: newStaticAddress,
 }
@@ -59,16 +62,16 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	err := displayNewAddressWarning()
-	if err != nil {
-		return err
-	}
-
 	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	err = maybeDisplayNewAddressWarning(ctx, client)
+	if err != nil {
+		return err
+	}
 
 	resp, err := client.NewStaticAddress(
 		ctx, &looprpc.NewStaticAddressRequest{},
@@ -841,8 +844,26 @@ func lowConfDepositWarning(allDeposits []*looprpc.Deposit,
 	)
 }
 
+func maybeDisplayNewAddressWarning(ctx context.Context,
+	client looprpc.SwapClientClient) error {
+
+	_, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{},
+	)
+	switch {
+	case err == nil:
+		return nil
+
+	case strings.Contains(err.Error(), address.ErrNoStaticAddress.Error()):
+		return displayNewAddressWarning()
+
+	default:
+		return nil
+	}
+}
+
 func displayNewAddressWarning() error {
-	fmt.Printf("\nWARNING: Be aware that loosing your l402.token file in " +
+	fmt.Printf("\nWARNING: Be aware that losing your l402.token file in " +
 		".loop under your home directory will take your ability to " +
 		"spend funds sent to the static address via loop-ins or " +
 		"withdrawals. You will have to wait until the deposit " +

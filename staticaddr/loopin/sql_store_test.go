@@ -11,8 +11,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -264,9 +266,13 @@ func TestCreateLoopIn(t *testing.T) {
 		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
 		DepositOutpoints: []string{d1.OutPoint.String(),
 			d2.OutPoint.String()},
-		Deposits:                []*deposit.Deposit{d1, d2},
-		ClientPubkey:            clientPubKey,
-		ServerPubkey:            serverPubKey,
+		Deposits:     []*deposit.Deposit{d1, d2},
+		ClientPubkey: clientPubKey,
+		ServerPubkey: serverPubKey,
+		HtlcKeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  37,
+		},
 		HtlcTimeoutSweepAddress: addr,
 	}
 	swapPending.SetState(SignHtlcTx)
@@ -291,15 +297,16 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[0])
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[1])
 
-	swap, err := swapStore.GetLoopInByHash(ctxb, swapHashPending)
+	storedSwap, err := swapStore.GetLoopInByHash(ctxb, swapHashPending)
 	require.NoError(t, err)
-	require.Equal(t, swapHashPending, swap.SwapHash)
+	require.Equal(t, swapHashPending, storedSwap.SwapHash)
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
-		swap.DepositOutpoints)
-	require.Equal(t, SignHtlcTx, swap.GetState())
+		storedSwap.DepositOutpoints)
+	require.Equal(t, SignHtlcTx, storedSwap.GetState())
+	require.Equal(t, swapPending.HtlcKeyLocator, storedSwap.HtlcKeyLocator)
 	require.Equal(
 		t, ConfirmationRiskDecisionNone,
-		swap.ConfirmationRiskDecision,
+		storedSwap.ConfirmationRiskDecision,
 	)
 
 	decisionTime := time.Unix(123, 0).UTC()
@@ -309,13 +316,13 @@ func TestCreateLoopIn(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	swap, err = swapStore.GetLoopInByHash(ctxb, swapHashPending)
+	storedSwap, err = swapStore.GetLoopInByHash(ctxb, swapHashPending)
 	require.NoError(t, err)
 	require.Equal(
 		t, ConfirmationRiskDecisionAccepted,
-		swap.ConfirmationRiskDecision,
+		storedSwap.ConfirmationRiskDecision,
 	)
-	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+	require.True(t, storedSwap.ConfirmationRiskDecisionTime.Equal(decisionTime))
 
 	err = swapStore.RecordStaticAddressRiskDecision(
 		ctxb, lntypes.Hash{0x9, 0x9, 0x9},
@@ -323,17 +330,17 @@ func TestCreateLoopIn(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrLoopInNotFound)
 
-	require.Len(t, swap.Deposits, 2)
+	require.Len(t, storedSwap.Deposits, 2)
 
-	require.Equal(t, d1.ID, swap.Deposits[0].ID)
-	require.Equal(t, d1.OutPoint, swap.Deposits[0].OutPoint)
-	require.Equal(t, d1.Value, swap.Deposits[0].Value)
-	require.Equal(t, deposit.LoopingIn, swap.Deposits[0].GetState())
+	require.Equal(t, d1.ID, storedSwap.Deposits[0].ID)
+	require.Equal(t, d1.OutPoint, storedSwap.Deposits[0].OutPoint)
+	require.Equal(t, d1.Value, storedSwap.Deposits[0].Value)
+	require.Equal(t, deposit.LoopingIn, storedSwap.Deposits[0].GetState())
 
-	require.Equal(t, d2.ID, swap.Deposits[1].ID)
-	require.Equal(t, d2.OutPoint, swap.Deposits[1].OutPoint)
-	require.Equal(t, d2.Value, swap.Deposits[1].Value)
-	require.Equal(t, deposit.LoopingIn, swap.Deposits[1].GetState())
+	require.Equal(t, d2.ID, storedSwap.Deposits[1].ID)
+	require.Equal(t, d2.OutPoint, storedSwap.Deposits[1].OutPoint)
+	require.Equal(t, d2.Value, storedSwap.Deposits[1].Value)
+	require.Equal(t, deposit.LoopingIn, storedSwap.Deposits[1].GetState())
 }
 
 // TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins

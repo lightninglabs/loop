@@ -29,6 +29,7 @@ import (
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/recovery"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
@@ -101,6 +102,7 @@ type swapClientServer struct {
 	staticLoopInManager  *loopin.Manager
 	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
+	recoveryService      *recovery.Service
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- any
 	statusChan           chan loop.SwapInfo
@@ -1277,6 +1279,32 @@ func (s *swapClientServer) FetchL402Token(ctx context.Context,
 	return &looprpc.FetchL402TokenResponse{}, nil
 }
 
+// Recover restores the local paid L402 token material and static-address state
+// from an encrypted backup file.
+func (s *swapClientServer) Recover(ctx context.Context,
+	req *looprpc.RecoverRequest) (*looprpc.RecoverResponse, error) {
+
+	if s.recoveryService == nil {
+		return nil, status.Error(
+			codes.Unavailable, "recovery service not configured",
+		)
+	}
+
+	result, err := s.recoveryService.Restore(ctx, req.GetBackupFile())
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.RecoverResponse{
+		BackupFile:                 result.BackupFile,
+		RestoredL402:               result.RestoredL402,
+		RestoredStaticAddress:      result.RestoredStaticAddress,
+		StaticAddress:              result.StaticAddress,
+		NumDepositsFound:           uint32(result.NumDepositsFound),
+		DepositReconciliationError: result.DepositReconciliationError,
+	}, nil
+}
+
 // GetInfo returns basic information about the loop daemon and details to swaps
 // from the swap store.
 func (s *swapClientServer) GetInfo(ctx context.Context,
@@ -1644,6 +1672,17 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.recoveryService != nil {
+		backupFile, backupErr := s.recoveryService.WriteBackup(ctx)
+		if backupErr != nil {
+			warnf("Unable to write recovery backup after static "+
+				"address request: %v", backupErr)
+		} else if backupFile != "" {
+			infof("Wrote encrypted recovery backup to %s after "+
+				"static address request", backupFile)
+		}
 	}
 
 	return &looprpc.NewStaticAddressResponse{
