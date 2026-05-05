@@ -512,6 +512,9 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.Equal(t, OnHtlcInitiated, event)
 	require.Nil(t, f.LastActionError)
 	require.NotNil(t, server.request)
+	require.EqualValues(
+		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
+	)
 
 	_, routeHints, _, _, err := swap.DecodeInvoice(
 		mockLnd.ChainParams, server.request.SwapInvoice,
