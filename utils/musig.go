@@ -10,7 +10,10 @@ import (
 )
 
 // MuSig2Sign will create a MuSig2 signature for the passed message using the
-// passed raw private keys. It expects at least two signing keys.
+// passed raw private keys. Raw keys are interpreted with
+// btcec.PrivKeyFromBytes semantics, which normalize 32-byte inputs modulo the
+// secp256k1 group order instead of rejecting out-of-range values. It expects
+// at least two signing keys.
 func MuSig2Sign(version input.MuSig2Version, keys [][32]byte,
 	tweaks *input.MuSig2Tweaks, msg [32]byte) ([]byte, error) {
 
@@ -18,7 +21,8 @@ func MuSig2Sign(version input.MuSig2Version, keys [][32]byte,
 	pubKeys := make([]*btcec.PublicKey, len(keys))
 
 	// First parse the raw private keys and also create the corresponding
-	// public keys.
+	// public keys. This preserves the same normalization semantics used
+	// when these raw keys are turned into pubkeys elsewhere in the protocol.
 	for i, key := range keys {
 		privKeys[i], pubKeys[i] = btcec.PrivKeyFromBytes(key[:])
 
