@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/test"
@@ -41,8 +42,14 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+		"GetParameters", mock.Anything,
+	).Return(&address.Parameters{
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	})
 
 	mockStore := new(mockStore)
 	var createCalls atomic.Int32
@@ -139,8 +146,14 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+		"GetParameters", mock.Anything,
+	).Return(&address.Parameters{
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	})
 
 	mockStore := new(mockStore)
 	mockStore.On(
@@ -433,6 +446,12 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 		OutPoint:           outpoint,
 		Value:              btcutil.Amount(100_000),
 		ConfirmationHeight: 77,
+		AddressParams: &address.Parameters{
+			ClientPubkey:    defaultServerPubkey,
+			ServerPubkey:    defaultServerPubkey,
+			Expiry:          defaultExpiry,
+			ProtocolVersion: version.ProtocolVersion_V0,
+		},
 	}
 	deposit.SetState(Deposited)
 

@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/outpoint"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -225,6 +226,11 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	}
 
 	for i, d := range deposits {
+		err = m.hydrateLegacyDepositAddressParams(ctx, d)
+		if err != nil {
+			return err
+		}
+
 		m.deposits[d.OutPoint] = deposits[i]
 
 		// If the current deposit is final it wasn't active when we
@@ -256,6 +262,67 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
 		m.mu.Unlock()
+	}
+
+	return nil
+}
+
+// hydrateLegacyDepositAddressParams fills in address parameters for deposits
+// that predate the durable deposit-to-static-address link. Those deposits all
+// belonged to the legacy/root static address, so the legacy address manager
+// lookup preserves the behavior that existed before multi-address support.
+func (m *Manager) hydrateLegacyDepositAddressParams(ctx context.Context,
+	deposits ...*Deposit) error {
+
+	needsHydration := false
+	for _, d := range deposits {
+		if d != nil && d.AddressParams == nil {
+			needsHydration = true
+			break
+		}
+	}
+	if !needsHydration {
+		return nil
+	}
+
+	if m.cfg == nil || m.cfg.AddressManager == nil {
+		return nil
+	}
+
+	var legacyParams *address.Parameters
+	for _, d := range deposits {
+		if d == nil || d.AddressParams != nil {
+			continue
+		}
+
+		if legacyParams == nil {
+			params, err := m.cfg.AddressManager.
+				GetStaticAddressParameters(ctx)
+			if err != nil {
+				return fmt.Errorf("unable to recover legacy "+
+					"static address parameters for deposit %v: %w",
+					d.OutPoint, err)
+			}
+			if params == nil {
+				return fmt.Errorf("missing legacy static address "+
+					"parameters for deposit %v", d.OutPoint)
+			}
+
+			if params.ID <= 0 {
+				params.ID, err = m.cfg.AddressManager.
+					GetStaticAddressID(ctx, params.PkScript)
+				if err != nil {
+					return fmt.Errorf("unable to recover legacy "+
+						"static address ID for deposit %v: %w",
+						d.OutPoint, err)
+				}
+			}
+
+			legacyParams = params
+		}
+
+		d.AddressParams = legacyParams
+		d.AddressID = legacyParams.ID
 	}
 
 	return nil
@@ -824,7 +891,17 @@ func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
 
 // GetAllDeposits returns all known deposits from the database.
 func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
-	return m.cfg.Store.AllDeposits(ctx)
+	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.hydrateLegacyDepositAddressParams(ctx, deposits...)
+	if err != nil {
+		return nil, err
+	}
+
+	return deposits, nil
 }
 
 // GetVisibleDeposits returns deposits that should be exposed through normal
@@ -835,6 +912,11 @@ func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
 // active set.
 func (m *Manager) GetVisibleDeposits(ctx context.Context) ([]*Deposit, error) {
 	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.hydrateLegacyDepositAddressParams(ctx, deposits...)
 	if err != nil {
 		return nil, err
 	}
@@ -912,6 +994,11 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 			if ignoreUnknown && errors.Is(err, ErrDepositNotFound) {
 				continue
 			}
+			return nil, err
+		}
+
+		err = m.hydrateLegacyDepositAddressParams(ctx, deposit)
+		if err != nil {
 			return nil, err
 		}
 

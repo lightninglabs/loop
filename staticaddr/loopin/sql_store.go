@@ -587,6 +587,16 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 			TimeoutSweepPkScript:  d.TimeoutSweepPkScript,
 			ExpirySweepTxid:       d.ExpirySweepTxid,
 			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
+			SwapHash:              d.SwapHash,
+			StaticAddressID:       d.StaticAddressID,
+			ClientPubkey:          d.ClientPubkey,
+			ServerPubkey:          d.ServerPubkey,
+			Expiry:                d.Expiry,
+			ClientKeyFamily:       d.ClientKeyFamily,
+			ClientKeyIndex:        d.ClientKeyIndex,
+			Pkscript:              d.Pkscript,
+			ProtocolVersion:       d.ProtocolVersion,
+			InitiationHeight:      d.InitiationHeight,
 		}
 
 		sqlcDepositUpdate := sqlc.DepositUpdate{
