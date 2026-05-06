@@ -3,6 +3,7 @@ package address
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -70,6 +71,12 @@ type Manager struct {
 	cfg *ManagerConfig
 
 	currentHeight atomic.Int32
+
+	// activeStaticAddresses is the runtime index used to match wallet UTXOs
+	// to locally known static address parameters. The DB remains the
+	// durable source of truth; this map is rebuilt from the DB on startup
+	// and updated after successful address issuance or recovery.
+	activeStaticAddresses map[string]*Parameters
 }
 
 // NewManager creates a new address manager.
@@ -80,7 +87,8 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
 	}
 
 	m := &Manager{
-		cfg: cfg,
+		cfg:                   cfg,
+		activeStaticAddresses: make(map[string]*Parameters),
 	}
 	m.currentHeight.Store(currentHeight)
 
@@ -99,6 +107,11 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
 		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
 
+	if err != nil {
+		return err
+	}
+
+	err = m.restoreActiveAddresses(ctx)
 	if err != nil {
 		return err
 	}
@@ -122,70 +135,125 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	}
 }
 
-// NewAddress creates a new static address with the server or returns an
-// existing one.
-func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
-	int64, error) {
-
-	// If there's already a static address in the database, we can return
-	// it.
-	m.Lock()
-	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+// restoreActiveAddresses rebuilds the runtime address map from the durable DB
+// state and re-imports all scripts into lnd. Importing is intentionally
+// idempotent so restart and recovery paths repair missing wallet watches before
+// deposit discovery starts.
+func (m *Manager) restoreActiveAddresses(ctx context.Context) error {
+	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
 	if err != nil {
-		m.Unlock()
-
-		return nil, 0, err
+		return err
 	}
-	if len(addresses) > 0 {
-		addrParams := addresses[0]
-		clientPubKey := addrParams.ClientPubkey
-		serverPubKey := addrParams.ServerPubkey
-		expiry := int64(addrParams.Expiry)
-		m.Unlock()
 
-		// Re-import the tapscript even when the address row already exists.
-		// This keeps the call idempotent while repairing cases where restore
-		// or startup left the DB populated before lnd imported the script.
-		staticAddress, err := script.NewStaticAddress(
-			input.MuSig2Version100RC2, expiry, clientPubKey,
-			serverPubKey,
-		)
+	active := make(map[string]*Parameters, len(params))
+	for _, param := range params {
+		staticAddress, err := staticAddressFromParams(param)
 		if err != nil {
-			return nil, 0, err
+			return err
 		}
 
 		_, err = m.importAddressTapscript(ctx, staticAddress)
 		if err != nil {
-			return nil, 0, err
+			return err
 		}
 
-		address, err := m.GetTaprootAddress(
-			clientPubKey, serverPubKey, expiry,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		return address, expiry, nil
+		active[string(param.PkScript)] = param
 	}
+
+	m.Lock()
+	m.activeStaticAddresses = active
 	m.Unlock()
 
-	// We are fetching a new L402 token from the server. There is one static
-	// address per L402 token allowed.
-	err = m.cfg.FetchL402(ctx)
+	return nil
+}
+
+// NewAddress creates the next externally visible receive static address.
+//
+// The first call also makes sure the legacy/root static address seed exists,
+// because receive and change addresses are derived from the server pubkey and
+// expiry returned for that seed.
+func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
+	int64, error) {
+
+	params, err := m.NewReceiveAddress(ctx)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	address, err := m.GetTaprootAddress(
+		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return address, int64(params.Expiry), nil
+}
+
+// EnsureStaticAddressSeed loads or creates the legacy/root static address
+// parameters. The root address is the only address that requires a Nautilus
+// ServerNewAddress call; all receive/change addresses derive client keys
+// locally and reuse this server pubkey/expiry seed.
+func (m *Manager) EnsureStaticAddressSeed(ctx context.Context) (*Parameters,
+	error) {
+
+	m.Lock()
+	seed := m.legacyParameters()
+	m.Unlock()
+	if seed != nil {
+		return seed, nil
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	// Another caller may have created the seed while we were waiting for the
+	// issuance lock.
+	seed = m.legacyParameters()
+	if seed != nil {
+		return seed, nil
+	}
+
+	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(addresses) > 0 {
+		for _, addr := range addresses {
+			// Re-import existing rows so startup and recovery can repair a
+			// DB-only address before deposit discovery depends on lnd's
+			// wallet view.
+			staticAddress, err := staticAddressFromParams(addr)
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = m.importAddressTapscript(ctx, staticAddress)
+			if err != nil {
+				return nil, err
+			}
+
+			m.activeStaticAddresses[string(addr.PkScript)] = addr
+		}
+
+		return addresses[0], nil
+	}
+
+	// We are fetching a new L402 token from the server. The returned server
+	// key/expiry is the static address seed for all future client-derived
+	// addresses for this L402.
+	err = m.cfg.FetchL402(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	// Send our clientPubKey to the server and wait for the server to
-	// respond with he serverPubKey and the static address CSV expiry.
 	protocolVersion := version.CurrentRPCProtocolVersion()
 	resp, err := m.cfg.AddressClient.ServerNewAddress(
 		ctx, &staticaddressrpc.ServerNewAddressRequest{
@@ -194,7 +262,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		},
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	if resp == nil {
@@ -208,36 +276,85 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	serverPubKey, err := btcec.ParsePubKey(serverParams.GetServerKey())
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
+	return m.createAddressFromKey(
+		ctx, clientPubKey, serverPubKey, serverParams.Expiry,
+		version.AddressProtocolVersion(protocolVersion),
+	)
+}
+
+// NewReceiveAddress derives, stores, imports and activates the next receive
+// family static address. It is used by `loop static new`.
+func (m *Manager) NewReceiveAddress(ctx context.Context) (*Parameters, error) {
+	seed, err := m.EnsureStaticAddressSeed(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.newDerivedAddress(ctx, seed, swap.StaticMultiAddressKeyFamily)
+}
+
+// NewChangeAddress derives, stores, imports and activates the next change
+// family static address. Swap and withdrawal code calls this before submitting
+// requests that require change.
+func (m *Manager) NewChangeAddress(ctx context.Context) (*Parameters, error) {
+	seed, err := m.EnsureStaticAddressSeed(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.newDerivedAddress(ctx, seed, swap.StaticAddressChangeKeyFamily)
+}
+
+func (m *Manager) newDerivedAddress(ctx context.Context, seed *Parameters,
+	keyFamily int32) (*Parameters, error) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(ctx, keyFamily)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.createAddressFromKey(
+		ctx, clientPubKey, seed.ServerPubkey, seed.Expiry,
+		seed.ProtocolVersion,
+	)
+}
+
+func (m *Manager) createAddressFromKey(ctx context.Context,
+	clientPubKey *keychain.KeyDescriptor, serverPubKey *btcec.PublicKey,
+	expiry uint32, protocolVersion version.AddressProtocolVersion) (
+	*Parameters, error) {
+
 	staticAddress, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(serverParams.Expiry),
-		clientPubKey.PubKey, serverPubKey,
+		input.MuSig2Version100RC2, int64(expiry), clientPubKey.PubKey,
+		serverPubKey,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	pkScript, err := staticAddress.StaticAddressScript()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// Create the static address from the parameters the server provided and
 	// store all parameters in the database.
-	addrParams := &script.Parameters{
+	addrParams := &Parameters{
 		ClientPubkey: clientPubKey.PubKey,
 		ServerPubkey: serverPubKey,
 		PkScript:     pkScript,
-		Expiry:       serverParams.Expiry,
+		Expiry:       expiry,
 		KeyLocator: keychain.KeyLocator{
 			Family: clientPubKey.Family,
 			Index:  clientPubKey.Index,
 		},
-		ProtocolVersion: version.AddressProtocolVersion(
-			protocolVersion,
-		),
+		ProtocolVersion:  protocolVersion,
 		InitiationHeight: m.currentHeight.Load(),
 	}
 
@@ -246,22 +363,22 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	// clean missing-address state instead of a DB-only static address.
 	_, err = m.importAddressTapscript(ctx, staticAddress)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	address, err := m.GetTaprootAddress(
-		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
-	)
+	addrParams.ID, err = m.cfg.Store.GetStaticAddressID(ctx, pkScript)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return address, int64(serverParams.Expiry), nil
+	m.activeStaticAddresses[string(pkScript)] = addrParams
+
+	return addrParams, nil
 }
 
 // validateServerAddressParams validates the server-controlled static address
@@ -343,9 +460,20 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 		return nil, false, err
 	}
 
-	var changed bool
+	changed := false
+	importedBeforeCreate := false
+	var matched *Parameters
+	for _, existingAddr := range existing {
+		if !bytes.Equal(existingAddr.PkScript, addrParams.PkScript) {
+			continue
+		}
+
+		matched = existingAddr
+		break
+	}
+
 	switch {
-	case len(existing) == 0:
+	case matched == nil:
 		// Import before creating the restored DB row. If import fails, the
 		// next recovery attempt should still treat the address as missing
 		// instead of getting stuck on an untracked DB-only address.
@@ -355,6 +483,7 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 
 			return nil, false, err
 		}
+		importedBeforeCreate = true
 
 		err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 		if err != nil {
@@ -362,42 +491,42 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 
 			return nil, false, err
 		}
+
+		addrParams.ID, err = m.cfg.Store.GetStaticAddressID(
+			ctx, addrParams.PkScript,
+		)
+		if err != nil {
+			m.Unlock()
+
+			return nil, false, err
+		}
+
 		changed = true
 
-	case len(existing) > 1:
-		m.Unlock()
-
-		return nil, false, fmt.Errorf("more than one static address found")
-
-	case !sameAddressParameters(existing[0], addrParams):
+	case !sameAddressParameters(matched, addrParams):
 		m.Unlock()
 
 		return nil, false, fmt.Errorf("existing static address differs from " +
 			"backup")
 
 	default:
-		m.Unlock()
+		addrParams.ID = matched.ID
+	}
+	m.Unlock()
 
-		// The DB row already matches the backup. Re-import anyway so
-		// restore is idempotent and can repair a prior partial restore where
-		// lnd never learned the tapscript.
+	if !importedBeforeCreate {
+		// The DB row already matches the backup. Re-import anyway so restore
+		// is idempotent and can repair a prior partial restore where lnd never
+		// learned the tapscript.
 		imported, err := m.importAddressTapscript(ctx, staticAddress)
 		if err != nil {
 			return nil, false, err
 		}
 
-		changed = imported
-
-		addr, err := m.GetTaprootAddress(
-			addrParams.ClientPubkey, addrParams.ServerPubkey,
-			int64(addrParams.Expiry),
-		)
-		if err != nil {
-			return nil, false, err
-		}
-
-		return addr, changed, nil
+		changed = changed || imported
 	}
+	m.Lock()
+	m.activeStaticAddresses[string(addrParams.PkScript)] = addrParams
 	m.Unlock()
 
 	addr, err := m.GetTaprootAddress(
@@ -451,6 +580,34 @@ func sameAddressParameters(a, b *Parameters) bool {
 		a.InitiationHeight == b.InitiationHeight
 }
 
+func staticAddressFromParams(params *Parameters) (*script.StaticAddress,
+	error) {
+
+	if params == nil {
+		return nil, fmt.Errorf("missing static address parameters")
+	}
+
+	return script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
+	)
+}
+
+func (m *Manager) legacyParameters() *Parameters {
+	var legacy *Parameters
+	for _, params := range m.activeStaticAddresses {
+		if params == nil {
+			continue
+		}
+
+		if legacy == nil || params.ID < legacy.ID {
+			legacy = params
+		}
+	}
+
+	return legacy
+}
+
 // GetTaprootAddress returns a taproot address for the given client and server
 // public keys and expiry.
 func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
@@ -471,21 +628,17 @@ func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
 
 // ListUnspentRaw returns a list of utxos at the static address.
 func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
-	maxConfs int32) (*btcutil.AddressTaproot, []*lnwallet.Utxo, error) {
+	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
-	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
-	switch {
-	case err != nil:
-		return nil, nil, err
-
-	case len(addresses) == 0:
-		return nil, nil, nil
-
-	case len(addresses) > 1:
-		return nil, nil, fmt.Errorf("more than one address found")
+	m.Lock()
+	active := make(map[string]struct{}, len(m.activeStaticAddresses))
+	for pkScript := range m.activeStaticAddresses {
+		active[pkScript] = struct{}{}
 	}
-
-	staticAddress := addresses[0]
+	m.Unlock()
+	if len(active) == 0 {
+		return nil, nil
+	}
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
@@ -493,27 +646,19 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 		ctx, minConfs, maxConfs,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Filter the list of lnd's unspent utxos for the pkScript of our static
-	// address.
+	// Filter the list of lnd's unspent utxos for any locally active static
+	// address script.
 	var filteredUtxos []*lnwallet.Utxo
 	for _, utxo := range utxos {
-		if bytes.Equal(utxo.PkScript, staticAddress.PkScript) {
+		if _, ok := active[string(utxo.PkScript)]; ok {
 			filteredUtxos = append(filteredUtxos, utxo)
 		}
 	}
 
-	taprootAddress, err := m.GetTaprootAddress(
-		staticAddress.ClientPubkey, staticAddress.ServerPubkey,
-		int64(staticAddress.Expiry),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return taprootAddress, filteredUtxos, nil
+	return filteredUtxos, nil
 }
 
 // GetStaticAddressParameters returns the single concrete static-address row
@@ -522,16 +667,16 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
 	error) {
 
-	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	params, err := m.GetLegacyParameters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(params) == 0 {
+	if params == nil {
 		return nil, ErrNoStaticAddress
 	}
 
-	return params[0], nil
+	return params, nil
 }
 
 // GetStaticAddress returns a taproot address for the given client and server
@@ -544,25 +689,53 @@ func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
 		return nil, err
 	}
 
-	address, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry),
-		params.ClientPubkey, params.ServerPubkey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return address, nil
+	return staticAddressFromParams(params)
 }
 
 // ListUnspent returns a list of utxos at the static address.
 func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
-	_, utxos, err := m.ListUnspentRaw(ctx, minConfs, maxConfs)
+	return m.ListUnspentRaw(ctx, minConfs, maxConfs)
+}
+
+// GetLegacyParameters returns the legacy/root static address parameters.
+func (m *Manager) GetLegacyParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	params, err := m.cfg.Store.GetLegacyParameters(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	return utxos, nil
+	return params, nil
+}
+
+// GetParameters returns active static address parameters for a pkScript.
+func (m *Manager) GetParameters(pkScript []byte) *Parameters {
+	m.Lock()
+	defer m.Unlock()
+
+	return m.activeStaticAddresses[string(pkScript)]
+}
+
+// GetStaticAddressID returns the database row ID for a static address script.
+func (m *Manager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	return m.cfg.Store.GetStaticAddressID(ctx, pkScript)
+}
+
+// IsOurPkScript returns true if the pkScript belongs to an active static
+// address.
+func (m *Manager) IsOurPkScript(pkScript []byte) bool {
+	return m.GetParameters(pkScript) != nil
+}
+
+// GetAllAddresses returns all persisted static address parameters.
+func (m *Manager) GetAllAddresses(ctx context.Context) ([]*Parameters, error) {
+	return m.cfg.Store.GetAllStaticAddresses(ctx)
 }

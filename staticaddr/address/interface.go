@@ -17,6 +17,15 @@ type Store interface {
 	// into the store.
 	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
+	// GetStaticAddressID retrieves the static address row ID for the
+	// address script.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
 	// GetAllStaticAddresses retrieves all static addresses from the store.
 	GetAllStaticAddresses(ctx context.Context) ([]*Parameters, error)
+
+	// GetLegacyParameters retrieves the first static address created for the
+	// L402. This is the immutable legacy/root address that anchors existing
+	// single-address deposits.
+	GetLegacyParameters(ctx context.Context) (*Parameters, error)
 }

@@ -111,6 +111,16 @@ type mockAddressManager struct {
 	mock.Mock
 }
 
+func (m *mockAddressManager) hasExpectation(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 	*script.Parameters, error) {
 
@@ -118,6 +128,39 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 
 	return args.Get(0).(*script.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	if !m.hasExpectation("GetStaticAddressID") {
+		return 1, nil
+	}
+
+	args := m.Called(ctx, pkScript)
+
+	return int32(args.Int(0)), args.Error(1)
+}
+
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	if !m.hasExpectation("GetParameters") {
+		return &address.Parameters{
+			ID:           1,
+			ClientPubkey: defaultServerPubkey,
+			ServerPubkey: defaultServerPubkey,
+			Expiry:       defaultExpiry,
+			PkScript:     pkScript,
+		}
+	}
+
+	args := m.Called(pkScript)
+	if args.Get(0) == nil {
+		return nil
+	}
+
+	return args.Get(0).(*address.Parameters)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (

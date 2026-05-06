@@ -24,13 +24,13 @@ func TestToDeposit(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		row        sqlc.Deposit
+		row        sqlc.AllDepositsRow
 		lastUpdate sqlc.DepositUpdate
 		expectErr  bool
 	}{
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,
@@ -44,7 +44,7 @@ func TestToDeposit(t *testing.T) {
 		},
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,
