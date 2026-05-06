@@ -461,6 +461,20 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+
+	addressID, err := m.cfg.AddressManager.GetStaticAddressID(
+		ctx, utxo.PkScript,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -468,6 +482,8 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		Value:                utxo.Value,
 		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
+		AddressID:            addressID,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)

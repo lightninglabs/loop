@@ -578,7 +578,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 			return nil, err
 		}
 
-		sqlcDeposit := sqlc.Deposit{
+		sqlcDeposit := sqlc.AllDepositsRow{
 			DepositID:             id[:],
 			TxHash:                d.TxHash,
 			Amount:                d.Amount,

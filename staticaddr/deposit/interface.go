@@ -40,6 +40,14 @@ type AddressManager interface {
 	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
 		error)
 
+	// GetStaticAddressID returns the database ID for the static address
+	// behind the given pkScript.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
+	// GetParameters returns active static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
+
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
 	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
