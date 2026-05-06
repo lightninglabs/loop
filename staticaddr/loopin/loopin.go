@@ -208,10 +208,29 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 
 	outpoints := l.Outpoints()
+	if len(tx.TxIn) != len(outpoints) {
+		return nil, fmt.Errorf("htlc tx input count %d does not "+
+			"match deposits %d", len(tx.TxIn), len(outpoints))
+	}
+	if len(musig2sessions) != len(outpoints) {
+		return nil, fmt.Errorf("musig2 session count %d does not "+
+			"match deposits %d", len(musig2sessions), len(outpoints))
+	}
+	if len(counterPartyNonces) != len(outpoints) {
+		return nil, fmt.Errorf("server nonce count %d does not "+
+			"match deposits %d", len(counterPartyNonces),
+			len(outpoints))
+	}
+
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
 	sigs := make([][]byte, len(outpoints))
 
 	for idx, outpoint := range outpoints {
+		if musig2sessions[idx] == nil {
+			return nil, fmt.Errorf("missing musig2 session for "+
+				"deposit input %d", idx)
+		}
+
 		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
 			outpoint) {
 

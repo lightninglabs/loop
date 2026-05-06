@@ -153,16 +153,27 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		version.CurrentRPCProtocolVersion(),
 	)
 
+	depositClientPubkeys, err := staticutil.DepositClientPubkeys(
+		f.loopIn.Deposits,
+	)
+	if err != nil {
+		err = fmt.Errorf("unable to prepare static address input "+
+			"proofs: %w", err)
+
+		return returnError(err)
+	}
+
 	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
-		SwapHash:              f.loopIn.SwapHash[:],
-		DepositOutpoints:      f.loopIn.DepositOutpoints,
-		Amount:                uint64(f.loopIn.SelectedAmount),
-		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
-		SwapInvoice:           f.loopIn.SwapInvoice,
-		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
-		UserAgent:             loop.UserAgent(f.loopIn.Initiator),
-		PaymentTimeoutSeconds: f.loopIn.PaymentTimeoutSeconds,
-		Fast:                  f.loopIn.Fast,
+		SwapHash:               f.loopIn.SwapHash[:],
+		DepositOutpoints:       f.loopIn.DepositOutpoints,
+		Amount:                 uint64(f.loopIn.SelectedAmount),
+		HtlcClientPubKey:       f.loopIn.ClientPubkey.SerializeCompressed(),
+		SwapInvoice:            f.loopIn.SwapInvoice,
+		ProtocolVersion:        version.CurrentRPCProtocolVersion(),
+		UserAgent:              loop.UserAgent(f.loopIn.Initiator),
+		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
+		Fast:                   f.loopIn.Fast,
+		DepositToClientPubkeys: depositClientPubkeys,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
