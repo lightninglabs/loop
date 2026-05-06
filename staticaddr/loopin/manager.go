@@ -671,19 +671,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				"deposits: %w", err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := m.cfg.AddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		selectedDeposits, err = SelectDeposits(
-			req.SelectedAmount, allDeposits, params.Expiry,
-			m.currentHeight.Load(),
+			req.SelectedAmount, allDeposits, m.currentHeight.Load(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -873,14 +862,20 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 // leaving a dust change. It returns an error if the sum of deposits minus dust
 // is less than the requested amount.
 func SelectDeposits(targetAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry uint32,
-	blockHeight uint32) ([]*deposit.Deposit, error) {
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32) (
+	[]*deposit.Deposit, error) {
 
 	// Filter out deposits that are too close to expiry to be swapped.
 	var deposits []*deposit.Deposit
 	for _, d := range unfilteredDeposits {
+		if d.AddressParams == nil {
+			return nil, fmt.Errorf("missing static address parameters "+
+				"for deposit %s", d.OutPoint.String())
+		}
+
 		if !IsSwappable(
-			uint32(d.ConfirmationHeight), blockHeight, csvExpiry,
+			uint32(d.ConfirmationHeight), blockHeight,
+			d.AddressParams.Expiry,
 		) {
 
 			log.Debugf("Skipping deposit %s as it expires before "+
@@ -905,11 +900,11 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		if deposits[i].Value == deposits[j].Value {
 			iExp := blocksUntilDepositExpiry(
 				uint32(deposits[i].ConfirmationHeight),
-				blockHeight, csvExpiry,
+				blockHeight, deposits[i].AddressParams.Expiry,
 			)
 			jExp := blocksUntilDepositExpiry(
 				uint32(deposits[j].ConfirmationHeight),
-				blockHeight, csvExpiry,
+				blockHeight, deposits[j].AddressParams.Expiry,
 			)
 
 			return iExp < jExp

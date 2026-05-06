@@ -2,7 +2,6 @@ package deposit
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -44,8 +43,14 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*address.Parameters)(nil), errors.New("fsm init failed"))
+		"GetParameters", mock.Anything,
+	).Return(&address.Parameters{
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	})
 
 	mockStore := new(mockStore)
 	var createCalls atomic.Int32
@@ -131,8 +136,14 @@ func TestReconcileConfirmedDepositUsesBestBlockHeight(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*address.Parameters)(nil), errors.New("fsm init failed"))
+		"GetParameters", mock.Anything,
+	).Return(&address.Parameters{
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	})
 
 	mockChainKit := new(MockChainKit)
 	expectStableBestBlock(mockChainKit, 100)
@@ -306,6 +317,12 @@ func TestReconcileDepositsReactivatesReappearedReplacedDeposit(t *testing.T) {
 		OutPoint:           outpoint,
 		Value:              btcutil.Amount(100_000),
 		ConfirmationHeight: 77,
+		AddressParams: &address.Parameters{
+			ClientPubkey:    defaultServerPubkey,
+			ServerPubkey:    defaultServerPubkey,
+			Expiry:          defaultExpiry,
+			ProtocolVersion: version.ProtocolVersion_V0,
+		},
 	}
 	deposit.SetState(Replaced)
 

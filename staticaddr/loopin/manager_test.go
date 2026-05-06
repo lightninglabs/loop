@@ -183,9 +183,11 @@ func TestSelectDeposits(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setTestDepositParams(tc.deposits, tc.csvExpiry)
+			setTestDepositParams(tc.expected, tc.csvExpiry)
+
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -194,6 +196,14 @@ func TestSelectDeposits(t *testing.T) {
 			}
 			require.ElementsMatch(t, tc.expected, selectedDeposits)
 		})
+	}
+}
+
+func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
+	for _, d := range deposits {
+		d.AddressParams = &address.Parameters{
+			Expiry: expiry,
+		}
 	}
 }
 
