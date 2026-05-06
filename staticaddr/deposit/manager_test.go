@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -524,6 +525,96 @@ func TestManagerSkipsExpiryNotificationOnReconcileFailure(t *testing.T) {
 	}
 }
 
+func TestRecoverDepositsKeepsSpentWithdrawing(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 2,
+		},
+		state:              Withdrawing,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+
+	deposits, err := testContext.manager.GetActiveDepositsInState(Withdrawing)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, storedDeposit.OutPoint, deposits[0].OutPoint)
+}
+
+func TestRecoverDepositsHydratesLegacyAddressParams(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 3,
+		},
+		state:                Deposited,
+		Value:                btcutil.Amount(100000),
+		ConfirmationHeight:   42,
+		TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	storedDeposit.AddressParams = nil
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, storedDeposit.AddressParams)
+	require.NotZero(t, storedDeposit.AddressParams.ID)
+}
+
+func TestGetAllDepositsHydratesLegacyAddressParams(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 4,
+		},
+		state:              Withdrawn,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	storedDeposit.AddressParams = nil
+
+	deposits, err := testContext.manager.GetAllDeposits(ctx)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.NotNil(t, deposits[0].AddressParams)
+	require.NotZero(t, deposits[0].AddressParams.ID)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -540,6 +631,39 @@ type ManagerTestContext struct {
 
 // newManagerTestContext creates a new test context for the reservation manager.
 func newManagerTestContext(t *testing.T) *ManagerTestContext {
+	ID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	utxo := &lnwallet.Utxo{
+		AddressType:   lnwallet.TaprootPubkey,
+		Value:         btcutil.Amount(100000),
+		Confirmations: int64(defaultDepositConfirmations),
+		PkScript:      []byte("pkscript"),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{},
+			Index: 0xffffffff,
+		},
+	}
+
+	storedDeposits := []*Deposit{
+		{
+			ID:                   ID,
+			state:                Deposited,
+			OutPoint:             utxo.OutPoint,
+			Value:                utxo.Value,
+			ConfirmationHeight:   3,
+			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+		},
+	}
+
+	return newManagerTestContextWithStoredDeposits(
+		t, storedDeposits, []*lnwallet.Utxo{utxo},
+	)
+}
+
+func newManagerTestContextWithStoredDeposits(t *testing.T,
+	storedDeposits []*Deposit, utxos []*lnwallet.Utxo) *ManagerTestContext {
+
 	mockLnd := test.NewMockLnd()
 	lndContext := test.NewContext(t, mockLnd)
 
@@ -552,29 +676,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	blockChan := make(chan int32)
 	blockErrChan := make(chan error)
 
-	ID, err := GetRandomDepositID()
-	utxo := &lnwallet.Utxo{
-		AddressType:   lnwallet.TaprootPubkey,
-		Value:         btcutil.Amount(100000),
-		Confirmations: int64(defaultDepositConfirmations),
-		PkScript:      []byte("pkscript"),
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{},
-			Index: 0xffffffff,
-		},
-	}
-	require.NoError(t, err)
-	storedDeposits := []*Deposit{
-		{
-			ID:                   ID,
-			state:                Deposited,
-			OutPoint:             utxo.OutPoint,
-			Value:                utxo.Value,
-			ConfirmationHeight:   3,
-			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
-		},
-	}
-
 	mockStore.On(
 		"AllDeposits", mock.Anything,
 	).Return(storedDeposits, nil)
@@ -583,17 +684,29 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"UpdateDeposit", mock.Anything, mock.Anything,
 	).Return(nil)
 
+	staticAddress, addrParams := generateStaticAddress(
+		context.Background(), mockLnd, lndContext.T,
+	)
+	for _, storedDeposit := range storedDeposits {
+		if storedDeposit.AddressParams == nil {
+			storedDeposit.AddressParams = addrParams
+		}
+	}
+
 	var manager *Manager
+
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		Expiry: defaultExpiry,
-	}, nil)
+	).Return(addrParams, nil)
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
 	).Return(func() []*lnwallet.Utxo {
-		currentUtxo := *utxo
+		if len(utxos) != 1 {
+			return utxos
+		}
+
+		currentUtxo := *utxos[0]
 		currentHeight := manager.currentHeight.Load()
 		if currentHeight < defaultDepositConfirmations {
 			currentUtxo.Confirmations = 0
@@ -638,9 +751,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		blockErrChan:            blockErrChan,
 	}
 
-	staticAddress := generateStaticAddress(
-		context.Background(), testContext,
-	)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return(staticAddress, nil)
@@ -648,19 +758,30 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	return testContext
 }
 
-func generateStaticAddress(ctx context.Context,
-	t *ManagerTestContext) *script.StaticAddress {
+func generateStaticAddress(ctx context.Context, mockLnd *test.LndMockServices,
+	t *testing.T) (*script.StaticAddress, *address.Parameters) {
 
-	keyDescriptor, err := t.mockLnd.WalletKit.DeriveNextKey(
+	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, int64(defaultExpiry),
 		keyDescriptor.PubKey, defaultServerPubkey,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
-	return staticAddress
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	return staticAddress, &address.Parameters{
+		ID:              1,
+		ClientPubkey:    keyDescriptor.PubKey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        pkScript,
+		KeyLocator:      keyDescriptor.KeyLocator,
+		ProtocolVersion: 0,
+	}
 }
