@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -193,9 +194,11 @@ func TestSelectDeposits(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setTestDepositParams(tc.deposits, tc.csvExpiry)
+			setTestDepositParams(tc.expected, tc.csvExpiry)
+
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -376,6 +379,14 @@ func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
 	require.Len(t, swaps, 1)
 	require.Equal(t, []string{oldOutpoint.String()}, swaps[0].DepositOutpoints)
 	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
+}
+
+func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
+	for _, d := range deposits {
+		d.AddressParams = &address.Parameters{
+			Expiry: expiry,
+		}
+	}
 }
 
 // TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered
