@@ -179,6 +179,45 @@ func TestDepositClientPubkeysRejectsInvalidDeposits(t *testing.T) {
 	})
 }
 
+func TestChangeOutput(t *testing.T) {
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	params := &address.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+		PkScript:     []byte{0x51, 0x20, 0x01},
+	}
+	amount := btcutil.Amount(12345)
+
+	changeOutput, err := ChangeOutput(params, amount)
+	require.NoError(t, err)
+	require.Equal(
+		t, clientKey.PubKey().SerializeCompressed(),
+		changeOutput.ClientPubkey,
+	)
+	require.Equal(t, params.PkScript, changeOutput.PkScript)
+	require.EqualValues(t, amount, changeOutput.Amount)
+
+	changeOutput, err = ChangeOutput(params, 0)
+	require.NoError(t, err)
+	require.Nil(t, changeOutput)
+}
+
+func TestChangeOutputRejectsInvalidParams(t *testing.T) {
+	_, err := ChangeOutput(nil, 100)
+	require.ErrorContains(t, err, "missing static address change parameters")
+
+	_, err = ChangeOutput(&address.Parameters{}, 100)
+	require.ErrorContains(t, err, "missing static address change client pubkey")
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	_, err = ChangeOutput(&address.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+	}, 100)
+	require.ErrorContains(t, err, "missing static address change pkscript")
+}
+
 func TestGetPrevoutInfo_ConversionAndSorting(t *testing.T) {
 	// Helper to create a hash from string.
 	must := func(s string) chainhash.Hash {

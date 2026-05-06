@@ -21,7 +21,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -331,7 +330,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	err = m.checkChange(ctx, sweepTx)
 	if err != nil {
 		return err
 	}
@@ -467,7 +466,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 // swaps with identical change outputs. The client needs to ensure that any
 // swap referenced by the inputs has a respective change output in the batch.
 func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
+	sweepTx *wire.MsgTx) error {
 
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
@@ -492,42 +491,67 @@ func (m *Manager) checkChange(ctx context.Context,
 		return err
 	}
 
-	var expectedChange btcutil.Amount
+	var expectedChanges []*wire.TxOut
 	for swapHash := range swapHashes {
 		loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
 		if err != nil {
 			return err
 		}
 
-		totalDepositAmount := loopIn.TotalDepositAmount()
-		changeAmt := totalDepositAmount - loopIn.SelectedAmount
-		if changeAmt > 0 && changeAmt < totalDepositAmount {
-			log.Debugf("expected change output to our "+
-				"static address, total_deposit_amount=%v, "+
-				"selected_amount=%v, "+
-				"expected_change_amount=%v ",
-				totalDepositAmount, loopIn.SelectedAmount,
-				changeAmt)
-
-			expectedChange += changeAmt
+		changeAmt := loopIn.ExpectedChangeAmount()
+		if changeAmt == 0 {
+			continue
 		}
+
+		if loopIn.ChangeAddressParams == nil {
+			return fmt.Errorf("missing change address for swap %x",
+				swapHash[:])
+		}
+
+		log.Debugf("expected change output to static address, "+
+			"swap_hash=%x, selected_amount=%v, "+
+			"expected_change_amount=%v", swapHash[:],
+			loopIn.SelectedAmount, changeAmt)
+
+		expectedChanges = append(expectedChanges, &wire.TxOut{
+			Value:    int64(changeAmt),
+			PkScript: loopIn.ChangeAddressParams.PkScript,
+		})
 	}
 
-	if expectedChange == 0 {
+	if len(expectedChanges) == 0 {
 		return nil
 	}
 
-	for _, out := range sweepTx.TxOut {
-		if out.Value == int64(expectedChange) &&
-			bytes.Equal(out.PkScript, changeAddr.PkScript) {
+	// Match expected change outputs as a multiset. This rejects batched
+	// transactions that collapse two equal client change outputs into one
+	// output unless the protocol explicitly negotiates such aggregation.
+	matchedOutputs := make([]bool, len(sweepTx.TxOut))
+	for _, expected := range expectedChanges {
+		var found bool
+		for i, out := range sweepTx.TxOut {
+			if matchedOutputs[i] {
+				continue
+			}
 
-			// We found the expected change output.
-			return nil
+			if out.Value == expected.Value &&
+				bytes.Equal(out.PkScript, expected.PkScript) {
+
+				matchedOutputs[i] = true
+				found = true
+				break
+			}
 		}
+
+		if found {
+			continue
+		}
+
+		return fmt.Errorf("couldn't find expected change of %v "+
+			"satoshis sent to static address", expected.Value)
 	}
 
-	return fmt.Errorf("couldn't find expected change of %v "+
-		"satoshis sent to our static address", expectedChange)
+	return nil
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
