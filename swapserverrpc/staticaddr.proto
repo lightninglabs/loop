@@ -124,6 +124,15 @@ message ServerPsbtWithdrawRequest {
 
     // The map of deposit txid:idx to the nonce used by the client.
     map<string, bytes> deposit_to_nonces = 2;
+
+    // The map of deposit txid:idx to the client static address pubkey that
+    // was used to derive the deposit output. The server combines this key
+    // with the L402's server pubkey and expiry to validate each input.
+    map<string, bytes> deposit_to_client_pubkeys = 3;
+
+    // Optional change output metadata for withdrawals that return funds to a
+    // newly generated static address.
+    StaticAddressChangeOutput change_output = 4;
 }
 
 message ServerPsbtWithdrawResponse {
@@ -141,6 +150,17 @@ message ServerPsbtWithdrawSigningInfo {
 
     // The musig2 htlc sigs that the client generated for the withdrawal tx.
     bytes sig = 2;
+}
+
+message StaticAddressChangeOutput {
+    // The client static address pubkey used to derive the change output.
+    bytes client_pubkey = 1;
+
+    // The expected output script for the static address change output.
+    bytes pk_script = 2;
+
+    // The expected change amount in satoshis.
+    int64 amount = 3;
 }
 
 message ServerStaticAddressLoopInRequest {
@@ -196,6 +216,15 @@ message ServerStaticAddressLoopInRequest {
     // If set, request the server to use fast publication behavior for this
     // swap.
     bool fast = 10;
+
+    // The map of deposit txid:idx to the client static address pubkey that
+    // was used to derive the deposit output. The server combines this key
+    // with the L402's server pubkey and expiry to validate each input.
+    map<string, bytes> deposit_to_client_pubkeys = 11;
+
+    // Optional change output metadata for fractional loop-ins that return
+    // funds to a newly generated static address.
+    StaticAddressChangeOutput change_output = 12;
 }
 
 message ServerStaticAddressLoopInResponse {
