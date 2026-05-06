@@ -11,9 +11,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -22,18 +20,27 @@ import (
 )
 
 // ToPrevOuts converts a slice of deposits to a map of outpoints to TxOuts.
-func ToPrevOuts(deposits []*deposit.Deposit,
-	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
+//
+// Each deposit carries the static address parameters that produced its output.
+// Using the per-deposit script here keeps signing correct when one transaction
+// spends deposits from multiple static addresses.
+func ToPrevOuts(deposits []*deposit.Deposit) (
+	map[wire.OutPoint]*wire.TxOut, error) {
 
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
 	for _, d := range deposits {
+		if d.AddressParams == nil {
+			return nil, fmt.Errorf("missing static address "+
+				"parameters for deposit %v", d.OutPoint)
+		}
+
 		outpoint := wire.OutPoint{
 			Hash:  d.Hash,
 			Index: d.Index,
 		}
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
-			PkScript: pkScript,
+			PkScript: d.AddressParams.PkScript,
 		}
 		if _, ok := prevOuts[outpoint]; ok {
 			return nil, fmt.Errorf("duplicate outpoint %v",
@@ -47,9 +54,8 @@ func ToPrevOuts(deposits []*deposit.Deposit,
 
 // CreateMusig2Sessions creates a musig2 session for a number of deposits.
 func CreateMusig2Sessions(ctx context.Context,
-	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
-	staticAddress *script.StaticAddress) ([]*input.MuSig2SessionInfo,
+	signer lndclient.SignerClient, deposits []*deposit.Deposit) (
+	[]*input.MuSig2SessionInfo,
 	[][]byte, error) {
 
 	musig2Sessions := make([]*input.MuSig2SessionInfo, len(deposits))
@@ -58,7 +64,7 @@ func CreateMusig2Sessions(ctx context.Context,
 	// Create the sessions and nonces from the deposits.
 	for i := range len(deposits) {
 		session, err := CreateMusig2Session(
-			ctx, signer, addrParams, staticAddress,
+			ctx, signer, deposits[i],
 		)
 		if err != nil {
 			return nil, nil, err
@@ -72,11 +78,12 @@ func CreateMusig2Sessions(ctx context.Context,
 }
 
 // CreateMusig2SessionsPerDeposit creates a musig2 session for a number of
-// deposits.
+// deposits and returns the sessions keyed by outpoint string.
+//
+// The per-deposit keying mirrors the server response format and avoids relying
+// on positional ordering after the request crosses the wire.
 func CreateMusig2SessionsPerDeposit(ctx context.Context,
-	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
-	staticAddress *script.StaticAddress) (
+	signer lndclient.SignerClient, deposits []*deposit.Deposit) (
 	map[string]*input.MuSig2SessionInfo, map[string][]byte, map[string]int,
 	error) {
 
@@ -86,25 +93,44 @@ func CreateMusig2SessionsPerDeposit(ctx context.Context,
 
 	// Create the musig2 sessions for the sweepless sweep tx.
 	for i, deposit := range deposits {
+		depositKey := deposit.String()
+		if _, ok := sessions[depositKey]; ok {
+			return nil, nil, nil, fmt.Errorf("duplicate outpoint "+
+				"%v", depositKey)
+		}
+
 		session, err := CreateMusig2Session(
-			ctx, signer, addrParams, staticAddress,
+			ctx, signer, deposit,
 		)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		sessions[deposit.String()] = session
-		nonces[deposit.String()] = session.PublicNonce[:]
-		depositToIdx[deposit.String()] = i
+		sessions[depositKey] = session
+		nonces[depositKey] = session.PublicNonce[:]
+		depositToIdx[depositKey] = i
 	}
 
 	return sessions, nonces, depositToIdx, nil
 }
 
-// CreateMusig2Session creates a musig2 session for the deposit.
+// CreateMusig2Session creates a musig2 session for the deposit's static
+// address.
 func CreateMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient, addrParams *address.Parameters,
-	staticAddress *script.StaticAddress) (*input.MuSig2SessionInfo, error) {
+	signer lndclient.SignerClient, d *deposit.Deposit) (
+	*input.MuSig2SessionInfo, error) {
+
+	if d.AddressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", d.OutPoint)
+	}
+
+	staticAddress, err := d.GetStaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	addrParams := d.AddressParams
 
 	signers := [][]byte{
 		addrParams.ClientPubkey.SerializeCompressed(),

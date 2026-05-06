@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	looptest "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
@@ -37,7 +36,8 @@ func TestToPrevOuts_Success(t *testing.T) {
 			Hash:  mustHash(t, "0000000000000000000000000000000000000000000000000000000000000001"),
 			Index: 0,
 		},
-		Value: btcutil.Amount(12345),
+		Value:         btcutil.Amount(12345),
+		AddressParams: &address.Parameters{PkScript: []byte{0x51}},
 	}
 
 	d2 := &deposit.Deposit{
@@ -45,12 +45,11 @@ func TestToPrevOuts_Success(t *testing.T) {
 			Hash:  mustHash(t, "1111111111111111111111111111111111111111111111111111111111111111"),
 			Index: 7,
 		},
-		Value: btcutil.Amount(987654321),
+		Value:         btcutil.Amount(987654321),
+		AddressParams: &address.Parameters{PkScript: []byte{0x52}},
 	}
 
-	pkScript := []byte{0x51, 0x21, 0x02, 0x52} // arbitrary bytes
-
-	prevOuts, err := ToPrevOuts([]*deposit.Deposit{d1, d2}, pkScript)
+	prevOuts, err := ToPrevOuts([]*deposit.Deposit{d1, d2})
 	require.NoError(t, err)
 
 	// We expect two entries.
@@ -60,13 +59,13 @@ func TestToPrevOuts_Success(t *testing.T) {
 	txOut1, ok := prevOuts[d1.OutPoint]
 	require.True(t, ok, "expected outpoint d1 to be present")
 	require.EqualValues(t, int64(d1.Value), txOut1.Value)
-	require.Equal(t, pkScript, txOut1.PkScript)
+	require.Equal(t, d1.AddressParams.PkScript, txOut1.PkScript)
 
 	// Check the second outpoint mapping.
 	txOut2, ok := prevOuts[d2.OutPoint]
 	require.True(t, ok, "expected outpoint d2 to be present")
 	require.EqualValues(t, int64(d2.Value), txOut2.Value)
-	require.Equal(t, pkScript, txOut2.PkScript)
+	require.Equal(t, d2.AddressParams.PkScript, txOut2.PkScript)
 
 	// Ensure the keys in the map are exactly the outpoints we provided.
 	for op := range prevOuts {
@@ -81,11 +80,32 @@ func TestToPrevOuts_DuplicateOutpoint(t *testing.T) {
 		Index: 2,
 	}
 
-	d1 := &deposit.Deposit{OutPoint: shared, Value: btcutil.Amount(100)}
-	d2 := &deposit.Deposit{OutPoint: shared, Value: btcutil.Amount(200)}
+	d1 := &deposit.Deposit{
+		OutPoint:      shared,
+		Value:         btcutil.Amount(100),
+		AddressParams: &address.Parameters{PkScript: []byte{0x00}},
+	}
+	d2 := &deposit.Deposit{
+		OutPoint:      shared,
+		Value:         btcutil.Amount(200),
+		AddressParams: &address.Parameters{PkScript: []byte{0x01}},
+	}
 
-	_, err := ToPrevOuts([]*deposit.Deposit{d1, d2}, []byte{0x00})
+	_, err := ToPrevOuts([]*deposit.Deposit{d1, d2})
 	require.Error(t, err)
+}
+
+func TestToPrevOutsMissingAddressParams(t *testing.T) {
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "3333333333333333333333333333333333333333333333333333333333333333"),
+			Index: 3,
+		},
+		Value: btcutil.Amount(100),
+	}
+
+	_, err := ToPrevOuts([]*deposit.Deposit{d})
+	require.ErrorContains(t, err, "missing static address parameters")
 }
 
 func TestGetPrevoutInfo_ConversionAndSorting(t *testing.T) {
@@ -183,13 +203,8 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 		KeyLocator:   keychain.KeyLocator{Family: 1, Index: 2},
 	}
 
-	// Build a static address for tweak options.
-	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
-	)
-	require.NoError(t, err)
-
-	sess, err := CreateMusig2Session(context.Background(), signer, params, staticAddr)
+	d := &deposit.Deposit{AddressParams: params}
+	sess, err := CreateMusig2Session(context.Background(), signer, d)
 	require.NoError(t, err)
 	require.NotNil(t, sess)
 }
@@ -212,20 +227,15 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 		KeyLocator:   keychain.KeyLocator{Family: 9, Index: 8},
 	}
 
-	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
-	)
-	require.NoError(t, err)
-
 	// Prepare N deposits; only the length matters for session count.
 	deposits := []*deposit.Deposit{
-		{OutPoint: wire.OutPoint{Index: 0}},
-		{OutPoint: wire.OutPoint{Index: 1}},
-		{OutPoint: wire.OutPoint{Index: 2}},
+		{OutPoint: wire.OutPoint{Index: 0}, AddressParams: params},
+		{OutPoint: wire.OutPoint{Index: 1}, AddressParams: params},
+		{OutPoint: wire.OutPoint{Index: 2}, AddressParams: params},
 	}
 
 	sessions, nonces, err := CreateMusig2Sessions(
-		context.Background(), signer, deposits, params, staticAddr,
+		context.Background(), signer, deposits,
 	)
 	require.NoError(t, err)
 	require.Len(t, sessions, len(deposits))
