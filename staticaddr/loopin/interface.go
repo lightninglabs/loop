@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -41,6 +42,10 @@ type AddressManager interface {
 	// GetStaticAddress returns the deposit address for the given client and
 	// server public keys.
 	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+
+	// NewChangeAddress derives and persists a fresh static address from the
+	// change key family for this operation's change output.
+	NewChangeAddress(ctx context.Context) (*address.Parameters, error)
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.
