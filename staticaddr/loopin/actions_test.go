@@ -465,6 +465,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	t.Parallel()
 
 	mockLnd := test.NewMockLnd()
+	_, clientPubkey := test.CreateKey(20)
 	_, serverKey := test.CreateKey(21)
 
 	server := &mockStaticAddressServer{
@@ -479,6 +480,9 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 			Index: 0,
 		},
 		Value: 500_000,
+		AddressParams: &address.Parameters{
+			ClientPubkey: clientPubkey,
+		},
 	}
 
 	loopIn := &StaticAddressLoopIn{
@@ -514,6 +518,10 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.NotNil(t, server.request)
 	require.EqualValues(
 		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
+	)
+	require.Equal(
+		t, clientPubkey.SerializeCompressed(),
+		server.request.DepositToClientPubkeys[dep.String()],
 	)
 
 	_, routeHints, _, _, err := swap.DecodeInvoice(
@@ -2231,10 +2239,15 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 
 	loopIn := &StaticAddressLoopIn{
 		Deposits: []*deposit.Deposit{{
 			Value: 200_000,
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+			},
 		}},
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -2281,12 +2294,17 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	loopIn := &StaticAddressLoopIn{
 		Deposits: []*deposit.Deposit{{
 			Value: 200_000,
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+			},
 		}},
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
