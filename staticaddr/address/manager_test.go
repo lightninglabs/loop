@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -157,6 +158,38 @@ func TestManager(t *testing.T) {
 		t, swap.StaticMultiAddressKeyFamily,
 		addresses[1].KeyLocator.Family,
 	)
+}
+
+// TestEnsureStaticAddressSeedDoesNotCreateReceiveAddress verifies that startup
+// initialization can create the generation seed without also issuing the first
+// multi-address receive child.
+func TestEnsureStaticAddressSeedDoesNotCreateReceiveAddress(t *testing.T) {
+	ctxb := t.Context()
+
+	testContext := NewAddressManagerTestContext(t)
+
+	seed, err := testContext.manager.EnsureStaticAddressSeed(ctxb)
+	require.NoError(t, err)
+	require.EqualValues(t, swap.StaticAddressKeyFamily, seed.KeyLocator.Family)
+
+	addresses, err := testContext.manager.GetAllAddresses(ctxb)
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	require.EqualValues(
+		t, swap.StaticAddressKeyFamily,
+		addresses[0].KeyLocator.Family,
+	)
+
+	params, err := testContext.manager.NewReceiveAddress(ctxb)
+	require.NoError(t, err)
+	require.EqualValues(
+		t, swap.StaticMultiAddressKeyFamily,
+		params.KeyLocator.Family,
+	)
+
+	addresses, err = testContext.manager.GetAllAddresses(ctxb)
+	require.NoError(t, err)
+	require.Len(t, addresses, 2)
 }
 
 // TestRestoreAddress verifies that restoring an address recreates the same
@@ -410,6 +443,69 @@ func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
 	_, expiry, err := testContext.manager.NewAddress(t.Context())
 	require.NoError(t, err)
 	require.EqualValues(t, maxStaticAddressCSVExpiry, expiry)
+}
+
+// TestRestoreDerivedAddressAcceptsDifferentInitiationHeight verifies that
+// receive/change multi-address restores are idempotent even though the backup
+// stores only the branch scan floor and not each child's original initiation
+// height.
+func TestRestoreDerivedAddressAcceptsDifferentInitiationHeight(t *testing.T) {
+	ctxb := t.Context()
+
+	for _, family := range []int32{
+		swap.StaticMultiAddressKeyFamily,
+		swap.StaticAddressChangeKeyFamily,
+	} {
+		t.Run(fmt.Sprintf("family-%d", family), func(t *testing.T) {
+			testContext := NewAddressManagerTestContext(t)
+
+			keyDesc, err := testContext.mockLnd.WalletKit.DeriveKey(
+				ctxb, &keychain.KeyLocator{
+					Family: keychain.KeyFamily(family),
+					Index:  4,
+				},
+			)
+			require.NoError(t, err)
+
+			staticAddress, err := script.NewStaticAddress(
+				input.MuSig2Version100RC2, int64(defaultExpiry),
+				keyDesc.PubKey, defaultServerPubkey,
+			)
+			require.NoError(t, err)
+
+			pkScript, err := staticAddress.StaticAddressScript()
+			require.NoError(t, err)
+
+			addressParams := &Parameters{
+				ClientPubkey:     keyDesc.PubKey,
+				ServerPubkey:     defaultServerPubkey,
+				Expiry:           defaultExpiry,
+				PkScript:         pkScript,
+				KeyLocator:       keyDesc.KeyLocator,
+				ProtocolVersion:  0,
+				InitiationHeight: 123,
+			}
+
+			_, restored, err := testContext.manager.RestoreAddress(
+				ctxb, addressParams,
+			)
+			require.NoError(t, err)
+			require.True(t, restored)
+
+			differentHeight := *addressParams
+			differentHeight.InitiationHeight = 456
+
+			_, restored, err = testContext.manager.RestoreAddress(
+				ctxb, &differentHeight,
+			)
+			require.NoError(t, err)
+			require.False(t, restored)
+			require.Equal(
+				t, addressParams.InitiationHeight,
+				differentHeight.InitiationHeight,
+			)
+		})
+	}
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that

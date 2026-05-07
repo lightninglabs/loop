@@ -17,6 +17,8 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -27,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/macaroon.v2"
@@ -840,6 +843,109 @@ func TestRestoreStaticAddressAndPaidToken(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, expectedAddr.String(), result.StaticAddress)
+}
+
+// TestRestoreStaticAddressDiscoversMultiAddressDeposits verifies that restore
+// scans receive and change branches with a rolling gap. Hits separated by one
+// less than the gap must all be recovered, while restore stops after a full
+// trailing gap.
+func TestRestoreStaticAddressDiscoversMultiAddressDeposits(t *testing.T) {
+	ctx := context.Background()
+	lnd := testutils.NewMockLnd()
+	backupDir := t.TempDir()
+	restoreDir := t.TempDir()
+
+	addrParams := makeStaticAddressParams(
+		t, lnd, 7, defaultRecoveryServerPubkey, 144, 321,
+	)
+	sourceStaticMgr := &mockStaticAddressManager{
+		chainParams:   lnd.ChainParams,
+		params:        addrParams,
+		currentHeight: 654,
+	}
+	sourceSvc := NewService(
+		backupDir, "testnet", lnd.Signer, lnd.WalletKit,
+		sourceStaticMgr, nil,
+	)
+
+	writePaidToken(
+		t, backupDir, 1,
+		time.Date(2026, time.April, 14, 9, 30, 1, 0, time.UTC),
+	)
+	backupFile, err := sourceSvc.WriteBackup(ctx)
+	require.NoError(t, err)
+
+	gap := uint32(DefaultMultiAddressScanGap)
+	require.Greater(t, gap, uint32(1))
+
+	receiveIndexes := []uint32{gap - 1, 2*gap - 1, 3*gap - 1}
+	changeIndexes := []uint32{gap - 1}
+	restoreWallet := &multiAddressRecoveryWalletKit{}
+
+	var utxos []*lnwallet.Utxo
+	for _, index := range receiveIndexes {
+		utxos = append(utxos, multiAddressUtxo(
+			t, restoreWallet, swap.StaticMultiAddressKeyFamily, index,
+			addrParams, len(utxos),
+		))
+	}
+	for _, index := range changeIndexes {
+		utxos = append(utxos, multiAddressUtxo(
+			t, restoreWallet, swap.StaticAddressChangeKeyFamily, index,
+			addrParams, len(utxos),
+		))
+	}
+
+	// This output is beyond a full unused gap after the last receive hit, so
+	// it documents the stopping condition and must not be restored.
+	unreachableReceiveIndex := 4 * gap
+	utxos = append(utxos, multiAddressUtxo(
+		t, restoreWallet, swap.StaticMultiAddressKeyFamily,
+		unreachableReceiveIndex, addrParams, len(utxos),
+	))
+	restoreWallet.utxos = utxos
+
+	destStaticMgr := &mockStaticAddressManager{
+		chainParams: lnd.ChainParams,
+	}
+	destSvc := NewService(
+		restoreDir, "testnet", lnd.Signer, restoreWallet,
+		destStaticMgr, nil,
+	)
+
+	result, err := destSvc.Restore(ctx, backupFile)
+	require.NoError(t, err)
+	require.True(t, result.RestoredStaticAddress)
+	require.Equal(t, 1, restoreWallet.listUnspentCalls)
+
+	restoredLocators := make(map[keychain.KeyLocator]struct{})
+	for _, params := range destStaticMgr.restoreCalls {
+		restoredLocators[params.KeyLocator] = struct{}{}
+	}
+
+	require.Contains(t, restoredLocators, addrParams.KeyLocator)
+	for _, index := range receiveIndexes {
+		require.Contains(t, restoredLocators, keychain.KeyLocator{
+			Family: keychain.KeyFamily(
+				swap.StaticMultiAddressKeyFamily,
+			),
+			Index: index,
+		})
+	}
+	for _, index := range changeIndexes {
+		require.Contains(t, restoredLocators, keychain.KeyLocator{
+			Family: keychain.KeyFamily(
+				swap.StaticAddressChangeKeyFamily,
+			),
+			Index: index,
+		})
+	}
+	require.NotContains(t, restoredLocators, keychain.KeyLocator{
+		Family: keychain.KeyFamily(swap.StaticMultiAddressKeyFamily),
+		Index:  unreachableReceiveIndex,
+	})
+	require.Len(t, destStaticMgr.restoreCalls, 1+len(receiveIndexes)+
+		len(changeIndexes))
 }
 
 // TestRestoreReturnsDepositReconciliationError verifies that restore succeeds
@@ -2082,6 +2188,99 @@ type mockDepositManager struct {
 func (m *mockDepositManager) ReconcileDeposits(context.Context) (int, error) {
 	m.calls++
 	return m.depositsFound, m.err
+}
+
+type multiAddressRecoveryWalletKit struct {
+	lndclient.WalletKitClient
+
+	utxos            []*lnwallet.Utxo
+	listUnspentCalls int
+}
+
+func (w *multiAddressRecoveryWalletKit) ListUnspent(context.Context, int32,
+	int32, ...lndclient.ListUnspentOption) ([]*lnwallet.Utxo, error) {
+
+	w.listUnspentCalls++
+
+	return w.utxos, nil
+}
+
+func (w *multiAddressRecoveryWalletKit) DeriveKey(_ context.Context,
+	locator *keychain.KeyLocator) (*keychain.KeyDescriptor, error) {
+
+	if locator == nil {
+		return nil, fmt.Errorf("missing key locator")
+	}
+
+	seed := int32(locator.Index)
+	switch int32(locator.Family) {
+	case swap.StaticAddressKeyFamily:
+		_, pubKey := testutils.CreateKey(seed)
+
+		return &keychain.KeyDescriptor{
+			KeyLocator: *locator,
+			PubKey:     pubKey,
+		}, nil
+
+	case swap.StaticMultiAddressKeyFamily:
+		seed += 10_000
+
+	case swap.StaticAddressChangeKeyFamily:
+		seed += 20_000
+
+	default:
+		seed += int32(locator.Family) * 10_000
+	}
+
+	_, pubKey := deterministicTestKey(seed)
+
+	return &keychain.KeyDescriptor{
+		KeyLocator: *locator,
+		PubKey:     pubKey,
+	}, nil
+}
+
+func deterministicTestKey(seed int32) (*btcec.PrivateKey, *btcec.PublicKey) {
+	var key [32]byte
+	binary.BigEndian.PutUint32(key[28:], uint32(seed)+1)
+
+	return btcec.PrivKeyFromBytes(key[:])
+}
+
+func multiAddressUtxo(t *testing.T, walletKit lndclient.WalletKitClient,
+	keyFamily int32, keyIndex uint32, addrParams *address.Parameters,
+	utxoIndex int) *lnwallet.Utxo {
+
+	t.Helper()
+
+	keyDesc, err := walletKit.DeriveKey(
+		context.Background(), &keychain.KeyLocator{
+			Family: keychain.KeyFamily(keyFamily),
+			Index:  keyIndex,
+		},
+	)
+	require.NoError(t, err)
+
+	staticAddress, err := staticaddrscript.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(addrParams.Expiry),
+		keyDesc.PubKey, addrParams.ServerPubkey,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	var hash chainhash.Hash
+	hash[0] = byte(utxoIndex + 1)
+
+	return &lnwallet.Utxo{
+		OutPoint: wire.OutPoint{
+			Hash:  hash,
+			Index: uint32(utxoIndex),
+		},
+		Value:    btcutil.Amount(1000 + utxoIndex),
+		PkScript: pkScript,
+	}
 }
 
 func makeStaticAddressParams(t *testing.T, lnd *testutils.LndMockServices,

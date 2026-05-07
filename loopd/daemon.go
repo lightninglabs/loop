@@ -726,7 +726,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		infof("Restored fresh install from encrypted recovery "+
 			"backup %s", restoreResult.BackupFile)
 	} else {
-		_, _, err = staticAddressManager.NewAddress(d.mainCtx)
+		_, err = staticAddressManager.EnsureStaticAddressSeed(
+			d.mainCtx,
+		)
 		if err != nil {
 			warnf("Unable to initialize static address generation "+
 				"during startup: %v", err)

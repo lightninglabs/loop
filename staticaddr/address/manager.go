@@ -264,12 +264,12 @@ func (m *Manager) EnsureStaticAddressSeed(ctx context.Context) (*Parameters,
 	}
 
 	if resp == nil {
-		return nil, 0, fmt.Errorf("missing server new address response")
+		return nil, fmt.Errorf("missing server new address response")
 	}
 
 	serverParams := resp.GetParams()
 	if err := validateServerAddressParams(serverParams); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	serverPubKey, err := btcec.ParsePubKey(serverParams.GetServerKey())
@@ -444,9 +444,6 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 	}
 
 	addrParams.PkScript = pkScript
-	if addrParams.InitiationHeight <= 0 {
-		addrParams.InitiationHeight = m.currentHeight.Load()
-	}
 
 	m.Lock()
 	existing, err := m.cfg.Store.GetAllStaticAddresses(ctx)
@@ -466,6 +463,9 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 
 		matched = existingAddr
 		break
+	}
+	if matched == nil && addrParams.InitiationHeight <= 0 {
+		addrParams.InitiationHeight = m.currentHeight.Load()
 	}
 
 	switch {
@@ -500,6 +500,12 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 		changed = true
 
 	case !sameAddressParameters(matched, addrParams):
+		if sameDerivedAddressParameters(matched, addrParams) {
+			addrParams.ID = matched.ID
+			addrParams.InitiationHeight = matched.InitiationHeight
+			break
+		}
+
 		m.Unlock()
 
 		return nil, false, fmt.Errorf("existing static address differs from " +
@@ -507,6 +513,10 @@ func (m *Manager) RestoreAddress(ctx context.Context,
 
 	default:
 		addrParams.ID = matched.ID
+	}
+
+	if addrParams.InitiationHeight <= 0 {
+		addrParams.InitiationHeight = m.currentHeight.Load()
 	}
 	m.Unlock()
 
@@ -574,6 +584,32 @@ func sameAddressParameters(a, b *Parameters) bool {
 		a.KeyLocator == b.KeyLocator &&
 		a.ProtocolVersion == b.ProtocolVersion &&
 		a.InitiationHeight == b.InitiationHeight
+}
+
+// sameDerivedAddressParameters compares persisted and recovered multi-address
+// receive/change rows while ignoring initiation height. Recovery only stores a
+// branch scan floor for these rows, not each child's exact issuance height.
+func sameDerivedAddressParameters(a, b *Parameters) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if !isMultiAddressFamily(b.KeyLocator.Family) {
+		return false
+	}
+
+	return a.ClientPubkey.IsEqual(b.ClientPubkey) &&
+		a.ServerPubkey.IsEqual(b.ServerPubkey) &&
+		a.Expiry == b.Expiry &&
+		bytes.Equal(a.PkScript, b.PkScript) &&
+		a.KeyLocator == b.KeyLocator &&
+		a.ProtocolVersion == b.ProtocolVersion
+}
+
+// isMultiAddressFamily returns true for static-address receive/change branches
+// that are derived locally from the L402-bound static-address seed.
+func isMultiAddressFamily(family keychain.KeyFamily) bool {
+	return int32(family) == swap.StaticMultiAddressKeyFamily ||
+		int32(family) == swap.StaticAddressChangeKeyFamily
 }
 
 func staticAddressFromParams(params *Parameters) (*script.StaticAddress,

@@ -70,8 +70,8 @@ matching wallet child and recreate the one concrete static-address row.
 Current V0 backups initialize `legacy_first_height` from the legacy concrete
 static-address initiation height and `multi_address_first_height` from the
 current block height when the backup is written. They are separate fields so
-the future multi-address scan floor is independent from the legacy concrete
-address import hint.
+the multi-address scan floor is independent of the legacy concrete address
+import hint.
 
 The Taproot address string, `pkScript`, and scan lookahead/gap limit are not
 backed up. The address and `pkScript` can be derived from the stored key and
@@ -88,15 +88,16 @@ are not replayed from the backup.
 
 ## Why Root And Legacy Fields Are Both Stored
 
-The server pubkey, protocol version, expiry, planned multi-address
-receive/change key families, Bitcoin network, and multi-address first height
-define the stable fields future restore code will combine with lnd-derived
-client keys and a chain scan. They are not used by the current V0 restore path.
+The server pubkey, protocol version, expiry, multi-address receive/change key
+families, Bitcoin network, and multi-address first height are stable for the
+L402 generation. Multi-address restore combines those fields with lnd-derived
+client keys and matches the resulting scripts against wallet-visible UTXOs.
 
-The current V0 restore path recreates the existing concrete address row
-directly, so the backup also stores that row's client pubkey, legacy client key
-family, and legacy first height. Those fields let restore find the matching
-local wallet child and import the concrete address from the right chain height.
+The legacy concrete address predates the receive/change branches and is restored
+as one explicit row. The backup therefore also stores that row's client pubkey,
+legacy client key family, and legacy first height, which let restore find the
+matching local wallet child and import the concrete address from the right
+height.
 
 ## Encryption Model
 
@@ -196,9 +197,11 @@ Restore performs the following steps:
    existing file has identical contents
 7. import the tapscript into lnd and create or reuse the local concrete
    static-address record
-8. if static-address restore fails after token files were written, remove only
+8. scan the multi-address receive/change branches against wallet-visible UTXOs
+   and recreate matching concrete address rows
+9. if an address restore phase fails after token files were written, remove only
    the token files written by this restore attempt
-9. trigger best-effort deposit reconciliation
+10. trigger best-effort deposit reconciliation
 
 Client-key reconstruction uses the following strategy:
 
@@ -206,12 +209,13 @@ Client-key reconstruction uses the following strategy:
   family using `DeriveKey`
 - accept the child whose derived pubkey matches the backed-up client pubkey
 
-The multi-address scan-and-rebuild flow is not active yet. The immutable backup
-already contains the address-space metadata that flow will need.
+Multi-address scanning uses the immutable address-space fields in the backup to
+derive receive/change candidates without requiring a backed-up last-issued child
+index.
 
-## Future Multi-Address Generation
+## Multi-Address Generation
 
-The planned multi-address model uses two dedicated client-side key families:
+The multi-address model uses two dedicated client-side key families:
 
 - `swap.StaticMultiAddressKeyFamily` for externally visible static-address
   deposits
@@ -221,8 +225,8 @@ The planned multi-address model uses two dedicated client-side key families:
 The legacy `swap.StaticAddressKeyFamily` remains the V0 concrete static-address
 family and the static-address HTLC key family.
 
-The future `static_addresses` table remains a table of concrete derived
-addresses. Each row represents one address child and stores:
+The `static_addresses` table remains a table of concrete derived addresses.
+Each row represents one address child and stores:
 
 - the client pubkey
 - the server pubkey
@@ -235,7 +239,7 @@ addresses. Each row represents one address child and stores:
 The immutable backup does not store every row. Instead it stores the
 address-space metadata that allows those rows to be rediscovered by scanning.
 
-For each future receive or change address:
+For each receive or change address:
 
 1. the client chooses the appropriate key family
 2. the client derives the next pubkey from lnd for that family
@@ -248,12 +252,19 @@ For each future receive or change address:
 The client key used in the MuSig2 aggregate key should also be the client's key
 in the timeout path for that concrete multi-address output.
 
-Because the backup is immutable, future restore must regenerate candidate
-receive and change children from the backed-up key families and the restored
-lnd key material, rescan from the backed-up multi-address first height, and
-rebuild local table rows from what is found on chain. The lookahead/gap limit
-used during that scan is a restore parameter, not immutable backup data. Restore
-must not depend on a mutable "last issued child index" snapshot.
+Because the backup is immutable, restore regenerates candidate receive and
+change children from the backed-up branch fields and matches their scripts
+against lnd's wallet-visible UTXOs. The scan uses a rolling gap limit: each
+matched child resets the unused counter, and restore stops only after a full
+gap of consecutive unused children. The default gap is restore policy, not
+immutable backup data, so restore does not depend on a mutable "last issued
+child index" snapshot.
+
+The multi-address branch scan takes one unfiltered `ListUnspent` snapshot from
+lnd and matches all derived candidates against that in-memory script set.
+Deposit reconciliation runs after matching and performs its own `ListUnspent`
+pass through the address manager so it can use the newly active address rows and
+confirmation metadata.
 
 ## Server Proof For Multi-Address Inputs
 
@@ -286,18 +297,19 @@ and chain-scan problem.
 
 ## Operational Limits
 
-Restore in this implementation recreates the V0 one-address model only.
+Restore in this implementation rebuilds current wallet-visible static-address
+state, not the full historical database.
 
 Some practical consequences follow from that:
 
 - restoring an older immutable backup is best done into a fresh Loop data
-  directory, or into a directory that already contains the same token and
-  static-address row
-- only one concrete static address can be recreated directly by this restore
-  code
-- conflicting local `l402.token` contents or a different existing
-  static-address row cause restore to fail rather than overwrite local state
-- active deposits are rebuilt best-effort from wallet reconciliation, not by
+  directory
+- the legacy concrete static address is restored directly
+- multi-address receive/change rows are recreated for wallet-visible unspent
+  outputs discovered by the rolling branch scan
+- conflicting local `l402.token` contents or different existing address rows
+  cause restore to fail rather than overwrite local state
+- historical deposit state is rebuilt best-effort from reconciliation, not by
   replaying every stored deposit transition
 
 ## Why The Backup Is Immutable
@@ -324,7 +336,8 @@ This package owns:
 - immutable backup-file discovery and selection
 - paid L402 token-file backup and restore
 - V0 static-address key re-derivation and restore orchestration
-- static-address metadata fields for future multi-address restore
+- static-address root fields for multi-address restore
+- multi-address branch scanning against wallet-visible UTXOs
 - post-restore deposit reconciliation orchestration
 
 This package does not own:
@@ -332,5 +345,4 @@ This package does not own:
 - CLI command handling
 - gRPC transport
 - the static-address server protocol
-- the future multi-address scanning implementation
 - `loopd` startup wiring
