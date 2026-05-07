@@ -18,8 +18,10 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	staticaddrscript "github.com/lightninglabs/loop/staticaddr/script"
 	staticaddrversion "github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -42,6 +44,11 @@ const (
 
 	pendingTokenFileName = "l402.token.pending"
 )
+
+// DefaultMultiAddressScanGap is the default number of consecutive unused
+// multi-address children to scan before restore stops. It is intentionally a
+// package-level default so it can be wired to configuration later.
+var DefaultMultiAddressScanGap = 20
 
 // backupKeyLocator identifies the lnd key used only for deriving the local
 // backup encryption key. The encrypted backup stays tied to the same lnd seed
@@ -118,6 +125,7 @@ type Service struct {
 	walletKit            lndclient.WalletKitClient
 	staticAddressManager StaticAddressManager
 	depositManager       DepositManager
+	multiAddressScanGap  int
 }
 
 type backupPayload struct {
@@ -184,6 +192,7 @@ func NewService(dataDir, network string, signer lndclient.SignerClient,
 		walletKit:            walletKit,
 		staticAddressManager: staticAddressManager,
 		depositManager:       depositManager,
+		multiAddressScanGap:  DefaultMultiAddressScanGap,
 	}
 }
 
@@ -370,6 +379,26 @@ func (s *Service) Restore(ctx context.Context, backupFile string) (
 
 		result.StaticAddress = addr
 		result.RestoredStaticAddress = restored
+
+		restored, err = s.restoreMultiAddressBranches(
+			ctx, payload.StaticAddress, restoreParams.ServerPubkey,
+		)
+		if err != nil {
+			rollbackErr := cleanupRestoredTokenFiles(
+				tokenRestore.writtenPaths,
+			)
+			if rollbackErr != nil {
+				return nil, fmt.Errorf("unable to restore multi-"+
+					"address static addresses: %w (also failed "+
+					"to roll back restored token files: %v)",
+					err, rollbackErr)
+			}
+
+			return nil, err
+		}
+
+		result.RestoredStaticAddress = result.RestoredStaticAddress ||
+			restored
 	}
 
 	if payload.StaticAddress != nil && s.depositManager != nil {
@@ -861,18 +890,21 @@ func (s *Service) prepareStaticAddressRestore(ctx context.Context,
 		return nil, err
 	}
 
-	// PkScript is intentionally omitted here. RestoreAddress derives it again
-	// from the reconstructed script and rejects mismatches when one is supplied.
-	return &address.Parameters{
-		ClientPubkey: clientPubKey,
-		ServerPubkey: serverPubKey,
-		Expiry:       backup.Expiry,
-		KeyLocator:   locator,
-		ProtocolVersion: staticaddrversion.AddressProtocolVersion(
-			backup.ProtocolVersion,
-		),
-		InitiationHeight: backup.LegacyFirstHeight,
-	}, nil
+	// Build the full concrete row, including pkScript, through the same helper
+	// used by multi-address recovery so both paths reconstruct scripts in one
+	// place. RestoreAddress still derives and verifies the script before it
+	// writes or imports anything.
+	params, err := newRecoveredStaticAddress(
+		backup, serverPubKey, &keychain.KeyDescriptor{
+			KeyLocator: locator,
+			PubKey:     clientPubKey,
+		}, backup.LegacyFirstHeight,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return params, nil
 }
 
 func (s *Service) restoreTokenFiles(
@@ -1056,6 +1088,193 @@ func (s *Service) restorePreparedStaticAddress(ctx context.Context,
 	}
 
 	return addr.String(), restored, nil
+}
+
+// restoreMultiAddressBranches scans all backed-up multi-address key families
+// against a single cached ListUnspent view. The scan is branch-local and uses a
+// rolling gap: every matched child resets the unused-child counter, so sparse
+// deposits remain recoverable as long as the distance between hits is below the
+// configured scan gap.
+func (s *Service) restoreMultiAddressBranches(ctx context.Context,
+	backup *staticAddressBackup, serverPubKey *btcec.PublicKey) (bool, error) {
+
+	if backup == nil {
+		return false, nil
+	}
+	if serverPubKey == nil {
+		return false, fmt.Errorf("missing static address server pubkey")
+	}
+	if s.multiAddressScanGap <= 0 {
+		return false, fmt.Errorf("invalid multi-address scan gap %d",
+			s.multiAddressScanGap)
+	}
+
+	families := multiAddressFamilies(backup)
+	if len(families) == 0 {
+		return false, nil
+	}
+
+	walletScripts, err := s.walletUnspentScriptSet(ctx)
+	if err != nil {
+		return false, err
+	}
+	if len(walletScripts) == 0 {
+		return false, nil
+	}
+
+	var restored bool
+	for _, family := range families {
+		branchRestored, err := s.restoreMultiAddressBranch(
+			ctx, backup, serverPubKey, family, walletScripts,
+		)
+		if err != nil {
+			return false, err
+		}
+
+		restored = restored || branchRestored
+	}
+
+	return restored, nil
+}
+
+// multiAddressFamilies returns the non-zero multi-address branch families from
+// the backup while preserving their order and suppressing duplicates.
+func multiAddressFamilies(backup *staticAddressBackup) []int32 {
+	var families []int32
+	seen := make(map[int32]struct{}, 2)
+	for _, family := range []int32{
+		backup.MainKeyFamily,
+		backup.ChangeKeyFamily,
+	} {
+		if family == 0 {
+			continue
+		}
+		if _, ok := seen[family]; ok {
+			continue
+		}
+
+		seen[family] = struct{}{}
+		families = append(families, family)
+	}
+
+	return families
+}
+
+// walletUnspentScriptSet returns the pkScripts currently visible in lnd's
+// wallet. This is intentionally called once per restore before branch scanning;
+// scanning then derives candidates in memory and checks them against this set.
+// Deposit reconciliation runs afterwards and performs its own ListUnspent pass
+// because it needs the active address-manager view and confirmation metadata.
+func (s *Service) walletUnspentScriptSet(ctx context.Context) (
+	map[string]struct{}, error) {
+
+	// List all wallet-visible UTXOs. This follows the legacy recovery model:
+	// recovery reconstructs scripts and matches them against lnd's current
+	// wallet view.
+	utxos, err := s.walletKit.ListUnspent(ctx, 0, 0)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list unspent outputs for "+
+			"multi-address recovery: %w", err)
+	}
+
+	scripts := make(map[string]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		scripts[string(utxo.PkScript)] = struct{}{}
+	}
+
+	return scripts, nil
+}
+
+// restoreMultiAddressBranch derives concrete children for one key family until
+// it observes multiAddressScanGap consecutive misses. Each hit is restored
+// through the address manager so the concrete row is persisted and imported
+// before deposit reconciliation discovers matching UTXOs.
+func (s *Service) restoreMultiAddressBranch(ctx context.Context,
+	backup *staticAddressBackup, serverPubKey *btcec.PublicKey,
+	keyFamily int32, walletScripts map[string]struct{}) (bool, error) {
+
+	var restored bool
+	unused := 0
+	for idx := uint32(0); unused < s.multiAddressScanGap; idx++ {
+		params, err := s.deriveMultiAddress(
+			ctx, backup, serverPubKey, keyFamily, idx,
+		)
+		if err != nil {
+			return false, err
+		}
+
+		if _, ok := walletScripts[string(params.PkScript)]; !ok {
+			unused++
+			continue
+		}
+
+		_, changed, err := s.staticAddressManager.RestoreAddress(
+			ctx, params,
+		)
+		if err != nil {
+			return false, err
+		}
+
+		restored = restored || changed
+		unused = 0
+	}
+
+	return restored, nil
+}
+
+// deriveMultiAddress reconstructs one concrete receive/change child from the
+// backed-up generation root and a child locator.
+func (s *Service) deriveMultiAddress(ctx context.Context,
+	backup *staticAddressBackup, serverPubKey *btcec.PublicKey,
+	keyFamily int32, keyIndex uint32) (*address.Parameters, error) {
+
+	locator := keychain.KeyLocator{
+		Family: keychain.KeyFamily(keyFamily),
+		Index:  keyIndex,
+	}
+
+	clientKey, err := s.walletKit.DeriveKey(ctx, &locator)
+	if err != nil {
+		return nil, fmt.Errorf("unable to derive multi-address child "+
+			"%d:%d: %w", keyFamily, keyIndex, err)
+	}
+
+	return newRecoveredStaticAddress(
+		backup, serverPubKey, clientKey, backup.MultiAddressFirstHeight,
+	)
+}
+
+// newRecoveredStaticAddress builds the concrete static-address parameters and
+// pkScript for a recovered child key. Legacy recovery uses the same helper as
+// multi-address scanning so both paths reconstruct scripts identically.
+func newRecoveredStaticAddress(backup *staticAddressBackup,
+	serverPubKey *btcec.PublicKey, clientKey *keychain.KeyDescriptor,
+	initiationHeight int32) (*address.Parameters, error) {
+
+	staticAddress, err := staticaddrscript.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(backup.Expiry),
+		clientKey.PubKey, serverPubKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	return &address.Parameters{
+		ClientPubkey: clientKey.PubKey,
+		ServerPubkey: serverPubKey,
+		Expiry:       backup.Expiry,
+		PkScript:     pkScript,
+		KeyLocator:   clientKey.KeyLocator,
+		ProtocolVersion: staticaddrversion.AddressProtocolVersion(
+			backup.ProtocolVersion,
+		),
+		InitiationHeight: initiationHeight,
+	}, nil
 }
 
 func cleanupRestoredTokenFiles(paths []string) error {
