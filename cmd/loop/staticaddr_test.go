@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -12,7 +14,60 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
+	"google.golang.org/grpc"
 )
+
+type staticAddressSummaryErrorClient struct {
+	looprpc.SwapClientClient
+
+	err error
+}
+
+func (c *staticAddressSummaryErrorClient) GetStaticAddressSummary(
+	context.Context, *looprpc.StaticAddressSummaryRequest,
+	...grpc.CallOption) (*looprpc.StaticAddressSummaryResponse, error) {
+
+	return nil, c.err
+}
+
+func TestMaybeDisplayNewAddressWarningReturnsUnexpectedError(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("permission denied")
+	err := maybeDisplayNewAddressWarning(
+		context.Background(), &staticAddressSummaryErrorClient{
+			err: expectedErr,
+		},
+	)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestStaticAddressDepositRequestAllowsNoUtxos(t *testing.T) {
+	t.Parallel()
+
+	var req *looprpc.NewStaticAddressRequest
+	cmd := &cli.Command{
+		Name:  "deposit",
+		Flags: depositStaticAddressCommand.Flags,
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			var err error
+			req, err = staticAddressDepositRequest(
+				cmd, "bcrt1ptestaddress",
+			)
+
+			return err
+		},
+	}
+
+	err := cmd.Run(context.Background(), []string{
+		"deposit", "--amt", "1000000",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "bcrt1ptestaddress", req.GetSendCoinsRequest().Addr)
+	require.EqualValues(t, 1_000_000, req.GetSendCoinsRequest().Amount)
+	require.Empty(t, req.GetSendCoinsRequest().Outpoints)
+}
 
 // TestLowConfDepositWarningConfirmedOnly verifies confirmed deposits below the
 // conservative warning threshold are included in the warning text.
