@@ -63,7 +63,8 @@
         "event": "request",
         "message_type": "looprpc.NewStaticAddressRequest",
         "payload": {
-          "client_key": ""
+          "client_key": "",
+          "send_coins_request": null
         }
       }
     },
@@ -87,7 +88,8 @@
         "lines": [
           "{\n",
           "    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
-          "    \"expiry\": 14400\n",
+          "    \"expiry\": 14400,\n",
+          "    \"send_coins_response\": null\n",
           "}\n"
         ]
       }

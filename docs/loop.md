@@ -549,9 +549,9 @@ The following flags are supported:
 
 ### `static new` subcommand (aliases: `n`)
 
-Return the static loop in address.
+Create a new static loop in address.
 
-Returns the current static loop in address. On a fresh installation loopd 	initializes the current static-address generation during startup. If the 	address is still missing, this call will create it on demand. Funds sent 	to the address will be locked by a 2:2 multisig between us and the loop 	server, or a timeout path that we can sweep once it opens up. The funds 	can either be cooperatively spent with a signature from the server or 	looped in.
+Creates a new static loop in address. On a fresh installation loopd 	initializes the static-address generation during startup. Funds sent to the 	address will be locked by a 2:2 multisig between us and the loop server, or 	a timeout path that we can sweep once it opens up. The funds can either be 	cooperatively spent with a signature from the server or looped in.
 
 Usage:
 
@@ -564,6 +564,33 @@ The following flags are supported:
 | Name            | Description | Type | Default value |
 |-----------------|-------------|------|:-------------:|
 | `--help` (`-h`) | show help   | bool |    `false`    |
+
+### `static deposit` subcommand
+
+Create and fund a new static loop in address.
+
+Creates a new static loop in address and initiates a deposit by calling 	lnd's SendCoins API with the newly created address as the destination.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static deposit [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name                            | Description                                                                                                                                                                                                                                                                                                              | Type   |  Default value  |
+|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|:---------------:|
+| `--amt="…"`                     | the number of bitcoin denominated in satoshis to send to the new static address                                                                                                                                                                                                                                          | int    |       `0`       |
+| `--sweepall`                    | if set, then the amount field should be unset. This indicates that the wallet will attempt to sweep all outputs within the wallet or all funds in selected utxos (when supplied) to the new static address                                                                                                               | bool   |     `false`     |
+| `--conf_target="…"`             | (optional) the number of blocks that the funding transaction should confirm in, will be used for fee estimation                                                                                                                                                                                                          | int    |       `0`       |
+| `--sat_per_vbyte="…"`           | (optional) a manual fee expressed in sat/vbyte that should be used when crafting the funding transaction                                                                                                                                                                                                                 | uint   |       `0`       |
+| `--min_confs="…"`               | (optional) the minimum number of confirmations each one of your outputs used for the funding transaction must satisfy                                                                                                                                                                                                    | uint   |       `1`       |
+| `--force`                       | if set, the funding transaction will be broadcast without asking for confirmation                                                                                                                                                                                                                                        | bool   |     `false`     |
+| `--coin_selection_strategy="…"` | (optional) the strategy to use for selecting coins. Possible values are 'largest', 'random', or 'global-config'. If either 'largest' or 'random' is specified, it will override the globally configured strategy in lnd.conf                                                                                             | string | `global-config` |
+| `--utxo="…"`                    | a utxo specified as outpoint(tx:idx) which will be used as input for the funding transaction. This flag can be repeatedly used to specify multiple utxos as inputs. The selected utxos can either be entirely spent by specifying the sweepall flag or a specified amount can be spent in the utxos through the amt flag | string |      `[]`       |
+| `--label="…"`                   | (optional) a label for the funding transaction                                                                                                                                                                                                                                                                           | string |
+| `--help` (`-h`)                 | show help                                                                                                                                                                                                                                                                                                                | bool   |     `false`     |
 
 ### `static listunspent` subcommand (aliases: `l`)
 
