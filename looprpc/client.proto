@@ -1767,6 +1767,14 @@ message NewStaticAddressRequest {
     The client's public key for the 2-of-2 MuSig2 taproot static address.
     */
     bytes client_key = 1;
+
+    /*
+    If set, loopd initiates a deposit by calling lnd's SendCoins API. If the
+    request's addr field is empty, loopd creates and funds a new static
+    address. If addr is set, it must be an existing static address known to
+    loopd.
+    */
+    lnrpc.SendCoinsRequest send_coins_request = 2;
 }
 
 message NewStaticAddressResponse {
@@ -1779,6 +1787,11 @@ message NewStaticAddressResponse {
     The CSV expiry of the static address.
     */
     uint32 expiry = 2;
+
+    /*
+    The response from lnd's SendCoins API, if a deposit was initiated.
+    */
+    lnrpc.SendCoinsResponse send_coins_response = 3;
 }
 
 message ListUnspentDepositsRequest {
