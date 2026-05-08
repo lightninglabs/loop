@@ -427,6 +427,40 @@ Create a new static loop in address.
 .PP
 \fB--help, -h\fP: show help
 
+.SS deposit
+.PP
+Create and fund a new static loop in address.
+
+.PP
+\fB--amt\fP="": the number of bitcoin denominated in satoshis to send to the new static address (default: 0)
+
+.PP
+\fB--coin_selection_strategy\fP="": (optional) the strategy to use for selecting coins. Possible values are 'largest', 'random', or 'global-config'. If either 'largest' or 'random' is specified, it will override the globally configured strategy in lnd.conf (default: global-config)
+
+.PP
+\fB--conf_target\fP="": (optional) the number of blocks that the funding transaction should confirm in, will be used for fee estimation (default: 0)
+
+.PP
+\fB--force\fP: if set, the funding transaction will be broadcast without asking for confirmation
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--label\fP="": (optional) a label for the funding transaction
+
+.PP
+\fB--min_confs\fP="": (optional) the minimum number of confirmations each one of your outputs used for the funding transaction must satisfy (default: 1)
+
+.PP
+\fB--sat_per_vbyte\fP="": (optional) a manual fee expressed in sat/vbyte that should be used when crafting the funding transaction (default: 0)
+
+.PP
+\fB--sweepall\fP: if set, then the amount field should be unset. This indicates that the wallet will attempt to sweep all outputs within the wallet or all funds in selected utxos (when supplied) to the new static address
+
+.PP
+\fB--utxo\fP="": a utxo specified as outpoint(tx:idx) which will be used as input for the funding transaction. This flag can be repeatedly used to specify multiple utxos as inputs. The selected utxos can either be entirely spent by specifying the sweepall flag or a specified amount can be spent in the utxos through the amt flag (default: [])
+
 .SS listunspent, l
 List unspent static address outputs.
 

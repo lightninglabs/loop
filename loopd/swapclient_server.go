@@ -38,6 +38,8 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	lndlabels "github.com/lightningnetwork/lnd/labels"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/queue"
@@ -45,6 +47,7 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -1710,18 +1713,167 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 // NewStaticAddress is the rpc endpoint for loop clients to request a new static
 // address.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	_ *looprpc.NewStaticAddressRequest) (
+	req *looprpc.NewStaticAddressRequest) (
 	*looprpc.NewStaticAddressResponse, error) {
+
+	sendCoinsReq := req.GetSendCoinsRequest()
+	if err := validateStaticAddressSendCoinsRequest(sendCoinsReq); err != nil {
+		return nil, err
+	}
+
+	if sendCoinsReq.GetAddr() != "" {
+		return s.fundExistingStaticAddress(ctx, sendCoinsReq)
+	}
 
 	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	sendCoinsResp, err := s.sendCoinsToStaticAddress(
+		ctx, staticAddress.String(), sendCoinsReq,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("static address %s created, but "+
+			"funding transaction failed: %w", staticAddress, err)
+	}
+
 	return &looprpc.NewStaticAddressResponse{
-		Address: staticAddress.String(),
-		Expiry:  uint32(expiry),
+		Address:           staticAddress.String(),
+		Expiry:            uint32(expiry),
+		SendCoinsResponse: sendCoinsResp,
 	}, nil
+}
+
+func (s *swapClientServer) fundExistingStaticAddress(ctx context.Context,
+	req *lnrpc.SendCoinsRequest) (*looprpc.NewStaticAddressResponse, error) {
+
+	staticAddress, expiry, err := s.staticAddressForDeposit(ctx, req.Addr)
+	if err != nil {
+		return nil, err
+	}
+
+	sendCoinsResp, err := s.sendCoinsToStaticAddress(
+		ctx, staticAddress, req,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("static address %s funding transaction "+
+			"failed: %w", staticAddress, err)
+	}
+
+	return &looprpc.NewStaticAddressResponse{
+		Address:           staticAddress,
+		Expiry:            expiry,
+		SendCoinsResponse: sendCoinsResp,
+	}, nil
+}
+
+func (s *swapClientServer) staticAddressForDeposit(ctx context.Context,
+	addr string) (string, uint32, error) {
+
+	addresses, err := s.staticAddressManager.GetAllAddresses(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+
+	for _, params := range addresses {
+		staticAddress, err := s.staticAddressManager.GetTaprootAddress(
+			params.ClientPubkey, params.ServerPubkey,
+			int64(params.Expiry),
+		)
+		if err != nil {
+			return "", 0, err
+		}
+
+		if staticAddress.String() == addr {
+			return addr, params.Expiry, nil
+		}
+	}
+
+	return "", 0, status.Errorf(codes.InvalidArgument,
+		"send_coins_request.addr is not a known static address")
+}
+
+func validateStaticAddressSendCoinsRequest(req *lnrpc.SendCoinsRequest) error {
+	if req == nil {
+		return nil
+	}
+
+	switch {
+	case req.Amount < 0:
+		return status.Error(codes.InvalidArgument, "send_coins_request."+
+			"amount must be non-negative")
+
+	case req.Amount == 0 && !req.SendAll:
+		return status.Error(codes.InvalidArgument, "send_coins_request "+
+			"must set amount or send_all")
+
+	case req.Amount != 0 && req.SendAll:
+		return status.Error(codes.InvalidArgument, "send_coins_request."+
+			"amount cannot be set when send_all is true")
+
+	case req.TargetConf < 0:
+		return status.Error(codes.InvalidArgument, "send_coins_request."+
+			"target_conf must be non-negative")
+
+	case req.SatPerByte < 0: //nolint:staticcheck
+		return status.Error(codes.InvalidArgument, "send_coins_request."+
+			"sat_per_byte must be non-negative")
+
+	case req.TargetConf != 0 &&
+		(req.SatPerVbyte != 0 || req.SatPerByte != 0): //nolint:staticcheck
+
+		return status.Error(codes.InvalidArgument, "send_coins_request "+
+			"can set either target_conf or a fee rate, but not both")
+
+	case req.SatPerVbyte != 0 && req.SatPerByte != 0: //nolint:staticcheck
+		return status.Error(codes.InvalidArgument, "send_coins_request "+
+			"can set either sat_per_vbyte or sat_per_byte, but not "+
+			"both")
+
+	case req.MinConfs < 0:
+		return status.Error(codes.InvalidArgument, "send_coins_request."+
+			"min_confs must be non-negative")
+	}
+
+	if _, err := lnrpc.ExtractMinConfs(
+		req.MinConfs, req.SpendUnconfirmed,
+	); err != nil {
+		return status.Errorf(codes.InvalidArgument, "send_coins_request "+
+			"min_confs/spend_unconfirmed invalid: %v", err)
+	}
+
+	if _, err := lndlabels.ValidateAPI(req.Label); err != nil {
+		return status.Errorf(codes.InvalidArgument, "send_coins_request "+
+			"label invalid: %v", err)
+	}
+
+	if _, err := lnrpc.UnmarshallCoinSelectionStrategy(
+		req.CoinSelectionStrategy, nil,
+	); err != nil {
+		return status.Errorf(codes.InvalidArgument, "send_coins_request "+
+			"coin_selection_strategy invalid: %v", err)
+	}
+
+	return nil
+}
+
+func (s *swapClientServer) sendCoinsToStaticAddress(ctx context.Context,
+	addr string, req *lnrpc.SendCoinsRequest) (*lnrpc.SendCoinsResponse,
+	error) {
+
+	if req == nil {
+		return nil, nil
+	}
+
+	sendCoinsReq := proto.Clone(req).(*lnrpc.SendCoinsRequest)
+	sendCoinsReq.Addr = addr
+
+	rawCtx, timeout, rawClient := s.lnd.Client.RawClientWithMacAuth(ctx)
+	rawCtx, cancel := context.WithTimeout(rawCtx, timeout)
+	defer cancel()
+
+	return rawClient.SendCoins(rawCtx, sendCoinsReq)
 }
 
 // ListUnspentDeposits returns a list of utxos behind the static address.
