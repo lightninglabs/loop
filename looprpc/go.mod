@@ -188,6 +188,10 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
+// We want to format raw bytes as hex instead of base64. The forked version
+// allows us to specify that as an option.
+replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display
+
 // Avoid fetching gonum vanity domains. The domain is unstable and causes
 // "go mod check" failures in CI.
 replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
