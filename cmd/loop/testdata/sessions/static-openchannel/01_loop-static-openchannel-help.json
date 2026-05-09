@@ -25,7 +25,7 @@
       "data": {
         "lines": [
           "NAME:\n",
-          "   loop static openchannel - Open a channel to a an existing peer.\n",
+          "   loop static openchannel - Open a channel to an existing peer.\n",
           "\n",
           "USAGE:\n",
           "   loop static openchannel [options]\n",

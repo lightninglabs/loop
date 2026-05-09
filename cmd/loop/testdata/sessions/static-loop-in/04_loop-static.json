@@ -32,16 +32,8 @@
           "   withdraw, w      Withdraw from static address deposits.\n",
           "   summary, s       Display a summary of static address related information.\n",
           "   in               Loop in funds from static address deposits.\n",
-          "   openchannel      Open a channel to a an existing peer.\n",
-          "\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 2,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "   openchannel      Open a channel to an existing peer.\n",
+          "\n",
           "OPTIONS:\n",
           "   --help, -h  show help\n"
         ]
