@@ -196,8 +196,6 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // "go mod check" failures in CI.
 replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
-replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
-
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
 
 replace lukechampine.com/uint128 => github.com/lukechampine/uint128 v1.2.0
