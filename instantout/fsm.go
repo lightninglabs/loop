@@ -85,6 +85,14 @@ var (
 	// FailedHtlcSweep is the state where the htlc sweep failed.
 	FailedHtlcSweep = fsm.StateType("FailedHtlcSweep")
 
+	// UnlockReservationsOnRecover is a transient state entered via
+	// OnRecover from any in-flight state that had already locked the
+	// underlying reservations. Its action unlocks them and routes the
+	// FSM to Failed, so a crash mid-swap does not leave reservations
+	// stuck Locked in the local store.
+	UnlockReservationsOnRecover = fsm.StateType(
+		"UnlockReservationsOnRecover")
+
 	// Failed is the state where the swap failed.
 	Failed = fsm.StateType("InstantOutFailed")
 )
@@ -246,7 +254,11 @@ func (f *FSM) GetV1ReservationStates() fsm.States {
 			Transitions: fsm.Transitions{
 				OnPaymentAccepted: BuildHtlc,
 				fsm.OnError:       Failed,
-				OnRecover:         Failed,
+				// OnRecover must go through cleanup since
+				// PollPaymentAcceptedAction has already locked
+				// the reservations by the time the FSM can
+				// crash here.
+				OnRecover: UnlockReservationsOnRecover,
 			},
 			Action: f.PollPaymentAcceptedAction,
 		},
@@ -254,9 +266,17 @@ func (f *FSM) GetV1ReservationStates() fsm.States {
 			Transitions: fsm.Transitions{
 				OnHtlcSigReceived: PushPreimage,
 				fsm.OnError:       Failed,
-				OnRecover:         Failed,
+				// Same as SendPaymentAndPollAccepted -- the
+				// reservations are still locked at this point.
+				OnRecover: UnlockReservationsOnRecover,
 			},
 			Action: f.BuildHTLCAction,
+		},
+		UnlockReservationsOnRecover: fsm.State{
+			Transitions: fsm.Transitions{
+				fsm.OnError: Failed,
+			},
+			Action: f.unlockReservationsOnRecoverAction,
 		},
 		PushPreimage: fsm.State{
 			Transitions: fsm.Transitions{

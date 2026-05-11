@@ -691,6 +691,21 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 	}
 }
 
+// unlockReservationsOnRecoverAction is the action of the
+// UnlockReservationsOnRecover state. It is entered via OnRecover from any
+// in-flight state where the reservations are already locked, and it unlocks
+// them before routing to Failed. Without this, a crash between
+// PollPaymentAcceptedAction's LockReservation and the swap reaching a
+// terminal state would leave the reservations permanently Locked in the
+// local store, blocking any future InstantOut that wants to spend them.
+func (f *FSM) unlockReservationsOnRecoverAction(ctx context.Context,
+	_ fsm.EventContext) fsm.EventType {
+
+	return f.handleErrorAndUnlockReservations(
+		ctx, errors.New("instant out recovered from in-flight state"),
+	)
+}
+
 // handleErrorAndUnlockReservations handles an error and unlocks the
 // reservations.
 func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
