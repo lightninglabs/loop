@@ -76,9 +76,12 @@ func (f *FSM) InitFromClientRequestAction(ctx context.Context,
 	expectedExpiry := reservationRequest.relativeExpiry +
 		reservationRequest.heightHint
 
-	// Check that the expiry is in the delta.
-	if requestResponse.Expiry < expectedExpiry-expiryDelta ||
-		requestResponse.Expiry > expectedExpiry+expiryDelta {
+	// Check that the expiry is in the delta. Compare as int64 so the
+	// lower bound stays meaningful when expectedExpiry < expiryDelta
+	// (which would otherwise underflow the uint32 and accept any
+	// response below the upper bound).
+	if int64(requestResponse.Expiry) < int64(expectedExpiry)-int64(expiryDelta) ||
+		int64(requestResponse.Expiry) > int64(expectedExpiry)+int64(expiryDelta) {
 
 		return f.HandleError(
 			fmt.Errorf("unexpected expiry height: %v, expected %v",
