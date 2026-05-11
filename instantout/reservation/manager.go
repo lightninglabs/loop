@@ -263,11 +263,18 @@ func (m *Manager) RequestReservationFromServer(ctx context.Context,
 	}
 
 	reservationFSM := NewFSM(m.cfg, ProtocolVersionClientInitiated)
-	// Send the event to the main loop.
-	m.reqChan <- &FSMSendEventReq{
+	// Send the event to the main loop. reqChan is unbuffered so the
+	// raw send blocks until Run picks it up; if Run has already exited
+	// or the caller has cancelled, fall through with an error instead
+	// of hanging the RPC indefinitely.
+	select {
+	case m.reqChan <- &FSMSendEventReq{
 		fsm:      reservationFSM,
 		event:    OnClientInitialized,
 		eventCtx: req,
+	}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	// We'll now wait for the reservation to be in the state where we are
