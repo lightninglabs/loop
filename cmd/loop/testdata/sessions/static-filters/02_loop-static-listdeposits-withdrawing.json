@@ -65,6 +65,7 @@
           "            \"id\": \"bb7f050df0b7c3e1fe61010e10ad45e30ddf7acd301fa6e05a2ddb825b5c2efb\",\n",
           "            \"outpoint\": \"56cd081a3a6eadf25b7d3fe0b61207389352ed69a622d2ec28c5d669bf6a5313:0\",\n",
           "            \"state\": \"WITHDRAWING\",\n",
+          "            \"static_address\": \"\",\n",
           "            \"swap_hash\": \"\",\n",
           "            \"value\": \"500000\"\n",
           "        }\n",

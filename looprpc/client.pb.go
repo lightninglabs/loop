@@ -5844,7 +5844,9 @@ type Deposit struct {
 	BlocksUntilExpiry int64 `protobuf:"varint,6,opt,name=blocks_until_expiry,json=blocksUntilExpiry,proto3" json:"blocks_until_expiry,omitempty"`
 	// The swap hash of the swap that this deposit is part of. This field is only
 	// set if the deposit is part of a loop-in swap.
-	SwapHash      []byte `protobuf:"bytes,7,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
+	SwapHash []byte `protobuf:"bytes,7,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
+	// The static address that the deposit was sent to.
+	StaticAddress string `protobuf:"bytes,8,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5926,6 +5928,13 @@ func (x *Deposit) GetSwapHash() []byte {
 		return x.SwapHash
 	}
 	return nil
+}
+
+func (x *Deposit) GetStaticAddress() string {
+	if x != nil {
+		return x.StaticAddress
+	}
+	return ""
 }
 
 type StaticAddressWithdrawal struct {
@@ -7174,7 +7183,7 @@ const file_client_proto_rawDesc = "" +
 	"\x18value_looped_in_satoshis\x18\b \x01(\x03R\x15valueLoopedInSatoshis\x12J\n" +
 	"\"value_htlc_timeout_sweeps_satoshis\x18\t \x01(\x03R\x1evalueHtlcTimeoutSweepsSatoshis\x122\n" +
 	"\x15value_channels_opened\x18\n" +
-	" \x01(\x03R\x13valueChannelsOpened\"\xf6\x01\n" +
+	" \x01(\x03R\x13valueChannelsOpened\"\x9d\x02\n" +
 	"\aDeposit\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12+\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.looprpc.DepositStateR\x05state\x12\x1a\n" +
@@ -7182,7 +7191,8 @@ const file_client_proto_rawDesc = "" +
 	"\x05value\x18\x04 \x01(\x03R\x05value\x12/\n" +
 	"\x13confirmation_height\x18\x05 \x01(\x03R\x12confirmationHeight\x12.\n" +
 	"\x13blocks_until_expiry\x18\x06 \x01(\x03R\x11blocksUntilExpiry\x12\x1b\n" +
-	"\tswap_hash\x18\a \x01(\fR\bswapHash\"\xc2\x02\n" +
+	"\tswap_hash\x18\a \x01(\fR\bswapHash\x12%\n" +
+	"\x0estatic_address\x18\b \x01(\tR\rstaticAddress\"\xc2\x02\n" +
 	"\x17StaticAddressWithdrawal\x12\x13\n" +
 	"\x05tx_id\x18\x01 \x01(\tR\x04txId\x12,\n" +
 	"\bdeposits\x18\x02 \x03(\v2\x10.looprpc.DepositR\bdeposits\x12A\n" +
