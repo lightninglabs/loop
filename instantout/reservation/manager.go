@@ -16,7 +16,17 @@ import (
 )
 
 var (
-	defaultWaitForStateTime = time.Second * 15
+	// defaultWaitForStateTime is how long RequestReservationFromServer
+	// blocks waiting for the FSM to advance to SendPrepaymentPayment.
+	// The action that drives that transition performs a server RPC
+	// round-trip that itself creates an lnd hold invoice on the swap
+	// server side, plus an lnd DecodePaymentRequest, plus a local
+	// CreateReservation. Under load any one of these can take a few
+	// seconds, so 15s is too tight: when the RPC times out the FSM
+	// continues running in the background and may still pay the
+	// prepay invoice after the caller has been told the request
+	// failed. 60s gives realistic head-room.
+	defaultWaitForStateTime = time.Second * 60
 )
 
 // FSMSendEventReq contains the information needed to send an event to the FSM.
