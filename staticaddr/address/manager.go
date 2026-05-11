@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -19,6 +20,13 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
+)
+
+const (
+	// maxStaticAddressCSVExpiry is the maximum CSV delay that we accept
+	// from the server for a static address timeout path: 200 days at 144
+	// blocks per day.
+	maxStaticAddressCSVExpiry = uint32(200 * 144)
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -158,9 +166,16 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		return nil, 0, err
 	}
 
-	serverParams := resp.GetParams()
+	if resp == nil {
+		return nil, 0, fmt.Errorf("missing server new address response")
+	}
 
-	serverPubKey, err := btcec.ParsePubKey(serverParams.ServerKey)
+	serverParams := resp.GetParams()
+	if err := validateServerAddressParams(serverParams); err != nil {
+		return nil, 0, err
+	}
+
+	serverPubKey, err := btcec.ParsePubKey(serverParams.GetServerKey())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -220,6 +235,41 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	}
 
 	return address, int64(serverParams.Expiry), nil
+}
+
+// validateServerAddressParams validates the server-controlled static address
+// parameters before they are committed into the address script or database.
+func validateServerAddressParams(
+	params *staticaddressrpc.ServerAddressParameters) error {
+
+	if params == nil {
+		return fmt.Errorf("missing server address parameters")
+	}
+
+	serverKey := params.GetServerKey()
+	if len(serverKey) == 0 {
+		return fmt.Errorf("missing server public key")
+	}
+	if !btcec.IsCompressedPubKey(serverKey) {
+		return fmt.Errorf("server public key is not a compressed " +
+			"secp256k1 public key")
+	}
+
+	expiry := params.GetExpiry()
+	switch {
+	case expiry == 0:
+		return fmt.Errorf("static address CSV expiry must be non-zero")
+
+	case expiry&^wire.SequenceLockTimeMask != 0:
+		return fmt.Errorf("static address expiry does not fit into "+
+			"CSV: %x", expiry)
+
+	case expiry > maxStaticAddressCSVExpiry:
+		return fmt.Errorf("static address CSV expiry %v exceeds "+
+			"maximum %v", expiry, maxStaticAddressCSVExpiry)
+	}
+
+	return nil
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server

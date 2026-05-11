@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -93,8 +94,9 @@ func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 
 	args := m.Called(ctx, in, opts)
 
-	return args.Get(0).(*swapserverrpc.ServerNewAddressResponse),
-		args.Error(1)
+	resp, _ := args.Get(0).(*swapserverrpc.ServerNewAddressResponse)
+
+	return resp, args.Error(1)
 }
 
 // TestManager tests the static address manager generates the corerct static
@@ -126,6 +128,100 @@ func TestManager(t *testing.T) {
 
 	// The expiry has to match.
 	require.EqualValues(t, defaultExpiry, expiry)
+}
+
+// TestNewAddressValidatesServerResponse tests that the untrusted
+// ServerNewAddress response is validated before the address script is created.
+func TestNewAddressValidatesServerResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		resp     *swapserverrpc.ServerNewAddressResponse
+		expected string
+	}{
+		{
+			name:     "nil response",
+			expected: "missing server new address response",
+		},
+		{
+			name:     "nil params",
+			resp:     &swapserverrpc.ServerNewAddressResponse{},
+			expected: "missing server address parameters",
+		},
+		{
+			name: "missing server key",
+			resp: &swapserverrpc.ServerNewAddressResponse{
+				Params: &swapserverrpc.ServerAddressParameters{
+					Expiry: defaultExpiry,
+				},
+			},
+			expected: "missing server public key",
+		},
+		{
+			name: "uncompressed server key",
+			resp: &swapserverrpc.ServerNewAddressResponse{
+				Params: &swapserverrpc.ServerAddressParameters{
+					ServerKey: []byte{0x04},
+					Expiry:    defaultExpiry,
+				},
+			},
+			expected: "server public key is not a compressed",
+		},
+		{
+			name:     "zero expiry",
+			resp:     newServerNewAddressResponse(0),
+			expected: "static address CSV expiry must be non-zero",
+		},
+		{
+			name: "seconds flag",
+			resp: newServerNewAddressResponse(
+				wire.SequenceLockTimeIsSeconds | 1,
+			),
+			expected: "static address expiry does not fit into CSV",
+		},
+		{
+			name: "disabled flag",
+			resp: newServerNewAddressResponse(
+				wire.SequenceLockTimeDisabled | 1,
+			),
+			expected: "static address expiry does not fit into CSV",
+		},
+		{
+			name: "reserved flag",
+			resp: newServerNewAddressResponse(
+				wire.SequenceLockTimeMask + 1,
+			),
+			expected: "static address expiry does not fit into CSV",
+		},
+		{
+			name: "too large",
+			resp: newServerNewAddressResponse(
+				maxStaticAddressCSVExpiry + 1,
+			),
+			expected: "exceeds maximum",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			testContext := NewAddressManagerTestContextWithResponse(
+				t, test.resp,
+			)
+
+			_, _, err := testContext.manager.NewAddress(t.Context())
+			require.ErrorContains(t, err, test.expected)
+		})
+	}
+}
+
+// TestNewAddressAcceptsMaxCSVExpiry tests the upper valid CSV boundary.
+func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
+	testContext := NewAddressManagerTestContextWithResponse(
+		t, newServerNewAddressResponse(maxStaticAddressCSVExpiry),
+	)
+
+	_, expiry, err := testContext.manager.NewAddress(t.Context())
+	require.NoError(t, err)
+	require.EqualValues(t, maxStaticAddressCSVExpiry, expiry)
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that
@@ -170,6 +266,16 @@ type ManagerTestContext struct {
 // NewAddressManagerTestContext creates a new test context for the static
 // address manager.
 func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
+	return NewAddressManagerTestContextWithResponse(
+		t, newServerNewAddressResponse(defaultExpiry),
+	)
+}
+
+// NewAddressManagerTestContextWithResponse creates a new test context with a
+// custom ServerNewAddress response.
+func NewAddressManagerTestContextWithResponse(t *testing.T,
+	resp *swapserverrpc.ServerNewAddressResponse) *ManagerTestContext {
+
 	ctxb, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -184,14 +290,7 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	mockStaticAddressClient.On(
 		"ServerNewAddress", mock.Anything, mock.Anything, mock.Anything,
-	).Return(
-		&swapserverrpc.ServerNewAddressResponse{
-			Params: &swapserverrpc.ServerAddressParameters{
-				ServerKey: defaultServerPubkeyBytes,
-				Expiry:    defaultExpiry,
-			},
-		}, nil,
-	)
+	).Return(resp, nil)
 
 	cfg := &ManagerConfig{
 		Store:         store,
@@ -213,5 +312,16 @@ func NewAddressManagerTestContext(t *testing.T) *ManagerTestContext {
 		context:                 lndContext,
 		mockLnd:                 mockLnd,
 		mockStaticAddressClient: mockStaticAddressClient,
+	}
+}
+
+// newServerNewAddressResponse returns a valid server response with the given
+// CSV expiry.
+func newServerNewAddressResponse(expiry uint32) *swapserverrpc.ServerNewAddressResponse {
+	return &swapserverrpc.ServerNewAddressResponse{
+		Params: &swapserverrpc.ServerAddressParameters{
+			ServerKey: defaultServerPubkeyBytes,
+			Expiry:    expiry,
+		},
 	}
 }
