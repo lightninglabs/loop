@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/urfave/cli/v3"
@@ -97,8 +98,9 @@ func newReservation(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("CONTINUE RESERVATION? (y/n): ")
 
 	var answer string
-	fmt.Scanln(&answer)
-	if answer == "n" {
+	if _, err := fmt.Scanln(&answer); err != nil ||
+		!strings.EqualFold(answer, "y") {
+
 		return nil
 	}
 
