@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -339,6 +340,17 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	available.SetState(deposit.Deposited)
 
 	addrMgr, lnd := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(context.Background())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	available.AddressParams = addresses[0]
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(available),
 		staticAddressManager: addrMgr,
@@ -353,6 +365,52 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	require.Equal(
 		t, available.OutPoint.String(),
 		resp.FilteredDeposits[0].Outpoint,
+	)
+	require.Equal(
+		t, expectedAddr.String(),
+		resp.FilteredDeposits[0].StaticAddress,
+	)
+}
+
+// TestStaticAddressWithdrawalIncludesDepositAddress verifies withdrawal
+// listings use the common deposit conversion path, including the address that
+// received each deposit.
+func TestStaticAddressWithdrawalIncludesDepositAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, _ := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(context.Background())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 3,
+		},
+		AddressParams: addresses[0],
+	}
+	d.SetState(deposit.Withdrawn)
+
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+	}
+	rpcWithdrawal, err := server.rpcStaticAddressWithdrawal(
+		withdraw.Withdrawal{
+			Deposits: []*deposit.Deposit{d},
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, rpcWithdrawal.Deposits, 1)
+	require.Equal(
+		t, expectedAddr.String(),
+		rpcWithdrawal.Deposits[0].StaticAddress,
 	)
 }
 
