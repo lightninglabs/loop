@@ -156,6 +156,24 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+
+		if !sweepAddr.IsForNet(m.cfg.Network) {
+			return nil, fmt.Errorf("sweep address %s is not "+
+				"valid for network %s", sweepAddress,
+				m.cfg.Network.Name)
+		}
+
+		switch sweepAddr.(type) {
+		case *btcutil.AddressTaproot,
+			*btcutil.AddressWitnessScriptHash,
+			*btcutil.AddressWitnessPubKeyHash,
+			*btcutil.AddressScriptHash,
+			*btcutil.AddressPubKeyHash:
+
+		default:
+			return nil, fmt.Errorf("unsupported sweep address "+
+				"type %T", sweepAddr)
+		}
 	}
 
 	m.Lock()
