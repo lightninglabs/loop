@@ -117,6 +117,13 @@ func (f *FSM) InitFromClientRequestAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 	reservation.PrepayInvoice = requestResponse.Invoice
+
+	// Persist the row with state = Init so a crash before the next
+	// state transition leaves a recoverable row. Without this, NewReservation
+	// produces State = fsm.EmptyState (zero value), which has no OnRecover
+	// transition in the client-initiated state map, and recovery would
+	// silently leave the row stuck forever.
+	reservation.State = Init
 	f.reservation = reservation
 
 	// Create the reservation in the database.
