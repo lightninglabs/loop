@@ -92,7 +92,13 @@ func (m *Manager) Run(ctx context.Context, height int32,
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Take the lock for the initial write so the race detector sees a
+	// consistent synchronisation rule (later writes in the new-block
+	// case already lock; concurrent reads in RequestReservationFromServer
+	// already lock).
+	m.Lock()
 	m.currentHeight = height
+	m.Unlock()
 
 	err := m.RecoverReservations(runCtx)
 	if err != nil {
