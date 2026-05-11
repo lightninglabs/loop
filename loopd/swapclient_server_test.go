@@ -414,6 +414,17 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	staticAddressParams := &script.Parameters{
+		ID:           1,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     []byte("pkscript"),
+	}
+	testDeposit.AddressParams = staticAddressParams
+
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
 	staticLoopIn := &loopin.StaticAddressLoopIn{
@@ -444,15 +455,8 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrStore := &mockAddressStore{
-		params: []*script.Parameters{{
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       staticAddressExpiry,
-			PkScript:     []byte("pkscript"),
-		}},
+		params: []*script.Parameters{staticAddressParams},
 	}
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
