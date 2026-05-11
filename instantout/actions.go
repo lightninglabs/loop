@@ -708,11 +708,17 @@ func (f *FSM) unlockReservationsOnRecoverAction(ctx context.Context,
 
 // handleErrorAndUnlockReservations handles an error and unlocks the
 // reservations.
-func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
+func (f *FSM) handleErrorAndUnlockReservations(_ context.Context,
 	err error) fsm.EventType {
-	// We might get here from a canceled context, we create a new context
-	// with a timeout to unlock the reservations.
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	// We very likely got here from a canceled parent context (caller
+	// timeout, daemon shutdown, etc.). Deriving with timeout from a
+	// canceled parent yields an already-done context, so neither the
+	// local UnlockReservation calls nor the server-side CancelInstantSwap
+	// RPC would ever get a chance to run. Detach from the caller's
+	// context entirely.
+	ctx, cancel := context.WithTimeout(
+		context.Background(), time.Second*30,
+	)
 	defer cancel()
 
 	// Unlock the reservations.
@@ -727,19 +733,23 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	// We're also sending the server a cancel message so that it can
-	// release the reservations. This can be done in a goroutine as we
-	// wan't to fail the fsm early.
+	// release the reservations. This runs in a goroutine because we
+	// want to fail the FSM early -- but it must use its OWN background
+	// context with timeout, not derive from the cancel above (which
+	// fires the moment this function returns).
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+		cancelCtx, cancel := context.WithTimeout(
+			context.Background(), time.Second*30,
+		)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			ctx, &swapserverrpc.CancelInstantSwapRequest{
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
 				SwapHash: f.InstantOut.SwapHash[:],
 			},
 		)
 		if cancelErr != nil {
-			// We'll log the error but not return it as we want to return the
-			// original error.
+			// We'll log the error but not return it as we want
+			// to return the original error.
 			f.Debugf("error sending cancel message: %v", cancelErr)
 		}
 	}()
