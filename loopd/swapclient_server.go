@@ -1743,6 +1743,11 @@ func (s *swapClientServer) ReservationRequest(ctx context.Context,
 	req *looprpc.ReservationRequestRequest) (
 	*looprpc.ReservationRequestResponse, error) {
 
+	if s.reservationManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
+
 	reservation, err := s.reservationManager.RequestReservationFromServer(
 		ctx, btcutil.Amount(req.Amt), req.Expiry,
 		btcutil.Amount(req.MaxPrepayAmt),
@@ -1755,9 +1760,15 @@ func (s *swapClientServer) ReservationRequest(ctx context.Context,
 		Reservation: toClientReservation(reservation),
 	}, nil
 }
+
 func (s *swapClientServer) ReservationQuote(ctx context.Context,
 	req *looprpc.ReservationQuoteRequest) (
 	*looprpc.ReservationQuoteResponse, error) {
+
+	if s.reservationManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
 
 	quote, err := s.reservationManager.QuoteReservation(
 		ctx, btcutil.Amount(req.Amt), req.Expiry,
