@@ -244,6 +244,7 @@
           "            \"id\": \"82771323e95dca403d966f70a88be39ef0a475ef6aa78694044ba9b87304ac63\",\n",
           "            \"outpoint\": \"da52bf383c4fe5c684221c311fc5756ccaee211b6c6e6f5ccc159622a6039271:1\",\n",
           "            \"state\": \"LOOPING_IN\",\n",
+          "            \"static_address\": \"\",\n",
           "            \"swap_hash\": \"\",\n",
           "            \"value\": \"500000\"\n",
           "        }\n",

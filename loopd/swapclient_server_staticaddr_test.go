@@ -339,6 +339,17 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	available.SetState(deposit.Deposited)
 
 	addrMgr, lnd := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(context.Background())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	available.AddressParams = addresses[0]
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(available),
 		staticAddressManager: addrMgr,
@@ -353,6 +364,10 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	require.Equal(
 		t, available.OutPoint.String(),
 		resp.FilteredDeposits[0].Outpoint,
+	)
+	require.Equal(
+		t, expectedAddr.String(),
+		resp.FilteredDeposits[0].StaticAddress,
 	)
 }
 
