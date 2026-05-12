@@ -54,8 +54,8 @@ type RoutingPlugin interface {
 }
 
 // makeRoutingPlugin is a helper to instantiate routing plugins.
-func makeRoutingPlugin(pluginType RoutingPluginType,
-	lnd lndclient.LndServices, clock clock.Clock) RoutingPlugin {
+func makeRoutingPlugin(pluginType RoutingPluginType, lnd lndclient.LndServices,
+	clock clock.Clock) RoutingPlugin {
 
 	if pluginType == RoutingPluginLowHigh {
 		return &lowToHighRoutingPlugin{
@@ -73,8 +73,8 @@ func makeRoutingPlugin(pluginType RoutingPluginType,
 // instance a nil is returned.
 func AcquireRoutingPlugin(ctx context.Context, pluginType RoutingPluginType,
 	lnd lndclient.LndServices, target route.Vertex,
-	routeHints [][]zpay32.HopHint, amt btcutil.Amount) (
-	RoutingPlugin, error) {
+	routeHints [][]zpay32.HopHint,
+	amt btcutil.Amount) (RoutingPlugin, error) {
 
 	routingPluginMx.Lock()
 	defer routingPluginMx.Unlock()
@@ -109,6 +109,7 @@ func AcquireRoutingPlugin(ctx context.Context, pluginType RoutingPluginType,
 		}
 
 		routingPluginInstance = nil
+
 		return nil, err
 	}
 
@@ -308,6 +309,7 @@ func (r *lowToHighRoutingPlugin) saveMissionControlState(ctx context.Context,
 	}
 
 	log.Debugf("Saved MC state: %v", spew.Sdump(r.mcState))
+
 	return nil
 }
 
@@ -338,8 +340,8 @@ func nodesByMaxFee(amt btcutil.Amount, target route.Vertex,
 
 			totalCapacity += ch.Capacity
 
-			log.Debugf("'%v', policy=%v",
-				node.Alias, spew.Sdump(policy))
+			log.Debugf("'%v', policy=%v", node.Alias,
+				spew.Sdump(policy))
 			fee := policy.FeeBaseMsat +
 				policy.FeeRateMilliMsat*amtMsat
 
@@ -609,6 +611,7 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 	// If none of the selected pairs were manipulated we can skip ahead.
 	if !r.mcChanged {
 		log.Debugf("MC state not changed, skipping restore")
+
 		return nil
 	}
 
@@ -658,8 +661,7 @@ func (r *lowToHighRoutingPlugin) Done(ctx context.Context) error {
 		return err
 	}
 
-	log.Debugf("Restored partial MC state: %v",
-		spew.Sdump(entries))
+	log.Debugf("Restored partial MC state: %v", spew.Sdump(entries))
 
 	return nil
 }

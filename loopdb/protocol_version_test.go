@@ -54,15 +54,20 @@ func TestProtocolVersionSanity(t *testing.T) {
 		versions[len(versions)-1],
 	)
 
-	require.Equal(t,
-		uint32(CurrentProtocolVersion()),
-		uint32(CurrentRPCProtocolVersion()),
+	require.Equal(
+		t,
+		uint32(
+			CurrentProtocolVersion(),
+		),
+		uint32(
+			CurrentRPCProtocolVersion(),
+		),
 	)
 
 	EnableExperimentalProtocol()
 
-	require.Equal(t,
-		CurrentProtocolVersion(),
+	require.Equal(
+		t, CurrentProtocolVersion(),
 		ProtocolVersion(experimentalRPCProtocolVersion),
 	)
 }

@@ -645,8 +645,9 @@ func TestHasBandwidth(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			res, shards := hasBandwidth(test.channels, test.amt,
-				test.maxParts)
+			res, shards := hasBandwidth(
+				test.channels, test.amt, test.maxParts,
+			)
 			require.Equal(t, test.expectedRes, res)
 			require.Equal(t, test.expectedShards, shards)
 		})
@@ -671,8 +672,10 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 		SwapContract: loopdb.SwapContract{
 			InitiationTime: firstSwapStartTime,
 		},
-		LastUpdate:       time.Now(),
-		SwapHash:         lntypes.Hash{1},
+		LastUpdate: time.Now(),
+		SwapHash: lntypes.Hash{
+			1,
+		},
 		SwapType:         swap.TypeIn,
 		HtlcAddressP2WSH: testnetAddr,
 		HtlcAddressP2TR:  testnetAddr,
@@ -686,8 +689,10 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 		SwapContract: loopdb.SwapContract{
 			InitiationTime: secondSwapStartTime,
 		},
-		LastUpdate:       time.Now(),
-		SwapHash:         lntypes.Hash{2},
+		LastUpdate: time.Now(),
+		SwapHash: lntypes.Hash{
+			2,
+		},
 		SwapType:         swap.TypeOut,
 		HtlcAddressP2WSH: testnetAddr,
 		HtlcAddressP2TR:  testnetAddr,
@@ -701,8 +706,10 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 		SwapContract: loopdb.SwapContract{
 			InitiationTime: thirdSwapStartTime,
 		},
-		LastUpdate:       time.Now(),
-		SwapHash:         lntypes.Hash{3},
+		LastUpdate: time.Now(),
+		SwapHash: lntypes.Hash{
+			3,
+		},
 		SwapType:         swap.TypeOut,
 		HtlcAddressP2WSH: testnetAddr,
 		HtlcAddressP2TR:  testnetAddr,
@@ -715,7 +722,8 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 		// Define the mock swaps that will be stored in the mock client.
 		mockSwaps []loop.SwapInfo
 		req       *looprpc.ListSwapsRequest
-		// These hashes must be in the correct return order as the response.
+		// These hashes must be in the correct return order as the
+		// response.
 		expectedReturnedSwaps []lntypes.Hash
 		expectedNextStartTime int64
 	}{
@@ -766,7 +774,8 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 				swapInOrder0.SwapHash,
 				swapOutOrder1.SwapHash,
 			},
-			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+			expectedNextStartTime: secondSwapStartTime.UnixNano() +
+				1,
 		},
 		{
 			name:      "fetch with limit set to default",
@@ -786,7 +795,9 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			mockSwaps: mockSwaps,
 			req: &looprpc.ListSwapsRequest{
 				ListSwapFilter: &looprpc.ListSwapsFilter{
-					StartTimestampNs: unixTime.Add(25 * time.Minute).UnixNano(),
+					StartTimestampNs: unixTime.
+						Add(25 * time.Minute).
+						UnixNano(),
 				},
 			},
 			expectedReturnedSwaps: []lntypes.Hash{
@@ -799,7 +810,9 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			mockSwaps: mockSwaps,
 			req: &looprpc.ListSwapsRequest{
 				ListSwapFilter: &looprpc.ListSwapsFilter{
-					StartTimestampNs: unixTime.Add(5 * time.Minute).UnixNano(),
+					StartTimestampNs: unixTime.
+						Add(5 * time.Minute).
+						UnixNano(),
 				},
 			},
 			expectedReturnedSwaps: []lntypes.Hash{
@@ -814,15 +827,18 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			mockSwaps: mockSwaps,
 			req: &looprpc.ListSwapsRequest{
 				ListSwapFilter: &looprpc.ListSwapsFilter{
-					SwapType:         looprpc.ListSwapsFilter_LOOP_OUT,
-					StartTimestampNs: unixTime.Add(15 * time.Minute).UnixNano(),
+					SwapType: looprpc.ListSwapsFilter_LOOP_OUT,
+					StartTimestampNs: unixTime.
+						Add(15 * time.Minute).
+						UnixNano(),
 				},
 				MaxSwaps: 1,
 			},
 			expectedReturnedSwaps: []lntypes.Hash{
 				swapOutOrder1.SwapHash,
 			},
-			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+			expectedNextStartTime: secondSwapStartTime.UnixNano() +
+				1,
 		},
 		{
 			name:      "fetch with time filter, limit set",
@@ -837,7 +853,8 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 				swapInOrder0.SwapHash,
 				swapOutOrder1.SwapHash,
 			},
-			expectedNextStartTime: secondSwapStartTime.UnixNano() + 1,
+			expectedNextStartTime: secondSwapStartTime.UnixNano() +
+				1,
 		},
 		{
 			name:      "fetch with time filter, limit set 2",
@@ -874,7 +891,8 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			mockSwaps: mockSwaps,
 			req: &looprpc.ListSwapsRequest{
 				ListSwapFilter: &looprpc.ListSwapsFilter{
-					StartTimestampNs: secondSwapStartTime.UnixNano() + 1,
+					StartTimestampNs: secondSwapStartTime.UnixNano() +
+						1,
 				},
 			},
 			expectedReturnedSwaps: []lntypes.Hash{
@@ -887,7 +905,8 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			mockSwaps: mockSwaps,
 			req: &looprpc.ListSwapsRequest{
 				ListSwapFilter: &looprpc.ListSwapsFilter{
-					StartTimestampNs: secondSwapStartTime.UnixNano() - 1,
+					StartTimestampNs: secondSwapStartTime.UnixNano() -
+						1,
 				},
 			},
 			expectedReturnedSwaps: []lntypes.Hash{
@@ -913,33 +932,31 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 			}
 
 			// Call the ListSwaps method.
-			resp, err := server.ListSwaps(context.Background(), test.req)
+			resp, err := server.ListSwaps(
+				context.Background(), test.req,
+			)
 			require.NoError(t, err)
 
 			require.Len(
-				t,
-				resp.Swaps,
-				len(test.expectedReturnedSwaps),
+				t, resp.Swaps, len(test.expectedReturnedSwaps),
 				"incorrect returned count",
 			)
 
 			// Check order of returned swaps is exactly as expected.
 			for idx, aswap := range resp.Swaps {
-				newhash, err := lntypes.MakeHash(aswap.GetIdBytes())
+				newhash, err := lntypes.MakeHash(
+					aswap.GetIdBytes(),
+				)
 				require.NoError(t, err)
 				require.Equal(
-					t,
-					test.expectedReturnedSwaps[idx],
-					newhash,
-					"iteration order mismatch",
+					t, test.expectedReturnedSwaps[idx],
+					newhash, "iteration order mismatch",
 				)
 			}
 
 			require.Equal(
-				t,
-				test.expectedNextStartTime,
-				resp.NextStartTime,
-				"incorrect next start time",
+				t, test.expectedNextStartTime,
+				resp.NextStartTime, "incorrect next start time",
 			)
 		})
 	}
@@ -954,6 +971,7 @@ func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
 	p *address.Parameters) error {
 
 	s.params = append(s.params, p)
+
 	return nil
 }
 
@@ -990,8 +1008,8 @@ func (s *mockDepositStore) UpdateDeposit(_ context.Context,
 	return nil
 }
 
-func (s *mockDepositStore) GetDeposit(_ context.Context,
-	_ deposit.ID) (*deposit.Deposit, error) {
+func (s *mockDepositStore) GetDeposit(_ context.Context, _ deposit.ID) (
+	*deposit.Deposit, error) {
 
 	return nil, nil
 }
@@ -1002,6 +1020,7 @@ func (s *mockDepositStore) DepositForOutpoint(_ context.Context,
 	if d, ok := s.byOutpoint[outpoint]; ok {
 		return d, nil
 	}
+
 	return nil, nil
 }
 func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
@@ -1026,7 +1045,11 @@ func TestListUnspentDeposits(t *testing.T) {
 		PkScript:     pkScript,
 	}
 
-	addrStore := &mockAddressStore{params: []*address.Parameters{addrParams}}
+	addrStore := &mockAddressStore{
+		params: []*address.Parameters{
+			addrParams,
+		},
+	}
 
 	// Build an address manager using our mock lnd and fake address store.
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
@@ -1045,7 +1068,9 @@ func TestListUnspentDeposits(t *testing.T) {
 			Confirmations: confs,
 			PkScript:      pkScript,
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{byte(idx + 1)},
+				Hash: chainhash.Hash{
+					byte(idx + 1),
+				},
 				Index: idx,
 			},
 		}
@@ -1080,11 +1105,13 @@ func TestListUnspentDeposits(t *testing.T) {
 				utxoBelow, utxoAt, utxoAbove1, utxoAbove2,
 			})
 
-			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Deposited,
-				utxoAbove1.OutPoint: deposit.Withdrawn,
-				utxoAbove2.OutPoint: deposit.LoopingIn,
-			})
+			depMgr := buildDepositMgr(
+				map[wire.OutPoint]fsm.StateType{
+					utxoAt.OutPoint:     deposit.Deposited,
+					utxoAbove1.OutPoint: deposit.Withdrawn,
+					utxoAbove2.OutPoint: deposit.LoopingIn,
+				},
+			)
 
 			server := &swapClientServer{
 				staticAddressManager: addrMgr,
@@ -1120,11 +1147,13 @@ func TestListUnspentDeposits(t *testing.T) {
 					utxoAbove2,
 				})
 
-			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Withdrawn,
-				utxoAbove1.OutPoint: deposit.Deposited,
-				utxoAbove2.OutPoint: deposit.Withdrawn,
-			})
+			depMgr := buildDepositMgr(
+				map[wire.OutPoint]fsm.StateType{
+					utxoAt.OutPoint:     deposit.Withdrawn,
+					utxoAbove1.OutPoint: deposit.Deposited,
+					utxoAbove2.OutPoint: deposit.Withdrawn,
+				},
+			)
 
 			server := &swapClientServer{
 				staticAddressManager: addrMgr,

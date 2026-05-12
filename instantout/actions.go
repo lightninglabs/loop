@@ -41,7 +41,8 @@ const (
 	// defaultMaxParts is the default maximum number of parts for the swap.
 	defaultMaxParts = uint32(5)
 
-	// defaultSendpaymentTimeout is the default timeout for the swap invoice.
+	// defaultSendpaymentTimeout is the default timeout for the swap
+	// invoice.
 	defaultSendpaymentTimeout = time.Minute * 5
 
 	// defaultPollPaymentTime is the default time to poll the server for the
@@ -81,7 +82,8 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		reservationAmt uint64
 		reservationIds = make([][]byte, 0, len(initCtx.reservations))
 		reservations   = make(
-			[]*reservation.Reservation, 0, len(initCtx.reservations),
+			[]*reservation.Reservation, 0,
+			len(initCtx.reservations),
 		)
 	)
 
@@ -95,8 +97,10 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 
 		// Check if the reservation is locked.
 		if res.State == reservation.Locked {
-			return f.HandleError(fmt.Errorf("reservation %v is "+
-				"locked", reservationId))
+			return f.HandleError(
+				fmt.Errorf("reservation %v is locked",
+					reservationId),
+			)
 		}
 
 		reservationAmt += uint64(res.Value)
@@ -107,9 +111,12 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		// expiry of the swap, with an additional delta to allow for
 		// preimage reveal.
 		if int32(res.Expiry) < initCtx.cltvExpiry+htlcExpiryDelta {
-			return f.HandleError(fmt.Errorf("reservation %x has "+
-				"expiry %v which is less than the swap expiry %v",
-				resId, res.Expiry, initCtx.cltvExpiry+htlcExpiryDelta))
+			return f.HandleError(
+				fmt.Errorf("reservation %x has expiry %v "+
+					"which is less than the swap "+
+					"expiry %v", resId, res.Expiry,
+					initCtx.cltvExpiry+htlcExpiryDelta),
+			)
 		}
 	}
 
@@ -131,6 +138,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	feeRate, err := f.cfg.Wallet.EstimateFeeRate(ctx, urgentConfTarget)
 	if err != nil {
 		f.Infof("error estimating fee rate: %v", err)
+
 		return f.HandleError(err)
 	}
 
@@ -158,8 +166,12 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	if swapHash != payReq.Hash {
-		return f.HandleError(fmt.Errorf("invalid swap invoice hash: "+
-			"expected %x got %x", preimage.Hash(), payReq.Hash))
+		return f.HandleError(
+			fmt.Errorf(
+				"invalid swap invoice hash: expected %x got %x",
+				preimage.Hash(), payReq.Hash,
+			),
+		)
 	}
 	serverPubkey, err := btcec.ParsePubKey(instantOutResponse.SenderKey)
 	if err != nil {
@@ -234,6 +246,7 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 	)
 	if err != nil {
 		f.Errorf("error sending payment: %v", err)
+
 		return f.handleErrorAndUnlockReservations(ctx, err)
 	}
 
@@ -252,8 +265,10 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 						payRes.FailureReason),
 				)
 			}
+
 		case err := <-paymentErrChan:
 			f.Errorf("error sending payment: %v", err)
+
 			return f.handleErrorAndUnlockReservations(ctx, err)
 
 		case <-ctx.Done():
@@ -269,7 +284,9 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 			if err != nil {
 				pollPaymentTries++
 				if pollPaymentTries > 20 {
-					return f.handleErrorAndUnlockReservations(ctx, err)
+					return f.handleErrorAndUnlockReservations(
+						ctx, err,
+					)
 				}
 			}
 			if res != nil && res.Accepted {
@@ -407,6 +424,7 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	// we'll need to publish the htlc tx.
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
@@ -417,12 +435,14 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	)
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
 	coopServerNonces, err := toNonces(pushPreImageRes.ServerNonces)
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
@@ -433,6 +453,7 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	)
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
@@ -443,6 +464,7 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	)
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
@@ -453,6 +475,7 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	err = f.cfg.Wallet.PublishTransaction(ctx, sweepTx, txLabel)
 	if err != nil {
 		f.LastActionError = err
+
 		return OnErrorPublishHtlc
 	}
 
@@ -476,8 +499,8 @@ func (f *FSM) WaitForSweeplessSweepConfirmedAction(ctx context.Context,
 
 	confChan, confErrChan, err := f.cfg.ChainNotifier.
 		RegisterConfirmationsNtfn(
-			ctx, f.InstantOut.SweepTxHash, pkscript,
-			1, f.InstantOut.initiationHeight,
+			ctx, f.InstantOut.SweepTxHash, pkscript, 1,
+			f.InstantOut.initiationHeight,
 		)
 	if err != nil {
 		return f.HandleError(err)
@@ -522,8 +545,8 @@ func (f *FSM) PublishHtlcAction(ctx context.Context,
 	confChan, confErrChan, err := f.cfg.ChainNotifier.
 		RegisterConfirmationsNtfn(
 			ctx, &txHash,
-			f.InstantOut.finalizedHtlcTx.TxOut[0].PkScript,
-			1, f.InstantOut.initiationHeight,
+			f.InstantOut.finalizedHtlcTx.TxOut[0].PkScript, 1,
+			f.InstantOut.initiationHeight,
 		)
 	if err != nil {
 		return f.HandleError(err)
@@ -567,6 +590,7 @@ func (f *FSM) PublishHtlcSweepAction(ctx context.Context,
 	err = f.cfg.Wallet.PublishTransaction(ctx, htlcSweepTx, label)
 	if err != nil {
 		log.Errorf("error publishing htlc sweep tx: %v", err)
+
 		return f.HandleError(err)
 	}
 
@@ -590,8 +614,8 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 	}
 
 	confChan, confErrChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-		ctx, f.InstantOut.SweepTxHash, sweepPkScript,
-		1, f.InstantOut.initiationHeight,
+		ctx, f.InstantOut.SweepTxHash, sweepPkScript, 1,
+		f.InstantOut.initiationHeight,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -618,6 +642,7 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 // reservations.
 func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	err error) fsm.EventType {
+
 	// We might get here from a canceled context, we create a new context
 	// with a timeout to unlock the reservations.
 	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
@@ -630,6 +655,7 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 		)
 		if err != nil {
 			f.Errorf("error unlocking reservation: %v", err)
+
 			return f.HandleError(err)
 		}
 	}
@@ -646,8 +672,8 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 			},
 		)
 		if cancelErr != nil {
-			// We'll log the error but not return it as we want to return the
-			// original error.
+			// We'll log the error but not return it as we want to
+			// return the original error.
 			f.Debugf("error sending cancel message: %v", cancelErr)
 		}
 	}()

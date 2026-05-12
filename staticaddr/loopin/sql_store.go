@@ -59,8 +59,8 @@ type Querier interface {
 	// given states. The states string is an input for the IN primitive in
 	// sqlite, hence the format needs to be '{State1,State2,...}'.
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
-		states sql.NullString) ([]sqlc.GetStaticAddressLoopInSwapsByStatesRow,
-		error)
+		states sql.NullString) (
+		[]sqlc.GetStaticAddressLoopInSwapsByStatesRow, error)
 
 	// GetLoopInSwapUpdates retrieves all updates for a loop-in swap.
 	GetLoopInSwapUpdates(ctx context.Context,
@@ -125,8 +125,8 @@ func NewSqlStore(db BaseDB, clock clock.Clock,
 }
 
 // GetLoopInByHash returns the loop-in swap with the given hash.
-func (s *SqlStore) GetLoopInByHash(ctx context.Context,
-	swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+func (s *SqlStore) GetLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
+	*StaticAddressLoopIn, error) {
 
 	var (
 		err     error
@@ -576,10 +576,12 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		SwapInvoice:           swap.SwapInvoice,
 		PaymentTimeoutSeconds: uint32(swap.PaymentTimeoutSeconds),
 		LastHop:               swap.LastHop,
-		QuotedSwapFee:         btcutil.Amount(swap.QuotedSwapFeeSatoshis),
-		DepositOutpoints:      depositOutpoints,
-		SelectedAmount:        btcutil.Amount(swap.SelectedAmount),
-		Fast:                  swap.Fast,
+		QuotedSwapFee: btcutil.Amount(
+			swap.QuotedSwapFeeSatoshis,
+		),
+		DepositOutpoints: depositOutpoints,
+		SelectedAmount:   btcutil.Amount(swap.SelectedAmount),
+		Fast:             swap.Fast,
 		HtlcTxFeeRate: chainfee.SatPerKWeight(
 			swap.HtlcTxFeeRateSatKw,
 		),

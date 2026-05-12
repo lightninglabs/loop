@@ -22,8 +22,8 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 			version, signingKey, pubKeys, tweaks, nil,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error creating "+
-				"signing context: %v", err)
+			return nil, fmt.Errorf("error creating signing "+
+				"context: %v", err)
 		}
 
 		sessions[i] = muSigSession
@@ -42,8 +42,8 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 
 			_, err := sessions[j].RegisterPubNonce(nonce)
 			if err != nil {
-				return nil, fmt.Errorf("error sharing "+
-					"MuSig2 nonces: %v", err)
+				return nil, fmt.Errorf("error sharing MuSig2 "+
+					"nonces: %v", err)
 			}
 		}
 	}
@@ -74,8 +74,7 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 	}
 
 	if !haveAllSigs {
-		return nil, fmt.Errorf("combinging MuSig2 signatures " +
-			"failed")
+		return nil, fmt.Errorf("combinging MuSig2 signatures failed")
 	}
 
 	return sessions[0].FinalSig().Serialize(), nil

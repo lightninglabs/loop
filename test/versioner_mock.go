@@ -49,9 +49,8 @@ func newMockVersioner() *mockVersioner {
 	}
 }
 
-func (v *mockVersioner) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	verrpc.VersionerClient) {
+func (v *mockVersioner) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, verrpc.VersionerClient) {
 
 	return ctx, 0, nil
 }

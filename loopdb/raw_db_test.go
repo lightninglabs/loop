@@ -21,6 +21,7 @@ import (
 //	     },
 //	} .
 func DumpDB(tx *bbolt.Tx) error { // nolint: unused
+
 	return tx.ForEach(func(k []byte, bucket *bbolt.Bucket) error {
 		key := toString(k)
 		fmt.Printf("%v: ", key)
@@ -71,8 +72,8 @@ func RestoreDB(tx *bbolt.Tx, data map[string]any) error {
 
 		subBucket, err := tx.CreateBucket(key)
 		if err != nil {
-			return fmt.Errorf("create bucket %v: %v",
-				string(key), err)
+			return fmt.Errorf("create bucket %v: %v", string(key),
+				err)
 		}
 
 		if err := restoreDB(subBucket, value); err != nil {
@@ -149,5 +150,6 @@ func Hex(value string) string {
 	if err != nil {
 		panic(err)
 	}
+
 	return string(b)
 }

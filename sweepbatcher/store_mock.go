@@ -48,8 +48,8 @@ func (s *StoreMock) FetchUnconfirmedSweepBatches(ctx context.Context) (
 
 // InsertSweepBatch inserts a batch into the database, returning the id of the
 // inserted batch.
-func (s *StoreMock) InsertSweepBatch(ctx context.Context,
-	batch *dbBatch) (int32, error) {
+func (s *StoreMock) InsertSweepBatch(ctx context.Context, batch *dbBatch) (
+	int32, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,12 +58,14 @@ func (s *StoreMock) InsertSweepBatch(ctx context.Context,
 	s.batchID++
 
 	s.batches[id] = *batch
+
 	return id, nil
 }
 
 // CancelBatch drops a batch from the database.
 func (s *StoreMock) CancelBatch(ctx context.Context, id int32) error {
 	delete(s.batches, id)
+
 	return nil
 }
 
@@ -75,12 +77,13 @@ func (s *StoreMock) UpdateSweepBatch(ctx context.Context,
 	defer s.mu.Unlock()
 
 	s.batches[batch.ID] = *batch
+
 	return nil
 }
 
 // ConfirmBatchWithSweeps updates the batch and the provided sweeps atomically.
-func (s *StoreMock) ConfirmBatchWithSweeps(ctx context.Context,
-	batch *dbBatch, sweeps []*dbSweep) error {
+func (s *StoreMock) ConfirmBatchWithSweeps(ctx context.Context, batch *dbBatch,
+	sweeps []*dbSweep) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,8 +108,8 @@ func (s *StoreMock) ConfirmBatchWithSweeps(ctx context.Context,
 }
 
 // FetchBatchSweeps fetches all the sweeps that belong to a batch.
-func (s *StoreMock) FetchBatchSweeps(ctx context.Context,
-	id int32) ([]*dbSweep, error) {
+func (s *StoreMock) FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep,
+	error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,6 +175,7 @@ func (s *StoreMock) AssertSweepStored(outpoint wire.OutPoint) bool {
 	defer s.mu.Unlock()
 
 	_, ok := s.sweeps[outpoint]
+
 	return ok
 }
 
@@ -188,6 +192,7 @@ func (s *StoreMock) GetParentBatch(ctx context.Context,
 			if !ok {
 				return nil, errors.New("batch not found")
 			}
+
 			return &batch, nil
 		}
 	}

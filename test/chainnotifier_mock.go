@@ -24,9 +24,8 @@ type mockChainNotifier struct {
 
 var _ lndclient.ChainNotifierClient = (*mockChainNotifier)(nil)
 
-func (c *mockChainNotifier) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	chainrpc.ChainNotifierClient) {
+func (c *mockChainNotifier) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, chainrpc.ChainNotifierClient) {
 
 	return ctx, 0, nil
 }
@@ -172,12 +171,17 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 			for i := 0; i < len(c.confRegistrations); i++ {
 				r := c.confRegistrations[i]
 
-				// Whichever conf notifier catches the confirmation
-				// will forward it to all matching subscribers.
-				if bytes.Equal(m.Tx.TxOut[0].PkScript, r.PkScript) {
+				// Whichever conf notifier catches the
+				// confirmation will forward it to all matching
+				// subscribers.
+				if bytes.Equal(
+					m.Tx.TxOut[0].PkScript, r.PkScript,
+				) {
+
 					// Unregister the "notifier".
 					c.confRegistrations = append(
-						c.confRegistrations[:i], c.confRegistrations[i+1:]...,
+						c.confRegistrations[:i],
+						c.confRegistrations[i+1:]...,
 					)
 					i--
 

@@ -18,7 +18,9 @@ func TestSqlStore(t *testing.T) {
 	defer testDb.Close()
 
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
-	store := NewSqlStore(loopdb.NewTypedStore[Querier](testDb), depositStore)
+	store := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), depositStore,
+	)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()

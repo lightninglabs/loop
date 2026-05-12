@@ -77,7 +77,8 @@ var (
 	// for the serialized swap contract. It is nested within the sub-bucket
 	// for each active swap.
 	//
-	// path: loopInBucket/loopOutBucket -> swapBucket[hash] -> protocolVersionKey
+	// path: loopInBucket/loopOutBucket -> swapBucket[hash] ->
+	// protocolVersionKey
 	//
 	// value: protocol version as specified in server.proto
 	protocolVersionKey = []byte("protocol-version")
@@ -180,8 +181,8 @@ type boltSwapStore struct {
 var _ = (*boltSwapStore)(nil)
 
 // NewBoltSwapStore creates a new client swap store.
-func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
-	*boltSwapStore, error) {
+func NewBoltSwapStore(dbPath string,
+	chainParams *chaincfg.Params) (*boltSwapStore, error) {
 
 	// If the target path for the swap store doesn't exist, then we'll
 	// create it now before we proceed.
@@ -464,8 +465,8 @@ func (s *boltSwapStore) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn,
 }
 
 // createLoopBucket creates the bucket for a particular swap.
-func createLoopBucket(tx *bbolt.Tx, swapTypeKey []byte, hash lntypes.Hash) (
-	*bbolt.Bucket, error) {
+func createLoopBucket(tx *bbolt.Tx, swapTypeKey []byte,
+	hash lntypes.Hash) (*bbolt.Bucket, error) {
 
 	// First, we'll grab the root bucket that houses all of our
 	// swaps of this type.
@@ -551,7 +552,8 @@ func (s *boltSwapStore) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 		}
 
 		// Store the current protocol version.
-		err = swapBucket.Put(protocolVersionKey,
+		err = swapBucket.Put(
+			protocolVersionKey,
 			MarshalProtocolVersion(swap.ProtocolVersion),
 		)
 		if err != nil {
@@ -567,13 +569,14 @@ func (s *boltSwapStore) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 		// Finally, we'll create an empty updates bucket for this swap
 		// to track any future updates to the swap itself.
 		_, err = swapBucket.CreateBucket(updatesBucketKey)
+
 		return err
 	})
 }
 
 // UpdateLoopOutAssetInfo is unused for the bolt swap store.
-func (db *boltSwapStore) UpdateLoopOutAssetInfo(ctx context.Context, hash lntypes.Hash,
-	asset *LoopOutAssetSwap) error {
+func (db *boltSwapStore) UpdateLoopOutAssetInfo(ctx context.Context,
+	hash lntypes.Hash, asset *LoopOutAssetSwap) error {
 
 	return errors.New("unimplemented")
 }
@@ -610,7 +613,8 @@ func (s *boltSwapStore) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 		}
 
 		// Store the current protocol version.
-		err = swapBucket.Put(protocolVersionKey,
+		err = swapBucket.Put(
+			protocolVersionKey,
 			MarshalProtocolVersion(swap.ProtocolVersion),
 		)
 		if err != nil {
@@ -631,6 +635,7 @@ func (s *boltSwapStore) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 		// Finally, we'll create an empty updates bucket for this swap
 		// to track any future updates to the swap itself.
 		_, err = swapBucket.CreateBucket(updatesBucketKey)
+
 		return err
 	})
 }
@@ -698,8 +703,8 @@ func (s *boltSwapStore) updateLoop(bucketKey []byte, hash lntypes.Hash,
 // a particular swap as it goes through the various stages in its lifetime.
 //
 // NOTE: Part of the loopdb.SwapStore interface.
-func (s *boltSwapStore) UpdateLoopOut(ctx context.Context,
-	hash lntypes.Hash, time time.Time, state SwapStateData) error {
+func (s *boltSwapStore) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
+	time time.Time, state SwapStateData) error {
 
 	return s.updateLoop(loopOutBucketKey, hash, time, state)
 }
@@ -735,6 +740,7 @@ func (s *boltSwapStore) PutLiquidityParams(ctx context.Context,
 		if rootBucket == nil {
 			return errors.New("liquidity bucket does not exist")
 		}
+
 		return rootBucket.Put(liquidtyParamsKey, params)
 	})
 }
@@ -757,6 +763,7 @@ func (s *boltSwapStore) FetchLiquidityParams(ctx context.Context) ([]byte,
 		}
 
 		params = rootBucket.Get(liquidtyParamsKey)
+
 		return nil
 	})
 
@@ -803,6 +810,7 @@ func fetchUpdates(swapBucket *bbolt.Bucket) ([]*LoopEvent, error) {
 		}
 
 		updates = append(updates, event)
+
 		return nil
 	})
 	if err != nil {
@@ -821,8 +829,7 @@ func (s *boltSwapStore) fetchLoopOutSwap(rootBucket *bbolt.Bucket,
 	// bucket for this swap from its swaphash.
 	swapBucket := rootBucket.Bucket(swapHash)
 	if swapBucket == nil {
-		return nil, fmt.Errorf("swap bucket %x not found",
-			swapHash)
+		return nil, fmt.Errorf("swap bucket %x not found", swapHash)
 	}
 
 	hash, err := lntypes.MakeHash(swapHash)
@@ -859,13 +866,13 @@ func (s *boltSwapStore) fetchLoopOutSwap(rootBucket *bbolt.Bucket,
 			switch {
 			case err == io.EOF:
 				break readLoop
+
 			case err != nil:
 				return nil, err
 			}
 
 			contract.OutgoingChanSet = append(
-				contract.OutgoingChanSet,
-				chanID,
+				contract.OutgoingChanSet, chanID,
 			)
 		}
 	}
@@ -936,8 +943,7 @@ func (s *boltSwapStore) fetchLoopInSwap(rootBucket *bbolt.Bucket,
 	// bucket for this swap from its swaphash.
 	swapBucket := rootBucket.Bucket(swapHash)
 	if swapBucket == nil {
-		return nil, fmt.Errorf("swap bucket %x not found",
-			swapHash)
+		return nil, fmt.Errorf("swap bucket %x not found", swapHash)
 	}
 
 	hash, err := lntypes.MakeHash(swapHash)

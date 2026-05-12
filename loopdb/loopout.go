@@ -72,7 +72,8 @@ type LoopOutContract struct {
 }
 
 type LoopOutAssetSwap struct {
-	// AssetId is the optional asset id that is used to pay the swap invoice.
+	// AssetId is the optional asset id that is used to pay the swap
+	// invoice.
 	AssetId []byte
 
 	// PrepayRfqId is the rfq id that is used to pay the prepay invoice.
@@ -98,6 +99,7 @@ func (c ChannelSet) String() string {
 	for i, chanID := range c {
 		channelStrings[i] = strconv.FormatUint(chanID, 10)
 	}
+
 	return strings.Join(channelStrings, ",")
 }
 
@@ -137,8 +139,8 @@ func (s *LoopOut) LastUpdateTime() time.Time {
 	return lastUpdate.Time
 }
 
-func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
-	*LoopOutContract, error) {
+func deserializeLoopOutContract(value []byte,
+	chainParams *chaincfg.Params) (*LoopOutContract, error) {
 
 	r := bytes.NewReader(value)
 
@@ -191,10 +193,14 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.MaxPrepayRoutingFee); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.MaxPrepayRoutingFee,
+	); err != nil {
 		return nil, err
 	}
-	if err := binary.Read(r, byteOrder, &contract.InitiationHeight); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.InitiationHeight,
+	); err != nil {
 		return nil, err
 	}
 
@@ -212,11 +218,15 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.SweepConfTarget); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.SweepConfTarget,
+	); err != nil {
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.MaxSwapRoutingFee); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.MaxSwapRoutingFee,
+	); err != nil {
 		return nil, err
 	}
 
@@ -238,12 +248,12 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 	return &contract, nil
 }
 
-func serializeLoopOutContract(swap *LoopOutContract) (
-	[]byte, error) {
-
+func serializeLoopOutContract(swap *LoopOutContract) ([]byte, error) {
 	var b bytes.Buffer
 
-	if err := binary.Write(&b, byteOrder, swap.InitiationTime.UnixNano()); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.InitiationTime.UnixNano(),
+	); err != nil {
 		return nil, err
 	}
 
@@ -251,7 +261,9 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.AmountRequested); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.AmountRequested,
+	); err != nil {
 		return nil, err
 	}
 
@@ -287,11 +299,15 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.MaxPrepayRoutingFee); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.MaxPrepayRoutingFee,
+	); err != nil {
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.InitiationHeight); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.InitiationHeight,
+	); err != nil {
 		return nil, err
 	}
 
@@ -304,11 +320,15 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.SweepConfTarget); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.SweepConfTarget,
+	); err != nil {
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.MaxSwapRoutingFee); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.MaxSwapRoutingFee,
+	); err != nil {
 		return nil, err
 	}
 
@@ -319,7 +339,9 @@ func serializeLoopOutContract(swap *LoopOutContract) (
 		return nil, err
 	}
 
-	err = binary.Write(&b, byteOrder, swap.SwapPublicationDeadline.UnixNano())
+	err = binary.Write(
+		&b, byteOrder, swap.SwapPublicationDeadline.UnixNano(),
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -134,6 +134,7 @@ func NewPostgresStore(cfg *PostgresConfig,
 	err = baseDB.FixFaultyTimestamps(ctx)
 	if err != nil {
 		log.Errorf("Failed to fix faulty timestamps: %v", err)
+
 		return nil, err
 	}
 

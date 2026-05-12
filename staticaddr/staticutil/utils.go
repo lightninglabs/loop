@@ -46,9 +46,8 @@ func ToPrevOuts(deposits []*deposit.Deposit,
 }
 
 // CreateMusig2Sessions creates a musig2 session for a number of deposits.
-func CreateMusig2Sessions(ctx context.Context,
-	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
+func CreateMusig2Sessions(ctx context.Context, signer lndclient.SignerClient,
+	deposits []*deposit.Deposit, addrParams *address.Parameters,
 	staticAddress *script.StaticAddress) ([]*input.MuSig2SessionInfo,
 	[][]byte, error) {
 
@@ -75,8 +74,7 @@ func CreateMusig2Sessions(ctx context.Context,
 // deposits.
 func CreateMusig2SessionsPerDeposit(ctx context.Context,
 	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
-	staticAddress *script.StaticAddress) (
+	addrParams *address.Parameters, staticAddress *script.StaticAddress) (
 	map[string]*input.MuSig2SessionInfo, map[string][]byte, map[string]int,
 	error) {
 
@@ -102,8 +100,8 @@ func CreateMusig2SessionsPerDeposit(ctx context.Context,
 }
 
 // CreateMusig2Session creates a musig2 session for the deposit.
-func CreateMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient, addrParams *address.Parameters,
+func CreateMusig2Session(ctx context.Context, signer lndclient.SignerClient,
+	addrParams *address.Parameters,
 	staticAddress *script.StaticAddress) (*input.MuSig2SessionInfo, error) {
 
 	signers := [][]byte{
@@ -116,8 +114,8 @@ func CreateMusig2Session(ctx context.Context,
 	rootHash := expiryLeaf.TapHash()
 
 	return signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
+		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
 	)
 }
 
@@ -165,6 +163,7 @@ func bip69inputLess(input1, input2 *swapserverrpc.PrevoutInfo) bool {
 		ihash[b], ihash[hashSize-1-b] = ihash[hashSize-1-b], ihash[b]
 		jhash[b], jhash[hashSize-1-b] = jhash[hashSize-1-b], jhash[b]
 	}
+
 	return bytes.Compare(ihash[:], jhash[:]) == -1
 }
 
@@ -215,8 +214,8 @@ func SelectDeposits(deposits []*deposit.Deposit, amount int64,
 	}
 
 	// We exhausted all deposits without meeting the threshold.
-	return nil, fmt.Errorf("insufficient funds to cover swap " +
-		"amount plus fees, try manually selecting deposits")
+	return nil, fmt.Errorf("insufficient funds to cover swap amount plus " +
+		"fees, try manually selecting deposits")
 }
 
 // estimateFee returns the estimated fee for a transaction with the given
@@ -235,6 +234,7 @@ func estimateFee(numInputs int, feeRate chainfee.SatPerKWeight,
 	switch commitmentType {
 	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
 		we.AddP2TROutput()
+
 	default:
 		we.AddP2WSHOutput()
 	}

@@ -316,8 +316,8 @@ func TestOrderedSweeps(t *testing.T) {
 			switch {
 			// Don't create DB sweeps at all.
 			case tc.skipStore:
-
 			// Reverse the order of DB sweeps to ID incorrect IDs.
+
 			case tc.reverseStore:
 				for i := len(tc.sweeps) - 1; i >= 0; i-- {
 					s := tc.sweeps[i]
@@ -355,12 +355,14 @@ func TestOrderedSweeps(t *testing.T) {
 			orderedSweeps, err := b.getOrderedSweeps(ctx)
 			if tc.wantErr1 != "" {
 				require.ErrorContains(t, err, tc.wantErr1)
+
 				return
 			}
 			require.NoError(t, err)
 
 			if tc.reverseStore {
 				require.NotEqual(t, tc.sweeps, orderedSweeps)
+
 				return
 			}
 
@@ -378,6 +380,7 @@ func TestOrderedSweeps(t *testing.T) {
 			groups, err := b.getSweepsGroups(ctx)
 			if tc.wantErr2 != "" {
 				require.ErrorContains(t, err, tc.wantErr2)
+
 				return
 			}
 			require.NoError(t, err)
@@ -436,8 +439,8 @@ func (m *mockPresignedTxChecker) DestPkScript(ctx context.Context,
 // SignTx records all its argumentd and returned a "presigned" tx.
 func (m *mockPresignedTxChecker) SignTx(ctx context.Context,
 	primarySweepID wire.OutPoint, tx *wire.MsgTx, inputAmt btcutil.Amount,
-	minRelayFee, feeRate chainfee.SatPerKWeight,
-	loadOnly bool) (*wire.MsgTx, error) {
+	minRelayFee, feeRate chainfee.SatPerKWeight, loadOnly bool) (
+	*wire.MsgTx, error) {
 
 	m.signTxCalls++
 
@@ -469,11 +472,19 @@ func (m *mockPresignedTxChecker) SignTx(ctx context.Context,
 func TestEnsurePresigned(t *testing.T) {
 	// Prepare the necessary data for test cases.
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 
@@ -588,8 +599,10 @@ func TestEnsurePresigned(t *testing.T) {
 			switch {
 			case tc.destPkScriptErr != nil:
 				require.ErrorIs(t, err, tc.destPkScriptErr)
+
 			case tc.signedTxErr != nil:
 				require.ErrorIs(t, err, tc.signedTxErr)
+
 			default:
 				require.NoError(t, err)
 				require.Equal(t, 1, c.signTxCalls)
@@ -640,8 +653,8 @@ type mockPresigner struct {
 // calls previously made is failAt.
 func (p *mockPresigner) SignTx(ctx context.Context,
 	primarySweepID wire.OutPoint, tx *wire.MsgTx, inputAmt btcutil.Amount,
-	minRelayFee, feeRate chainfee.SatPerKWeight,
-	loadOnly bool) (*wire.MsgTx, error) {
+	minRelayFee, feeRate chainfee.SatPerKWeight, loadOnly bool) (
+	*wire.MsgTx, error) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -670,11 +683,19 @@ func (p *mockPresigner) SignTx(ctx context.Context,
 func TestPresign(t *testing.T) {
 	// Prepare the necessary data for test cases.
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 
@@ -1144,11 +1165,19 @@ func TestPresign(t *testing.T) {
 func TestCheckSignedTx(t *testing.T) {
 	// Prepare the necessary data for test cases.
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 
@@ -1667,8 +1696,12 @@ func TestCheckSignedTx(t *testing.T) {
 				},
 				TxOut: []*wire.TxOut{
 					{
-						Value:    2999374,
-						PkScript: []byte{0xaf, 0xfe}, // Just to make it different.
+						Value: 2999374,
+						// Just to make it different.
+						PkScript: []byte{
+							0xaf,
+							0xfe,
+						},
 					},
 				},
 				LockTime: 799_999,
@@ -1709,7 +1742,8 @@ func TestCheckSignedTx(t *testing.T) {
 				},
 				TxOut: []*wire.TxOut{
 					{
-						Value:    1_337_000, // Just to make it different.
+						// Just to make it different.
+						Value:    1_337_000,
 						PkScript: batchPkScript,
 					},
 				},
@@ -1770,7 +1804,8 @@ func TestCheckSignedTx(t *testing.T) {
 						PkScript: batchPkScript,
 					},
 					{
-						Value:    1_338, // Just to make it different.
+						// Just to make it different.
+						Value:    1_338,
 						PkScript: batchPkScript,
 					},
 				},

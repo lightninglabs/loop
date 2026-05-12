@@ -54,7 +54,6 @@ func NewFSM(ctx context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
 	loopInStates := loopInFsm.LoopInStatesV0()
 	switch params.ProtocolVersion {
 	case version.ProtocolVersion_V0:
-
 	default:
 		return nil, deposit.ErrProtocolVersionNotSupported
 	}
@@ -117,7 +116,9 @@ var (
 	// SucceededTransitioningFailed is the state the swap is in if the swap
 	// payment was received but the client was not able to transition
 	// the deposits to the looped-in state.
-	SucceededTransitioningFailed = fsm.StateType("SucceededTransitioningFailed") //nolint:lll
+	SucceededTransitioningFailed = fsm.StateType(
+		"SucceededTransitioningFailed",
+	) //nolint:lll
 
 	// UnlockDeposits is the state where the deposits are reset. This
 	// happens when the state machine encountered an error and the swap
@@ -138,7 +139,10 @@ var FinalStates = []fsm.StateType{
 }
 
 var AllStates = append(
-	append([]fsm.StateType{}, PendingStates...), FinalStates...,
+	append(
+		[]fsm.StateType{}, PendingStates...,
+	),
+	FinalStates...,
 )
 
 // Events.
@@ -147,12 +151,14 @@ var (
 	OnHtlcInitiated             = fsm.EventType("OnHtlcInitiated")
 	OnHtlcTxSigned              = fsm.EventType("OnHtlcTxSigned")
 	OnSweepHtlcTimeout          = fsm.EventType("OnSweepHtlcTimeout")
-	OnHtlcTimeoutSweepPublished = fsm.EventType("OnHtlcTimeoutSweepPublished")
-	OnHtlcTimeoutSwept          = fsm.EventType("OnHtlcTimeoutSwept")
-	OnPaymentReceived           = fsm.EventType("OnPaymentReceived")
-	OnSwapTimedOut              = fsm.EventType("OnSwapTimedOut")
-	OnSucceeded                 = fsm.EventType("OnSucceeded")
-	OnRecover                   = fsm.EventType("OnRecover")
+	OnHtlcTimeoutSweepPublished = fsm.EventType(
+		"OnHtlcTimeoutSweepPublished",
+	)
+	OnHtlcTimeoutSwept = fsm.EventType("OnHtlcTimeoutSwept")
+	OnPaymentReceived  = fsm.EventType("OnPaymentReceived")
+	OnSwapTimedOut     = fsm.EventType("OnSwapTimedOut")
+	OnSucceeded        = fsm.EventType("OnSucceeded")
+	OnRecover          = fsm.EventType("OnRecover")
 )
 
 // LoopInStatesV0 returns the state and transition map for the loop-in state
@@ -306,46 +312,42 @@ func isUpdateSkipped(notification fsm.Notification,
 func (f *FSM) Infof(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Infof(format, args...)
+
 		return
 	}
-	log.Infof(
-		"StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
-		fmt.Sprintf(format, args...),
-	)
+	log.Infof("StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
+		fmt.Sprintf(format, args...))
 }
 
 // Debugf logs a debug message with the loop-in swap hash.
 func (f *FSM) Debugf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Debugf(format, args...)
+
 		return
 	}
-	log.Debugf(
-		"StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
-		fmt.Sprintf(format, args...),
-	)
+	log.Debugf("StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
+		fmt.Sprintf(format, args...))
 }
 
 // Warnf logs a warning message with the loop-in swap hash.
 func (f *FSM) Warnf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Warnf(format, args...)
+
 		return
 	}
-	log.Warnf(
-		"StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
-		fmt.Sprintf(format, args...),
-	)
+	log.Warnf("StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
+		fmt.Sprintf(format, args...))
 }
 
 // Errorf logs an error message with the loop-in swap hash.
 func (f *FSM) Errorf(format string, args ...any) {
 	if f.loopIn == nil {
 		log.Errorf(format, args...)
+
 		return
 	}
-	log.Errorf(
-		"StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
-		fmt.Sprintf(format, args...),
-	)
+	log.Errorf("StaticAddr loop-in %s: %s", f.loopIn.SwapHash.String(),
+		fmt.Sprintf(format, args...))
 }

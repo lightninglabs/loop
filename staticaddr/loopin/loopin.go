@@ -172,8 +172,8 @@ func (l *StaticAddressLoopIn) getHtlc(chainParams *chaincfg.Params) (*swap.Htlc,
 
 // signMusig2Tx adds the server nonces to the musig2 sessions and signs the
 // transaction.
-func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
-	tx *wire.MsgTx, signer lndclient.SignerClient,
+func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context, tx *wire.MsgTx,
+	signer lndclient.SignerClient,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
@@ -192,7 +192,6 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	for idx, outpoint := range outpoints {
 		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
 			outpoint) {
-
 			return nil, fmt.Errorf("tx input does not match " +
 				"deposits")
 		}
@@ -277,8 +276,8 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 	// Check if the server breaches our fee limits.
 	feeLimit := btcutil.Amount(float64(swapAmt) * maxFeePercentage)
 	if fee > feeLimit {
-		return nil, fmt.Errorf("htlc tx fee %v exceeds max fee %v",
-			fee, feeLimit)
+		return nil, fmt.Errorf("htlc tx fee %v exceeds max fee %v", fee,
+			feeLimit)
 	}
 
 	htlc, err := l.getHtlc(chainParams)
@@ -379,10 +378,9 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		if bytes.Equal(
 			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
 		) {
-
 			return nil, fmt.Errorf("htlc tx output layout " +
-				"invariant violated: expected HTLC output " +
-				"at index 0, got change output")
+				"invariant violated: expected HTLC output at " +
+				"index 0, got change output")
 		}
 	}
 
@@ -461,6 +459,7 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 	for _, d := range l.Deposits {
 		total += d.Value
 	}
+
 	return total
 }
 

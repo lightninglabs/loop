@@ -12,6 +12,7 @@ import (
 func itob(v uint64) []byte {
 	b := make([]byte, 8)
 	byteOrder.PutUint64(b, v)
+
 	return b
 }
 

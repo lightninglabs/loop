@@ -75,8 +75,7 @@ func (s *swapKit) swapInfo() *SwapInfo {
 }
 
 type genericSwap interface {
-	execute(mainCtx context.Context, cfg *executeConfig,
-		height int32) error
+	execute(mainCtx context.Context, cfg *executeConfig, height int32) error
 }
 
 type swapConfig struct {

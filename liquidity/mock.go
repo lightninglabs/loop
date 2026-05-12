@@ -29,5 +29,6 @@ func (m *mockCfg) LoopInQuote(ctx context.Context,
 	request *loop.LoopInQuoteRequest) (*loop.LoopInQuote, error) {
 
 	args := m.Called(ctx, request)
+
 	return args.Get(0).(*loop.LoopInQuote), args.Error(1)
 }

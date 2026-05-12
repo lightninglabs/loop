@@ -199,7 +199,9 @@ func testLateHtlcPublish(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, store, server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	testRequest.Expiry = height + testLoopOutMinOnChainCltvDelta
@@ -303,7 +305,9 @@ func testCustomSweepConfTarget(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -451,7 +455,9 @@ func testCustomSweepConfTarget(t *testing.T) {
 			htlcTx.TxOut[0].Value - sweepTx.TxOut[0].Value,
 		)
 
-		weight := blockchain.GetTransactionWeight(btcutil.NewTx(sweepTx))
+		weight := blockchain.GetTransactionWeight(
+			btcutil.NewTx(sweepTx),
+		)
 		feeRate, err := ctx.Lnd.WalletKit.EstimateFeeRate(
 			context.Background(), expConfTarget,
 		)
@@ -547,7 +553,9 @@ func testPreimagePush(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -677,9 +685,11 @@ func testPreimagePush(t *testing.T) {
 
 	// Now we decrease our fees for the swap's confirmation target to less
 	// than the maximum miner fee.
-	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
-		testReq.MaxMinerFee/2,
-	))
+	ctx.Lnd.SetFeeEstimate(
+		testReq.SweepConfTarget, chainfee.SatPerKWeight(
+			testReq.MaxMinerFee/2,
+		),
+	)
 
 	// Now when we report a new block and tick our expiry fee timer, and
 	// fees are acceptably low so we expect our sweep to be published.
@@ -806,7 +816,9 @@ func testFailedOffChainCancelation(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -961,7 +973,9 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	cfg := newSwapConfig(
 		&lnd.LndServices, loopdb.NewStoreMock(t), server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -1095,9 +1109,11 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 
 	// Now we decrease our fees for the swap's confirmation target to less
 	// than the maximum miner fee.
-	ctx.Lnd.SetFeeEstimate(testReq.SweepConfTarget, chainfee.SatPerKWeight(
-		testReq.MaxMinerFee/2,
-	))
+	ctx.Lnd.SetFeeEstimate(
+		testReq.SweepConfTarget, chainfee.SatPerKWeight(
+			testReq.MaxMinerFee/2,
+		),
+	)
 
 	// Now when we report a new block and tick our expiry fee timer, and
 	// fees are acceptably low so we expect our sweep to be published.

@@ -191,8 +191,8 @@ type PresignedHelper interface {
 	// These rules are enforced by CheckSignedTx function.
 	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
 		tx *wire.MsgTx, inputAmt btcutil.Amount,
-		minRelayFee, feeRate chainfee.SatPerKWeight,
-		loadOnly bool) (*wire.MsgTx, error)
+		minRelayFee, feeRate chainfee.SatPerKWeight, loadOnly bool) (
+		*wire.MsgTx, error)
 
 	// CleanupTransactions removes all transactions related to any of the
 	// outpoints. Should be called after sweep batch tx is reorg-safely
@@ -218,8 +218,8 @@ type InitialDelayProvider func(ctx context.Context, numSweeps int,
 	value btcutil.Amount, fast bool) (time.Duration, error)
 
 // zeroInitialDelay returns no delay for any sweeps.
-func zeroInitialDelay(_ context.Context, _ int,
-	_ btcutil.Amount, _ bool) (time.Duration, error) {
+func zeroInitialDelay(_ context.Context, _ int, _ btcutil.Amount,
+	_ bool) (time.Duration, error) {
 
 	return 0, nil
 }
@@ -595,8 +595,8 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	opts ...BatcherOption) *Batcher {
 
 	badTx1, err := chainhash.NewHashFromStr(
-		"7028bdac753a254785d29506f311abcda323706b531345105f38999" +
-			"aecd6f3d1",
+		"7028bdac753a254785d29506f311abcda323706b531345105f38999aecd" +
+			"6f3d1",
 	)
 	if err != nil {
 		panic(err)
@@ -626,8 +626,10 @@ func NewBatcher(wallet lndclient.WalletKitClient,
 	}
 
 	if cfg.customMuSig2Signer != nil && musig2ServerSigner != nil {
-		panic("customMuSig2Signer must not be used with " +
-			"musig2ServerSigner")
+		panic(
+			"customMuSig2Signer must not be used with " +
+				"musig2ServerSigner",
+		)
 	}
 
 	return &Batcher{
@@ -747,10 +749,12 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	if err != nil {
 		return fmt.Errorf("txscript.PayToAddrScript failed: %w", err)
 	}
-	infof("PresignSweepsGroup: nextBlockFeeRate is %v, inputs: %v, "+
-		"destAddress: %v, destPkscript: %x sweepTimeout: %d",
+	infof(
+		"PresignSweepsGroup: nextBlockFeeRate is %v, inputs: %v, "+
+			"destAddress: %v, destPkscript: %x sweepTimeout: %d",
 		nextBlockFeeRate, inputs, destAddress, destPkscript,
-		sweepTimeout)
+		sweepTimeout,
+	)
 
 	sweeps := make([]sweep, len(inputs))
 	for i, input := range inputs {
@@ -845,9 +849,11 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 		}
 	}
 
-	infof("Batcher adding sweep group of %d sweeps with primarySweep %x, "+
-		"presigned=%v, fully_confirmed=%v", len(sweeps),
-		sweep.swapHash[:6], sweep.presigned, completed)
+	infof(
+		"Batcher adding sweep group of %d sweeps with primarySweep "+
+			"%x, presigned=%v, fully_confirmed=%v", len(sweeps),
+		sweep.swapHash[:6], sweep.presigned, completed,
+	)
 
 	req := &addSweepsRequest{
 		sweeps:   sweeps,
@@ -873,6 +879,7 @@ func (b *Batcher) testRunInEventLoop(ctx context.Context, handler func()) {
 		handler()
 
 		return
+
 	default:
 	}
 
@@ -953,19 +960,21 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// If the sweep has already been completed in a confirmed batch then we
 	// can't attach its notifier to the batch as that is no longer running.
 	// Instead we directly detect and return the spend here. We cannot reuse
-	// the values gathered in AddSweep because the sweep status may change in
-	// the meantime. If the status flips while handleSweeps is running, the
-	// re-add path above will handle it. A batch is removed from b.batches
-	// only after the code below finds the sweep fully confirmed and switches
-	// to the monitorSpendAndNotify path.
+	// the values gathered in AddSweep because the sweep status may change
+	// in the meantime. If the status flips while handleSweeps is running,
+	// the re-add path above will handle it. A batch is removed from
+	// b.batches only after the code below finds the sweep fully confirmed
+	// and switches to the monitorSpendAndNotify path.
 	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
 	if err != nil {
 		return fmt.Errorf("failed to get the status of sweep %v: %w",
 			sweep.outpoint, err)
 	}
-	debugf("Status of the sweep group of %d sweeps with primarySweep %x: "+
-		"presigned=%v, fully_confirmed=%v", len(sweeps),
-		sweep.swapHash[:6], sweep.presigned, completed)
+	debugf(
+		"Status of the sweep group of %d sweeps with primarySweep "+
+			"%x: presigned=%v, fully_confirmed=%v", len(sweeps),
+		sweep.swapHash[:6], sweep.presigned, completed,
+	)
 	if completed {
 		// Verify that the parent batch is confirmed. Note that a batch
 		// is only considered confirmed after it has received three
@@ -976,16 +985,21 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 				"sweep %x: %w", sweep.swapHash[:6], err)
 		}
 
-		debugf("Status of the parent batch of the sweep group of %d "+
-			"sweeps with primarySweep %x: confirmed=%v",
-			len(sweeps), sweep.swapHash[:6], parentBatch.Confirmed)
+		debugf(
+			"Status of the parent batch of the sweep group of "+
+				"%d sweeps with primarySweep %x: confirmed=%v",
+			len(sweeps), sweep.swapHash[:6], parentBatch.Confirmed,
+		)
 
 		// Batch + sweeps are persisted atomically, so if the sweep
 		// shows as completed its parent batch must be confirmed.
 		if parentBatch.Confirmed {
-			debugf("Sweep group of %d sweeps with primarySweep %x "+
-				"is fully confirmed, switching directly to "+
-				"monitoring", len(sweeps), sweep.swapHash[:6])
+			debugf(
+				"Sweep group of %d sweeps with primarySweep "+
+					"%x is fully confirmed, switching "+
+					"directly to monitoring", len(sweeps),
+				sweep.swapHash[:6],
+			)
 
 			return b.monitorSpendAndNotify(
 				ctx, sweeps, parentBatch.ID, notifier,
@@ -1002,12 +1016,16 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 	// Try to run the greedy algorithm of batch selection to minimize costs.
 	err = b.greedyAddSweeps(ctx, sweeps)
 	if err == nil {
+
 		// The greedy algorithm succeeded.
 		return nil
 	}
 
-	warnf("Greedy batch selection algorithm failed for sweep %x: %v."+
-		" Falling back to old approach.", sweep.swapHash[:6], err)
+	warnf(
+		"Greedy batch selection algorithm failed for sweep %x: %v. "+
+			"Falling back to old approach.", sweep.swapHash[:6],
+		err,
+	)
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
@@ -1131,15 +1149,19 @@ func (b *Batcher) spinUpBatchFromDB(ctx context.Context, batch *batch) error {
 	dbSweeps = filterDbSweeps(b.skippedTxns, dbSweeps)
 
 	if len(dbSweeps) == 0 {
-		infof("skipping restored batch %d as it has no sweeps",
-			batch.id)
+		infof(
+			"skipping restored batch %d as it has no sweeps",
+			batch.id,
+		)
 
 		// It is safe to cancel this empty batch as it has no sweeps
 		// that are not skipped.
 		err := b.store.CancelBatch(ctx, batch.id)
 		if err != nil {
-			warnf("unable to drop empty batch %d: %v",
-				batch.id, err)
+			warnf(
+				"unable to drop empty batch %d: %v", batch.id,
+				err,
+			)
 		}
 
 		return nil
@@ -1302,8 +1324,10 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 
 	b.wg.Go(func() {
 		defer cancel()
-		infof("Batcher monitoring spend for swap %x",
-			sweep.swapHash[:6])
+		infof(
+			"Batcher monitoring spend for swap %x",
+			sweep.swapHash[:6],
+		)
 
 		select {
 		case spend := <-spendChan:
@@ -1313,8 +1337,7 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 			// for the batch.
 			feePortionPerSweep, roundingDifference :=
 				getFeePortionForSweep(
-					spendTx, len(spendTx.TxIn),
-					totalSwept,
+					spendTx, len(spendTx.TxIn), totalSwept,
 				)
 
 			// Sum onchain fee across all the sweeps of the swap.
@@ -1340,20 +1363,21 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 			// Try to write the update to the notification channel.
 			case notifier.SpendChan <- spendDetail:
 				err := b.monitorConfAndNotify(
-					ctx, sweep, notifier, spendTx,
-					fee,
+					ctx, sweep, notifier, spendTx, fee,
 				)
 				if err != nil {
 					b.writeToErrChan(
-						ctx, fmt.Errorf("monitor conf "+
-							"failed: %w", err),
+						ctx, fmt.Errorf(
+							"monitor conf failed: "+
+								"%w",
+							err),
 					)
 				}
 
 			// If a quit signal was provided by the swap, continue.
 			case <-notifier.QuitChan:
-
 			// If the context was canceled, stop.
+
 			case <-ctx.Done():
 			}
 
@@ -1364,12 +1388,12 @@ func (b *Batcher) monitorSpendAndNotify(ctx context.Context, sweeps []*sweep,
 			// Try to write the error to the notification
 			// channel.
 			case notifier.SpendErrChan <- err:
-
 			// If a quit signal was provided by the swap,
 			// continue.
-			case <-notifier.QuitChan:
 
+			case <-notifier.QuitChan:
 			// If the context was canceled, stop.
+
 			case <-ctx.Done():
 			}
 
@@ -1422,6 +1446,7 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 	)
 	if err != nil {
 		cancel()
+
 		return err
 	}
 
@@ -1452,8 +1477,10 @@ func (b *Batcher) monitorConfAndNotify(ctx context.Context, sweep *sweep,
 				}
 			}
 
-			b.writeToErrChan(ctx, fmt.Errorf("confirmations "+
-				"monitoring error: %w", err))
+			b.writeToErrChan(
+				ctx, fmt.Errorf("confirmations monitoring "+
+					"error: %w", err),
+			)
 
 		case <-reorgChan:
 			// A re-org has been detected, but the batch is fully
@@ -1477,11 +1504,12 @@ func (b *Batcher) writeToErrChan(ctx context.Context, err error) {
 // convertSweep converts a fetched sweep from the database to a sweep that is
 // ready to be processed by the batcher. It loads swap from loopdb by calling
 // the method FetchLoopOutSwap.
-func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (
-	*sweep, error) {
+func (b *Batcher) convertSweep(ctx context.Context, dbSweep *dbSweep) (*sweep,
+	error) {
 
-	return b.loadSweep(ctx, dbSweep.SwapHash, dbSweep.Outpoint,
-		dbSweep.Amount)
+	return b.loadSweep(
+		ctx, dbSweep.SwapHash, dbSweep.Outpoint, dbSweep.Amount,
+	)
 }
 
 // LoopOutFetcher is used to load LoopOut swaps from the database.
@@ -1555,18 +1583,17 @@ func NewSweepFetcherFromSwapStore(swapStore LoopOutFetcher,
 }
 
 // fetchSweeps fetches the sweep related information from the database.
-func (b *Batcher) fetchSweeps(ctx context.Context,
-	sweepReq SweepRequest) ([]*sweep, error) {
+func (b *Batcher) fetchSweeps(ctx context.Context, sweepReq SweepRequest) (
+	[]*sweep, error) {
 
 	sweeps := make([]*sweep, len(sweepReq.Inputs))
 	for i, utxo := range sweepReq.Inputs {
 		s, err := b.loadSweep(
-			ctx, sweepReq.SwapHash, utxo.Outpoint,
-			utxo.Value,
+			ctx, sweepReq.SwapHash, utxo.Outpoint, utxo.Value,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load "+
-				"sweep %v: %w", utxo.Outpoint, err)
+			return nil, fmt.Errorf("failed to load sweep %v: %w",
+				utxo.Outpoint, err)
 		}
 		sweeps[i] = s
 	}
@@ -1595,8 +1622,8 @@ func (b *Batcher) loadSweep(ctx context.Context, swapHash lntypes.Hash,
 	// Find minimum fee rate for the sweep. Use customFeeRate if it is
 	// provided, otherwise use wallet's EstimateFeeRate.
 	minFeeRate, err := minimumSweepFeeRate(
-		ctx, b.customFeeRate, b.wallet,
-		swapHash, outpoint, s.ConfTarget,
+		ctx, b.customFeeRate, b.wallet, swapHash, outpoint,
+		s.ConfTarget,
 	)
 	if err != nil {
 		return nil, err
@@ -1645,8 +1672,8 @@ func minimumSweepFeeRate(ctx context.Context, customFeeRate FeeRateProvider,
 				"for %x: %w", swapHash[:6], err)
 		}
 		if minFeeRate < chainfee.AbsoluteFeePerKwFloor {
-			return 0, fmt.Errorf("min fee rate too low (%v) for "+
-				"%x", minFeeRate, swapHash[:6])
+			return 0, fmt.Errorf("min fee rate too low (%v) for %x",
+				minFeeRate, swapHash[:6])
 		}
 
 		return minFeeRate, nil
@@ -1658,17 +1685,18 @@ func minimumSweepFeeRate(ctx context.Context, customFeeRate FeeRateProvider,
 	// merged and that LND version becomes a requirement, we can decrease
 	// this from 2 to 1.
 	if sweepConfTarget < 2 {
-		warnf("Fee estimation was requested for confTarget=%d for "+
-			"sweep %x; changing confTarget to 2", sweepConfTarget,
-			swapHash[:6])
+		warnf(
+			"Fee estimation was requested for confTarget=%d for "+
+				"sweep %x; changing confTarget to 2",
+			sweepConfTarget, swapHash[:6],
+		)
 		sweepConfTarget = 2
 	}
 
 	minFeeRate, err := wallet.EstimateFeeRate(ctx, sweepConfTarget)
 	if err != nil {
-		return 0, fmt.Errorf("failed to estimate fee rate "+
-			"for %x, confTarget=%d: %w", swapHash[:6],
-			sweepConfTarget, err)
+		return 0, fmt.Errorf("failed to estimate fee rate for %x, "+
+			"confTarget=%d: %w", swapHash[:6], sweepConfTarget, err)
 	}
 
 	return minFeeRate, nil

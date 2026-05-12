@@ -388,7 +388,6 @@ func TestSweepHtlc(t *testing.T) {
 			go func() {
 				select {
 				case <-lnd.SignOutputRawChannel:
-
 				case <-ctx.Done():
 				}
 			}()
@@ -452,8 +451,7 @@ func TestSweepHtlc(t *testing.T) {
 			// Invoke sweepHtlc and forward the result.
 			resp, err := sweepHtlc(
 				ctx, req, lnd.ChainParams, store,
-				lnd.ChainNotifier, lnd.WalletKit,
-				lnd.Signer,
+				lnd.ChainNotifier, lnd.WalletKit, lnd.Signer,
 			)
 
 			// Handle confirmation registration caused by the call

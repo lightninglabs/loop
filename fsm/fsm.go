@@ -13,9 +13,8 @@ var (
 	ErrEventRejected = errors.New("event rejected")
 
 	// ErrWaitForStateTimedOut is returned when waiting for state times out.
-	ErrWaitForStateTimedOut = errors.New(
-		"timed out while waiting for event",
-	)
+	ErrWaitForStateTimedOut = errors.New("timed out while waiting for " +
+		"event")
 
 	// ErrInvalidContextType is returned when an invalid context type is
 	// passed.
@@ -23,9 +22,8 @@ var (
 
 	// ErrWaitingForStateEarlyAbortError is returned when waiting for state
 	// is aborted early.
-	ErrWaitingForStateEarlyAbortError = errors.New(
-		"waiting for state early abort",
-	)
+	ErrWaitingForStateEarlyAbortError = errors.New("waiting for state " +
+		"early abort")
 )
 
 const (
@@ -226,6 +224,7 @@ func (s *StateMachine) SendEvent(ctx context.Context, event EventType,
 		if err != nil {
 			log.Errorf("unable to get next state: %v from event: "+
 				"%v, current state: %v", err, event, s.current)
+
 			return ErrEventRejected
 		}
 
@@ -298,6 +297,7 @@ func (s *StateMachine) RemoveObserver(observer Observer) bool {
 			s.observers = append(
 				s.observers[:i], s.observers[i+1:]...,
 			)
+
 			return true
 		}
 	}
@@ -310,6 +310,7 @@ func (s *StateMachine) RemoveObserver(observer Observer) bool {
 func (s *StateMachine) HandleError(err error) EventType {
 	log.Errorf("StateMachine error: %s", err)
 	s.LastActionError = err
+
 	return OnError
 }
 
@@ -348,7 +349,9 @@ func (e ErrWaitingForStateTimeout) Error() string {
 }
 
 // NewErrWaitingForStateTimeout creates a new ErrWaitingForStateTimeout.
-func NewErrWaitingForStateTimeout(expected StateType) ErrWaitingForStateTimeout {
+func NewErrWaitingForStateTimeout(
+	expected StateType) ErrWaitingForStateTimeout {
+
 	return ErrWaitingForStateTimeout{
 		expected: expected,
 	}

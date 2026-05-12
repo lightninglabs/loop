@@ -96,7 +96,16 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			// Alice --- Loop
 			//
 			channels: []testChan{
-				{alice, loopNode, 1, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					loopNode,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: ErrRoutingPluginNotApplicable,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -118,9 +127,27 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//
 			channels: []testChan{
 				// Alice - Bob
-				{alice, bob, 1, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Loop
-				{bob, loopNode, 2, 1000, 1000, 1, 1000, 1},
+				{
+					bob,
+					loopNode,
+					2,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: ErrRoutingPluginNotApplicable,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -140,11 +167,47 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//          Charlie
 			//
 			channels: []testChan{
-				{alice, bob, 1, 1000, 1000, 1, 1000, 1},
-				{alice, charlie, 2, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					alice,
+					charlie,
+					2,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Dave (cheap)
-				{bob, dave, 3, 1000, 1000, 1, 1000, 1},
-				{dave, loopNode, 5, 1000, 1000, 1, 1000, 1},
+				{
+					bob,
+					dave,
+					3,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					dave,
+					loopNode,
+					5,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: ErrRoutingPluginNotApplicable,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -181,13 +244,58 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//          Charlie
 			//
 			channels: []testChan{
-				{alice, bob, 1, 1000, 1000, 1, 1000, 1},
-				{alice, charlie, 2, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					alice,
+					charlie,
+					2,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Dave (cheap)
-				{bob, dave, 3, 1000, 1000, 1, 1000, 1},
+				{
+					bob,
+					dave,
+					3,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Charlie - Dave (expensive)
-				{charlie, dave, 4, 1000, 1000, 100, 1000, 1},
-				{dave, loopNode, 5, 1000, 1000, 1, 1000, 1},
+				{
+					charlie,
+					dave,
+					4,
+					1000,
+					1000,
+					100,
+					1000,
+					1,
+				},
+				{
+					dave,
+					loopNode,
+					5,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: nil,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -249,13 +357,58 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//          Charlie
 			//
 			channels: []testChan{
-				{alice, bob, 1, 999, 1000, 1, 1000, 1},
-				{alice, charlie, 2, 9999, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					999,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					alice,
+					charlie,
+					2,
+					9999,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Dave (expensive)
-				{bob, dave, 3, 999, 1000, 100, 1000, 1},
+				{
+					bob,
+					dave,
+					3,
+					999,
+					1000,
+					100,
+					1000,
+					1,
+				},
 				// Charlie - Dave (expensive)
-				{charlie, dave, 4, 999, 1000, 100, 1000, 1},
-				{dave, loopNode, 5, 999, 1000, 1, 1000, 1},
+				{
+					charlie,
+					dave,
+					4,
+					999,
+					1000,
+					100,
+					1000,
+					1,
+				},
+				{
+					dave,
+					loopNode,
+					5,
+					999,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: nil,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -330,16 +483,79 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//           Dave
 			//
 			channels: []testChan{
-				{alice, bob, 1, 1000, 1000, 1, 1000, 1},
-				{alice, charlie, 2, 1000, 1000, 1, 1000, 1},
-				{alice, dave, 3, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					alice,
+					charlie,
+					2,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
+				{
+					alice,
+					dave,
+					3,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Eugene (cheap)
-				{bob, eugene, 4, 1000, 1000, 1, 1000, 1},
+				{
+					bob,
+					eugene,
+					4,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Charlie - Eugene (more expensive)
-				{charlie, eugene, 5, 1000, 1000, 2, 1000, 1},
+				{
+					charlie,
+					eugene,
+					5,
+					1000,
+					1000,
+					2,
+					1000,
+					1,
+				},
 				// Dave - Eugene (most expensive)
-				{dave, eugene, 6, 1000, 1001, 2, 1000, 1},
-				{eugene, frank, 7, 1000, 1000, 1, 1000, 1},
+				{
+					dave,
+					eugene,
+					6,
+					1000,
+					1001,
+					2,
+					1000,
+					1,
+				},
+				{
+					eugene,
+					frank,
+					7,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			// Private channels: Frank - George - Loop
 			routeHints: [][]zpay32.HopHint{{
@@ -457,23 +673,104 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			//
 			channels: []testChan{
 				// Alice - Bob
-				{alice, bob, 1, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					bob,
+					1,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Alice - Charlie
-				{alice, charlie, 2, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					charlie,
+					2,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Alice - Dave
-				{alice, dave, 3, 1000, 1000, 1, 1000, 1},
+				{
+					alice,
+					dave,
+					3,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Bob - Eugene
-				{bob, eugene, 4, 1000, 1000, 1, 1000, 1},
+				{
+					bob,
+					eugene,
+					4,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Charlie - Eugene
-				{charlie, eugene, 5, 1000, 1000, 2, 1000, 1},
+				{
+					charlie,
+					eugene,
+					5,
+					1000,
+					1000,
+					2,
+					1000,
+					1,
+				},
 				// Dave - George (expensive)
-				{dave, george, 6, 1000, 1001, 2, 1000, 1},
+				{
+					dave,
+					george,
+					6,
+					1000,
+					1001,
+					2,
+					1000,
+					1,
+				},
 				// Eugene - Frank
-				{eugene, frank, 7, 1000, 1000, 1, 1000, 1},
+				{
+					eugene,
+					frank,
+					7,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// Frank - George (cheap)
-				{frank, george, 8, 1000, 1000, 1, 1000, 1},
+				{
+					frank,
+					george,
+					8,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 				// George - Loop
-				{george, loopNode, 9, 1000, 1000, 1, 1000, 1},
+				{
+					george,
+					loopNode,
+					9,
+					1000,
+					1000,
+					1,
+					1000,
+					1,
+				},
 			},
 			initError: nil,
 			missionControlState: [][]lndclient.MissionControlEntry{
@@ -582,9 +879,10 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 				// Check that after each step, MC state is what
 				// we expect it to be.
 				require.NoError(
-					t, plugin.BeforePayment(
-						context.TODO(),
-						i+1, maxAttempts,
+					t,
+					plugin.BeforePayment(
+						context.TODO(), i+1,
+						maxAttempts,
 					),
 				)
 
@@ -598,7 +896,8 @@ func TestLowHighRoutingPlugin(t *testing.T) {
 			require.Error(
 				t, ErrRoutingPluginNoMoreRetries,
 				plugin.BeforePayment(
-					context.TODO(), maxAttempts, maxAttempts,
+					context.TODO(), maxAttempts,
+					maxAttempts,
 				),
 			)
 
@@ -625,11 +924,56 @@ func TestRoutingPluginAcquireRelease(t *testing.T) {
 	//          Charlie
 	//
 	channels := []testChan{
-		{alice, bob, 1, 1000, 1000, 1, 1000, 1},
-		{alice, charlie, 2, 1000, 1000, 1, 1000, 1},
-		{bob, dave, 3, 1000, 1000, 1, 1000, 1},
-		{charlie, dave, 4, 1000, 1000, 100, 1000, 1},
-		{dave, loopNode, 5, 1000, 1000, 1, 1000, 1},
+		{
+			alice,
+			bob,
+			1,
+			1000,
+			1000,
+			1,
+			1000,
+			1,
+		},
+		{
+			alice,
+			charlie,
+			2,
+			1000,
+			1000,
+			1,
+			1000,
+			1,
+		},
+		{
+			bob,
+			dave,
+			3,
+			1000,
+			1000,
+			1,
+			1000,
+			1,
+		},
+		{
+			charlie,
+			dave,
+			4,
+			1000,
+			1000,
+			100,
+			1000,
+			1,
+		},
+		{
+			dave,
+			loopNode,
+			5,
+			1000,
+			1000,
+			1,
+			1000,
+			1,
+		},
 	}
 
 	mockLnd.Channels, mockLnd.ChannelEdges = makeTestNetwork(channels)
@@ -710,6 +1054,7 @@ func (m *mockRoutingPlugin) Init(_ context.Context, _ route.Vertex,
 // context.
 func (m *mockRoutingPlugin) Done(ctx context.Context) error {
 	m.doneCtxErr = ctx.Err()
+
 	return nil
 }
 

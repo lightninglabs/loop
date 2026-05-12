@@ -34,13 +34,14 @@ const (
 	//	- <witness_script>: 39 bytes
 	//	- control_block_varint_len: 1 byte (control block length)
 	//	- <control_block>: 33 bytes
-	TaprootExpiryWitnessSize = 1 + 1 + 64 + 1 + TaprootExpiryScriptSize + 1 + 33
+	TaprootExpiryWitnessSize = 1 + 1 + 64 + 1 + TaprootExpiryScriptSize +
+		1 + 33
 )
 
 // ReservationScript returns the tapscript pkscript for the given reservation
 // parameters.
-func ReservationScript(expiry uint32, serverKey,
-	clientKey *btcec.PublicKey) ([]byte, error) {
+func ReservationScript(expiry uint32, serverKey, clientKey *btcec.PublicKey) (
+	[]byte, error) {
 
 	aggregatedKey, err := TaprootKey(expiry, serverKey, clientKey)
 	if err != nil {
@@ -51,8 +52,8 @@ func ReservationScript(expiry uint32, serverKey,
 }
 
 // TaprootKey returns the aggregated MuSig2 combined key.
-func TaprootKey(expiry uint32, serverKey,
-	clientKey *btcec.PublicKey) (*musig2.AggregateKey, error) {
+func TaprootKey(expiry uint32, serverKey, clientKey *btcec.PublicKey) (
+	*musig2.AggregateKey, error) {
 
 	expiryLeaf, err := TaprootExpiryScript(expiry, serverKey)
 	if err != nil {
@@ -108,6 +109,7 @@ func TaprootExpiryScript(expiry uint32,
 	}
 
 	leaf := txscript.NewBaseTapLeaf(script)
+
 	return &leaf, nil
 }
 

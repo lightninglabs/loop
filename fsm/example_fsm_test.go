@@ -106,14 +106,12 @@ func TestExampleFSM(t *testing.T) {
 			require.Equal(t, tc.sendEventErr, err)
 
 			require.Equal(
-				t,
-				tc.expectedLastActionError,
+				t, tc.expectedLastActionError,
 				exampleContext.LastActionError,
 			)
 
 			err = cachedObserver.WaitForState(
-				context.Background(),
-				time.Second,
+				context.Background(), time.Second,
 				tc.expectedState,
 			)
 			require.NoError(t, err)
@@ -206,7 +204,8 @@ func TestExampleFSMFlow(t *testing.T) {
 
 			go func() {
 				err := exampleContext.SendEvent(
-					ctxb, OnRequestStuff, newInitStuffRequest(),
+					ctxb, OnRequestStuff,
+					newInitStuffRequest(),
 				)
 
 				require.NoError(t, err)
@@ -214,8 +213,7 @@ func TestExampleFSMFlow(t *testing.T) {
 
 			// Wait for the final state.
 			err := cachedObserver.WaitForState(
-				context.Background(),
-				time.Second,
+				context.Background(), time.Second,
 				tc.expectedStateFlow[len(
 					tc.expectedStateFlow,
 				)-1],
@@ -227,13 +225,11 @@ func TestExampleFSMFlow(t *testing.T) {
 
 			for index, notification := range allNotifications {
 				require.Equal(
-					t,
-					tc.expectedStateFlow[index],
+					t, tc.expectedStateFlow[index],
 					notification.NextState,
 				)
 				require.Equal(
-					t,
-					tc.expectedEventFlow[index],
+					t, tc.expectedEventFlow[index],
 					notification.Event,
 				)
 			}
@@ -289,7 +285,8 @@ func TestObserverAsyncWait(t *testing.T) {
 
 			go func() {
 				err := exampleContext.SendEvent(
-					ctxb, OnRequestStuff, newInitStuffRequest(),
+					ctxb, OnRequestStuff,
+					newInitStuffRequest(),
 				)
 
 				require.NoError(t, err)

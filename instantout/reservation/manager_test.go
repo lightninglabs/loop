@@ -17,7 +17,10 @@ import (
 )
 
 var (
-	defaultReservationId = mustDecodeID("17cecc61ab4aafebdc0542dabdae0d0cb8907ec1c9c8ae387bc5a3309ca8b600")
+	defaultReservationId = mustDecodeID(
+		"17cecc61ab4aafebdc0542dabdae0d0cb8907ec1c9c8ae387bc5a3309ca" +
+			"8b600",
+	)
 )
 
 func TestManager(t *testing.T) {
@@ -28,7 +31,9 @@ func TestManager(t *testing.T) {
 	initChan := make(chan struct{})
 	// Start the manager.
 	go func() {
-		err := testContext.manager.Run(ctxb, testContext.mockLnd.Height, initChan)
+		err := testContext.manager.Run(
+			ctxb, testContext.mockLnd.Height, initChan,
+		)
 		require.NoError(t, err)
 	}()
 
@@ -42,7 +47,8 @@ func TestManager(t *testing.T) {
 			ReservationId: defaultReservationId[:],
 			Value:         uint64(defaultValue),
 			ServerKey:     defaultPubkeyBytes,
-			Expiry:        uint32(testContext.mockLnd.Height) + defaultExpiry,
+			Expiry: uint32(testContext.mockLnd.Height) +
+				defaultExpiry,
 		},
 	)
 	require.NoError(t, err)
@@ -68,7 +74,9 @@ func TestManager(t *testing.T) {
 	}
 
 	// We'll now expect the reservation to be confirmed.
-	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Confirmed)
+	err = reservationFSM.DefaultObserver.WaitForState(
+		ctxb, 5*time.Second, Confirmed,
+	)
 	require.NoError(t, err)
 
 	// We'll now expect a spend registration.
@@ -95,7 +103,9 @@ func TestManager(t *testing.T) {
 	}
 
 	// We'll now expect the reservation to be expired.
-	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Spent)
+	err = reservationFSM.DefaultObserver.WaitForState(
+		ctxb, 5*time.Second, Spent,
+	)
 	require.NoError(t, err)
 }
 
@@ -169,5 +179,6 @@ func mustDecodeID(id string) ID {
 	}
 	var decoded ID
 	copy(decoded[:], bytes)
+
 	return decoded
 }

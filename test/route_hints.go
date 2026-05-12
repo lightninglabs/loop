@@ -8,9 +8,7 @@ import (
 )
 
 // RequireRouteHintsEqual asserts that two route hint sets are identical.
-func RequireRouteHintsEqual(t testing.TB, expected,
-	actual [][]zpay32.HopHint) {
-
+func RequireRouteHintsEqual(t testing.TB, expected, actual [][]zpay32.HopHint) {
 	t.Helper()
 
 	require.Len(t, actual, len(expected))
@@ -23,8 +21,7 @@ func RequireRouteHintsEqual(t testing.TB, expected,
 			actualHint := actual[i][j]
 
 			require.Equal(
-				t,
-				expectedHint.NodeID.SerializeCompressed(),
+				t, expectedHint.NodeID.SerializeCompressed(),
 				actualHint.NodeID.SerializeCompressed(),
 			)
 			require.Equal(
@@ -35,13 +32,11 @@ func RequireRouteHintsEqual(t testing.TB, expected,
 				actualHint.FeeBaseMSat,
 			)
 			require.Equal(
-				t,
-				expectedHint.FeeProportionalMillionths,
+				t, expectedHint.FeeProportionalMillionths,
 				actualHint.FeeProportionalMillionths,
 			)
 			require.Equal(
-				t,
-				expectedHint.CLTVExpiryDelta,
+				t, expectedHint.CLTVExpiryDelta,
 				actualHint.CLTVExpiryDelta,
 			)
 		}

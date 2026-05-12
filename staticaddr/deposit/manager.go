@@ -91,7 +91,9 @@ func NewManager(cfg *ManagerConfig) *Manager {
 
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
-	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
+	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(
+		ctx,
+	) //nolint:lll
 	if err != nil {
 		log.Errorf("unable to register block epoch notifier: %v", err)
 
@@ -134,7 +136,6 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			for _, fsm := range activeDeposits {
 				select {
 				case fsm.blockNtfnChan <- uint32(height):
-
 				case <-fsm.quitChan:
 					continue
 
@@ -248,6 +249,7 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	newDeposits := m.filterNewDeposits(utxos)
 	if len(newDeposits) == 0 {
 		log.Tracef("No new deposits...")
+
 		return nil
 	}
 
@@ -271,8 +273,8 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
-func (m *Manager) createNewDeposit(ctx context.Context,
-	utxo *lnwallet.Utxo) (*Deposit, error) {
+func (m *Manager) createNewDeposit(ctx context.Context, utxo *lnwallet.Utxo) (
+	*Deposit, error) {
 
 	blockHeight, err := m.getBlockHeight(ctx, utxo)
 	if err != nil {
@@ -319,8 +321,8 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 }
 
 // getBlockHeight retrieves the block height of a given utxo.
-func (m *Manager) getBlockHeight(ctx context.Context,
-	utxo *lnwallet.Utxo) (uint32, error) {
+func (m *Manager) getBlockHeight(ctx context.Context, utxo *lnwallet.Utxo) (
+	uint32, error) {
 
 	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
 		ctx,
@@ -569,15 +571,15 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 
 // DepositsForOutpoints returns all deposits that are behind the given
 // outpoints.
-func (m *Manager) DepositsForOutpoints(ctx context.Context,
-	outpoints []string, ignoreUnknown bool) ([]*Deposit, error) {
+func (m *Manager) DepositsForOutpoints(ctx context.Context, outpoints []string,
+	ignoreUnknown bool) ([]*Deposit, error) {
 
 	// Check for duplicates.
 	existingOutpoints := make(map[string]struct{}, len(outpoints))
 	for i, o := range outpoints {
 		if _, ok := existingOutpoints[o]; ok {
-			return nil, fmt.Errorf("duplicate outpoint %s "+
-				"at index %d", o, i)
+			return nil, fmt.Errorf("duplicate outpoint %s at "+
+				"index %d", o, i)
 		}
 		existingOutpoints[o] = struct{}{}
 	}
@@ -594,6 +596,7 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 			if ignoreUnknown && errors.Is(err, ErrDepositNotFound) {
 				continue
 			}
+
 			return nil, err
 		}
 

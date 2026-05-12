@@ -26,11 +26,10 @@ type Sweeper struct {
 // CreateUnsignedTaprootKeySpendSweepTx creates a taproot htlc sweep tx using
 // keyspend. Returns the raw unsigned txn, the psbt serialized txn, the sighash
 // or an error.
-func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
-	ctx context.Context, lockTime uint32,
-	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
-	amount, fee btcutil.Amount, destAddr btcutil.Address) (
-	*wire.MsgTx, []byte, []byte, error) {
+func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(ctx context.Context,
+	lockTime uint32, htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
+	amount, fee btcutil.Amount, destAddr btcutil.Address) (*wire.MsgTx,
+	[]byte, []byte, error) {
 
 	if htlc.Version != swap.HtlcV3 {
 		return nil, nil, nil, fmt.Errorf("invalid htlc version")
@@ -90,13 +89,12 @@ func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
 }
 
 // CreateSweepTx creates an htlc sweep tx.
-func (s *Sweeper) CreateSweepTx(
-	globalCtx context.Context, height int32, sequence uint32,
-	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
+func (s *Sweeper) CreateSweepTx(globalCtx context.Context, height int32,
+	sequence uint32, htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
 	keyBytes [33]byte, witnessScript []byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
-	amount, fee btcutil.Amount,
-	destAddr btcutil.Address) (*wire.MsgTx, error) {
+	amount, fee btcutil.Amount, destAddr btcutil.Address) (*wire.MsgTx,
+	error) {
 
 	// Compose tx.
 	sweepTx := wire.NewMsgTx(2)

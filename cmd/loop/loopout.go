@@ -137,9 +137,11 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 	switch {
 	case cmd.IsSet("amt"):
 		amtStr = strconv.FormatUint(cmd.Uint64("amt"), 10)
+
 	case cmd.NArg() == 1 || cmd.NArg() == 2:
 		amtStr = args.First()
 		remaining = args.Tail()
+
 	default:
 		// Show command help if no arguments and flags were provided.
 		return showCommandHelp(ctx, cmd)
@@ -156,14 +158,17 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 	var outgoingChanSet []uint64
 	if cmd.IsSet("channel") {
 		if cmd.IsSet("asset_id") {
-			return fmt.Errorf("channel flag is not supported when " +
-				"looping out assets")
+			return fmt.Errorf("channel flag is not supported " +
+				"when looping out assets")
 		}
-		for chanString := range strings.SplitSeq(cmd.String("channel"), ",") {
+		for chanString := range strings.SplitSeq(
+			cmd.String("channel"),
+			",",
+		) {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
-				return fmt.Errorf("error parsing channel id "+
-					"\"%v\"", chanString)
+				return fmt.Errorf("error parsing "+
+					"channel id \"%v\"", chanString)
 			}
 			outgoingChanSet = append(outgoingChanSet, chanID)
 		}
@@ -275,8 +280,8 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 	if fast {
 		warning = "Fast swap requested."
 	} else {
-		warning = fmt.Sprintf("Regular swap speed requested, it "+
-			"might take up to %v for the swap to be executed.",
+		warning = fmt.Sprintf("Regular swap speed requested, it might "+
+			"take up to %v for the swap to be executed.",
 			defaultSwapWaitTime)
 	}
 
@@ -302,8 +307,8 @@ func loopOut(ctx context.Context, cmd *cli.Command) error {
 	if cmd.IsSet("payment_timeout") {
 		parsedTimeout := cmd.Duration("payment_timeout")
 		if parsedTimeout.Truncate(time.Second) != parsedTimeout {
-			return fmt.Errorf("payment timeout must be a " +
-				"whole number of seconds")
+			return fmt.Errorf("payment timeout must be a whole " +
+				"number of seconds")
 		}
 
 		paymentTimeout = int64(parsedTimeout.Seconds())

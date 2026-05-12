@@ -11,7 +11,9 @@ import (
 
 // migrateSwapPublicationDeadline migrates the database to v02, by adding the
 // SwapPublicationDeadline field to loop out contracts.
-func migrateSwapPublicationDeadline(tx *bbolt.Tx, chainParams *chaincfg.Params) error {
+func migrateSwapPublicationDeadline(tx *bbolt.Tx,
+	chainParams *chaincfg.Params) error {
+
 	rootBucket := tx.Bucket(loopOutBucketKey)
 	if rootBucket == nil {
 		return errors.New("bucket does not exist")
@@ -28,8 +30,7 @@ func migrateSwapPublicationDeadline(tx *bbolt.Tx, chainParams *chaincfg.Params) 
 		// bucket for this swap from its swaphash.
 		swapBucket := rootBucket.Bucket(swapHash)
 		if swapBucket == nil {
-			return fmt.Errorf("swap bucket %x not found",
-				swapHash)
+			return fmt.Errorf("swap bucket %x not found", swapHash)
 		}
 
 		// With the main swap bucket obtained, we'll grab the

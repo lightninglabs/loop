@@ -17,6 +17,7 @@ func migrateCosts(tx *bbolt.Tx, _ *chaincfg.Params) error {
 	if err := migrateCostsForBucket(tx, loopOutBucketKey); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -40,8 +41,7 @@ func migrateCostsForBucket(tx *bbolt.Tx, bucketKey []byte) error {
 		// bucket for this swap from its swaphash.
 		swapBucket := rootBucket.Bucket(swapHash)
 		if swapBucket == nil {
-			return fmt.Errorf("swap bucket %x not found",
-				swapHash)
+			return fmt.Errorf("swap bucket %x not found", swapHash)
 		}
 
 		// Get the updates bucket.
@@ -54,6 +54,7 @@ func migrateCostsForBucket(tx *bbolt.Tx, bucketKey []byte) error {
 		var ids [][]byte
 		err := updatesBucket.ForEach(func(k, v []byte) error {
 			ids = append(ids, k)
+
 			return nil
 		})
 		if err != nil {

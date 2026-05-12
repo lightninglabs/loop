@@ -26,8 +26,8 @@ const (
 	// static loop in sweep requests.
 	NotificationTypeStaticLoopInSweepRequest
 
-	// NotificationTypeUnfinishedSwap is the notification type for unfinished
-	// swap notifications.
+	// NotificationTypeUnfinishedSwap is the notification type for
+	// unfinished swap notifications.
 	NotificationTypeUnfinishedSwap
 )
 
@@ -44,7 +44,8 @@ const (
 // Client is the interface that the notification manager needs to implement in
 // order to be able to subscribe to notifications.
 type Client interface {
-	// SubscribeNotifications subscribes to the notifications from the server.
+	// SubscribeNotifications subscribes to the notifications from the
+	// server.
 	SubscribeNotifications(ctx context.Context,
 		in *swapserverrpc.SubscribeNotificationsRequest,
 		opts ...grpc.CallOption) (
@@ -134,8 +135,7 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 
 	context.AfterFunc(ctx, func() {
 		m.removeSubscriber(
-			NotificationTypeStaticLoopInSweepRequest,
-			sub,
+			NotificationTypeStaticLoopInSweepRequest, sub,
 		)
 		close(notifChan)
 	})
@@ -289,12 +289,13 @@ func (m *Manager) subscribeNotifications(ctx context.Context) error {
 
 // handleNotification handles an incoming notification from the server,
 // forwarding it to the appropriate subscribers.
-func (m *Manager) handleNotification(ntfn *swapserverrpc.
-	SubscribeNotificationsResponse) {
+func (m *Manager) handleNotification(
+	ntfn *swapserverrpc.SubscribeNotificationsResponse) {
 
 	switch ntfn.Notification.(type) {
 	case *swapserverrpc.SubscribeNotificationsResponse_ReservationNotification: // nolint: lll
-		// We'll forward the reservation notification to all subscribers.
+		// We'll forward the reservation notification to all
+		// subscribers.
 		reservationNtfn := ntfn.GetReservationNotification()
 		m.Lock()
 		defer m.Unlock()
@@ -305,6 +306,7 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 
 			recvChan <- reservationNtfn
 		}
+
 	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInSweep: // nolint: lll
 		// We'll forward the static loop in sweep request to all
 		// subscribers.
@@ -334,8 +336,7 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 		}
 
 	default:
-		log.Warnf("Received unknown notification type: %v",
-			ntfn)
+		log.Warnf("Received unknown notification type: %v", ntfn)
 	}
 }
 

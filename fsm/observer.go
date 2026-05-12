@@ -113,7 +113,6 @@ func (c *CachedObserver) WaitForState(ctx context.Context,
 	if options.initialWait > 0 {
 		select {
 		case <-time.After(options.initialWait):
-
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -171,6 +170,7 @@ func (c *CachedObserver) WaitForStateAsync(ctx context.Context, state StateType,
 			// Check if the last state is the desired state.
 			if c.lastNotification.NextState == state {
 				writeResult(nil)
+
 				return
 			}
 
@@ -179,6 +179,7 @@ func (c *CachedObserver) WaitForStateAsync(ctx context.Context, state StateType,
 				lastErr := c.lastNotification.LastActionError
 				if abortOnEarlyError {
 					writeResult(lastErr)
+
 					return
 				}
 			}

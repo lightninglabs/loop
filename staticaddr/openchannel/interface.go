@@ -20,8 +20,10 @@ type DepositManager interface {
 
 	// GetActiveDepositsInState returns all deposits that are in the
 	// given state.
-	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
-		error)
+	GetActiveDepositsInState(stateFilter fsm.StateType) (
+		[]*deposit.Deposit,
+		error,
+	)
 
 	// TransitionDeposits transitions the deposits to the given state.
 	TransitionDeposits(ctx context.Context, deposits []*deposit.Deposit,
@@ -31,7 +33,7 @@ type DepositManager interface {
 type WithdrawalManager interface {
 	CreateFinalizedWithdrawalTx(ctx context.Context,
 		deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
-		feeRate chainfee.SatPerKWeight,
-		selectedWithdrawalAmount int64,
-		commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error)
+		feeRate chainfee.SatPerKWeight, selectedWithdrawalAmount int64,
+		commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte,
+		error)
 }

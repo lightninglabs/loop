@@ -136,7 +136,9 @@ func TestLoopInSwapInvoiceRouteHintsMatchProbe(t *testing.T) {
 	ctx := newLoopInTestContext(t)
 	cfg := newSwapConfig(
 		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	req := testLoopInRequest
@@ -178,8 +180,7 @@ func testLoopInSuccess(t *testing.T) {
 	req.LastHop = expectedLastHop
 
 	initResult, err := newLoopInSwap(
-		context.Background(), cfg,
-		height, req,
+		context.Background(), cfg, height, req,
 	)
 	require.NoError(t, err)
 
@@ -358,7 +359,9 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 
 	cfg := newSwapConfig(
 		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	req := testLoopInRequest
@@ -367,8 +370,7 @@ func testLoopInTimeout(t *testing.T, externalValue int64) {
 	}
 
 	initResult, err := newLoopInSwap(
-		context.Background(), cfg,
-		height, &req,
+		context.Background(), cfg, height, &req,
 	)
 	require.NoError(t, err)
 	inSwap := initResult.swap
@@ -544,9 +546,8 @@ func TestLoopInResume(t *testing.T) {
 	for _, next := range []bool{false, true} {
 		for _, version := range storedVersion {
 			for _, testCase := range testCases {
-				name := fmt.Sprintf(
-					"%v %v", testCase, version.String(),
-				)
+				name := fmt.Sprintf("%v %v", testCase,
+					version.String())
 				if next {
 					name += " next protocol"
 				}
@@ -554,8 +555,7 @@ func TestLoopInResume(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					testLoopInResume(
 						t, testCase.state,
-						testCase.expired,
-						version,
+						testCase.expired, version,
 					)
 				})
 			}
@@ -572,7 +572,9 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 	ctx := newLoopInTestContext(t)
 	cfg := newSwapConfig(
 		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	// Create sender and receiver keys.
@@ -658,12 +660,14 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		select {
 		case <-ctx.lnd.SendPaymentChannel:
 			t.Fatal("unexpected payment sent")
+
 		default:
 		}
 
 		select {
 		case <-ctx.lnd.SendOutputsChannel:
 			t.Fatal("unexpected tx published")
+
 		default:
 		}
 	}()
@@ -674,6 +678,7 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 		if expired {
 			ctx.assertState(loopdb.StateFailTimeout)
+
 			return
 		}
 
@@ -874,7 +879,9 @@ func TestAbandonSettledInvoiceState(t *testing.T) {
 			Hash: testPreimage.Hash(),
 		},
 	}
-	resumedSwap, err := resumeLoopInSwap(context.Background(), cfg, pendSwap)
+	resumedSwap, err := resumeLoopInSwap(
+		context.Background(), cfg, pendSwap,
+	)
 	require.NoError(t, err)
 
 	// Execute the abandoned swap.
@@ -922,6 +929,7 @@ func advanceToPublishedHtlc(t *testing.T, ctx *loopInTestContext) SwapInfo {
 
 	// Client starts listening for spend of htlc.
 	<-ctx.lnd.RegisterSpendChannel
+
 	return swapInfo
 }
 
@@ -930,14 +938,15 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 
 	cfg := newSwapConfig(
 		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
-		clock.NewTestClock(time.Unix(123, 0)),
+		clock.NewTestClock(
+			time.Unix(123, 0),
+		),
 	)
 
 	req := &testLoopInRequest
 
 	initResult, err := newLoopInSwap(
-		context.Background(), cfg,
-		height, req,
+		context.Background(), cfg, height, req,
 	)
 	require.NoError(t, err)
 

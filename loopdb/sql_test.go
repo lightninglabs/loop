@@ -303,8 +303,8 @@ func testSqliteLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 	require.NoError(t, err)
 }
 
-// TestSqliteLiquidityParams checks that reading and writing to liquidty bucket are
-// as expected.
+// TestSqliteLiquidityParams checks that reading and writing to liquidty bucket
+// are as expected.
 func TestSqliteLiquidityParams(t *testing.T) {
 	ctxb := context.Background()
 
@@ -558,6 +558,7 @@ func randomString(length int) string {
 	for i := range b {
 		b[i] = charset[rand.Intn(len(charset))]
 	}
+
 	return string(b)
 }
 
@@ -566,6 +567,7 @@ func randomBytes(length int) []byte {
 	for i := range b {
 		b[i] = byte(rand.Intn(256))
 	}
+
 	return b
 }
 

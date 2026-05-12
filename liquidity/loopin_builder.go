@@ -68,9 +68,8 @@ func (b *loopInBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 
 	lastFail, recentFail := traffic.failedLoopIn[peer]
 	if recentFail {
-		log.Debugf("Peer: %v not eligible for suggestions, "+
-			"was part of a failed swap at: %v", peer,
-			lastFail)
+		log.Debugf("Peer: %v not eligible for suggestions, was part "+
+			"of a failed swap at: %v", peer, lastFail)
 
 		return newReasonError(ReasonFailureBackoff)
 	}
@@ -83,9 +82,8 @@ func (b *loopInBuilder) inUse(traffic *swapTraffic, peer route.Vertex,
 //
 // For loop in, we do not add the autoloop label for dry runs.
 func (b *loopInBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
-	_ []lnwire.ShortChannelID, amount btcutil.Amount,
-	params Parameters, swapOpts ...buildSwapOption) (swapSuggestion,
-	error) {
+	_ []lnwire.ShortChannelID, amount btcutil.Amount, params Parameters,
+	swapOpts ...buildSwapOption) (swapSuggestion, error) {
 
 	quote, err := b.cfg.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
 		Amount:         amount,
