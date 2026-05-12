@@ -3,9 +3,11 @@ package notifications
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/lightninglabs/aperture/l402"
@@ -427,4 +429,179 @@ func TestManager_Backoff_Pending_Token(t *testing.T) {
 		float64(tolerance),
 		"Expected to backoff for at ~3 seconds due to pending token",
 	)
+}
+
+// TestManager_HtlcConfirmedNotification tests that the Manager correctly
+// forwards htlc confirmed notifications to subscribers via the end-to-end
+// subscription path.
+func TestManager_HtlcConfirmedNotification(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock notification client.
+	recvChan := make(
+		chan *swapserverrpc.SubscribeNotificationsResponse, 1,
+	)
+	errChan := make(chan error, 1)
+	mockStream := &mockSubscribeNotificationsClient{
+		recvChan:    recvChan,
+		recvErrChan: errChan,
+	}
+	mockClient := &mockNotificationsClient{
+		mockStream: mockStream,
+	}
+
+	mgr := NewManager(&Config{
+		Client: mockClient,
+		CurrentToken: func() (*l402.Token, error) {
+			return &l402.Token{
+				Preimage: lntypes.Preimage{1, 2, 3},
+			}, nil
+		},
+	})
+
+	// Subscribe to htlc confirmed notifications.
+	ctx := t.Context()
+	subCtx, subCancel := context.WithCancel(ctx)
+	defer subCancel()
+	subChan := mgr.SubscribeHtlcConfirmed(subCtx)
+
+	// Run the manager.
+	go func() {
+		_ = mgr.Run(ctx)
+	}()
+
+	// Wait for the manager to subscribe to the server stream.
+	require.Eventually(t, func() bool {
+		mockClient.Lock()
+		defer mockClient.Unlock()
+
+		return mockClient.timesCalled > 0
+	}, time.Second*5, 10*time.Millisecond)
+
+	// Send an htlc confirmed notification via the mock stream.
+	testSwapHash := []byte("test_hash_32_bytes_long_padding!")
+	testNtfn := &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.SubscribeNotificationsResponse_HtlcConfirmed{ // nolint: lll
+			HtlcConfirmed: &swapserverrpc.ServerHtlcConfirmedNotification{ // nolint: lll
+				SwapHash:     testSwapHash,
+				HtlcOutpoint: "abc123:0",
+				HtlcAddress:  "tb1qexamplehtlcaddress",
+			},
+		},
+	}
+	recvChan <- testNtfn
+
+	// Verify the subscriber receives it.
+	select {
+	case received := <-subChan:
+		require.NotNil(t, received)
+		require.Equal(t, testSwapHash, received.SwapHash)
+		require.Equal(t, "abc123:0", received.HtlcOutpoint)
+		require.Equal(t, "tb1qexamplehtlcaddress", received.HtlcAddress)
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not receive htlc confirmed notification")
+	}
+
+	// Cancel the subscription and verify the channel closes.
+	subCancel()
+	require.Eventually(t, func() bool {
+		select {
+		case _, ok := <-subChan:
+			return !ok
+
+		default:
+			return false
+		}
+	}, time.Second*5, 10*time.Millisecond)
+}
+
+// TestManager_HtlcConfirmedNonBlocking tests that a slow htlc confirmed
+// subscriber does not block the notification pipeline.
+func TestManager_HtlcConfirmedNonBlocking(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		recvChan := make(
+			chan *swapserverrpc.SubscribeNotificationsResponse, 1,
+		)
+		errChan := make(chan error, 1)
+		mockStream := &mockSubscribeNotificationsClient{
+			recvChan:    recvChan,
+			recvErrChan: errChan,
+		}
+		mockClient := &mockNotificationsClient{
+			mockStream: mockStream,
+		}
+
+		mgr := NewManager(&Config{
+			Client: mockClient,
+			CurrentToken: func() (*l402.Token, error) {
+				return &l402.Token{
+					Preimage: lntypes.Preimage{1, 2, 3},
+				}, nil
+			},
+		})
+
+		// Subscribe but never read from the channel.
+		subCtx, subCancel := context.WithCancel(t.Context())
+		defer subCancel()
+		_ = mgr.SubscribeHtlcConfirmed(subCtx)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() {
+			_ = mgr.Run(ctx)
+		}()
+
+		// Wait for the manager to connect and block on stream Recv().
+		synctest.Wait()
+		mockClient.Lock()
+		require.Greater(t, mockClient.timesCalled, 0)
+		mockClient.Unlock()
+
+		// Also send a reservation notification to prove the pipeline
+		// is not blocked — it should still be dispatched once the
+		// timed htlc fanout drop has elapsed.
+		resChan := mgr.SubscribeReservations(subCtx)
+
+		// Send two notifications rapidly. The subscriber channel has
+		// buffer 1, so the first should be delivered and the second
+		// should be dropped after waiting for the timeout.
+		for i := range 2 {
+			ntfn := &swapserverrpc.SubscribeNotificationsResponse{
+				Notification: &swapserverrpc.SubscribeNotificationsResponse_HtlcConfirmed{ // nolint: lll
+					HtlcConfirmed: &swapserverrpc.ServerHtlcConfirmedNotification{ // nolint: lll
+						SwapHash:     fmt.Appendf(nil, "hash_%d_padding_to_32bytes!!", i), // nolint: lll
+						HtlcOutpoint: "abc:0",
+						HtlcAddress:  "tb1qexamplehtlcaddress",
+					},
+				},
+			}
+			recvChan <- ntfn
+		}
+
+		resNtfn := &swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.SubscribeNotificationsResponse_ReservationNotification{ // nolint: lll
+				ReservationNotification: &swapserverrpc.ServerReservationNotification{ // nolint: lll
+					ReservationId: []byte("res1"),
+				},
+			},
+		}
+		recvChan <- resNtfn
+
+		select {
+		case res := <-resChan:
+			require.Equal(t, []byte("res1"), res.ReservationId)
+
+		case <-time.After(5 * htlcConfirmedSubscriberSendTimeout):
+			t.Fatal("reservation notification blocked by slow " +
+				"htlc confirmed subscriber")
+		}
+
+		// Stop the manager and ensure all goroutines in the test exit.
+		cancel()
+		close(recvChan)
+		synctest.Wait()
+	})
 }

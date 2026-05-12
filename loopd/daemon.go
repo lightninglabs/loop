@@ -571,6 +571,27 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	})
 
+	// Start the HTLC recovery worker that handles HTLC-confirmed
+	// notifications with a direct sweep attempt.
+	htlcConfirmedRecovery := &htlcConfirmedRecoveryManager{
+		notificationSource: notificationManager,
+		swapStore:          swapDb,
+		chainParams:        d.lnd.ChainParams,
+		notifier:           d.lnd.ChainNotifier,
+		wallet:             d.lnd.WalletKit,
+		signer:             d.lnd.Signer,
+	}
+
+	d.wg.Go(func() {
+		debugf("Starting htlc confirmed recovery worker")
+		defer debugf("Htlc confirmed recovery worker stopped")
+
+		err := htlcConfirmedRecovery.run(d.mainCtx)
+		if shouldReportManagerErr(err) {
+			debugf("htlc confirmed recovery worker failed: %v", err)
+		}
+	})
+
 	var (
 		staticAddressManager *address.Manager
 		depositManager       *deposit.Manager

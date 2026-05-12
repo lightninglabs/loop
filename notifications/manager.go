@@ -29,6 +29,10 @@ const (
 	// NotificationTypeUnfinishedSwap is the notification type for unfinished
 	// swap notifications.
 	NotificationTypeUnfinishedSwap
+
+	// NotificationTypeHtlcConfirmed is the notification type for HTLC
+	// confirmed notifications.
+	NotificationTypeHtlcConfirmed
 )
 
 const (
@@ -36,6 +40,10 @@ const (
 	// connection to the server needs to be alive before we consider it a
 	// successful connection.
 	defaultMinAliveConnTime = time.Minute
+
+	// htlcConfirmedSubscriberSendTimeout is how long we wait for a busy
+	// htlc-confirmed subscriber before dropping the notification.
+	htlcConfirmedSubscriberSendTimeout = 200 * time.Millisecond
 
 	// current_version is the current version of the notification listener.
 	current_version = swapserverrpc.SubscribeNotificationsRequest_V1
@@ -158,6 +166,27 @@ func (m *Manager) SubscribeUnfinishedSwaps(ctx context.Context,
 	m.addSubscriber(NotificationTypeUnfinishedSwap, sub)
 	context.AfterFunc(ctx, func() {
 		m.removeSubscriber(NotificationTypeUnfinishedSwap, sub)
+		close(notifChan)
+	})
+
+	return notifChan
+}
+
+// SubscribeHtlcConfirmed subscribes to the HTLC confirmed notifications.
+func (m *Manager) SubscribeHtlcConfirmed(ctx context.Context,
+) <-chan *swapserverrpc.ServerHtlcConfirmedNotification {
+
+	notifChan := make(
+		chan *swapserverrpc.ServerHtlcConfirmedNotification, 1,
+	)
+	sub := subscriber{
+		subCtx:   ctx,
+		recvChan: notifChan,
+	}
+
+	m.addSubscriber(NotificationTypeHtlcConfirmed, sub)
+	context.AfterFunc(ctx, func() {
+		m.removeSubscriber(NotificationTypeHtlcConfirmed, sub)
 		close(notifChan)
 	})
 
@@ -333,9 +362,30 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan <- unfinishedSwapNtfn
 		}
 
+	case *swapserverrpc.SubscribeNotificationsResponse_HtlcConfirmed:
+		// We'll forward the htlc confirmed notification to all
+		// subscribers. We wait briefly for a slow subscriber and
+		// then drop to avoid stalling the notification pipeline.
+		htlcConfirmedNtfn := ntfn.GetHtlcConfirmed()
+		m.Lock()
+		defer m.Unlock()
+
+		subscribers := m.subscribers[NotificationTypeHtlcConfirmed]
+		for _, sub := range subscribers {
+			recvChan := sub.recvChan.(chan *swapserverrpc.
+				ServerHtlcConfirmedNotification)
+
+			select {
+			case recvChan <- htlcConfirmedNtfn:
+
+			case <-time.After(htlcConfirmedSubscriberSendTimeout):
+				log.Infof("Dropping htlc confirmed " +
+					"notification, subscriber busy")
+			}
+		}
+
 	default:
-		log.Warnf("Received unknown notification type: %v",
-			ntfn)
+		log.Debugf("Received unknown notification type: %v", ntfn)
 	}
 }
 

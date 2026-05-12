@@ -683,6 +683,7 @@ message SubscribeNotificationsResponse {
             static_loop_in_risk_accepted = 4;
         ServerStaticLoopInRiskRejectedNotification
             static_loop_in_risk_rejected = 5;
+        ServerHtlcConfirmedNotification htlc_confirmed = 6;
     }
 }
 
@@ -728,4 +729,18 @@ message ServerUnfinishedSwapNotification {
 
     // Whether the swap is a loop in or loop out.
     bool is_loop_in = 2;
+}
+
+// ServerHtlcConfirmedNotification is a notification from the server to the
+// client that the on-chain HTLC for a loop out swap has been confirmed.
+message ServerHtlcConfirmedNotification {
+    // The swap hash of the loop out swap.
+    bytes swap_hash = 1;
+
+    // htlc_outpoint is the outpoint of the confirmed HTLC in the format
+    // "txid:output_index".
+    string htlc_outpoint = 2;
+
+    // htlc_address is the address of the confirmed HTLC output.
+    string htlc_address = 3;
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/loop/loopdb"
@@ -17,7 +18,9 @@ import (
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
@@ -45,7 +48,6 @@ var sweepHtlcTests = []struct {
 		satPerVByte:    10,
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -63,7 +65,6 @@ var sweepHtlcTests = []struct {
 		satPerVByte:    10,
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -83,7 +84,6 @@ var sweepHtlcTests = []struct {
 		satPerVByte:    10,
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -105,7 +105,6 @@ var sweepHtlcTests = []struct {
 		expectErrMsg:   "fee exceeds",
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -124,7 +123,6 @@ var sweepHtlcTests = []struct {
 		expectErrMsg:   "fee too low for relay after clamp",
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -182,10 +180,7 @@ var sweepHtlcTests = []struct {
 		expectErrMsg:   "no matching swap",
 		expectRegister: false,
 		noSwap:         true,
-		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
-			"sweephtlc: start sweep for %v -> %v",
-		},
+		expectLogs:     []string{},
 	},
 	{
 		name:           "invalid initiation height",
@@ -197,7 +192,6 @@ var sweepHtlcTests = []struct {
 			contract.InitiationHeight = 0
 		},
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 		},
@@ -212,7 +206,6 @@ var sweepHtlcTests = []struct {
 			reg.ErrChan <- errors.New("boom")
 		},
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -230,7 +223,6 @@ var sweepHtlcTests = []struct {
 			txOut.PkScript = []byte{0x6a}
 		},
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -245,7 +237,6 @@ var sweepHtlcTests = []struct {
 		expectErrMsg:   "fee exceeds HTLC value",
 		expectRegister: true,
 		expectLogs: []string{
-			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
 			"sweephtlc: registering conf ntfn for %v hint=%v",
@@ -265,6 +256,23 @@ var sweepHtlcTests = []struct {
 			req.Preimage = bytes.Repeat([]byte{9}, 32)
 		},
 		expectLogs: []string{
+			"sweephtlc: start sweep for %v -> %v",
+			"sweephtlc: matched swap %v at height hint %v",
+			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: waiting for confirmation of %v",
+			"sweephtlc: funding confirmed at height %v",
+			"sweephtlc: swap hash validated for %v",
+		},
+	},
+	{
+		name:           "fallback to generated destination",
+		amount:         100_000,
+		satPerVByte:    10,
+		expectRegister: true,
+		mutateSwap: func(contract *loopdb.LoopOutContract) {
+			contract.DestAddr = nil
+		},
+		expectLogs: []string{
 			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: matched swap %v at height hint %v",
@@ -272,6 +280,9 @@ var sweepHtlcTests = []struct {
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
+			"sweephtlc: sweeping to %v with feerate %v sat/vbyte",
+			"sweephtlc: signing sweep spending %v",
+			"sweephtlc: witness assembled, tx size=%d vbytes",
 		},
 	},
 }
@@ -336,7 +347,7 @@ func TestSweepHtlc(t *testing.T) {
 			}
 
 			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
-				make([]byte, 20), lnd.ChainParams,
+				bytes.Repeat([]byte{1}, 20), lnd.ChainParams,
 			)
 			require.NoError(t, err)
 
@@ -497,6 +508,33 @@ func TestSweepHtlc(t *testing.T) {
 				t, outpoint, sweepTx.TxIn[0].PreviousOutPoint,
 			)
 			require.NotEmpty(t, sweepTx.TxIn[0].Witness)
+
+			// Verify that the sweep uses the stored destination address and
+			// only falls back to wallet address generation when the swap
+			// record does not define one.
+			expectedAddr := loopOut.Contract.DestAddr
+			if req.DestAddress != "" {
+				expectedAddr, err = btcutil.DecodeAddress(
+					req.DestAddress, lnd.ChainParams,
+				)
+				require.NoError(t, err)
+			}
+			if expectedAddr == nil {
+				expectedAddr, err = lnd.WalletKit.NextAddr(
+					ctx, lnwallet.DefaultAccountName,
+					walletrpc.AddressType_TAPROOT_PUBKEY, false,
+				)
+				require.NoError(t, err)
+			}
+
+			expectedPkScript, err := txscript.PayToAddrScript(
+				expectedAddr,
+			)
+			require.NoError(t, err)
+			require.Len(t, sweepTx.TxOut, 1)
+			require.Equal(
+				t, expectedPkScript, sweepTx.TxOut[0].PkScript,
+			)
 
 			if tc.publish {
 				// For publish=true we should see a
