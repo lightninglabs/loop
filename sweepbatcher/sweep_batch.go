@@ -360,7 +360,6 @@ type batchKit struct {
 func (b *batch) scheduleNextCall() (func(), error) {
 	select {
 	case b.callEnter <- struct{}{}:
-
 	case <-b.quit:
 		return func() {}, ErrBatcherShuttingDown
 
@@ -409,6 +408,7 @@ func NewBatch(cfg batchConfig, bk batchKit) *batch {
 func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 	// Make sure the batch is not empty.
 	if len(bk.sweeps) == 0 {
+
 		// This should never happen, as this precondition is already
 		// ensured in spinUpBatchFromDB.
 		return nil, fmt.Errorf("empty batch is not allowed")
@@ -643,14 +643,14 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 		switch {
 		// We don't need to run checks if existing sweeps are updated.
 		case numExisting == len(sweeps):
-
 		// If new sweeps are added to the batch, we need to presign new
 		// version of batch transaction.
+
 		case len(b.sweeps) != 0:
 			if err := b.presign(ctx, sweeps); err != nil {
 				b.Warnf("Failed to add sweep %x to the batch, "+
-					"because failed to presign new version"+
-					" of batch tx: %v",
+					"because failed to presign new "+
+					"version of batch tx: %v",
 					sweeps[0].swapHash[:6], err)
 
 				return false, nil
@@ -664,10 +664,10 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 				ctx, sweeps, allowNonEmptyBatch,
 			)
 			if err != nil {
-				b.Warnf("Failed to check signing of input %x,"+
-					" this means that PresignSweepsGroup "+
-					"was not called prior to AddSweep for"+
-					" this input: %v",
+				b.Warnf("Failed to check signing of input %x, "+
+					"this means that PresignSweepsGroup "+
+					"was not called prior to AddSweep for "+
+					"this input: %v",
 					sweeps[0].swapHash[:6], err)
 
 				return false, nil
@@ -725,8 +725,8 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 			// lower that minFeeRate of other sweeps (so it is
 			// applied).
 			if b.rbfCache.FeeRate < s.minFeeRate {
-				b.Infof("Increasing feerate of the batch "+
-					"from %v to %v", b.rbfCache.FeeRate,
+				b.Infof("Increasing feerate of the batch from "+
+					"%v to %v", b.rbfCache.FeeRate,
 					s.minFeeRate)
 				b.rbfCache.FeeRate = s.minFeeRate
 			}
@@ -734,10 +734,11 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 
 		return true, nil
 	} else if numNew != len(sweeps) {
+
 		// Sanity check: all the sweeps must be either existing or new.
 		// We have checked this above, let's check here as well.
-		return false, fmt.Errorf("bug in numExisting and numNew logic:"+
-			" numExisting=%d, numNew=%d, len(sweeps)=%d, "+
+		return false, fmt.Errorf("bug in numExisting and numNew "+
+			"logic: numExisting=%d, numNew=%d, len(sweeps)=%d, "+
 			"len(b.sweeps)=%d", numExisting, numNew, len(sweeps),
 			len(b.sweeps))
 	}
@@ -774,9 +775,8 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 		// Update FeeRate. Max(s.minFeeRate) for all the sweeps of
 		// the batch is the basis for fee bumps.
 		if b.rbfCache.FeeRate < s.minFeeRate {
-			b.Infof("Increasing feerate of the batch "+
-				"from %v to %v", b.rbfCache.FeeRate,
-				s.minFeeRate)
+			b.Infof("Increasing feerate of the batch from %v to %v",
+				b.rbfCache.FeeRate, s.minFeeRate)
 			b.rbfCache.FeeRate = s.minFeeRate
 			b.rbfCache.SkipNextBump = true
 		}
@@ -952,14 +952,14 @@ func (b *batch) Run(ctx context.Context) error {
 		case <-timerChan:
 			// Check that batch is still open.
 			if b.state != Open {
-				b.Debugf("Skipping publishing, because "+
-					"the batch is not open (%v).", b.state)
+				b.Debugf("Skipping publishing, because the "+
+					"batch is not open (%v).", b.state)
 				continue
 			}
 
 			if skipBefore == nil {
-				b.Debugf("Skipping publishing, because " +
-					"the batch is empty.")
+				b.Debugf("Skipping publishing, because the " +
+					"batch is empty.")
 				continue
 			}
 
@@ -1011,8 +1011,8 @@ func (b *batch) Run(ctx context.Context) error {
 		// block. We can accept more sweeps and try to publish.
 		case <-b.reorgChan:
 			b.state = Open
-			b.Warnf("reorg detected, batch is able to " +
-				"accept new sweeps")
+			b.Warnf("reorg detected, batch is able to accept new " +
+				"sweeps")
 
 		case testReq := <-b.testReqs:
 			testReq.handler()
@@ -1036,8 +1036,8 @@ func (b *batch) Run(ctx context.Context) error {
 func (b *batch) updateFeeRate(ctx context.Context) {
 	for outpoint, s := range b.sweeps {
 		minFeeRate, err := minimumSweepFeeRate(
-			ctx, b.cfg.customFeeRate, b.wallet,
-			s.swapHash, s.outpoint, s.confTarget,
+			ctx, b.cfg.customFeeRate, b.wallet, s.swapHash,
+			s.outpoint, s.confTarget,
 		)
 		if err != nil {
 			b.Warnf("failed to determine feerate for sweep %v of "+
@@ -1050,8 +1050,8 @@ func (b *batch) updateFeeRate(ctx context.Context) {
 			continue
 		}
 
-		b.Infof("Increasing feerate of sweep %v of swap %x from %v "+
-			"to %v", s.outpoint, s.swapHash[:6], s.minFeeRate,
+		b.Infof("Increasing feerate of sweep %v of swap %x from "+
+			"%v to %v", s.outpoint, s.swapHash[:6], s.minFeeRate,
 			minFeeRate)
 		s.minFeeRate = minFeeRate
 		b.sweeps[outpoint] = s
@@ -1075,6 +1075,7 @@ func (b *batch) testRunInEventLoop(ctx context.Context, handler func()) {
 		handler()
 
 		return
+
 	default:
 	}
 
@@ -1118,13 +1119,14 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 	if timeout <= 0 {
 		// This may happen if the batch is empty or if SweepInfo.Timeout
 		// is not set, may be possible in tests or if there is a bug.
-		b.Warnf("Method timeout() returned %v. Number of "+
-			"sweeps: %d. It may be an empty batch.",
-			timeout, len(b.sweeps))
+		b.Warnf("Method timeout() returned %v. Number of sweeps: %d. "+
+			"It may be an empty batch.", timeout, len(b.sweeps))
+
 		return false
 	}
 
 	if b.currentHeight == 0 {
+
 		// currentHeight is not initiated yet.
 		return false
 	}
@@ -1138,6 +1140,7 @@ func (b *batch) isUrgent(skipBefore time.Time) bool {
 	remainingWaiting := skipBefore.Sub(b.cfg.clock.Now())
 
 	if timeBank >= safetyFactor*remainingWaiting {
+
 		// There is enough time, keep waiting.
 		return false
 	}
@@ -1240,8 +1243,8 @@ func (b *batch) publish(ctx context.Context) error {
 
 	b.Infof("published, total sweeps: %v, fees: %v", len(b.sweeps), fee)
 	for _, sweep := range b.sweeps {
-		b.Infof("published sweep %x, value: %v",
-			sweep.swapHash[:6], sweep.value)
+		b.Infof("published sweep %x, value: %v", sweep.swapHash[:6],
+			sweep.value)
 	}
 
 	return b.persist(ctx)
@@ -1340,8 +1343,9 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 
 			err := sweep.htlcSuccessEstimator(&weightEstimate)
 			if err != nil {
-				return nil, 0, 0, 0, fmt.Errorf("sweep."+
-					"htlcSuccessEstimator failed: %w", err)
+				return nil, 0, 0, 0, fmt.Errorf(
+					"sweep.htlcSuccessEstimator failed: %w",
+					err)
 			}
 		} else {
 			// Cooperative sweep.
@@ -1415,8 +1419,8 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		utils.MaxFeeToAmountRatio, minRelayFeeRate, weight,
 	)
 	if err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("failed to clamp batch "+
-			"fee: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("failed to clamp batch fee: %w",
+			err)
 	}
 
 	// Ensure that batch amount is equal or exceeds the sum of change
@@ -1424,10 +1428,9 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 	// for the main output.
 	dustLimit := utils.DustLimitForPkScript(batchPkScript)
 	if fee+btcutil.Amount(sumChange)+dustLimit > batchAmt {
-		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is < the "+
-			"sum of change outputs %v plus fee %v and dust "+
-			"limit %v", batchAmt, btcutil.Amount(sumChange),
-			fee, dustLimit)
+		return nil, 0, 0, 0, fmt.Errorf("batch amount %v is < the sum "+
+			"of change outputs %v plus fee %v and dust limit %v",
+			batchAmt, btcutil.Amount(sumChange), fee, dustLimit)
 	}
 
 	// Add the main output first.
@@ -1472,9 +1475,9 @@ func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
 		for swapHash, inputs := range swap2Inputs {
 			change := swap2Change[swapHash]
 			if inputs <= change {
-				return nil, 0, 0, 0, fmt.Errorf(""+
-					"inputs %v <= change %v for swap %x",
-					inputs, change, swapHash[:6])
+				return nil, 0, 0, 0, fmt.Errorf("inputs %v <= "+
+					"change %v for swap %x", inputs, change,
+					swapHash[:6])
 			}
 		}
 	}
@@ -1529,8 +1532,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	if addrOverride {
 		// Sanity check, there should be exactly 1 sweep in this batch.
 		if len(sweeps) != 1 {
-			return 0, fmt.Errorf("external address sweep batched " +
-				"with other sweeps"), false
+			return 0, fmt.Errorf("external address sweep " +
+				"batched with other sweeps"), false
 		}
 
 		address = sweeps[0].destAddr
@@ -1600,8 +1603,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 				ctx, i, sweep, tx, prevOutsMap, psbtBytes,
 			)
 			if err != nil {
-				b.Infof("cooperative signing failed for "+
-					"sweep %x: %v", sweep.swapHash[:6], err)
+				b.Infof("cooperative signing failed for sweep "+
+					"%x: %v", sweep.swapHash[:6], err)
 
 				// Set coopFailed flag for this sweep in all the
 				// places we store the sweep.
@@ -1653,8 +1656,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 			sweep.htlcKeys.ReceiverScriptKey[:],
 		)
 		if err != nil {
-			return 0, fmt.Errorf("btcec.ParsePubKey failed: %w",
-				err), false
+			return 0, fmt.Errorf("btcec.ParsePubKey "+
+				"failed: %w", err), false
 		}
 
 		// Create and store the sign descriptor for this sweep.
@@ -1677,11 +1680,13 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 
 	// Sanity checks.
 	if len(signDescs) != nonCoopInputs {
+
 		// This must not happen by construction.
-		return 0, fmt.Errorf("unexpected size of signDescs: %d != %d",
-			len(signDescs), nonCoopInputs), false
+		return 0, fmt.Errorf("unexpected size of signDescs: "+
+			"%d != %d", len(signDescs), nonCoopInputs), false
 	}
 	if len(prevOutsList) != len(sweeps) {
+
 		// This must not happen by construction.
 		return 0, fmt.Errorf("unexpected size of prevOutsList: "+
 			"%d != %d", len(prevOutsList), len(sweeps)), false
@@ -1695,16 +1700,18 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 			ctx, tx, signDescs, prevOutsList,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("signerClient.SignOutputRaw "+
-				"failed: %w", err), false
+			return 0, fmt.Errorf(
+				"signerClient.SignOutputRaw failed: %w",
+				err), false
 		}
 	}
 
 	// Sanity checks.
 	if len(rawSigs) != nonCoopInputs {
+
 		// This must not happen by construction.
-		return 0, fmt.Errorf("unexpected size of rawSigs: %d != %d",
-			len(rawSigs), nonCoopInputs), false
+		return 0, fmt.Errorf("unexpected size of rawSigs: "+
+			"%d != %d", len(rawSigs), nonCoopInputs), false
 	}
 
 	// Generate success witnesses for non-cooperative sweeps.
@@ -1719,8 +1726,9 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 			rawSigs[sigIndex], sweep.preimage,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("sweep.htlc.GenSuccessWitness "+
-				"failed: %w", err), false
+			return 0, fmt.Errorf(
+				"sweep.htlc.GenSuccessWitness "+
+					"failed: %w", err), false
 		}
 		sigIndex++
 
@@ -1740,8 +1748,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	}
 	txHash := tx.TxHash()
 	b.Infof("attempting to publish batch tx=%v with feerate=%v, "+
-		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, "+
-		"%d cooperative: (%s) and %d non-cooperative (%s), destAddr=%s",
+		"weight=%v, feeForWeight=%v, fee=%v, sweeps=%d, %d "+
+		"cooperative: (%s) and %d non-cooperative (%s), destAddr=%s",
 		txHash, b.rbfCache.FeeRate, weight, feeForWeight, fee,
 		len(tx.TxIn), coopInputs, strings.Join(coopHexs, ", "),
 		nonCoopInputs, strings.Join(nonCoopHexs, ", "), address)
@@ -1750,11 +1758,13 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 
 	// Make sure tx weight matches the expected value.
 	realWeight := lntypes.WeightUnit(
-		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+		blockchain.GetTransactionWeight(
+			btcutil.NewTx(tx),
+		),
 	)
 	if realWeight != weight {
-		b.Warnf("actual weight of tx %v is %v, estimated as %d",
-			txHash, realWeight, weight)
+		b.Warnf("actual weight of tx %v is %v, estimated as %d", txHash,
+			realWeight, weight)
 	}
 
 	// Publish the transaction.
@@ -1778,6 +1788,7 @@ func (b *batch) debugLogTx(msg string, tx *wire.MsgTx) {
 	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
 	if err := tx.Serialize(buf); err != nil {
 		b.Errorf("failed to serialize tx for debug log: %v", err)
+
 		return
 	}
 
@@ -1835,8 +1846,8 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 	if b.cfg.customMuSig2Signer != nil {
 		// Produce a signature.
 		finalSig, err := b.cfg.customMuSig2Signer(
-			ctx, muSig2Version, sweep.swapHash,
-			htlcScript.RootHash, digest,
+			ctx, muSig2Version, sweep.swapHash, htlcScript.RootHash,
+			digest,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("customMuSig2Signer failed: %w",
@@ -1875,8 +1886,8 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 	// signature.
 	serverNonce, serverSig, err := b.muSig2SignSweep(
 		ctx, sweep.protocolVersion, sweep.swapHash,
-		sweep.swapInvoicePaymentAddr,
-		musig2SessionInfo.PublicNonce[:], psbt, prevOuts,
+		sweep.swapInvoicePaymentAddr, musig2SessionInfo.PublicNonce[:],
+		psbt, prevOuts,
 	)
 	if err != nil {
 		return nil, err
@@ -1897,8 +1908,7 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 
 	// Sanity check that we have all the nonces.
 	if !haveAllNonces {
-		return nil, fmt.Errorf("invalid MuSig2 session: " +
-			"nonces missing")
+		return nil, fmt.Errorf("invalid MuSig2 session: nonces missing")
 	}
 
 	// Since our MuSig2 session has all nonces, we can now create
@@ -2031,6 +2041,7 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 	)
 	if err != nil {
 		cancel()
+
 		return err
 	}
 
@@ -2041,15 +2052,16 @@ func (b *batch) monitorConfirmations(ctx context.Context) error {
 		case conf := <-confChan:
 			select {
 			case b.confChan <- conf:
-
 			case <-ctx.Done():
 			}
 
 		case err := <-errChan:
 			b.writeToConfErrChan(ctx, err)
 
-			b.writeToErrChan(fmt.Errorf("confirmations "+
-				"monitoring error: %w", err))
+			b.writeToErrChan(
+				fmt.Errorf("confirmations monitoring "+
+					"error: %w", err),
+			)
 
 		case <-ctx.Done():
 		}
@@ -2158,8 +2170,8 @@ func (b *batch) handleSpend(ctx context.Context, spendTx *wire.MsgTx) error {
 		// hash, otherwise our fee calculation is incorrect.
 		fee, has := swap2fee[sweep.swapHash]
 		if !has {
-			return fmt.Errorf("no fee for swap %v; maybe "+
-				"multiple sweeps with a notifier per swap?",
+			return fmt.Errorf("no fee for swap %v; maybe multiple "+
+				"sweeps with a notifier per swap?",
 				sweep.swapHash)
 		}
 		delete(swap2fee, sweep.swapHash)
@@ -2232,8 +2244,7 @@ func (b *batch) handleConf(ctx context.Context,
 	// same way for simplicity.
 	allSweeps, err := b.getOrderedSweeps(ctx)
 	if err != nil {
-		return fmt.Errorf("getOrderedSweeps(%d) failed: %w",
-			b.id, err)
+		return fmt.Errorf("getOrderedSweeps(%d) failed: %w", b.id, err)
 	}
 
 	// Make a set of confirmed sweeps.
@@ -2316,9 +2327,9 @@ func (b *batch) handleConf(ctx context.Context,
 		}
 	}
 
-	b.Infof("Fully confirmed sweeps: %v, purged sweeps: %v, "+
-		"purged swaps: %v. Saving the batch and sweeps to DB",
-		confirmedSweeps, purgedSweeps, purgedSwaps)
+	b.Infof("Fully confirmed sweeps: %v, purged sweeps: %v, purged swaps: "+
+		"%v. Saving the batch and sweeps to DB", confirmedSweeps,
+		purgedSweeps, purgedSwaps)
 
 	if err := b.persistConfirmedBatch(ctx, dbConfirmed); err != nil {
 		return fmt.Errorf("saving confirmed batch failed: %w", err)
@@ -2356,8 +2367,8 @@ func (b *batch) handleConf(ctx context.Context,
 
 		err := b.cfg.presignedHelper.CleanupTransactions(ctx, inputs)
 		if err != nil {
-			return fmt.Errorf("failed to clean up store for "+
-				"batch %d, inputs %v: %w", b.id, inputs, err)
+			return fmt.Errorf("failed to clean up store for batch "+
+				"%d, inputs %v: %w", b.id, inputs, err)
 		}
 	}
 
@@ -2391,9 +2402,8 @@ func (b *batch) handleConf(ctx context.Context,
 		// hash, otherwise our fee calculation is incorrect.
 		fee, has := swap2fee[s.swapHash]
 		if !has {
-			return fmt.Errorf("no fee for swap %v; maybe "+
-				"multiple sweeps with a notifier per swap?",
-				s.swapHash)
+			return fmt.Errorf("no fee for swap %v; maybe multiple "+
+				"sweeps with a notifier per swap?", s.swapHash)
 		}
 		delete(swap2fee, s.swapHash)
 
@@ -2411,9 +2421,9 @@ func (b *batch) handleConf(ctx context.Context,
 			// Try to write the confirmation to the notification
 			// channel.
 			case notifier.ConfChan <- confDetail:
-
 			// If a quit signal was provided by the swap,
 			// continue.
+
 			case <-notifier.QuitChan:
 			}
 		}(s.notifier)
@@ -2528,11 +2538,11 @@ func (s *sweep) notifySweepSpend(ctx context.Context,
 	select {
 	// Try to write the update to the notification channel.
 	case s.notifier.SpendChan <- spendDetail:
-
 	// If a quit signal was provided by the swap, continue.
-	case <-s.notifier.QuitChan:
 
+	case <-s.notifier.QuitChan:
 	// If the context was canceled, return.
+
 	case <-ctx.Done():
 	}
 }
@@ -2563,12 +2573,12 @@ func (b *batch) writeToSpendErrChan(ctx context.Context, spendErr error) {
 		// Try to write the error to the notification
 		// channel.
 		case notifier.SpendErrChan <- spendErr:
-
 		// If a quit signal was provided by the swap,
 		// continue.
-		case <-notifier.QuitChan:
 
+		case <-notifier.QuitChan:
 		// If the context was canceled, stop.
+
 		case <-ctx.Done():
 		}
 	}
@@ -2601,12 +2611,12 @@ func (b *batch) writeToConfErrChan(ctx context.Context, confErr error) {
 		// Try to write the error to the notification
 		// channel.
 		case notifier.ConfErrChan <- confErr:
-
 		// If a quit signal was provided by the swap,
 		// continue.
-		case <-notifier.QuitChan:
 
+		case <-notifier.QuitChan:
 		// If the context was canceled, stop.
+
 		case <-ctx.Done():
 		}
 	}

@@ -25,13 +25,15 @@ var (
 		AutoloopBudgetLastRefresh: time.Now(),
 		DestAddr:                  nil,
 		MaxAutoInFlight:           defaultMaxInFlight,
-		ChannelRules:              make(map[lnwire.ShortChannelID]*SwapRule),
-		PeerRules:                 make(map[route.Vertex]*SwapRule),
-		FailureBackOff:            defaultFailureBackoff,
-		SweepConfTarget:           defaultConfTarget,
-		HtlcConfTarget:            defaultHtlcConfTarget,
-		FeeLimit:                  defaultFeePortion(),
-		FastSwapPublication:       true,
+		ChannelRules: make(
+			map[lnwire.ShortChannelID]*SwapRule,
+		),
+		PeerRules:           make(map[route.Vertex]*SwapRule),
+		FailureBackOff:      defaultFailureBackoff,
+		SweepConfTarget:     defaultConfTarget,
+		HtlcConfTarget:      defaultHtlcConfTarget,
+		FeeLimit:            defaultFeePortion(),
+		FastSwapPublication: true,
 	}
 )
 
@@ -157,14 +159,14 @@ func (p Parameters) String() string {
 		)
 	}
 
-	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+
-		"sweep conf target: %v, htlc conf target: %v,fees: %v, "+
-		"auto budget: %v, budget refresh: %v, max auto in flight: %v, "+
-		"minimum swap size=%v, maximum swap size=%v",
-		strings.Join(ruleList, ","), p.FailureBackOff,
-		p.SweepConfTarget, p.HtlcConfTarget, p.FeeLimit,
-		p.AutoFeeBudget, p.AutoFeeRefreshPeriod, p.MaxAutoInFlight,
-		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
+	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep sweep conf "+
+		"target: %v, htlc conf target: %v,fees: %v, auto budget: %v, "+
+		"budget refresh: %v, max auto in flight: %v, minimum swap "+
+		"size=%v, maximum swap size=%v", strings.Join(ruleList, ","),
+		p.FailureBackOff, p.SweepConfTarget, p.HtlcConfTarget,
+		p.FeeLimit, p.AutoFeeBudget, p.AutoFeeRefreshPeriod,
+		p.MaxAutoInFlight, p.ClientRestrictions.Minimum,
+		p.ClientRestrictions.Maximum)
 }
 
 // haveRules returns a boolean indicating whether we have any rules configured.
@@ -209,7 +211,8 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 		_, ok = p.ChannelRules[shortID]
 		if ok {
 			log.Debugf("Rules for peer: %v and its channel: %v "+
-				"can't both be set", channel.PubKeyBytes, shortID)
+				"can't both be set", channel.PubKeyBytes,
+				shortID)
 
 			return ErrExclusiveRules
 		}
@@ -221,8 +224,9 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 		}
 
 		if rule.Type == swap.TypeIn {
-			return errors.New("channel level rules not supported for " +
-				"loop in swaps, only peer-level rules allowed")
+			return errors.New("channel level rules not supported " +
+				"for loop in swaps, only peer-level rules " +
+				"allowed")
 		}
 
 		if err := rule.validate(); err != nil {
@@ -233,8 +237,8 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 
 	for peer, rule := range p.PeerRules {
 		if err := rule.validate(); err != nil {
-			return fmt.Errorf("peer: %v has invalid rule: %v",
-				peer, err)
+			return fmt.Errorf("peer: %v has invalid rule: %v", peer,
+				err)
 		}
 	}
 
@@ -263,7 +267,6 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 	// Destination address and account cannot be set at the same time.
 	if p.DestAddr != nil && len(p.DestAddr.String()) > 0 &&
 		len(p.Account) > 0 {
-
 		return ErrAmbiguousDestAddr
 	}
 
@@ -271,7 +274,6 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 	// specified as well, or both must be unset.
 	if len(p.Account) == 0 !=
 		(p.AccountAddrType == walletrpc.AddressType_UNKNOWN) {
-
 		return ErrAccountAndAddrType
 	}
 
@@ -325,8 +327,7 @@ func validateRestrictions(server, client *Restrictions) error {
 func cloneParameters(params Parameters) Parameters {
 	paramCopy := params
 	paramCopy.ChannelRules = make(
-		map[lnwire.ShortChannelID]*SwapRule,
-		len(params.ChannelRules),
+		map[lnwire.ShortChannelID]*SwapRule, len(params.ChannelRules),
 	)
 
 	for channel, rule := range params.ChannelRules {
@@ -335,8 +336,7 @@ func cloneParameters(params Parameters) Parameters {
 	}
 
 	paramCopy.PeerRules = make(
-		map[route.Vertex]*SwapRule,
-		len(params.PeerRules),
+		map[route.Vertex]*SwapRule, len(params.PeerRules),
 	)
 
 	for peer, rule := range params.PeerRules {
@@ -362,6 +362,7 @@ func rpcToFee(req *clientrpc.LiquidityParameters) (FeeLimit, error) {
 	case isFeePPM && isCategories:
 		return nil, errors.New("set either fee ppm, or individual " +
 			"fee categories")
+
 	case isFeePPM:
 		return NewFeePortion(req.FeePpm), nil
 
@@ -371,8 +372,7 @@ func rpcToFee(req *clientrpc.LiquidityParameters) (FeeLimit, error) {
 		)
 
 		return NewFeeCategoryLimit(
-			req.MaxSwapFeePpm,
-			req.MaxRoutingFeePpm,
+			req.MaxSwapFeePpm, req.MaxRoutingFeePpm,
 			req.MaxPrepayRoutingFeePpm,
 			btcutil.Amount(req.MaxMinerFeeSat),
 			btcutil.Amount(req.MaxPrepaySat),
@@ -411,9 +411,7 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*SwapRule, error) {
 
 // RpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
 // from it.
-func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
-	error) {
-
+func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters, error) {
 	feeLimit, err := rpcToFee(req)
 	if err != nil {
 		return nil, err
@@ -509,7 +507,8 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 
 		params.AutoFeeRefreshPeriod = InfiniteDuration
 		params.AutoloopBudgetLastRefresh = time.Unix(
-			int64(req.AutoloopBudgetStartSec), 0)
+			int64(req.AutoloopBudgetStartSec), 0,
+		)
 	}
 
 	for _, rule := range req.Rules {
@@ -561,9 +560,7 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 
 // ParametersToRpc takes a `Parameters` and creates a `LiquidityParameters`
 // from it.
-func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
-	error) {
-
+func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters, error) {
 	totalRules := len(cfg.ChannelRules) + len(cfg.PeerRules)
 
 	var destaddr string

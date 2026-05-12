@@ -22,9 +22,8 @@ type mockInvoices struct {
 
 var _ lndclient.InvoicesClient = (*mockInvoices)(nil)
 
-func (s *mockInvoices) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	invoicesrpc.InvoicesClient) {
+func (s *mockInvoices) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, invoicesrpc.InvoicesClient) {
 
 	return ctx, 0, nil
 }
@@ -53,8 +52,8 @@ func (s *mockInvoices) CancelInvoice(ctx context.Context,
 }
 
 func (s *mockInvoices) SubscribeSingleInvoice(ctx context.Context,
-	hash lntypes.Hash) (<-chan lndclient.InvoiceUpdate,
-	<-chan error, error) {
+	hash lntypes.Hash) (<-chan lndclient.InvoiceUpdate, <-chan error,
+	error) {
 
 	updateChan := make(chan lndclient.InvoiceUpdate, 2)
 	errChan := make(chan error)

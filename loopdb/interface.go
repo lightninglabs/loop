@@ -14,7 +14,8 @@ type SwapStore interface {
 	FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error)
 
 	// FetchLoopOutSwap returns the loop out swap with the given hash.
-	FetchLoopOutSwap(ctx context.Context, hash lntypes.Hash) (*LoopOut, error)
+	FetchLoopOutSwap(ctx context.Context,
+		hash lntypes.Hash) (*LoopOut, error)
 
 	// CreateLoopOut adds an initiated swap to the store.
 	CreateLoopOut(ctx context.Context, hash lntypes.Hash,

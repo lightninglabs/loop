@@ -43,8 +43,8 @@ type daemonConn interface {
 type directGrpcTransport struct{}
 
 // Dial opens a direct gRPC connection.
-func (t *directGrpcTransport) Dial(
-	cmd *cli.Command) (daemonConn, func(), error) {
+func (t *directGrpcTransport) Dial(cmd *cli.Command) (daemonConn, func(),
+	error) {
 
 	return dialDirectConn(cmd)
 }
@@ -68,7 +68,9 @@ func hookGrpc(transport grpcTransport) func() {
 	prev := sessionTransport
 	sessionTransport = transport
 
-	return func() { sessionTransport = prev }
+	return func() {
+		sessionTransport = prev
+	}
 }
 
 // dialDirectConn returns the standard CLI gRPC connection.

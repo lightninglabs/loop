@@ -235,11 +235,9 @@ func (r *FSM) updateReservation(ctx context.Context,
 		return
 	}
 
-	r.Debugf(
-		"NextState: %v, PreviousState: %v, Event: %v",
+	r.Debugf("NextState: %v, PreviousState: %v, Event: %v",
 		notification.NextState, notification.PreviousState,
-		notification.Event,
-	)
+		notification.Event)
 
 	r.reservation.State = notification.NextState
 
@@ -249,7 +247,6 @@ func (r *FSM) updateReservation(ctx context.Context,
 		r.reservation.State == Init ||
 		(notification.PreviousState == Init &&
 			r.reservation.State == Failed) {
-
 		return
 	}
 
@@ -260,27 +257,21 @@ func (r *FSM) updateReservation(ctx context.Context,
 }
 
 func (r *FSM) Infof(format string, args ...any) {
-	log.Infof(
-		"Reservation %v %x: "+format,
-		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
-			args...)...,
-	)
+	log.Infof("Reservation %v %x: "+format, append(
+		[]any{r.reservation.ProtocolVersion, r.reservation.ID}, args...,
+	)...)
 }
 
 func (r *FSM) Debugf(format string, args ...any) {
-	log.Debugf(
-		"Reservation %v %x: "+format,
-		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
-			args...)...,
-	)
+	log.Debugf("Reservation %v %x: "+format, append(
+		[]any{r.reservation.ProtocolVersion, r.reservation.ID}, args...,
+	)...)
 }
 
 func (r *FSM) Errorf(format string, args ...any) {
-	log.Errorf(
-		"Reservation %v %x: "+format,
-		append([]any{r.reservation.ProtocolVersion, r.reservation.ID},
-			args...)...,
-	)
+	log.Errorf("Reservation %v %x: "+format, append(
+		[]any{r.reservation.ProtocolVersion, r.reservation.ID}, args...,
+	)...)
 }
 
 // isFinalState returns true if the state is a final state.
@@ -289,5 +280,6 @@ func isFinalState(state fsm.StateType) bool {
 	case Failed, TimedOut, Spent:
 		return true
 	}
+
 	return false
 }

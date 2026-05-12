@@ -18,8 +18,7 @@ import (
 // by sqlc for sweep batcher.
 type Querier interface {
 	// GetBatchSweeps fetches all the sweeps that are part a batch.
-	GetBatchSweeps(ctx context.Context, batchID int32) (
-		[]sqlc.Sweep, error)
+	GetBatchSweeps(ctx context.Context, batchID int32) ([]sqlc.Sweep, error)
 
 	// GetBatchSweptAmount returns the total amount of sats swept by a
 	// (confirmed) batch.
@@ -38,8 +37,8 @@ type Querier interface {
 
 	// InsertBatch inserts a batch into the database, returning the id of
 	// the inserted batch.
-	InsertBatch(ctx context.Context, arg sqlc.InsertBatchParams) (
-		int32, error)
+	InsertBatch(ctx context.Context,
+		arg sqlc.InsertBatchParams) (int32, error)
 
 	// CancelBatch marks the batch as cancelled.
 	CancelBatch(ctx context.Context, id int32) error
@@ -147,8 +146,8 @@ func (s *SQLStore) ConfirmBatchWithSweeps(ctx context.Context, batch *dbBatch,
 }
 
 // FetchBatchSweeps fetches all the sweeps that are part a batch.
-func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) (
-	[]*dbSweep, error) {
+func (s *SQLStore) FetchBatchSweeps(ctx context.Context, id int32) ([]*dbSweep,
+	error) {
 
 	readOpts := loopdb.NewSqlReadOpts()
 	var sweeps []*dbSweep

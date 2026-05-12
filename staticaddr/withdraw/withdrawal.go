@@ -64,5 +64,6 @@ type Withdrawal struct {
 func GetRandomWithdrawalID() (ID, error) {
 	var id ID
 	_, err := rand.Read(id[:])
+
 	return id, err
 }

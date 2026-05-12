@@ -26,6 +26,7 @@ func mustHash(t *testing.T, s string) chainhash.Hash {
 	t.Helper()
 	h, err := chainhash.NewHashFromStr(s)
 	require.NoError(t, err)
+
 	return *h
 }
 
@@ -33,7 +34,10 @@ func TestToPrevOuts_Success(t *testing.T) {
 	// Prepare two distinct deposits with different outpoints and values.
 	d1 := &deposit.Deposit{
 		OutPoint: wire.OutPoint{
-			Hash:  mustHash(t, "0000000000000000000000000000000000000000000000000000000000000001"),
+			Hash: mustHash(
+				t, "0000000000000000000000000000000000000000"+
+					"000000000000000000000001",
+			),
 			Index: 0,
 		},
 		Value: btcutil.Amount(12345),
@@ -41,7 +45,10 @@ func TestToPrevOuts_Success(t *testing.T) {
 
 	d2 := &deposit.Deposit{
 		OutPoint: wire.OutPoint{
-			Hash:  mustHash(t, "1111111111111111111111111111111111111111111111111111111111111111"),
+			Hash: mustHash(
+				t, "1111111111111111111111111111111111111111"+
+					"111111111111111111111111",
+			),
 			Index: 7,
 		},
 		Value: btcutil.Amount(987654321),
@@ -74,9 +81,13 @@ func TestToPrevOuts_Success(t *testing.T) {
 }
 
 func TestToPrevOuts_DuplicateOutpoint(t *testing.T) {
-	// Two deposits that share the exact same outpoint should cause an error.
+	// Two deposits that share the exact same outpoint should cause an
+	// error.
 	shared := wire.OutPoint{
-		Hash:  mustHash(t, "2222222222222222222222222222222222222222222222222222222222222222"),
+		Hash: mustHash(
+			t, "222222222222222222222222222222222222222222222222"+
+				"2222222222222222",
+		),
 		Index: 2,
 	}
 
@@ -92,20 +103,45 @@ func TestGetPrevoutInfo_ConversionAndSorting(t *testing.T) {
 	must := func(s string) chainhash.Hash {
 		h, err := chainhash.NewHashFromStr(s)
 		require.NoError(t, err)
+
 		return *h
 	}
 
 	// Choose txids such that after reversal, ordering is determined by the
 	// last byte of the original hex string.
-	txidA := must("0000000000000000000000000000000000000000000000000000000000000001")
-	txidB := must("0000000000000000000000000000000000000000000000000000000000000002")
+	txidA := must(
+		"00000000000000000000000000000000000000000000000000000000000" +
+			"00001",
+	)
+	txidB := must(
+		"00000000000000000000000000000000000000000000000000000000000" +
+			"00002",
+	)
 
 	pkScript := []byte{0xaa, 0xbb}
 
 	prevOuts := map[wire.OutPoint]*wire.TxOut{
-		{Hash: txidA, Index: 5}: {Value: 11, PkScript: pkScript},
-		{Hash: txidA, Index: 2}: {Value: 22, PkScript: pkScript},
-		{Hash: txidB, Index: 0}: {Value: 33, PkScript: pkScript},
+		{
+			Hash:  txidA,
+			Index: 5,
+		}: {
+			Value:    11,
+			PkScript: pkScript,
+		},
+		{
+			Hash:  txidA,
+			Index: 2,
+		}: {
+			Value:    22,
+			PkScript: pkScript,
+		},
+		{
+			Hash:  txidB,
+			Index: 0,
+		}: {
+			Value:    33,
+			PkScript: pkScript,
+		},
 	}
 
 	infos := GetPrevoutInfo(prevOuts)
@@ -153,8 +189,14 @@ func TestBip69InputLess_DifferentHashes(t *testing.T) {
 	// txid1 ends with 0x01, txid2 ends with 0x02. After reversing for
 	// comparison, txid1 should still come before txid2 in lexicographic
 	// order.
-	h1, _ := chainhash.NewHashFromStr("0000000000000000000000000000000000000000000000000000000000000001")
-	h2, _ := chainhash.NewHashFromStr("0000000000000000000000000000000000000000000000000000000000000002")
+	h1, _ := chainhash.NewHashFromStr(
+		"00000000000000000000000000000000000000000000000000000000000" +
+			"00001",
+	)
+	h2, _ := chainhash.NewHashFromStr(
+		"00000000000000000000000000000000000000000000000000000000000" +
+			"00002",
+	)
 
 	a := &swapserverrpc.PrevoutInfo{TxidBytes: h1[:], OutputIndex: 9}
 	b := &swapserverrpc.PrevoutInfo{TxidBytes: h2[:], OutputIndex: 0}
@@ -178,17 +220,25 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       10,
-		PkScript:     []byte{0x51},
-		KeyLocator:   keychain.KeyLocator{Family: 1, Index: 2},
+		PkScript: []byte{
+			0x51,
+		},
+		KeyLocator: keychain.KeyLocator{
+			Family: 1,
+			Index:  2,
+		},
 	}
 
 	// Build a static address for tweak options.
 	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
 	)
 	require.NoError(t, err)
 
-	sess, err := CreateMusig2Session(context.Background(), signer, params, staticAddr)
+	sess, err := CreateMusig2Session(
+		context.Background(), signer, params, staticAddr,
+	)
 	require.NoError(t, err)
 	require.NotNil(t, sess)
 }
@@ -207,20 +257,38 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       12,
-		PkScript:     []byte{0xaa},
-		KeyLocator:   keychain.KeyLocator{Family: 9, Index: 8},
+		PkScript: []byte{
+			0xaa,
+		},
+		KeyLocator: keychain.KeyLocator{
+			Family: 9,
+			Index:  8,
+		},
 	}
 
 	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
+		input.MuSig2Version100RC2, int64(params.Expiry),
+		params.ClientPubkey, params.ServerPubkey,
 	)
 	require.NoError(t, err)
 
 	// Prepare N deposits; only the length matters for session count.
 	deposits := []*deposit.Deposit{
-		{OutPoint: wire.OutPoint{Index: 0}},
-		{OutPoint: wire.OutPoint{Index: 1}},
-		{OutPoint: wire.OutPoint{Index: 2}},
+		{
+			OutPoint: wire.OutPoint{
+				Index: 0,
+			},
+		},
+		{
+			OutPoint: wire.OutPoint{
+				Index: 1,
+			},
+		},
+		{
+			OutPoint: wire.OutPoint{
+				Index: 2,
+			},
+		},
 	}
 
 	sessions, nonces, err := CreateMusig2Sessions(
@@ -233,7 +301,9 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 	// The mock signer returns a zero-value PublicNonce; assert consistency.
 	for i := range sessions {
 		require.NotNil(t, sessions[i])
-		require.True(t, bytes.Equal(nonces[i], sessions[i].PublicNonce[:]))
+		require.True(
+			t, bytes.Equal(nonces[i], sessions[i].PublicNonce[:]),
+		)
 	}
 }
 
@@ -248,6 +318,7 @@ func makeDeposits(values ...btcutil.Amount) []*deposit.Deposit {
 	for i, v := range values {
 		deps[i] = makeDeposit(v)
 	}
+
 	return deps
 }
 
@@ -257,6 +328,7 @@ func depositSum(deps []*deposit.Deposit) btcutil.Amount {
 	for _, d := range deps {
 		total += d.Value
 	}
+
 	return total
 }
 
@@ -319,17 +391,18 @@ func TestSelectDeposits(t *testing.T) {
 			// Many tiny deposits should not cause a false
 			// rejection in the early check.
 			deposits: append(
-				makeDeposits(300_000, 200_000),
-				makeDeposits(
-					100, 100, 100, 100, 100,
-					100, 100, 100, 100, 100,
+				makeDeposits(300_000, 200_000), makeDeposits(
+					100, 100, 100, 100, 100, 100, 100, 100,
+					100, 100,
 				)...,
 			),
 			amount:         400_000,
 			feeRate:        highFeeRate,
 			commitmentType: anchors,
 			wantCount:      2,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				require.Equal(
 					t, btcutil.Amount(300_000),
 					selected[0].Value,
@@ -363,7 +436,9 @@ func TestSelectDeposits(t *testing.T) {
 			feeRate:        lowFeeRate,
 			commitmentType: anchors,
 			wantCount:      1,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				// Should pick the 200k deposit.
 				require.Equal(
 					t, btcutil.Amount(200_000),
@@ -390,11 +465,12 @@ func TestSelectDeposits(t *testing.T) {
 			feeRate:        highFeeRate,
 			commitmentType: anchors,
 			wantCount:      3,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				total := depositSum(selected)
 				fee := estimateFee(
-					len(selected), highFeeRate,
-					anchors,
+					len(selected), highFeeRate, anchors,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -417,7 +493,9 @@ func TestSelectDeposits(t *testing.T) {
 			feeRate:        0,
 			commitmentType: anchors,
 			wantCount:      1,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				// With zero fee, 100k covers 99k + 0 + dust.
 				require.Equal(
 					t, btcutil.Amount(100_000),
@@ -431,11 +509,12 @@ func TestSelectDeposits(t *testing.T) {
 			amount:         100_000,
 			feeRate:        highFeeRate,
 			commitmentType: anchors,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				total := depositSum(selected)
 				fee := estimateFee(
-					len(selected), highFeeRate,
-					anchors,
+					len(selected), highFeeRate, anchors,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -454,17 +533,18 @@ func TestSelectDeposits(t *testing.T) {
 		{
 			name: "many small deposits accumulate",
 			deposits: makeDeposits(
-				10_000, 10_000, 10_000, 10_000, 10_000,
-				10_000, 10_000, 10_000, 10_000, 10_000,
+				10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
+				10_000, 10_000, 10_000, 10_000,
 			),
 			amount:         50_000,
 			feeRate:        lowFeeRate,
 			commitmentType: anchors,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				total := depositSum(selected)
 				fee := estimateFee(
-					len(selected), lowFeeRate,
-					anchors,
+					len(selected), lowFeeRate, anchors,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -485,11 +565,12 @@ func TestSelectDeposits(t *testing.T) {
 			amount:         150_000,
 			feeRate:        lowFeeRate,
 			commitmentType: anchors,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				total := depositSum(selected)
 				fee := estimateFee(
-					len(selected), lowFeeRate,
-					anchors,
+					len(selected), lowFeeRate, anchors,
 				)
 				// Core invariant: selected amount covers
 				// requested amount + fee + dust.
@@ -508,7 +589,9 @@ func TestSelectDeposits(t *testing.T) {
 			feeRate:        lowFeeRate,
 			commitmentType: anchors,
 			wantCount:      1,
-			validate: func(t *testing.T, selected []*deposit.Deposit) {
+			validate: func(t *testing.T,
+				selected []*deposit.Deposit) {
+
 				require.Equal(
 					t, btcutil.Amount(300_000),
 					selected[0].Value,
@@ -540,6 +623,7 @@ func TestSelectDeposits(t *testing.T) {
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.ErrorContains(t, err, tc.wantErr)
+
 				return
 			}
 
@@ -554,8 +638,7 @@ func TestSelectDeposits(t *testing.T) {
 			// cover amount + fee + dust.
 			total := depositSum(selected)
 			fee := estimateFee(
-				len(selected), tc.feeRate,
-				tc.commitmentType,
+				len(selected), tc.feeRate, tc.commitmentType,
 			)
 			require.GreaterOrEqual(
 				t, total,

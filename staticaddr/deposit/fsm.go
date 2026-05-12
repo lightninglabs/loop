@@ -198,15 +198,13 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	depositStates := depoFsm.DepositStatesV0()
 	switch params.ProtocolVersion {
 	case version.ProtocolVersion_V0:
-
 	default:
 		return nil, ErrProtocolVersionNotSupported
 	}
 
 	if recoverStateMachine {
 		depoFsm.StateMachine = fsm.NewStateMachineWithState(
-			depositStates, deposit.GetState(),
-			DefaultObserverSize,
+			depositStates, deposit.GetState(), DefaultObserverSize,
 		)
 	} else {
 		depoFsm.StateMachine = fsm.NewStateMachine(
@@ -437,8 +435,7 @@ func (f *FSM) updateDeposit(ctx context.Context,
 
 	f.Debugf("NextState: %v, PreviousState: %v, Event: %v",
 		notification.NextState, notification.PreviousState,
-		notification.Event,
-	)
+		notification.Event)
 
 	err := f.cfg.Store.UpdateDeposit(ctx, f.deposit)
 	if err != nil {
@@ -446,8 +443,8 @@ func (f *FSM) updateDeposit(ctx context.Context,
 	}
 }
 
-// isUpdateSkipped returns true if the deposit should not be updated for the given
-// notification.
+// isUpdateSkipped returns true if the deposit should not be updated for the
+// given notification.
 func isUpdateSkipped(notification fsm.Notification,
 	checkStateFunc func(stateType fsm.StateType) bool) bool {
 
@@ -475,35 +472,23 @@ func isUpdateSkipped(notification fsm.Notification,
 
 // Infof logs an info message with the deposit outpoint.
 func (f *FSM) Infof(format string, args ...any) {
-	log.Infof(
-		"Deposit %v: "+format,
-		append(
-			[]any{f.deposit.OutPoint},
-			args...,
-		)...,
-	)
+	log.Infof("Deposit %v: "+format, append(
+		[]any{f.deposit.OutPoint}, args...,
+	)...)
 }
 
 // Debugf logs a debug message with the deposit outpoint.
 func (f *FSM) Debugf(format string, args ...any) {
-	log.Debugf(
-		"Deposit %v: "+format,
-		append(
-			[]any{f.deposit.OutPoint},
-			args...,
-		)...,
-	)
+	log.Debugf("Deposit %v: "+format, append(
+		[]any{f.deposit.OutPoint}, args...,
+	)...)
 }
 
 // Errorf logs an error message with the deposit outpoint.
 func (f *FSM) Errorf(format string, args ...any) {
-	log.Errorf(
-		"Deposit %v: "+format,
-		append(
-			[]any{f.deposit.OutPoint},
-			args...,
-		)...,
-	)
+	log.Errorf("Deposit %v: "+format, append(
+		[]any{f.deposit.OutPoint}, args...,
+	)...)
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.

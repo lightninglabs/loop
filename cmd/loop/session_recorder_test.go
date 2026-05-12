@@ -34,32 +34,54 @@ func TestDeriveSessionSlug(t *testing.T) {
 		},
 		{
 			name: "binary_only",
-			args: []string{"/usr/local/bin/loop"},
+			args: []string{
+				"/usr/local/bin/loop",
+			},
 			want: testLoopArg,
 		},
 		{
 			name: "with_subcommand",
-			args: []string{testLoopArg, testOutArg},
+			args: []string{
+				testLoopArg,
+				testOutArg,
+			},
 			want: testLoopOutSlug,
 		},
 		{
 			name: "stops_at_flag",
-			args: []string{testLoopArg, testOutArg, "--network", "regtest"},
+			args: []string{
+				testLoopArg,
+				testOutArg,
+				"--network",
+				"regtest",
+			},
 			want: testLoopOutSlug,
 		},
 		{
 			name: "skips_empty_args",
-			args: []string{testLoopArg, "", "quote", testOutArg},
+			args: []string{
+				testLoopArg,
+				"",
+				"quote",
+				testOutArg,
+			},
 			want: "loop-quote-out",
 		},
 		{
 			name: "sanitizes_tokens",
-			args: []string{testLoopArg, "Quote", "Out"},
+			args: []string{
+				testLoopArg,
+				"Quote",
+				"Out",
+			},
 			want: "loop-quote-out",
 		},
 		{
 			name: "sanitizes_path_base",
-			args: []string{"/tmp/loop-cli", testOutArg},
+			args: []string{
+				"/tmp/loop-cli",
+				testOutArg,
+			},
 			want: "loop-cli-out",
 		},
 	}
@@ -196,7 +218,10 @@ func TestSessionFinalizeWritesFileWhenHookRestoreFails(t *testing.T) {
 		started:  time.Now().Add(-time.Second),
 		filePath: filepath.Join(t.TempDir(), "session.json"),
 		metadata: sessionMetadata{
-			Args:           []string{testLoopArg, testOutArg},
+			Args: []string{
+				testLoopArg,
+				testOutArg,
+			},
 			Env:            map[string]string{},
 			Version:        testVersion,
 			ClockStartUnix: testClockStart,
@@ -230,7 +255,10 @@ func TestSessionFinalizeReportsWriteAndHookErrors(t *testing.T) {
 		started:  time.Now().Add(-time.Second),
 		filePath: t.TempDir(),
 		metadata: sessionMetadata{
-			Args:           []string{testLoopArg, testOutArg},
+			Args: []string{
+				testLoopArg,
+				testOutArg,
+			},
 			Env:            map[string]string{},
 			Version:        testVersion,
 			ClockStartUnix: testClockStart,
@@ -254,7 +282,10 @@ func TestSessionFinalizeReportsDeferredMarshalError(t *testing.T) {
 		started:  time.Now().Add(-time.Second),
 		filePath: filepath.Join(t.TempDir(), "session.json"),
 		metadata: sessionMetadata{
-			Args:           []string{testLoopArg, testOutArg},
+			Args: []string{
+				testLoopArg,
+				testOutArg,
+			},
 			Env:            map[string]string{},
 			Version:        testVersion,
 			ClockStartUnix: testClockStart,
@@ -290,8 +321,10 @@ func TestNewSessionRecorderRequiresRepoRoot(t *testing.T) {
 
 	recorder, err := newSessionRecorder([]string{testLoopArg, testOutArg})
 	require.Nil(t, recorder)
-	require.EqualError(t, err, "cmd/loop/testdata/sessions does not "+
-		"exist; run session recording from the repository root")
+	require.EqualError(
+		t, err, "cmd/loop/testdata/sessions does not exist; run "+
+			"session recording from the repository root",
+	)
 }
 
 // TestNewSessionRecorderCapturesClockStart verifies that new recordings store
@@ -299,7 +332,10 @@ func TestNewSessionRecorderRequiresRepoRoot(t *testing.T) {
 func TestNewSessionRecorderCapturesClockStart(t *testing.T) {
 	repoRoot := t.TempDir()
 	require.NoError(
-		t, os.MkdirAll(filepath.Join(repoRoot, sessionDefaultDir), 0o755),
+		t,
+		os.MkdirAll(
+			filepath.Join(repoRoot, sessionDefaultDir), 0o755,
+		),
 	)
 	t.Chdir(repoRoot)
 	t.Setenv(sessionEnvVar, "true")

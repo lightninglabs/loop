@@ -25,7 +25,8 @@ type InstantLoopOutStore interface {
 
 	// GetInstantLoopOut returns the instant loop out for the given swap
 	// hash.
-	GetInstantLoopOut(ctx context.Context, swapHash []byte) (*InstantOut, error)
+	GetInstantLoopOut(ctx context.Context,
+		swapHash []byte) (*InstantOut, error)
 
 	// ListInstantLoopOuts returns all instant loop outs that are in the
 	// store.
@@ -35,8 +36,8 @@ type InstantLoopOutStore interface {
 // ReservationManager handles fetching and locking of reservations.
 type ReservationManager interface {
 	// GetReservation returns the reservation for the given id.
-	GetReservation(ctx context.Context, id reservation.ID) (
-		*reservation.Reservation, error)
+	GetReservation(ctx context.Context,
+		id reservation.ID) (*reservation.Reservation, error)
 
 	// LockReservation locks the reservation for the given id.
 	LockReservation(ctx context.Context, id reservation.ID) error

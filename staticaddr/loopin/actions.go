@@ -182,8 +182,8 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	)
 	if err != nil {
 		pushEmptySigs()
-		err = fmt.Errorf("server response parameters are outside "+
-			"our allowed range: %w", err)
+		err = fmt.Errorf("server response parameters are outside our "+
+			"allowed range: %w", err)
 
 		return f.HandleError(err)
 	}
@@ -217,11 +217,15 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// tx since we might have to sweep the timeout path. We maximally allow
 	// a configured percentage of the swap value to be spent on fees.
 	amt := float64(swapAmount)
-	maxHtlcTxFee := btcutil.Amount(amt *
-		f.cfg.MaxStaticAddrHtlcFeePercentage)
+	maxHtlcTxFee := btcutil.Amount(
+		amt *
+			f.cfg.MaxStaticAddrHtlcFeePercentage,
+	)
 
-	maxHtlcTxBackupFee := btcutil.Amount(amt *
-		f.cfg.MaxStaticAddrHtlcBackupFeePercentage)
+	maxHtlcTxBackupFee := btcutil.Amount(
+		amt *
+			f.cfg.MaxStaticAddrHtlcBackupFeePercentage,
+	)
 
 	feeRate := chainfee.SatPerKWeight(loopInResp.StandardHtlcInfo.FeeRate)
 	fee := feeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
@@ -236,7 +240,9 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 	f.loopIn.HtlcTxFeeRate = feeRate
 
-	highFeeRate := chainfee.SatPerKWeight(loopInResp.HighFeeHtlcInfo.FeeRate)
+	highFeeRate := chainfee.SatPerKWeight(
+		loopInResp.HighFeeHtlcInfo.FeeRate,
+	)
 	fee = highFeeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
 	if fee > maxHtlcTxBackupFee {
 		// Abort the swap by pushing empty sigs to the server.
@@ -304,8 +310,8 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
 
 	if err != nil {
-		err = fmt.Errorf("unable to get static address parameters: "+
-			"%w", err)
+		err = fmt.Errorf("unable to get static address parameters: %w",
+			err)
 
 		return f.HandleError(err)
 	}
@@ -346,6 +352,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)
+
 		return f.HandleError(err)
 	}
 	defer f.cleanUpSessions(ctx, htlcSessionsExtremelyHighFee)
@@ -371,6 +378,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to create the htlc tx: %w", err)
+
 		return f.HandleError(err)
 	}
 
@@ -380,6 +388,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to sign htlc tx: %w", err)
+
 		return f.HandleError(err)
 	}
 
@@ -392,7 +401,8 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	}
 	htlcSigsExtremelyHighFee, err := f.loopIn.signMusig2Tx(
 		ctx, htlcTxExtremelyHighFee, f.cfg.Signer,
-		htlcSessionsExtremelyHighFee, f.htlcServerNoncesExtremelyHighFee,
+		htlcSessionsExtremelyHighFee,
+		f.htlcServerNoncesExtremelyHighFee,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -469,8 +479,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			subscribeCtx, f.loopIn.SwapHash,
 		)
 	if err != nil {
-		err = fmt.Errorf("unable to subscribe to swap "+
-			"invoice: %w", err)
+		err = fmt.Errorf("unable to subscribe to swap invoice: %w", err)
 
 		return f.HandleError(err)
 	}
@@ -551,16 +560,16 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	}
 
 	cancelInvoice := func() {
-		f.Errorf("timeout waiting for invoice to be " +
-			"paid, canceling invoice")
+		f.Errorf("timeout waiting for invoice to be paid, canceling " +
+			"invoice")
 
 		// Cancel the lndclient invoice subscription.
 		cancelInvoiceSubscription()
 
 		err = f.cfg.InvoicesClient.CancelInvoice(ctx, f.loopIn.SwapHash)
 		if err != nil {
-			f.Warnf("unable to cancel invoice "+
-				"for swap hash: %v", err)
+			f.Warnf("unable to cancel invoice for swap hash: %v",
+				err)
 		}
 	}
 
@@ -572,11 +581,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			htlcConfirmed = true
 
 		case err = <-htlcErrConfChan:
-			f.Errorf("htlc tx conf chan error, re-registering: "+
-				"%v", err)
+			f.Errorf("htlc tx conf chan error, re-registering: %v",
+				err)
 
 			// A previous confirmation may no longer be valid if the
-			// subscription failed, so reset and wait for a fresh one.
+			// subscription failed, so reset and wait for a fresh
+			// one.
 			htlcConfirmed = false
 
 			// Re-register for htlc confirmation.
@@ -659,9 +669,9 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				deposit.SweepHtlcTimeout,
 			)
 			if err != nil {
-				log.Errorf("unable to transition "+
-					"deposits to the htlc timeout "+
-					"sweeping state: %v", err)
+				log.Errorf("unable to transition deposits to "+
+					"the htlc timeout sweeping state: %v",
+					err)
 			}
 
 			return OnSweepHtlcTimeout
@@ -676,8 +686,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			case invoices.ContractOpen:
 			case invoices.ContractAccepted:
 			case invoices.ContractSettled:
-				f.Debugf("received off-chain payment update "+
-					"%v", update.State)
+				f.Debugf("received off-chain payment update %v",
+					update.State)
 
 				return OnPaymentReceived
 
@@ -721,8 +731,8 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 			return OnHtlcTimeoutSweepPublished
 		}
 
-		f.Errorf("unable to create and publish htlc timeout sweep "+
-			"tx: %v, retrying in %v", err, htlcTimeoutSweepRetryDelay)
+		f.Errorf("unable to create and publish htlc timeout sweep tx: "+
+			"%v, retrying in %v", err, htlcTimeoutSweepRetryDelay)
 
 		select {
 		// The context is cancelled when the server is shutting
@@ -862,9 +872,7 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 	}
 
 	// Broadcast htlc timeout transaction.
-	txLabel := fmt.Sprintf(
-		"htlc-timeout-sweep-%v", f.loopIn.SwapHash,
-	)
+	txLabel := fmt.Sprintf("htlc-timeout-sweep-%v", f.loopIn.SwapHash)
 
 	err = f.cfg.WalletKit.PublishTransaction(ctx, timeoutTx, txLabel)
 	if err != nil {
@@ -874,6 +882,7 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 
 			f.Errorf("%v: %v", txLabel, err)
 			f.LastActionError = err
+
 			return err
 		}
 	} else {

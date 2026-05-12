@@ -514,7 +514,9 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		label                      = cmd.String(labelFlag.Name)
 		hints                      []*swapserverrpc.RouteHint
 		lastHop                    []byte
-		paymentTimeoutSeconds      = uint32(loopin.DefaultPaymentTimeoutSeconds)
+		paymentTimeoutSeconds      = uint32(
+			loopin.DefaultPaymentTimeoutSeconds,
+		)
 	)
 
 	// Validate our label early so that we can fail before getting a quote.
@@ -606,9 +608,9 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	// the two is used and checked against the current quote. Without
 	// overrides the quoted fee is forwarded as before.
 	maxSwapFee, err := resolveMaxSwapFee(
-		quoteReq, quote,
-		cmd.IsSet("max_swap_fee_sat"), cmd.Uint64("max_swap_fee_sat"),
-		cmd.IsSet("max_swap_fee_ppm"), cmd.Uint64("max_swap_fee_ppm"),
+		quoteReq, quote, cmd.IsSet("max_swap_fee_sat"),
+		cmd.Uint64("max_swap_fee_sat"), cmd.IsSet("max_swap_fee_ppm"),
+		cmd.Uint64("max_swap_fee_ppm"),
 	)
 	if err != nil {
 		return err
@@ -622,7 +624,9 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.IsSet("payment_timeout") {
-		paymentTimeoutSeconds = uint32(cmd.Duration("payment_timeout").Seconds())
+		paymentTimeoutSeconds = uint32(
+			cmd.Duration("payment_timeout").Seconds(),
+		)
 	}
 
 	req := &looprpc.StaticAddressLoopInRequest{

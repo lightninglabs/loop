@@ -210,7 +210,10 @@ func (m *MigratorManager) checkLoopOuts(ctx context.Context) error {
 	// Check that the number of loop outs is the same.
 	if len(fromLoopOuts) != len(toLoopOuts) {
 		return NewMigrationError(
-			fmt.Errorf("from: %d, to: %d", len(fromLoopOuts), len(toLoopOuts)),
+			fmt.Errorf(
+				"from: %d, to: %d", len(fromLoopOuts),
+				len(toLoopOuts),
+			),
 		)
 	}
 
@@ -254,7 +257,10 @@ func (m *MigratorManager) checkLoopIns(ctx context.Context) error {
 	// Check that the number of loop ins is the same.
 	if len(fromLoopIns) != len(toLoopIns) {
 		return NewMigrationError(
-			fmt.Errorf("from: %d, to: %d", len(fromLoopIns), len(toLoopIns)),
+			fmt.Errorf(
+				"from: %d, to: %d", len(fromLoopIns),
+				len(toLoopIns),
+			),
 		)
 	}
 
@@ -311,7 +317,6 @@ func (m *MigratorManager) checkLiquidityParams(ctx context.Context) error {
 func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 	if fromLoopOut.Contract.InitiationTime.Unix() !=
 		toLoopOut.Contract.InitiationTime.Unix() {
-
 		return fmt.Errorf("initiation time mismatch")
 	}
 
@@ -319,12 +324,13 @@ func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 
 	if fromLoopOut.Contract.SwapPublicationDeadline.Unix() !=
 		toLoopOut.Contract.SwapPublicationDeadline.Unix() {
-
 		return fmt.Errorf("swap publication deadline mismatch")
 	}
 
 	toLoopOut.Contract.
-		SwapPublicationDeadline = fromLoopOut.Contract.SwapPublicationDeadline
+		SwapPublicationDeadline = fromLoopOut.
+		Contract.
+		SwapPublicationDeadline
 
 	for i, event := range fromLoopOut.Events {
 		if event.Time.Unix() != toLoopOut.Events[i].Time.Unix() {
@@ -339,7 +345,6 @@ func equalizeLoopOut(fromLoopOut, toLoopOut *LoopOut) error {
 func equalizeLoopIns(fromLoopIn, toLoopIn *LoopIn) error {
 	if fromLoopIn.Contract.InitiationTime.Unix() !=
 		toLoopIn.Contract.InitiationTime.Unix() {
-
 		return fmt.Errorf("initiation time mismatch")
 	}
 
@@ -383,6 +388,7 @@ func (e *migrationError) Unwrap() error {
 
 func (e *migrationError) Is(target error) bool {
 	_, ok := target.(*migrationError)
+
 	return ok
 }
 

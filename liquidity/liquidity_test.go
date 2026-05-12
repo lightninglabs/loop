@@ -147,8 +147,8 @@ func newTestConfig() (*Config, *test.LndMockServices) {
 	)
 
 	return &Config{
-		Restrictions: func(_ context.Context, _ swap.Type, initiator string) (*Restrictions,
-			error) {
+		Restrictions: func(_ context.Context, _ swap.Type,
+			initiator string) (*Restrictions, error) {
 
 			return testRestrictions, nil
 		},
@@ -271,7 +271,9 @@ func TestPersistParams(t *testing.T) {
 	var paramsBytes []byte
 
 	// Mock the read method to return empty data.
-	manager.cfg.FetchLiquidityParams = func(context.Context) ([]byte, error) {
+	manager.cfg.FetchLiquidityParams = func(context.Context) ([]byte,
+		error) {
+
 		return paramsBytes, nil
 	}
 
@@ -285,6 +287,7 @@ func TestPersistParams(t *testing.T) {
 		data []byte) error {
 
 		paramsBytes = data
+
 		return nil
 	}
 
@@ -567,10 +570,14 @@ func TestRestrictedSuggestions(t *testing.T) {
 			// Create a manager config which will return the test
 			// case's set of existing swaps.
 			cfg, lnd := newTestConfig()
-			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) (
+				[]*loopdb.LoopOut, error) {
+
 				return testCase.loopOut, nil
 			}
-			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) (
+				[]*loopdb.LoopIn, error) {
+
 				return testCase.loopIn, nil
 			}
 
@@ -614,7 +621,8 @@ func TestSweepFeeLimit(t *testing.T) {
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
 					applyFeeCategoryQuote(
-						chan1Rec, defaultMaximumMinerFee,
+						chan1Rec,
+						defaultMaximumMinerFee,
 						defaultPrepayRoutingFeePPM,
 						defaultRoutingFeePPM, *quote,
 					),
@@ -640,8 +648,8 @@ func TestSweepFeeLimit(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
 			cfg.LoopOutQuote = func(_ context.Context,
-				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
-				error) {
+				_ *loop.LoopOutQuoteRequest) (
+				*loop.LoopOutQuote, error) {
 
 				return quote, nil
 			}
@@ -776,7 +784,9 @@ func TestSuggestSwaps(t *testing.T) {
 						MaxPrepayRoutingFee: prepay,
 						MaxSwapRoutingFee:   routing,
 						MaxMinerFee: scaleMaxMinerFee(
-							scaleMinerFee(testQuote.MinerFee),
+							scaleMinerFee(
+								testQuote.MinerFee,
+							),
 						),
 						MaxSwapFee:      testQuote.SwapFee,
 						MaxPrepayAmount: testQuote.PrepayAmount,
@@ -858,7 +868,8 @@ func TestFeeLimits(t *testing.T) {
 			suggestions: &Suggestions{
 				OutSwaps: []loop.OutRequest{
 					applyFeeCategoryQuote(
-						chan1Rec, defaultMaximumMinerFee,
+						chan1Rec,
+						defaultMaximumMinerFee,
 						defaultPrepayRoutingFeePPM,
 						defaultRoutingFeePPM, *quote,
 					),
@@ -1110,13 +1121,15 @@ func TestFeeBudget(t *testing.T) {
 				})
 			}
 
-			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) (
+				[]*loopdb.LoopOut, error) {
+
 				return swaps, nil
 			}
 
 			cfg.LoopOutQuote = func(_ context.Context,
-				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
-				error) {
+				_ *loop.LoopOutQuoteRequest) (
+				*loop.LoopOutQuote, error) {
 
 				return quote, nil
 			}
@@ -1285,10 +1298,14 @@ func TestInFlightLimit(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			cfg, lnd := newTestConfig()
-			cfg.ListLoopOut = func(context.Context) ([]*loopdb.LoopOut, error) {
+			cfg.ListLoopOut = func(context.Context) (
+				[]*loopdb.LoopOut, error) {
+
 				return testCase.existingSwaps, nil
 			}
-			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) (
+				[]*loopdb.LoopIn, error) {
+
 				return testCase.existingInSwaps, nil
 			}
 
@@ -1330,8 +1347,7 @@ type mockServer struct {
 
 // Restrictions mocks a call to the server to get swap size restrictions.
 func (m *mockServer) Restrictions(ctx context.Context, swapType swap.Type,
-	initiator string) (
-	*Restrictions, error) {
+	initiator string) (*Restrictions, error) {
 
 	args := m.Called(ctx, swapType)
 
@@ -1595,8 +1611,8 @@ func TestFeePercentage(t *testing.T) {
 			cfg, lnd := newTestConfig()
 
 			cfg.LoopOutQuote = func(_ context.Context,
-				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
-				error) {
+				_ *loop.LoopOutQuoteRequest) (
+				*loop.LoopOutQuote, error) {
 
 				return testCase.quote, nil
 			}
@@ -1765,13 +1781,15 @@ func TestBudgetWithLoopin(t *testing.T) {
 				channel1,
 			}
 
-			cfg.ListLoopIn = func(context.Context) ([]*loopdb.LoopIn, error) {
+			cfg.ListLoopIn = func(context.Context) (
+				[]*loopdb.LoopIn, error) {
+
 				return testCase.loopIns, nil
 			}
 
 			cfg.LoopOutQuote = func(_ context.Context,
-				_ *loop.LoopOutQuoteRequest) (*loop.LoopOutQuote,
-				error) {
+				_ *loop.LoopOutQuoteRequest) (
+				*loop.LoopOutQuote, error) {
 
 				return okQuote, nil
 			}
@@ -2035,9 +2053,16 @@ func TestCurrentTraffic(t *testing.T) {
 
 		params := m.GetParameters()
 		params.FailureBackOff = backoff
-		require.NoError(t, m.setParameters(context.Background(), params))
+		require.NoError(
+			t,
+			m.setParameters(
+				context.Background(), params,
+			),
+		)
 
-		actual := m.currentSwapTraffic(testCase.loopOut, testCase.loopIn)
+		actual := m.currentSwapTraffic(
+			testCase.loopOut, testCase.loopIn,
+		)
 		require.Equal(t, testCase.expected, actual)
 	}
 }

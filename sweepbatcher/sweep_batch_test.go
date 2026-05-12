@@ -22,15 +22,27 @@ import (
 func TestConstructUnsignedTx(t *testing.T) {
 	// Prepare the necessary data for test cases.
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	op3 := wire.OutPoint{
-		Hash:  chainhash.Hash{3, 3, 3},
+		Hash: chainhash.Hash{
+			3,
+			3,
+			3,
+		},
 		Index: 3,
 	}
 
@@ -55,11 +67,13 @@ func TestConstructUnsignedTx(t *testing.T) {
 		PkScript: change1Pkscript,
 	}
 
-	change1PrimeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
-		"lwyyeq5ryn6r"
+	change1PrimeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0" +
+		"rjlwyyeq5ryn6r"
 	change1PrimeAddress, err := btcutil.DecodeAddress(change1PrimeAddr, nil)
 	require.NoError(t, err)
-	change1PrimePkscript, err := txscript.PayToAddrScript(change1PrimeAddress)
+	change1PrimePkscript, err := txscript.PayToAddrScript(
+		change1PrimeAddress,
+	)
 	require.NoError(t, err)
 	change1Prime := &wire.TxOut{
 		Value:    200_000,
@@ -498,7 +512,8 @@ func TestConstructUnsignedTx(t *testing.T) {
 						PkScript: p2trPkScript,
 					},
 					{
-						Value:    change1.Value + change1Prime.Value,
+						Value: change1.Value +
+							change1Prime.Value,
 						PkScript: change1.PkScript,
 					},
 				},
@@ -513,8 +528,10 @@ func TestConstructUnsignedTx(t *testing.T) {
 			sweeps: []sweep{
 				{
 					outpoint: op2,
-					value:    btcutil.Amount(change1.Value - 1),
-					change:   change1,
+					value: btcutil.Amount(
+						change1.Value - 1,
+					),
+					change: change1,
 				},
 			},
 			address:       p2trAddress,
@@ -569,8 +586,11 @@ func TestConstructUnsignedTx(t *testing.T) {
 					outpoint: op1,
 					value:    1_000_000,
 					change: &wire.TxOut{
-						Value:    int64(dustLimit - 1),
-						PkScript: []byte{0xaf, 0xfe},
+						Value: int64(dustLimit - 1),
+						PkScript: []byte{
+							0xaf,
+							0xfe,
+						},
 					},
 				},
 			},
@@ -588,7 +608,8 @@ func TestConstructUnsignedTx(t *testing.T) {
 					outpoint: op1,
 					value:    btcutil.SatoshiPerBitcoin,
 					change: &wire.TxOut{
-						Value:    btcutil.SatoshiPerBitcoin * 0.9,
+						Value: btcutil.SatoshiPerBitcoin *
+							0.9,
 						PkScript: change1Pkscript,
 					},
 				},
@@ -606,11 +627,13 @@ func TestConstructUnsignedTx(t *testing.T) {
 				},
 				TxOut: []*wire.TxOut{
 					{
-						Value:    btcutil.SatoshiPerBitcoin * 0.08,
+						Value: btcutil.SatoshiPerBitcoin *
+							0.08,
 						PkScript: p2trPkScript,
 					},
 					{
-						Value:    btcutil.SatoshiPerBitcoin * 0.9,
+						Value: btcutil.SatoshiPerBitcoin *
+							0.9,
 						PkScript: change1.PkScript,
 					},
 				},

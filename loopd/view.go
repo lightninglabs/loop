@@ -34,8 +34,7 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 	}
 
 	sweeperDb := sweepbatcher.NewSQLStore(
-		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb),
-		chainParams,
+		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb), chainParams,
 	)
 
 	var assetClient *assets.TapdClient
@@ -81,8 +80,7 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 
 		fmt.Printf("OUT %v\n", s.Hash)
 		fmt.Printf("   Created: %v (height %v)\n",
-			s.Contract.InitiationTime, s.Contract.InitiationHeight,
-		)
+			s.Contract.InitiationTime, s.Contract.InitiationHeight)
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
 		fmt.Printf("   Htlc address (%s): %v\n", htlc.OutputType,
 			htlc.Address)
@@ -91,19 +89,14 @@ func viewOut(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 			s.Contract.OutgoingChanSet)
 		fmt.Printf("   Dest: %v\n", s.Contract.DestAddr)
 		fmt.Printf("   Amt: %v, Expiry: %v\n",
-			s.Contract.AmountRequested, s.Contract.CltvExpiry,
-		)
+			s.Contract.AmountRequested, s.Contract.CltvExpiry)
 		for i, e := range s.Events {
-			fmt.Printf("   Update %v, Time %v, State: %v",
-				i, e.Time, e.State,
-			)
+			fmt.Printf("   Update %v, Time %v, State: %v", i,
+				e.Time, e.State)
 			if e.State.Type() != loopdb.StateTypePending {
 				fmt.Printf(", Cost: server=%v, onchain=%v, "+
-					"offchain=%v",
-					e.Cost.Server,
-					e.Cost.Onchain,
-					e.Cost.Offchain,
-				)
+					"offchain=%v", e.Cost.Server,
+					e.Cost.Onchain, e.Cost.Offchain)
 			}
 
 			fmt.Println()
@@ -130,18 +123,15 @@ func viewIn(swapClient *loop.Client, chainParams *chaincfg.Params) error {
 
 		fmt.Printf("IN %v\n", s.Hash)
 		fmt.Printf("   Created: %v (height %v)\n",
-			s.Contract.InitiationTime, s.Contract.InitiationHeight,
-		)
+			s.Contract.InitiationTime, s.Contract.InitiationHeight)
 		fmt.Printf("   Preimage: %v\n", s.Contract.Preimage)
 		fmt.Printf("   Htlc address (%s): %v\n", htlc.OutputType,
 			htlc.Address)
 		fmt.Printf("   Amt: %v, Expiry: %v\n",
-			s.Contract.AmountRequested, s.Contract.CltvExpiry,
-		)
+			s.Contract.AmountRequested, s.Contract.CltvExpiry)
 		for i, e := range s.Events {
-			fmt.Printf("   Update %v, Time %v, State: %v\n",
-				i, e.Time, e.State,
-			)
+			fmt.Printf("   Update %v, Time %v, State: %v\n", i,
+				e.Time, e.State)
 		}
 		fmt.Println()
 	}

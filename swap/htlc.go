@@ -223,8 +223,8 @@ func NewHtlcV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 // segwitV0LockingConditions provides the address, pkScript and sigScript (if
 // required) for the segwit v0 script and output type provided.
 func segwitV0LockingConditions(outputType HtlcOutputType,
-	chainParams *chaincfg.Params, script []byte) (btcutil.Address,
-	[]byte, []byte, error) {
+	chainParams *chaincfg.Params, script []byte) (btcutil.Address, []byte,
+	[]byte, error) {
 
 	switch outputType {
 	case HtlcP2WSH:
@@ -234,8 +234,7 @@ func segwitV0LockingConditions(outputType HtlcOutputType,
 		}
 
 		address, err := btcutil.NewAddressWitnessScriptHash(
-			pkScript[2:],
-			chainParams,
+			pkScript[2:], chainParams,
 		)
 		if err != nil {
 			return nil, nil, nil, err
@@ -338,17 +337,17 @@ type HtlcScriptV2 struct {
 //
 // <receiverHtlcKey> OP_CHECKSIG OP_NOTIF
 //
-//	OP_DUP OP_HASH160 <HASH160(senderHtlcKey)> OP_EQUALVERIFY OP_CHECKSIGVERIFY
-//	<cltv timeout> OP_CHECKLOCKTIMEVERIFY
+// OP_DUP OP_HASH160 <HASH160(senderHtlcKey)> OP_EQUALVERIFY OP_CHECKSIGVERIFY
+// <cltv timeout> OP_CHECKLOCKTIMEVERIFY
 //
 // OP_ELSE
 //
-//	OP_SIZE <20> OP_EQUALVERIFY OP_HASH160 <ripemd(swapHash)> OP_EQUALVERIFY 1
-//	OP_CHECKSEQUENCEVERIFY
+// OP_SIZE <20> OP_EQUALVERIFY OP_HASH160 <ripemd(swapHash)> OP_EQUALVERIFY 1
+// OP_CHECKSEQUENCEVERIFY
 //
 // OP_ENDIF .
-func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey,
-	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV2, error) {
+func newHTLCScriptV2(cltvExpiry int32, senderHtlcKey, receiverHtlcKey [33]byte,
+	swapHash lntypes.Hash) (*HtlcScriptV2, error) {
 
 	builder := txscript.NewScriptBuilder()
 	builder.AddData(receiverHtlcKey[:])
@@ -415,8 +414,8 @@ func (h *HtlcScriptV2) IsSuccessWitness(witness wire.TxWitness) bool {
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV2) GenTimeoutWitness(
-	senderSig []byte) (wire.TxWitness, error) {
+func (h *HtlcScriptV2) GenTimeoutWitness(senderSig []byte) (wire.TxWitness,
+	error) {
 
 	witnessStack := make(wire.TxWitness, 4)
 	witnessStack[0] = append(senderSig, byte(txscript.SigHashAll))
@@ -445,6 +444,7 @@ func (h *HtlcScriptV2) SuccessScript() []byte {
 
 // MaxSuccessWitnessSize returns maximum success witness size.
 func (h *HtlcScriptV2) MaxSuccessWitnessSize() lntypes.WeightUnit {
+
 	// Calculate maximum success witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -459,6 +459,7 @@ func (h *HtlcScriptV2) MaxSuccessWitnessSize() lntypes.WeightUnit {
 
 // MaxTimeoutWitnessSize returns maximum timeout witness size.
 func (h *HtlcScriptV2) MaxTimeoutWitnessSize() lntypes.WeightUnit {
+
 	// Calculate maximum timeout witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -514,8 +515,8 @@ type HtlcScriptV3 struct {
 
 // parsePubKey will parse a serialized public key into a btcec.PublicKey
 // depending on the passed MuSig2 version.
-func parsePubKey(muSig2Version input.MuSig2Version, key [33]byte) (
-	*btcec.PublicKey, error) {
+func parsePubKey(muSig2Version input.MuSig2Version,
+	key [33]byte) (*btcec.PublicKey, error) {
 
 	// Make sure that we have the correct public keys depending on the
 	// MuSig2 version.
@@ -535,7 +536,8 @@ func parsePubKey(muSig2Version input.MuSig2Version, key [33]byte) (
 // newHTLCScriptV3 constructs a HtlcScript with the HTLC V3 taproot script.
 func newHTLCScriptV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 	senderInternalKey, receiverInternalKey, senderHtlcKey,
-	receiverHtlcKey [33]byte, swapHash lntypes.Hash) (*HtlcScriptV3, error) {
+	receiverHtlcKey [33]byte,
+	swapHash lntypes.Hash) (*HtlcScriptV3, error) {
 
 	senderPubKey, err := parsePubKey(muSig2Version, senderHtlcKey)
 	if err != nil {
@@ -619,14 +621,15 @@ func newHTLCScriptV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 // Largest possible bytesize of the script is 32 + 1 + 2 + 1 = 36.
 //
 //	<senderHtlcKey> OP_CHECKSIGVERIFY <cltvExpiry> OP_CHECKLOCKTIMEVERIFY
-func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey, cltvExpiry int64) (
-	[]byte, error) {
+func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey,
+	cltvExpiry int64) ([]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
 	builder.AddData(schnorr.SerializePubKey(senderHtlcKey))
 	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
 	builder.AddInt64(cltvExpiry)
 	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
+
 	return builder.Script()
 }
 
@@ -684,8 +687,8 @@ func (h *HtlcScriptV3) genControlBlock(leafScript []byte) ([]byte, error) {
 
 // genSuccessWitness returns the success script to spend this htlc with
 // the preimage.
-func (h *HtlcScriptV3) genSuccessWitness(
-	receiverSig []byte, preimage lntypes.Preimage) (wire.TxWitness, error) {
+func (h *HtlcScriptV3) genSuccessWitness(receiverSig []byte,
+	preimage lntypes.Preimage) (wire.TxWitness, error) {
 
 	controlBlockBytes, err := h.genControlBlock(h.timeoutScript)
 	if err != nil {
@@ -702,8 +705,8 @@ func (h *HtlcScriptV3) genSuccessWitness(
 
 // GenTimeoutWitness returns the timeout script to spend this htlc after
 // timeout.
-func (h *HtlcScriptV3) GenTimeoutWitness(
-	senderSig []byte) (wire.TxWitness, error) {
+func (h *HtlcScriptV3) GenTimeoutWitness(senderSig []byte) (wire.TxWitness,
+	error) {
 
 	controlBlockBytes, err := h.genControlBlock(h.successScript)
 	if err != nil {
@@ -720,6 +723,7 @@ func (h *HtlcScriptV3) GenTimeoutWitness(
 // IsSuccessWitness checks whether the given stack is valid for
 // redeeming the htlc.
 func (h *HtlcScriptV3) IsSuccessWitness(witness wire.TxWitness) bool {
+
 	// The witness has four elements if this is a script spend or one
 	// element if this is a keyspend.
 	return len(witness) == 4 || len(witness) == 1
@@ -744,6 +748,7 @@ func (h *HtlcScriptV3) SuccessScript() []byte {
 // MaxSuccessWitnessSize returns the maximum witness size for the
 // success case witness.
 func (h *HtlcScriptV3) MaxSuccessWitnessSize() lntypes.WeightUnit {
+
 	// Calculate maximum success witness size
 	//
 	// - number_of_witness_elements: 1 byte
@@ -764,6 +769,7 @@ func (h *HtlcScriptV3) MaxSuccessWitnessSize() lntypes.WeightUnit {
 // MaxTimeoutWitnessSize returns the maximum witness size for the
 // timeout case witness.
 func (h *HtlcScriptV3) MaxTimeoutWitnessSize() lntypes.WeightUnit {
+
 	// Calculate maximum timeout witness size
 	//
 	// - number_of_witness_elements: 1 byte

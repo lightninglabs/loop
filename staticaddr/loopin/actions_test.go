@@ -123,6 +123,7 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	select {
 	case event := <-resultChan:
 		require.Equal(t, OnPaymentReceived, event)
+
 	case <-ctx.Done():
 		t.Fatalf("fsm did not return: %v", ctx.Err())
 	}
@@ -145,15 +146,21 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 
 	dep := &deposit.Deposit{
 		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1},
+			Hash: chainhash.Hash{
+				1,
+			},
 			Index: 0,
 		},
 		Value: 500_000,
 	}
 
 	loopIn := &StaticAddressLoopIn{
-		Deposits:              []*deposit.Deposit{dep},
-		DepositOutpoints:      []string{dep.OutPoint.String()},
+		Deposits: []*deposit.Deposit{
+			dep,
+		},
+		DepositOutpoints: []string{
+			dep.OutPoint.String(),
+		},
 		SelectedAmount:        dep.Value,
 		QuotedSwapFee:         1_000,
 		RouteHints:            testStaticAddressRouteHints(),
@@ -201,8 +208,8 @@ type mockStaticAddressServer struct {
 
 // ServerStaticAddressLoopIn records the request and returns the prepared
 // response.
-func (m *mockStaticAddressServer) ServerStaticAddressLoopIn(
-	_ context.Context, in *swapserverrpc.ServerStaticAddressLoopInRequest,
+func (m *mockStaticAddressServer) ServerStaticAddressLoopIn(_ context.Context,
+	in *swapserverrpc.ServerStaticAddressLoopInRequest,
 	_ ...grpc.CallOption) (*swapserverrpc.ServerStaticAddressLoopInResponse,
 	error) {
 
@@ -301,8 +308,8 @@ func (n *noopDepositManager) GetAllDeposits(_ context.Context) (
 }
 
 // AllStringOutpointsActiveDeposits implements DepositManager with a no-op.
-func (n *noopDepositManager) AllStringOutpointsActiveDeposits(
-	_ []string, _ fsm.StateType) ([]*deposit.Deposit, bool) {
+func (n *noopDepositManager) AllStringOutpointsActiveDeposits(_ []string,
+	_ fsm.StateType) ([]*deposit.Deposit, bool) {
 
 	return nil, false
 }

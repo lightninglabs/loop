@@ -101,8 +101,8 @@ func (i *InstantOut) getHtlc(chainParams *chaincfg.Params) (*swap.Htlc, error) {
 
 // createMusig2Session creates a musig2 session for the instant out.
 func (i *InstantOut) createMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient) ([]*input.MuSig2SessionInfo,
-	[][]byte, error) {
+	signer lndclient.SignerClient) ([]*input.MuSig2SessionInfo, [][]byte,
+	error) {
 
 	// Create the htlc musig2 context.
 	musig2Sessions := make([]*input.MuSig2SessionInfo, len(i.Reservations))
@@ -181,8 +181,7 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params,
 		return nil, err
 	}
 	if clamped {
-		return nil, errors.New("fee is higher than 20% of " +
-			"sweep value")
+		return nil, errors.New("fee is higher than 20% of sweep value")
 	}
 
 	htlc, err := i.getHtlc(network)
@@ -203,8 +202,8 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params,
 
 // createSweeplessSweepTx creates the sweepless sweep transaction for the
 // instant out.
-func (i *InstantOut) createSweeplessSweepTx(feerate,
-	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+func (i *InstantOut) createSweeplessSweepTx(
+	feerate, minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx, error) {
 
 	inputReservations, err := i.getInputReservations()
 	if err != nil {
@@ -232,8 +231,7 @@ func (i *InstantOut) createSweeplessSweepTx(feerate,
 		return nil, err
 	}
 	if clamped {
-		return nil, errors.New("fee is higher than 20% of " +
-			"sweep value")
+		return nil, errors.New("fee is higher than 20% of sweep value")
 	}
 
 	pkscript, err := txscript.PayToAddrScript(i.sweepAddress)
@@ -269,16 +267,16 @@ func (i *InstantOut) signMusig2Tx(ctx context.Context,
 	sigs := make([][]byte, len(inputs))
 
 	for idx, reservation := range inputs {
-		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
-			reservation.Outpoint) {
-
+		if !reflect.DeepEqual(
+			tx.TxIn[idx].PreviousOutPoint, reservation.Outpoint,
+		) {
 			return nil, fmt.Errorf("tx input does not match " +
 				"reservation")
 		}
 
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
-			sigHashes, txscript.SigHashDefault,
-			tx, idx, prevOutFetcher,
+			sigHashes, txscript.SigHashDefault, tx, idx,
+			prevOutFetcher,
 		)
 		if err != nil {
 			return nil, err
@@ -322,8 +320,8 @@ func (i *InstantOut) signMusig2Tx(ctx context.Context,
 // the htlc or the cooperative close.
 func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 	signer lndclient.SignerClient,
-	musig2Sessions []*input.MuSig2SessionInfo,
-	tx *wire.MsgTx, serverSigs [][]byte) (*wire.MsgTx, error) {
+	musig2Sessions []*input.MuSig2SessionInfo, tx *wire.MsgTx,
+	serverSigs [][]byte) (*wire.MsgTx, error) {
 
 	inputs, err := i.getInputReservations()
 	if err != nil {
@@ -352,8 +350,7 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 // generateHtlcSweepTx creates the htlc sweep transaction for the instant out.
 func (i *InstantOut) generateHtlcSweepTx(ctx context.Context,
 	signer lndclient.SignerClient, feeRate chainfee.SatPerKWeight,
-	network *chaincfg.Params, blockheight uint32) (
-	*wire.MsgTx, error) {
+	network *chaincfg.Params, blockheight uint32) (*wire.MsgTx, error) {
 
 	if network == nil {
 		return nil, errors.New("no network provided")

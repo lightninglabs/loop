@@ -41,11 +41,14 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 	// element.
 	var outgoingChanSet []uint64
 	if cmd.IsSet("channel") {
-		for chanString := range strings.SplitSeq(cmd.String("channel"), ",") {
+		for chanString := range strings.SplitSeq(
+			cmd.String("channel"),
+			",",
+		) {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
-				return fmt.Errorf("error parsing channel id "+
-					"\"%v\"", chanString)
+				return fmt.Errorf("error parsing "+
+					"channel id \"%v\"", chanString)
 			}
 			outgoingChanSet = append(outgoingChanSet, chanID)
 		}
@@ -82,6 +85,7 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 
 	if len(confirmedReservations) == 0 {
 		fmt.Printf("No confirmed reservations found \n")
+
 		return nil
 	}
 
@@ -89,14 +93,14 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 	for _, res := range confirmedReservations {
 		idx++
 		if len(res.ReservationId) != reservation.IdLength {
-			return fmt.Errorf("invalid reservation id length: "+
-				"got %d, expected %d", len(res.ReservationId),
+			return fmt.Errorf("invalid reservation id length: got "+
+				"%d, expected %d", len(res.ReservationId),
 				reservation.IdLength)
 		}
 
 		fmt.Printf("Reservation %v: shortid %x, amt %v, expiry "+
-			"height %v \n", idx, res.ReservationId[:3], res.Amount,
-			res.Expiry)
+			"height %v \n",
+			idx, res.ReservationId[:3], res.Amount, res.Expiry)
 
 		totalAmt += int64(res.Amount)
 	}
@@ -120,8 +124,7 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 	case "ALL":
 		for _, res := range confirmedReservations {
 			selectedReservations = append(
-				selectedReservations,
-				res.ReservationId,
+				selectedReservations, res.ReservationId,
 			)
 			selectedAmt += res.Amount
 		}

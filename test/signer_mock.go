@@ -24,16 +24,15 @@ type mockSigner struct {
 
 var _ lndclient.SignerClient = (*mockSigner)(nil)
 
-func (s *mockSigner) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	signrpc.SignerClient) {
+func (s *mockSigner) RawClientWithMacAuth(ctx context.Context) (context.Context,
+	time.Duration, signrpc.SignerClient) {
 
 	return ctx, 0, nil
 }
 
 func (s *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor,
-	_ []*wire.TxOut) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor, _ []*wire.TxOut) ([][]byte,
+	error) {
 
 	s.lnd.SignOutputRawChannel <- SignOutputRawRequest{
 		Tx:              tx,
@@ -123,8 +122,8 @@ func (s *mockSigner) MuSig2RegisterNonces(context.Context, [32]byte,
 // combining all the partial signatures, then the cleanup parameter
 // should be set, indicating that the session can be removed from memory
 // once the signature was produced.
-func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
-	bool) ([]byte, error) {
+func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte, bool) (
+	[]byte, error) {
 
 	return nil, nil
 }
@@ -133,8 +132,8 @@ func (s *mockSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
 // local one, if it already exists. Once a partial signature of all
 // participants is registered, the final signature will be combined and
 // returned.
-func (s *mockSigner) MuSig2CombineSig(context.Context, [32]byte,
-	[][]byte) (bool, []byte, error) {
+func (s *mockSigner) MuSig2CombineSig(context.Context, [32]byte, [][]byte) (
+	bool, []byte, error) {
 
 	sig := make([]byte, 64)
 	sig[0] = 42

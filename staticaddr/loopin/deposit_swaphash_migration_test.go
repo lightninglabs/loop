@@ -48,7 +48,12 @@ func TestDepositSwapHashMigration(t *testing.T) {
 	d1, d2 := &deposit.Deposit{
 		ID: newID(),
 		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Hash: chainhash.Hash{
+				0x1a,
+				0x2b,
+				0x3c,
+				0x4d,
+			},
 			Index: 0,
 		},
 		Value: btcutil.Amount(100_000),
@@ -59,7 +64,12 @@ func TestDepositSwapHashMigration(t *testing.T) {
 		&deposit.Deposit{
 			ID: newID(),
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4e},
+				Hash: chainhash.Hash{
+					0x2a,
+					0x2b,
+					0x3c,
+					0x4e,
+				},
 				Index: 1,
 			},
 			Value: btcutil.Amount(200_000),
@@ -96,10 +106,12 @@ func TestDepositSwapHashMigration(t *testing.T) {
 	err = swapStore.baseDB.ExecTx(ctxb, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			swapArgs := sqlc.InsertSwapParams{
-				SwapHash:         loopIn.SwapHash[:],
-				Preimage:         loopIn.SwapPreimage[:],
-				InitiationTime:   loopIn.InitiationTime,
-				AmountRequested:  int64(loopIn.TotalDepositAmount()),
+				SwapHash:       loopIn.SwapHash[:],
+				Preimage:       loopIn.SwapPreimage[:],
+				InitiationTime: loopIn.InitiationTime,
+				AmountRequested: int64(
+					loopIn.TotalDepositAmount(),
+				),
 				CltvExpiry:       loopIn.HtlcCltvExpiry,
 				MaxSwapFee:       int64(loopIn.MaxSwapFee),
 				InitiationHeight: int32(loopIn.InitiationHeight),
@@ -111,13 +123,17 @@ func TestDepositSwapHashMigration(t *testing.T) {
 				SwapHash:             loopIn.SwapHash[:],
 				SenderScriptPubkey:   loopIn.ClientPubkey.SerializeCompressed(),
 				ReceiverScriptPubkey: loopIn.ServerPubkey.SerializeCompressed(),
-				ClientKeyFamily:      int32(loopIn.HtlcKeyLocator.Family),
-				ClientKeyIndex:       int32(loopIn.HtlcKeyLocator.Index),
+				ClientKeyFamily: int32(
+					loopIn.HtlcKeyLocator.Family,
+				),
+				ClientKeyIndex: int32(
+					loopIn.HtlcKeyLocator.Index,
+				),
 			}
 
-			// Sanity check, if any of the outpoints contain the outpoint separator.
-			// If so, we reject the loop-in to prevent potential issues with
-			// parsing.
+			// Sanity check, if any of the outpoints contain the
+			// outpoint separator. If so, we reject the loop-in to
+			// prevent potential issues with parsing.
 			for _, outpoint := range loopIn.DepositOutpoints {
 				if strings.Contains(outpoint, OutpointSeparator) {
 					return ErrInvalidOutpoint
@@ -128,14 +144,20 @@ func TestDepositSwapHashMigration(t *testing.T) {
 				loopIn.DepositOutpoints, OutpointSeparator,
 			)
 			staticAddressLoopInParams := sqlc.InsertStaticAddressLoopInParams{
-				SwapHash:                loopIn.SwapHash[:],
-				SwapInvoice:             loopIn.SwapInvoice,
-				LastHop:                 loopIn.LastHop,
-				QuotedSwapFeeSatoshis:   int64(loopIn.QuotedSwapFee),
+				SwapHash:    loopIn.SwapHash[:],
+				SwapInvoice: loopIn.SwapInvoice,
+				LastHop:     loopIn.LastHop,
+				QuotedSwapFeeSatoshis: int64(
+					loopIn.QuotedSwapFee,
+				),
 				HtlcTimeoutSweepAddress: loopIn.HtlcTimeoutSweepAddress.String(),
-				HtlcTxFeeRateSatKw:      int64(loopIn.HtlcTxFeeRate),
-				DepositOutpoints:        joinedOutpoints,
-				PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
+				HtlcTxFeeRateSatKw: int64(
+					loopIn.HtlcTxFeeRate,
+				),
+				DepositOutpoints: joinedOutpoints,
+				PaymentTimeoutSeconds: int32(
+					loopIn.PaymentTimeoutSeconds,
+				),
 			}
 
 			updateArgs := sqlc.InsertStaticAddressMetaUpdateParams{

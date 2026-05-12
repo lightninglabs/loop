@@ -87,7 +87,8 @@ func SetupLoggers(root *build.SubLoggerManager, intercept signal.Interceptor) {
 		root, instantout.Subsystem, intercept, instantout.UseLogger,
 	)
 	lnd.AddSubLogger(
-		root, notifications.Subsystem, intercept, notifications.UseLogger,
+		root, notifications.Subsystem, intercept,
+		notifications.UseLogger,
 	)
 	lnd.AddSubLogger(
 		root, sweep.Subsystem, intercept, sweep.UseLogger,

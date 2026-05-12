@@ -48,8 +48,7 @@ func migrateSwapTypeUpdates(rootBucket *bbolt.Bucket) error {
 	for _, swapHash := range swaps {
 		swapBucket := rootBucket.Bucket(swapHash)
 		if swapBucket == nil {
-			return fmt.Errorf("swap bucket %x not found",
-				swapHash)
+			return fmt.Errorf("swap bucket %x not found", swapHash)
 		}
 
 		err := migrateSwapUpdates(swapBucket)
@@ -80,6 +79,7 @@ func migrateSwapUpdates(swapBucket *bbolt.Bucket) error {
 	// Do not modify inside the for each.
 	err := updatesBucket.ForEach(func(k, v []byte) error {
 		existingStates = append(existingStates, state{id: k, state: v})
+
 		return nil
 	})
 	if err != nil {

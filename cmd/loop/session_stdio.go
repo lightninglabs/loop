@@ -11,10 +11,7 @@ func hookStdout(orig *os.File, forward io.Writer,
 	onChunk func([]byte)) (func() error, error) {
 
 	return hookOutput(
-		func(f *os.File) { os.Stdout = f },
-		orig,
-		forward,
-		onChunk,
+		func(f *os.File) { os.Stdout = f }, orig, forward, onChunk,
 	)
 }
 
@@ -23,10 +20,7 @@ func hookStderr(orig *os.File, forward io.Writer,
 	onChunk func([]byte)) (func() error, error) {
 
 	return hookOutput(
-		func(f *os.File) { os.Stderr = f },
-		orig,
-		forward,
-		onChunk,
+		func(f *os.File) { os.Stderr = f }, orig, forward, onChunk,
 	)
 }
 

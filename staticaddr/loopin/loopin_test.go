@@ -74,7 +74,9 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 	deposits := []*deposit.Deposit{
 		{
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{0xaa},
+				Hash: chainhash.Hash{
+					0xaa,
+				},
 				Index: 0,
 			},
 			Value: depositValue,
@@ -123,33 +125,36 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 
 	htlcValue := htlcTx.TxOut[htlcIdx].Value
 	changeValue := htlcTx.TxOut[1-htlcIdx].Value
-	require.NotEqual(t, htlcValue, changeValue,
-		"HTLC and change values must differ for this test to be "+
-			"meaningful")
+	require.NotEqual(
+		t, htlcValue, changeValue, "HTLC and change values must "+
+			"differ for this test to be meaningful",
+	)
 
 	// Call createHtlcSweepTx and verify that the sweep output is derived
 	// from the HTLC value, not the change.
 	sweepTx, err := loopIn.createHtlcSweepTx(
-		t.Context(), signer, sweepAddr, feeRate,
-		network, uint32(loopIn.HtlcCltvExpiry)+1,
-		maxFeePercentage,
+		t.Context(), signer, sweepAddr, feeRate, network,
+		uint32(loopIn.HtlcCltvExpiry)+1, maxFeePercentage,
 	)
 	require.NoError(t, err)
 	require.Len(t, sweepTx.TxOut, 1)
 
 	sweepValue := sweepTx.TxOut[0].Value
 	require.Greater(t, sweepValue, int64(0))
-	require.LessOrEqual(t, sweepValue, htlcValue,
-		"sweep value must not exceed HTLC output value")
-	require.Greater(t, sweepValue, changeValue,
-		"sweep value should be greater than change "+
-			"value, confirming it was derived from "+
-			"the HTLC output")
+	require.LessOrEqual(
+		t, sweepValue, htlcValue,
+		"sweep value must not exceed HTLC output value",
+	)
+	require.Greater(
+		t, sweepValue, changeValue, "sweep value should be greater "+
+			"than change value, confirming it was derived from "+
+			"the HTLC output",
+	)
 }
 
 // newStaticAddress creates a StaticAddress for testing.
-func newStaticAddress(clientKey, serverKey *btcec.PublicKey,
-	csvExpiry int64) (*script.StaticAddress, error) {
+func newStaticAddress(clientKey, serverKey *btcec.PublicKey, csvExpiry int64) (
+	*script.StaticAddress, error) {
 
 	return script.NewStaticAddress(
 		input.MuSig2Version100RC2, csvExpiry, clientKey, serverKey,

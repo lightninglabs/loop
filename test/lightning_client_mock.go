@@ -70,16 +70,18 @@ func (h *mockLightningClient) GetInfo(ctx context.Context) (*lndclient.Info,
 	}
 	var pubKey [33]byte
 	copy(pubKey[:], pubKeyBytes)
+
 	return &lndclient.Info{
 		BlockHeight:    600,
 		IdentityPubkey: pubKey,
-		Uris:           []string{h.lnd.NodePubkey + "@127.0.0.1:9735"},
+		Uris: []string{
+			h.lnd.NodePubkey + "@127.0.0.1:9735",
+		},
 	}, nil
 }
 
 func (h *mockLightningClient) EstimateFeeToP2WSH(ctx context.Context,
-	amt btcutil.Amount, confTarget int32) (btcutil.Amount,
-	error) {
+	amt btcutil.Amount, confTarget int32) (btcutil.Amount, error) {
 
 	return 3000, nil
 }
@@ -94,8 +96,10 @@ func (h *mockLightningClient) AddInvoice(ctx context.Context,
 	switch {
 	case in.Hash != nil:
 		hash = *in.Hash
+
 	case in.Preimage != nil:
 		hash = (*in.Preimage).Hash()
+
 	default:
 		if _, err := rand.Read(hash[:]); err != nil {
 			return lntypes.Hash{}, "", err
@@ -174,9 +178,9 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 }
 
 // ListTransactions returns all known transactions of the backing lnd node.
-func (h *mockLightningClient) ListTransactions(
-	_ context.Context, _, _ int32, _ ...lndclient.ListTransactionsOption) (
-	[]lndclient.Transaction, error) {
+func (h *mockLightningClient) ListTransactions(_ context.Context, _, _ int32,
+	_ ...lndclient.ListTransactionsOption) ([]lndclient.Transaction,
+	error) {
 
 	h.lnd.lock.Lock()
 	txs := h.lnd.Transactions
@@ -188,7 +192,8 @@ func (h *mockLightningClient) ListTransactions(
 // GetNodeInfo retrieves info on the node, and if includeChannels is True,
 // will return other channels the node may have with other peers.
 func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
-	pubKeyBytes route.Vertex, includeChannels bool) (*lndclient.NodeInfo, error) {
+	pubKeyBytes route.Vertex, includeChannels bool) (*lndclient.NodeInfo,
+	error) {
 
 	nodeInfo := &lndclient.NodeInfo{
 		Node: &lndclient.Node{
@@ -213,8 +218,12 @@ func (h *mockLightningClient) GetNodeInfo(ctx context.Context,
 			(edge.Node1 != nodePubKey || edge.Node2 != nodePubKey) {
 
 			for _, channel := range h.lnd.Channels {
-				if channel.ChannelID == edge.ChannelID && !channel.Private {
-					nodeInfo.Channels = append(nodeInfo.Channels, *edge)
+				if channel.ChannelID == edge.ChannelID &&
+					!channel.Private {
+
+					nodeInfo.Channels = append(
+						nodeInfo.Channels, *edge,
+					)
 				}
 			}
 		}
@@ -233,6 +242,7 @@ func (h *mockLightningClient) GetChanInfo(ctx context.Context,
 	if channelEdge, ok := h.lnd.ChannelEdges[channelID]; ok {
 		return channelEdge, nil
 	}
+
 	return channelEdge, fmt.Errorf("not found")
 }
 
@@ -244,16 +254,16 @@ func (h *mockLightningClient) ListChannels(ctx context.Context, _, _ bool,
 }
 
 // ClosedChannels returns a list of our closed channels.
-func (h *mockLightningClient) ClosedChannels(_ context.Context) ([]lndclient.ClosedChannel,
-	error) {
+func (h *mockLightningClient) ClosedChannels(_ context.Context) (
+	[]lndclient.ClosedChannel, error) {
 
 	return h.lnd.ClosedChannels, nil
 }
 
 // ForwardingHistory returns the mock's set of forwarding events.
 func (h *mockLightningClient) ForwardingHistory(_ context.Context,
-	_ lndclient.ForwardingHistoryRequest) (*lndclient.ForwardingHistoryResponse,
-	error) {
+	_ lndclient.ForwardingHistoryRequest) (
+	*lndclient.ForwardingHistoryResponse, error) {
 
 	return &lndclient.ForwardingHistoryResponse{
 		LastIndexOffset: 0,
@@ -299,13 +309,17 @@ func (h *mockLightningClient) ListPayments(_ context.Context,
 
 // ChannelBackup retrieves the backup for a particular channel. The
 // backup is returned as an encrypted chanbackup.Single payload.
-func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) ([]byte, error) {
+func (h *mockLightningClient) ChannelBackup(context.Context, wire.OutPoint) (
+	[]byte, error) {
+
 	return nil, nil
 }
 
 // ChannelBackups retrieves backups for all existing pending open and
 // open channels. The backups are returned as an encrypted
 // chanbackup.Multi payload.
-func (h *mockLightningClient) ChannelBackups(ctx context.Context) ([]byte, error) {
+func (h *mockLightningClient) ChannelBackups(ctx context.Context) ([]byte,
+	error) {
+
 	return nil, nil
 }

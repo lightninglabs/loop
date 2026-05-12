@@ -11,8 +11,8 @@ import (
 
 // GetScriptOutput locates the given script in the outputs of a transaction and
 // returns its outpoint and value.
-func GetScriptOutput(htlcTx *wire.MsgTx, scriptHash []byte) (
-	*wire.OutPoint, btcutil.Amount, error) {
+func GetScriptOutput(htlcTx *wire.MsgTx, scriptHash []byte) (*wire.OutPoint,
+	btcutil.Amount, error) {
 
 	for idx, output := range htlcTx.TxOut {
 		if bytes.Equal(output.PkScript, scriptHash) {
@@ -27,8 +27,8 @@ func GetScriptOutput(htlcTx *wire.MsgTx, scriptHash []byte) (
 }
 
 // GetTxInputByOutpoint returns a tx input based on a given input outpoint.
-func GetTxInputByOutpoint(tx *wire.MsgTx, input *wire.OutPoint) (
-	*wire.TxIn, error) {
+func GetTxInputByOutpoint(tx *wire.MsgTx,
+	input *wire.OutPoint) (*wire.TxIn, error) {
 
 	for _, in := range tx.TxIn {
 		if in.PreviousOutPoint == *input {

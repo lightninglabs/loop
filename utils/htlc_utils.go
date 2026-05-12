@@ -19,8 +19,7 @@ func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
 	case swap.HtlcV2:
 		return swap.NewHtlcV2(
 			contract.CltvExpiry, contract.HtlcKeys.SenderScriptKey,
-			contract.HtlcKeys.ReceiverScriptKey, hash,
-			chainParams,
+			contract.HtlcKeys.ReceiverScriptKey, hash, chainParams,
 		)
 
 	case swap.HtlcV3:
@@ -32,13 +31,11 @@ func GetHtlc(hash lntypes.Hash, contract *loopdb.SwapContract,
 		}
 
 		return swap.NewHtlcV3(
-			muSig2Version,
-			contract.CltvExpiry,
+			muSig2Version, contract.CltvExpiry,
 			contract.HtlcKeys.SenderInternalPubKey,
 			contract.HtlcKeys.ReceiverInternalPubKey,
 			contract.HtlcKeys.SenderScriptKey,
-			contract.HtlcKeys.ReceiverScriptKey,
-			hash, chainParams,
+			contract.HtlcKeys.ReceiverScriptKey, hash, chainParams,
 		)
 	}
 
@@ -53,7 +50,6 @@ func GetHtlcScriptVersion(
 	// If the swap was initiated before we had our v3 script, use v2.
 	if protocolVersion < loopdb.ProtocolVersionHtlcV3 ||
 		protocolVersion == loopdb.ProtocolVersionUnrecorded {
-
 		return swap.HtlcV2
 	}
 
@@ -61,8 +57,8 @@ func GetHtlcScriptVersion(
 }
 
 // ObtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
-func ObtainSwapPaymentAddr(swapInvoice string, chainParams *chaincfg.Params) (
-	*[32]byte, error) {
+func ObtainSwapPaymentAddr(swapInvoice string,
+	chainParams *chaincfg.Params) (*[32]byte, error) {
 
 	swapPayReq, err := zpay32.Decode(swapInvoice, chainParams)
 	if err != nil {

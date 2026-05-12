@@ -31,8 +31,8 @@ func (r *mockRouter) SendPayment(ctx context.Context,
 	return statusChan, errorChan, nil
 }
 
-func (r *mockRouter) TrackPayment(ctx context.Context,
-	hash lntypes.Hash) (chan lndclient.PaymentStatus, chan error, error) {
+func (r *mockRouter) TrackPayment(ctx context.Context, hash lntypes.Hash) (
+	chan lndclient.PaymentStatus, chan error, error) {
 
 	statusChan := make(chan lndclient.PaymentStatus)
 	errorChan := make(chan error)
@@ -63,11 +63,12 @@ func (r *mockRouter) ImportMissionControl(ctx context.Context,
 			if entry.NodeFrom == current.NodeFrom &&
 				entry.NodeTo == current.NodeTo {
 
-				// Mark that the entry has been found and updated.
+				// Mark that the entry has been found and
+				// updated.
 				found = true
 
-				// Import failure result first. We ignore failure
-				// relax interval here for convenience.
+				// Import failure result first. We ignore
+				// failure relax interval here for convenience.
 				current.FailTime = entry.FailTime
 				current.FailAmt = entry.FailAmt
 
@@ -107,5 +108,6 @@ func (r *mockRouter) ImportMissionControl(ctx context.Context,
 
 func (r *mockRouter) ResetMissionControl(ctx context.Context) error {
 	r.lnd.MissionControlState = []lndclient.MissionControlEntry{}
+
 	return nil
 }

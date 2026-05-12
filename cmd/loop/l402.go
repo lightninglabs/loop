@@ -71,6 +71,7 @@ func listAuth(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printJSON(tokens)
+
 	return nil
 }
 
@@ -99,5 +100,6 @@ func fetchL402(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printRespJSON(res)
+
 	return nil
 }

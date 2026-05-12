@@ -38,9 +38,8 @@ const (
 )
 
 var (
-	ErrProtocolVersionNotSupported = errors.New(
-		"protocol version not supported",
-	)
+	ErrProtocolVersionNotSupported = errors.New("protocol version not " +
+		"supported")
 )
 
 // States.
@@ -61,7 +60,8 @@ var (
 	// WaitForSweeplessSweepConfirmed is the state where we wait for the
 	// sweepless sweep to be confirmed.
 	WaitForSweeplessSweepConfirmed = fsm.StateType(
-		"WaitForSweeplessSweepConfirmed")
+		"WaitForSweeplessSweepConfirmed",
+	)
 
 	// FinishedSweeplessSweep is the state where the swap is finished by
 	// publishing the sweepless sweep.
@@ -340,48 +340,36 @@ func (f *FSM) updateInstantOut(ctx context.Context,
 		f.InstantOut.State == fsm.EmptyState ||
 		(notification.PreviousState == Init &&
 			f.InstantOut.State == Failed) {
-
 		return
 	}
 
 	err := f.cfg.Store.UpdateInstantLoopOut(ctx, f.InstantOut)
 	if err != nil {
 		log.Errorf("Error updating instant out: %v", err)
+
 		return
 	}
 }
 
 // Infof logs an info message with the reservation hash as prefix.
 func (f *FSM) Infof(format string, args ...any) {
-	log.Infof(
-		"InstantOut %v: "+format,
-		append(
-			[]any{f.InstantOut.swapPreimage.Hash()},
-			args...,
-		)...,
-	)
+	log.Infof("InstantOut %v: "+format, append(
+		[]any{f.InstantOut.swapPreimage.Hash()}, args...,
+	)...)
 }
 
 // Debugf logs a debug message with the reservation hash as prefix.
 func (f *FSM) Debugf(format string, args ...any) {
-	log.Debugf(
-		"InstantOut %v: "+format,
-		append(
-			[]any{f.InstantOut.swapPreimage.Hash()},
-			args...,
-		)...,
-	)
+	log.Debugf("InstantOut %v: "+format, append(
+		[]any{f.InstantOut.swapPreimage.Hash()}, args...,
+	)...)
 }
 
 // Errorf logs an error message with the reservation hash as prefix.
 func (f *FSM) Errorf(format string, args ...any) {
-	log.Errorf(
-		"InstantOut %v: "+format,
-		append(
-			[]any{f.InstantOut.swapPreimage.Hash()},
-			args...,
-		)...,
-	)
+	log.Errorf("InstantOut %v: "+format, append(
+		[]any{f.InstantOut.swapPreimage.Hash()}, args...,
+	)...)
 }
 
 // isFinalState returns true if the state is a final state.
@@ -389,8 +377,8 @@ func isFinalState(state fsm.StateType) bool {
 	switch state {
 	case Failed, FinishedHtlcPreimageSweep,
 		FinishedSweeplessSweep:
-
 		return true
 	}
+
 	return false
 }

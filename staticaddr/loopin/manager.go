@@ -178,7 +178,9 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 	// Register for notifications of loop-in sweep requests.
 	sweepReqs := m.cfg.NotificationManager.
-		SubscribeStaticLoopInSweepRequests(ctx)
+		SubscribeStaticLoopInSweepRequests(
+			ctx,
+		)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -210,7 +212,6 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			}
 			select {
 			case request.respChan <- resp:
-
 			case <-ctx.Done():
 				// Notify subroutines that the main loop has
 				// been canceled.
@@ -312,8 +313,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		// We'll notify the server that we don't consider the swap
 		// finished yet, so it can retry later.
 		_ = m.notifyNotFinished(ctx, swapHash, sweepTx.TxHash())
-		return fmt.Errorf("loop-in %v not in Succeeded state",
-			swapHash)
+
+		return fmt.Errorf("loop-in %v not in Succeeded state", swapHash)
 	}
 
 	// Perform a sanity check on the number of unsigned tx inputs and
@@ -399,8 +400,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 				musig2Session.SessionID,
 			)
 			if err != nil {
-				log.Errorf("Error cleaning up musig2 session: "+
-					" %v", err)
+				log.Errorf("Error cleaning up musig2 "+
+					"session:  %v", err)
 			}
 		}()
 
@@ -444,6 +445,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			SigningInfo: responseMap,
 		},
 	)
+
 	return err
 }
 
@@ -451,8 +453,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 // back to our static address. An edge case arises if a batch contains two
 // swaps with identical change outputs. The client needs to ensure that any
 // swap referenced by the inputs has a respective change output in the batch.
-func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *script.Parameters) error {
+func (m *Manager) checkChange(ctx context.Context, sweepTx *wire.MsgTx,
+	changeAddr *script.Parameters) error {
 
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
@@ -487,8 +489,8 @@ func (m *Manager) checkChange(ctx context.Context,
 		totalDepositAmount := loopIn.TotalDepositAmount()
 		changeAmt := totalDepositAmount - loopIn.SelectedAmount
 		if changeAmt > 0 && changeAmt < totalDepositAmount {
-			log.Debugf("expected change output to our "+
-				"static address, total_deposit_amount=%v, "+
+			log.Debugf("expected change output to our static "+
+				"address, total_deposit_amount=%v, "+
 				"selected_amount=%v, "+
 				"expected_change_amount=%v ",
 				totalDepositAmount, loopIn.SelectedAmount,
@@ -505,14 +507,13 @@ func (m *Manager) checkChange(ctx context.Context,
 	for _, out := range sweepTx.TxOut {
 		if out.Value == int64(expectedChange) &&
 			bytes.Equal(out.PkScript, changeAddr.PkScript) {
-
 			// We found the expected change output.
 			return nil
 		}
 	}
 
-	return fmt.Errorf("couldn't find expected change of %v "+
-		"satoshis sent to our static address", expectedChange)
+	return fmt.Errorf("couldn't find expected change of %v satoshis sent "+
+		"to our static address", expectedChange)
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
@@ -570,8 +571,8 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		go func() {
 			err := fsm.SendEvent(ctx, OnRecover, nil)
 			if err != nil {
-				log.Errorf("Error sending OnRecover "+
-					"event: %v", err)
+				log.Errorf("Error sending OnRecover event: %v",
+					err)
 			}
 		}()
 	}
@@ -592,13 +593,12 @@ func (m *Manager) DeliverLoopInRequest(ctx context.Context,
 	// Send the new loop-in request to the manager run loop.
 	select {
 	case m.newLoopInChan <- request:
-
 	case <-m.exitChan:
 		return nil, fmt.Errorf("loop-in manager has been canceled")
 
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context canceled while initiating " +
-			"a loop-in swap")
+		return nil, fmt.Errorf("context canceled while initiating a " +
+			"loop-in swap")
 	}
 
 	// Wait for the response from the manager run loop.
@@ -642,15 +642,17 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				selectedOutpoints, deposit.Deposited,
 			)
 		if !active {
-			return nil, fmt.Errorf("one or more deposits are not in "+
-				"state %s", deposit.Deposited)
+			return nil, fmt.Errorf("one or more deposits are not "+
+				"in state %s", deposit.Deposited)
 		}
 
 	case len(selectedOutpoints) == 0:
 		// If an amount was provided, we'll coin-select deposits to
 		// cover for the amount.
 		allDeposits, err := m.cfg.DepositManager.
-			GetActiveDepositsInState(deposit.Deposited)
+			GetActiveDepositsInState(
+				deposit.Deposited,
+			)
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve all "+
 				"deposits: %w", err)
@@ -677,8 +679,9 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 
 		selectedOutpoints = make([]string, 0, len(selectedDeposits))
 		for _, deposit := range selectedDeposits {
-			selectedOutpoints = append(selectedOutpoints,
-				deposit.String())
+			selectedOutpoints = append(
+				selectedOutpoints, deposit.String(),
+			)
 		}
 	}
 
@@ -747,8 +750,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	// If the previously accepted quote fee is lower than what is quoted, we
 	// abort the swap.
 	if quote.SwapFee > req.MaxSwapFee {
-		log.Warnf("Swap fee %v exceeding maximum of %v",
-			quote.SwapFee, req.MaxSwapFee)
+		log.Warnf("Swap fee %v exceeding maximum of %v", quote.SwapFee,
+			req.MaxSwapFee)
 
 		return nil, loop.ErrSwapFeeTooHigh
 	}
@@ -805,8 +808,7 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 	// If an error occurs before SignHtlcTx is reached we consider the swap
 	// failed and abort early.
 	err = loopInFsm.DefaultObserver.WaitForState(
-		ctx, time.Minute, SignHtlcTx,
-		fsm.WithAbortEarlyOnErrorOption(),
+		ctx, time.Minute, SignHtlcTx, fsm.WithAbortEarlyOnErrorOption(),
 	)
 	if err != nil {
 		return nil, err
@@ -886,6 +888,7 @@ func SelectDeposits(targetAmount btcutil.Amount,
 
 			return iExp < jExp
 		}
+
 		return deposits[i].Value > deposits[j].Value
 	})
 
@@ -906,9 +909,9 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		}
 	}
 
-	return nil, fmt.Errorf("not enough deposits to cover "+
-		"requested amount or prevent dust change, have %d but need %d",
-		selectedAmount, targetAmount)
+	return nil, fmt.Errorf("not enough deposits to cover requested amount "+
+		"or prevent dust change, have %d but need %d", selectedAmount,
+		targetAmount)
 }
 
 // IsSwappable checks if a deposit is swappable. It returns true if the deposit
@@ -949,20 +952,20 @@ func DeduceSwapAmount(totalDepositAmount btcutil.Amount,
 			selectedAmount)
 
 	case selectedAmount > 0 && selectedAmount < dustLimit:
-		return 0, fmt.Errorf("selected amount %v is dust, "+
-			"need at least %v", selectedAmount, dustLimit)
+		return 0, fmt.Errorf("selected amount %v is dust, need at "+
+			"least %v", selectedAmount, dustLimit)
 
 	case totalDepositAmount < dustLimit:
-		return 0, fmt.Errorf("total deposit value %v is dust, "+
-			"need at least %v", totalDepositAmount, dustLimit)
+		return 0, fmt.Errorf("total deposit value %v is dust, need at "+
+			"least %v", totalDepositAmount, dustLimit)
 
 	case remainingAmount < 0:
 		return 0, fmt.Errorf("selected amount %v exceeds total "+
 			"deposit value %v", selectedAmount, totalDepositAmount)
 
 	case remainingAmount > 0 && remainingAmount < dustLimit:
-		return 0, fmt.Errorf("selected amount %v leaves dust change "+
-			"%v", selectedAmount, remainingAmount)
+		return 0, fmt.Errorf("selected amount %v leaves dust change %v",
+			selectedAmount, remainingAmount)
 
 	default:
 		// If the remaining amount is 0 or equal or greater than the
@@ -982,8 +985,8 @@ func DeduceSwapAmount(totalDepositAmount btcutil.Amount,
 // in the sweep transaction.
 func mapDepositsToIndices(
 	req *swapserverrpc.ServerStaticLoopInSweepNotification,
-	loopIn *StaticAddressLoopIn, sweepTx *wire.MsgTx) (map[string]int,
-	error) {
+	loopIn *StaticAddressLoopIn,
+	sweepTx *wire.MsgTx) (map[string]int, error) {
 
 	depositToIdxMap := make(map[string]int)
 	for reqOutpoint := range req.DepositToNonces {
@@ -1015,6 +1018,7 @@ func mapDepositsToIndices(
 				"of sweep tx", reqOutpoint)
 		}
 	}
+
 	return depositToIdxMap, nil
 }
 

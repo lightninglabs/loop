@@ -115,8 +115,10 @@ func (s *executor) run(mainCtx context.Context,
 	select {
 	case h := <-blockEpochChan:
 		setHeight(h)
+
 	case err := <-blockErrorChan:
 		return err
+
 	case <-mainCtx.Done():
 		return mainCtx.Err()
 	}
@@ -163,16 +165,26 @@ func (s *executor) run(mainCtx context.Context,
 
 			s.wg.Go(func() {
 				err := newSwap.execute(mainCtx, &executeConfig{
-					statusChan:          statusChan,
-					sweeper:             s.sweeper,
-					batcher:             s.batcher,
-					blockEpochChan:      queue.ChanOut(),
-					timerFactory:        s.executorConfig.createExpiryTimer,
-					loopOutMaxParts:     s.executorConfig.loopOutMaxParts,
-					totalPaymentTimeout: s.executorConfig.totalPaymentTimeout,
-					maxPaymentRetries:   s.executorConfig.maxPaymentRetries,
-					cancelSwap:          s.executorConfig.cancelSwap,
-					verifySchnorrSig:    s.executorConfig.verifySchnorrSig,
+					statusChan:     statusChan,
+					sweeper:        s.sweeper,
+					batcher:        s.batcher,
+					blockEpochChan: queue.ChanOut(),
+					timerFactory: s.
+						executorConfig.
+						createExpiryTimer,
+					loopOutMaxParts: s.
+						executorConfig.
+						loopOutMaxParts,
+					totalPaymentTimeout: s.
+						executorConfig.
+						totalPaymentTimeout,
+					maxPaymentRetries: s.
+						executorConfig.
+						maxPaymentRetries,
+					cancelSwap: s.executorConfig.cancelSwap,
+					verifySchnorrSig: s.
+						executorConfig.
+						verifySchnorrSig,
 				}, height)
 				if err != nil && !errors.Is(
 					err, context.Canceled,
@@ -201,9 +213,8 @@ func (s *executor) run(mainCtx context.Context,
 		case doneID := <-swapDoneChan:
 			queue, ok := blockEpochQueues[doneID]
 			if !ok {
-				return fmt.Errorf(
-					"swap id %v not found in queues",
-					doneID)
+				return fmt.Errorf("swap id %v not found "+
+					"in queues", doneID)
 			}
 			queue.Stop()
 			delete(blockEpochQueues, doneID)
@@ -231,9 +242,7 @@ func (s *executor) run(mainCtx context.Context,
 }
 
 // initiateSwap delivers a new swap to the executor main loop.
-func (s *executor) initiateSwap(ctx context.Context,
-	swap genericSwap) {
-
+func (s *executor) initiateSwap(ctx context.Context, swap genericSwap) {
 	select {
 	case s.newSwaps <- swap:
 	case <-ctx.Done():

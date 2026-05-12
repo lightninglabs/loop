@@ -21,7 +21,8 @@ var (
 	testReservationId2 = []byte{0x01, 0x02}
 )
 
-// mockNotificationsClient implements the NotificationsClient interface for testing.
+// mockNotificationsClient implements the NotificationsClient interface for
+// testing.
 type mockNotificationsClient struct {
 	sync.Mutex
 
@@ -44,6 +45,7 @@ func (m *mockNotificationsClient) SubscribeNotifications(ctx context.Context,
 	if m.subscribeErr != nil {
 		return nil, m.subscribeErr
 	}
+
 	return m.mockStream, nil
 }
 
@@ -61,10 +63,12 @@ func (m *mockSubscribeNotificationsClient) Recv() (
 	select {
 	case err := <-m.recvErrChan:
 		return nil, err
+
 	case notif, ok := <-m.recvChan:
 		if !ok {
 			return nil, io.EOF
 		}
+
 		return notif, nil
 	}
 }
@@ -113,9 +117,14 @@ func TestManager_ReservationNotification(t *testing.T) {
 	mgr := NewManager(&Config{
 		Client: mockClient,
 		CurrentToken: func() (*l402.Token, error) {
+
 			// Simulate successful fetching of L402
 			return &l402.Token{
-				Preimage: lntypes.Preimage{1, 2, 3},
+				Preimage: lntypes.Preimage{
+					1,
+					2,
+					3,
+				},
 			}, nil
 		},
 	})
@@ -144,6 +153,7 @@ func TestManager_ReservationNotification(t *testing.T) {
 	require.Eventually(t, func() bool {
 		mockClient.Lock()
 		defer mockClient.Unlock()
+
 		return mockClient.timesCalled == 1
 	}, time.Second*5, 10*time.Millisecond)
 
@@ -156,7 +166,8 @@ func TestManager_ReservationNotification(t *testing.T) {
 	// Collect the notification in the callback
 	receivedNotification := <-subChan
 
-	// Now, check that the notification received in the callback matches the one sent
+	// Now, check that the notification received in the callback matches the
+	// one sent
 	require.NotNil(t, receivedNotification)
 	require.Equal(t, testReservationId, receivedNotification.ReservationId)
 
@@ -172,13 +183,16 @@ func TestManager_ReservationNotification(t *testing.T) {
 		select {
 		case _, ok := <-subChan:
 			return !ok
+
 		default:
 			return false
 		}
 	}, time.Second*5, 10*time.Millisecond)
 }
 
-func getTestNotification(resId []byte) *swapserverrpc.SubscribeNotificationsResponse {
+func getTestNotification(
+	resId []byte) *swapserverrpc.SubscribeNotificationsResponse {
+
 	return &swapserverrpc.SubscribeNotificationsResponse{
 		Notification: &swapserverrpc.SubscribeNotificationsResponse_ReservationNotification{
 			ReservationNotification: &swapserverrpc.ServerReservationNotification{
@@ -216,9 +230,14 @@ func TestManager_Backoff(t *testing.T) {
 	mgr := NewManager(&Config{
 		Client: mockClient,
 		CurrentToken: func() (*l402.Token, error) {
+
 			// Simulate successful fetching of L402
 			return &l402.Token{
-				Preimage: lntypes.Preimage{1, 2, 3},
+				Preimage: lntypes.Preimage{
+					1,
+					2,
+					3,
+				},
 			}, nil
 		},
 	})
@@ -247,7 +266,8 @@ func TestManager_Backoff(t *testing.T) {
 	wg.Wait()
 
 	// Check how many attempts we made.
-	require.GreaterOrEqual(t, len(mockClient.attemptTimes), 3,
+	require.GreaterOrEqual(
+		t, len(mockClient.attemptTimes), 3,
 		"expected at least 3 attempts within 5 seconds",
 	)
 
@@ -306,9 +326,14 @@ func TestManager_MinAliveConnTime(t *testing.T) {
 		Client:           mockClient,
 		MinAliveConnTime: minAlive,
 		CurrentToken: func() (*l402.Token, error) {
+
 			// Simulate successful fetching of L402
 			return &l402.Token{
-				Preimage: lntypes.Preimage{1, 2, 3},
+				Preimage: lntypes.Preimage{
+					1,
+					2,
+					3,
+				},
 			}, nil
 		},
 	})
@@ -386,13 +411,18 @@ func TestManager_Backoff_Pending_Token(t *testing.T) {
 		CurrentToken: func() (*l402.Token, error) {
 			tokenCalls = append(tokenCalls, time.Now())
 			if len(tokenCalls) < 3 {
+
 				// Simulate a pending token.
 				return &l402.Token{}, nil
 			}
 
 			// Simulate successful fetching of L402
 			return &l402.Token{
-				Preimage: lntypes.Preimage{1, 2, 3},
+				Preimage: lntypes.Preimage{
+					1,
+					2,
+					3,
+				},
 			}, nil
 		},
 	})

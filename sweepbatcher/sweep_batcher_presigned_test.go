@@ -105,7 +105,9 @@ func (h *mockPresignedHelper) getTxFeerate(tx *wire.MsgTx,
 	tx2 := tx.Copy()
 	h.sign(tx2)
 	weight := lntypes.WeightUnit(
-		blockchain.GetTransactionWeight(btcutil.NewTx(tx2)),
+		blockchain.GetTransactionWeight(
+			btcutil.NewTx(tx2),
+		),
 	)
 	fee := inputAmt - btcutil.Amount(tx.TxOut[0].Value)
 
@@ -133,8 +135,8 @@ func (h *mockPresignedHelper) DestPkScript(ctx context.Context,
 // looks for a transaction in presignedBatches satisfying the criteria.
 func (h *mockPresignedHelper) SignTx(ctx context.Context,
 	primarySweepID wire.OutPoint, tx *wire.MsgTx, inputAmt btcutil.Amount,
-	minRelayFee, feeRate chainfee.SatPerKWeight,
-	loadOnly bool) (*wire.MsgTx, error) {
+	minRelayFee, feeRate chainfee.SatPerKWeight, loadOnly bool) (
+	*wire.MsgTx, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -218,8 +220,8 @@ const sweepTimeout = 1000
 
 // FetchSweep returns blank SweepInfo.
 // This method implements SweepFetcher interface.
-func (h *mockPresignedHelper) FetchSweep(_ context.Context,
-	_ lntypes.Hash, utxo wire.OutPoint) (*SweepInfo, error) {
+func (h *mockPresignedHelper) FetchSweep(_ context.Context, _ lntypes.Hash,
+	utxo wire.OutPoint) (*SweepInfo, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -237,7 +239,11 @@ func (h *mockPresignedHelper) FetchSweep(_ context.Context,
 		IsPresigned: isPresigned,
 
 		HTLC: swap.Htlc{
-			PkScript: []byte{10, 11, 12},
+			PkScript: []byte{
+				10,
+				11,
+				12,
+			},
 		},
 		Change: change,
 	}, nil
@@ -263,11 +269,12 @@ func testPresigned_forgotten_presign(t *testing.T,
 
 	presignedHelper := newMockPresignedHelper()
 
-	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
-		WithPresignedHelper(presignedHelper))
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
 
 	go func() {
 		err := batcher.Run(ctx)
@@ -277,7 +284,10 @@ func testPresigned_forgotten_presign(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -292,8 +302,12 @@ func testPresigned_forgotten_presign(t *testing.T,
 	// This should fail, because the input is offline.
 	presignedHelper.SetOutpointOnline(op1, false)
 	err := batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: 1_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: 1_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "offline")
@@ -339,11 +353,12 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 
 	presignedHelper := newMockPresignedHelper()
 
-	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
-		WithPresignedHelper(presignedHelper))
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -354,7 +369,10 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -369,8 +387,12 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 	// Enable the input and presign.
 	presignedHelper.SetOutpointOnline(op1, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: 1_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: 1_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -419,7 +441,10 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 	// offline, so another input should go to another batch.
 	swapHash2 := lntypes.Hash{2, 2, 2}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	sweepReq2 := SweepRequest{
@@ -432,8 +457,12 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 	}
 	presignedHelper.SetOutpointOnline(op2, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op2, Value: 2_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op2, Value: 2_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -489,9 +518,7 @@ func testPresigned_input1_offline_then_input2(t *testing.T,
 
 // testPresigned_min_relay_fee tests that online and presigned transactions
 // comply with min_relay_fee.
-func testPresigned_min_relay_fee(t *testing.T,
-	batcherStore testBatcherStore) {
-
+func testPresigned_min_relay_fee(t *testing.T, batcherStore testBatcherStore) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -508,11 +535,12 @@ func testPresigned_min_relay_fee(t *testing.T,
 
 	presignedHelper := newMockPresignedHelper()
 
-	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
-		WithPresignedHelper(presignedHelper))
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
+		WithPresignedHelper(presignedHelper),
+	)
 	go func() {
 		err := batcher.Run(ctx)
 		checkBatcherError(t, err)
@@ -524,7 +552,10 @@ func testPresigned_min_relay_fee(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -539,8 +570,12 @@ func testPresigned_min_relay_fee(t *testing.T,
 	// Enable the input and presign.
 	presignedHelper.SetOutpointOnline(op1, true)
 	err := batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: inputAmt}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: inputAmt},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -635,8 +670,7 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -650,7 +684,10 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -663,8 +700,12 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	}
 	presignedHelper.SetOutpointOnline(op1, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: 1_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: 1_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	require.NoError(t, batcher.AddSweep(ctx, &sweepReq1))
@@ -676,7 +717,10 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	// Add second sweep.
 	swapHash2 := lntypes.Hash{2, 2, 2}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	sweepReq2 := SweepRequest{
@@ -689,8 +733,12 @@ func testPresigned_two_inputs_one_goes_offline(t *testing.T,
 	}
 	presignedHelper.SetOutpointOnline(op2, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op2, Value: 2_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op2, Value: 2_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
@@ -771,8 +819,7 @@ func testPresigned_first_publish_fails(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -786,7 +833,10 @@ func testPresigned_first_publish_fails(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -799,8 +849,12 @@ func testPresigned_first_publish_fails(t *testing.T,
 	}
 	presignedHelper.SetOutpointOnline(op1, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: 1_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: 1_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	presignedHelper.SetOutpointOnline(op1, false)
@@ -861,9 +915,7 @@ func testPresigned_first_publish_fails(t *testing.T,
 // locktime logic, so the published transaction has medium feerate (maximum
 // feerate among transactions without locktime protection). Then blocks are
 // mined and a transaction with a higher feerate is published.
-func testPresigned_locktime(t *testing.T,
-	batcherStore testBatcherStore) {
-
+func testPresigned_locktime(t *testing.T, batcherStore testBatcherStore) {
 	defer test.Guard(t)()
 
 	batchPkScript, err := txscript.PayToAddrScript(destAddr)
@@ -894,8 +946,7 @@ func testPresigned_locktime(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -909,7 +960,10 @@ func testPresigned_locktime(t *testing.T,
 	// Create the first sweep.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -922,8 +976,12 @@ func testPresigned_locktime(t *testing.T,
 	}
 	presignedHelper.SetOutpointOnline(op1, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op1, Value: 1_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op1, Value: 1_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	presignedHelper.SetOutpointOnline(op1, false)
@@ -978,8 +1036,7 @@ func testPresigned_presigned_group(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -991,11 +1048,17 @@ func testPresigned_presigned_group(t *testing.T,
 	// Create a swap of two sweeps.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	group1 := []Input{
@@ -1029,11 +1092,16 @@ func testPresigned_presigned_group(t *testing.T,
 	require.NoError(t, err)
 
 	// Add the sweep, triggering the publish attempt.
-	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-		SwapHash: swapHash1,
-		Inputs:   group1,
-		Notifier: &dummyNotifier,
-	}))
+	require.NoError(
+		t,
+		batcher.AddSweep(
+			ctx, &SweepRequest{
+				SwapHash: swapHash1,
+				Inputs:   group1,
+				Notifier: &dummyNotifier,
+			},
+		),
+	)
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -1056,11 +1124,17 @@ func testPresigned_presigned_group(t *testing.T,
 	// Add another group of sweeps.
 	swapHash2 := lntypes.Hash{2, 2, 2}
 	op3 := wire.OutPoint{
-		Hash:  chainhash.Hash{3, 3},
+		Hash: chainhash.Hash{
+			3,
+			3,
+		},
 		Index: 3,
 	}
 	op4 := wire.OutPoint{
-		Hash:  chainhash.Hash{4, 4},
+		Hash: chainhash.Hash{
+			4,
+			4,
+		},
 		Index: 4,
 	}
 	group2 := []Input{
@@ -1083,11 +1157,16 @@ func testPresigned_presigned_group(t *testing.T,
 	require.NoError(t, err)
 
 	// Add the sweep. It should go to the same batch.
-	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-		SwapHash: swapHash2,
-		Inputs:   group2,
-		Notifier: &dummyNotifier,
-	}))
+	require.NoError(
+		t,
+		batcher.AddSweep(
+			ctx, &SweepRequest{
+				SwapHash: swapHash2,
+				Inputs:   group2,
+				Notifier: &dummyNotifier,
+			},
+		),
+	)
 
 	// Mine a blocks to trigger republishing.
 	require.NoError(t, lnd.NotifyHeight(601))
@@ -1112,11 +1191,17 @@ func testPresigned_presigned_group(t *testing.T,
 
 	swapHash3 := lntypes.Hash{3, 3, 3}
 	op5 := wire.OutPoint{
-		Hash:  chainhash.Hash{5, 5},
+		Hash: chainhash.Hash{
+			5,
+			5,
+		},
 		Index: 5,
 	}
 	op6 := wire.OutPoint{
-		Hash:  chainhash.Hash{6, 6},
+		Hash: chainhash.Hash{
+			6,
+			6,
+		},
 		Index: 6,
 	}
 	group3 := []Input{
@@ -1139,11 +1224,16 @@ func testPresigned_presigned_group(t *testing.T,
 	require.NoError(t, err)
 
 	// Add the sweep. It should go to the same batch.
-	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-		SwapHash: swapHash3,
-		Inputs:   group3,
-		Notifier: &dummyNotifier,
-	}))
+	require.NoError(
+		t,
+		batcher.AddSweep(
+			ctx, &SweepRequest{
+				SwapHash: swapHash3,
+				Inputs:   group3,
+				Notifier: &dummyNotifier,
+			},
+		),
+	)
 
 	// Since a batch was created we check that it registered for its primary
 	// sweep's spend.
@@ -1190,8 +1280,7 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1203,11 +1292,17 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 	// Create a swap of two sweeps.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	group1 := []Input{
@@ -1221,8 +1316,11 @@ func testPresigned_presigned_group_with_change(t *testing.T,
 		},
 	}
 	change := &wire.TxOut{
-		Value:    500_000,
-		PkScript: []byte{0xaf, 0xfe},
+		Value: 500_000,
+		PkScript: []byte{
+			0xaf,
+			0xfe,
+		},
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op1, change)
@@ -1293,8 +1391,7 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1305,7 +1402,10 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 
 	swapHash := lntypes.Hash{2, 2, 2}
 	op := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	group := []Input{
@@ -1315,16 +1415,21 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 		},
 	}
 	change := &wire.TxOut{
-		Value:    250_000,
-		PkScript: []byte{0xca, 0xfe},
+		Value: 250_000,
+		PkScript: []byte{
+			0xca,
+			0xfe,
+		},
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op, change)
 	presignedHelper.SetOutpointOnline(op, true)
 
-	require.NoError(t, batcher.PresignSweepsGroup(
-		ctx, group, sweepTimeout, destAddr, change,
-	))
+	require.NoError(
+		t, batcher.PresignSweepsGroup(
+			ctx, group, sweepTimeout, destAddr, change,
+		),
+	)
 
 	spendChan := make(chan *SpendDetail, 1)
 	confChan := make(chan *ConfDetail, 1)
@@ -1336,11 +1441,16 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 		QuitChan:     make(chan bool, 1),
 	}
 
-	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-		SwapHash: swapHash,
-		Inputs:   group,
-		Notifier: notifier,
-	}))
+	require.NoError(
+		t,
+		batcher.AddSweep(
+			ctx, &SweepRequest{
+				SwapHash: swapHash,
+				Inputs:   group,
+				Notifier: notifier,
+			},
+		),
+	)
 
 	spendReg := <-lnd.RegisterSpendChannel
 	require.NotNil(t, spendReg)
@@ -1398,8 +1508,10 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 	require.Equal(t, expectedFee, spend.OnChainFeePortion)
 
 	confReg := <-lnd.RegisterConfChannel
-	require.True(t, bytes.Equal(tx.TxOut[0].PkScript, confReg.PkScript) ||
-		bytes.Equal(tx.TxOut[1].PkScript, confReg.PkScript))
+	require.True(
+		t, bytes.Equal(tx.TxOut[0].PkScript, confReg.PkScript) ||
+			bytes.Equal(tx.TxOut[1].PkScript, confReg.PkScript),
+	)
 
 	require.NoError(
 		t, lnd.NotifyHeight(spendReg.HeightHint+batchConfHeight+1),
@@ -1410,6 +1522,7 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 		select {
 		case <-presignedHelper.cleanupCalled:
 			return true
+
 		default:
 			return false
 		}
@@ -1419,9 +1532,10 @@ func testPresigned_fee_portion_with_change(t *testing.T,
 	require.Equal(t, expectedFee, conf.OnChainFeePortion)
 }
 
-// testPresigned_presigned_group_with_identical_change_pkscript tests passing multiple sweeps to
-// the method PresignSweepsGroup. It tests that a change output of a primary
-// deposit sweep is properly added to the presigned transaction.
+// testPresigned_presigned_group_with_identical_change_pkscript tests passing
+// multiple sweeps to the method PresignSweepsGroup. It tests that a change
+// output of a primary deposit sweep is properly added to the presigned
+// transaction.
 func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
 	batcherStore testBatcherStore) {
 
@@ -1446,8 +1560,7 @@ func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1460,11 +1573,17 @@ func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	swapHash2 := lntypes.Hash{2, 2, 2}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	group1 := []Input{
@@ -1474,8 +1593,11 @@ func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
 		},
 	}
 	change1 := &wire.TxOut{
-		Value:    500_000,
-		PkScript: []byte{0xaf, 0xfe},
+		Value: 500_000,
+		PkScript: []byte{
+			0xaf,
+			0xfe,
+		},
 	}
 	group2 := []Input{
 		{
@@ -1484,8 +1606,11 @@ func testPresigned_presigned_group_with_identical_change_pkscript(t *testing.T,
 		},
 	}
 	change2 := &wire.TxOut{
-		Value:    600_000,
-		PkScript: []byte{0xaf, 0xfe},
+		Value: 600_000,
+		PkScript: []byte{
+			0xaf,
+			0xfe,
+		},
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op1, change1)
@@ -1575,8 +1700,7 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1588,7 +1712,10 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	// Create a swap of two sweeps.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	inputValue := int64(1_000_000)
@@ -1614,8 +1741,11 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 
 	change := &wire.TxOut{
 		// If "+1" is removed, the group would be added successfully.
-		Value:    inputValue - dustLimit - clampedFee + 1,
-		PkScript: []byte{0xaf, 0xfe},
+		Value: inputValue - dustLimit - clampedFee + 1,
+		PkScript: []byte{
+			0xaf,
+			0xfe,
+		},
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op1, change)
@@ -1627,10 +1757,12 @@ func testPresigned_presigned_group_with_dust_main_output(t *testing.T,
 	err = batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
-	require.EqualError(t, err, "failed to construct unsigned tx for "+
-		"feeRate 166 sat/kw: batch amount 0.01000000 BTC is < the "+
-		"sum of change outputs 0.00999634 BTC plus fee "+
-		"0.00000073 BTC and dust limit 0.00000294 BTC")
+	require.EqualError(
+		t, err, "failed to construct unsigned tx for feeRate 166 "+
+			"sat/kw: batch amount 0.01000000 BTC is < the sum "+
+			"of change outputs 0.00999634 BTC plus fee "+
+			"0.00000073 BTC and dust limit 0.00000294 BTC",
+	)
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -1687,8 +1819,7 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1700,7 +1831,10 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 	// Create a swap of two sweeps.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	inputValue := int64(1_000_000)
@@ -1713,8 +1847,11 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 	dustLimit := int64(utils.DustLimitForPkScript(batchPkScript))
 	change := &wire.TxOut{
 		// Note that there is no space for fee.
-		Value:    inputValue - dustLimit,
-		PkScript: []byte{0xaf, 0xfe},
+		Value: inputValue - dustLimit,
+		PkScript: []byte{
+			0xaf,
+			0xfe,
+		},
 	}
 
 	presignedHelper.setChangeForPrimaryDeposit(op1, change)
@@ -1726,9 +1863,12 @@ func testPresigned_presigned_group_with_dust_below_relay_fee(t *testing.T,
 	err = batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
-	require.EqualError(t, err, "failed to construct unsigned tx for "+
-		"feeRate 253 sat/kw: failed to clamp batch fee: clamped "+
-		"fee rate 132 sat/kw is less than minimum relay fee 253 sat/kw")
+	require.EqualError(
+		t, err, "failed to construct unsigned tx for feeRate 253 "+
+			"sat/kw: failed to clamp batch fee: clamped fee "+
+			"rate 132 sat/kw is less than minimum relay fee "+
+			"253 sat/kw",
+	)
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -1763,8 +1903,7 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1776,11 +1915,17 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 	// Create a swap of two sweeps.
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	group1 := []Input{
@@ -1811,9 +1956,11 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 	err := batcher.PresignSweepsGroup(
 		ctx, group1, sweepTimeout, destAddr, change,
 	)
-	require.EqualError(t, err, "failed to construct unsigned tx for "+
-		"feeRate 253 sat/kw: output 0.00000476 BTC is below dust "+
-		"limit 0.00000477 BTC")
+	require.EqualError(
+		t, err, "failed to construct unsigned tx for feeRate 253 "+
+			"sat/kw: output 0.00000476 BTC is below dust limit "+
+			"0.00000477 BTC",
+	)
 
 	// Add the sweep, triggering the publishing attempt.
 	err = batcher.AddSweep(ctx, &SweepRequest{
@@ -1907,8 +2054,7 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, sweepFetcher,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, sweepFetcher, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -1924,7 +2070,10 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	/////////////////////////////////////
 	swapHash1 := lntypes.Hash{1, 1, 1}
 	op1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	sweepReq1 := SweepRequest{
@@ -1944,7 +2093,9 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
-			Preimage: lntypes.Preimage{1},
+			Preimage: lntypes.Preimage{
+				1,
+			},
 		},
 
 		DestAddr:        destAddr,
@@ -1973,7 +2124,10 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	///////////////////////////////////////
 	swapHash2 := lntypes.Hash{2, 2, 2}
 	op2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+		},
 		Index: 2,
 	}
 
@@ -1985,7 +2139,9 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
-			Preimage: lntypes.Preimage{2},
+			Preimage: lntypes.Preimage{
+				2,
+			},
 		},
 
 		DestAddr:        destAddr,
@@ -2007,8 +2163,12 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	}
 	presignedHelper.SetOutpointOnline(op2, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op2, Value: 2_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op2, Value: 2_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	require.NoError(t, batcher.AddSweep(ctx, &sweepReq2))
@@ -2028,7 +2188,10 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	//////////////////////////////////////
 	swapHash3 := lntypes.Hash{3, 3, 3}
 	op3 := wire.OutPoint{
-		Hash:  chainhash.Hash{3, 3},
+		Hash: chainhash.Hash{
+			3,
+			3,
+		},
 		Index: 3,
 	}
 	sweepReq3 := SweepRequest{
@@ -2048,7 +2211,9 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
-			Preimage: lntypes.Preimage{3},
+			Preimage: lntypes.Preimage{
+				3,
+			},
 		},
 
 		DestAddr:        destAddr,
@@ -2068,7 +2233,10 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	////////////////////////////////////////
 	swapHash4 := lntypes.Hash{4, 4, 4}
 	op4 := wire.OutPoint{
-		Hash:  chainhash.Hash{4, 4},
+		Hash: chainhash.Hash{
+			4,
+			4,
+		},
 		Index: 4,
 	}
 
@@ -2080,7 +2248,9 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 			HtlcKeys:        htlcKeys,
 
 			// Make preimage unique to pass SQL constraints.
-			Preimage: lntypes.Preimage{4},
+			Preimage: lntypes.Preimage{
+				4,
+			},
 		},
 
 		DestAddr:        destAddr,
@@ -2102,8 +2272,12 @@ func testPresigned_presigned_and_regular_sweeps(t *testing.T, store testStore,
 	}
 	presignedHelper.SetOutpointOnline(op4, true)
 	err = batcher.PresignSweepsGroup(
-		ctx, []Input{{Outpoint: op4, Value: 3_000_000}},
-		sweepTimeout, destAddr, nil,
+		ctx, []Input{
+			{Outpoint: op4, Value: 3_000_000},
+		},
+		sweepTimeout,
+		destAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	require.NoError(t, batcher.AddSweep(ctx, &sweepReq4))
@@ -2180,8 +2354,7 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	batcher := NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
-		batcherStore, presignedHelper,
-		WithCustomFeeRate(customFeeRate),
+		batcherStore, presignedHelper, WithCustomFeeRate(customFeeRate),
 		WithPresignedHelper(presignedHelper),
 	)
 
@@ -2205,7 +2378,9 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		group := make([]Input, sweepsPerSwap)
 		for j := range sweepsPerSwap {
 			ops[j] = wire.OutPoint{
-				Hash:  chainhash.Hash{byte(1 + i*2 + j)},
+				Hash: chainhash.Hash{
+					byte(1 + i*2 + j),
+				},
 				Index: uint32(1 + i*2 + j),
 			}
 			allOps = append(allOps, ops[j])
@@ -2242,11 +2417,16 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		}
 
 		// Add the sweep, triggering the publish attempt.
-		require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-			SwapHash: swapHash,
-			Inputs:   group,
-			Notifier: notifier,
-		}))
+		require.NoError(
+			t,
+			batcher.AddSweep(
+				ctx, &SweepRequest{
+					SwapHash: swapHash,
+					Inputs:   group,
+					Notifier: notifier,
+				},
+			),
+		)
 
 		// For the first group it should register for the sweep's spend
 		// and publish a transaction.
@@ -2293,11 +2473,16 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		require.NoError(t, err)
 
 		// Add the sweep, triggering the publishing attempt.
-		require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-			SwapHash: swapHash,
-			Inputs:   group,
-			Notifier: &dummyNotifier,
-		}))
+		require.NoError(
+			t,
+			batcher.AddSweep(
+				ctx, &SweepRequest{
+					SwapHash: swapHash,
+					Inputs:   group,
+					Notifier: &dummyNotifier,
+				},
+			),
+		)
 
 		<-lnd.RegisterSpendChannel
 		tx := <-lnd.TxPublishChannel
@@ -2353,9 +2538,12 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	}
 
 	<-lnd.RegisterConfChannel
-	require.NoError(t, lnd.NotifyHeight(
-		int32(601+numSwaps+1+batchConfHeight),
-	))
+	require.NoError(
+		t,
+		lnd.NotifyHeight(
+			int32(601+numSwaps+1+batchConfHeight),
+		),
+	)
 	lnd.ConfChannel <- &chainntnfs.TxConfirmation{
 		Tx: tx,
 	}
@@ -2399,11 +2587,16 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 		}
 
 		// Add the sweep, triggering the publish attempt.
-		require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
-			SwapHash: swapHashes[i],
-			Inputs:   groups[i],
-			Notifier: notifier,
-		}))
+		require.NoError(
+			t,
+			batcher.AddSweep(
+				ctx, &SweepRequest{
+					SwapHash: swapHashes[i],
+					Inputs:   groups[i],
+					Notifier: notifier,
+				},
+			),
+		)
 
 		spendReg := <-lnd.RegisterSpendChannel
 		spendReg.SpendChannel <- spendDetail
@@ -2451,9 +2644,14 @@ func testPresigned_purging(t *testing.T, numSwaps, numConfirmedSwaps int,
 	}, test.Timeout, eventuallyCheckFrequency)
 
 	// Now trigger batch publishing and inspect the published tx.
-	require.NoError(t, lnd.NotifyHeight(int32(
-		601+numSwaps+1+batchConfHeight+1,
-	)))
+	require.NoError(
+		t,
+		lnd.NotifyHeight(
+			int32(
+				601+numSwaps+1+batchConfHeight+1,
+			),
+		),
+	)
 	tx2 := <-lnd.TxPublishChannel
 	wantOps := allOps[numConfirmedSwaps*sweepsPerSwap:]
 	if online {
@@ -2512,7 +2710,9 @@ func TestPresigned(t *testing.T) {
 	})
 
 	t.Run("identical change pkscript", func(t *testing.T) {
-		testPresigned_presigned_group_with_identical_change_pkscript(t, NewStoreMock())
+		testPresigned_presigned_group_with_identical_change_pkscript(
+			t, NewStoreMock(),
+		)
 	})
 
 	t.Run("dust_main_output", func(t *testing.T) {
@@ -2528,7 +2728,9 @@ func TestPresigned(t *testing.T) {
 	})
 
 	t.Run("dust_change", func(t *testing.T) {
-		testPresigned_presigned_group_with_dust_change(t, NewStoreMock())
+		testPresigned_presigned_group_with_dust_change(
+			t, NewStoreMock(),
+		)
 	})
 
 	t.Run("presigned_and_regular_sweeps", func(t *testing.T) {

@@ -43,22 +43,21 @@ type mockWalletKit struct {
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
 
-func (m *mockWalletKit) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	walletrpc.WalletKitClient) {
+func (m *mockWalletKit) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, walletrpc.WalletKitClient) {
 
 	return ctx, 0, nil
 }
 
 func (m *mockWalletKit) ListUnspent(ctx context.Context, minConfs,
-	maxConfs int32, opts ...lndclient.ListUnspentOption) (
-	[]*lnwallet.Utxo, error) {
+	maxConfs int32, opts ...lndclient.ListUnspentOption) ([]*lnwallet.Utxo,
+	error) {
 
 	return m.listUnspent, nil
 }
 
-func (m *mockWalletKit) ListLeases(
-	context.Context) ([]lndclient.LeaseDescriptor, error) {
+func (m *mockWalletKit) ListLeases(context.Context) (
+	[]lndclient.LeaseDescriptor, error) {
 
 	return nil, nil
 }
@@ -69,8 +68,8 @@ func (m *mockWalletKit) LeaseOutput(ctx context.Context, lockID wtxmgr.LockID,
 	return time.Now(), nil
 }
 
-func (m *mockWalletKit) ReleaseOutput(ctx context.Context,
-	lockID wtxmgr.LockID, op wire.OutPoint) error {
+func (m *mockWalletKit) ReleaseOutput(ctx context.Context, lockID wtxmgr.LockID,
+	op wire.OutPoint) error {
 
 	return nil
 }
@@ -92,8 +91,8 @@ func (m *mockWalletKit) DeriveNextKey(ctx context.Context, family int32) (
 	}, nil
 }
 
-func (m *mockWalletKit) DeriveKey(ctx context.Context, in *keychain.KeyLocator) (
-	*keychain.KeyDescriptor, error) {
+func (m *mockWalletKit) DeriveKey(ctx context.Context,
+	in *keychain.KeyLocator) (*keychain.KeyDescriptor, error) {
 
 	_, pubKey := CreateKey(int32(in.Index))
 
@@ -112,6 +111,7 @@ func (m *mockWalletKit) NextAddr(context.Context, string, walletrpc.AddressType,
 	if err != nil {
 		return nil, err
 	}
+
 	return addr, nil
 }
 
@@ -126,6 +126,7 @@ func (m *mockWalletKit) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
 
 	m.lnd.AddTx(tx)
 	m.lnd.TxPublishChannel <- tx
+
 	return nil
 }
 
@@ -155,15 +156,17 @@ func (m *mockWalletKit) SendOutputs(ctx context.Context, outputs []*wire.TxOut,
 	return &tx, nil
 }
 
-func (m *mockWalletKit) setFeeEstimate(confTarget int32, fee chainfee.SatPerKWeight) {
+func (m *mockWalletKit) setFeeEstimate(confTarget int32,
+	fee chainfee.SatPerKWeight) {
+
 	m.feeEstimateLock.Lock()
 	defer m.feeEstimateLock.Unlock()
 
 	m.feeEstimates[confTarget] = fee
 }
 
-func (m *mockWalletKit) EstimateFeeRate(ctx context.Context,
-	confTarget int32) (chainfee.SatPerKWeight, error) {
+func (m *mockWalletKit) EstimateFeeRate(ctx context.Context, confTarget int32) (
+	chainfee.SatPerKWeight, error) {
 
 	m.feeEstimateLock.Lock()
 	defer m.feeEstimateLock.Unlock()
@@ -194,8 +197,8 @@ func (m *mockWalletKit) setListUnspent(utxos []*lnwallet.Utxo) {
 
 // MinRelayFee returns the current minimum relay fee based on our chain backend
 // in sat/kw. It can be set with setMinRelayFee.
-func (m *mockWalletKit) MinRelayFee(
-	ctx context.Context) (chainfee.SatPerKWeight, error) {
+func (m *mockWalletKit) MinRelayFee(ctx context.Context) (
+	chainfee.SatPerKWeight, error) {
 
 	m.feeEstimateLock.Lock()
 	defer m.feeEstimateLock.Unlock()
@@ -204,8 +207,8 @@ func (m *mockWalletKit) MinRelayFee(
 }
 
 // ListSweeps returns a list of the sweep transaction ids known to our node.
-func (m *mockWalletKit) ListSweeps(_ context.Context, _ int32) (
-	[]string, error) {
+func (m *mockWalletKit) ListSweeps(_ context.Context, _ int32) ([]string,
+	error) {
 
 	return m.lnd.Sweeps, nil
 }
@@ -291,8 +294,8 @@ var finalScriptWitness = func() []byte {
 // does not perform any other tasks (such as coin selection, UTXO
 // locking or input/output/fee value validation, PSBT finalization). Any
 // input that is incomplete will be skipped.
-func (m *mockWalletKit) SignPsbt(_ context.Context,
-	packet *psbt.Packet) (*psbt.Packet, error) {
+func (m *mockWalletKit) SignPsbt(_ context.Context, packet *psbt.Packet) (
+	*psbt.Packet, error) {
 
 	inputs := make([]psbt.PInput, len(packet.Inputs))
 	copy(inputs, packet.Inputs)

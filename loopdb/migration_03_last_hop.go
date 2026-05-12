@@ -28,8 +28,7 @@ func migrateLastHop(tx *bbolt.Tx, chainParams *chaincfg.Params) error {
 		// bucket for this swap from its swaphash.
 		swapBucket := rootBucket.Bucket(swapHash)
 		if swapBucket == nil {
-			return fmt.Errorf("swap bucket %x not found",
-				swapHash)
+			return fmt.Errorf("swap bucket %x not found", swapHash)
 		}
 
 		// With the main swap bucket obtained, we'll grab the

@@ -51,74 +51,123 @@ func TestSelectDeposits(t *testing.T) {
 
 	testCases := []testCase{
 		{
-			name:        "single deposit exact target",
-			deposits:    []*deposit.Deposit{d1},
+			name: "single deposit exact target",
+			deposits: []*deposit.Deposit{
+				d1,
+			},
 			targetValue: 1_000_000,
-			expected:    []*deposit.Deposit{d1},
+			expected: []*deposit.Deposit{
+				d1,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "prefer larger deposit when both cover",
-			deposits:    []*deposit.Deposit{d1, d2},
+			name: "prefer larger deposit when both cover",
+			deposits: []*deposit.Deposit{
+				d1,
+				d2,
+			},
 			targetValue: 1_000_000,
-			expected:    []*deposit.Deposit{d2},
+			expected: []*deposit.Deposit{
+				d2,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "prefer largest among three when one is enough",
-			deposits:    []*deposit.Deposit{d1, d2, d3},
+			name: "prefer largest among three when one is enough",
+			deposits: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
 			targetValue: 1_000_000,
-			expected:    []*deposit.Deposit{d3},
+			expected: []*deposit.Deposit{
+				d3,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "single deposit insufficient by 1",
-			deposits:    []*deposit.Deposit{d1},
+			name: "single deposit insufficient by 1",
+			deposits: []*deposit.Deposit{
+				d1,
+			},
 			targetValue: 1_000_001,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
 		{
-			name:        "target leaves exact dust limit change",
-			deposits:    []*deposit.Deposit{d1},
+			name: "target leaves exact dust limit change",
+			deposits: []*deposit.Deposit{
+				d1,
+			},
 			targetValue: 1_000_000 - dustLimit,
-			expected:    []*deposit.Deposit{d1},
+			expected: []*deposit.Deposit{
+				d1,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "target leaves dust change (just over)",
-			deposits:    []*deposit.Deposit{d1},
+			name: "target leaves dust change (just over)",
+			deposits: []*deposit.Deposit{
+				d1,
+			},
 			targetValue: 1_000_000 - dustLimit + 1,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
 		{
-			name:        "all deposits exactly match target",
-			deposits:    []*deposit.Deposit{d1, d2, d3},
+			name: "all deposits exactly match target",
+			deposits: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
 			targetValue: d1.Value + d2.Value + d3.Value,
-			expected:    []*deposit.Deposit{d1, d2, d3},
+			expected: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "sum minus dust limit is allowed (change == dust)",
-			deposits:    []*deposit.Deposit{d1, d2, d3},
+			name: "sum minus dust limit is allowed (change == dust)",
+			deposits: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
 			targetValue: d1.Value + d2.Value + d3.Value - dustLimit,
-			expected:    []*deposit.Deposit{d1, d2, d3},
+			expected: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
 			expectedErr: "",
 		},
 		{
-			name:        "sum minus dust limit plus 1 is not allowed (dust change)",
-			deposits:    []*deposit.Deposit{d1, d2, d3},
-			targetValue: d1.Value + d2.Value + d3.Value - dustLimit + 1,
+			name: "sum minus dust limit plus 1 is not allowed (dust change)",
+			deposits: []*deposit.Deposit{
+				d1,
+				d2,
+				d3,
+			},
+			targetValue: d1.Value + d2.Value + d3.Value - dustLimit +
+				1,
 			expected:    []*deposit.Deposit{},
 			expectedErr: "not enough deposits to cover",
 		},
 		{
-			name:        "tie by value, prefer earlier expiry",
-			deposits:    []*deposit.Deposit{d3, d4},
+			name: "tie by value, prefer earlier expiry",
+			deposits: []*deposit.Deposit{
+				d3,
+				d4,
+			},
 			targetValue: d4.Value - dustLimit, // d3/d4 have the
 			// same value but different expiration.
-			expected:    []*deposit.Deposit{d3},
+			expected: []*deposit.Deposit{
+				d3,
+			},
 			expectedErr: "",
 		},
 		{
@@ -132,15 +181,23 @@ func TestSelectDeposits(t *testing.T) {
 					Value:              3_000_000,
 					ConfirmationHeight: 3000,
 				}
-				dClose.Hash = chainhash.Hash{5}
+				dClose.Hash = chainhash.Hash{
+					5,
+				}
 				dClose.Index = 0
 				dOK := &deposit.Deposit{
 					Value:              2_000_000,
 					ConfirmationHeight: 3050,
 				}
-				dOK.Hash = chainhash.Hash{6}
+				dOK.Hash = chainhash.Hash{
+					6,
+				}
 				dOK.Index = 0
-				return []*deposit.Deposit{dClose, dOK}
+
+				return []*deposit.Deposit{
+					dClose,
+					dOK,
+				}
 			}(),
 			targetValue: 1_000_000,
 			csvExpiry:   1000,
@@ -152,9 +209,14 @@ func TestSelectDeposits(t *testing.T) {
 					Value:              2_000_000,
 					ConfirmationHeight: 3050,
 				}
-				dOK.Hash = chainhash.Hash{6}
+				dOK.Hash = chainhash.Hash{
+					6,
+				}
 				dOK.Index = 0
-				return []*deposit.Deposit{dOK}
+
+				return []*deposit.Deposit{
+					dOK,
+				}
 			}(),
 			expectedErr: "",
 		},
@@ -208,6 +270,7 @@ func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
 			res = append(res, d)
 		}
 	}
+
 	return res, nil
 }
 
@@ -244,13 +307,14 @@ func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return false, nil
 }
 
-func (s *mockStore) GetLoopInByHash(_ context.Context,
-	swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+func (s *mockStore) GetLoopInByHash(_ context.Context, swapHash lntypes.Hash) (
+	*StaticAddressLoopIn, error) {
 
 	li, ok := s.loopIns[swapHash]
 	if !ok {
 		return nil, nil
 	}
+
 	return li, nil
 }
 func (s *mockStore) SwapHashesForDepositIDs(_ context.Context,
@@ -326,6 +390,7 @@ func TestCheckChange(t *testing.T) {
 			SelectedAmount: selected,
 			AddressParams:  changeAddr,
 		}
+
 		return hash, li
 	}
 
@@ -348,10 +413,19 @@ func TestCheckChange(t *testing.T) {
 
 	// Mapping deposits -> swaps (by deposit IDs).
 	mapIDs := map[lntypes.Hash][]deposit.ID{
-		hA: {s1d1.ID, s1d2.ID},
-		hB: {s2d1.ID},
-		hC: {s3d1.ID},
-		hD: {s4d1.ID},
+		hA: {
+			s1d1.ID,
+			s1d2.ID,
+		},
+		hB: {
+			s2d1.ID,
+		},
+		hC: {
+			s3d1.ID,
+		},
+		hD: {
+			s4d1.ID,
+		},
 	}
 
 	loopIns := map[lntypes.Hash]*StaticAddressLoopIn{
@@ -385,8 +459,11 @@ func TestCheckChange(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name:   "no change expected (selected == total)",
-			inDeps: []*deposit.Deposit{s1d1, s1d2},
+			name: "no change expected (selected == total)",
+			inDeps: []*deposit.Deposit{
+				s1d1,
+				s1d2,
+			},
 			// No change output required.
 			outputs: []*wire.TxOut{
 				{
@@ -397,8 +474,10 @@ func TestCheckChange(t *testing.T) {
 			addr: changeAddr,
 		},
 		{
-			name:   "single swap change present",
-			inDeps: []*deposit.Deposit{s2d1}, // B -> change 500
+			name: "single swap change present",
+			inDeps: []*deposit.Deposit{
+				s2d1,
+			}, // B -> change 500
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -412,8 +491,12 @@ func TestCheckChange(t *testing.T) {
 			addr: changeAddr,
 		},
 		{
-			name:   "multiple swaps different change amounts",
-			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)=900
+			name: "multiple swaps different change amounts",
+			// B(500)+C(400)=900
+			inDeps: []*deposit.Deposit{
+				s2d1,
+				s3d1,
+			},
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -427,8 +510,12 @@ func TestCheckChange(t *testing.T) {
 			addr: changeAddr,
 		},
 		{
-			name:   "two swaps with identical change values sum correctly",
-			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)=800
+			name: "two swaps with identical change values sum correctly",
+			// C(400)+D(400)=800
+			inDeps: []*deposit.Deposit{
+				s3d1,
+				s4d1,
+			},
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -442,16 +529,20 @@ func TestCheckChange(t *testing.T) {
 			addr: changeAddr,
 		},
 		{
-			name:           "missing change output results in error",
-			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
+			name: "missing change output results in error",
+			inDeps: []*deposit.Deposit{
+				s2d1,
+			}, // expect 500
 			outputs:        []*wire.TxOut{},
 			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
 		{
-			name:   "wrong address for change output",
-			inDeps: []*deposit.Deposit{s2d1}, // expect 500
+			name: "wrong address for change output",
+			inDeps: []*deposit.Deposit{
+				s2d1,
+			}, // expect 500
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -467,8 +558,10 @@ func TestCheckChange(t *testing.T) {
 			expectedErrMsg: "couldn't find expected change",
 		},
 		{
-			name:   "wrong amount for change output",
-			inDeps: []*deposit.Deposit{s2d1}, // expect 500
+			name: "wrong amount for change output",
+			inDeps: []*deposit.Deposit{
+				s2d1,
+			}, // expect 500
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -484,8 +577,13 @@ func TestCheckChange(t *testing.T) {
 			expectedErrMsg: "couldn't find expected change",
 		},
 		{
-			name:   "mixed swaps some with change some without",
-			inDeps: []*deposit.Deposit{s1d1, s1d2, s3d1}, // A(0)+C(400)=400
+			name: "mixed swaps some with change some without",
+			// A(0)+C(400)=400
+			inDeps: []*deposit.Deposit{
+				s1d1,
+				s1d2,
+				s3d1,
+			},
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,

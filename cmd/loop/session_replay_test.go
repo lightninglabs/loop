@@ -163,7 +163,11 @@ func TestParseRecordedSessionRequiresClockStart(t *testing.T) {
 
 	valid := sessionFile{
 		Metadata: sessionMetadata{
-			Args:           []string{"loop", "quote", "out"},
+			Args: []string{
+				"loop",
+				"quote",
+				"out",
+			},
 			Env:            map[string]string{},
 			Version:        "test-version",
 			ClockStartUnix: 1769407086,
@@ -267,18 +271,21 @@ type replayTransport struct {
 
 // Dial returns the recorded gRPC connection for replay.
 func (t *replayTransport) Dial(cmd *cli.Command) (daemonConn, func(), error) {
+
 	// Ignore the command; replays always use the recorded connection.
 	return t.conn, func() {}, nil
 }
 
 // UnaryInterceptor returns nil because replay uses a recorded connection.
 func (t *replayTransport) UnaryInterceptor() grpc.UnaryClientInterceptor {
+
 	// No wrapping is needed for the recorded connection.
 	return nil
 }
 
 // StreamInterceptor returns nil because replay uses a recorded connection.
 func (t *replayTransport) StreamInterceptor() grpc.StreamClientInterceptor {
+
 	// No wrapping is needed for the recorded connection.
 	return nil
 }
@@ -399,8 +406,8 @@ func (c *recordedClientConn) Invoke(ctx context.Context, method string,
 	// Decode JSON responses when the reply is not a proto message.
 	if len(resp.Payload) > 0 {
 		if err := json.Unmarshal(resp.Payload, reply); err != nil {
-			return fmt.Errorf("grpc %s response[%d] unmarshal: "+
-				"%w", method, respIdx, err)
+			return fmt.Errorf("grpc %s response[%d] unmarshal: %w",
+				method, respIdx, err)
 		}
 	}
 
@@ -409,8 +416,8 @@ func (c *recordedClientConn) Invoke(ctx context.Context, method string,
 
 // NewStream creates a replay stream backed by recorded events.
 func (c *recordedClientConn) NewStream(ctx context.Context,
-	desc *grpc.StreamDesc, method string,
-	opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (
+	grpc.ClientStream, error) {
 
 	// Create a stream wrapper that consumes events as needed.
 	return &replayStream{
@@ -544,8 +551,8 @@ func (c *recordedClientConn) consumeLocked(method, expected string,
 
 	// Verify the method matches.
 	if evt.Method != method {
-		return nil, idx, fmt.Errorf("grpc event[%d] unexpected "+
-			"method %s, want %s", idx, evt.Method, method)
+		return nil, idx, fmt.Errorf("grpc event[%d] unexpected method "+
+			"%s, want %s", idx, evt.Method, method)
 	}
 
 	// Accept the expected event or a documented alternative.
@@ -569,8 +576,8 @@ func (c *recordedClientConn) assertFullyConsumed() error {
 
 	evt := c.events[c.idx]
 
-	return fmt.Errorf("grpc event[%d] for %s was not consumed",
-		c.idx, evt.Method)
+	return fmt.Errorf("grpc event[%d] for %s was not consumed", c.idx,
+		evt.Method)
 }
 
 // compareMessageWithContext marshals and compares a message against recorded
@@ -614,8 +621,8 @@ func compareJSONWithContext(method, event string, idx int, actual []byte,
 	)
 
 	if err := json.Unmarshal(actual, &actualValue); err != nil {
-		return fmt.Errorf("grpc %s %s[%d] unmarshal actual: %w",
-			method, event, idx, err)
+		return fmt.Errorf("grpc %s %s[%d] unmarshal actual: %w", method,
+			event, idx, err)
 	}
 	if err := json.Unmarshal(recorded, &recordedValue); err != nil {
 		return fmt.Errorf("grpc %s %s[%d] unmarshal recorded: %w",
@@ -679,12 +686,16 @@ func TestRecordedSessions(t *testing.T) {
 			)
 			if updateSessions {
 				fixturePath, err = sessionFixturePath(path)
-				require.NoErrorf(t, err,
-					"resolve fixture path for %s", path)
+				require.NoErrorf(
+					t, err, "resolve fixture path for %s",
+					path,
+				)
 
 				fixture, err = loadSessionFilePath(fixturePath)
-				require.NoErrorf(t, err,
-					"load fixture for update %s", path)
+				require.NoErrorf(
+					t, err, "load fixture for update %s",
+					path,
+				)
 			}
 
 			// Force deterministic JSON output for replay.
@@ -710,7 +721,9 @@ func TestRecordedSessions(t *testing.T) {
 			stdoutUnhook, err := hookStdout(
 				os.Stdout, nil, func(p []byte) {
 					stdoutBuf.Write(p)
-					stdoutChunks = append(stdoutChunks, string(p))
+					stdoutChunks = append(
+						stdoutChunks, string(p),
+					)
 				},
 			)
 			require.NoErrorf(t, err, "hook stdout for %s", path)
@@ -719,7 +732,9 @@ func TestRecordedSessions(t *testing.T) {
 			stderrUnhook, err := hookStderr(
 				os.Stderr, nil, func(p []byte) {
 					stderrBuf.Write(p)
-					stderrChunks = append(stderrChunks, string(p))
+					stderrChunks = append(
+						stderrChunks, string(p),
+					)
 				},
 			)
 			require.NoErrorf(t, err, "hook stderr for %s", path)
@@ -733,7 +748,9 @@ func TestRecordedSessions(t *testing.T) {
 
 			// Install the replay gRPC transport.
 			restoreTransport := hookGrpc(
-				&replayTransport{conn: replay.conn},
+				&replayTransport{
+					conn: replay.conn,
+				},
 			)
 			defer restoreTransport()
 
@@ -763,13 +780,16 @@ func TestRecordedSessions(t *testing.T) {
 
 			// Restore IO hooks before checking output.
 			require.NoErrorf(
-				t, stdoutUnhook(), "unhook stdout for %s", path,
+				t, stdoutUnhook(),
+				"unhook stdout for %s", path,
 			)
 			require.NoErrorf(
-				t, stderrUnhook(), "unhook stderr for %s", path,
+				t, stderrUnhook(),
+				"unhook stderr for %s", path,
 			)
 			require.NoErrorf(
-				t, stdinUnhook(), "unhook stdin for %s", path,
+				t, stdinUnhook(),
+				"unhook stdin for %s", path,
 			)
 
 			// Validate the recorded error status matches the
@@ -794,8 +814,9 @@ func TestRecordedSessions(t *testing.T) {
 						runError:     actualRunError,
 					},
 				)
-				require.NoErrorf(t, updateErr,
-					"update fixture %s", path)
+				require.NoErrorf(
+					t, updateErr, "update fixture %s", path,
+				)
 				if updated {
 					t.Logf("updated %s", path)
 				}
@@ -897,6 +918,7 @@ func requireReplayOutcomeClass(t *testing.T, path string, expected,
 
 // newRootCommandForReplay returns a root command clone with fresh flag state.
 func newRootCommandForReplay() *cli.Command {
+
 	// Clone the root command tree to avoid shared flag state.
 	return cloneCommandForReplay(newRootCommand())
 }
@@ -1108,7 +1130,6 @@ func cloneStructWithExportedFields(src any) (any, bool) {
 	value := reflect.ValueOf(src)
 	if value.Kind() != reflect.Pointer ||
 		value.Elem().Kind() != reflect.Struct {
-
 		return nil, false
 	}
 
@@ -1234,9 +1255,11 @@ func normalizeTimestamps(text string) string {
 func TestCloneCommandForReplayResetsFlagState(t *testing.T) {
 	// Prepare a flag that has been set.
 	originalFlag := &cli.StringFlag{
-		Name:    "alpha",
-		Usage:   "alpha usage",
-		Aliases: []string{"a"},
+		Name:  "alpha",
+		Usage: "alpha usage",
+		Aliases: []string{
+			"a",
+		},
 	}
 	require.NoError(t, originalFlag.Set("alpha", "value"))
 	require.True(t, originalFlag.IsSet())
@@ -1258,26 +1281,37 @@ func TestCloneCommandForReplayResetsFlagState(t *testing.T) {
 
 	// Build a command tree with flags, args, and metadata.
 	root := &cli.Command{
-		Name:  "root",
-		Flags: []cli.Flag{originalFlag, sharedFlag},
+		Name: "root",
+		Flags: []cli.Flag{
+			originalFlag,
+			sharedFlag,
+		},
 		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{
 			{
 				Flags: [][]cli.Flag{
-					{originalFlag},
-					{sharedFlag},
+					{
+						originalFlag,
+					},
+					{
+						sharedFlag,
+					},
 				},
 				Required: true,
 				Category: "cat",
 			},
 		},
-		Arguments: []cli.Argument{originalArg},
+		Arguments: []cli.Argument{
+			originalArg,
+		},
 		Metadata: map[string]any{
 			"key": "value",
 		},
 		Commands: []*cli.Command{
 			{
-				Name:  "sub",
-				Flags: []cli.Flag{sharedFlag},
+				Name: "sub",
+				Flags: []cli.Flag{
+					sharedFlag,
+				},
 			},
 		},
 	}

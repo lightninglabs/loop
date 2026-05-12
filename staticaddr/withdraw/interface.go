@@ -12,8 +12,10 @@ import (
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
-		error)
+	GetStaticAddressParameters(ctx context.Context) (
+		*script.Parameters,
+		error,
+	)
 
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
@@ -21,8 +23,10 @@ type AddressManager interface {
 }
 
 type DepositManager interface {
-	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
-		error)
+	GetActiveDepositsInState(stateFilter fsm.StateType) (
+		[]*deposit.Deposit,
+		error,
+	)
 
 	AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 		stateFilter fsm.StateType) ([]*deposit.Deposit, bool)

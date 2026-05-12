@@ -26,8 +26,8 @@ type Store interface {
 	GetDeposit(ctx context.Context, depositID ID) (*Deposit, error)
 
 	// DepositForOutpoint retrieves the deposit with the given outpoint.
-	DepositForOutpoint(ctx context.Context, outpoint string) (*Deposit,
-		error)
+	DepositForOutpoint(ctx context.Context,
+		outpoint string) (*Deposit, error)
 
 	// AllDeposits retrieves all deposits from the store.
 	AllDeposits(ctx context.Context) ([]*Deposit, error)
@@ -36,8 +36,10 @@ type Store interface {
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
-		error)
+	GetStaticAddressParameters(ctx context.Context) (
+		*script.Parameters,
+		error,
+	)
 
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.

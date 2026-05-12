@@ -11,21 +11,21 @@
 // Fee restrictions are placed on swap suggestions to ensure that we only
 // suggest swaps that fit the configured fee preferences.
 //   - Sweep Fee Rate Limit: the maximum sat/vByte fee estimate for our sweep
-//     transaction to confirm within our configured number of confirmations
-//     that we will suggest swaps for.
+//     transaction to confirm within our configured number of confirmations that
+//     we will suggest swaps for.
 //   - Maximum Swap Fee PPM: the maximum server fee, expressed as parts per
 //     million of the full swap amount
 //   - Maximum Routing Fee PPM: the maximum off-chain routing fees for the swap
 //     invoice, expressed as parts per million of the swap amount.
-//   - Maximum Prepay Routing Fee PPM: the maximum off-chain routing fees for the
-//     swap prepayment, expressed as parts per million of the prepay amount.
+//   - Maximum Prepay Routing Fee PPM: the maximum off-chain routing fees for
+//     the swap prepayment, expressed as parts per million of the prepay amount.
 //   - Maximum Prepay: the maximum now-show fee, expressed in satoshis. This
-//     amount is only payable in the case where the swap server broadcasts a htlc
-//     and the client fails to sweep the preimage.
-//   - Maximum miner fee: the maximum miner fee we are willing to pay to sweep the
-//     on chain htlc. Note that the client will use current fee estimates to
-//     sweep, so this value acts more as a sanity check in the case of a large fee
-//     spike.
+//     amount is only payable in the case where the swap server broadcasts a
+//     htlc and the client fails to sweep the preimage.
+//   - Maximum miner fee: the maximum miner fee we are willing to pay to sweep
+//     the on chain htlc. Note that the client will use current fee estimates to
+//     sweep, so this value acts more as a sanity check in the case of a large
+//     fee spike.
 //
 // The maximum fee per-swap is calculated as follows:
 // (swap amount * serverPPM/1e6) + miner fee + (swap amount * routingPPM/1e6)
@@ -166,8 +166,8 @@ var (
 
 	// ErrAccountAndAddrType indicates if an account is set but the
 	// account address type is not or vice versa.
-	ErrAccountAndAddrType = errors.New("account and address type have " +
-		"to be both either set or unset")
+	ErrAccountAndAddrType = errors.New("account and address type have to " +
+		"be both either set or unset")
 )
 
 // Config contains the external functionality required to run the
@@ -307,7 +307,6 @@ func (m *Manager) Run(ctx context.Context) error {
 						"autoloop")
 
 				case nil:
-
 				default:
 					log.Errorf("autoloop failed: %v", err)
 				}
@@ -371,9 +370,7 @@ func (m *Manager) SetParameters(ctx context.Context,
 
 // setParameters updates our current set of parameters if the new parameters
 // provided are valid.
-func (m *Manager) setParameters(ctx context.Context,
-	params Parameters) error {
-
+func (m *Manager) setParameters(ctx context.Context, params Parameters) error {
 	restrictions, err := m.cfg.Restrictions(
 		ctx, swap.TypeOut, getInitiator(m.params),
 	)
@@ -458,8 +455,8 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		// If we don't actually have dispatch of swaps enabled, log
 		// suggestions.
 		if !m.params.Autoloop {
-			log.Debugf("recommended autoloop out: %v sats over "+
-				"%v", swap.Amount, swap.OutgoingChanSet)
+			log.Debugf("recommended autoloop out: %v sats over %v",
+				swap.Amount, swap.OutgoingChanSet)
 
 			continue
 		}
@@ -481,8 +478,8 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		// If we don't actually have dispatch of swaps enabled, log
 		// suggestions.
 		if !m.params.Autoloop {
-			log.Debugf("recommended autoloop in: %v sats over "+
-				"%v", in.Amount, in.LastHop)
+			log.Debugf("recommended autoloop in: %v sats over %v",
+				in.Amount, in.LastHop)
 
 			continue
 		}
@@ -523,12 +520,12 @@ func (m *Manager) easyAutoLoop(ctx context.Context) error {
 	return nil
 }
 
-// easyAssetAutoloop is the main entry point for the easy auto loop functionality
-// for assets. This function will try to dispatch a swap in order to meet the
-// easy autoloop requirements for the given asset. For easyAutoloop to work
-// there needs to be an EasyAutoloopTarget defined in the parameters. Easy
-// autoloop also uses the configured max inflight swaps and budget rules defined
-// in the parameters.
+// easyAssetAutoloop is the main entry point for the easy auto loop
+// functionality for assets. This function will try to dispatch a swap in order
+// to meet the easy autoloop requirements for the given asset. For easyAutoloop
+// to work there needs to be an EasyAutoloopTarget defined in the parameters.
+// Easy autoloop also uses the configured max inflight swaps and budget rules
+// defined in the parameters.
 func (m *Manager) easyAssetAutoloop(ctx context.Context, assetID string) error {
 	if !m.params.Autoloop {
 		return nil
@@ -607,8 +604,9 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// Since we're only autolooping-out we need to check if we are below
 	// the target, meaning that we already meet the requirements.
 	if localTotal <= m.params.EasyAutoloopTarget {
-		log.Debugf("total local balance %v below target %v",
-			localTotal, m.params.EasyAutoloopTarget)
+		log.Debugf("total local balance %v below target %v", localTotal,
+			m.params.EasyAutoloopTarget)
+
 		return nil
 	}
 
@@ -630,12 +628,12 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		log.Debugf("easy autoloop: swap amount is below minimum swap "+
 			"size, minimum=%v, need to swap %v",
 			restrictions.Minimum, amount)
+
 		return nil
 	}
 
-	log.Debugf("easy autoloop: local_total=%v, target=%v, "+
-		"attempting to loop out %v", localTotal,
-		m.params.EasyAutoloopTarget, amount)
+	log.Debugf("easy autoloop: local_total=%v, target=%v, attempting to "+
+		"loop out %v", localTotal, m.params.EasyAutoloopTarget, amount)
 
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
@@ -651,7 +649,9 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		channel.ChannelID, channel.LocalBalance)
 
 	swapAmt, err := btcutil.NewAmount(
-		math.Min(channel.LocalBalance.ToBTC(), amount.ToBTC()),
+		math.Min(
+			channel.LocalBalance.ToBTC(), amount.ToBTC(),
+		),
 	)
 	if err != nil {
 		return err
@@ -668,6 +668,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 				PartsPerMillion: defaultFeePPM,
 			}
 		}
+
 	default:
 		easyParams.FeeLimit = &FeePortion{
 			PartsPerMillion: defaultFeePPM,
@@ -764,8 +765,8 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 		channel.LocalBalance = btcutil.Amount(assetData.LocalBalance)
 		usableChannels = append(usableChannels, channel)
 
-		// We'll use a random peer pubkey in order to get a rfq for the asset
-		// to get a rough amount of sats to swap amount.
+		// We'll use a random peer pubkey in order to get a rfq for the
+		// asset to get a rough amount of sats to swap amount.
 		assetPeerPubkey = channel.PubKeyBytes[:]
 
 		localTotal += assetData.LocalBalance
@@ -774,8 +775,9 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	// Since we're only autolooping-out we need to check if we are below
 	// the target, meaning that we already meet the requirements.
 	if localTotal <= localTarget {
-		log.Debugf("Asset: %v... total local balance %v below target %v",
-			assetID[:8], localTotal, localTarget)
+		log.Debugf("Asset: %v... total local balance %v below "+
+			"target %v", assetID[:8], localTotal, localTarget)
+
 		return nil
 	}
 
@@ -792,7 +794,9 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 
 	// We need a request sat amount for the asset price request. We'll use
 	// the average of the min and max restrictions.
-	assetPriceRequestSatAmt := (restrictions.Minimum + restrictions.Maximum) / 2
+	assetPriceRequestSatAmt := (restrictions.Minimum +
+		restrictions.Maximum) /
+		2
 
 	// If we run a custom asset, we'll need to convert the asset amount
 	// we want to swap to the satoshi amount.
@@ -806,17 +810,18 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 
 	if satAmount > restrictions.Maximum {
 		log.Debugf("Asset %v easy autoloop: using maximum allowed "+
-			"swap amount, maximum=%v, need to swap %v",
-			assetID[:8], restrictions.Maximum, satAmount)
+			"swap amount, maximum=%v, need to swap %v", assetID[:8],
+			restrictions.Maximum, satAmount)
 		satAmount = restrictions.Maximum
 	}
 
 	// If the amount we want to loop out is less than the minimum we can't
 	// proceed with a swap, so we return early.
 	if satAmount < restrictions.Minimum {
-		log.Debugf("Asset %v easy autoloop: swap amount is below"+
-			" minimum swap size, minimum=%v, need to swap %v",
+		log.Debugf("Asset %v easy autoloop: swap amount is below "+
+			"minimum swap size, minimum=%v, need to swap %v",
 			assetID[:8], restrictions.Minimum, satAmount)
+
 		return nil
 	}
 
@@ -954,9 +959,7 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 // suggestions are being used for our internal autolooper. This boolean is used
 // to determine the information we add to our swap suggestion and whether we
 // return any suggestions.
-func (m *Manager) SuggestSwaps(ctx context.Context) (
-	*Suggestions, error) {
-
+func (m *Manager) SuggestSwaps(ctx context.Context) (*Suggestions, error) {
 	m.paramsLock.Lock()
 	defer m.paramsLock.Unlock()
 
@@ -1481,6 +1484,7 @@ func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
 		if err != nil {
 			log.Errorf("Error converting parameters to rpc: %v",
 				err)
+
 			return
 		}
 
@@ -1501,6 +1505,7 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 	m.activeStickyLock.Lock()
 	if m.activeStickyLoops >= m.params.MaxAutoInFlight {
 		m.activeStickyLock.Unlock()
+
 		return
 	}
 
@@ -1518,8 +1523,9 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 		// Dispatch the swap.
 		swap, err := m.cfg.LoopOut(ctx, &out)
 		if err != nil {
-			log.Errorf("unable to dispatch loop out, amt: %v, "+
-				"err: %v", out.Amount, err)
+			log.Errorf("unable to dispatch loop out, amt: "+
+				"%v, err: %v", out.Amount, err)
+
 			return
 		}
 
@@ -1546,11 +1552,9 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 				// If update is nil then no update occurred
 				// within the defined timeout period. It's
 				// better to return and not attempt a retry.
-				log.Debug(
-					"No payment update received for swap "+
-						"%v, skipping amount backoff",
-					swap.SwapHash,
-				)
+				log.Debug("No payment update received for "+
+					"swap %v, skipping amount backoff",
+					swap.SwapHash)
 
 				return
 			}
@@ -1566,12 +1570,13 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 					float64(out.Amount) * amountBackoff,
 				)
 
-				log.Infof("swap %v: amount backoff old amount="+
-					"%v, new amount=%v", swap.SwapHash,
-					oldAmt, out.Amount)
+				log.Infof("swap %v: amount backoff old "+
+					"amount=%v, new amount=%v",
+					swap.SwapHash, oldAmt, out.Amount)
 
 				continue
 			} else {
+
 				// If the update channel did not return an
 				// off-chain payment failure we won't retry.
 				return
@@ -1603,15 +1608,14 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 		select {
 		case <-ctx.Done():
 			return
+
 		case <-time.After(interval):
 		}
 
 		swap, err = m.cfg.GetLoopOut(ctx, swapHash)
 		if err != nil {
-			log.Errorf(
-				"Error getting swap with hash %x: %v", swapHash,
-				err,
-			)
+			log.Errorf("Error getting swap with hash %x: %v",
+				swapHash, err)
 			continue
 		}
 
@@ -1627,16 +1631,22 @@ func (m *Manager) waitForSwapPayment(ctx context.Context, swapHash lntypes.Hash,
 		switch update.State {
 		case loopdb.StateFailInsufficientValue:
 			fallthrough
+
 		case loopdb.StateSuccess:
 			fallthrough
+
 		case loopdb.StateFailSweepTimeout:
 			fallthrough
+
 		case loopdb.StateFailTimeout:
 			fallthrough
+
 		case loopdb.StatePreimageRevealed:
 			fallthrough
+
 		case loopdb.StateFailOffchainPayments:
 			updateChan <- &update.State
+
 			return
 		}
 	}
@@ -1676,7 +1686,8 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 	// Check each channel, since channels are already sorted, we return the
 	// first channel that passes all checks.
 	for _, channel := range channels {
-		// Skip channels whose remote peer is excluded for easy autoloop.
+		// Skip channels whose remote peer is excluded for easy
+		// autoloop.
 		if _, ok := excluded[channel.PubKeyBytes]; ok {
 			log.Debugf("Channel %v cannot be used for easy "+
 				"autoloop: peer %v manually excluded",
@@ -1718,10 +1729,11 @@ func (m *Manager) pickEasyAutoloopChannel(channels []lndclient.ChannelInfo,
 
 		if localBalance < restrictions.Minimum {
 			log.Debugf("Channel %v cannot be used for easy "+
-				"autoloop: insufficient local balance %v,"+
-				"minimum is %v, skipping remaining channels",
+				"autoloop: insufficient local balance "+
+				"%v,minimum is %v, skipping remaining channels",
 				channel.ChannelID, channel.LocalBalance,
 				restrictions.Minimum)
+
 			return nil
 		}
 
@@ -1740,18 +1752,18 @@ func (m *Manager) numActiveStickyLoops() int {
 
 func (m *Manager) checkSummaryBudget(summary *existingAutoLoopSummary) error {
 	if summary.totalFees() >= m.params.AutoFeeBudget {
-		return fmt.Errorf("autoloop fee budget: %v exhausted, %v spent on "+
-			"completed swaps, %v reserved for ongoing swaps "+
-			"(upper limit)",
-			m.params.AutoFeeBudget, summary.spentFees,
-			summary.pendingFees)
+		return fmt.Errorf("autoloop fee budget: %v exhausted, %v "+
+			"spent on completed swaps, %v reserved for ongoing "+
+			"swaps (upper limit)", m.params.AutoFeeBudget,
+			summary.spentFees, summary.pendingFees)
 	}
 
 	return nil
 }
 
-func (m *Manager) checkSummaryInflight(
-	summary *existingAutoLoopSummary) (int, error) {
+func (m *Manager) checkSummaryInflight(summary *existingAutoLoopSummary) (int,
+	error) {
+
 	// If we have already reached our total allowed number of in flight
 	// swaps we return early.
 	allowedSwaps := m.params.MaxAutoInFlight - summary.inFlightCount
@@ -1822,6 +1834,7 @@ func ppmToSat(amount btcutil.Amount, ppm uint64) btcutil.Amount {
 // channelIsCustom returns true if the channel has custom channel data.
 // we'll want to ignore these channels for autoloop recommendations.
 func channelIsCustom(channel lndclient.ChannelInfo) bool {
+
 	// If the channel has custom channel data, the channel is a
 	// non-standard channel, such as an asset channel and we
 	// don't want to consider it for swaps.
@@ -1841,6 +1854,7 @@ func getCustomAssetData(channel lndclient.ChannelInfo,
 	if err != nil {
 		log.Errorf("Error unmarshalling custom channel %v data: %v",
 			channel.ChannelID, err)
+
 		return nil
 	}
 

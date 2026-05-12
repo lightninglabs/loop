@@ -76,27 +76,38 @@ func TestGetSatsFromAssetAmt(t *testing.T) {
 		expectError bool
 	}{
 		{
-			assetAmt:    1000,
-			assetRate:   &rfqrpc.FixedPoint{Coefficient: "100000", Scale: 0},
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "100000",
+				Scale:       0,
+			},
 			expected:    btcutil.Amount(1000000),
 			expectError: false,
 		},
 		{
-			assetAmt:    500000,
-			assetRate:   &rfqrpc.FixedPoint{Coefficient: "200000000", Scale: 0},
+			assetAmt: 500000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "200000000",
+				Scale:       0,
+			},
 			expected:    btcutil.Amount(250000),
 			expectError: false,
 		},
 		{
-			assetAmt:    0,
-			assetRate:   &rfqrpc.FixedPoint{Coefficient: "100000000", Scale: 0},
+			assetAmt: 0,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "100000000",
+				Scale:       0,
+			},
 			expected:    btcutil.Amount(0),
 			expectError: false,
 		},
 	}
 
 	for _, test := range tests {
-		result, err := getSatsFromAssetAmt(test.assetAmt, test.assetRate)
+		result, err := getSatsFromAssetAmt(
+			test.assetAmt, test.assetRate,
+		)
 		if test.expectError {
 			require.NotNil(t, err)
 		} else {

@@ -24,9 +24,7 @@ type Context struct {
 }
 
 // NewContext instanties a new common test context.
-func NewContext(t *testing.T,
-	lnd *LndMockServices) Context {
-
+func NewContext(t *testing.T, lnd *LndMockServices) Context {
 	return Context{
 		T:              t,
 		Lnd:            lnd,
@@ -42,8 +40,10 @@ func (ctx *Context) ReceiveTx() *wire.MsgTx {
 	select {
 	case tx := <-ctx.Lnd.TxPublishChannel:
 		return tx
+
 	case <-time.After(Timeout):
 		ctx.T.Fatalf("sweep not published")
+
 		return nil
 	}
 }
@@ -104,7 +104,6 @@ func (ctx *Context) AssertTrackPayment() TrackPaymentMessage {
 	var msg TrackPaymentMessage
 	select {
 	case msg = <-ctx.Lnd.TrackPaymentChannel:
-
 	case <-time.After(Timeout):
 		DumpGoroutines()
 		ctx.T.Fatalf("payment not tracked")
@@ -114,7 +113,9 @@ func (ctx *Context) AssertTrackPayment() TrackPaymentMessage {
 }
 
 // AssertRegisterConf asserts that a register for conf has been received.
-func (ctx *Context) AssertRegisterConf(expectTxHash bool, confs int32) *ConfRegistration {
+func (ctx *Context) AssertRegisterConf(expectTxHash bool,
+	confs int32) *ConfRegistration {
+
 	ctx.T.Helper()
 
 	// Expect client to register for conf
@@ -142,9 +143,7 @@ func (ctx *Context) AssertRegisterConf(expectTxHash bool, confs int32) *ConfRegi
 
 // AssertPaid asserts that the expected payment request has been paid. This
 // function returns a complete function to signal the final payment result.
-func (ctx *Context) AssertPaid(
-	expectedMemo string) func(error) {
-
+func (ctx *Context) AssertPaid(expectedMemo string) func(error) {
 	ctx.T.Helper()
 
 	if done, ok := ctx.PaidInvoices[expectedMemo]; ok {
@@ -161,12 +160,14 @@ func (ctx *Context) AssertPaid(
 				expectedMemo)
 		}
 
-		payReq := ctx.DecodeInvoice(swapPayment.SendPaymentRequest.Invoice)
+		payReq := ctx.DecodeInvoice(
+			swapPayment.SendPaymentRequest.Invoice,
+		)
 
 		_, ok := ctx.PaidInvoices[*payReq.Description]
 		require.False(
-			ctx.T, ok,
-			"duplicate invoice paid: %v", *payReq.Description,
+			ctx.T, ok, "duplicate invoice paid: %v",
+			*payReq.Description,
 		)
 
 		done := func(result error) {
@@ -177,6 +178,7 @@ func (ctx *Context) AssertPaid(
 				swapPayment.Updates <- lndclient.PaymentStatus{
 					State: lnrpc.Payment_FAILED,
 				}
+
 				return
 			}
 			swapPayment.Updates <- lndclient.PaymentStatus{
@@ -193,9 +195,7 @@ func (ctx *Context) AssertPaid(
 }
 
 // AssertSettled asserts that an invoice with the given hash is settled.
-func (ctx *Context) AssertSettled(
-	expectedHash lntypes.Hash) lntypes.Preimage {
-
+func (ctx *Context) AssertSettled(expectedHash lntypes.Hash) lntypes.Preimage {
 	ctx.T.Helper()
 
 	select {
@@ -207,9 +207,11 @@ func (ctx *Context) AssertSettled(
 		)
 
 		return preimage
+
 	case <-time.After(Timeout):
 	}
 	ctx.T.Fatalf("invoice not settled")
+
 	return lntypes.Preimage{}
 }
 
@@ -228,6 +230,7 @@ func (ctx *Context) AssertFailed(expectedHash lntypes.Hash) {
 			if expectedHash == hash {
 				return
 			}
+
 		case <-time.After(Timeout):
 			ctx.T.Fatalf("invoice not failed")
 		}
@@ -245,9 +248,7 @@ func (ctx *Context) DecodeInvoice(request string) *zpay32.Invoice {
 }
 
 // GetOutputIndex returns the index in the tx outs of the given script hash.
-func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
-	script []byte) int {
-
+func (ctx *Context) GetOutputIndex(tx *wire.MsgTx, script []byte) int {
 	for idx, out := range tx.TxOut {
 		if bytes.Equal(out.PkScript, script) {
 			return idx
@@ -255,6 +256,7 @@ func (ctx *Context) GetOutputIndex(tx *wire.MsgTx,
 	}
 
 	ctx.T.Fatal("the output not present in tx")
+
 	return 0
 }
 

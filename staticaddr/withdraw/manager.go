@@ -206,7 +206,6 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			}
 			select {
 			case req.respChan <- resp:
-
 			case <-ctx.Done():
 				// Notify subroutines that the main loop has
 				// been canceled.
@@ -453,8 +452,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		// Persist info about the finalized withdrawal.
 		err = m.cfg.Store.CreateWithdrawal(ctx, deposits)
 		if err != nil {
-			log.Errorf("Error persisting "+
-				"withdrawal: %v", err)
+			log.Errorf("Error persisting withdrawal: %v", err)
 		}
 
 		err = m.handleWithdrawal(
@@ -508,8 +506,8 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	for _, d := range deposits {
 		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to update "+
-				"deposit %w", err)
+			return "", "", fmt.Errorf("failed to update deposit %w",
+				err)
 		}
 	}
 
@@ -521,8 +519,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 // signed *wire.MsgTx representation and the unsigned psbt.
 func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
-	feeRate chainfee.SatPerKWeight,
-	selectedWithdrawalAmount int64,
+	feeRate chainfee.SatPerKWeight, selectedWithdrawalAmount int64,
 	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
 	// Create a musig2 session for each deposit.
@@ -545,8 +542,8 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 
 	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("couldn't get confirmation "+
-			"height for deposit, %w", err)
+		return nil, nil, fmt.Errorf("couldn't get confirmation height "+
+			"for deposit, %w", err)
 	}
 
 	outpoints := toOutpoints(deposits)
@@ -588,8 +585,8 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	}
 
 	if len(sigResp.SigningInfo) != len(deposits) {
-		return nil, nil, errors.New("invalid number of " +
-			"deposit signatures")
+		return nil, nil, errors.New("invalid number of deposit " +
+			"signatures")
 	}
 
 	// Verify 1:1 matching between deposits and SigningInfo entries.
@@ -632,10 +629,13 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 	// Publish the withdrawal sweep transaction.
 	err := m.cfg.WalletKit.PublishTransaction(ctx, tx, txLabel)
 	if err != nil {
-		if !strings.Contains(err.Error(), chain.ErrSameNonWitnessData.Error()) &&
+		if !strings.Contains(
+			err.Error(), chain.ErrSameNonWitnessData.Error(),
+		) &&
 			!strings.Contains(err.Error(), "output already spent") &&
-			!strings.Contains(err.Error(), chain.ErrInsufficientFee.Error()) {
-
+			!strings.Contains(
+				err.Error(), chain.ErrInsufficientFee.Error(),
+			) {
 			return false, err
 		} else {
 			if strings.Contains(err.Error(), "output already spent") {
@@ -686,7 +686,9 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
 					withdrawalPkscript, MinConfs,
-					int32(m.initiationHeight.Load()),
+					int32(
+						m.initiationHeight.Load(),
+					),
 				)
 			if err != nil {
 				// TODO(#1087): Retry registration on
@@ -805,8 +807,8 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 			[][musig2.PubNonceSize]byte{nonce},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error registering nonces: "+
-				"%w", err)
+			return nil, fmt.Errorf("error registering nonces: %w",
+				err)
 		}
 
 		if !haveAllNonces {
@@ -819,8 +821,8 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 			depositsToIdx[deposit], prevOutFetcher,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error calculating taproot "+
-				"sig hash: %w", err)
+			return nil, fmt.Errorf("error calculating taproot sig "+
+				"hash: %w", err)
 		}
 
 		copy(sigHash[:], taprootSigHash)
@@ -835,12 +837,11 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 
 		// Combine the signature with the client signature.
 		haveAllSigs, sig, err := signer.MuSig2CombineSig(
-			ctx, session.SessionID,
-			[][]byte{sigAndNonce.Sig},
+			ctx, session.SessionID, [][]byte{sigAndNonce.Sig},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error combining signature: "+
-				"%w", err)
+			return nil, fmt.Errorf("error combining signature: %w",
+				err)
 		}
 
 		if !haveAllSigs {
@@ -860,8 +861,8 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
 	prevOuts map[wire.OutPoint]*wire.TxOut,
 	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
-	feeRate chainfee.SatPerKWeight,
-	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
+	feeRate chainfee.SatPerKWeight, commitmentType lnrpc.CommitmentType) (
+	*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)
@@ -875,8 +876,8 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	}
 
 	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
-		deposits, selectedWithdrawalAmount, feeRate,
-		withdrawAddr, commitmentType,
+		deposits, selectedWithdrawalAmount, feeRate, withdrawAddr,
+		commitmentType,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error calculating funding tx "+
@@ -889,8 +890,8 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	// transaction, saving fees.
 	for outpoint, txOut := range prevOuts {
 		if changeAmount >= btcutil.Amount(txOut.Value) {
-			return nil, nil, fmt.Errorf("change amount %v "+
-				"is higher than an input value %v of input %v",
+			return nil, nil, fmt.Errorf("change amount %v is "+
+				"higher than an input value %v of input %v",
 				changeAmount, btcutil.Amount(txOut.Value),
 				outpoint)
 		}
@@ -974,7 +975,6 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 
 	if withdrawalAddress == nil &&
 		commitmentType == lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE {
-
 		return 0, 0, fmt.Errorf("either address or commitment type " +
 			"must be specified")
 	}
@@ -1034,9 +1034,9 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 		default:
 			// If the fees eat into our selected amount, we fail the
 			// withdrawal.
-			return 0, 0, fmt.Errorf("the change doesn't " +
-				"cover for fees. Consider lowering the fee " +
-				"rate or decrease the selected amount")
+			return 0, 0, fmt.Errorf("the change doesn't cover " +
+				"for fees. Consider lowering the fee rate or " +
+				"decrease the selected amount")
 		}
 	} else {
 		// If the user wants to withdraw the total value of deposits, we
@@ -1066,8 +1066,8 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 	// transaction, saving fees.
 	for _, d := range deposits {
 		if changeAmount >= d.Value {
-			return 0, 0, fmt.Errorf("change amount %v is "+
-				"higher than an input value %v of input %v",
+			return 0, 0, fmt.Errorf("change amount %v is higher "+
+				"than an input value %v of input %v",
 				changeAmount, d.Value, d.OutPoint.String())
 		}
 	}
@@ -1163,7 +1163,6 @@ func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
 	// Send the new loop-in request to the manager run loop.
 	select {
 	case m.newWithdrawalRequestChan <- request:
-
 	case <-m.exitChan:
 		return "", "", fmt.Errorf("withdrawal manager has been " +
 			"canceled")

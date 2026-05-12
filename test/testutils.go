@@ -61,13 +61,15 @@ func EncodePayReq(payReq *zpay32.Invoice) (string, error) {
 }
 
 // GetInvoice creates a testnet payment request with the given parameters.
-func GetInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (
-	string, error) {
+func GetInvoice(hash lntypes.Hash, amt btcutil.Amount,
+	memo string) (string, error) {
 
 	req, err := zpay32.NewInvoice(
 		&chaincfg.TestNet3Params, hash, testTime,
 		zpay32.Description(memo),
-		zpay32.Amount(lnwire.NewMSatFromSatoshis(amt)),
+		zpay32.Amount(
+			lnwire.NewMSatFromSatoshis(amt),
+		),
 	)
 	if err != nil {
 		return "", err

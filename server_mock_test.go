@@ -74,8 +74,8 @@ func newServerMock(lnd *test.LndMockServices) *serverMock {
 }
 
 func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
-	amount btcutil.Amount, _ int32, _ [33]byte, _ time.Time,
-	_ string) (*newLoopOutResponse, error) {
+	amount btcutil.Amount, _ int32, _ [33]byte, _ time.Time, _ string) (
+	*newLoopOutResponse, error) {
 
 	_, senderKey := test.CreateKey(100)
 
@@ -84,8 +84,9 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 	}
 
 	s.swapHash = swapHash
-	swapPayReqString, err := getInvoice(swapHash, s.swapInvoiceAmt,
-		swapInvoiceDesc)
+	swapPayReqString, err := getInvoice(
+		swapHash, s.swapInvoiceAmt, swapInvoiceDesc,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +94,9 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 	// Set the prepay hash to be different from the swap hash.
 	s.prepayHash = swapHash
 	s.prepayHash[0] ^= 1
-	prePayReqString, err := getInvoice(s.prepayHash, s.prepayInvoiceAmt,
-		prepayInvoiceDesc)
+	prePayReqString, err := getInvoice(
+		s.prepayHash, s.prepayInvoiceAmt, prepayInvoiceDesc,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +134,9 @@ func (s *serverMock) GetLoopOutQuote(ctx context.Context, amt btcutil.Amount,
 	}, nil
 }
 
-func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, error) {
+func getInvoice(hash lntypes.Hash, amt btcutil.Amount,
+	memo string) (string, error) {
+
 	// Set different payment addresses for swap invoices.
 	payAddr := [32]byte{1, 2, 3}
 	if memo == swapInvoiceDesc {
@@ -142,7 +146,9 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 	req, err := zpay32.NewInvoice(
 		&chaincfg.TestNet3Params, hash, testTime,
 		zpay32.Description(memo),
-		zpay32.Amount(lnwire.MilliSatoshi(1000*amt)),
+		zpay32.Amount(
+			lnwire.MilliSatoshi(1000*amt),
+		),
 		zpay32.PaymentAddr(payAddr),
 	)
 	if err != nil {
@@ -212,10 +218,13 @@ func (s *serverMock) CancelLoopOutSwap(ctx context.Context,
 	details *outCancelDetails) error {
 
 	s.cancelSwap <- details
+
 	return nil
 }
 
-func (s *serverMock) assertSwapCanceled(t *testing.T, details *outCancelDetails) {
+func (s *serverMock) assertSwapCanceled(t *testing.T,
+	details *outCancelDetails) {
+
 	require.Equal(t, details, <-s.cancelSwap)
 }
 
@@ -229,8 +238,8 @@ func (s *serverMock) GetLoopInTerms(ctx context.Context, initiator string) (
 }
 
 func (s *serverMock) GetLoopInQuote(context.Context, btcutil.Amount,
-	route.Vertex, *route.Vertex, [][]zpay32.HopHint, string,
-	uint32, bool) (*LoopInQuote, error) {
+	route.Vertex, *route.Vertex, [][]zpay32.HopHint, string, uint32, bool) (
+	*LoopInQuote, error) {
 
 	return &LoopInQuote{
 		SwapFee:   testSwapFee,
@@ -246,9 +255,10 @@ func (s *serverMock) SubscribeLoopOutUpdates(_ context.Context,
 	return nil, nil, nil
 }
 
-// SubscribeLoopInUpdates provides a mocked implementation of state subscriptions.
-func (s *serverMock) SubscribeLoopInUpdates(_ context.Context,
-	_ lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error) {
+// SubscribeLoopInUpdates provides a mocked implementation of state
+// subscriptions.
+func (s *serverMock) SubscribeLoopInUpdates(_ context.Context, _ lntypes.Hash) (
+	<-chan *ServerUpdate, <-chan error, error) {
 
 	return nil, nil, nil
 }
@@ -272,9 +282,9 @@ func (s *serverMock) ReportRoutingResult(_ context.Context, _ lntypes.Hash,
 	return nil
 }
 
-func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion,
-	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte,
-	[]byte, error) {
+func (s *serverMock) MuSig2SignSweep(_ context.Context,
+	_ loopdb.ProtocolVersion, _ lntypes.Hash, _ [32]byte, _ []byte,
+	_ []byte) ([]byte, []byte, error) {
 
 	return nil, nil, nil
 }
@@ -282,8 +292,7 @@ func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion
 func (s *serverMock) MultiMuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
 	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
-	prevoutMap map[wire.OutPoint]*wire.TxOut) (
-	[]byte, []byte, error) {
+	prevoutMap map[wire.OutPoint]*wire.TxOut) ([]byte, []byte, error) {
 
 	return nil, nil, nil
 }

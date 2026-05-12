@@ -74,16 +74,19 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 	// Make sure that the request has all required inputs.
 	if req.Outpoint == "" {
-		return nil, status.Error(codes.InvalidArgument,
-			"outpoint required")
+		return nil, status.Error(
+			codes.InvalidArgument, "outpoint required",
+		)
 	}
 	if req.HtlcAddress == "" {
-		return nil, status.Error(codes.InvalidArgument,
-			"htlc_address required")
+		return nil, status.Error(
+			codes.InvalidArgument, "htlc_address required",
+		)
 	}
 	if req.SatPerVbyte == 0 {
-		return nil, status.Error(codes.InvalidArgument,
-			"sat_per_vbyte required")
+		return nil, status.Error(
+			codes.InvalidArgument, "sat_per_vbyte required",
+		)
 	}
 
 	// Parse the inputs.
@@ -91,14 +94,14 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		req.HtlcAddress, chainParams,
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid htlc_address: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid "+
+			"htlc_address: %v", err)
 	}
 
 	htlcPkScript, err := txscript.PayToAddrScript(htlcAddr)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid htlc_address script: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid "+
+			"htlc_address script: %v", err)
 	}
 
 	htlcOutpoint, err := wire.NewOutPointFromString(req.Outpoint)
@@ -120,15 +123,16 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	} else {
 		sweepAddr, err = wallet.NextAddr(
 			ctx, lnwallet.DefaultAccountName,
-			walletrpc.AddressType_TAPROOT_PUBKEY,
-			false,
+			walletrpc.AddressType_TAPROOT_PUBKEY, false,
 		)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal,
-				"derive sweep address: %v", err)
+			return nil, status.Errorf(codes.Internal, "derive "+
+				"sweep address: %v", err)
 		}
-		infof("sweephtlc: generated new destination address: %v",
-			sweepAddr.EncodeAddress())
+		infof(
+			"sweephtlc: generated new destination address: %v",
+			sweepAddr.EncodeAddress(),
+		)
 	}
 
 	sweepPkScript, err := txscript.PayToAddrScript(sweepAddr)
@@ -136,8 +140,10 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		return nil, err
 	}
 
-	infof("sweephtlc: start sweep for %v -> %v", req.Outpoint,
-		sweepAddr.EncodeAddress())
+	infof(
+		"sweephtlc: start sweep for %v -> %v", req.Outpoint,
+		sweepAddr.EncodeAddress(),
+	)
 
 	// Locate the loop-out swap whose HTLC script matches the outpoint so
 	// we can obtain keys and the stored preimage.
@@ -153,8 +159,7 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 	for _, swp := range swaps {
 		htlc, htlcErr := utils.GetHtlc(
-			swp.Hash, &swp.Contract.SwapContract,
-			chainParams,
+			swp.Hash, &swp.Contract.SwapContract, chainParams,
 		)
 		if htlcErr != nil {
 			return nil, htlcErr
@@ -168,30 +173,35 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	if targetSwap == nil || targetHtlc == nil {
-		return nil, status.Error(codes.NotFound,
-			"no matching swap HTLC found")
+		return nil, status.Error(
+			codes.NotFound, "no matching swap HTLC found",
+		)
 	}
 
-	infof("sweephtlc: matched swap %v at height hint %v",
-		targetSwap.Hash, targetSwap.Contract.InitiationHeight)
+	infof(
+		"sweephtlc: matched swap %v at height hint %v", targetSwap.Hash,
+		targetSwap.Contract.InitiationHeight,
+	)
 
 	if targetSwap.Contract.InitiationHeight <= 0 {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid initiation height %d",
+		return nil, status.Errorf(codes.InvalidArgument, "invalid "+
+			"initiation height %d",
 			targetSwap.Contract.InitiationHeight)
 	}
 
 	// Wait for a confirmation so we can read the full transaction even if
 	// it's not in our wallet.
-	infof("sweephtlc: registering conf ntfn for %v hint=%v",
-		req.Outpoint, targetSwap.Contract.InitiationHeight)
+	infof(
+		"sweephtlc: registering conf ntfn for %v hint=%v", req.Outpoint,
+		targetSwap.Contract.InitiationHeight,
+	)
 	confChan, errChan, err := notifier.RegisterConfirmationsNtfn(
 		ctx, &htlcOutpoint.Hash, htlcPkScript, 1,
 		targetSwap.Contract.InitiationHeight,
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"register conf ntfn: %v", err)
+		return nil, status.Errorf(codes.Internal, "register conf "+
+			"ntfn: %v", err)
 	}
 
 	var (
@@ -203,34 +213,42 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	select {
 	case conf := <-confChan:
 		fundingTx = conf.Tx
-		infof("sweephtlc: funding confirmed at height %v",
-			conf.BlockHeight)
+		infof(
+			"sweephtlc: funding confirmed at height %v",
+			conf.BlockHeight,
+		)
 
 	case ntfnErr := <-errChan:
-		infof("sweephtlc: conf ntfn error for %v: %v",
-			req.Outpoint, ntfnErr)
+		infof(
+			"sweephtlc: conf ntfn error for %v: %v", req.Outpoint,
+			ntfnErr,
+		)
 
-		return nil, status.Errorf(codes.Internal,
-			"conf ntfn: %v", ntfnErr)
+		return nil, status.Errorf(codes.Internal, "conf ntfn: %v",
+			ntfnErr)
 
 	case <-ctx.Done():
-		infof("sweephtlc: context done waiting for %v: %v",
-			req.Outpoint, ctx.Err())
+		infof(
+			"sweephtlc: context done waiting for %v: %v",
+			req.Outpoint, ctx.Err(),
+		)
 
-		return nil, status.Errorf(codes.DeadlineExceeded,
-			"waiting for transaction details")
+		return nil, status.Errorf(codes.DeadlineExceeded, "waiting "+
+			"for transaction details")
 	}
 
 	if int(htlcOutpoint.Index) >= len(fundingTx.TxOut) {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"vout %d out of range", htlcOutpoint.Index)
+		return nil, status.Errorf(codes.InvalidArgument, "vout %d out "+
+			"of range", htlcOutpoint.Index)
 	}
 
 	htlcTxOut = fundingTx.TxOut[htlcOutpoint.Index]
 
 	if !bytes.Equal(htlcTxOut.PkScript, htlcPkScript) {
-		return nil, status.Error(codes.InvalidArgument,
-			"outpoint script does not match HTLC address")
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"outpoint script does not match HTLC address",
+		)
 	}
 
 	infof("sweephtlc: swap hash validated for %v", req.Outpoint)
@@ -249,24 +267,28 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	if preimage.Hash() != targetHtlc.Hash {
-		return nil, status.Error(codes.InvalidArgument,
-			"preimage does not match HTLC hash")
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"preimage does not match HTLC hash",
+		)
 	}
 
-	infof("sweephtlc: sweeping to %v with feerate %v sat/vbyte",
-		sweepAddr.EncodeAddress(), req.SatPerVbyte)
+	infof(
+		"sweephtlc: sweeping to %v with feerate %v sat/vbyte",
+		sweepAddr.EncodeAddress(), req.SatPerVbyte,
+	)
 
 	// Estimate fee for the success-path spend weight.
 	var estimator input.TxWeightEstimator
 	err = targetHtlc.AddSuccessToEstimator(&estimator)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"failed to estimate tx input weight: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "failed to "+
+			"estimate tx input weight: %v", err)
 	}
 	err = sweep.AddOutputEstimate(&estimator, sweepAddr)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"failed to estimate tx output weight: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "failed to "+
+			"estimate tx output weight: %v", err)
 	}
 
 	// Convert the requested fee rate to sat/kw for fee computation.
@@ -276,14 +298,15 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	// Make sure the fee is fine.
 	htlcValue := btcutil.Amount(htlcTxOut.Value)
 	if htlcValue <= fee {
-		return nil, status.Error(codes.InvalidArgument,
-			"fee exceeds HTLC value")
+		return nil, status.Error(
+			codes.InvalidArgument, "fee exceeds HTLC value",
+		)
 	}
 
 	minRelayFeeRate, err := wallet.MinRelayFee(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"min relay fee: %v", err)
+		return nil, status.Errorf(codes.Internal, "min relay fee: %v",
+			err)
 	}
 
 	fee, clamped, err := utils.ClampSweepFee(
@@ -291,14 +314,13 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		estimator.Weight(),
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"fee too low for relay after clamp: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "fee too low "+
+			"for relay after clamp: %v", err)
 	}
 	if clamped {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"fee exceeds %.0f%% of HTLC value; lower sat_per_vbyte",
-			utils.MaxFeeToAmountRatio*100,
-		)
+		return nil, status.Errorf(codes.InvalidArgument, "fee exceeds "+
+			"%.0f%% of HTLC value; lower sat_per_vbyte",
+			utils.MaxFeeToAmountRatio*100)
 	}
 
 	// Build the sweep transaction spending the HTLC via the success path.
@@ -342,8 +364,10 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 	sig := rawSigs[0]
 
-	infof("sweephtlc: witness assembled, tx size=%d vbytes",
-		sweepTx.SerializeSize())
+	infof(
+		"sweephtlc: witness assembled, tx size=%d vbytes",
+		sweepTx.SerializeSize(),
+	)
 
 	// Assemble the success witness using the signature and preimage.
 	witness, err := targetHtlc.GenSuccessWitness(sig, preimage)
@@ -364,11 +388,15 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	if req.Publish {
 		err = wallet.PublishTransaction(
 			ctx, sweepTx,
-			labels.LoopOutSweepSuccess(targetSwap.Hash.String()),
+			labels.LoopOutSweepSuccess(
+				targetSwap.Hash.String(),
+			),
 		)
 		if err != nil {
-			errorf("sweephtlc: publish failed for %v: %v",
-				req.Outpoint, err)
+			errorf(
+				"sweephtlc: publish failed for %v: %v",
+				req.Outpoint, err,
+			)
 
 			return &looprpc.SweepHtlcResponse{
 				SweepTx: rawTx,

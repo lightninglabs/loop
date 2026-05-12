@@ -104,7 +104,8 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	categories, ok := parameters.FeeLimit.(*FeeCategoryLimit)
 	if ok {
 		lnd.SetFeeEstimate(
-			parameters.SweepConfTarget, categories.SweepFeeRateLimit,
+			parameters.SweepConfTarget,
+			categories.SweepFeeRateLimit,
 		)
 	}
 
@@ -135,8 +136,8 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 	cfg := &Config{
 		AutoloopTicker: ticker.NewForce(DefaultAutoloopTicker),
-		Restrictions: func(_ context.Context, swapType swap.Type, initiator string) (*Restrictions,
-			error) {
+		Restrictions: func(_ context.Context, swapType swap.Type,
+			initiator string) (*Restrictions, error) {
 
 			if swapType == swap.TypeOut {
 				return <-testCtx.loopOutRestrictions, nil
@@ -147,8 +148,8 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 		ListLoopOut: func(context.Context) ([]*loopdb.LoopOut, error) {
 			return <-testCtx.loopOuts, nil
 		},
-		GetLoopOut: func(ctx context.Context,
-			hash lntypes.Hash) (*loopdb.LoopOut, error) {
+		GetLoopOut: func(ctx context.Context, hash lntypes.Hash) (
+			*loopdb.LoopOut, error) {
 
 			return testCtx.loopOutSingle, nil
 		},
@@ -163,23 +164,23 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 			return <-testCtx.quotes, nil
 		},
-		LoopOut: func(_ context.Context,
-			req *loop.OutRequest) (*loop.LoopOutSwapInfo,
-			error) {
+		LoopOut: func(_ context.Context, req *loop.OutRequest) (
+			*loop.LoopOutSwapInfo, error) {
 
 			testCtx.outRequest <- req
 
 			return <-testCtx.loopOut, nil
 		},
 		LoopInQuote: func(_ context.Context,
-			req *loop.LoopInQuoteRequest) (*loop.LoopInQuote, error) {
+			req *loop.LoopInQuoteRequest) (*loop.LoopInQuote,
+			error) {
 
 			testCtx.quoteRequestIn <- req
 
 			return <-testCtx.quotesIn, nil
 		},
-		LoopIn: func(_ context.Context,
-			req *loop.LoopInRequest) (*loop.LoopInSwapInfo, error) {
+		LoopIn: func(_ context.Context, req *loop.LoopInRequest) (
+			*loop.LoopInSwapInfo, error) {
 
 			testCtx.inRequest <- req
 
@@ -214,6 +215,7 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 	testCtx.manager.params.CustomPaymentCheckInterval =
 		150 * time.Millisecond
 	<-done
+
 	return testCtx
 }
 
@@ -398,8 +400,11 @@ func (c *autoloopTestCtx) easyautoloop(step *easyAutoloopStep, noop bool) {
 	// If easy autoloop is not meant to be triggered we skip sending the
 	// mock response for restrictions, as this is never called.
 	if !noop {
-		// Send a mocked response from the server with the swap size limits.
-		c.loopOutRestrictions <- NewRestrictions(step.minAmt, step.maxAmt)
+		// Send a mocked response from the server with the swap size
+		// limits.
+		c.loopOutRestrictions <- NewRestrictions(
+			step.minAmt, step.maxAmt,
+		)
 	}
 
 	for _, expected := range step.quotesOut {
@@ -488,9 +493,7 @@ func (c *autoloopTestCtx) matchLoopOuts(swaps []loopOutRequestResp,
 
 // matchLoopIns checks that the actual loop in requests we got match the
 // expected ones.
-func (c *autoloopTestCtx) matchLoopIns(
-	swaps []loopInRequestResp) bool {
-
+func (c *autoloopTestCtx) matchLoopIns(swaps []loopInRequestResp) bool {
 	swapsCopy := make([]loopInRequestResp, len(swaps))
 	copy(swapsCopy, swaps)
 

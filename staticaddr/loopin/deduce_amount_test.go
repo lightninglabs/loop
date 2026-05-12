@@ -76,6 +76,7 @@ func TestDeduceSwapAmount(t *testing.T) {
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.ErrorContains(t, err, tc.wantErr)
+
 				return
 			}
 			require.NoError(t, err)
