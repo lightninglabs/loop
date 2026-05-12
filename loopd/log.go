@@ -43,6 +43,11 @@ func tracef(format string, params ...any) {
 	log().Tracef(format, params...)
 }
 
+// debugf logs a message with level DEBUG.
+func debugf(format string, params ...any) {
+	log().Debugf(format, params...)
+}
+
 // infof logs a message with level INFO.
 func infof(format string, params ...any) {
 	log().Infof(format, params...)
