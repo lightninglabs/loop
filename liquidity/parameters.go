@@ -159,7 +159,7 @@ func (p Parameters) String() string {
 		)
 	}
 
-	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep sweep conf "+
+	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep conf "+
 		"target: %v, htlc conf target: %v,fees: %v, auto budget: %v, "+
 		"budget refresh: %v, max auto in flight: %v, minimum swap "+
 		"size=%v, maximum swap size=%v", strings.Join(ruleList, ","),
