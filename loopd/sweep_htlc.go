@@ -106,8 +106,8 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Destination address: honor a provided override or derive a fresh
-	// wallet address from the default account.
+	// Destination address: honor a provided override immediately so request
+	// validation stays independent from swap lookup.
 	var sweepAddr btcutil.Address
 	if req.DestAddress != "" {
 		sweepAddr, err = btcutil.DecodeAddress(
@@ -117,30 +117,10 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 			return nil, status.Errorf(codes.InvalidArgument,
 				"invalid dest_address: %v", err)
 		}
-	} else {
-		sweepAddr, err = wallet.NextAddr(
-			ctx, lnwallet.DefaultAccountName,
-			walletrpc.AddressType_TAPROOT_PUBKEY,
-			false,
-		)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal,
-				"derive sweep address: %v", err)
-		}
-		infof("sweephtlc: generated new destination address: %v",
-			sweepAddr.EncodeAddress())
 	}
-
-	sweepPkScript, err := txscript.PayToAddrScript(sweepAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	infof("sweephtlc: start sweep for %v -> %v", req.Outpoint,
-		sweepAddr.EncodeAddress())
 
 	// Locate the loop-out swap whose HTLC script matches the outpoint so
-	// we can obtain keys and the stored preimage.
+	// we can obtain keys, the stored preimage, and the default destination.
 	swaps, err := store.FetchLoopOutSwaps(ctx)
 	if err != nil {
 		return nil, err
@@ -171,6 +151,34 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		return nil, status.Error(codes.NotFound,
 			"no matching swap HTLC found")
 	}
+
+	// Prefer the stored swap destination for recovery sweeps and only
+	// derive a fresh wallet address when neither the request nor DB
+	// specifies one.
+	if sweepAddr == nil {
+		sweepAddr = targetSwap.Contract.DestAddr
+	}
+	if sweepAddr == nil {
+		sweepAddr, err = wallet.NextAddr(
+			ctx, lnwallet.DefaultAccountName,
+			walletrpc.AddressType_TAPROOT_PUBKEY,
+			false,
+		)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"derive sweep address: %v", err)
+		}
+		infof("sweephtlc: generated new destination address: %v",
+			sweepAddr.EncodeAddress())
+	}
+
+	sweepPkScript, err := txscript.PayToAddrScript(sweepAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	infof("sweephtlc: start sweep for %v -> %v", req.Outpoint,
+		sweepAddr.EncodeAddress())
 
 	infof("sweephtlc: matched swap %v at height hint %v",
 		targetSwap.Hash, targetSwap.Contract.InitiationHeight)
