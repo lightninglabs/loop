@@ -26,6 +26,7 @@ _testmain.go
 
 /loop-debug
 /loopd-debug
+/tools/llformat
 
 output*.log
 
