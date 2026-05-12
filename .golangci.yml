@@ -54,6 +54,11 @@ linters:
     - funcorder
     - wsl_v5
     - noinlineerr
+    # llformat now owns vertical whitespace for handwritten Go. The
+    # whitespace linter cannot express the project rule that multi-line
+    # function signatures keep a body separator while single-return control
+    # blocks stay compact.
+    - whitespace
   settings:
     gosec:
       excludes:
@@ -67,9 +72,6 @@ linters:
       case:
         rules:
           json: snake
-    whitespace:
-      multi-if: true
-      multi-func: true
   exclusions:
     generated: lax
     presets:
