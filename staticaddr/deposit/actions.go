@@ -44,14 +44,18 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		ctx, DefaultConfTarget,
 	)
 	if err != nil {
-		return f.HandleError(fmt.Errorf("timeout sweep fee "+
-			"estimation failed: %w", err))
+		return f.HandleError(
+			fmt.Errorf("timeout sweep fee estimation failed: %w",
+				err),
+		)
 	}
 
 	minRelayFeeRate, err := f.cfg.WalletKit.MinRelayFee(ctx)
 	if err != nil {
-		return f.HandleError(fmt.Errorf("timeout sweep min relay "+
-			"query failed: %w", err))
+		return f.HandleError(
+			fmt.Errorf("timeout sweep min relay query failed: %w",
+				err),
+		)
 	}
 
 	weight := script.ExpirySpendWeight()
@@ -67,8 +71,10 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 	if clamped {
-		return f.HandleError(errors.New("fee is greater than 20% of " +
-			"the deposit value"))
+		return f.HandleError(
+			errors.New("fee is greater than 20% of the deposit " +
+				"value"),
+		)
 	}
 
 	output := &wire.TxOut{
@@ -115,6 +121,7 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		if !strings.Contains(err.Error(), "output already spent") {
 			log.Errorf("%v: %v", txLabel, err)
 			f.LastActionError = err
+
 			return fsm.OnError
 		}
 	} else {
@@ -148,10 +155,12 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	select {
 	case err = <-errSpendChan:
 		log.Debugf("error while sweeping expired deposit: %v", err)
+
 		return fsm.OnError
 
 	case confirmedTx := <-spendChan:
 		f.deposit.ExpirySweepTxid = confirmedTx.Tx.TxHash()
+
 		return OnExpirySwept
 
 	case <-ctx.Done():

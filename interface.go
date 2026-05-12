@@ -240,7 +240,8 @@ type LoopOutRfq struct {
 	// to pay for the swap invoice.
 	MaxSwapAssetAmt uint64
 
-	// SwapAssetRate is the rate at which the asset is exchanged for bitcoin.
+	// SwapAssetRate is the rate at which the asset is exchanged for
+	// bitcoin.
 	SwapAssetRate *rfqmath.BigIntFixedPoint
 
 	// AssetName is the human readable name of the asset.

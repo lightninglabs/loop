@@ -42,7 +42,12 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 	d1, d2 := &deposit.Deposit{
 		ID: newID(),
 		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Hash: chainhash.Hash{
+				0x1a,
+				0x2b,
+				0x3c,
+				0x4d,
+			},
 			Index: 0,
 		},
 		Value: btcutil.Amount(100_000),
@@ -53,7 +58,12 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 		&deposit.Deposit{
 			ID: newID(),
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4e},
+				Hash: chainhash.Hash{
+					0x2a,
+					0x2b,
+					0x3c,
+					0x4e,
+				},
 				Index: 1,
 			},
 			Value: btcutil.Amount(200_000),
@@ -78,12 +88,20 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 	require.NoError(t, err)
 
 	swap := StaticAddressLoopIn{
-		SwapHash:                lntypes.Hash{0x1, 0x2, 0x3, 0x4},
+		SwapHash: lntypes.Hash{
+			0x1,
+			0x2,
+			0x3,
+			0x4,
+		},
 		DepositOutpoints:        outpoints,
 		ClientPubkey:            clientPubKey,
 		ServerPubkey:            serverPubKey,
 		HtlcTimeoutSweepAddress: addr,
-		Deposits:                []*deposit.Deposit{d1, d2},
+		Deposits: []*deposit.Deposit{
+			d1,
+			d2,
+		},
 	}
 	swap.SetState(Succeeded)
 

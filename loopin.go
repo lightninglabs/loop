@@ -91,8 +91,8 @@ type loopInInitResult struct {
 
 // newLoopInSwap initiates a new loop in swap.
 func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
-	currentHeight int32, request *LoopInRequest) (*loopInInitResult,
-	error) {
+	currentHeight int32,
+	request *LoopInRequest) (*loopInInitResult, error) {
 
 	var err error
 
@@ -142,8 +142,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	swapFee := quote.SwapFee
 
 	if swapFee > request.MaxSwapFee {
-		log.Warnf("Swap fee %v exceeding maximum of %v",
-			swapFee, request.MaxSwapFee)
+		log.Warnf("Swap fee %v exceeding maximum of %v", swapFee,
+			request.MaxSwapFee)
 
 		return nil, ErrSwapFeeTooHigh
 	}
@@ -230,6 +230,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	probeResult, err := awaitProbe(probeWaitCtx, *cfg.lnd, probeHash)
 	if err != nil {
 		probeWaitCancel()
+
 		return nil, fmt.Errorf("probe failed: %v", err)
 	}
 
@@ -237,9 +238,10 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// the server success key and the expiry height of the on-chain swap
 	// htlc.
 	log.Infof("Initiating swap request at height %v", currentHeight)
-	swapResp, err := cfg.server.NewLoopInSwap(globalCtx, swapHash,
-		request.Amount, senderKey, senderInternalPubKey, swapInvoice,
-		probeInvoice, request.LastHop, request.Initiator,
+	swapResp, err := cfg.server.NewLoopInSwap(
+		globalCtx, swapHash, request.Amount, senderKey,
+		senderInternalPubKey, swapInvoice, probeInvoice,
+		request.LastHop, request.Initiator,
 	)
 
 	probeWaitCancel()
@@ -297,8 +299,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	swapKit := newSwapKit(
-		swapHash, swap.TypeIn,
-		cfg, &contract.SwapContract,
+		swapHash, swap.TypeIn, cfg, &contract.SwapContract,
 	)
 
 	swapKit.lastUpdateTime = initiationTime
@@ -365,15 +366,17 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 						probeHash,
 					)
 					if err != nil {
-						log.Errorf("Cancel probe "+
-							"invoice: %v", err)
+						log.Errorf(
+							"Cancel probe "+
+								"invoice: %v",
+							err)
 					}
 
 					return
 
 				case invpkg.ContractCanceled:
-					probeResult <- errors.New(
-						"probe invoice expired")
+					probeResult <- errors.New("probe " +
+						"invoice expired")
 
 					return
 
@@ -387,10 +390,12 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 
 			case err := <-errChan:
 				probeResult <- err
+
 				return
 
 			case <-ctx.Done():
 				probeResult <- ctx.Err()
+
 				return
 			}
 		}
@@ -409,8 +414,7 @@ func resumeLoopInSwap(_ context.Context, cfg *swapConfig,
 	log.Infof("Resuming loop in swap %v", hash)
 
 	swapKit := newSwapKit(
-		hash, swap.TypeIn, cfg,
-		&pend.Contract.SwapContract,
+		hash, swap.TypeIn, cfg, &pend.Contract.SwapContract,
 	)
 
 	swap := &loopInSwap{
@@ -515,8 +519,8 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 
 // execute starts/resumes the swap. It is a thin wrapper around executeSwap to
 // conveniently handle the error case.
-func (s *loopInSwap) execute(mainCtx context.Context,
-	cfg *executeConfig, height int32) error {
+func (s *loopInSwap) execute(mainCtx context.Context, cfg *executeConfig,
+	height int32) error {
 
 	defer s.wg.Wait()
 
@@ -577,13 +581,9 @@ func (s *loopInSwap) execute(mainCtx context.Context,
 		return err
 	}
 
-	s.log.Infof("Loop in swap completed: %v "+
-		"(final cost: server %v, onchain %v, offchain %v)",
-		s.state,
-		s.cost.Server,
-		s.cost.Onchain,
-		s.cost.Offchain,
-	)
+	s.log.Infof("Loop in swap completed: %v (final cost: server %v, "+
+		"onchain %v, offchain %v)", s.state, s.cost.Server,
+		s.cost.Onchain, s.cost.Offchain)
 
 	return nil
 }
@@ -776,6 +776,7 @@ func (s *loopInSwap) publishOnChainHtlc(ctx context.Context) (bool, error) {
 	// Verify whether it still makes sense to publish the htlc.
 	if blocksRemaining < MinLoopInPublishDelta {
 		s.setState(loopdb.StateFailTimeout)
+
 		return false, s.persistAndAnnounceState(ctx)
 	}
 
@@ -1051,6 +1052,7 @@ func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
 	err = s.server.PushKey(ctx, s.ProtocolVersion, s.hash, internalPrivKey)
 	if err != nil {
 		s.log.Warnf("Internal HTLC key reveal failed: %v", err)
+
 		return false
 	}
 
@@ -1149,7 +1151,9 @@ func (s *loopInSwap) publishTimeoutTx(ctx context.Context,
 
 	err = s.lnd.WalletKit.PublishTransaction(
 		ctx, timeoutTx,
-		labels.LoopInSweepTimeout(swap.ShortHash(&s.hash)),
+		labels.LoopInSweepTimeout(
+			swap.ShortHash(&s.hash),
+		),
 	)
 	if err != nil {
 		s.log.Warnf("publish timeout: %v", err)
@@ -1177,9 +1181,7 @@ func (s *loopInSwap) setStateAbandoned(ctx context.Context) error {
 	// If the invoice is already settled or canceled, this is a nop.
 	_ = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
 
-	return fmt.Errorf("swap hash "+
-		"abandoned by client, "+
-		"swap ID: %v, %v",
+	return fmt.Errorf("swap hash abandoned by client, swap ID: %v, %v",
 		s.hash, err)
 }
 

@@ -131,8 +131,8 @@ func (r *ThresholdRule) swapAmount(channel *balances,
 //     liquidity. We aim for this liquidity to reach the threshold amount set.
 //   - reserve: this is the side of the channel(s) that we will move liquidity
 //     away from. This may not drop below a certain reserve threshold.
-func calculateSwapAmount(targetAmount, reserveAmount,
-	capacity btcutil.Amount, targetThresholdPercentage,
+func calculateSwapAmount(targetAmount, reserveAmount, capacity btcutil.Amount,
+	targetThresholdPercentage,
 	reserveThresholdPercentage uint64) btcutil.Amount {
 
 	targetGoal := btcutil.Amount(

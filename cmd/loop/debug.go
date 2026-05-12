@@ -42,7 +42,9 @@ func forceAutoloop(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient, func(), error) {
+func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient,
+	func(), error) {
+
 	rpcServer := cmd.String("rpcserver")
 	tlsCertPath, macaroonPath, err := extractPathArgs(cmd)
 	if err != nil {
@@ -52,8 +54,11 @@ func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient,
 	if err != nil {
 		return nil, nil, err
 	}
-	cleanup := func() { conn.Close() }
+	cleanup := func() {
+		conn.Close()
+	}
 
 	debugClient := looprpc.NewDebugClient(conn)
+
 	return debugClient, cleanup, nil
 }

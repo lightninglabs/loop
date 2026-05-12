@@ -16,8 +16,7 @@ type Store interface {
 	CreateStaticAddress(ctx context.Context, addrParams *Parameters) error
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
-		error)
+	GetAllStaticAddresses(ctx context.Context) ([]*Parameters, error)
 }
 
 // Parameters holds all the necessary information for the 2-of-2 multisig

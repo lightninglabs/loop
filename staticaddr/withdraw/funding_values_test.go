@@ -151,8 +151,12 @@ func TestCalculateFundingTxValues(t *testing.T) {
 		{
 			name: "change >= input triggers efficiency error",
 			deposits: []*deposit.Deposit{
-				{Value: 40_000},
-				{Value: 60_000},
+				{
+					Value: 40_000,
+				},
+				{
+					Value: 60_000,
+				},
 			},
 			localAmount:    40_000,
 			satPerVbyte:    1,
@@ -164,7 +168,9 @@ func TestCalculateFundingTxValues(t *testing.T) {
 		{
 			name: "channel funding below minimum",
 			deposits: []*deposit.Deposit{
-				{Value: 30_000},
+				{
+					Value: 30_000,
+				},
 			},
 			localAmount:    20_000 - 1,
 			satPerVbyte:    1,
@@ -204,8 +210,12 @@ func TestCalculateWithdrawalTxValuesCommitmentTypeParity(t *testing.T) {
 
 	feeRate := chainfee.SatPerKVByte(1000).FeePerKWeight()
 	deposits := []*deposit.Deposit{
-		{Value: 500_000},
-		{Value: 300_000},
+		{
+			Value: 500_000,
+		},
+		{
+			Value: 300_000,
+		},
 	}
 
 	p2wshAddr, err := btcutil.NewAddressWitnessScriptHash(

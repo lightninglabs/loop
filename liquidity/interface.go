@@ -35,8 +35,7 @@ type FeeLimit interface {
 
 	// loopInLimits checks whether the quote provided is within our fee
 	// limits for the swap amount.
-	loopInLimits(amount btcutil.Amount,
-		quote *loop.LoopInQuote) error
+	loopInLimits(amount btcutil.Amount, quote *loop.LoopInQuote) error
 }
 
 // swapBuilder is an interface used to build our different swap types.
@@ -62,8 +61,8 @@ type swapBuilder interface {
 	// is just for a dry run.
 	buildSwap(ctx context.Context, peer route.Vertex,
 		channels []lnwire.ShortChannelID, amount btcutil.Amount,
-		params Parameters, swapOpts ...buildSwapOption) (swapSuggestion,
-		error)
+		params Parameters,
+		swapOpts ...buildSwapOption) (swapSuggestion, error)
 }
 
 // swapSuggestion is an interface implemented by suggested swaps for our

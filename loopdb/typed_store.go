@@ -38,8 +38,8 @@ func NewTypedStore[Q any](db BatchedQuerier) *TypedStore[Q] {
 // ExecTx will execute the passed txBody, operating upon generic parameter Q
 // (usually a storage interface) in a single transaction. The set of TxOptions
 // are passed in to allow the caller to specify if a transaction is read-only.
-func (s *TypedStore[Q]) ExecTx(ctx context.Context,
-	txOptions TxOptions, txBody func(Q) error) error {
+func (s *TypedStore[Q]) ExecTx(ctx context.Context, txOptions TxOptions,
+	txBody func(Q) error) error {
 
 	return s.BatchedQuerier.ExecTx(ctx, txOptions,
 		func(q *sqlc.Queries) error {

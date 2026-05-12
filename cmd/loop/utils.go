@@ -16,8 +16,10 @@ func showCommandHelp(ctx context.Context, cmd *cli.Command) error {
 	lineage := cmd.Lineage()
 	if len(lineage) > 1 {
 		parent := lineage[1]
+
 		return cli.ShowCommandHelp(ctx, parent, cmd.Name)
 	}
+
 	return cli.ShowCommandHelp(ctx, cmd, cmd.Name)
 }
 
@@ -30,9 +32,8 @@ func validateRouteHints(cmd *cli.Command) ([]*swapserverrpc.RouteHint, error) {
 
 	if cmd.IsSet(routeHintsFlag.Name) {
 		if cmd.IsSet(privateFlag.Name) {
-			return nil, fmt.Errorf(
-				"private and route_hints both set",
-			)
+			return nil, fmt.Errorf("private and route_hints both " +
+				"set")
 		}
 
 		jsonHints := cmd.StringSlice(routeHintsFlag.Name)

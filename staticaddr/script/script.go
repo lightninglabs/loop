@@ -32,7 +32,8 @@ const (
 	//	- <witness_script>: 39 bytes
 	//	- control_block_varint_len: 1 byte (control block length)
 	//	- <control_block>: 33 bytes
-	TaprootExpiryWitnessSize = 1 + 1 + 64 + 1 + TaprootExpiryScriptSize + 1 + 33
+	TaprootExpiryWitnessSize = 1 + 1 + 64 + 1 + TaprootExpiryScriptSize +
+		1 + 33
 )
 
 // StaticAddress encapsulates the static address script.
@@ -113,8 +114,8 @@ func (s *StaticAddress) StaticAddressScript() ([]byte, error) {
 // GenTimeoutPathScript constructs a csv timeout script for the client.
 //
 //	<clientKey> OP_CHECKSIGVERIFY <csvExpiry> OP_CHECKSEQUENCEVERIFY
-func GenTimeoutPathScript(clientKey *btcec.PublicKey, csvExpiry int64) ([]byte,
-	error) {
+func GenTimeoutPathScript(clientKey *btcec.PublicKey,
+	csvExpiry int64) ([]byte, error) {
 
 	builder := txscript.NewScriptBuilder()
 

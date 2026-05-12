@@ -51,11 +51,12 @@ func printMarkdown(_ context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// filterNestedHelpCommands clones cmd, drops nested help commands, and normalises
-// flag defaults so generated documentation avoids absolute paths.
+// filterNestedHelpCommands clones cmd, drops nested help commands, and
+// normalises flag defaults so generated documentation avoids absolute paths.
 func filterNestedHelpCommands(cmd *cli.Command) *cli.Command {
 	cloned := cloneCommand(cmd, 0)
 	overrideDocFlags(cloned)
+
 	return cloned
 }
 
@@ -86,6 +87,7 @@ func cloneCommand(cmd *cli.Command, depth int) *cli.Command {
 	}
 
 	cloned.Commands = filtered
+
 	return &cloned
 }
 

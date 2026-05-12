@@ -50,6 +50,7 @@ type TapdConfig struct {
 // assets daemon.
 func DefaultTapdConfig() *TapdConfig {
 	defaultConf := tapcfg.DefaultConfig()
+
 	return &TapdConfig{
 		Activate:     false,
 		Host:         "localhost:10029",
@@ -83,14 +84,18 @@ func NewTapdClient(config *TapdConfig) (*TapdClient, error) {
 
 	// Create the TapdClient.
 	client := &TapdClient{
-		assetNameCache:             make(map[string]string),
-		cc:                         conn,
-		cfg:                        config,
-		TaprootAssetsClient:        taprpc.NewTaprootAssetsClient(conn),
-		TaprootAssetChannelsClient: tapchannelrpc.NewTaprootAssetChannelsClient(conn),
-		PriceOracleClient:          priceoraclerpc.NewPriceOracleClient(conn),
-		RfqClient:                  rfqrpc.NewRfqClient(conn),
-		UniverseClient:             universerpc.NewUniverseClient(conn),
+		assetNameCache:      make(map[string]string),
+		cc:                  conn,
+		cfg:                 config,
+		TaprootAssetsClient: taprpc.NewTaprootAssetsClient(conn),
+		TaprootAssetChannelsClient: tapchannelrpc.NewTaprootAssetChannelsClient(
+			conn,
+		),
+		PriceOracleClient: priceoraclerpc.NewPriceOracleClient(
+			conn,
+		),
+		RfqClient:      rfqrpc.NewRfqClient(conn),
+		UniverseClient: universerpc.NewUniverseClient(conn),
 	}
 
 	return client, nil
@@ -104,9 +109,8 @@ func (c *TapdClient) Close() {
 // GetRfqForAsset returns a RFQ for the given asset with the given amount and
 // to the given peer.
 func (c *TapdClient) GetRfqForAsset(ctx context.Context,
-	satAmount btcutil.Amount, assetId, peerPubkey []byte,
-	expiry int64, feeLimitMultiplier float64) (
-	*rfqrpc.PeerAcceptedSellQuote, error) {
+	satAmount btcutil.Amount, assetId, peerPubkey []byte, expiry int64,
+	feeLimitMultiplier float64) (*rfqrpc.PeerAcceptedSellQuote, error) {
 
 	// paymentMaxAmt is the maximum amount we are willing to pay for the
 	// payment.
@@ -149,8 +153,8 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 }
 
 // GetAssetName returns the human-readable name of the asset.
-func (c *TapdClient) GetAssetName(ctx context.Context,
-	assetId []byte) (string, error) {
+func (c *TapdClient) GetAssetName(ctx context.Context, assetId []byte) (string,
+	error) {
 
 	c.assetNameMutex.Lock()
 	defer c.assetNameMutex.Unlock()
@@ -220,13 +224,15 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 	}
 
 	if rfq.GetInvalidQuote() != nil {
-		return 0, fmt.Errorf("peer %v sent an invalid quote response %v for "+
-			"asset %v", peerPubkey, rfq.GetInvalidQuote(), assetID)
+		return 0, fmt.Errorf("peer %v sent an invalid quote response "+
+			"%v for asset %v", peerPubkey, rfq.GetInvalidQuote(),
+			assetID)
 	}
 
 	if rfq.GetRejectedQuote() != nil {
 		return 0, fmt.Errorf("peer %v rejected the quote request for "+
-			"asset %v, %v", peerPubkey, assetID, rfq.GetRejectedQuote())
+			"asset %v, %v", peerPubkey, assetID,
+			rfq.GetRejectedQuote())
 	}
 
 	acceptedRes := rfq.GetAcceptedQuote()
@@ -240,8 +246,8 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 
 // getSatsFromAssetAmt returns the amount in satoshis for the given asset amount
 // and asset rate.
-func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
-	btcutil.Amount, error) {
+func getSatsFromAssetAmt(assetAmt uint64,
+	assetRate *rfqrpc.FixedPoint) (btcutil.Amount, error) {
 
 	rateFP, err := rpcutils.UnmarshalRfqFixedPoint(assetRate)
 	if err != nil {
@@ -257,8 +263,8 @@ func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 
 // getPaymentMaxAmount returns the milisat amount we are willing to pay for the
 // payment.
-func getPaymentMaxAmount(satAmount btcutil.Amount, feeLimitMultiplier float64) (
-	lnwire.MilliSatoshi, error) {
+func getPaymentMaxAmount(satAmount btcutil.Amount,
+	feeLimitMultiplier float64) (lnwire.MilliSatoshi, error) {
 
 	if satAmount == 0 {
 		return 0, fmt.Errorf("satAmount cannot be zero")
@@ -273,7 +279,10 @@ func getPaymentMaxAmount(satAmount btcutil.Amount, feeLimitMultiplier float64) (
 	// The resulting maximum amount we're willing to pay is 300k sats.
 	// The response asset amount will be for those 300k sats.
 	return lnrpc.UnmarshallAmt(
-		int64(satAmount.MulF64(feeLimitMultiplier)), 0,
+		int64(
+			satAmount.MulF64(feeLimitMultiplier),
+		),
+		0,
 	)
 }
 

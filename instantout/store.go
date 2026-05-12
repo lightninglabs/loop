@@ -51,8 +51,10 @@ type Querier interface {
 		swapHash []byte) ([]sqlc.InstantoutUpdate, error)
 
 	// GetInstantOutSwaps retrieves all instant out swaps.
-	GetInstantOutSwaps(ctx context.Context) ([]sqlc.GetInstantOutSwapsRow,
-		error)
+	GetInstantOutSwaps(ctx context.Context) (
+		[]sqlc.GetInstantOutSwapsRow,
+		error,
+	)
 }
 
 // InstantOutBaseDB is the interface that contains all the queries generated
@@ -70,8 +72,8 @@ type InstantOutBaseDB interface {
 // based on the stored reservation ids.
 type ReservationStore interface {
 	// GetReservation returns the reservation for the given id.
-	GetReservation(ctx context.Context, id reservation.ID) (
-		*reservation.Reservation, error)
+	GetReservation(ctx context.Context,
+		id reservation.ID) (*reservation.Reservation, error)
 }
 
 type SQLStore struct {
@@ -301,9 +303,11 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 	var finalizedHtlcTx *wire.MsgTx
 	if row.FinalizedHtlcTx != nil {
 		finalizedHtlcTx = &wire.MsgTx{}
-		err := finalizedHtlcTx.Deserialize(bytes.NewReader(
-			row.FinalizedHtlcTx,
-		))
+		err := finalizedHtlcTx.Deserialize(
+			bytes.NewReader(
+				row.FinalizedHtlcTx,
+			),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -312,9 +316,11 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 	var finalizedSweepLessSweepTx *wire.MsgTx
 	if row.FinalizedSweeplessSweepTx != nil {
 		finalizedSweepLessSweepTx = &wire.MsgTx{}
-		err := finalizedSweepLessSweepTx.Deserialize(bytes.NewReader(
-			row.FinalizedSweeplessSweepTx,
-		))
+		err := finalizedSweepLessSweepTx.Deserialize(
+			bytes.NewReader(
+				row.FinalizedSweeplessSweepTx,
+			),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -372,17 +378,21 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 			Family: keychain.KeyFamily(row.ClientKeyFamily),
 			Index:  uint32(row.ClientKeyIndex),
 		},
-		clientPubkey:              clientKey,
-		serverPubkey:              serverKey,
-		swapInvoice:               row.SwapInvoice,
-		htlcFeeRate:               chainfee.SatPerKWeight(row.HtlcFeeRate),
+		clientPubkey: clientKey,
+		serverPubkey: serverKey,
+		swapInvoice:  row.SwapInvoice,
+		htlcFeeRate: chainfee.SatPerKWeight(
+			row.HtlcFeeRate,
+		),
 		sweepAddress:              sweepAddress,
 		finalizedHtlcTx:           finalizedHtlcTx,
 		SweepTxHash:               sweepTxHash,
 		FinalizedSweeplessSweepTx: finalizedSweepLessSweepTx,
-		sweepConfirmationHeight: uint32(deserializeNullInt32(
-			row.SweepConfirmationHeight,
-		)),
+		sweepConfirmationHeight: uint32(
+			deserializeNullInt32(
+				row.SweepConfirmationHeight,
+			),
+		),
 	}
 
 	if len(updates) > 0 {

@@ -26,7 +26,10 @@ import (
 )
 
 var (
-	defaultServerPubkeyBytes, _ = hex.DecodeString("021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d")
+	defaultServerPubkeyBytes, _ = hex.DecodeString(
+		"021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db" +
+			"0747d0d",
+	)
 
 	defaultServerPubkey, _ = btcec.ParsePubKey(defaultServerPubkeyBytes)
 
@@ -50,7 +53,8 @@ func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(ctx context.Context,
+func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(
+	ctx context.Context,
 	in *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
 	opts ...grpc.CallOption) (
 	*swapserverrpc.PushStaticAddressSweeplessSigsResponse, error) {
@@ -73,9 +77,8 @@ func (m *mockStaticAddressClient) PushStaticAddressHtlcSigs(ctx context.Context,
 }
 
 func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
-	in *swapserverrpc.ServerWithdrawRequest,
-	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,
-	error) {
+	in *swapserverrpc.ServerWithdrawRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.ServerWithdrawResponse, error) {
 
 	args := m.Called(ctx, in, opts)
 
@@ -83,8 +86,8 @@ func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(ctx context.Context,
-	in *swapserverrpc.ServerPsbtWithdrawRequest,
+func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(
+	ctx context.Context, in *swapserverrpc.ServerPsbtWithdrawRequest,
 	opts ...grpc.CallOption) (*swapserverrpc.ServerPsbtWithdrawResponse,
 	error) {
 
@@ -126,8 +129,8 @@ func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
 		args.Error(1)
 }
 
-func (m *mockAddressManager) ListUnspent(ctx context.Context,
-	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
+func (m *mockAddressManager) ListUnspent(ctx context.Context, minConfs,
+	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
 	args := m.Called(ctx, minConfs, maxConfs)
 
@@ -135,9 +138,9 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
-	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
-	error) {
+func (m *mockAddressManager) GetTaprootAddress(
+	clientPubkey, serverPubkey *btcec.PublicKey, expiry int64) (
+	*btcutil.AddressTaproot, error) {
 
 	args := m.Called(clientPubkey, serverPubkey, expiry)
 
@@ -151,11 +154,13 @@ type mockStore struct {
 
 func (s *mockStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 	args := s.Called(ctx, deposit)
+
 	return args.Error(0)
 }
 
 func (s *mockStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 	args := s.Called(ctx, deposit)
+
 	return args.Error(0)
 }
 
@@ -163,18 +168,21 @@ func (s *mockStore) GetDeposit(ctx context.Context, depositID ID) (*Deposit,
 	error) {
 
 	args := s.Called(ctx, depositID)
+
 	return args.Get(0).(*Deposit), args.Error(1)
 }
 
-func (s *mockStore) DepositForOutpoint(ctx context.Context,
-	outpoint string) (*Deposit, error) {
+func (s *mockStore) DepositForOutpoint(ctx context.Context, outpoint string) (
+	*Deposit, error) {
 
 	args := s.Called(ctx, outpoint)
+
 	return args.Get(0).(*Deposit), args.Error(1)
 }
 
 func (s *mockStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	args := s.Called(ctx)
+
 	return args.Get(0).([]*Deposit), args.Error(1)
 }
 
@@ -182,9 +190,8 @@ type MockChainNotifier struct {
 	mock.Mock
 }
 
-func (m *MockChainNotifier) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	chainrpc.ChainNotifierClient) {
+func (m *MockChainNotifier) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, chainrpc.ChainNotifierClient) {
 
 	return ctx, 0, nil
 }
@@ -195,6 +202,7 @@ func (m *MockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	chan error, error) {
 
 	args := m.Called(ctx, txid, pkScript, numConfs, heightHint)
+
 	return args.Get(0).(chan *chainntnfs.TxConfirmation),
 		args.Get(1).(chan error), args.Error(2)
 }
@@ -203,6 +211,7 @@ func (m *MockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 	chan int32, chan error, error) {
 
 	args := m.Called(ctx)
+
 	return args.Get(0).(chan int32), args.Get(1).(chan error), args.Error(2)
 }
 
@@ -212,6 +221,7 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	chan error, error) {
 
 	args := m.Called(ctx, pkScript, heightHint)
+
 	return args.Get(0).(chan *chainntnfs.SpendDetail),
 		args.Get(1).(chan error), args.Error(2)
 }
@@ -265,7 +275,6 @@ func TestManager(t *testing.T) {
 	// Ensure that the deposit state machine signed the expiry tx.
 	select {
 	case <-testContext.mockLnd.SignOutputRawChannel:
-
 	case <-time.After(defaultTimeout):
 		t.Fatal("did not receive sign request")
 	}
@@ -274,7 +283,6 @@ func TestManager(t *testing.T) {
 	var expiryTx *wire.MsgTx
 	select {
 	case expiryTx = <-testContext.mockLnd.TxPublishChannel:
-
 	case <-time.After(defaultTimeout):
 		t.Fatal("did not receive published expiry tx")
 	}
@@ -346,12 +354,16 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	require.NoError(t, err)
 	storedDeposits := []*Deposit{
 		{
-			ID:                   ID,
-			state:                Deposited,
-			OutPoint:             utxo.OutPoint,
-			Value:                utxo.Value,
-			ConfirmationHeight:   3,
-			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+			ID:                 ID,
+			state:              Deposited,
+			OutPoint:           utxo.OutPoint,
+			Value:              utxo.Value,
+			ConfirmationHeight: 3,
+			TimeOutSweepPkScript: []byte{
+				0x42,
+				0x21,
+				0x69,
+			},
 		},
 	}
 

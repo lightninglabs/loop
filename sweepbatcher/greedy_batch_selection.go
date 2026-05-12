@@ -41,8 +41,8 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 		sweeps,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to estimate tx weight for "+
-			"sweep %x: %w", swap[:6], err)
+		return fmt.Errorf("failed to estimate tx weight for sweep "+
+			"%x: %w", swap[:6], err)
 	}
 
 	// Collect weight and fee rate info about existing batches.
@@ -78,6 +78,7 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 		// If the best option is to start a new batch, do it.
 		if batchId == newBatchSignal {
 			fast := false
+
 			return b.spinUpNewBatch(ctx, sweeps, fast)
 		}
 
@@ -93,16 +94,18 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 		accepted, err := bestBatch.addSweeps(ctx, sweeps)
 		if err != nil {
 			return fmt.Errorf("batch selection algorithm returned "+
-				"batch id %d for sweep %x, but adding failed: "+
-				"%w", batchId, swap[:6], err)
+				"batch id %d for sweep %x, but adding "+
+				"failed: %w", batchId, swap[:6], err)
 		}
 		if accepted {
 			return nil
 		}
 
-		debugf("Batch selection algorithm returned batch id %d "+
-			"for sweep %x, but acceptance failed.", batchId,
-			swap[:6])
+		debugf(
+			"Batch selection algorithm returned batch id %d for "+
+				"sweep %x, but acceptance failed.", batchId,
+			swap[:6],
+		)
 	}
 
 	return fmt.Errorf("no batch accepted sweep group %x", swap[:6])
@@ -110,8 +113,8 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 
 // estimateSweepFeeIncrement returns fee details for adding the sweeps to
 // a batch and for creating new batch with these sweeps only.
-func estimateSweepFeeIncrement(
-	sweeps []*sweep) (feeDetails, feeDetails, error) {
+func estimateSweepFeeIncrement(sweeps []*sweep) (feeDetails, feeDetails,
+	error) {
 
 	if len(sweeps) == 0 {
 		return feeDetails{}, feeDetails{}, fmt.Errorf("estimating an " +
@@ -192,8 +195,8 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 	var destAddr btcutil.Address
 	if theSweep.isExternalAddr {
 		if theSweep.destAddr == nil {
-			return feeDetails{}, errors.New("isExternalAddr=true," +
-				" but destAddr is nil")
+			return feeDetails{}, errors.New(
+				"isExternalAddr=true, but destAddr is nil")
 		}
 		destAddr = theSweep.destAddr
 	} else {
@@ -234,8 +237,7 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 			err = sweep.htlcSuccessEstimator(&weight)
 			if err != nil {
 				return feeDetails{}, fmt.Errorf(
-					"htlcSuccessEstimator failed: %w", err,
-				)
+					"htlcSuccessEstimator failed: %w", err)
 			}
 		} else {
 			weight.AddTaprootKeySpendInput(
@@ -299,8 +301,8 @@ func (e1 feeDetails) combine(e2 feeDetails) feeDetails {
 // Each fee details has also IsExternalAddr flag. There is a rule that sweeps
 // having flag IsExternalAddr must go in individual batches. Cooperative
 // spending may only be available for some sweeps supporting it, not for all.
-func selectBatches(batches []feeDetails,
-	added, newBatch feeDetails) ([]int32, error) {
+func selectBatches(batches []feeDetails, added,
+	newBatch feeDetails) ([]int32, error) {
 
 	// If the sweep has IsExternalAddr flag, the sweep can't be added to
 	// a batch, so create new batch for it.

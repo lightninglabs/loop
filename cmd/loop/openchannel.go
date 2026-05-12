@@ -204,6 +204,7 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	// Show command help if no arguments provided
 	if cmd.NArg() == 0 && cmd.NumFlags() == 0 {
 		_ = cli.ShowCommandHelp(ctx, cmd, "openchannel")
+
 		return nil
 	}
 
@@ -224,26 +225,31 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	case "sat_per_byte":
 		feeRateSatPerByte := cmd.Int64(feeRateFlag)
 		if feeRateSatPerByte < 0 {
-			return fmt.Errorf("%v must be non-negative", feeRateFlag)
+			return fmt.Errorf("%v must be non-negative",
+				feeRateFlag)
 		}
 		feeRateSatPerVbyte = uint64(feeRateSatPerByte)
 	}
 
 	minConfs := defaultUtxoMinConf
 	req := &lnrpc.OpenChannelRequest{
-		SatPerVbyte:                feeRateSatPerVbyte,
-		FundMax:                    cmd.Bool("fundmax"),
-		MinHtlcMsat:                cmd.Int64("min_htlc_msat"),
-		RemoteCsvDelay:             uint32(cmd.Uint64("remote_csv_delay")),
-		MinConfs:                   int32(minConfs),
-		SpendUnconfirmed:           minConfs == 0,
-		CloseAddress:               cmd.String("close_address"),
-		RemoteMaxValueInFlightMsat: cmd.Uint64("remote_max_value_in_flight_msat"),
-		MaxLocalCsv:                uint32(cmd.Uint64("max_local_csv")),
-		ZeroConf:                   cmd.Bool("zero_conf"),
-		ScidAlias:                  cmd.Bool("scid_alias"),
-		RemoteChanReserveSat:       cmd.Uint64("remote_reserve_sats"),
-		Memo:                       cmd.String("memo"),
+		SatPerVbyte: feeRateSatPerVbyte,
+		FundMax:     cmd.Bool("fundmax"),
+		MinHtlcMsat: cmd.Int64("min_htlc_msat"),
+		RemoteCsvDelay: uint32(
+			cmd.Uint64("remote_csv_delay"),
+		),
+		MinConfs:         int32(minConfs),
+		SpendUnconfirmed: minConfs == 0,
+		CloseAddress:     cmd.String("close_address"),
+		RemoteMaxValueInFlightMsat: cmd.Uint64(
+			"remote_max_value_in_flight_msat",
+		),
+		MaxLocalCsv:          uint32(cmd.Uint64("max_local_csv")),
+		ZeroConf:             cmd.Bool("zero_conf"),
+		ScidAlias:            cmd.Bool("scid_alias"),
+		RemoteChanReserveSat: cmd.Uint64("remote_reserve_sats"),
+		Memo:                 cmd.String("memo"),
 	}
 
 	switch {
@@ -322,6 +328,7 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	switch channelType {
 	case "":
 		break
+
 	case channelTypeTweakless:
 		req.CommitmentType = lnrpc.CommitmentType_STATIC_REMOTE_KEY
 
@@ -330,6 +337,7 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 
 	case channelTypeSimpleTaproot:
 		req.CommitmentType = lnrpc.CommitmentType_SIMPLE_TAPROOT
+
 	default:
 		return fmt.Errorf("unsupported channel type %v", channelType)
 	}
@@ -353,9 +361,8 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 // error.
 func checkNotBothSet(cmd *cli.Command, a, b string) (string, error) {
 	if cmd.IsSet(a) && cmd.IsSet(b) {
-		return "", fmt.Errorf(
-			"either %s or %s should be set, but not both", a, b,
-		)
+		return "", fmt.Errorf("either %s or %s should be set, but "+
+			"not both", a, b)
 	}
 
 	if cmd.IsSet(a) {

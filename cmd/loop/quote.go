@@ -123,10 +123,12 @@ func quoteIn(ctx context.Context, cmd *cli.Command) error {
 	// don't want to fail the quote. But the user should still be informed
 	// why the fee shows as -1.
 	if quoteResp.HtlcPublishFeeSat == int64(loop.MinerFeeEstimationFailed) {
-		_, _ = fmt.Fprintf(os.Stderr, "Warning: Miner fee estimation "+
-			"not possible, lnd has insufficient funds to "+
-			"create a sample transaction for selected "+
-			"amount.\n")
+		_, _ = fmt.Fprintf(
+			os.Stderr, "Warning: Miner fee estimation not "+
+				"possible, lnd has insufficient funds to "+
+				"create a sample transaction for selected "+
+				"amount.\n",
+		)
 	}
 
 	// If the user specified static address deposits, we quoted for their
@@ -136,6 +138,7 @@ func quoteIn(ctx context.Context, cmd *cli.Command) error {
 		quoteReq.Amt = int64(depositAmt)
 	}
 	printQuoteInResp(quoteReq, quoteResp, cmd.Bool("verbose"))
+
 	return nil
 }
 
@@ -222,11 +225,12 @@ func quoteOut(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printQuoteOutResp(quoteReq, quoteResp, cmd.Bool("verbose"))
+
 	return nil
 }
 
-func printQuoteInResp(req *looprpc.QuoteRequest,
-	resp *looprpc.InQuoteResponse, verbose bool) {
+func printQuoteInResp(req *looprpc.QuoteRequest, resp *looprpc.InQuoteResponse,
+	verbose bool) {
 
 	totalFee := resp.HtlcPublishFeeSat + resp.SwapFeeSat
 	amt := req.Amt
@@ -235,8 +239,7 @@ func printQuoteInResp(req *looprpc.QuoteRequest,
 	}
 
 	if req.DepositOutpoints != nil {
-		fmt.Printf(satAmtFmt, "Previously deposited on-chain:",
-			amt)
+		fmt.Printf(satAmtFmt, "Previously deposited on-chain:", amt)
 	} else {
 		fmt.Printf(satAmtFmt, "Send on-chain:", amt)
 	}
@@ -255,15 +258,14 @@ func printQuoteInResp(req *looprpc.QuoteRequest,
 
 	case verbose:
 		fmt.Println()
-		fmt.Printf(
-			satAmtFmt, "Estimated on-chain fee:",
-			resp.HtlcPublishFeeSat,
-		)
+		fmt.Printf(satAmtFmt, "Estimated on-chain fee:",
+			resp.HtlcPublishFeeSat)
 		fmt.Printf(satAmtFmt, "Loop service fee:", resp.SwapFeeSat)
 		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
 		fmt.Println()
 		fmt.Printf(blkFmt, "Conf target:", resp.ConfTarget)
 		fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
+
 	default:
 		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
 	}
@@ -280,13 +282,14 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 		)
 		if err != nil {
 			fmt.Printf("Error converting asset amount: %v\n", err)
+
 			return
 		}
 		exchangeRate := float64(assetAmtSwap) / float64(req.Amt)
-		fmt.Printf(assetAmtFmt, "Send off-chain:",
-			assetAmtSwap, resp.AssetRfqInfo.AssetName)
-		fmt.Printf(rateFmt, "Exchange rate:",
-			exchangeRate, resp.AssetRfqInfo.AssetName)
+		fmt.Printf(assetAmtFmt, "Send off-chain:", assetAmtSwap,
+			resp.AssetRfqInfo.AssetName)
+		fmt.Printf(rateFmt, "Exchange rate:", exchangeRate,
+			resp.AssetRfqInfo.AssetName)
 		fmt.Printf(assetAmtFmt, "Limit Send off-chain:",
 			resp.AssetRfqInfo.MaxSwapAssetAmt,
 			resp.AssetRfqInfo.AssetName)
@@ -298,6 +301,7 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 
 	if !verbose {
 		fmt.Printf(satAmtFmt, "Estimated total fee:", totalFee)
+
 		return
 	}
 
@@ -312,11 +316,11 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 		)
 		if err != nil {
 			fmt.Printf("Error converting asset amount: %v\n", err)
+
 			return
 		}
 		fmt.Printf(assetAmtFmt, "No show penalty (prepay):",
-			assetAmtPrepay,
-			resp.AssetRfqInfo.AssetName)
+			assetAmtPrepay, resp.AssetRfqInfo.AssetName)
 		fmt.Printf(assetAmtFmt, "Limit no show penalty (prepay):",
 			resp.AssetRfqInfo.MaxPrepayAssetAmt,
 			resp.AssetRfqInfo.AssetName)
@@ -326,17 +330,13 @@ func printQuoteOutResp(req *looprpc.QuoteRequest,
 	}
 	fmt.Printf(blkFmt, "Conf target:", resp.ConfTarget)
 	fmt.Printf(blkFmt, "CLTV expiry delta:", resp.CltvDelta)
-	fmt.Printf("%-38s %s\n",
-		"Publication deadline:",
-		time.Unix(int64(req.SwapPublicationDeadline), 0),
-	)
+	fmt.Printf("%-38s %s\n", "Publication deadline:",
+		time.Unix(int64(req.SwapPublicationDeadline), 0))
 }
 
 // getAssetAmt returns the asset amount for the given amount in satoshis and
 // the asset rate.
-func getAssetAmt(amt int64, assetRate *looprpc.FixedPoint) (
-	uint64, error) {
-
+func getAssetAmt(amt int64, assetRate *looprpc.FixedPoint) (uint64, error) {
 	askAssetRate, err := unmarshalFixedPoint(assetRate)
 	if err != nil {
 		return 0, err

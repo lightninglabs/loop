@@ -35,8 +35,10 @@ type (
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
-	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
-		error)
+	GetStaticAddressParameters(ctx context.Context) (
+		*address.Parameters,
+		error,
+	)
 
 	// GetStaticAddress returns the deposit address for the given client and
 	// server public keys.
@@ -68,8 +70,10 @@ type DepositManager interface {
 
 	// GetActiveDepositsInState returns all active deposits in the given
 	// state.
-	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,
-		error)
+	GetActiveDepositsInState(stateFilter fsm.StateType) (
+		[]*deposit.Deposit,
+		error,
+	)
 }
 
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
@@ -89,8 +93,8 @@ type StaticAddressLoopInStore interface {
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
 
 	// GetLoopInByHash returns the loop-in swap with the given hash.
-	GetLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
-		*StaticAddressLoopIn, error)
+	GetLoopInByHash(ctx context.Context,
+		swapHash lntypes.Hash) (*StaticAddressLoopIn, error)
 
 	// SwapHashesForDepositIDs returns a map of swap hashes to deposit IDs
 	// for the given deposit IDs.

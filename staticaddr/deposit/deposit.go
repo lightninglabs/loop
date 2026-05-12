@@ -114,5 +114,6 @@ func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
 func GetRandomDepositID() (ID, error) {
 	var id ID
 	_, err := rand.Read(id[:])
+
 	return id, err
 }

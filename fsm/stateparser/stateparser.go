@@ -23,7 +23,9 @@ func main() {
 
 func run() error {
 	out := flag.String("out", "", "outfile")
-	stateMachine := flag.String("fsm", "", "the swap state machine to parse")
+	stateMachine := flag.String(
+		"fsm", "", "the swap state machine to parse",
+	)
 	flag.Parse()
 
 	if filepath.Ext(*out) != ".md" {
@@ -45,7 +47,10 @@ func run() error {
 
 	case "reservation":
 		reservationFSM := &reservation.FSM{}
-		err = writeMermaidFile(fp, reservationFSM.GetServerInitiatedReservationStates())
+		err = writeMermaidFile(
+			fp,
+			reservationFSM.GetServerInitiatedReservationStates(),
+		)
 		if err != nil {
 			return err
 		}
@@ -108,5 +113,6 @@ func sortedKeys(m fsm.States) []string {
 		i++
 	}
 	sort.Strings(keys)
+
 	return keys
 }

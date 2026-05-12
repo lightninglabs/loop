@@ -23,8 +23,11 @@ import (
 )
 
 var (
-	defaultPubkeyBytes, _ = hex.DecodeString("021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d")
-	defaultPubkey, _      = btcec.ParsePubKey(defaultPubkeyBytes)
+	defaultPubkeyBytes, _ = hex.DecodeString(
+		"021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db" +
+			"0747d0d",
+	)
+	defaultPubkey, _ = btcec.ParsePubKey(defaultPubkeyBytes)
 
 	defaultValue = btcutil.Amount(100)
 
@@ -33,11 +36,13 @@ var (
 
 func newValidInitReservationContext() *InitReservationContext {
 	return &InitReservationContext{
-		reservationID: ID{0x01},
-		serverPubkey:  defaultPubkey,
-		value:         defaultValue,
-		expiry:        defaultExpiry,
-		heightHint:    0,
+		reservationID: ID{
+			0x01,
+		},
+		serverPubkey: defaultPubkey,
+		value:        defaultValue,
+		expiry:       defaultExpiry,
+		heightHint:   0,
 	}
 }
 
@@ -51,11 +56,12 @@ type mockReservationClient struct {
 
 func (m *mockReservationClient) ReservationNotificationStream(
 	ctx context.Context, in *swapserverrpc.ReservationNotificationRequest,
-	opts ...grpc.CallOption,
-) (swapserverrpc.ReservationService_ReservationNotificationStreamClient,
+	opts ...grpc.CallOption) (
+	swapserverrpc.ReservationService_ReservationNotificationStreamClient,
 	error) {
 
 	args := m.Called(ctx, in, opts)
+
 	return args.Get(0).(swapserverrpc.ReservationService_ReservationNotificationStreamClient),
 		args.Error(1)
 }
@@ -66,13 +72,14 @@ func (m *mockReservationClient) OpenReservation(ctx context.Context,
 	error) {
 
 	args := m.Called(ctx, in, opts)
+
 	return args.Get(0).(*swapserverrpc.ServerOpenReservationResponse),
 		args.Error(1)
 }
 
 func (m *mockReservationClient) FetchL402(ctx context.Context,
-	in *swapserverrpc.FetchL402Request,
-	opts ...grpc.CallOption) (*swapserverrpc.FetchL402Response, error) {
+	in *swapserverrpc.FetchL402Request, opts ...grpc.CallOption) (
+	*swapserverrpc.FetchL402Response, error) {
 
 	args := m.Called(ctx, in, opts)
 
@@ -90,6 +97,7 @@ func (m *mockStore) CreateReservation(ctx context.Context,
 	reservation *Reservation) error {
 
 	args := m.Called(ctx, reservation)
+
 	return args.Error(0)
 }
 
@@ -163,9 +171,8 @@ type MockChainNotifier struct {
 	mock.Mock
 }
 
-func (m *MockChainNotifier) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	chainrpc.ChainNotifierClient) {
+func (m *MockChainNotifier) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, chainrpc.ChainNotifierClient) {
 
 	return ctx, 0, nil
 }
@@ -176,23 +183,30 @@ func (m *MockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	chan error, error) {
 
 	args := m.Called(ctx, txid, pkScript, numConfs, heightHint)
-	return args.Get(0).(chan *chainntnfs.TxConfirmation), args.Get(1).(chan error), args.Error(2)
+
+	return args.Get(0).(chan *chainntnfs.TxConfirmation), args.Get(1).(chan error), args.Error(
+		2,
+	)
 }
 
 func (m *MockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 	chan int32, chan error, error) {
 
 	args := m.Called(ctx)
+
 	return args.Get(0).(chan int32), args.Get(1).(chan error), args.Error(2)
 }
 
 func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
-	_ ...lndclient.NotifierOption) (
-	chan *chainntnfs.SpendDetail, chan error, error) {
+	_ ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+	chan error, error) {
 
 	args := m.Called(ctx, pkScript, heightHint)
-	return args.Get(0).(chan *chainntnfs.SpendDetail), args.Get(1).(chan error), args.Error(2)
+
+	return args.Get(0).(chan *chainntnfs.SpendDetail), args.Get(1).(chan error), args.Error(
+		2,
+	)
 }
 
 // TestSubscribeToConfirmationAction tests the SubscribeToConfirmationAction of
@@ -261,9 +275,9 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 				mock.Anything, mock.Anything, mock.Anything,
 			).Return(confChan, confErrChan, nil)
 
-			chainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
-				blockChan, blockErrChan, nil,
-			)
+			chainNotifier.
+				On("RegisterBlockEpochNtfn", mock.Anything).
+				Return(blockChan, blockErrChan, nil)
 
 			go func() {
 				// Send the tx confirmation.
@@ -273,7 +287,9 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 							TxIn: []*wire.TxIn{},
 							TxOut: []*wire.TxOut{
 								{
-									Value:    int64(defaultValue),
+									Value: int64(
+										defaultValue,
+									),
 									PkScript: pkScript,
 								},
 							},
@@ -307,7 +323,8 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 			// Assert that the return value is as expected
 			require.Equal(t, tc.expectedEvent, eventType)
 
-			// Assert that the expected functions were called on the mocks
+			// Assert that the expected functions were called on the
+			// mocks
 			chainNotifier.AssertExpectations(t)
 		})
 	}
@@ -357,9 +374,13 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 			)
 
 			// Define the expected return values for your mocks
-			chainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
-				make(chan int32), make(chan error), tc.blockErr,
-			)
+			chainNotifier.
+				On("RegisterBlockEpochNtfn", mock.Anything).
+				Return(
+					make(chan int32),
+					make(chan error),
+					tc.blockErr,
+				)
 
 			chainNotifier.On(
 				"RegisterSpendNtfn", mock.Anything,
@@ -369,7 +390,9 @@ func TestAsyncWaitForExpiredOrSweptAction(t *testing.T) {
 				make(chan error), tc.spendErr,
 			)
 
-			eventType := r.AsyncWaitForExpiredOrSweptAction(ctxb, nil)
+			eventType := r.AsyncWaitForExpiredOrSweptAction(
+				ctxb, nil,
+			)
 			// Assert that the return value is as expected
 			require.Equal(t, tc.expectedEvent, eventType)
 		})

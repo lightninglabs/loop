@@ -41,8 +41,8 @@ func (m *mockDepositManager) AllOutpointsActiveDeposits([]wire.OutPoint,
 	return nil, false
 }
 
-func (m *mockDepositManager) GetActiveDepositsInState(stateFilter fsm.StateType) (
-	[]*deposit.Deposit, error) {
+func (m *mockDepositManager) GetActiveDepositsInState(
+	stateFilter fsm.StateType) ([]*deposit.Deposit, error) {
 
 	if stateFilter != deposit.OpeningChannel {
 		return nil, nil
@@ -106,12 +106,19 @@ func TestRecoverOpeningChannelDepositsMixed(t *testing.T) {
 	spentDeposit := &deposit.Deposit{OutPoint: testOutPoint(2)}
 
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{unspentDeposit, spentDeposit},
+		openingDeposits: []*deposit.Deposit{
+			unspentDeposit,
+			spentDeposit,
+		},
 	}
 	walletKit := &mockWalletKit{
 		utxos: []*lnwallet.Utxo{
-			{OutPoint: unspentDeposit.OutPoint},
-			{OutPoint: testOutPoint(99)},
+			{
+				OutPoint: unspentDeposit.OutPoint,
+			},
+			{
+				OutPoint: testOutPoint(99),
+			},
 		},
 	}
 
@@ -128,13 +135,17 @@ func TestRecoverOpeningChannelDepositsMixed(t *testing.T) {
 	require.Len(t, depositManager.calls, 2)
 
 	require.Equal(t, fsm.OnError, depositManager.calls[0].event)
-	require.Equal(t, deposit.Deposited, depositManager.calls[0].expectedState)
+	require.Equal(
+		t, deposit.Deposited, depositManager.calls[0].expectedState,
+	)
 	require.Equal(
 		t, []wire.OutPoint{unspentDeposit.OutPoint},
 		depositManager.calls[0].outpoints,
 	)
 
-	require.Equal(t, deposit.OnChannelPublished, depositManager.calls[1].event)
+	require.Equal(
+		t, deposit.OnChannelPublished, depositManager.calls[1].event,
+	)
 	require.Equal(
 		t, deposit.ChannelPublished,
 		depositManager.calls[1].expectedState,
@@ -172,7 +183,9 @@ func TestRecoverOpeningChannelDepositsListUnspentError(t *testing.T) {
 
 	depositManager := &mockDepositManager{
 		openingDeposits: []*deposit.Deposit{
-			{OutPoint: testOutPoint(1)},
+			{
+				OutPoint: testOutPoint(1),
+			},
 		},
 	}
 	walletKit := &mockWalletKit{
@@ -197,14 +210,18 @@ func TestRecoverOpeningChannelDepositsTransitionError(t *testing.T) {
 
 	unspentDeposit := &deposit.Deposit{OutPoint: testOutPoint(1)}
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{unspentDeposit},
+		openingDeposits: []*deposit.Deposit{
+			unspentDeposit,
+		},
 		transitionErrs: map[fsm.EventType]error{
 			fsm.OnError: errors.New("transition failed"),
 		},
 	}
 	walletKit := &mockWalletKit{
 		utxos: []*lnwallet.Utxo{
-			{OutPoint: unspentDeposit.OutPoint},
+			{
+				OutPoint: unspentDeposit.OutPoint,
+			},
 		},
 	}
 	manager := &Manager{
@@ -215,7 +232,9 @@ func TestRecoverOpeningChannelDepositsTransitionError(t *testing.T) {
 	}
 
 	err := manager.recoverOpeningChannelDeposits(context.Background())
-	require.ErrorContains(t, err, "unable to recover unspent opening deposits")
+	require.ErrorContains(
+		t, err, "unable to recover unspent opening deposits",
+	)
 	require.Len(t, depositManager.calls, 1)
 }
 
@@ -229,13 +248,20 @@ func TestRecoverAfterReorg(t *testing.T) {
 	d2 := &deposit.Deposit{OutPoint: testOutPoint(2)}
 
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{d1, d2},
+		openingDeposits: []*deposit.Deposit{
+			d1,
+			d2,
+		},
 	}
 	walletKit := &mockWalletKit{
 		utxos: []*lnwallet.Utxo{
 			// After reorg both UTXOs are unspent again.
-			{OutPoint: d1.OutPoint},
-			{OutPoint: d2.OutPoint},
+			{
+				OutPoint: d1.OutPoint,
+			},
+			{
+				OutPoint: d2.OutPoint,
+			},
 		},
 	}
 
@@ -256,8 +282,7 @@ func TestRecoverAfterReorg(t *testing.T) {
 		t, deposit.Deposited, depositManager.calls[0].expectedState,
 	)
 	require.ElementsMatch(
-		t,
-		[]wire.OutPoint{d1.OutPoint, d2.OutPoint},
+		t, []wire.OutPoint{d1.OutPoint, d2.OutPoint},
 		depositManager.calls[0].outpoints,
 	)
 }
@@ -270,12 +295,16 @@ func TestRecoverAfterMempoolEviction(t *testing.T) {
 
 	d := &deposit.Deposit{OutPoint: testOutPoint(1)}
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{d},
+		openingDeposits: []*deposit.Deposit{
+			d,
+		},
 	}
 	walletKit := &mockWalletKit{
 		utxos: []*lnwallet.Utxo{
 			// UTXO reappears after mempool eviction.
-			{OutPoint: d.OutPoint},
+			{
+				OutPoint: d.OutPoint,
+			},
 		},
 	}
 
@@ -307,14 +336,24 @@ func TestRecoverAfterMempoolRejection(t *testing.T) {
 	d3 := &deposit.Deposit{OutPoint: testOutPoint(3)}
 
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{d1, d2, d3},
+		openingDeposits: []*deposit.Deposit{
+			d1,
+			d2,
+			d3,
+		},
 	}
 	walletKit := &mockWalletKit{
 		utxos: []*lnwallet.Utxo{
 			// All UTXOs still unspent since tx was never accepted.
-			{OutPoint: d1.OutPoint},
-			{OutPoint: d2.OutPoint},
-			{OutPoint: d3.OutPoint},
+			{
+				OutPoint: d1.OutPoint,
+			},
+			{
+				OutPoint: d2.OutPoint,
+			},
+			{
+				OutPoint: d3.OutPoint,
+			},
 		},
 	}
 
@@ -345,7 +384,10 @@ func TestRecoverDaemonRestartChannelPublished(t *testing.T) {
 	d2 := &deposit.Deposit{OutPoint: testOutPoint(2)}
 
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{d1, d2},
+		openingDeposits: []*deposit.Deposit{
+			d1,
+			d2,
+		},
 	}
 	walletKit := &mockWalletKit{
 		// No UTXOs returned - all deposit outpoints have been spent.
@@ -363,16 +405,14 @@ func TestRecoverDaemonRestartChannelPublished(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, depositManager.calls, 1)
 	require.Equal(
-		t, deposit.OnChannelPublished,
-		depositManager.calls[0].event,
+		t, deposit.OnChannelPublished, depositManager.calls[0].event,
 	)
 	require.Equal(
 		t, deposit.ChannelPublished,
 		depositManager.calls[0].expectedState,
 	)
 	require.ElementsMatch(
-		t,
-		[]wire.OutPoint{d1.OutPoint, d2.OutPoint},
+		t, []wire.OutPoint{d1.OutPoint, d2.OutPoint},
 		depositManager.calls[0].outpoints,
 	)
 }
@@ -384,7 +424,9 @@ func TestRecoverChannelPublishedTransitionError(t *testing.T) {
 
 	d := &deposit.Deposit{OutPoint: testOutPoint(1)}
 	depositManager := &mockDepositManager{
-		openingDeposits: []*deposit.Deposit{d},
+		openingDeposits: []*deposit.Deposit{
+			d,
+		},
 		transitionErrs: map[fsm.EventType]error{
 			deposit.OnChannelPublished: errors.New(
 				"transition failed",
@@ -404,7 +446,9 @@ func TestRecoverChannelPublishedTransitionError(t *testing.T) {
 	}
 
 	err := manager.recoverOpeningChannelDeposits(context.Background())
-	require.ErrorContains(t, err, "unable to recover spent opening deposits")
+	require.ErrorContains(
+		t, err, "unable to recover spent opening deposits",
+	)
 }
 
 // TestRecoverGetActiveDepositsError verifies that a failure to fetch opening
@@ -423,12 +467,16 @@ func TestRecoverGetActiveDepositsError(t *testing.T) {
 	}
 
 	err := manager.recoverOpeningChannelDeposits(context.Background())
-	require.ErrorContains(t, err, "unable to fetch opening channel deposits")
+	require.ErrorContains(
+		t, err, "unable to fetch opening channel deposits",
+	)
 }
 
 func testOutPoint(b byte) wire.OutPoint {
 	return wire.OutPoint{
-		Hash:  chainhash.Hash{b},
+		Hash: chainhash.Hash{
+			b,
+		},
 		Index: uint32(b),
 	}
 }
@@ -534,6 +582,7 @@ func TestValidateInitialPsbtFlags(t *testing.T) {
 			err := validateInitialPsbtFlags(tc.req)
 			if tc.expectedErrSubstr == "" {
 				require.NoError(t, err)
+
 				return
 			}
 
@@ -587,7 +636,10 @@ func TestResolveCommitmentType(t *testing.T) {
 			)
 			if tc.expectedErrSubstr == "" {
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedType, commitmentType)
+				require.Equal(
+					t, tc.expectedType, commitmentType,
+				)
+
 				return
 			}
 
@@ -614,9 +666,8 @@ type mockLndClient struct {
 	fundingStepCtxErrs []error
 }
 
-func (m *mockLndClient) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	lnrpc.LightningClient) {
+func (m *mockLndClient) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, lnrpc.LightningClient) {
 
 	return ctx, 0, m.rawClient
 }
@@ -642,8 +693,8 @@ type mockRawLnrpcClient struct {
 }
 
 func (m *mockRawLnrpcClient) OpenChannel(_ context.Context,
-	_ *lnrpc.OpenChannelRequest,
-	_ ...grpc.CallOption) (lnrpc.Lightning_OpenChannelClient, error) {
+	_ *lnrpc.OpenChannelRequest, _ ...grpc.CallOption) (
+	lnrpc.Lightning_OpenChannelClient, error) {
 
 	return m.stream, m.openErr
 }
@@ -696,10 +747,9 @@ type mockWithdrawManager struct {
 	err  error
 }
 
-func (m *mockWithdrawManager) CreateFinalizedWithdrawalTx(
-	_ context.Context, _ []*deposit.Deposit,
-	_ btcutil.Address, _ chainfee.SatPerKWeight, _ int64,
-	_ lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
+func (m *mockWithdrawManager) CreateFinalizedWithdrawalTx(_ context.Context,
+	_ []*deposit.Deposit, _ btcutil.Address, _ chainfee.SatPerKWeight,
+	_ int64, _ lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
 	return m.tx, m.psbt, m.err
 }

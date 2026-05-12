@@ -55,7 +55,9 @@ func TestSqlStore(t *testing.T) {
 
 	// Add an outpoint to the reservation and compare it.
 	reservation.Outpoint = &wire.OutPoint{
-		Hash:  chainhash.Hash{0x01},
+		Hash: chainhash.Hash{
+			0x01,
+		},
 		Index: 0,
 	}
 	reservation.State = Confirmed
@@ -93,5 +95,6 @@ func TestSqlStore(t *testing.T) {
 func getRandomReservationID() ID {
 	var id ID
 	rand.Read(id[:]) // nolint: errcheck
+
 	return id
 }

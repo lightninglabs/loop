@@ -151,6 +151,7 @@ func printRespJSON(resp proto.Message) {
 	jsonBytes, err := lnrpc.ProtoJSONMarshalOpts.Marshal(resp)
 	if err != nil {
 		fmt.Println("unable to decode response: ", err)
+
 		return
 	}
 
@@ -192,9 +193,7 @@ func main() {
 
 // getClient establishes a SwapClient RPC connection and returns the client and
 // a cleanup handler.
-func getClient(cmd *cli.Command) (looprpc.SwapClientClient,
-	func(), error) {
-
+func getClient(cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
 	client, _, cleanup, err := getClientWithConn(cmd)
 	if err != nil {
 		return nil, nil, err
@@ -217,9 +216,12 @@ func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	cleanup := func() { conn.Close() }
+	cleanup := func() {
+		conn.Close()
+	}
 
 	loopClient := looprpc.NewSwapClientClient(conn)
+
 	return loopClient, conn, cleanup, nil
 }
 
@@ -301,9 +303,11 @@ func getOutLimits(amt btcutil.Amount,
 	quote *looprpc.OutQuoteResponse) *outLimits {
 
 	maxSwapRoutingFee := getMaxRoutingFee(amt)
-	maxPrepayRoutingFee := getMaxRoutingFee(btcutil.Amount(
-		quote.PrepayAmtSat,
-	))
+	maxPrepayRoutingFee := getMaxRoutingFee(
+		btcutil.Amount(
+			quote.PrepayAmtSat,
+		),
+	)
 	maxPrepayAmt := btcutil.Amount(quote.PrepayAmtSat)
 
 	return &outLimits{
@@ -319,8 +323,8 @@ func getOutLimits(amt btcutil.Amount,
 	}
 }
 
-func displayInDetails(req *looprpc.QuoteRequest,
-	resp *looprpc.InQuoteResponse, verbose bool) error {
+func displayInDetails(req *looprpc.QuoteRequest, resp *looprpc.InQuoteResponse,
+	verbose bool) error {
 
 	if req.ExternalHtlc {
 		fmt.Printf("On-chain fee for external loop in is not " +
@@ -351,9 +355,8 @@ func displayOutDetails(l *outLimits, warning string, req *looprpc.QuoteRequest,
 	if verbose {
 		fmt.Println()
 		fmt.Printf(satAmtFmt, "Max on-chain fee:", l.maxMinerFee)
-		fmt.Printf(satAmtFmt,
-			"Max off-chain swap routing fee:", l.maxSwapRoutingFee,
-		)
+		fmt.Printf(satAmtFmt, "Max off-chain swap routing fee:",
+			l.maxSwapRoutingFee)
 		fmt.Printf(satAmtFmt, "Max off-chain prepay routing fee:",
 			l.maxPrepayRoutingFee)
 	}
@@ -391,15 +394,15 @@ func logSwap(swap *looprpc.SwapStatus) {
 	// If our swap failed, we add our failure reason to the state.
 	swapState := fmt.Sprintf("%v", swap.State)
 	if swap.State == looprpc.SwapState_FAILED {
-		swapState = fmt.Sprintf("%v (%v)", swapState, swap.FailureReason)
+		swapState = fmt.Sprintf("%v (%v)", swapState,
+			swap.FailureReason)
 	}
 
 	if swap.Type == looprpc.SwapType_LOOP_OUT {
 		fmt.Printf("%v %v %v %v - %v",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
 			swap.Type, swapState, btcutil.Amount(swap.Amt),
-			swap.HtlcAddressP2Wsh,
-		)
+			swap.HtlcAddressP2Wsh)
 	} else {
 		fmt.Printf("%v %v %v %v -",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
@@ -419,15 +422,14 @@ func logSwap(swap *looprpc.SwapStatus) {
 		swap.State != looprpc.SwapState_PREIMAGE_REVEALED {
 
 		fmt.Printf(" (cost: server %v, onchain %v, offchain %v)",
-			swap.CostServer, swap.CostOnchain, swap.CostOffchain,
-		)
+			swap.CostServer, swap.CostOnchain, swap.CostOffchain)
 	}
 
 	fmt.Println()
 }
 
-func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
-	error) {
+func getClientConn(address, tlsCertPath,
+	macaroonPath string) (*grpc.ClientConn, error) {
 
 	// We always need to send a macaroon.
 	macOption, err := readMacaroon(macaroonPath)
@@ -450,8 +452,7 @@ func getClientConn(address, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
 
 	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create RPC client: %v",
-			err)
+		return nil, fmt.Errorf("unable to create RPC client: %v", err)
 	}
 
 	return conn, nil
@@ -497,5 +498,6 @@ func readMacaroon(macPath string) (grpc.DialOption, error) {
 		return nil, fmt.Errorf("error creating macaroon credential: %v",
 			err)
 	}
+
 	return grpc.WithPerRPCCredentials(cred), nil
 }

@@ -83,8 +83,8 @@ func (s *StoreMock) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error) {
 // FetchLoopOutSwap returns a swap currently in the store.
 //
 // NOTE: Part of the SwapStore interface.
-func (s *StoreMock) FetchLoopOutSwap(ctx context.Context,
-	hash lntypes.Hash) (*LoopOut, error) {
+func (s *StoreMock) FetchLoopOutSwap(ctx context.Context, hash lntypes.Hash) (
+	*LoopOut, error) {
 
 	s.RLock()
 	defer s.RUnlock()
@@ -135,9 +135,7 @@ func (s *StoreMock) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 }
 
 // FetchLoopInSwaps returns all in swaps currently in the store.
-func (s *StoreMock) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn,
-	error) {
-
+func (s *StoreMock) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -266,14 +264,17 @@ func (s *StoreMock) IsDone() error {
 	select {
 	case <-s.loopOutStoreChan:
 		return errors.New("storeChan not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.loopOutUpdateChan:
 		return errors.New("updateChan not empty")
+
 	default:
 	}
+
 	return nil
 }
 
@@ -296,6 +297,7 @@ func (s *StoreMock) AssertLoopOutState(expectedState SwapState) {
 	select {
 	case state := <-s.loopOutUpdateChan:
 		require.Equal(s.t, expectedState, state.State)
+
 	case <-time.After(test.Timeout):
 		s.t.Fatalf("expected swap state to be stored")
 	}
@@ -314,9 +316,7 @@ func (s *StoreMock) AssertLoopInStored() {
 
 // AssertLoopInState asserts that a specified state transition is persisted to
 // disk.
-func (s *StoreMock) AssertLoopInState(
-	expectedState SwapState) SwapStateData {
-
+func (s *StoreMock) AssertLoopInState(expectedState SwapState) SwapStateData {
 	s.t.Helper()
 
 	state := <-s.loopInUpdateChan
@@ -397,8 +397,8 @@ func (s *StoreMock) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 }
 
 // HasMigration returns true if the migration with the given ID has been done.
-func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (
-	bool, error) {
+func (s *StoreMock) HasMigration(ctx context.Context, migrationID string) (bool,
+	error) {
 
 	s.RLock()
 	defer s.RUnlock()

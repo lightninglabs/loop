@@ -48,15 +48,19 @@ func NewMockLnd() *LndMockServices {
 			ChainParams:   &chaincfg.TestNet3Params,
 			Versioner:     versioner,
 		},
-		SendPaymentChannel:           make(chan PaymentChannelMessage),
-		ConfChannel:                  make(chan *chainntnfs.TxConfirmation),
-		RegisterConfChannel:          make(chan *ConfRegistration),
-		RegisterSpendChannel:         make(chan *SpendRegistration),
-		SpendChannel:                 make(chan *chainntnfs.SpendDetail),
-		TxPublishChannel:             make(chan *wire.MsgTx),
-		SendOutputsChannel:           make(chan wire.MsgTx),
-		SettleInvoiceChannel:         make(chan lntypes.Preimage),
-		SingleInvoiceSubcribeChannel: make(chan *SingleInvoiceSubscription, 1),
+		SendPaymentChannel: make(chan PaymentChannelMessage),
+		ConfChannel: make(
+			chan *chainntnfs.TxConfirmation,
+		),
+		RegisterConfChannel:  make(chan *ConfRegistration),
+		RegisterSpendChannel: make(chan *SpendRegistration),
+		SpendChannel:         make(chan *chainntnfs.SpendDetail),
+		TxPublishChannel:     make(chan *wire.MsgTx),
+		SendOutputsChannel:   make(chan wire.MsgTx),
+		SettleInvoiceChannel: make(chan lntypes.Preimage),
+		SingleInvoiceSubcribeChannel: make(
+			chan *SingleInvoiceSubscription, 1,
+		),
 
 		RouterSendPaymentChannel: make(chan RouterPaymentChannelMessage),
 		TrackPaymentChannel:      make(chan TrackPaymentMessage),
@@ -109,7 +113,8 @@ type TrackPaymentMessage struct {
 	Errors  chan error
 }
 
-// RouterPaymentChannelMessage is the data that passed through RouterSendPaymentChannel.
+// RouterPaymentChannelMessage is the data that passed through
+// RouterSendPaymentChannel.
 type RouterPaymentChannelMessage struct {
 	lndclient.SendPaymentRequest
 
@@ -224,48 +229,56 @@ func (s *LndMockServices) IsDone() error {
 	select {
 	case <-s.SendPaymentChannel:
 		return errors.New("SendPaymentChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.SpendChannel:
 		return errors.New("SpendChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.TxPublishChannel:
 		return errors.New("TxPublishChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.SendOutputsChannel:
 		return errors.New("SendOutputsChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.SettleInvoiceChannel:
 		return errors.New("SettleInvoiceChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.ConfChannel:
 		return errors.New("ConfChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.RegisterConfChannel:
 		return errors.New("RegisterConfChannel not empty")
+
 	default:
 	}
 
 	select {
 	case <-s.RegisterSpendChannel:
 		return errors.New("RegisterSpendChannel not empty")
+
 	default:
 	}
 
@@ -283,7 +296,8 @@ func (s *LndMockServices) SetFeeEstimate(confTarget int32,
 	feeEstimate chainfee.SatPerKWeight) {
 
 	s.LndServices.WalletKit.(*mockWalletKit).setFeeEstimate(
-		confTarget, feeEstimate,
+		confTarget,
+		feeEstimate,
 	)
 }
 

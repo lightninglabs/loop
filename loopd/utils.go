@@ -32,23 +32,28 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 		defaultFee  = l402.DefaultMaxRoutingFeeSats
 	)
 	if cfg.MaxL402Cost != defaultCost && cfg.MaxLSATCost != 0 {
-		return nil, nil, fmt.Errorf("both maxl402cost and maxlsatcost" +
-			" were specified; they are not allowed together")
+		return nil, nil, fmt.Errorf("both maxl402cost and " +
+			"maxlsatcost were specified; they are not allowed " +
+			"together")
 	}
 	if cfg.MaxL402Fee != defaultFee && cfg.MaxLSATFee != 0 {
-		return nil, nil, fmt.Errorf("both maxl402fee and maxlsatfee" +
-			" were specified; they are not allowed together")
+		return nil, nil, fmt.Errorf("both maxl402fee and maxlsatfee " +
+			"were specified; they are not allowed together")
 	}
 
 	clientConfig := &loop.ClientConfig{
-		ServerAddress:                        cfg.Server.Host,
-		ProxyAddress:                         cfg.Server.Proxy,
-		SwapServerNoTLS:                      cfg.Server.NoTLS,
-		TLSPathServer:                        cfg.Server.TLSPath,
-		Lnd:                                  lnd,
-		AssetClient:                          assets,
-		MaxL402Cost:                          btcutil.Amount(cfg.MaxL402Cost),
-		MaxL402Fee:                           btcutil.Amount(cfg.MaxL402Fee),
+		ServerAddress:   cfg.Server.Host,
+		ProxyAddress:    cfg.Server.Proxy,
+		SwapServerNoTLS: cfg.Server.NoTLS,
+		TLSPathServer:   cfg.Server.TLSPath,
+		Lnd:             lnd,
+		AssetClient:     assets,
+		MaxL402Cost: btcutil.Amount(
+			cfg.MaxL402Cost,
+		),
+		MaxL402Fee: btcutil.Amount(
+			cfg.MaxL402Fee,
+		),
 		LoopOutMaxParts:                      cfg.LoopOutMaxParts,
 		SkippedTxns:                          cfg.SkippedTxns,
 		TotalPaymentTimeout:                  cfg.TotalPaymentTimeout,
@@ -58,13 +63,17 @@ func getClient(cfg *Config, swapDb loopdb.SwapStore,
 	}
 
 	if cfg.MaxL402Cost == defaultCost && cfg.MaxLSATCost != 0 {
-		warnf("Option maxlsatcost is deprecated and will be " +
-			"removed. Switch to maxl402cost.")
+		warnf(
+			"Option maxlsatcost is deprecated and will be " +
+				"removed. Switch to maxl402cost.",
+		)
 		clientConfig.MaxL402Cost = btcutil.Amount(cfg.MaxLSATCost)
 	}
 	if cfg.MaxL402Fee == defaultFee && cfg.MaxLSATFee != 0 {
-		warnf("Option maxlsatfee is deprecated and will be " +
-			"removed. Switch to maxl402fee.")
+		warnf(
+			"Option maxlsatfee is deprecated and will be " +
+				"removed. Switch to maxl402fee.",
+		)
 		clientConfig.MaxL402Fee = btcutil.Amount(cfg.MaxLSATFee)
 	}
 
@@ -88,8 +97,10 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	)
 	switch cfg.DatabaseBackend {
 	case DatabaseBackendSqlite:
-		infof("Opening sqlite3 database at: %v",
-			cfg.Sqlite.DatabaseFileName)
+		infof(
+			"Opening sqlite3 database at: %v",
+			cfg.Sqlite.DatabaseFileName,
+		)
 
 		db, err = loopdb.NewSqliteStore(cfg.Sqlite, chainParams)
 		if err != nil {
@@ -98,8 +109,10 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 		baseDb = *db.(*loopdb.SqliteSwapStore).BaseDB
 
 	case DatabaseBackendPostgres:
-		infof("Opening postgres database at: %v",
-			cfg.Postgres.DSN(true))
+		infof(
+			"Opening postgres database at: %v",
+			cfg.Postgres.DSN(true),
+		)
 
 		db, err = loopdb.NewPostgresStore(cfg.Postgres, chainParams)
 		if err != nil {
@@ -124,17 +137,22 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 			initiator string) (*liquidity.Restrictions, error) {
 
 			if swapType == swap.TypeOut {
-				outTerms, err := client.Server.GetLoopOutTerms(ctx, initiator)
+				outTerms, err := client.Server.GetLoopOutTerms(
+					ctx, initiator,
+				)
 				if err != nil {
 					return nil, err
 				}
 
 				return liquidity.NewRestrictions(
-					outTerms.MinSwapAmount, outTerms.MaxSwapAmount,
+					outTerms.MinSwapAmount,
+					outTerms.MaxSwapAmount,
 				), nil
 			}
 
-			inTerms, err := client.Server.GetLoopInTerms(ctx, initiator)
+			inTerms, err := client.Server.GetLoopInTerms(
+				ctx, initiator,
+			)
 			if err != nil {
 				return nil, err
 			}

@@ -66,7 +66,12 @@ func TestToDeposit(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, result)
-				require.Equal(t, fsm.StateType(test.lastUpdate.UpdateState), result.state)
+				require.Equal(
+					t, fsm.StateType(
+						test.lastUpdate.UpdateState,
+					),
+					result.state,
+				)
 			}
 		})
 	}

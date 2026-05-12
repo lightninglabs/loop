@@ -261,8 +261,8 @@ func validateServerAddressParams(
 		return fmt.Errorf("static address CSV expiry must be non-zero")
 
 	case expiry&^wire.SequenceLockTimeMask != 0:
-		return fmt.Errorf("static address expiry does not fit into "+
-			"CSV: %x", expiry)
+		return fmt.Errorf("static address expiry does not fit "+
+			"into CSV: %x", expiry)
 
 	case expiry > maxStaticAddressCSVExpiry:
 		return fmt.Errorf("static address CSV expiry %v exceeds "+
@@ -375,8 +375,8 @@ func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
 }
 
 // ListUnspent returns a list of utxos at the static address.
-func (m *Manager) ListUnspent(ctx context.Context, minConfs,
-	maxConfs int32) ([]*lnwallet.Utxo, error) {
+func (m *Manager) ListUnspent(ctx context.Context, minConfs, maxConfs int32) (
+	[]*lnwallet.Utxo, error) {
 
 	_, utxos, err := m.ListUnspentRaw(ctx, minConfs, maxConfs)
 	if err != nil {

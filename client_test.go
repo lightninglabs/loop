@@ -84,11 +84,13 @@ func TestLoopOutSuccess(t *testing.T) {
 	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
 
 	// Expect client to register for conf.
-	confIntent := ctx.Context.AssertRegisterConf(false, req.HtlcConfirmations)
+	confIntent := ctx.Context.AssertRegisterConf(
+		false, req.HtlcConfirmations,
+	)
 
-	testLoopOutSuccess(ctx, testRequest.Amount, info.SwapHash,
-		signalPrepaymentResult, signalSwapPaymentResult, false,
-		confIntent, swap.HtlcV3,
+	testLoopOutSuccess(
+		ctx, testRequest.Amount, info.SwapHash, signalPrepaymentResult,
+		signalSwapPaymentResult, false, confIntent, swap.HtlcV3,
 	)
 }
 
@@ -267,8 +269,10 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 			},
 		},
 		Loop: loopdb.Loop{
-			Events: []*loopdb.LoopEvent{&update},
-			Hash:   hash,
+			Events: []*loopdb.LoopEvent{
+				&update,
+			},
+			Hash: hash,
 		},
 	}
 
@@ -310,16 +314,17 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 		ctx.assertStatus(loopdb.StateFailTimeout)
 		ctx.assertStoreFinished(loopdb.StateFailTimeout)
 		ctx.finish()
+
 		return
 	}
 
 	// Because there is no reliable payment yet, an invoice is assumed to be
 	// paid after resume.
-	testLoopOutSuccess(ctx, amt, hash,
+	testLoopOutSuccess(
+		ctx, amt, hash,
 		func(r error) {},
-		func(r error) {},
-		preimageRevealed,
-		confIntent, utils.GetHtlcScriptVersion(protocolVersion),
+		func(r error) {}, preimageRevealed, confIntent,
+		utils.GetHtlcScriptVersion(protocolVersion),
 	)
 }
 

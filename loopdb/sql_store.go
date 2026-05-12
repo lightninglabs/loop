@@ -18,9 +18,7 @@ import (
 )
 
 // FetchLoopOutSwaps returns all swaps currently in the store.
-func (db *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
-	error) {
-
+func (db *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut, error) {
 	var loopOuts []*LoopOut
 
 	err := db.ExecTx(ctx, NewSqlReadOpts(), func(tx *sqlc.Queries) error {
@@ -60,8 +58,8 @@ func (db *BaseDB) FetchLoopOutSwaps(ctx context.Context) ([]*LoopOut,
 }
 
 // FetchLoopOutSwap returns the loop out swap with the given hash.
-func (db *BaseDB) FetchLoopOutSwap(ctx context.Context,
-	hash lntypes.Hash) (*LoopOut, error) {
+func (db *BaseDB) FetchLoopOutSwap(ctx context.Context, hash lntypes.Hash) (
+	*LoopOut, error) {
 
 	var loopOut *LoopOut
 
@@ -97,6 +95,7 @@ func (db *BaseDB) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 	swap *LoopOutContract) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
@@ -165,6 +164,7 @@ func (db *BaseDB) BatchCreateLoopOut(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopOutContract) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			insertArgs := loopToInsertArgs(
@@ -195,6 +195,7 @@ func (db *BaseDB) BatchCreateLoopOut(ctx context.Context,
 				return err
 			}
 		}
+
 		return nil
 	})
 }
@@ -209,9 +210,7 @@ func (db *BaseDB) UpdateLoopOut(ctx context.Context, hash lntypes.Hash,
 }
 
 // FetchLoopInSwaps returns all swaps currently in the store.
-func (db *BaseDB) FetchLoopInSwaps(ctx context.Context) (
-	[]*LoopIn, error) {
-
+func (db *BaseDB) FetchLoopInSwaps(ctx context.Context) ([]*LoopIn, error) {
 	var loopIns []*LoopIn
 
 	err := db.ExecTx(ctx, NewSqlReadOpts(), func(tx *sqlc.Queries) error {
@@ -252,6 +251,7 @@ func (db *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 	swap *LoopInContract) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		insertArgs := loopToInsertArgs(
 			hash, &swap.SwapContract,
@@ -289,6 +289,7 @@ func (db *BaseDB) BatchCreateLoopIn(ctx context.Context,
 	swaps map[lntypes.Hash]*LoopInContract) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, swap := range swaps {
 			insertArgs := loopToInsertArgs(
@@ -338,9 +339,7 @@ func (db *BaseDB) UpdateLoopIn(ctx context.Context, hash lntypes.Hash,
 //
 // NOTE: it's the caller's responsibility to encode the param. Atm,
 // it's encoding using the proto package's `Marshal` method.
-func (db *BaseDB) PutLiquidityParams(ctx context.Context,
-	params []byte) error {
-
+func (db *BaseDB) PutLiquidityParams(ctx context.Context, params []byte) error {
 	err := db.Queries.UpsertLiquidityParams(ctx, params)
 	if err != nil {
 		return err
@@ -354,9 +353,7 @@ func (db *BaseDB) PutLiquidityParams(ctx context.Context,
 //
 // NOTE: it's the caller's responsibility to decode the param. Atm,
 // it's decoding using the proto package's `Unmarshal` method.
-func (db *BaseDB) FetchLiquidityParams(ctx context.Context) ([]byte,
-	error) {
-
+func (db *BaseDB) FetchLiquidityParams(ctx context.Context) ([]byte, error) {
 	var params []byte
 	params, err := db.Queries.FetchLiquidityParams(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -378,6 +375,7 @@ func (db *BaseDB) updateLoop(ctx context.Context, hash lntypes.Hash,
 	time time.Time, state SwapStateData) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		updateParams := sqlc.InsertSwapUpdateParams{
 			SwapHash:        hash[:],
@@ -406,16 +404,31 @@ func (db *BaseDB) BatchInsertUpdate(ctx context.Context,
 	updateData map[lntypes.Hash][]BatchInsertUpdateData) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, updates := range updateData {
 			for _, update := range updates {
 				updateParams := sqlc.InsertSwapUpdateParams{
 					SwapHash:        swapHash[:],
 					UpdateTimestamp: update.Time.UTC(),
-					UpdateState:     int32(update.State.State),
-					ServerCost:      int64(update.State.Cost.Server),
-					OnchainCost:     int64(update.State.Cost.Onchain),
-					OffchainCost:    int64(update.State.Cost.Offchain),
+					UpdateState: int32(
+						update.State.State,
+					),
+					ServerCost: int64(
+						update.State.Cost.Server,
+					),
+					OnchainCost: int64(
+						update.
+							State.
+							Cost.
+							Onchain,
+					),
+					OffchainCost: int64(
+						update.
+							State.
+							Cost.
+							Offchain,
+					),
 				}
 
 				if update.State.HtlcTxHash != nil {
@@ -439,6 +452,7 @@ func (db *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 	costs map[lntypes.Hash]SwapCost) error {
 
 	writeOpts := NewSqlWriteOpts()
+
 	return db.ExecTx(ctx, writeOpts, func(tx *sqlc.Queries) error {
 		for swapHash, cost := range costs {
 			lastUpdateID, err := tx.GetLastUpdateID(
@@ -466,8 +480,8 @@ func (db *BaseDB) BatchUpdateLoopOutSwapCosts(ctx context.Context,
 }
 
 // HasMigration returns true if the migration with the given ID has been done.
-func (db *BaseDB) HasMigration(ctx context.Context, migrationID string) (
-	bool, error) {
+func (db *BaseDB) HasMigration(ctx context.Context, migrationID string) (bool,
+	error) {
 
 	migration, err := db.GetMigration(ctx, migrationID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -569,8 +583,7 @@ func swapToHtlcKeysInsertArgs(hash lntypes.Hash,
 // ConvertLoopOutRow converts a database row containing a loop out swap to a
 // LoopOut struct.
 func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
-	updates []sqlc.SwapUpdate) (*LoopOut,
-	error) {
+	updates []sqlc.SwapUpdate) (*LoopOut, error) {
 
 	htlcKeys, err := fetchHtlcKeys(
 		row.SenderScriptPubkey, row.ReceiverScriptPubkey,
@@ -599,25 +612,35 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 	loopOut := &LoopOut{
 		Contract: &LoopOutContract{
 			SwapContract: SwapContract{
-				Preimage:         preimage,
-				AmountRequested:  btcutil.Amount(row.AmountRequested),
-				HtlcKeys:         htlcKeys,
-				CltvExpiry:       row.CltvExpiry,
-				MaxSwapFee:       btcutil.Amount(row.MaxSwapFee),
-				MaxMinerFee:      btcutil.Amount(row.MaxMinerFee),
+				Preimage: preimage,
+				AmountRequested: btcutil.Amount(
+					row.AmountRequested,
+				),
+				HtlcKeys:   htlcKeys,
+				CltvExpiry: row.CltvExpiry,
+				MaxSwapFee: btcutil.Amount(row.MaxSwapFee),
+				MaxMinerFee: btcutil.Amount(
+					row.MaxMinerFee,
+				),
 				InitiationHeight: row.InitiationHeight,
 				InitiationTime:   row.InitiationTime,
 				Label:            row.Label,
-				ProtocolVersion:  ProtocolVersion(row.ProtocolVersion),
+				ProtocolVersion: ProtocolVersion(
+					row.ProtocolVersion,
+				),
 			},
-			DestAddr:                destAddress,
-			IsExternalAddr:          row.SingleSweep,
-			SwapInvoice:             row.SwapInvoice,
-			MaxSwapRoutingFee:       btcutil.Amount(row.MaxSwapRoutingFee),
-			SweepConfTarget:         row.SweepConfTarget,
-			HtlcConfirmations:       uint32(row.HtlcConfirmations),
-			PrepayInvoice:           row.PrepayInvoice,
-			MaxPrepayRoutingFee:     btcutil.Amount(row.MaxPrepayRoutingFee),
+			DestAddr:       destAddress,
+			IsExternalAddr: row.SingleSweep,
+			SwapInvoice:    row.SwapInvoice,
+			MaxSwapRoutingFee: btcutil.Amount(
+				row.MaxSwapRoutingFee,
+			),
+			SweepConfTarget:   row.SweepConfTarget,
+			HtlcConfirmations: uint32(row.HtlcConfirmations),
+			PrepayInvoice:     row.PrepayInvoice,
+			MaxPrepayRoutingFee: btcutil.Amount(
+				row.MaxPrepayRoutingFee,
+			),
 			SwapPublicationDeadline: row.PublicationDeadline,
 			PaymentTimeout: time.Duration(
 				row.PaymentTimeout,
@@ -693,16 +716,22 @@ func (db *BaseDB) convertLoopInRow(row sqlc.GetLoopInSwapsRow,
 	loopIn := &LoopIn{
 		Contract: &LoopInContract{
 			SwapContract: SwapContract{
-				Preimage:         preimage,
-				AmountRequested:  btcutil.Amount(row.AmountRequested),
-				HtlcKeys:         htlcKeys,
-				CltvExpiry:       row.CltvExpiry,
-				MaxSwapFee:       btcutil.Amount(row.MaxSwapFee),
-				MaxMinerFee:      btcutil.Amount(row.MaxMinerFee),
+				Preimage: preimage,
+				AmountRequested: btcutil.Amount(
+					row.AmountRequested,
+				),
+				HtlcKeys:   htlcKeys,
+				CltvExpiry: row.CltvExpiry,
+				MaxSwapFee: btcutil.Amount(row.MaxSwapFee),
+				MaxMinerFee: btcutil.Amount(
+					row.MaxMinerFee,
+				),
 				InitiationHeight: row.InitiationHeight,
 				InitiationTime:   row.InitiationTime,
 				Label:            row.Label,
-				ProtocolVersion:  ProtocolVersion(row.ProtocolVersion),
+				ProtocolVersion: ProtocolVersion(
+					row.ProtocolVersion,
+				),
 			},
 			HtlcConfTarget: row.HtlcConfTarget,
 			ExternalHtlc:   row.ExternalHtlc,
@@ -745,16 +774,24 @@ func getSwapEvents(updates []sqlc.SwapUpdate) ([]*LoopEvent, error) {
 			SwapStateData: SwapStateData{
 				State: SwapState(updates[i].UpdateState),
 				Cost: SwapCost{
-					Server:   btcutil.Amount(updates[i].ServerCost),
-					Onchain:  btcutil.Amount(updates[i].OnchainCost),
-					Offchain: btcutil.Amount(updates[i].OffchainCost),
+					Server: btcutil.Amount(
+						updates[i].ServerCost,
+					),
+					Onchain: btcutil.Amount(
+						updates[i].OnchainCost,
+					),
+					Offchain: btcutil.Amount(
+						updates[i].OffchainCost,
+					),
 				},
 			},
 			Time: updates[i].UpdateTimestamp.UTC(),
 		}
 
 		if updates[i].HtlcTxhash != "" {
-			chainHash, err := chainhash.NewHashFromStr(updates[i].HtlcTxhash)
+			chainHash, err := chainhash.NewHashFromStr(
+				updates[i].HtlcTxhash,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -773,7 +810,8 @@ func ConvertOutgoingChanSet(outgoingChanSet string) (ChannelSet, error) {
 	chanStrings := strings.Split(outgoingChanSet, ",")
 	channels := make([]uint64, len(chanStrings))
 
-	// Iterate over the chanStrings slice and convert each string to ChannelID
+	// Iterate over the chanStrings slice and convert each string to
+	// ChannelID
 	for i, chanString := range chanStrings {
 		chanID, err := strconv.ParseInt(chanString, 10, 64)
 		if err != nil {
@@ -787,8 +825,8 @@ func ConvertOutgoingChanSet(outgoingChanSet string) (ChannelSet, error) {
 
 // fetchHtlcKeys converts the blob encoded htlc keys into a HtlcKeys struct.
 func fetchHtlcKeys(senderScriptPubkey, receiverScriptPubkey,
-	senderInternalPubkey, receiverInternalPubkey []byte,
-	clientKeyFamily, clientKeyIndex int32) (HtlcKeys, error) {
+	senderInternalPubkey, receiverInternalPubkey []byte, clientKeyFamily,
+	clientKeyIndex int32) (HtlcKeys, error) {
 
 	senderScriptKey, err := blobTo33ByteSlice(senderScriptPubkey)
 	if err != nil {

@@ -22,7 +22,10 @@ import (
 )
 
 var (
-	defaultServerPubkeyBytes, _ = hex.DecodeString("021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d")
+	defaultServerPubkeyBytes, _ = hex.DecodeString(
+		"021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db" +
+			"0747d0d",
+	)
 
 	defaultServerPubkey, _ = btcec.ParsePubKey(defaultServerPubkeyBytes)
 
@@ -44,7 +47,8 @@ func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(ctx context.Context,
+func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(
+	ctx context.Context,
 	in *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
 	opts ...grpc.CallOption) (
 	*swapserverrpc.PushStaticAddressSweeplessSigsResponse, error) {
@@ -67,9 +71,8 @@ func (m *mockStaticAddressClient) PushStaticAddressHtlcSigs(ctx context.Context,
 }
 
 func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
-	in *swapserverrpc.ServerWithdrawRequest,
-	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,
-	error) {
+	in *swapserverrpc.ServerWithdrawRequest, opts ...grpc.CallOption) (
+	*swapserverrpc.ServerWithdrawResponse, error) {
 
 	args := m.Called(ctx, in, opts)
 
@@ -77,8 +80,8 @@ func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(ctx context.Context,
-	in *swapserverrpc.ServerPsbtWithdrawRequest,
+func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(
+	ctx context.Context, in *swapserverrpc.ServerPsbtWithdrawRequest,
 	opts ...grpc.CallOption) (*swapserverrpc.ServerPsbtWithdrawResponse,
 	error) {
 
@@ -160,8 +163,10 @@ func TestNewAddressValidatesServerResponse(t *testing.T) {
 			name: "uncompressed server key",
 			resp: &swapserverrpc.ServerNewAddressResponse{
 				Params: &swapserverrpc.ServerAddressParameters{
-					ServerKey: []byte{0x04},
-					Expiry:    defaultExpiry,
+					ServerKey: []byte{
+						0x04,
+					},
+					Expiry: defaultExpiry,
 				},
 			},
 			expected: "server public key is not a compressed",
@@ -317,7 +322,9 @@ func NewAddressManagerTestContextWithResponse(t *testing.T,
 
 // newServerNewAddressResponse returns a valid server response with the given
 // CSV expiry.
-func newServerNewAddressResponse(expiry uint32) *swapserverrpc.ServerNewAddressResponse {
+func newServerNewAddressResponse(
+	expiry uint32) *swapserverrpc.ServerNewAddressResponse {
+
 	return &swapserverrpc.ServerNewAddressResponse{
 		Params: &swapserverrpc.ServerAddressParameters{
 			ServerKey: defaultServerPubkeyBytes,

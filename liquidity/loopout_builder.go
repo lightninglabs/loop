@@ -178,9 +178,9 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 		return nil, err
 	}
 
-	log.Debugf("quote for suggestion: %v, swap fee: %v, "+
-		"miner fee: %v, prepay: %v", amount, quote.SwapFee,
-		quote.MinerFee, quote.PrepayAmount)
+	log.Debugf("quote for suggestion: %v, swap fee: %v, miner fee: %v, "+
+		"prepay: %v", amount, quote.SwapFee, quote.MinerFee,
+		quote.PrepayAmount)
 
 	// Check that the estimated fees for the suggested swap are below the
 	// fee limits configured.

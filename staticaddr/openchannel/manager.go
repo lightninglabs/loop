@@ -119,7 +119,6 @@ func (m *Manager) Run(ctx context.Context) error {
 
 			select {
 			case req.respChan <- resp:
-
 			case <-ctx.Done():
 				// Notify subroutines that the main loop has
 				// been canceled.
@@ -147,8 +146,8 @@ func (m *Manager) recoverOpeningChannelDeposits(ctx context.Context) error {
 		deposit.OpeningChannel,
 	)
 	if err != nil {
-		return fmt.Errorf("unable to fetch opening channel deposits: %w",
-			err)
+		return fmt.Errorf("unable to fetch opening channel "+
+			"deposits: %w", err)
 	}
 
 	if len(openingDeposits) == 0 {
@@ -162,8 +161,8 @@ func (m *Manager) recoverOpeningChannelDeposits(ctx context.Context) error {
 		ctx, 0, 0,
 	)
 	if err != nil {
-		return fmt.Errorf("unable to list unspent outputs for recovery: %w",
-			err)
+		return fmt.Errorf("unable to list unspent outputs for "+
+			"recovery: %w", err)
 	}
 
 	unspentOutpoints := make(map[wire.OutPoint]struct{}, len(utxos))
@@ -207,8 +206,8 @@ func (m *Manager) recoverOpeningChannelDeposits(ctx context.Context) error {
 		}
 	}
 
-	log.Infof("Recovered opening channel deposits: %d returned to Deposited, "+
-		"%d marked ChannelPublished", len(deposited),
+	log.Infof("Recovered opening channel deposits: %d returned to "+
+		"Deposited, %d marked ChannelPublished", len(deposited),
 		len(channelPublished))
 
 	return nil
@@ -287,8 +286,8 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		seen := make(map[wire.OutPoint]struct{}, len(outpoints))
 		for _, op := range outpoints {
 			if _, ok := seen[op]; ok {
-				return nil, fmt.Errorf("duplicate outpoint "+
-					"%v in request", op)
+				return nil, fmt.Errorf("duplicate outpoint %v "+
+					"in request", op)
 			}
 			seen[op] = struct{}{}
 		}
@@ -312,8 +311,8 @@ func (m *Manager) OpenChannel(ctx context.Context,
 
 		if req.LocalFundingAmount != 0 {
 			deposits, err = staticutil.SelectDeposits(
-				deposits, req.LocalFundingAmount,
-				feeRate, chanCommitmentType,
+				deposits, req.LocalFundingAmount, feeRate,
+				chanCommitmentType,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("error selecting "+
@@ -380,19 +379,16 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	if errors.Is(err, errPsbtFinalized) {
 		recoverErr := m.recoverOpeningChannelDeposits(ctx)
 		if recoverErr != nil {
-			log.Errorf("failed recovering deposits "+
-				"after PSBT finalize: %v",
-				recoverErr)
+			log.Errorf("failed recovering deposits after PSBT "+
+				"finalize: %v", recoverErr)
 		}
 	} else {
 		err2 := m.cfg.DepositManager.TransitionDeposits(
-			ctx, deposits, fsm.OnError,
-			deposit.Deposited,
+			ctx, deposits, fsm.OnError, deposit.Deposited,
 		)
 		if err2 != nil {
-			log.Errorf("failed transitioning deposits "+
-				"after failed channel open: %v",
-				err2)
+			log.Errorf("failed transitioning deposits after "+
+				"failed channel open: %v", err2)
 		}
 	}
 
@@ -452,8 +448,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 	// Generate a new, random pending channel ID that we'll use as the main
 	// identifier when sending update messages to the RPC server.
 	if _, err := rand.Read(pendingChanID[:]); err != nil {
-		return nil, fmt.Errorf("unable to generate random chan ID: "+
-			"%w", err)
+		return nil, fmt.Errorf("unable to generate random chan ID: %w",
+			err)
 	}
 	log.Infof("Starting PSBT funding flow with pending channel ID %x.\n",
 		pendingChanID)
@@ -466,7 +462,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		// with the wallet, release the resources now.
 		if shimPending {
 			log.Infof("Canceling PSBT funding flow for pending "+
-				"channel ID %x.\n", pendingChanID)
+				"channel ID %x.\n",
+				pendingChanID)
 
 			cancelMsg := &lnrpc.FundingTransitionMsg{
 				Trigger: &lnrpc.FundingTransitionMsg_ShimCancel{
@@ -506,8 +503,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 	rawCtx, _, rawClient := m.cfg.LightningClient.RawClientWithMacAuth(ctx)
 	stream, err := rawClient.OpenChannel(rawCtx, req)
 	if err != nil {
-		return nil, fmt.Errorf("opening stream to server "+
-			"failed: %w", err)
+		return nil, fmt.Errorf("opening stream to server failed: %w",
+			err)
 	}
 
 	// We also need to spawn a goroutine that reads from the server. This
@@ -523,8 +520,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 
 				return
 			} else if err != nil {
-				srvErr <- fmt.Errorf("got error from server: "+
-					"%v", err)
+				srvErr <- fmt.Errorf("got error from "+
+					"server: %v", err)
 
 				return
 			}
@@ -533,7 +530,6 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			select {
 			case srvMsg <- resp:
 			case <-quit:
-
 				return
 			}
 		}
@@ -550,7 +546,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 
 		case err := <-srvErr:
 			log.Errorf("OpenChannel lnd server error received: "+
-				"%v\n", err)
+				"%v\n",
+				err)
 
 			// If the remote peer canceled on us, the reservation
 			// has already been deleted. We don't need to try to
@@ -586,6 +583,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				return nil, fmt.Errorf("%w: %v",
 					errPsbtFinalized, cancelErr)
 			}
+
 			return nil, cancelErr
 		}
 
@@ -593,21 +591,18 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 		case *lnrpc.OpenStatusUpdate_PsbtFund:
 			fundingAmount := update.PsbtFund.FundingAmount
 			if req.LocalFundingAmount != fundingAmount {
-				err := fmt.Errorf("funding amount "+
-					"%v doesn't match local "+
-					"funding amount %v",
-					fundingAmount,
-					req.LocalFundingAmount)
+				err := fmt.Errorf("funding amount %v doesn't "+
+					"match local funding amount %v",
+					fundingAmount, req.LocalFundingAmount)
 
 				return nil, err
 			}
 
 			addr := update.PsbtFund.FundingAddress
 
-			log.Infof("PSBT funding initiated with peer "+
-				"%x, funding amount %v, funding "+
-				"address %v", req.NodePubkey,
-				fundingAmount, addr)
+			log.Infof("PSBT funding initiated with peer %x, "+
+				"funding amount %v, funding address %v",
+				req.NodePubkey, fundingAmount, addr)
 
 			// Create the psbt funding transaction for the
 			// channel. Ensure the selected deposits amount
@@ -653,8 +648,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			var buffer bytes.Buffer
 			err = signedTx.Serialize(&buffer)
 			if err != nil {
-				return nil, fmt.Errorf("error serializing "+
-					"tx: %w", err)
+				return nil, fmt.Errorf("error "+
+					"serializing tx: %w", err)
 			}
 			transitionMsg := &lnrpc.FundingTransitionMsg{
 				Trigger: &lnrpc.FundingTransitionMsg_PsbtFinalize{
@@ -689,8 +684,8 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 				update.ChanPending.Txid,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("error creating "+
-					"hash for channel open tx: %w", err)
+				return nil, fmt.Errorf("error creating hash "+
+					"for channel open tx: %w", err)
 			}
 
 			chanOutpoint := &wire.OutPoint{
@@ -729,8 +724,8 @@ func validateInitialPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 	}
 
 	if req.SpendUnconfirmed {
-		return fmt.Errorf("SpendUnconfirmed is not supported " +
-			"for PSBT funding")
+		return fmt.Errorf("SpendUnconfirmed is not supported for " +
+			"PSBT funding")
 	}
 
 	if req.TargetConf != 0 {
@@ -744,8 +739,8 @@ func validateInitialPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 	}
 
 	if req.NodePubkeyString != "" { //nolint:staticcheck
-		return fmt.Errorf("NodePubkeyString is not supported, " +
-			"use NodePubkey instead")
+		return fmt.Errorf("NodePubkeyString is not supported, use " +
+			"NodePubkey instead")
 	}
 
 	if req.FundingShim != nil {
@@ -775,8 +770,8 @@ func resolveCommitmentType(commitmentType lnrpc.CommitmentType) (
 
 	default:
 		return lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE, fmt.Errorf(
-			"unsupported commitment type %v", commitmentType,
-		)
+			"unsupported "+
+				"commitment type %v", commitmentType)
 	}
 }
 
@@ -787,10 +782,13 @@ func checkPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 		return fmt.Errorf("specifying minimum confirmations for PSBT " +
 			"funding is not supported")
 	}
-	if req.TargetConf != 0 || req.SatPerByte != 0 || req.SatPerVbyte != 0 { // nolint:staticcheck
+	if req.TargetConf != 0 || req.SatPerByte != 0 ||
+		req.SatPerVbyte != 0 { // nolint:staticcheck
+
 		return fmt.Errorf("setting fee estimation parameters not " +
 			"supported for PSBT funding")
 	}
+
 	return nil
 }
 
@@ -807,14 +805,11 @@ func (m *Manager) DeliverOpenChannelRequest(ctx context.Context,
 	// Send the open channel request to the manager run loop.
 	select {
 	case m.newOpenChannelRequestChan <- request:
-
 	case <-m.exitChan:
-		return nil, fmt.Errorf("open channel manager has been " +
-			"canceled")
+		return nil, fmt.Errorf("open channel manager has been canceled")
 
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context canceled while opening " +
-			"channel")
+		return nil, fmt.Errorf("context canceled while opening channel")
 	}
 
 	// Wait for the response from the manager run loop.
@@ -823,11 +818,10 @@ func (m *Manager) DeliverOpenChannelRequest(ctx context.Context,
 		return resp.ChanOutpoint, resp.err
 
 	case <-m.exitChan:
-		return nil, fmt.Errorf("open channel manager has been " +
-			"canceled")
+		return nil, fmt.Errorf("open channel manager has been canceled")
 
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context canceled while waiting " +
-			"for open channel response")
+		return nil, fmt.Errorf("context canceled while waiting for " +
+			"open channel response")
 	}
 }

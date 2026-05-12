@@ -3,6 +3,7 @@ module github.com/lightninglabs/loop/tools
 go 1.26
 
 require (
+	github.com/bhandras/llformat v0.1.1-beta // indirect
 	// Once golangci-lint v2.4.1 update it here.
 	github.com/golangci/golangci-lint/v2 v2.10.1
 	github.com/rinchsan/gosimports v0.3.8
@@ -221,4 +222,9 @@ require (
 	go.augendre.info/arangolint v0.4.0 // indirect
 	go.augendre.info/fatcontext v0.9.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+)
+
+tool (
+	github.com/bhandras/llformat/cmd/llformat
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 )

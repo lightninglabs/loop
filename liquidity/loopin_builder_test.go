@@ -116,9 +116,13 @@ func TestLoopinBuildSwap(t *testing.T) {
 			Initiator:      autoloopSwapInitiator,
 		}
 
-		errPrecondition = status.Error(codes.FailedPrecondition, "failed")
-		errOtherCode    = status.Error(codes.DeadlineExceeded, "timeout")
-		errNoCode       = errors.New("failure")
+		errPrecondition = status.Error(
+			codes.FailedPrecondition, "failed",
+		)
+		errOtherCode = status.Error(
+			codes.DeadlineExceeded, "timeout",
+		)
+		errNoCode = errors.New("failure")
 	)
 
 	tests := []struct {

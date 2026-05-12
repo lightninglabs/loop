@@ -25,8 +25,8 @@ type Querier interface {
 
 	// GetWithdrawalIDByDepositID retrieves the withdrawal ID associated
 	// with a given deposit ID.
-	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) (
-		[]byte, error)
+	GetWithdrawalIDByDepositID(ctx context.Context,
+		depositID []byte) ([]byte, error)
 
 	// CreateWithdrawalDeposit links withdrawal to deposits.
 	CreateWithdrawalDeposit(ctx context.Context,
@@ -34,8 +34,8 @@ type Querier interface {
 
 	// GetWithdrawalDeposits retrieves the deposit IDs associated with a
 	// withdrawal.
-	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) (
-		[][]byte, error)
+	GetWithdrawalDeposits(ctx context.Context,
+		withdrawalID []byte) ([][]byte, error)
 
 	// GetAllWithdrawals retrieves all withdrawals from the database.
 	GetAllWithdrawals(ctx context.Context) ([]sqlc.Withdrawal, error)
@@ -88,6 +88,7 @@ func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 		TotalDepositAmount: int64(totalAmount),
 		InitiationTime:     s.clock.Now().UTC(),
 	}
+
 	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
 		func(q Querier) error {
 			err := q.CreateWithdrawal(ctx, createArgs)
@@ -182,8 +183,9 @@ func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal,
 
 	result := make([]Withdrawal, 0, len(withdrawals))
 	for _, w := range withdrawals {
-		depositIDs, err := s.baseDB.GetWithdrawalDeposits(ctx,
-			w.WithdrawalID)
+		depositIDs, err := s.baseDB.GetWithdrawalDeposits(
+			ctx, w.WithdrawalID,
+		)
 
 		if err != nil {
 			return nil, err
@@ -210,7 +212,9 @@ func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal,
 			TxID:               *txID,
 			Deposits:           deposits,
 			TotalDepositAmount: btcutil.Amount(w.TotalDepositAmount),
-			WithdrawnAmount:    btcutil.Amount(w.WithdrawnAmount.Int64),
+			WithdrawnAmount: btcutil.Amount(
+				w.WithdrawnAmount.Int64,
+			),
 			ChangeAmount:       btcutil.Amount(w.ChangeAmount.Int64),
 			InitiationTime:     w.InitiationTime,
 			ConfirmationHeight: w.ConfirmationHeight.Int64,

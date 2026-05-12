@@ -65,8 +65,8 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
-func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
-	*Parameters, error) {
+func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (*Parameters,
+	error) {
 
 	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
 	if err != nil {

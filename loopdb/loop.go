@@ -108,14 +108,13 @@ func (s *Loop) LastUpdate() *LoopEvent {
 	}
 
 	lastEvent := s.Events[eventCount-1]
+
 	return lastEvent
 }
 
 // serializeLoopEvent serializes a state update of a swap. This is used for both
 // in and out swaps.
-func serializeLoopEvent(time time.Time, state SwapStateData) (
-	[]byte, error) {
-
+func serializeLoopEvent(time time.Time, state SwapStateData) ([]byte, error) {
 	var b bytes.Buffer
 
 	if err := binary.Write(&b, byteOrder, time.UnixNano()); err != nil {

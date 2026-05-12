@@ -92,8 +92,8 @@ func setRule(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		pubkey, err = route.NewVertexFromStr(cmd.Args().First())
 		if err != nil {
-			return fmt.Errorf("please provide a valid pubkey: "+
-				"%v, or short channel ID", err)
+			return fmt.Errorf("please provide a valid pubkey: %v, "+
+				"or short channel ID", err)
 		}
 		pubkeyRule = true
 	}
@@ -163,6 +163,7 @@ func setRule(ctx context.Context, cmd *cli.Command) error {
 				Parameters: params,
 			},
 		)
+
 		return err
 	}
 
@@ -531,7 +532,10 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("autobudgetrefreshperiod") {
 		params.AutoloopBudgetRefreshPeriodSec =
-			uint64(cmd.Duration("autobudgetrefreshperiod").Seconds())
+			uint64(
+				cmd.Duration("autobudgetrefreshperiod").
+					Seconds(),
+			)
 		flagSet = true
 	}
 
@@ -576,7 +580,9 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.IsSet("localbalancesat") {
-		params.EasyAutoloopLocalTargetSat = cmd.Uint64("localbalancesat")
+		params.EasyAutoloopLocalTargetSat = cmd.Uint64(
+			"localbalancesat",
+		)
 		flagSet = true
 	}
 
@@ -603,8 +609,8 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 			}
 			v, err := route.NewVertexFromStr(s)
 			if err != nil {
-				return fmt.Errorf("invalid peer pubkey "+
-					"%s: %v", s, err)
+				return fmt.Errorf("invalid peer pubkey %s: %v",
+					s, err)
 			}
 			params.EasyAutoloopExcludedPeers = append(
 				params.EasyAutoloopExcludedPeers, v[:],
@@ -704,6 +710,7 @@ func suggestSwap(ctx context.Context, cmd *cli.Command) error {
 	)
 	if err == nil {
 		printRespJSON(resp)
+
 		return nil
 	}
 

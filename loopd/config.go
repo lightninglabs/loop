@@ -80,8 +80,7 @@ var (
 	// LND.
 	DefaultLndMacaroonPath = filepath.Join(
 		btcutil.AppDataDir("lnd", false),
-		"data", "chain", "bitcoin", DefaultNetwork,
-		defaultLndMacaroon,
+		"data", "chain", "bitcoin", DefaultNetwork, defaultLndMacaroon,
 	)
 
 	// DefaultLndRPCTimeout is the default timeout to use when communicating
@@ -281,8 +280,8 @@ func Validate(cfg *Config) error {
 		}
 
 		if dataDirSet {
-			return fmt.Errorf("loopdir overwrites datadir, please " +
-				"only set one value")
+			return fmt.Errorf("loopdir overwrites datadir, " +
+				"please only set one value")
 		}
 
 		if tlsCertPathSet {
@@ -378,8 +377,8 @@ func Validate(cfg *Config) error {
 
 	// Allow at most 2x the default total payment timeout.
 	if cfg.TotalPaymentTimeout > 2*defaultTotalPaymentTimeout {
-		return fmt.Errorf("max total payment timeout allowed is at "+
-			"most %v", 2*defaultTotalPaymentTimeout)
+		return fmt.Errorf("max total payment timeout allowed is "+
+			"at most %v", 2*defaultTotalPaymentTimeout)
 	}
 
 	// At least one retry.
@@ -389,11 +388,13 @@ func Validate(cfg *Config) error {
 
 	// TLS Validity period to be at least 24 hours
 	if cfg.TLSValidity < time.Hour*24 {
-		return fmt.Errorf("TLS certificate minimum validity period is 24h")
+		return fmt.Errorf("TLS certificate minimum validity period " +
+			"is 24h")
 	}
 
 	if cfg.MigrationRPCBatchSize <= 0 {
-		return fmt.Errorf("migrationrpcbatchsize must be greater than 0")
+		return fmt.Errorf("migrationrpcbatchsize must be greater " +
+			"than 0")
 	}
 
 	// Initialize the log manager with the actual logging configuration. We
@@ -425,8 +426,10 @@ func getTLSConfig(cfg *Config) (*tls.Config, *credentials.TransportCredentials,
 	// If the certificate expired or it was outdated, delete it and the TLS
 	// key and generate a new pair.
 	if time.Now().After(parsedCert.NotAfter) {
-		infof("TLS certificate is expired or outdated, " +
-			"removing old file then generating a new one")
+		infof(
+			"TLS certificate is expired or outdated, removing " +
+				"old file then generating a new one",
+		)
 
 		err := os.Remove(cfg.TLSCertPath)
 		if err != nil {

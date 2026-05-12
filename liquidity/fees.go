@@ -135,20 +135,21 @@ func NewFeeCategoryLimit(swapFeePPM, routingFeePPM, prepayFeePPM uint64,
 }
 
 func defaultFeeCategoryLimit() *FeeCategoryLimit {
-	return NewFeeCategoryLimit(defaultSwapFeePPM, defaultRoutingFeePPM,
+	return NewFeeCategoryLimit(
+		defaultSwapFeePPM, defaultRoutingFeePPM,
 		defaultPrepayRoutingFeePPM, defaultMaximumMinerFee,
-		defaultMaximumPrepay, defaultSweepFeeRateLimit)
+		defaultMaximumPrepay, defaultSweepFeeRateLimit,
+	)
 }
 
 // String returns the string representation of our fee category limits.
 func (f *FeeCategoryLimit) String() string {
-	return fmt.Sprintf("fee categories: maximum prepay: %v, maximum "+
-		"miner fee: %v, maximum swap fee ppm: %v, maximum "+
-		"routing fee ppm: %v, maximum prepay routing fee ppm: %v,"+
-		"sweep fee limit: %v", f.MaximumPrepay, f.MaximumMinerFee,
-		f.MaximumSwapFeePPM, f.MaximumRoutingFeePPM,
-		f.MaximumPrepayRoutingFeePPM, f.SweepFeeRateLimit,
-	)
+	return fmt.Sprintf("fee categories: maximum prepay: %v, maximum miner "+
+		"fee: %v, maximum swap fee ppm: %v, maximum routing fee ppm: "+
+		"%v, maximum prepay routing fee ppm: %v,sweep fee limit: %v",
+		f.MaximumPrepay, f.MaximumMinerFee, f.MaximumSwapFeePPM,
+		f.MaximumRoutingFeePPM, f.MaximumPrepayRoutingFeePPM,
+		f.SweepFeeRateLimit)
 }
 
 func (f *FeeCategoryLimit) validate() error {
@@ -211,8 +212,8 @@ func (f *FeeCategoryLimit) loopOutLimits(amount btcutil.Amount,
 	}
 
 	if quote.MinerFee > f.MaximumMinerFee {
-		log.Debugf("quoted miner fee: %v > maximum miner "+
-			"fee: %v", quote.MinerFee, f.MaximumMinerFee)
+		log.Debugf("quoted miner fee: %v > maximum miner fee: %v",
+			quote.MinerFee, f.MaximumMinerFee)
 
 		return newReasonError(ReasonMinerFee)
 	}
@@ -239,8 +240,8 @@ func (f *FeeCategoryLimit) loopInLimits(amount btcutil.Amount,
 	}
 
 	if quote.MinerFee > f.MaximumMinerFee {
-		log.Debugf("quoted miner fee: %v > maximum miner "+
-			"fee: %v", quote.MinerFee, f.MaximumMinerFee)
+		log.Debugf("quoted miner fee: %v > maximum miner fee: %v",
+			quote.MinerFee, f.MaximumMinerFee)
 
 		return newReasonError(ReasonMinerFee)
 	}
@@ -320,15 +321,15 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 	minerFee := scaleMinerFee(quote.MinerFee)
 
 	if minerFee > feeLimit {
-		log.Debugf("miner fee: %v greater than fee limit: %v, at "+
-			"%v ppm", minerFee, feeLimit, f.PartsPerMillion)
+		log.Debugf("miner fee: %v greater than fee limit: %v, "+
+			"at %v ppm", minerFee, feeLimit, f.PartsPerMillion)
 
 		return newReasonError(ReasonMinerFee)
 	}
 
 	if quote.SwapFee > feeLimit {
-		log.Debugf("swap fee: %v greater than fee limit: %v, at "+
-			"%v ppm", quote.SwapFee, feeLimit, f.PartsPerMillion)
+		log.Debugf("swap fee: %v greater than fee limit: %v, at %v ppm",
+			quote.SwapFee, feeLimit, f.PartsPerMillion)
 
 		return newReasonError(ReasonSwapFee)
 	}
@@ -358,8 +359,8 @@ func (f *FeePortion) loopOutLimits(swapAmt btcutil.Amount,
 	)
 
 	if fees > feeLimit {
-		log.Debugf("total fees for swap: %v > fee limit: %v, at "+
-			"%v ppm", fees, feeLimit, f.PartsPerMillion)
+		log.Debugf("total fees for swap: %v > fee limit: %v, at %v ppm",
+			fees, feeLimit, f.PartsPerMillion)
 
 		return newReasonError(ReasonFeePPMInsufficient)
 	}
@@ -433,17 +434,16 @@ func (f *FeePortion) loopInLimits(amount btcutil.Amount,
 	// Check individual fee components so that we can give more specific
 	// feedback.
 	if quote.MinerFee > totalFeeSpend {
-		log.Debugf("miner fee: %v greater than fee limit: %v, at "+
-			"%v ppm", quote.MinerFee, totalFeeSpend,
+		log.Debugf("miner fee: %v greater than fee limit: %v, "+
+			"at %v ppm", quote.MinerFee, totalFeeSpend,
 			f.PartsPerMillion)
 
 		return newReasonError(ReasonMinerFee)
 	}
 
 	if quote.SwapFee > totalFeeSpend {
-		log.Debugf("swap fee: %v greater than fee limit: %v, at "+
-			"%v ppm", quote.SwapFee, totalFeeSpend,
-			f.PartsPerMillion)
+		log.Debugf("swap fee: %v greater than fee limit: %v, at %v ppm",
+			quote.SwapFee, totalFeeSpend, f.PartsPerMillion)
 
 		return newReasonError(ReasonSwapFee)
 	}
@@ -453,8 +453,8 @@ func (f *FeePortion) loopInLimits(amount btcutil.Amount,
 	)
 
 	if fees > totalFeeSpend {
-		log.Debugf("total fees for swap: %v > fee limit: %v, at "+
-			"%v ppm", fees, totalFeeSpend, f.PartsPerMillion)
+		log.Debugf("total fees for swap: %v > fee limit: %v, at %v ppm",
+			fees, totalFeeSpend, f.PartsPerMillion)
 
 		return newReasonError(ReasonFeePPMInsufficient)
 	}

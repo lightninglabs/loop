@@ -58,6 +58,7 @@ var AgentName = defaultAgentName
 // Version returns the application version as a properly formed string per the
 // semantic versioning 2.0.0 spec (http://semver.org/).
 func Version() string {
+
 	// Append commit hash of current build to version.
 	return semanticVersion()
 }
@@ -66,12 +67,11 @@ func Version() string {
 // per the semantic versioning 2.0.0 spec (http://semver.org/), followed by the
 // most recent git tag and commit hash the build was built on.
 func RichVersion() string {
+
 	// Append the most recent git tag and commit hash of the current build
 	// to version.
-	return fmt.Sprintf(
-		"%s commit=%s commit_hash=%s", semanticVersion(), Commit,
-		CommitHash,
-	)
+	return fmt.Sprintf("%s commit=%s commit_hash=%s", semanticVersion(),
+		Commit, CommitHash)
 }
 
 // UserAgent returns the full user agent string that identifies the software
@@ -95,10 +95,8 @@ func UserAgent(initiator string) string {
 	cleanInitiator = cleanInitiator[:int(math.Min(float64(strLen), 150))]
 
 	// Assemble full string, including the commit hash of current build.
-	return fmt.Sprintf(
-		"%s/v%s/commit=%s%s", AgentName, semanticVersion(), Commit,
-		cleanInitiator,
-	)
+	return fmt.Sprintf("%s/v%s/commit=%s%s", AgentName, semanticVersion(),
+		Commit, cleanInitiator)
 }
 
 // semanticVersion returns the SemVer part of the version.
@@ -127,5 +125,6 @@ func normalizeVerString(str, alphabet string) string {
 			result.WriteRune(r)
 		}
 	}
+
 	return result.String()
 }
