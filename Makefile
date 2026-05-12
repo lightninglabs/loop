@@ -7,9 +7,11 @@ GOTEST := GO111MODULE=on go test -v
 
 
 GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
+LLFORMAT_PKG := github.com/bhandras/llformat/cmd/llformat
 
 GO_BIN := ${GOPATH}/bin
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
+LLFORMAT_BIN := $(CURDIR)/$(TOOLS_DIR)/llformat
 
 GOBUILD := CGO_ENABLED=0 GO111MODULE=on go build -v
 GOINSTALL := CGO_ENABLED=0 GO111MODULE=on go install -v
@@ -35,6 +37,7 @@ UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) $(TEST_FLAGS)
 ifneq ($(workers),)
 LINT_WORKERS = --concurrency=$(workers)
 endif
+FMT_BASE := $(if $(base),$(base),origin/master)
 
 DOCKER_TOOLS = docker run \
   --rm \
@@ -63,6 +66,11 @@ endef
 $(GOIMPORTS_BIN):
 	@$(call print, "Installing goimports.")
 	cd $(TOOLS_DIR); go install -trimpath $(GOIMPORTS_PKG)
+
+$(LLFORMAT_BIN): $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum
+	@$(call print, "Installing llformat.")
+	cd $(TOOLS_DIR); GOBIN="$(CURDIR)/$(TOOLS_DIR)" \
+		go install -trimpath $(LLFORMAT_PKG)
 
 
 # ============
@@ -132,11 +140,15 @@ unit-postgres-race:
 # UTILITIES
 # =========
 
-fmt: $(GOIMPORTS_BIN)
-	@$(call print, "Fixing imports.")
-	gosimports -w $(GOFILES_NOVENDOR)
-	@$(call print, "Formatting source.")
-	gofmt -l -w -s $(GOFILES_NOVENDOR)
+fmt: $(LLFORMAT_BIN)
+	@$(call print, "Formatting all handwritten Go source.")
+	@./scripts/llformat-files.sh all | \
+		xargs -0 -n 1 $(LLFORMAT_BIN) -w
+
+fmt-changed: $(LLFORMAT_BIN)
+	@$(call print, "Formatting Go source changes against $(FMT_BASE).")
+	@./scripts/llformat-files.sh changed "$(FMT_BASE)" | \
+		xargs -0 -n 1 $(LLFORMAT_BIN) -w
 
 lint: docker-tools
 	@$(call print, "Linting source.")
