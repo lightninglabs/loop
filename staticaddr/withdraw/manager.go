@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -238,6 +239,18 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 		return err
 	}
 
+	// If there are no withdrawing deposits, we have nothing to recover.
+	if len(withdrawingDeposits) == 0 {
+		return nil
+	}
+
+	// Get static address pkScript for handleWithdrawal. We fetch this once
+	// before grouping deposits and spawning goroutines.
+	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get address params: %w", err)
+	}
+
 	// Group the deposits by their finalized withdrawal transaction.
 	depositsByWithdrawalTx := make(map[chainhash.Hash][]*deposit.Deposit)
 	hash2tx := make(map[chainhash.Hash]*wire.MsgTx)
@@ -279,13 +292,12 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 				return err
 			}
 
-			err = m.handleWithdrawal(
+			// Best-effort monitoring - handleWithdrawal runs async
+			// and handles its own retries.
+			m.handleWithdrawal(
 				ctx, deposits, tx.TxHash(),
-				tx.TxOut[0].PkScript,
+				tx.TxOut[0].PkScript, addrParams.PkScript,
 			)
-			if err != nil {
-				return err
-			}
 
 			m.mu.Lock()
 			m.finalizedWithdrawalTxns[tx.TxHash()] = tx
@@ -443,27 +455,12 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 			"pkscript: %w", err)
 	}
 
-	// If this is the first time this cluster of deposits is withdrawn, we
-	// start a goroutine that listens for the spent of the first input of
-	// the withdrawal transaction.
-	// Since we ensure above that the same ensemble of deposits is
-	// republished in case of a fee bump, it suffices if only one spent
-	// notifier is run.
-	if allDeposited {
-		// Persist info about the finalized withdrawal.
-		err = m.cfg.Store.CreateWithdrawal(ctx, deposits)
-		if err != nil {
-			log.Errorf("Error persisting "+
-				"withdrawal: %v", err)
-		}
-
-		err = m.handleWithdrawal(
-			ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
-		)
-		if err != nil {
-			return "", "", err
-		}
-	}
+	// ===== STATE PERSISTENCE =====
+	// Persist state BEFORE calling handleWithdrawal. This ordering is
+	// critical: if handleWithdrawal fails to set up monitoring (e.g.,
+	// RegisterSpendNtfn error), recoverWithdrawals will find the deposits
+	// in Withdrawing state on restart and retry. These operations run for
+	// BOTH first withdrawal and fee bump.
 
 	// If a previous withdrawal existed across the selected deposits, and
 	// it isn't the same as the new withdrawal, we remove it from the
@@ -500,7 +497,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to transition deposits %w",
+		return "", "", fmt.Errorf("failed to transition deposits: %w",
 			err)
 	}
 
@@ -509,7 +506,37 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to update "+
-				"deposit %w", err)
+				"deposit: %w", err)
+		}
+	}
+
+	// ===== FIRST WITHDRAWAL ONLY =====
+	// If this is the first time this cluster of deposits is withdrawn, we
+	// start a goroutine that listens for the spent of the first input of
+	// the withdrawal transaction.
+	// Since we ensure above that the same ensemble of deposits is
+	// republished in case of a fee bump, it suffices if only one spent
+	// notifier is run.
+	if allDeposited {
+		// Persist info about the finalized withdrawal.
+		err = m.cfg.Store.CreateWithdrawal(ctx, deposits)
+		if err != nil {
+			log.Errorf("Error persisting withdrawal: %v", err)
+		}
+
+		// Get static address pkScript for handleWithdrawal.
+		addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+		if err == nil {
+			// Best-effort monitoring - runs async, doesn't block.
+			m.handleWithdrawal(
+				ctx, deposits, finalizedTx.TxHash(),
+				withdrawalPkScript, addrParams.PkScript,
+			)
+		} else {
+			log.Errorf("Failed to get address params: %v", err)
+			// Return success - tx published and state persisted.
+			// handleWithdrawal will be picked up on restart via
+			// recovery.
 		}
 	}
 
@@ -654,97 +681,227 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 }
 
 // handleWithdrawal starts a goroutine that listens for the spent of the first
-// input of the withdrawal transaction.
+// input of the withdrawal transaction. It handles retry on registration
+// failure and reorg detection.
 func (m *Manager) handleWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, txHash chainhash.Hash,
-	withdrawalPkscript []byte) error {
-
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		log.Errorf("error retrieving address params: %v", err)
-
-		return fmt.Errorf("withdrawal failed")
-	}
+	withdrawalPkscript []byte, staticAddrPkScript []byte) {
 
 	d := deposits[0]
-	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &d.OutPoint, addrParams.PkScript,
-		int32(d.ConfirmationHeight),
-	)
-	if err != nil {
-		return fmt.Errorf("unable to register spend ntfn: %w", err)
-	}
 
 	go func() {
-		select {
-		case spentTx := <-spentChan:
-			spendingHeight := uint32(spentTx.SpendingHeight)
-			// If the transaction received one confirmation, we
-			// ensure re-org safety by waiting for some more
-			// confirmations.
-			confChan, confErrChan, err :=
-				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-					ctx, spentTx.SpenderTxHash,
-					withdrawalPkscript, MinConfs,
-					int32(m.initiationHeight.Load()),
-				)
-			if err != nil {
-				// TODO(#1087): Retry registration on
-				// next block instead of giving up.
-				log.Errorf("Error registering confirmation "+
-					"notification: %v", err)
+		// Register for block notifications (for retry-on-next-block).
+		blockChan, blockErrChan, err :=
+			m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		if err != nil {
+			log.Errorf("handleWithdrawal: failed to register "+
+				"block epoch: %v", err)
+			return
+		}
 
-				return
+		// Outer loop for retry on registration failure.
+		for {
+			// Create sub-context and fresh reorg channel per
+			// iteration to ensure clean subscription cleanup.
+			// When using WithReOrgChan, lndclient's goroutine
+			// keeps running until context is canceled.
+			iterCtx, iterCancel := context.WithCancel(ctx)
+			reorgChan := make(chan struct{}, 1)
+
+			// Register spend notification with reorg channel.
+			spendChan, spendErrChan, regErr :=
+				m.cfg.ChainNotifier.RegisterSpendNtfn(
+					iterCtx, &d.OutPoint, staticAddrPkScript,
+					int32(d.ConfirmationHeight),
+					lndclient.WithReOrgChan(reorgChan),
+				)
+			if regErr != nil {
+				iterCancel()
+				log.Errorf("RegisterSpendNtfn failed for %v, "+
+					"retrying on next block: %v",
+					d.OutPoint, regErr)
+
+				select {
+				case _, ok := <-blockChan:
+					if !ok {
+						return
+					}
+					continue
+				case err := <-blockErrChan:
+					log.Errorf("Block subscription "+
+						"error: %v", err)
+					return
+				case <-ctx.Done():
+					return
+				}
 			}
 
-			select {
-			case tx := <-confChan:
-				err = m.cfg.DepositManager.TransitionDeposits(
-					ctx, deposits, deposit.OnWithdrawn,
-					deposit.Withdrawn,
-				)
-				if err != nil {
-					log.Errorf("Error transitioning "+
-						"deposits: %v", err)
-				}
-
-				// Remove the withdrawal tx from the active
-				// withdrawals to stop republishing it on block
-				// arrivals.
-				m.mu.Lock()
-				delete(m.finalizedWithdrawalTxns, txHash)
-				m.mu.Unlock()
-
-				// Persist info about the finalized withdrawal.
-				err = m.cfg.Store.UpdateWithdrawal(
-					ctx, deposits, tx.Tx, spendingHeight,
-					addrParams.PkScript,
-				)
-				if err != nil {
-					log.Errorf("Error persisting "+
-						"withdrawal: %v", err)
-				}
-
-			case err := <-confErrChan:
-				// TODO(#1087): Handle reorgs by retrying
-				// confirmation registration on next block.
-				log.Errorf("Error waiting for confirmation: %v",
-					err)
-
-			case <-ctx.Done():
-				log.Errorf("Withdrawal tx confirmation wait " +
-					"canceled")
+			if !m.handleWithdrawalEvents(
+				iterCtx, deposits, txHash,
+				withdrawalPkscript, staticAddrPkScript,
+				spendChan, spendErrChan, reorgChan,
+				blockChan, blockErrChan,
+			) {
+				// Cancel subscription before re-registering.
+				iterCancel()
+				continue
 			}
-
-		case err := <-errChan:
-			log.Errorf("Error waiting for spending: %v", err)
-
-		case <-ctx.Done():
-			log.Errorf("Withdrawal tx confirmation wait canceled")
+			iterCancel()
+			return
 		}
 	}()
+}
 
-	return nil
+// handleWithdrawalEvents handles spend/confirmation events.
+// Returns true if complete, false if should re-register.
+func (m *Manager) handleWithdrawalEvents(ctx context.Context,
+	deposits []*deposit.Deposit, txHash chainhash.Hash,
+	withdrawalPkscript []byte, staticAddrPkScript []byte,
+	spendChan <-chan *chainntnfs.SpendDetail,
+	spendErrChan <-chan error,
+	reorgChan <-chan struct{},
+	blockChan <-chan int32,
+	blockErrChan <-chan error) bool {
+
+	select {
+	case spentTx, ok := <-spendChan:
+		if !ok {
+			return false
+		}
+		spendingHeight := uint32(spentTx.SpendingHeight)
+
+		// Wait for confirmations with reorg handling.
+		return m.waitForConfirmations(
+			ctx, deposits, txHash, withdrawalPkscript,
+			staticAddrPkScript, spentTx, spendingHeight,
+			blockChan, blockErrChan,
+		)
+
+	case err := <-spendErrChan:
+		log.Errorf("Spend notification error for %v, "+
+			"re-registering: %v", txHash, err)
+		return false // Re-register
+
+	case <-reorgChan:
+		log.Warnf("Reorg detected before spend for withdrawal %v",
+			txHash)
+		return false // Re-register
+
+	case err := <-blockErrChan:
+		log.Errorf("Block subscription error: %v", err)
+		return true // Exit
+
+	case <-ctx.Done():
+		return true // Exit
+	}
+}
+
+// waitForConfirmations waits for withdrawal confirmation with reorg handling.
+func (m *Manager) waitForConfirmations(ctx context.Context,
+	deposits []*deposit.Deposit, txHash chainhash.Hash,
+	withdrawalPkscript []byte, staticAddrPkScript []byte,
+	spentTx *chainntnfs.SpendDetail, spendingHeight uint32,
+	blockChan <-chan int32, blockErrChan <-chan error) bool {
+
+	for {
+		// Create sub-context and fresh reorg channel per iteration
+		// to ensure clean subscription cleanup.
+		confCtx, confCancel := context.WithCancel(ctx)
+		confReorgChan := make(chan struct{}, 1)
+
+		confChan, confErrChan, err :=
+			m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+				confCtx, spentTx.SpenderTxHash,
+				withdrawalPkscript, MinConfs,
+				int32(m.initiationHeight.Load()),
+				lndclient.WithReOrgChan(confReorgChan),
+			)
+		if err != nil {
+			confCancel()
+			log.Errorf("RegisterConfirmationsNtfn failed, "+
+				"retrying on next block: %v", err)
+
+			select {
+			case _, ok := <-blockChan:
+				if !ok {
+					confCancel()
+					return true
+				}
+				continue
+			case err := <-blockErrChan:
+				log.Errorf("Block subscription error: %v", err)
+				return true
+			case <-ctx.Done():
+				return true
+			}
+		}
+
+		select {
+		case tx, ok := <-confChan:
+			if !ok {
+				// Channel closed, retry registration.
+				confCancel()
+				continue
+			}
+			// Withdrawal confirmed - transition state.
+			err = m.cfg.DepositManager.TransitionDeposits(
+				ctx, deposits, deposit.OnWithdrawn,
+				deposit.Withdrawn,
+			)
+			if err != nil {
+				log.Errorf("Error transitioning deposits: %v",
+					err)
+			}
+
+			// Remove the withdrawal tx from the active withdrawals
+			// to stop republishing it on block arrivals. Use
+			// SpenderTxHash (not the original txHash) to handle
+			// RBF: when fee-bumped, the confirmed tx has a
+			// different hash than the original.
+			m.mu.Lock()
+			delete(m.finalizedWithdrawalTxns, *spentTx.SpenderTxHash)
+			m.mu.Unlock()
+
+			// Persist info about the finalized withdrawal.
+			err = m.cfg.Store.UpdateWithdrawal(
+				ctx, deposits, tx.Tx, spendingHeight,
+				staticAddrPkScript,
+			)
+			if err != nil {
+				log.Errorf("Error persisting withdrawal: %v",
+					err)
+			}
+
+			confCancel()
+			return true
+
+		case err := <-confErrChan:
+			// Cancel subscription before re-registering.
+			confCancel()
+			log.Errorf("Confirmation error, re-registering: %v",
+				err)
+			continue
+
+		case <-confReorgChan:
+			// A reorg after spend detection means the spend tx
+			// might have been reorged out. Return false to go back
+			// to the outer loop and re-register for spend
+			// notification, not just confirmations.
+			confCancel()
+			log.Warnf("Reorg detected for withdrawal %v, "+
+				"re-watching for spend", txHash)
+			return false
+
+		case err := <-blockErrChan:
+			confCancel()
+			log.Errorf("Block subscription error: %v", err)
+			return true
+
+		case <-ctx.Done():
+			confCancel()
+			return true
+		}
+	}
 }
 
 func toOutpoints(deposits []*deposit.Deposit) []wire.OutPoint {

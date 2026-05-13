@@ -20,4 +20,13 @@ This file tracks release notes for the loop client.
 
 #### Bug Fixes
 
+* [Static Address Withdrawals: Add retry and reorg handling for withdrawal
+  confirmations](https://github.com/lightninglabs/loop/issues/1087).
+  Previously, if `RegisterSpendNtfn` or `RegisterConfirmationsNtfn` failed,
+  the withdrawal monitoring would silently stop. Additionally, reorgs were not
+  handled, and state was not persisted before monitoring setup, causing
+  recovery failures on restart. This fix adds automatic retry on next block
+  for registration failures, proper reorg detection via `WithReOrgChan`, and
+  reorders state persistence to occur before monitoring setup.
+
 #### Maintenance
