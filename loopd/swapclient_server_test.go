@@ -1351,6 +1351,14 @@ func (s *mockDepositStore) UpdateDeposit(_ context.Context,
 	return nil
 }
 
+// UpdateRecoveredDeposit satisfies deposit.Store for server tests that only
+// need outpoint lookups.
+func (s *mockDepositStore) UpdateRecoveredDeposit(_ context.Context,
+	_ *deposit.Deposit) error {
+
+	return nil
+}
+
 func (s *mockDepositStore) GetDeposit(_ context.Context,
 	_ deposit.ID) (*deposit.Deposit, error) {
 

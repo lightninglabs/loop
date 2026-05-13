@@ -108,6 +108,12 @@ service SwapClient {
     */
     rpc Recover (RecoverRequest) returns (RecoverResponse);
 
+    /* loop: `recoverdeposit`
+    RecoverDeposit verifies one static-address deposit on-chain and restores
+    its local address/deposit state without relying on wallet reconciliation.
+    */
+    rpc RecoverDeposit (RecoverDepositRequest) returns (RecoverDepositResponse);
+
     /* loop: `getinfo`
     GetInfo gets basic information about the loop daemon.
     */
@@ -1106,6 +1112,75 @@ message RecoverResponse {
     after state restore completed.
     */
     string deposit_reconciliation_error = 6;
+}
+
+message RecoverDepositRequest {
+    /*
+    The transaction ID that created the static-address deposit output.
+    */
+    string txid = 1;
+
+    /*
+    The output index in the transaction.
+    */
+    uint32 vout = 2;
+
+    /*
+    The block height hint used when registering the confirmation notification.
+    */
+    int32 height_hint = 3;
+
+    /*
+    The expected static-address P2TR pkScript encoded as hex.
+    */
+    string pkscript_hex = 4;
+}
+
+message RecoverDepositResponse {
+    /*
+    The recovered deposit outpoint in the form txid:index.
+    */
+    string outpoint = 1;
+
+    /*
+    The recovered output value in satoshis.
+    */
+    int64 value = 2;
+
+    /*
+    The block height at which the deposit transaction confirmed.
+    */
+    int64 confirmation_height = 3;
+
+    /*
+    The matched client key family.
+    */
+    int32 client_key_family = 4;
+
+    /*
+    The matched client key index.
+    */
+    uint32 client_key_index = 5;
+
+    /*
+    The static address that owns the recovered deposit.
+    */
+    string static_address = 6;
+
+    /*
+    Whether a static-address row or wallet import was restored.
+    */
+    bool recovered_address = 7;
+
+    /*
+    Whether a deposit row was created or reactivated.
+    */
+    bool recovered_deposit = 8;
+
+    /*
+    The recovered deposit ID.
+    */
+    bytes deposit_id = 9;
 }
 
 message L402Token {

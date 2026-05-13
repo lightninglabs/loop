@@ -901,6 +901,39 @@
         ]
       }
     },
+    "/v1/recover/deposit": {
+      "post": {
+        "summary": "loop: `recoverdeposit`\nRecoverDeposit verifies one static-address deposit on-chain and restores\nits local address/deposit state without relying on wallet reconciliation.",
+        "operationId": "SwapClient_RecoverDeposit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcRecoverDepositResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcRecoverDepositRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/staticaddr": {
       "post": {
         "summary": "loop: `static newstaticaddress`\nNewStaticAddress requests a new static address for loop-ins from the server.",
@@ -2737,6 +2770,75 @@
     "looprpcPublishSucceeded": {
       "type": "object",
       "description": "PublishSucceeded is returned by SweepHtlc if publishing was requested in\nSweepHtlcRequest and it succeeded."
+    },
+    "looprpcRecoverDepositRequest": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string",
+          "description": "The transaction ID that created the static-address deposit output."
+        },
+        "vout": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The output index in the transaction."
+        },
+        "height_hint": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The block height hint used when registering the confirmation notification."
+        },
+        "pkscript_hex": {
+          "type": "string",
+          "description": "The expected static-address P2TR pkScript encoded as hex."
+        }
+      }
+    },
+    "looprpcRecoverDepositResponse": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "type": "string",
+          "description": "The recovered deposit outpoint in the form txid:index."
+        },
+        "value": {
+          "type": "string",
+          "format": "int64",
+          "description": "The recovered output value in satoshis."
+        },
+        "confirmation_height": {
+          "type": "string",
+          "format": "int64",
+          "description": "The block height at which the deposit transaction confirmed."
+        },
+        "client_key_family": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The matched client key family."
+        },
+        "client_key_index": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The matched client key index."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address that owns the recovered deposit."
+        },
+        "recovered_address": {
+          "type": "boolean",
+          "description": "Whether a static-address row or wallet import was restored."
+        },
+        "recovered_deposit": {
+          "type": "boolean",
+          "description": "Whether a deposit row was created or reactivated."
+        },
+        "deposit_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The recovered deposit ID."
+        }
+      }
     },
     "looprpcRecoverRequest": {
       "type": "object",

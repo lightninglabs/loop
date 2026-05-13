@@ -32,6 +32,18 @@ SET
 WHERE
     deposits.deposit_id = $1;
 
+-- name: UpdateRecoveredDeposit :exec
+UPDATE deposits
+SET
+    tx_hash = $2,
+    out_index = $3,
+    amount = $4,
+    confirmation_height = $5,
+    timeout_sweep_pk_script = $6,
+    static_address_id = $7
+WHERE
+    deposits.deposit_id = $1;
+
 -- name: InsertDepositUpdate :exec
 INSERT INTO deposit_updates (
     deposit_id,

@@ -80,6 +80,10 @@ type SwapClientClient interface {
 	// Recover restores the local static-address and L402 state from an encrypted
 	// local backup file.
 	Recover(ctx context.Context, in *RecoverRequest, opts ...grpc.CallOption) (*RecoverResponse, error)
+	// loop: `recoverdeposit`
+	// RecoverDeposit verifies one static-address deposit on-chain and restores
+	// its local address/deposit state without relying on wallet reconciliation.
+	RecoverDeposit(ctx context.Context, in *RecoverDepositRequest, opts ...grpc.CallOption) (*RecoverDepositResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
@@ -325,6 +329,15 @@ func (c *swapClientClient) Recover(ctx context.Context, in *RecoverRequest, opts
 	return out, nil
 }
 
+func (c *swapClientClient) RecoverDeposit(ctx context.Context, in *RecoverDepositRequest, opts ...grpc.CallOption) (*RecoverDepositResponse, error) {
+	out := new(RecoverDepositResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/RecoverDeposit", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
 	out := new(GetInfoResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/GetInfo", in, out, opts...)
@@ -553,6 +566,10 @@ type SwapClientServer interface {
 	// Recover restores the local static-address and L402 state from an encrypted
 	// local backup file.
 	Recover(context.Context, *RecoverRequest) (*RecoverResponse, error)
+	// loop: `recoverdeposit`
+	// RecoverDeposit verifies one static-address deposit on-chain and restores
+	// its local address/deposit state without relying on wallet reconciliation.
+	RecoverDeposit(context.Context, *RecoverDepositRequest) (*RecoverDepositResponse, error)
 	// loop: `getinfo`
 	// GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
@@ -675,6 +692,9 @@ func (UnimplementedSwapClientServer) FetchL402Token(context.Context, *FetchL402T
 }
 func (UnimplementedSwapClientServer) Recover(context.Context, *RecoverRequest) (*RecoverResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Recover not implemented")
+}
+func (UnimplementedSwapClientServer) RecoverDeposit(context.Context, *RecoverDepositRequest) (*RecoverDepositResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecoverDeposit not implemented")
 }
 func (UnimplementedSwapClientServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
@@ -1030,6 +1050,24 @@ func _SwapClient_Recover_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SwapClientServer).Recover(ctx, req.(*RecoverRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_RecoverDeposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecoverDepositRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).RecoverDeposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/RecoverDeposit",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).RecoverDeposit(ctx, req.(*RecoverDepositRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1424,6 +1462,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Recover",
 			Handler:    _SwapClient_Recover_Handler,
+		},
+		{
+			MethodName: "RecoverDeposit",
+			Handler:    _SwapClient_RecoverDeposit_Handler,
 		},
 		{
 			MethodName: "GetInfo",

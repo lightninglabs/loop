@@ -142,6 +142,45 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 		})
 }
 
+// UpdateRecoveredDeposit reactivates an existing deposit row from verified
+// on-chain recovery data and records its static-address linkage.
+func (s *SqlStore) UpdateRecoveredDeposit(ctx context.Context,
+	deposit *Deposit) error {
+
+	if deposit.AddressID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
+	updateArgs := sqlc.UpdateRecoveredDepositParams{
+		DepositID:            deposit.ID[:],
+		TxHash:               deposit.Hash[:],
+		OutIndex:             int32(deposit.Index),
+		Amount:               int64(deposit.Value),
+		ConfirmationHeight:   deposit.ConfirmationHeight,
+		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+		StaticAddressID: sql.NullInt32{
+			Int32: deposit.AddressID,
+			Valid: true,
+		},
+	}
+
+	updateStateArgs := sqlc.InsertDepositUpdateParams{
+		DepositID:       deposit.ID[:],
+		UpdateTimestamp: s.clock.Now().UTC(),
+		UpdateState:     string(deposit.state),
+	}
+
+	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+		func(q *sqlc.Queries) error {
+			err := q.UpdateRecoveredDeposit(ctx, updateArgs)
+			if err != nil {
+				return err
+			}
+
+			return q.InsertDepositUpdate(ctx, updateStateArgs)
+		})
+}
+
 // GetDeposit retrieves the deposit from the database.
 func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 	var deposit *Deposit

@@ -1335,6 +1335,43 @@ func (s *swapClientServer) Recover(ctx context.Context,
 	}, nil
 }
 
+// RecoverDeposit verifies and restores one static-address deposit from
+// caller-supplied on-chain coordinates.
+func (s *swapClientServer) RecoverDeposit(ctx context.Context,
+	req *looprpc.RecoverDepositRequest) (*looprpc.RecoverDepositResponse,
+	error) {
+
+	if s.recoveryService == nil {
+		return nil, status.Error(
+			codes.Unavailable, "recovery service not configured",
+		)
+	}
+
+	result, err := s.recoveryService.RecoverDeposit(
+		ctx, &recovery.RecoverDepositRequest{
+			TxID:        req.GetTxid(),
+			VOut:        req.GetVout(),
+			HeightHint:  req.GetHeightHint(),
+			PkScriptHex: req.GetPkscriptHex(),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.RecoverDepositResponse{
+		Outpoint:           result.OutPoint,
+		Value:              int64(result.Value),
+		ConfirmationHeight: result.ConfirmationHeight,
+		ClientKeyFamily:    result.ClientKeyFamily,
+		ClientKeyIndex:     result.ClientKeyIndex,
+		StaticAddress:      result.StaticAddress,
+		RecoveredAddress:   result.RecoveredAddress,
+		RecoveredDeposit:   result.RecoveredDeposit,
+		DepositId:          result.DepositID,
+	}, nil
+}
+
 // GetInfo returns basic information about the loop daemon and details to swaps
 // from the swap store.
 func (s *swapClientServer) GetInfo(ctx context.Context,

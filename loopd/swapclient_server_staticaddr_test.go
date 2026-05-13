@@ -39,6 +39,14 @@ func (s *staticAddrDepositStore) UpdateDeposit(context.Context,
 	return nil
 }
 
+// UpdateRecoveredDeposit satisfies deposit.Store for static-address server
+// tests that do not exercise manual recovery persistence.
+func (s *staticAddrDepositStore) UpdateRecoveredDeposit(context.Context,
+	*deposit.Deposit) error {
+
+	return nil
+}
+
 // GetDeposit implements deposit.Store for static address server tests.
 func (s *staticAddrDepositStore) GetDeposit(context.Context,
 	deposit.ID) (*deposit.Deposit, error) {
@@ -102,6 +110,13 @@ func (s *staticAddrTestAddressManager) GetParameters(
 	params.PkScript = pkScript
 
 	return &params
+}
+
+func (s *staticAddrTestAddressManager) RestoreAddress(
+	context.Context, *address.Parameters) (*btcutil.AddressTaproot, bool,
+	error) {
+
+	return nil, true, nil
 }
 
 func (s *staticAddrTestAddressManager) GetStaticAddress(

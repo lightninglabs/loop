@@ -406,6 +406,25 @@ restore static address and L402 state from a local backup file
 .PP
 \fB--help, -h\fP: show help
 
+.SH recoverdeposit
+.PP
+recover one static address deposit from on-chain data
+
+.PP
+\fB--height_hint\fP="": block height hint for the deposit transaction (default: 0)
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--pkscript_hex\fP="": expected static address P2TR pkScript in hex
+
+.PP
+\fB--txid\fP="": transaction ID containing the deposit output
+
+.PP
+\fB--vout\fP="": deposit output index (default: 0)
+
 .SH reservations, r
 .PP
 manage reservations
@@ -692,4 +711,3 @@ Open a channel to an existing peer.
 
 .PP
 \fB--zero_conf\fP: (optional) whether a zero-conf channel open should be attempted.
-
