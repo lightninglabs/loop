@@ -376,3 +376,39 @@ func (q *Queries) UpdateDeposit(ctx context.Context, arg UpdateDepositParams) er
 	)
 	return err
 }
+
+const updateRecoveredDeposit = `-- name: UpdateRecoveredDeposit :exec
+UPDATE deposits
+SET
+    tx_hash = $2,
+    out_index = $3,
+    amount = $4,
+    confirmation_height = $5,
+    timeout_sweep_pk_script = $6,
+    static_address_id = $7
+WHERE
+    deposits.deposit_id = $1
+`
+
+type UpdateRecoveredDepositParams struct {
+	DepositID            []byte
+	TxHash               []byte
+	OutIndex             int32
+	Amount               int64
+	ConfirmationHeight   int64
+	TimeoutSweepPkScript []byte
+	StaticAddressID      sql.NullInt32
+}
+
+func (q *Queries) UpdateRecoveredDeposit(ctx context.Context, arg UpdateRecoveredDepositParams) error {
+	_, err := q.db.ExecContext(ctx, updateRecoveredDeposit,
+		arg.DepositID,
+		arg.TxHash,
+		arg.OutIndex,
+		arg.Amount,
+		arg.ConfirmationHeight,
+		arg.TimeoutSweepPkScript,
+		arg.StaticAddressID,
+	)
+	return err
+}

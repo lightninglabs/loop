@@ -437,6 +437,28 @@ The following flags are supported:
 | `--backup_file="…"` | path to an encrypted backup file; if omitted, loopd selects and validates the latest active-network backup candidate | string |
 | `--help` (`-h`)     | show help                                                                                                            | bool   |    `false`    |
 
+### `recoverdeposit` command
+
+recover one static address deposit from on-chain data.
+
+Verifies the provided transaction output on-chain, restores the matching static address, stores the deposit, and starts normal deposit tracking.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] recoverdeposit [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name                 | Description                                                            | Type   | Default value |
+|----------------------|------------------------------------------------------------------------|--------|:-------------:|
+| `--txid="…"`         | transaction ID containing the deposit output                           | string |
+| `--vout="…"`         | deposit output index                                                   | uint   |      `0`      |
+| `--height_hint="…"`  | block height hint for the deposit transaction                          | int    |      `0`      |
+| `--pkscript_hex="…"` | expected static address P2TR pkScript in hex                           | string |
+| `--help` (`-h`)      | show help                                                              | bool   |    `false`    |
+
 ### `reservations` command (aliases: `r`)
 
 manage reservations.
@@ -768,4 +790,3 @@ The following flags are supported:
 | `--fundmax`                             | if set, the wallet will attempt to commit the maximum possible local amount to the channel. This must not be set at the same time as local_amt                                                                                                                                                                        | bool   |    `false`    |
 | `--utxo="…"`                            | a utxo specified as outpoint(tx:idx) which will be used to fund a channel. This flag can be repeatedly used to fund a channel with a selection of utxos. The selected funds can either be entirely spent by specifying the fundmax flag or partially by selecting a fraction of the sum of the outpoints in local_amt | string |     `[]`      |
 | `--help` (`-h`)                         | show help                                                                                                                                                                                                                                                                                                             | bool   |    `false`    |
-

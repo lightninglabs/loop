@@ -18,6 +18,31 @@ import (
 // ID is a unique identifier for a deposit.
 type ID [IdLength]byte
 
+// DefaultRecoveryScanLimit is the highest child index scanned per static
+// address key family when manually recovering a deposit.
+const DefaultRecoveryScanLimit = 20
+
+// RecoveryRequest describes one static-address output that should be verified
+// on-chain and restored locally.
+type RecoveryRequest struct {
+	TxID       chainhash.Hash
+	VOut       uint32
+	HeightHint int32
+	PkScript   []byte
+}
+
+// RecoveryResult describes the restored deposit and matched static address.
+type RecoveryResult struct {
+	OutPoint           wire.OutPoint
+	Value              btcutil.Amount
+	ConfirmationHeight int64
+	AddressParams      *address.Parameters
+	StaticAddress      string
+	RecoveredAddress   bool
+	RecoveredDeposit   bool
+	DepositID          ID
+}
+
 // FromByteSlice creates a deposit id from a byte slice.
 func (r *ID) FromByteSlice(b []byte) error {
 	if len(b) != IdLength {

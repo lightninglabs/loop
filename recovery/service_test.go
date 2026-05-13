@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	staticaddrscript "github.com/lightninglabs/loop/staticaddr/script"
 	staticaddrversion "github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -1037,6 +1039,83 @@ func TestRestoreReportsNoStaticAddressChangeForIdempotentRestore(t *testing.T) {
 	require.False(t, result.RestoredStaticAddress)
 	require.NotEmpty(t, result.StaticAddress)
 	require.Len(t, destStaticMgr.restoreCalls, 1)
+}
+
+func TestRecoverDepositParsesAndDelegates(t *testing.T) {
+	ctx := context.Background()
+	txid := chainhash.Hash{1, 2, 3}
+	depositID := deposit.ID{9, 8, 7}
+	depositMgr := &mockDepositManager{
+		recoverResult: &deposit.RecoveryResult{
+			OutPoint: wire.OutPoint{
+				Hash:  txid,
+				Index: 2,
+			},
+			Value:              50_000,
+			ConfirmationHeight: 123,
+			AddressParams: &address.Parameters{
+				KeyLocator: keychain.KeyLocator{
+					Family: 42061,
+					Index:  7,
+				},
+			},
+			StaticAddress:    "bc1pstatic",
+			RecoveredAddress: true,
+			RecoveredDeposit: true,
+			DepositID:        depositID,
+		},
+	}
+	service := &Service{depositManager: depositMgr}
+
+	result, err := service.RecoverDeposit(ctx, &RecoverDepositRequest{
+		TxID:        txid.String(),
+		VOut:        2,
+		HeightHint:  100,
+		PkScriptHex: "0x" + hex.EncodeToString(testP2TRPkScript()),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, depositMgr.recoverReq)
+	require.Equal(t, txid, depositMgr.recoverReq.TxID)
+	require.EqualValues(t, 2, depositMgr.recoverReq.VOut)
+	require.EqualValues(t, 100, depositMgr.recoverReq.HeightHint)
+	require.Equal(t, testP2TRPkScript(), depositMgr.recoverReq.PkScript)
+
+	require.Equal(t, txid.String()+":2", result.OutPoint)
+	require.EqualValues(t, 50_000, result.Value)
+	require.EqualValues(t, 123, result.ConfirmationHeight)
+	require.EqualValues(t, 42061, result.ClientKeyFamily)
+	require.EqualValues(t, 7, result.ClientKeyIndex)
+	require.Equal(t, "bc1pstatic", result.StaticAddress)
+	require.True(t, result.RecoveredAddress)
+	require.True(t, result.RecoveredDeposit)
+	require.Equal(t, depositID[:], result.DepositID)
+}
+
+func TestRecoverDepositRejectsInvalidP2TRScript(t *testing.T) {
+	depositMgr := &mockDepositManager{}
+	service := &Service{depositManager: depositMgr}
+
+	_, err := service.RecoverDeposit(
+		context.Background(), &RecoverDepositRequest{
+			TxID:        chainhash.Hash{1}.String(),
+			VOut:        0,
+			HeightHint:  1,
+			PkScriptHex: "0014",
+		},
+	)
+	require.ErrorContains(t, err, "P2TR")
+	require.Nil(t, depositMgr.recoverReq)
+}
+
+func testP2TRPkScript() []byte {
+	pkScript := make([]byte, 34)
+	pkScript[0] = 0x51
+	pkScript[1] = 0x20
+	for i := 2; i < len(pkScript); i++ {
+		pkScript[i] = byte(i)
+	}
+
+	return pkScript
 }
 
 // TestRestoreLatestOnFreshInstallSkipsNonFreshInstall verifies that startup
@@ -2183,11 +2262,27 @@ type mockDepositManager struct {
 	depositsFound int
 	err           error
 	calls         int
+	recoverReq    *deposit.RecoveryRequest
+	recoverResult *deposit.RecoveryResult
+	recoverErr    error
 }
 
 func (m *mockDepositManager) ReconcileDeposits(context.Context) (int, error) {
 	m.calls++
 	return m.depositsFound, m.err
+}
+
+// RecoverDeposit records the parsed recovery request and returns the configured
+// mock recovery result.
+func (m *mockDepositManager) RecoverDeposit(_ context.Context,
+	req *deposit.RecoveryRequest) (*deposit.RecoveryResult, error) {
+
+	m.recoverReq = req
+	if m.recoverErr != nil {
+		return nil, m.recoverErr
+	}
+
+	return m.recoverResult, nil
 }
 
 type multiAddressRecoveryWalletKit struct {

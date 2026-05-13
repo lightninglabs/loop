@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +16,12 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
 	staticaddrscript "github.com/lightninglabs/loop/staticaddr/script"
 	staticaddrversion "github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -86,6 +90,11 @@ type DepositManager interface {
 	// ReconcileDeposits asks lnd for wallet-visible static-address UTXOs and
 	// rebuilds deposit FSM state for anything not already tracked.
 	ReconcileDeposits(context.Context) (int, error)
+
+	// RecoverDeposit verifies one on-chain static-address output and restores
+	// the corresponding local deposit/address state.
+	RecoverDeposit(context.Context,
+		*deposit.RecoveryRequest) (*deposit.RecoveryResult, error)
 }
 
 // RecoverResult describes the outcome of a restore attempt.
@@ -96,6 +105,29 @@ type RecoverResult struct {
 	RestoredL402               bool
 	NumDepositsFound           int
 	DepositReconciliationError string
+}
+
+// RecoverDepositRequest describes one static-address deposit to recover from
+// on-chain data supplied by the caller.
+type RecoverDepositRequest struct {
+	TxID        string
+	VOut        uint32
+	HeightHint  int32
+	PkScriptHex string
+}
+
+// RecoverDepositResult describes the recovered deposit and the static-address
+// child that matched the supplied pkScript.
+type RecoverDepositResult struct {
+	OutPoint           string
+	Value              btcutil.Amount
+	ConfirmationHeight int64
+	ClientKeyFamily    int32
+	ClientKeyIndex     uint32
+	StaticAddress      string
+	RecoveredAddress   bool
+	RecoveredDeposit   bool
+	DepositID          []byte
 }
 
 // Service coordinates creation and restoration of encrypted local recovery
@@ -396,6 +428,96 @@ func (s *Service) Restore(ctx context.Context, backupFile string) (
 	}
 
 	return result, nil
+}
+
+// RecoverDeposit restores one static-address deposit from caller-supplied
+// on-chain coordinates. The recovery package only validates the RPC-shaped
+// request and delegates chain/address/deposit work to the deposit manager.
+func (s *Service) RecoverDeposit(ctx context.Context,
+	req *RecoverDepositRequest) (*RecoverDepositResult, error) {
+
+	if s.depositManager == nil {
+		return nil, fmt.Errorf("deposit recovery is unavailable")
+	}
+
+	depositReq, err := parseRecoverDepositRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := s.depositManager.RecoverDeposit(ctx, depositReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.AddressParams == nil {
+		return nil, fmt.Errorf("recovered deposit missing address " +
+			"parameters")
+	}
+
+	return &RecoverDepositResult{
+		OutPoint:           result.OutPoint.String(),
+		Value:              result.Value,
+		ConfirmationHeight: result.ConfirmationHeight,
+		ClientKeyFamily: int32(
+			result.AddressParams.KeyLocator.Family,
+		),
+		ClientKeyIndex:   result.AddressParams.KeyLocator.Index,
+		StaticAddress:    result.StaticAddress,
+		RecoveredAddress: result.RecoveredAddress,
+		RecoveredDeposit: result.RecoveredDeposit,
+		DepositID:        result.DepositID[:],
+	}, nil
+}
+
+// parseRecoverDepositRequest validates the service-level recovery request and
+// converts it into the deposit manager's strongly typed request.
+func parseRecoverDepositRequest(req *RecoverDepositRequest) (
+	*deposit.RecoveryRequest, error) {
+
+	if req == nil {
+		return nil, fmt.Errorf("missing recover deposit request")
+	}
+	if req.TxID == "" {
+		return nil, fmt.Errorf("missing txid")
+	}
+	if req.HeightHint <= 0 {
+		return nil, fmt.Errorf("height_hint must be positive")
+	}
+	if req.PkScriptHex == "" {
+		return nil, fmt.Errorf("missing pkscript_hex")
+	}
+
+	txid, err := chainhash.NewHashFromStr(req.TxID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid txid: %w", err)
+	}
+
+	pkScript, err := hex.DecodeString(
+		strings.TrimPrefix(req.PkScriptHex, "0x"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid pkscript_hex: %w", err)
+	}
+	if !isP2TRPkScript(pkScript) {
+		return nil, fmt.Errorf("pkscript_hex must encode a P2TR " +
+			"pkScript")
+	}
+
+	return &deposit.RecoveryRequest{
+		TxID:       *txid,
+		VOut:       req.VOut,
+		HeightHint: req.HeightHint,
+		PkScript:   pkScript,
+	}, nil
+}
+
+// isP2TRPkScript reports whether the pkScript is a v1 witness program with a
+// 32-byte Taproot output key.
+func isP2TRPkScript(pkScript []byte) bool {
+	return len(pkScript) == 34 &&
+		pkScript[0] == txscript.OP_1 &&
+		pkScript[1] == 32
 }
 
 func (p *backupPayload) validateNetwork(currentNetwork string) error {

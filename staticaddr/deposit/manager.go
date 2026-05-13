@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,11 +10,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -439,6 +446,426 @@ func (m *Manager) ReconcileDeposits(ctx context.Context) (int, error) {
 	defer m.reconcileMu.Unlock()
 
 	return m.reconcileDeposits(ctx)
+}
+
+type verifiedRecoveryDeposit struct {
+	outPoint           wire.OutPoint
+	value              btcutil.Amount
+	confirmationHeight int64
+}
+
+// RecoverDeposit verifies a caller-supplied static-address output on-chain,
+// restores the matching concrete static address, directly creates/reactivates
+// the local deposit row, and starts the normal deposit FSM.
+func (m *Manager) RecoverDeposit(ctx context.Context,
+	req *RecoveryRequest) (*RecoveryResult, error) {
+
+	if req == nil {
+		return nil, fmt.Errorf("missing recovery request")
+	}
+
+	verified, err := m.verifyRecoveryOutput(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
+	addrParams, err := m.findRecoveryAddressParams(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	staticAddress, recoveredAddress, err := m.cfg.AddressManager.
+		RestoreAddress(ctx, addrParams)
+	if err != nil {
+		return nil, err
+	}
+	if addrParams.ID <= 0 {
+		addrParams.ID, err = m.cfg.AddressManager.GetStaticAddressID(
+			ctx, addrParams.PkScript,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	recoveredDeposit, recovered, err := m.restoreVerifiedDeposit(
+		ctx, verified, addrParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RecoveryResult{
+		OutPoint:           recoveredDeposit.OutPoint,
+		Value:              recoveredDeposit.Value,
+		ConfirmationHeight: recoveredDeposit.ConfirmationHeight,
+		AddressParams:      recoveredDeposit.AddressParams,
+		StaticAddress:      staticAddress.String(),
+		RecoveredAddress:   recoveredAddress,
+		RecoveredDeposit:   recovered,
+		DepositID:          recoveredDeposit.ID,
+	}, nil
+}
+
+// verifyRecoveryOutput waits for and validates the confirmed transaction output
+// that the caller wants to restore as a static-address deposit.
+func (m *Manager) verifyRecoveryOutput(ctx context.Context,
+	req *RecoveryRequest) (*verifiedRecoveryDeposit, error) {
+
+	if req.HeightHint <= 0 {
+		return nil, fmt.Errorf("height hint must be positive")
+	}
+	if len(req.PkScript) == 0 {
+		return nil, fmt.Errorf("missing pkScript")
+	}
+
+	confChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+		ctx, &req.TxID, req.PkScript, 1, req.HeightHint,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var confTx *chainntnfs.TxConfirmation
+	select {
+	case confTx = <-confChan:
+
+	case err = <-errChan:
+		return nil, err
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	if confTx == nil || confTx.Tx == nil {
+		return nil, fmt.Errorf("missing confirmation transaction")
+	}
+	if confTx.BlockHeight == 0 {
+		return nil, fmt.Errorf("missing confirmation height")
+	}
+	txHash := confTx.Tx.TxHash()
+	if txHash != req.TxID {
+		return nil, fmt.Errorf("confirmation txid %v does not match "+
+			"requested txid %v", txHash, req.TxID)
+	}
+	if req.VOut >= uint32(len(confTx.Tx.TxOut)) {
+		return nil, fmt.Errorf("vout %d not found in transaction",
+			req.VOut)
+	}
+
+	txOut := confTx.Tx.TxOut[req.VOut]
+	if !bytes.Equal(txOut.PkScript, req.PkScript) {
+		return nil, fmt.Errorf("confirmed output pkScript mismatch")
+	}
+	if txOut.Value <= 0 {
+		return nil, fmt.Errorf("confirmed output has invalid value %d",
+			txOut.Value)
+	}
+
+	return &verifiedRecoveryDeposit{
+		outPoint: wire.OutPoint{
+			Hash:  req.TxID,
+			Index: req.VOut,
+		},
+		value:              btcutil.Amount(txOut.Value),
+		confirmationHeight: int64(confTx.BlockHeight),
+	}, nil
+}
+
+// findRecoveryAddressParams locates or derives the static-address parameters
+// that produced the recovered output's pkScript.
+func (m *Manager) findRecoveryAddressParams(ctx context.Context,
+	req *RecoveryRequest) (*address.Parameters, error) {
+
+	if params := m.cfg.AddressManager.GetParameters(req.PkScript); params != nil {
+		return params, nil
+	}
+
+	seedParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if seedParams == nil {
+		return nil, fmt.Errorf("missing static address seed")
+	}
+
+	params, matched, err := m.matchRecoveryAddressParams(
+		ctx, req, seedParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if matched {
+		return params, nil
+	}
+
+	return nil, fmt.Errorf("no static address child matched pkScript")
+}
+
+// matchRecoveryAddressParams scans the supported static-address key families
+// until the caller-supplied pkScript is matched.
+func (m *Manager) matchRecoveryAddressParams(ctx context.Context,
+	req *RecoveryRequest, seedParams *address.Parameters) (
+	*address.Parameters, bool, error) {
+
+	if seedParams == nil {
+		return nil, false, nil
+	}
+	if seedParams.ServerPubkey == nil {
+		return nil, false, fmt.Errorf("missing static address seed " +
+			"server pubkey")
+	}
+	if seedParams.Expiry == 0 {
+		return nil, false, fmt.Errorf("missing static address seed expiry")
+	}
+	if bytes.Equal(seedParams.PkScript, req.PkScript) {
+		return seedParams, true, nil
+	}
+
+	for _, family := range recoveryKeyFamilies(seedParams.KeyLocator.Family) {
+		for index := uint32(0); index <= DefaultRecoveryScanLimit; index++ {
+			params, err := m.deriveRecoveryAddress(
+				ctx, seedParams, family, index, req.HeightHint,
+			)
+			if err != nil {
+				return nil, false, err
+			}
+
+			if bytes.Equal(params.PkScript, req.PkScript) {
+				return params, true, nil
+			}
+		}
+	}
+
+	return nil, false, nil
+}
+
+// recoveryKeyFamilies returns the unique static-address key families that
+// manual recovery should scan for a pkScript match.
+func recoveryKeyFamilies(legacyFamily keychain.KeyFamily) []keychain.KeyFamily {
+	if legacyFamily == 0 {
+		legacyFamily = keychain.KeyFamily(swap.StaticAddressKeyFamily)
+	}
+
+	candidates := []keychain.KeyFamily{
+		legacyFamily,
+		keychain.KeyFamily(swap.StaticMultiAddressKeyFamily),
+		keychain.KeyFamily(swap.StaticAddressChangeKeyFamily),
+	}
+
+	families := make([]keychain.KeyFamily, 0, len(candidates))
+	seen := make(map[keychain.KeyFamily]struct{}, len(candidates))
+	for _, family := range candidates {
+		if _, ok := seen[family]; ok {
+			continue
+		}
+
+		seen[family] = struct{}{}
+		families = append(families, family)
+	}
+
+	return families
+}
+
+// deriveRecoveryAddress reconstructs one candidate static-address child from
+// the seed server parameters and a client key locator.
+func (m *Manager) deriveRecoveryAddress(ctx context.Context,
+	seedParams *address.Parameters, family keychain.KeyFamily,
+	index uint32, initiationHeight int32) (*address.Parameters, error) {
+
+	locator := keychain.KeyLocator{
+		Family: family,
+		Index:  index,
+	}
+	clientKey, err := m.cfg.WalletKit.DeriveKey(ctx, &locator)
+	if err != nil {
+		return nil, fmt.Errorf("unable to derive static address child "+
+			"%d:%d: %w", family, index, err)
+	}
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(seedParams.Expiry),
+		clientKey.PubKey, seedParams.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	return &address.Parameters{
+		ClientPubkey:     clientKey.PubKey,
+		ServerPubkey:     seedParams.ServerPubkey,
+		Expiry:           seedParams.Expiry,
+		PkScript:         pkScript,
+		KeyLocator:       locator,
+		ProtocolVersion:  seedParams.ProtocolVersion,
+		InitiationHeight: initiationHeight,
+	}, nil
+}
+
+// restoreVerifiedDeposit creates or reactivates the deposit row for a verified
+// recovery output.
+func (m *Manager) restoreVerifiedDeposit(ctx context.Context,
+	verified *verifiedRecoveryDeposit,
+	addrParams *address.Parameters) (*Deposit, bool, error) {
+
+	if addrParams == nil || addrParams.ID <= 0 {
+		return nil, false, fmt.Errorf("static address ID must be set")
+	}
+
+	existing, err := m.cfg.Store.DepositForOutpoint(
+		ctx, verified.outPoint.String(),
+	)
+	switch {
+	case err == nil:
+		return m.reactivateVerifiedDeposit(ctx, existing, verified,
+			addrParams)
+
+	case errors.Is(err, ErrDepositNotFound):
+		return m.createVerifiedDeposit(ctx, verified, addrParams)
+
+	default:
+		return nil, false, err
+	}
+}
+
+// createVerifiedDeposit persists a newly recovered deposit and starts its FSM.
+func (m *Manager) createVerifiedDeposit(ctx context.Context,
+	verified *verifiedRecoveryDeposit,
+	addrParams *address.Parameters) (*Deposit, bool, error) {
+
+	timeoutSweepPkScript, err := m.nextTimeoutSweepPkScript(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	id, err := GetRandomDepositID()
+	if err != nil {
+		return nil, false, err
+	}
+
+	d := &Deposit{
+		ID:                   id,
+		state:                Deposited,
+		OutPoint:             verified.outPoint,
+		Value:                verified.value,
+		ConfirmationHeight:   verified.confirmationHeight,
+		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addrParams,
+		AddressID:            addrParams.ID,
+	}
+
+	err = m.cfg.Store.CreateDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	err = m.rememberAndStartDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return d, true, nil
+}
+
+// reactivateVerifiedDeposit refreshes an existing Deposited/Replaced row with
+// verified recovery data and ensures normal FSM tracking is running.
+func (m *Manager) reactivateVerifiedDeposit(ctx context.Context, d *Deposit,
+	verified *verifiedRecoveryDeposit, addrParams *address.Parameters) (
+	*Deposit, bool, error) {
+
+	d.Lock()
+	if d.Value != verified.value {
+		d.Unlock()
+		return nil, false, fmt.Errorf("existing deposit %v has value "+
+			"%v, recovered output has value %v", verified.outPoint,
+			d.Value, verified.value)
+	}
+
+	state := d.state
+	switch state {
+	case Deposited:
+		// Idempotent recovery. We still refresh the verified height and
+		// address linkage below, but report that no deposit row needed to be
+		// recovered.
+
+	case Replaced:
+
+	default:
+		d.Unlock()
+		return nil, false, fmt.Errorf("existing deposit %v is in "+
+			"state %s", verified.outPoint, state)
+	}
+
+	if d.TimeOutSweepPkScript == nil {
+		timeoutSweepPkScript, err := m.nextTimeoutSweepPkScript(ctx)
+		if err != nil {
+			d.Unlock()
+			return nil, false, err
+		}
+		d.TimeOutSweepPkScript = timeoutSweepPkScript
+	}
+
+	d.OutPoint = verified.outPoint
+	d.ConfirmationHeight = verified.confirmationHeight
+	d.AddressParams = addrParams
+	d.AddressID = addrParams.ID
+	d.SetStateNoLock(Deposited)
+
+	err := m.cfg.Store.UpdateRecoveredDeposit(ctx, d)
+	if err != nil {
+		d.SetStateNoLock(state)
+		d.Unlock()
+		return nil, false, err
+	}
+
+	recovered := state == Replaced
+	d.Unlock()
+	err = m.rememberAndStartDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return d, recovered, nil
+}
+
+// rememberAndStartDeposit indexes a recovered deposit in memory and starts its
+// FSM if it is not already active.
+func (m *Manager) rememberAndStartDeposit(ctx context.Context,
+	d *Deposit) error {
+
+	m.mu.Lock()
+	m.deposits[d.OutPoint] = d
+	delete(m.missingDeposits, d.OutPoint)
+	_, active := m.activeDeposits[d.OutPoint]
+	m.mu.Unlock()
+
+	if active {
+		return nil
+	}
+
+	return m.startDepositFsm(ctx, d)
+}
+
+// nextTimeoutSweepPkScript derives the wallet script used for any future
+// timeout sweep of a recovered deposit.
+func (m *Manager) nextTimeoutSweepPkScript(ctx context.Context) ([]byte, error) {
+	addr, err := m.cfg.WalletKit.NextAddr(
+		ctx, lnwallet.DefaultAccountName,
+		walletrpc.AddressType_TAPROOT_PUBKEY, false,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return txscript.PayToAddrScript(addr)
 }
 
 // listUnspentWithBestHeight returns the wallet's current static-address UTXOs

@@ -122,6 +122,9 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 	*address.Parameters, error) {
 
 	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 
 	return args.Get(0).(*address.Parameters),
 		args.Error(1)
@@ -158,6 +161,29 @@ func (m *mockAddressManager) GetParameters(
 	}
 
 	return args.Get(0).(*address.Parameters)
+}
+
+// RestoreAddress records or simulates a static-address restore in deposit
+// manager tests.
+func (m *mockAddressManager) RestoreAddress(_ context.Context,
+	params *address.Parameters) (*btcutil.AddressTaproot, bool, error) {
+
+	if !m.hasExpectation("RestoreAddress") {
+		params.ID = 1
+		addr, err := m.GetTaprootAddress(
+			params.ClientPubkey, params.ServerPubkey,
+			int64(params.Expiry),
+		)
+		return addr, true, err
+	}
+
+	args := m.Called(params)
+	if args.Get(0) == nil {
+		return nil, args.Bool(1), args.Error(2)
+	}
+
+	return args.Get(0).(*btcutil.AddressTaproot), args.Bool(1),
+		args.Error(2)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
@@ -202,6 +228,14 @@ func (s *mockStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 	return args.Error(0)
 }
 
+// UpdateRecoveredDeposit records recovered deposit updates in manager tests.
+func (s *mockStore) UpdateRecoveredDeposit(ctx context.Context,
+	deposit *Deposit) error {
+
+	args := s.Called(ctx, deposit)
+	return args.Error(0)
+}
+
 func (s *mockStore) GetDeposit(ctx context.Context, depositID ID) (*Deposit,
 	error) {
 
@@ -213,6 +247,10 @@ func (s *mockStore) DepositForOutpoint(ctx context.Context,
 	outpoint string) (*Deposit, error) {
 
 	args := s.Called(ctx, outpoint)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
 	return args.Get(0).(*Deposit), args.Error(1)
 }
 
