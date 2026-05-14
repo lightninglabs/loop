@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--network=regtest",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "openchannel",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.0-beta commit=v0.32.1-beta-71-gbed29e41d84c34147ca60fb1aa99ecc6f2c8a079 commit_hash=bed29e41d84c34147ca60fb1aa99ecc6f2c8a079",
+    "run_error": "node id argument missing",
+    "duration": 1421679,
+    "clock_start_unix": 1769407086
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] node id argument missing\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "node id argument missing"
+      }
+    }
+  ]
+}

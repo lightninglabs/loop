@@ -688,7 +688,7 @@ The following flags are supported:
 
 ### `static openchannel` subcommand
 
-Open a channel to a an existing peer.
+Open a channel to an existing peer.
 
 Attempt to open a new channel to an existing peer with the key  	node-key.  	The channel will be initialized with local-amt satoshis locally and 	push-amt satoshis for the remote node. Note that the push-amt is 	deducted from the specified local-amt which implies that the local-amt 	must be greater than the push-amt. Also note that specifying push-amt 	means you give that amount to the remote node as part of the channel 	opening. Once the channel is open, a channelPoint (txid:vout) of the 	funding output is returned.  	If the remote peer supports the option upfront shutdown feature bit 	(query listpeers to see their supported feature bits), an address to 	enforce payout of funds on cooperative close can optionally be provided. 	Note that if you set this value, you will not be able to cooperatively 	close out to another address.  	One can also specify a short string memo to record some useful 	information about the channel using the --memo argument. This is stored 	locally only, and is purely for reference. It has no bearing on the 	channel's operation. Max allowed length is 500 characters.
 
