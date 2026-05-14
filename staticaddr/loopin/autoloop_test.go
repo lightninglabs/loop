@@ -11,10 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSelectNoChangeDeposits verifies the full-deposit static-autoloop
-// selector. The cases below target the filter paths, the branch-and-bound
-// search, and every documented tie-breaker explicitly so coverage tracks the
-// actual selection behavior instead of a handful of happy-path examples.
+// TestSelectNoChangeDeposits exercises the bounded-memory selector end to end.
+// The full decision rule:
+//
+//  1. build only full-deposit, no-change candidates
+//  2. find the best reachable total in the requested range
+//  3. allow a band that gives back up to 25 percent of the gain above
+//     minAmount
+//  4. inside that band, prefer earlier-expiring deposits
+//  5. fall back to larger total, then fewer deposits
 func TestSelectNoChangeDeposits(t *testing.T) {
 	depositSeven := makeDeposit(7, 0, 7_000, 200)
 	depositFour := makeDeposit(4, 0, 4_000, 210)
@@ -34,6 +39,7 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 	depositUnsuitable := makeDeposit(18, 0, 6_000, 149)
 	depositOversized := makeDeposit(19, 0, 9_000, 220)
 	depositTwo := makeDeposit(20, 0, 2_000, 210)
+	depositTen := makeDeposit(23, 0, 10_000, 500)
 
 	testCases := []struct {
 		name             string
@@ -188,6 +194,47 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			expected: []*deposit.Deposit{
 				depositNine, depositFourA,
 			},
+		},
+		{
+			// A slightly smaller total can win when it stays inside
+			// the band that gives back only part of the gain above
+			// minAmount.
+			name: "smaller earlier-expiring combo can win " +
+				"inside band",
+			maxAmount: 10_000,
+			minAmount: 6_000,
+			deposits: []*deposit.Deposit{
+				depositTen, depositFive, depositFourC,
+			},
+			csvExpiry:   1_000,
+			blockHeight: 100,
+			expected: []*deposit.Deposit{
+				depositFive, depositFourC,
+			},
+		},
+		{
+			name: "smaller earlier candidate below band does not " +
+				"beat best total",
+			maxAmount: 9_000,
+			minAmount: 8_000,
+			deposits: []*deposit.Deposit{
+				depositNine, depositSeven,
+			},
+			csvExpiry:   1_000,
+			blockHeight: 100,
+			expected:    []*deposit.Deposit{depositNine},
+		},
+		{
+			name: "returns no candidate when enough value exists " +
+				"but no subset fits range",
+			maxAmount: 6_000,
+			minAmount: 5_000,
+			deposits: []*deposit.Deposit{
+				depositFourC, depositFourD, depositFourE,
+			},
+			csvExpiry:   1_000,
+			blockHeight: 100,
+			expectedErr: ErrNoAutoloopCandidate,
 		},
 	}
 
