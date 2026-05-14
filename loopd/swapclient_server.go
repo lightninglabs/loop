@@ -1426,6 +1426,10 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		LoopIn: make(
 			[]*looprpc.LoopInRequest, len(suggestions.InSwaps),
 		),
+		StaticLoopIn: make(
+			[]*looprpc.StaticAddressLoopInRequest,
+			len(suggestions.StaticInSwaps),
+		),
 	}
 
 	for i, swap := range suggestions.OutSwaps {
@@ -1454,6 +1458,24 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		}
 
 		resp.LoopIn[i] = loopIn
+	}
+
+	for i, swap := range suggestions.StaticInSwaps {
+		request := &looprpc.StaticAddressLoopInRequest{
+			Outpoints:             swap.DepositOutpoints,
+			MaxSwapFeeSatoshis:    int64(swap.MaxSwapFee),
+			Label:                 swap.Label,
+			Initiator:             swap.Initiator,
+			PaymentTimeoutSeconds: swap.PaymentTimeoutSeconds,
+			Amount:                int64(swap.SelectedAmount),
+			Fast:                  swap.Fast,
+		}
+
+		if swap.LastHop != nil {
+			request.LastHop = swap.LastHop[:]
+		}
+
+		resp.StaticLoopIn[i] = request
 	}
 
 	for id, reason := range suggestions.DisqualifiedChans {
@@ -2097,6 +2119,13 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		Fast:                  in.Fast,
 	}
 
+	// External callers must not be able to use reserved autoloop labels.
+	// Internal autoloop dispatch bypasses this RPC and can still use the
+	// reserved labels needed to attribute automated swaps correctly.
+	if err := labels.Validate(req.Label); err != nil {
+		return nil, fmt.Errorf("invalid label: %w", err)
+	}
+
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)
 		if err != nil {
@@ -2408,6 +2437,13 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 
 	case liquidity.ReasonFeePPMInsufficient:
 		return looprpc.AutoReason_AUTO_REASON_SWAP_FEE, nil
+
+	case liquidity.ReasonStaticLoopInNoCandidate:
+		return looprpc.AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE,
+			nil
+
+	case liquidity.ReasonCustomChannelData:
+		return looprpc.AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA, nil
 
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)

@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -259,6 +260,48 @@ func TestValidateLoopInRequest(t *testing.T) {
 			require.Equal(t, test.expectedTarget, conf)
 		})
 	}
+}
+
+// TestStaticAddressLoopInRejectsReservedLabel verifies that external static
+// loop-in requests still reject reserved autoloop labels at the RPC boundary.
+func TestStaticAddressLoopInRejectsReservedLabel(t *testing.T) {
+	logger := btclog.NewSLogger(
+		btclog.NewDefaultHandler(os.Stdout),
+	)
+	setLogger(logger.SubSystem(Subsystem))
+
+	server := &swapClientServer{}
+
+	_, err := server.StaticAddressLoopIn(
+		t.Context(), &looprpc.StaticAddressLoopInRequest{
+			Label: labels.AutoloopLabel(swap.TypeIn),
+		},
+	)
+	require.ErrorContains(t, err, labels.ErrReservedPrefix.Error())
+}
+
+// TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner
+// reason is exposed over rpc.
+func TestRPCAutoloopReasonStaticLoopInNoCandidate(t *testing.T) {
+	reason, err := rpcAutoloopReason(
+		liquidity.ReasonStaticLoopInNoCandidate,
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		looprpc.AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE,
+		reason,
+	)
+}
+
+// TestRPCAutoloopReasonCustomChannelData verifies that custom-channel
+// disqualifications are exposed over rpc instead of failing the whole dry run.
+func TestRPCAutoloopReasonCustomChannelData(t *testing.T) {
+	reason, err := rpcAutoloopReason(liquidity.ReasonCustomChannelData)
+	require.NoError(t, err)
+	require.Equal(
+		t, looprpc.AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA, reason,
+	)
 }
 
 // TestSwapClientServerStopDaemon ensures that calling StopDaemon triggers the

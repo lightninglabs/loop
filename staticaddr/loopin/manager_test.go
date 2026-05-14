@@ -2,15 +2,21 @@ package loopin
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -176,8 +182,50 @@ func TestSelectDeposits(t *testing.T) {
 	}
 }
 
+// TestInitiateLoopInAllowsReservedAutoloopLabel verifies that the internal
+// loop-in manager path does not reject reserved autoloop labels. The RPC
+// boundary owns that validation, while internal autoloop dispatch must be able
+// to reuse the reserved labels directly.
+func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
+	ctx := t.Context()
+
+	const confirmationHeight = 0
+	selectedDeposit := makeDeposit(1, 0, 9_000, confirmationHeight)
+	selectedOutpoint := selectedDeposit.OutPoint.String()
+	quoteErr := errors.New("quote failed")
+	quoteGetter := &mockQuoteGetter{
+		err: quoteErr,
+	}
+
+	manager, err := NewManager(&Config{
+		DepositManager: &mockDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				selectedOutpoint: selectedDeposit,
+			},
+		},
+		QuoteGetter: quoteGetter,
+		NodePubkey:  route.Vertex{2},
+	}, 200)
+	require.NoError(t, err)
+
+	_, err = manager.initiateLoopIn(ctx, &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: []string{selectedOutpoint},
+		SelectedAmount:   selectedDeposit.Value,
+		MaxSwapFee:       1_000,
+		Label:            labels.AutoloopLabel(swap.TypeIn),
+		Initiator:        "autoloop",
+	})
+	require.ErrorIs(t, err, quoteErr)
+	require.NotContains(t, err.Error(), labels.ErrReservedPrefix.Error())
+	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
+	// activeDeposits is the set returned by GetActiveDepositsInState.
+	activeDeposits []*deposit.Deposit
+
+	// byOutpoint maps outpoint strings to deposits for direct lookups.
 	byOutpoint map[string]*deposit.Deposit
 }
 
@@ -187,10 +235,28 @@ func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 	return nil, nil
 }
 
-func (m *mockDepositManager) AllStringOutpointsActiveDeposits(_ []string,
-	_ fsm.StateType) ([]*deposit.Deposit, bool) {
+func (m *mockDepositManager) AllStringOutpointsActiveDeposits(outpoints []string,
+	state fsm.StateType) ([]*deposit.Deposit, bool) {
 
-	return nil, false
+	if state != deposit.Deposited {
+		return nil, false
+	}
+
+	if m.byOutpoint == nil {
+		return nil, false
+	}
+
+	res := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		selectedDeposit, ok := m.byOutpoint[outpoint]
+		if !ok {
+			return nil, false
+		}
+
+		res = append(res, selectedDeposit)
+	}
+
+	return res, true
 }
 
 func (m *mockDepositManager) TransitionDeposits(_ context.Context,
@@ -214,7 +280,52 @@ func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
 func (m *mockDepositManager) GetActiveDepositsInState(_ fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
-	return nil, nil
+	return m.activeDeposits, nil
+}
+
+// mockQuoteGetter records the inputs to quote requests and returns a fixed
+// loop-in quote.
+type mockQuoteGetter struct {
+	// quote is the response returned from GetLoopInQuote.
+	quote *loop.LoopInQuote
+
+	// err is the optional error returned from GetLoopInQuote.
+	err error
+
+	// amount records the quoted amount.
+	amount btcutil.Amount
+
+	// lastHop records the quoted last hop.
+	lastHop *route.Vertex
+
+	// initiator records the quoted initiator string.
+	initiator string
+
+	// numDeposits records the quoted deposit count.
+	numDeposits uint32
+
+	// fast records the quoted fast flag.
+	fast bool
+}
+
+// GetLoopInQuote returns the configured quote and records the request
+// parameters for assertions.
+func (m *mockQuoteGetter) GetLoopInQuote(_ context.Context,
+	amt btcutil.Amount, _ route.Vertex, lastHop *route.Vertex,
+	_ [][]zpay32.HopHint, initiator string, numDeposits uint32,
+	fast bool) (*loop.LoopInQuote, error) {
+
+	m.amount = amt
+	m.lastHop = lastHop
+	m.initiator = initiator
+	m.numDeposits = numDeposits
+	m.fast = fast
+
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return m.quote, nil
 }
 
 // mockStore implements StaticAddressLoopInStore for tests.
@@ -276,8 +387,14 @@ func (s *mockStore) SwapHashesForDepositIDs(_ context.Context,
 }
 
 // helper to create a deposit with specific outpoint and value.
-func makeDeposit(h byte, index uint32, value btcutil.Amount) *deposit.Deposit {
-	d := &deposit.Deposit{Value: value}
+func makeDeposit(h byte, index uint32, value btcutil.Amount,
+	confirmationHeight int64) *deposit.Deposit {
+
+	d := &deposit.Deposit{
+		Value:              value,
+		ConfirmationHeight: confirmationHeight,
+	}
+
 	d.Hash = chainhash.Hash{h}
 	d.Index = index
 	var id deposit.ID
@@ -330,11 +447,12 @@ func TestCheckChange(t *testing.T) {
 	}
 
 	// Deposits belonging to different swaps.
-	s1d1 := makeDeposit(1, 0, 1000)
-	s1d2 := makeDeposit(1, 1, 2000)
-	s2d1 := makeDeposit(2, 0, 1500)
-	s3d1 := makeDeposit(3, 0, 800)
-	s4d1 := makeDeposit(4, 0, 900)
+	const confirmationHeight = 0
+	s1d1 := makeDeposit(1, 0, 1000, confirmationHeight)
+	s1d2 := makeDeposit(1, 1, 2000, confirmationHeight)
+	s2d1 := makeDeposit(2, 0, 1500, confirmationHeight)
+	s3d1 := makeDeposit(3, 0, 800, confirmationHeight)
+	s4d1 := makeDeposit(4, 0, 900, confirmationHeight)
 
 	// Swaps:
 	// A: total 3000, selected 3000 => no change.

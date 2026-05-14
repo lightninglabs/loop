@@ -159,7 +159,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 // StaticAddressLoopIn swap and associates it with the provided deposits.
 func TestCreateLoopIn(t *testing.T) {
 	// Set up test context objects.
-	ctxb := context.Background()
+	ctx := t.Context()
 	testDb := loopdb.NewTestDB(t)
 	testClock := clock.NewTestClock(time.Now())
 	defer testDb.Close()
@@ -200,17 +200,17 @@ func TestCreateLoopIn(t *testing.T) {
 			},
 		}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err := depositStore.CreateDeposit(ctx, d1)
 	require.NoError(t, err)
-	err = depositStore.CreateDeposit(ctxb, d2)
+	err = depositStore.CreateDeposit(ctx, d2)
 	require.NoError(t, err)
 
 	d1.SetState(deposit.LoopingIn)
 	d2.SetState(deposit.LoopingIn)
 
-	err = depositStore.UpdateDeposit(ctxb, d1)
+	err = depositStore.UpdateDeposit(ctx, d1)
 	require.NoError(t, err)
-	err = depositStore.UpdateDeposit(ctxb, d2)
+	err = depositStore.UpdateDeposit(ctx, d2)
 	require.NoError(t, err)
 
 	_, clientPubKey := test.CreateKey(1)
@@ -232,11 +232,11 @@ func TestCreateLoopIn(t *testing.T) {
 	}
 	swapPending.SetState(SignHtlcTx)
 
-	err = swapStore.CreateLoopIn(ctxb, &swapPending)
+	err = swapStore.CreateLoopIn(ctx, &swapPending)
 	require.NoError(t, err)
 
 	depositIDs, err := swapStore.DepositIDsForSwapHash(
-		ctxb, swapHashPending,
+		ctx, swapHashPending,
 	)
 	require.NoError(t, err)
 	require.Len(t, depositIDs, 2)
@@ -244,7 +244,7 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Contains(t, depositIDs, d2.ID)
 
 	swapHashes, err := swapStore.SwapHashesForDepositIDs(
-		ctxb, []deposit.ID{depositIDs[0], depositIDs[1]},
+		ctx, []deposit.ID{depositIDs[0], depositIDs[1]},
 	)
 	require.NoError(t, err)
 	require.Len(t, swapHashes, 1)
@@ -252,7 +252,7 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[0])
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[1])
 
-	swap, err := swapStore.GetLoopInByHash(ctxb, swapHashPending)
+	swap, err := swapStore.GetLoopInByHash(ctx, swapHashPending)
 	require.NoError(t, err)
 	require.Equal(t, swapHashPending, swap.SwapHash)
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
@@ -270,4 +270,19 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, d2.OutPoint, swap.Deposits[1].OutPoint)
 	require.Equal(t, d2.Value, swap.Deposits[1].Value)
 	require.Equal(t, deposit.LoopingIn, swap.Deposits[1].GetState())
+
+	updateTime := testClock.Now().Add(time.Minute)
+	testClock.SetTime(updateTime)
+	swapPending.SetState(Succeeded)
+
+	err = swapStore.UpdateLoopIn(ctx, &swapPending)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(t, Succeeded, swap.GetState())
+	require.WithinDuration(
+		t, updateTime.UTC(), swap.LastUpdateTime.UTC(),
+		time.Microsecond,
+	)
 }

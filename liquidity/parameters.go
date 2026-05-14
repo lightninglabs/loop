@@ -32,6 +32,7 @@ var (
 		HtlcConfTarget:            defaultHtlcConfTarget,
 		FeeLimit:                  defaultFeePortion(),
 		FastSwapPublication:       true,
+		LoopInSource:              LoopInSourceWallet,
 	}
 )
 
@@ -128,6 +129,10 @@ type Parameters struct {
 	// swaps. If set to true, the deadline is set to immediate publication.
 	// If set to false, the deadline is set to 30 minutes.
 	FastSwapPublication bool
+
+	// LoopInSource controls which funding source autoloop uses for loop-in
+	// rules.
+	LoopInSource LoopInSource
 }
 
 // AssetParams define the asset specific autoloop parameters.
@@ -160,11 +165,13 @@ func (p Parameters) String() string {
 	return fmt.Sprintf("rules: %v, failure backoff: %v, sweep "+
 		"sweep conf target: %v, htlc conf target: %v,fees: %v, "+
 		"auto budget: %v, budget refresh: %v, max auto in flight: %v, "+
-		"minimum swap size=%v, maximum swap size=%v",
+		"minimum swap size: %v, maximum swap size: %v, "+
+		"loop in source: %v",
 		strings.Join(ruleList, ","), p.FailureBackOff,
 		p.SweepConfTarget, p.HtlcConfTarget, p.FeeLimit,
 		p.AutoFeeBudget, p.AutoFeeRefreshPeriod, p.MaxAutoInFlight,
-		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum)
+		p.ClientRestrictions.Minimum, p.ClientRestrictions.Maximum,
+		p.LoopInSource)
 }
 
 // haveRules returns a boolean indicating whether we have any rules configured.
@@ -258,6 +265,13 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 
 	if p.MaxAutoInFlight <= 0 {
 		return ErrZeroInFlight
+	}
+
+	switch p.LoopInSource {
+	case LoopInSourceWallet, LoopInSourceStaticAddress:
+
+	default:
+		return fmt.Errorf("unknown loop in source: %v", p.LoopInSource)
 	}
 
 	// Destination address and account cannot be set at the same time.
@@ -409,6 +423,37 @@ func rpcToRule(rule *clientrpc.LiquidityRule) (*SwapRule, error) {
 	}
 }
 
+// rpcToLoopInSource converts the rpc loop-in source enum to the internal
+// liquidity enum.
+func rpcToLoopInSource(source clientrpc.LoopInSource) (LoopInSource, error) {
+	switch source {
+	case clientrpc.LoopInSource_LOOP_IN_SOURCE_WALLET:
+		return LoopInSourceWallet, nil
+
+	case clientrpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS:
+		return LoopInSourceStaticAddress, nil
+
+	default:
+		return 0, fmt.Errorf("unknown rpc loop in source: %v", source)
+	}
+}
+
+// loopInSourceToRPC converts the internal loop-in source enum to its rpc
+// representation.
+func loopInSourceToRPC(source LoopInSource) (clientrpc.LoopInSource, error) {
+	switch source {
+	case LoopInSourceWallet:
+		return clientrpc.LoopInSource_LOOP_IN_SOURCE_WALLET, nil
+
+	case LoopInSourceStaticAddress:
+		return clientrpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS,
+			nil
+
+	default:
+		return 0, fmt.Errorf("unknown loop in source: %v", source)
+	}
+}
+
 // RpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
 // from it.
 func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
@@ -446,6 +491,11 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		}
 	}
 
+	loopInSource, err := rpcToLoopInSource(req.LoopInSource)
+	if err != nil {
+		return nil, err
+	}
+
 	params := &Parameters{
 		FeeLimit:        feeLimit,
 		SweepConfTarget: req.SweepConfTarget,
@@ -477,6 +527,7 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		),
 		AssetAutoloopParams: easyAssetParams,
 		FastSwapPublication: req.FastSwapPublication,
+		LoopInSource:        loopInSource,
 	}
 
 	if req.AutoloopBudgetRefreshPeriodSec != 0 {
@@ -592,6 +643,11 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		}
 	}
 
+	loopInSource, err := loopInSourceToRPC(cfg.LoopInSource)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcCfg := &clientrpc.LiquidityParameters{
 		SweepConfTarget:   cfg.SweepConfTarget,
 		FailureBackoffSec: uint64(cfg.FailureBackOff.Seconds()),
@@ -621,6 +677,7 @@ func ParametersToRpc(cfg Parameters) (*clientrpc.LiquidityParameters,
 		AccountAddrType:            addrType,
 		EasyAssetParams:            easyAssetMap,
 		FastSwapPublication:        cfg.FastSwapPublication,
+		LoopInSource:               loopInSource,
 	}
 	// Set excluded peers for easy autoloop.
 	rpcCfg.EasyAutoloopExcludedPeers = make(

@@ -340,6 +340,11 @@ var setParamsCommand = &cli.Command{
 			Usage: "the confirmation target for loop in on-chain " +
 				"htlcs.",
 		},
+		&cli.StringFlag{
+			Name: "loopinsource",
+			Usage: "the loop-in source to use for autoloop rules: " +
+				"wallet or static-address.",
+		},
 		&cli.BoolFlag{
 			Name: "easyautoloop",
 			Usage: "set to true to enable easy autoloop, which " +
@@ -552,6 +557,25 @@ func setParams(ctx context.Context, cmd *cli.Command) error {
 
 	if cmd.IsSet("htlc_conf") {
 		params.HtlcConfTarget = int32(cmd.Int("htlc_conf"))
+		flagSet = true
+	}
+
+	if cmd.IsSet("loopinsource") {
+		switch cmd.String("loopinsource") {
+		case "wallet":
+			params.LoopInSource =
+				looprpc.LoopInSource_LOOP_IN_SOURCE_WALLET
+
+		case "static-address", "static_address", "static":
+			params.LoopInSource =
+				looprpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS
+
+		default:
+			return fmt.Errorf("unknown loopinsource value %q "+
+				"(use \"wallet\" or \"static-address\")",
+				cmd.String("loopinsource"))
+		}
+
 		flagSet = true
 	}
 
