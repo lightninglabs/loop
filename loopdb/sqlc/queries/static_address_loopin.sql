@@ -33,6 +33,14 @@ SET
 WHERE
     swap_hash = $1;
 
+-- name: RecordStaticAddressRiskDecision :exec
+UPDATE static_address_swaps
+SET
+    confirmation_risk_decision = $2,
+    confirmation_risk_decision_time = $3
+WHERE
+    swap_hash = $1;
+
 -- name: InsertStaticAddressMetaUpdate :exec
 INSERT INTO static_address_swap_updates (
     swap_hash,
@@ -145,7 +153,6 @@ FROM
     )
 WHERE
     d.swap_hash = $1;
-
 
 
 

@@ -732,12 +732,18 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		}
 	}()
 
-	startPaymentDeadline := func(reason string) {
+	startPaymentDeadline := func(reason string, startedAt time.Time) {
 		if deadlineStarted || invoice.State == invoices.ContractCanceled {
 			return
 		}
 
 		timeout := f.loopIn.PaymentTimeoutDuration()
+		if !startedAt.IsZero() {
+			timeout -= time.Since(startedAt)
+			if timeout < 0 {
+				timeout = 0
+			}
+		}
 
 		f.Infof("starting payment deadline after %s", reason)
 		deadlineTimer = time.NewTimer(timeout)
@@ -761,6 +767,52 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		// Reuse the same helper as InitHtlcAction so timeout cleanup follows
 		// the same detached-context path as early-init cleanup.
 		f.cancelSwapInvoice(ctx)
+	}
+
+	riskDecisionTime := func(decision ConfirmationRiskDecision) time.Time {
+		if f.cfg.Store == nil {
+			return time.Now()
+		}
+
+		storedLoopIn, err := f.cfg.Store.GetLoopInByHash(
+			ctx, f.loopIn.SwapHash,
+		)
+		if err != nil {
+			f.Warnf("unable to reload persisted risk decision for "+
+				"swap %v: %v", f.loopIn.SwapHash, err)
+
+			return time.Now()
+		}
+
+		if storedLoopIn == nil ||
+			storedLoopIn.ConfirmationRiskDecision != decision ||
+			storedLoopIn.ConfirmationRiskDecisionTime.IsZero() {
+
+			return time.Now()
+		}
+
+		f.loopIn.ConfirmationRiskDecision =
+			storedLoopIn.ConfirmationRiskDecision
+		f.loopIn.ConfirmationRiskDecisionTime =
+			storedLoopIn.ConfirmationRiskDecisionTime
+
+		return storedLoopIn.ConfirmationRiskDecisionTime
+	}
+
+	switch f.loopIn.ConfirmationRiskDecision {
+	case ConfirmationRiskDecisionAccepted:
+		startPaymentDeadline(
+			"recovered risk accepted notification",
+			f.loopIn.ConfirmationRiskDecisionTime,
+		)
+
+	case ConfirmationRiskDecisionRejected:
+		cancelInvoiceSubscription()
+		f.cancelSwapInvoice(ctx)
+
+		return f.HandleError(errors.New(
+			"server rejected confirmation risk wait",
+		))
 	}
 
 	for {
@@ -831,7 +883,16 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				continue
 			}
 
-			startPaymentDeadline("risk accepted notification")
+			startedAt := riskDecisionTime(
+				ConfirmationRiskDecisionAccepted,
+			)
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionAccepted
+			f.loopIn.ConfirmationRiskDecisionTime = startedAt
+			startPaymentDeadline(
+				"risk accepted notification",
+				f.loopIn.ConfirmationRiskDecisionTime,
+			)
 
 		case riskRejected, ok := <-riskRejectedChan:
 			if !ok {
@@ -848,6 +909,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			cancelInvoiceSubscription()
 			f.cancelSwapInvoice(ctx)
+			decisionTime := riskDecisionTime(
+				ConfirmationRiskDecisionRejected,
+			)
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionRejected
+			f.loopIn.ConfirmationRiskDecisionTime = decisionTime
 
 			return f.HandleError(errors.New(
 				"server rejected confirmation risk wait",
@@ -864,6 +931,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 				startPaymentDeadline(
 					"legacy confirmation fallback",
+					time.Time{},
 				)
 			}
 
