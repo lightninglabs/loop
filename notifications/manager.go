@@ -72,6 +72,13 @@ type Config struct {
 	// MinAliveConnTime is the minimum time that the connection to the
 	// server needs to be alive before we consider it a successful.
 	MinAliveConnTime time.Duration
+
+	// PersistStaticLoopInRiskDecision durably records static loop-in
+	// confirmation-risk decisions. If this fails, the notification is still
+	// cached and forwarded so a later subscriber can process it after the swap
+	// row exists.
+	PersistStaticLoopInRiskDecision func(context.Context, lntypes.Hash,
+		bool) error
 }
 
 // Manager is a manager for notifications that the swap server sends to the
@@ -374,7 +381,7 @@ func (m *Manager) subscribeNotifications(ctx context.Context) error {
 		notification, err := notifStream.Recv()
 		if err == nil && notification != nil {
 			log.Tracef("Received notification: %v", notification)
-			m.handleNotification(notification)
+			m.handleNotification(ctx, notification)
 			continue
 		}
 
@@ -386,7 +393,7 @@ func (m *Manager) subscribeNotifications(ctx context.Context) error {
 
 // handleNotification handles an incoming notification from the server,
 // forwarding it to the appropriate subscribers.
-func (m *Manager) handleNotification(ntfn *swapserverrpc.
+func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 	SubscribeNotificationsResponse) {
 
 	switch ntfn.Notification.(type) {
@@ -429,9 +436,6 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 		// We'll forward the static loop in risk accepted notification to the
 		// subscriber for the matching swap.
 		riskAcceptedNtfn := ntfn.GetStaticLoopInRiskAccepted()
-		m.Lock()
-		defer m.Unlock()
-
 		var (
 			swapHash    lntypes.Hash
 			hasSwapHash bool
@@ -444,10 +448,26 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			} else {
 				swapHash = hash
 				hasSwapHash = true
-				m.staticLoopInRiskAccepted[hash] =
-					riskAcceptedNtfn
-				delete(m.staticLoopInRiskRejected, hash)
 			}
+		}
+
+		if hasSwapHash && m.cfg.PersistStaticLoopInRiskDecision != nil {
+			err := m.cfg.PersistStaticLoopInRiskDecision(
+				ctx, swapHash, true,
+			)
+			if err != nil {
+				log.Errorf("Unable to persist static loop in "+
+					"risk accepted notification: %v", err)
+			}
+		}
+
+		m.Lock()
+		defer m.Unlock()
+
+		if hasSwapHash {
+			m.staticLoopInRiskAccepted[swapHash] =
+				riskAcceptedNtfn
+			delete(m.staticLoopInRiskRejected, swapHash)
 		}
 
 		for _, sub := range m.subscribers[NotificationTypeStaticLoopInRiskAccepted] { // nolint: lll
@@ -473,9 +493,6 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 		// We'll forward the static loop in risk rejected notification to the
 		// subscriber for the matching swap.
 		riskRejectedNtfn := ntfn.GetStaticLoopInRiskRejected()
-		m.Lock()
-		defer m.Unlock()
-
 		var (
 			swapHash    lntypes.Hash
 			hasSwapHash bool
@@ -488,10 +505,26 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			} else {
 				swapHash = hash
 				hasSwapHash = true
-				m.staticLoopInRiskRejected[hash] =
-					riskRejectedNtfn
-				delete(m.staticLoopInRiskAccepted, hash)
 			}
+		}
+
+		if hasSwapHash && m.cfg.PersistStaticLoopInRiskDecision != nil {
+			err := m.cfg.PersistStaticLoopInRiskDecision(
+				ctx, swapHash, false,
+			)
+			if err != nil {
+				log.Errorf("Unable to persist static loop in "+
+					"risk rejected notification: %v", err)
+			}
+		}
+
+		m.Lock()
+		defer m.Unlock()
+
+		if hasSwapHash {
+			m.staticLoopInRiskRejected[swapHash] =
+				riskRejectedNtfn
+			delete(m.staticLoopInRiskAccepted, swapHash)
 		}
 
 		for _, sub := range m.subscribers[NotificationTypeStaticLoopInRiskRejected] { // nolint: lll

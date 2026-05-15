@@ -137,18 +137,20 @@ type StaticAddress struct {
 }
 
 type StaticAddressSwap struct {
-	ID                      int32
-	SwapHash                []byte
-	SwapInvoice             string
-	LastHop                 []byte
-	PaymentTimeoutSeconds   int32
-	QuotedSwapFeeSatoshis   int64
-	DepositOutpoints        string
-	HtlcTxFeeRateSatKw      int64
-	HtlcTimeoutSweepTxID    sql.NullString
-	HtlcTimeoutSweepAddress string
-	SelectedAmount          int64
-	Fast                    bool
+	ID                           int32
+	SwapHash                     []byte
+	SwapInvoice                  string
+	LastHop                      []byte
+	PaymentTimeoutSeconds        int32
+	QuotedSwapFeeSatoshis        int64
+	DepositOutpoints             string
+	HtlcTxFeeRateSatKw           int64
+	HtlcTimeoutSweepTxID         sql.NullString
+	HtlcTimeoutSweepAddress      string
+	SelectedAmount               int64
+	Fast                         bool
+	ConfirmationRiskDecision     string
+	ConfirmationRiskDecisionTime sql.NullTime
 }
 
 type StaticAddressSwapUpdate struct {
