@@ -3,12 +3,15 @@ package address
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/waddrmgr"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -31,6 +34,18 @@ var (
 
 type mockStaticAddressClient struct {
 	mock.Mock
+}
+
+type failingImportWalletKit struct {
+	lndclient.WalletKitClient
+
+	err error
+}
+
+func (w *failingImportWalletKit) ImportTaprootScript(context.Context,
+	*waddrmgr.Tapscript) (btcutil.Address, error) {
+
+	return nil, w.err
 }
 
 func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
@@ -128,6 +143,171 @@ func TestManager(t *testing.T) {
 
 	// The expiry has to match.
 	require.EqualValues(t, defaultExpiry, expiry)
+
+	storedParams, err := testContext.manager.GetStaticAddressParameters(ctxb)
+	require.NoError(t, err)
+	require.EqualValues(
+		t, swap.StaticAddressKeyFamily, storedParams.KeyLocator.Family,
+	)
+}
+
+// TestRestoreAddress verifies that restoring an address recreates the same
+// static address locally without requiring a server call.
+func TestRestoreAddress(t *testing.T) {
+	ctxb := t.Context()
+
+	testContext := NewAddressManagerTestContext(t)
+
+	keyDesc, err := testContext.mockLnd.WalletKit.DeriveKey(
+		ctxb, &keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  7,
+		},
+	)
+	require.NoError(t, err)
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(defaultExpiry),
+		keyDesc.PubKey, defaultServerPubkey,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	addressParams := &Parameters{
+		ClientPubkey:     keyDesc.PubKey,
+		ServerPubkey:     defaultServerPubkey,
+		Expiry:           defaultExpiry,
+		PkScript:         pkScript,
+		KeyLocator:       keyDesc.KeyLocator,
+		ProtocolVersion:  0,
+		InitiationHeight: 123,
+	}
+
+	taprootAddress, restored, err := testContext.manager.RestoreAddress(
+		ctxb, addressParams,
+	)
+	require.NoError(t, err)
+	require.True(t, restored)
+
+	expectedAddress, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(staticAddress.TaprootKey),
+		testContext.manager.cfg.ChainParams,
+	)
+	require.NoError(t, err)
+	require.Equal(t, expectedAddress.String(), taprootAddress.String())
+
+	storedParams, err := testContext.manager.GetStaticAddressParameters(ctxb)
+	require.NoError(t, err)
+	require.True(t, sameAddressParameters(storedParams, addressParams))
+
+	taprootAddress, restored, err = testContext.manager.RestoreAddress(
+		ctxb, addressParams,
+	)
+	require.NoError(t, err)
+	require.False(t, restored)
+	require.Equal(t, expectedAddress.String(), taprootAddress.String())
+}
+
+// TestRestoreAddressImportFailureDoesNotCreateRow verifies that a failed lnd
+// tapscript import leaves no static-address DB row behind, so a later retry can
+// restore cleanly.
+func TestRestoreAddressImportFailureDoesNotCreateRow(t *testing.T) {
+	ctxb := t.Context()
+
+	testContext := NewAddressManagerTestContext(t)
+
+	keyDesc, err := testContext.mockLnd.WalletKit.DeriveKey(
+		ctxb, &keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  7,
+		},
+	)
+	require.NoError(t, err)
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(defaultExpiry),
+		keyDesc.PubKey, defaultServerPubkey,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	addressParams := &Parameters{
+		ClientPubkey:     keyDesc.PubKey,
+		ServerPubkey:     defaultServerPubkey,
+		Expiry:           defaultExpiry,
+		PkScript:         pkScript,
+		KeyLocator:       keyDesc.KeyLocator,
+		ProtocolVersion:  0,
+		InitiationHeight: 123,
+	}
+
+	importErr := errors.New("import failed")
+	testContext.manager.cfg.WalletKit = &failingImportWalletKit{
+		WalletKitClient: testContext.mockLnd.WalletKit,
+		err:             importErr,
+	}
+
+	_, _, err = testContext.manager.RestoreAddress(ctxb, addressParams)
+	require.ErrorIs(t, err, importErr)
+
+	_, err = testContext.manager.GetStaticAddressParameters(ctxb)
+	require.ErrorIs(t, err, ErrNoStaticAddress)
+
+	testContext.manager.cfg.WalletKit = testContext.mockLnd.WalletKit
+	_, restored, err := testContext.manager.RestoreAddress(
+		ctxb, addressParams,
+	)
+	require.NoError(t, err)
+	require.True(t, restored)
+}
+
+// TestRestoreAddressRejectsDifferentInitiationHeight verifies that a restore
+// request with the same address material but a different initiation height is
+// rejected instead of being treated as idempotent.
+func TestRestoreAddressRejectsDifferentInitiationHeight(t *testing.T) {
+	ctxb := t.Context()
+
+	testContext := NewAddressManagerTestContext(t)
+
+	keyDesc, err := testContext.mockLnd.WalletKit.DeriveKey(
+		ctxb, &keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  7,
+		},
+	)
+	require.NoError(t, err)
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(defaultExpiry),
+		keyDesc.PubKey, defaultServerPubkey,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	addressParams := &Parameters{
+		ClientPubkey:     keyDesc.PubKey,
+		ServerPubkey:     defaultServerPubkey,
+		Expiry:           defaultExpiry,
+		PkScript:         pkScript,
+		KeyLocator:       keyDesc.KeyLocator,
+		ProtocolVersion:  0,
+		InitiationHeight: 123,
+	}
+
+	_, _, err = testContext.manager.RestoreAddress(ctxb, addressParams)
+	require.NoError(t, err)
+
+	differentHeight := *addressParams
+	differentHeight.InitiationHeight = 456
+
+	_, _, err = testContext.manager.RestoreAddress(ctxb, &differentHeight)
+	require.ErrorContains(t, err, "existing static address differs from backup")
 }
 
 // TestNewAddressValidatesServerResponse tests that the untrusted

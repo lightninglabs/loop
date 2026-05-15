@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS deposits (
     amount BIGINT NOT NULL,
 
     -- confirmation_height is the absolute height at which the deposit was
-    -- confirmed.
+    -- confirmed. A value of 0 means the deposit is still unconfirmed.
     confirmation_height BIGINT NOT NULL,
 
     -- timeout_sweep_pk_script is the public key script that will be used to

@@ -1,6 +1,7 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -36,6 +38,8 @@ const (
 	defaultConfTarget = 3
 
 	DefaultPaymentTimeoutSeconds = 60
+
+	defaultInvoiceCleanupTimeout = 5 * time.Second
 )
 
 var (
@@ -57,6 +61,24 @@ var (
 func (f *FSM) InitHtlcAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	var event fsm.EventType
+	invoiceNeedsCleanup := false
+	defer func() {
+		// If we created the private invoice but failed before persisting the
+		// swap, cancel it so retries do not accumulate orphan invoices.
+		if !invoiceNeedsCleanup || event != fsm.OnError {
+			return
+		}
+
+		f.cancelSwapInvoice(ctx)
+	}()
+
+	returnError := func(err error) fsm.EventType {
+		event = f.HandleError(err)
+
+		return event
+	}
+
 	// Lock the deposits and transition them to the LoopingIn state.
 	err := f.cfg.DepositManager.TransitionDeposits(
 		ctx, f.loopIn.Deposits, deposit.OnLoopInInitiated,
@@ -65,7 +87,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if err != nil {
 		err = fmt.Errorf("unable to loop-in deposits: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 
 	// Calculate the swap invoice amount. The server needs to pay us the
@@ -88,7 +110,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		err = fmt.Errorf("unable to create random swap preimage: %w",
 			err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.loopIn.SwapPreimage = swapPreimage
 	f.loopIn.SwapHash = swapPreimage.Hash()
@@ -100,7 +122,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if err != nil {
 		err = fmt.Errorf("unable to derive client htlc key: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.loopIn.ClientPubkey = keyDesc.PubKey
 	f.loopIn.HtlcKeyLocator = keyDesc.KeyLocator
@@ -119,9 +141,13 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if err != nil {
 		err = fmt.Errorf("unable to create swap invoice: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.loopIn.SwapInvoice = swapInvoice
+
+	// From here until CreateLoopIn succeeds, any error path would otherwise
+	// leave behind a live invoice with no persisted swap to recover it.
+	invoiceNeedsCleanup = true
 
 	f.loopIn.ProtocolVersion = version.AddressProtocolVersion(
 		version.CurrentRPCProtocolVersion(),
@@ -149,7 +175,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		err = fmt.Errorf("unable to initiate the loop-in with the "+
 			"server: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 
 	// Pushing empty sigs signals the server that we abandoned the swap
@@ -171,7 +197,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		pushEmptySigs()
 		err = fmt.Errorf("unable to parse server pubkey: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.loopIn.ServerPubkey = serverPubkey
 
@@ -185,7 +211,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		err = fmt.Errorf("server response parameters are outside "+
 			"our allowed range: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 
 	f.loopIn.HtlcCltvExpiry = loopInResp.HtlcExpiry
@@ -194,7 +220,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		pushEmptySigs()
 		err = fmt.Errorf("unable to convert server nonces: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.htlcServerNoncesHighFee, err = toNonces(
 		loopInResp.HighFeeHtlcInfo.Nonces,
@@ -202,7 +228,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if err != nil {
 		pushEmptySigs()
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.htlcServerNoncesExtremelyHighFee, err = toNonces(
 		loopInResp.ExtremeFeeHtlcInfo.Nonces,
@@ -210,7 +236,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if err != nil {
 		pushEmptySigs()
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 
 	// We need to defend against the server setting high fees for the htlc
@@ -232,7 +258,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		log.Errorf("server htlc tx fee is higher than the configured "+
 			"allowed maximum: %v > %v", fee, maxHtlcTxFee)
 
-		return f.HandleError(ErrFeeTooHigh)
+		return returnError(ErrFeeTooHigh)
 	}
 	f.loopIn.HtlcTxFeeRate = feeRate
 
@@ -246,7 +272,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			"configured allowed maximum: %v > %v", fee,
 			maxHtlcTxBackupFee)
 
-		return f.HandleError(ErrFeeTooHigh)
+		return returnError(ErrFeeTooHigh)
 	}
 	f.loopIn.HtlcTxHighFeeRate = highFeeRate
 
@@ -262,7 +288,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			"configured allowed maximum: %v > %v", fee,
 			maxHtlcTxBackupFee)
 
-		return f.HandleError(ErrFeeTooHigh)
+		return returnError(ErrFeeTooHigh)
 	}
 	f.loopIn.HtlcTxExtremelyHighFeeRate = extremelyHighFeeRate
 
@@ -276,7 +302,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		err = fmt.Errorf("unable to derive htlc timeout sweep "+
 			"address: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 	f.loopIn.HtlcTimeoutSweepAddress = sweepAddress
 
@@ -286,10 +312,148 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		pushEmptySigs()
 		err = fmt.Errorf("unable to store loop-in in db: %w", err)
 
-		return f.HandleError(err)
+		return returnError(err)
 	}
 
-	return OnHtlcInitiated
+	// Once the swap is stored, restart/recovery code owns invoice lifecycle.
+	invoiceNeedsCleanup = false
+
+	event = OnHtlcInitiated
+
+	return event
+}
+
+// cancelSwapInvoice best-effort cancels the current swap invoice using a
+// detached timeout-limited context so cleanup still runs even if the caller's
+// context is already done.
+func (f *FSM) cancelSwapInvoice(ctx context.Context) {
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), defaultInvoiceCleanupTimeout,
+	)
+	defer cancel()
+
+	err := f.cfg.InvoicesClient.CancelInvoice(cleanupCtx, f.loopIn.SwapHash)
+	if err != nil {
+		f.Warnf("unable to cancel invoice for swap %v: %v",
+			f.loopIn.SwapHash, err)
+	}
+}
+
+// handleInvoiceUpdate applies the monitor state's invoice-update semantics and
+// reports whether the update produced a terminal event.
+func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
+	fsm.EventType, bool) {
+
+	switch update.State {
+	case invoices.ContractOpen:
+		return fsm.NoOp, false
+
+	case invoices.ContractAccepted:
+		return fsm.NoOp, false
+
+	case invoices.ContractSettled:
+		f.Debugf("received off-chain payment update %v", update.State)
+		return OnPaymentReceived, true
+
+	case invoices.ContractCanceled:
+		// If the invoice was canceled we only log here since we still need
+		// to monitor until the htlc timed out.
+		log.Warnf("invoice for swap hash %v canceled", f.loopIn.SwapHash)
+		return fsm.NoOp, false
+
+	default:
+		err := fmt.Errorf("unexpected invoice state %v for swap hash %v "+
+			"canceled", update.State, f.loopIn.SwapHash)
+		return f.HandleError(err), true
+	}
+}
+
+// selectedDepositConfirmationHeights returns current confirmation heights for
+// the original deposit outpoints selected by this loop-in.
+func selectedDepositConfirmationHeights(
+	loopIn *StaticAddressLoopIn) map[string]int64 {
+
+	confirmations := make(map[string]int64, len(loopIn.Deposits))
+	outpoints := make(map[string]struct{}, len(loopIn.DepositOutpoints))
+	for _, outpoint := range loopIn.DepositOutpoints {
+		outpoints[outpoint] = struct{}{}
+	}
+
+	for _, d := range loopIn.Deposits {
+		if d == nil {
+			continue
+		}
+
+		d.Lock()
+		outpoint := d.OutPoint.String()
+		confirmationHeight := d.ConfirmationHeight
+		d.Unlock()
+
+		if _, ok := outpoints[outpoint]; !ok {
+			continue
+		}
+
+		confirmations[outpoint] = confirmationHeight
+	}
+
+	return confirmations
+}
+
+// legacyMinConfsReached returns true once every original deposit is confirmed
+// and the youngest original deposit has reached the legacy confirmation target.
+func legacyMinConfsReached(outpoints []string,
+	confirmationHeights map[string]int64, currentHeight int32) bool {
+
+	if currentHeight <= 0 || len(outpoints) == 0 {
+		return false
+	}
+
+	youngestConfirmation := int64(0)
+	for _, outpoint := range outpoints {
+		confirmationHeight, ok := confirmationHeights[outpoint]
+		if !ok || confirmationHeight <= 0 {
+			return false
+		}
+
+		if confirmationHeight > youngestConfirmation {
+			youngestConfirmation = confirmationHeight
+		}
+	}
+
+	return int64(currentHeight) >= youngestConfirmation+deposit.MinConfs-1
+}
+
+// originalDepositOutpointUnavailable checks the original selected deposit
+// outpoints against the chain backend's UTXO view.
+func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
+	bool, error) {
+
+	if f.cfg.TxOutChecker == nil {
+		return false, nil
+	}
+
+	const includeMempool = true
+	for _, outpointStr := range f.loopIn.DepositOutpoints {
+		outpoint, err := wire.NewOutPointFromString(outpointStr)
+		if err != nil {
+			return false, fmt.Errorf("invalid deposit outpoint %q: %w",
+				outpointStr, err)
+		}
+
+		txOut, err := f.cfg.TxOutChecker.GetTxOut(
+			ctx, *outpoint, includeMempool,
+		)
+		if err != nil {
+			return false, fmt.Errorf("unable to get txout %v: %w",
+				outpoint, err)
+		}
+
+		if txOut == nil {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // SignHtlcTxAction is called if the htlc was initialized and the server
@@ -299,6 +463,18 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	var err error
+
+	outpointUnavailable, err := f.originalDepositOutpointUnavailable(ctx)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	if outpointUnavailable {
+		err = errors.New("original deposit outpoint no longer available")
+		f.Warnf("%v, canceling swap invoice", err)
+		f.cancelSwapInvoice(ctx)
+
+		return f.HandleError(err)
+	}
 
 	f.loopIn.AddressParams, err =
 		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
@@ -511,7 +687,28 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	var (
+		riskAcceptedChan <-chan *swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification
+		riskRejectedChan <-chan *swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification
+		cancelRiskNotificationSubscriptions = func() {}
+	)
+	if f.cfg.NotificationManager != nil {
+		notificationCtx, cancel := context.WithCancel(ctx)
+		cancelRiskNotificationSubscriptions = cancel
+		riskAcceptedChan = f.cfg.NotificationManager.
+			SubscribeStaticLoopInRiskAccepted(
+				notificationCtx, f.loopIn.SwapHash,
+			)
+		riskRejectedChan = f.cfg.NotificationManager.
+			SubscribeStaticLoopInRiskRejected(
+				notificationCtx, f.loopIn.SwapHash,
+			)
+	}
+	defer cancelRiskNotificationSubscriptions()
 	htlcConfirmed := false
+	depositsUnlocked := false
 
 	invoice, err := f.cfg.LndClient.LookupInvoice(ctx, f.loopIn.SwapHash)
 	if err != nil {
@@ -521,30 +718,40 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	// Create the swap payment timeout timer. If it runs out we cancel the
-	// invoice, but keep monitoring the htlc confirmation.
-	// If the invoice was canceled, e.g. before a restart, we don't need to
-	// set a new deadline.
-	var deadlineChan <-chan time.Time
-	if invoice.State != invoices.ContractCanceled {
-		// If the invoice is still live we set the timeout to the
-		// remaining payment time. If too much time has elapsed, e.g.
-		// after a restart, we set the timeout to 0 to cancel the
-		// invoice and unlock the deposits immediately.
-		remainingTimeSeconds := f.loopIn.RemainingPaymentTimeSeconds()
+	// Create the swap payment timeout timer after the server confirms
+	// confirmation risk was accepted. If a server does not support risk
+	// notifications, fall back after the legacy deposit confirmation depth.
+	var (
+		deadlineChan    <-chan time.Time
+		deadlineTimer   *time.Timer
+		deadlineStarted bool
+	)
+	defer func() {
+		if deadlineTimer != nil {
+			deadlineTimer.Stop()
+		}
+	}()
 
-		// If the invoice isn't cancelled yet and the payment timeout
-		// elapsed, we set the timeout to 0 to cancel the invoice and
-		// unlock the deposits immediately. Otherwise, we start the
-		// timer with the remaining seconds to timeout.
-		timeout := time.Duration(0) * time.Second
-		if remainingTimeSeconds > 0 {
-			timeout = time.Duration(remainingTimeSeconds) *
-				time.Second
+	startPaymentDeadline := func(reason string, startedAt time.Time) {
+		if deadlineStarted || invoice.State == invoices.ContractCanceled {
+			return
 		}
 
-		deadlineChan = time.NewTimer(timeout).C
-	} else {
+		timeout := f.loopIn.PaymentTimeoutDuration()
+		if !startedAt.IsZero() {
+			timeout -= time.Since(startedAt)
+			if timeout < 0 {
+				timeout = 0
+			}
+		}
+
+		f.Infof("starting payment deadline after %s", reason)
+		deadlineTimer = time.NewTimer(timeout)
+		deadlineChan = deadlineTimer.C
+		deadlineStarted = true
+	}
+
+	if invoice.State == invoices.ContractCanceled {
 		// If the invoice was canceled previously we end our
 		// subscription to invoice updates.
 		cancelInvoiceSubscription()
@@ -557,11 +764,87 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		// Cancel the lndclient invoice subscription.
 		cancelInvoiceSubscription()
 
-		err = f.cfg.InvoicesClient.CancelInvoice(ctx, f.loopIn.SwapHash)
-		if err != nil {
-			f.Warnf("unable to cancel invoice "+
-				"for swap hash: %v", err)
+		// Reuse the same helper as InitHtlcAction so timeout cleanup follows
+		// the same detached-context path as early-init cleanup.
+		f.cancelSwapInvoice(ctx)
+	}
+
+	riskDecisionTime := func(decision ConfirmationRiskDecision) time.Time {
+		now := time.Now()
+		if f.cfg.Store == nil {
+			return now
 		}
+
+		storedLoopIn, err := f.cfg.Store.GetLoopInByHash(
+			ctx, f.loopIn.SwapHash,
+		)
+		if err != nil {
+			f.Warnf("unable to reload persisted risk decision for "+
+				"swap %v: %v", f.loopIn.SwapHash, err)
+
+			return now
+		}
+
+		if storedLoopIn == nil {
+			return now
+		}
+
+		hasPersistedDecision :=
+			storedLoopIn.ConfirmationRiskDecision == decision &&
+				!storedLoopIn.ConfirmationRiskDecisionTime.IsZero()
+
+		if !hasPersistedDecision {
+			err = f.cfg.Store.RecordStaticAddressRiskDecision(
+				ctx, f.loopIn.SwapHash, decision,
+			)
+			if err != nil {
+				f.Warnf("unable to persist replayed risk "+
+					"decision for swap %v: %v",
+					f.loopIn.SwapHash, err)
+
+				return now
+			}
+
+			storedLoopIn, err = f.cfg.Store.GetLoopInByHash(
+				ctx, f.loopIn.SwapHash,
+			)
+			if err != nil {
+				f.Warnf("unable to reload persisted risk "+
+					"decision for swap %v: %v",
+					f.loopIn.SwapHash, err)
+
+				return now
+			}
+			if storedLoopIn == nil ||
+				storedLoopIn.ConfirmationRiskDecision != decision ||
+				storedLoopIn.ConfirmationRiskDecisionTime.IsZero() {
+
+				return now
+			}
+		}
+
+		f.loopIn.ConfirmationRiskDecision =
+			storedLoopIn.ConfirmationRiskDecision
+		f.loopIn.ConfirmationRiskDecisionTime =
+			storedLoopIn.ConfirmationRiskDecisionTime
+
+		return storedLoopIn.ConfirmationRiskDecisionTime
+	}
+
+	switch f.loopIn.ConfirmationRiskDecision {
+	case ConfirmationRiskDecisionAccepted:
+		startPaymentDeadline(
+			"recovered risk accepted notification",
+			f.loopIn.ConfirmationRiskDecisionTime,
+		)
+
+	case ConfirmationRiskDecisionRejected:
+		cancelInvoiceSubscription()
+		f.cancelSwapInvoice(ctx)
+
+		return f.HandleError(errors.New(
+			"server rejected confirmation risk wait",
+		))
 	}
 
 	for {
@@ -603,19 +886,87 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			}
 
 		case <-deadlineChan:
+			deadlineChan = nil
+
 			// If the server didn't pay the invoice on time, we
 			// cancel the invoice and keep monitoring the htlc tx
 			// confirmation. We also need to unlock the deposits to
 			// re-enable them for loop-ins and withdrawals.
 			cancelInvoice()
 
-			event := f.UnlockDepositsAction(ctx, nil)
-			if event != fsm.OnError {
+			err := f.unlockDeposits(ctx)
+			if err != nil {
 				f.Errorf("unable to unlock deposits after " +
 					"payment deadline")
+				continue
+			}
+			depositsUnlocked = true
+
+		case riskAccepted, ok := <-riskAcceptedChan:
+			if !ok {
+				riskAcceptedChan = nil
+				continue
 			}
 
+			if !bytes.Equal(
+				riskAccepted.SwapHash, f.loopIn.SwapHash[:],
+			) {
+
+				continue
+			}
+
+			startedAt := riskDecisionTime(
+				ConfirmationRiskDecisionAccepted,
+			)
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionAccepted
+			f.loopIn.ConfirmationRiskDecisionTime = startedAt
+			startPaymentDeadline(
+				"risk accepted notification",
+				f.loopIn.ConfirmationRiskDecisionTime,
+			)
+
+		case riskRejected, ok := <-riskRejectedChan:
+			if !ok {
+				riskRejectedChan = nil
+				continue
+			}
+
+			if !bytes.Equal(
+				riskRejected.SwapHash, f.loopIn.SwapHash[:],
+			) {
+
+				continue
+			}
+
+			cancelInvoiceSubscription()
+			f.cancelSwapInvoice(ctx)
+			decisionTime := riskDecisionTime(
+				ConfirmationRiskDecisionRejected,
+			)
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionRejected
+			f.loopIn.ConfirmationRiskDecisionTime = decisionTime
+
+			return f.HandleError(errors.New(
+				"server rejected confirmation risk wait",
+			))
+
 		case currentHeight := <-blockChan:
+			depositConfirmationHeights :=
+				selectedDepositConfirmationHeights(f.loopIn)
+
+			if legacyMinConfsReached(
+				f.loopIn.DepositOutpoints,
+				depositConfirmationHeights, currentHeight,
+			) {
+
+				startPaymentDeadline(
+					"legacy confirmation fallback",
+					time.Time{},
+				)
+			}
+
 			// If the htlc is confirmed but blockChan fires before
 			// htlcConfChan, we would wrongfully assume that the
 			// htlc tx was not confirmed which would lead to
@@ -641,13 +992,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			if !htlcConfirmed {
 				f.Infof("swap timed out, htlc not confirmed")
 
-				// If the htlc hasn't confirmed but the timeout
-				// path opened up, and we didn't receive the
-				// swap payment, we consider the swap attempt to
-				// be failed. We cancelled the invoice, but
-				// don't need to unlock the deposits because
-				// that happened when the payment deadline was
-				// reached.
+				if !depositsUnlocked {
+					err = f.unlockDeposits(ctx)
+					if err != nil {
+						return f.HandleError(err)
+					}
+				}
+
 				return OnSwapTimedOut
 			}
 
@@ -671,32 +1022,22 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			return f.HandleError(err)
 
-		case update := <-invoiceUpdateChan:
-			switch update.State {
-			case invoices.ContractOpen:
-			case invoices.ContractAccepted:
-			case invoices.ContractSettled:
-				f.Debugf("received off-chain payment update "+
-					"%v", update.State)
-
-				return OnPaymentReceived
-
-			case invoices.ContractCanceled:
-				// If the invoice was canceled we only log here
-				// since we still need to monitor until the htlc
-				// timed out.
-				log.Warnf("invoice for swap hash %v canceled",
-					f.loopIn.SwapHash)
-
-			default:
-				err = fmt.Errorf("unexpected invoice state %v "+
-					"for swap hash %v canceled",
-					update.State, f.loopIn.SwapHash)
-
-				return f.HandleError(err)
+		case update, ok := <-invoiceUpdateChan:
+			if !ok {
+				invoiceUpdateChan = nil
+				continue
 			}
 
-		case err = <-invoiceErrChan:
+			if event, done := f.handleInvoiceUpdate(update); done {
+				return event
+			}
+
+		case err, ok := <-invoiceErrChan:
+			if !ok {
+				invoiceErrChan = nil
+				continue
+			}
+
 			f.Errorf("invoice subscription error: %v", err)
 
 		case <-ctx.Done():
@@ -824,9 +1165,7 @@ func (f *FSM) PaymentReceivedAction(ctx context.Context,
 func (f *FSM) UnlockDepositsAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	err := f.cfg.DepositManager.TransitionDeposits(
-		ctx, f.loopIn.Deposits, fsm.OnError, deposit.Deposited,
-	)
+	err := f.unlockDeposits(ctx)
 	if err != nil {
 		err = fmt.Errorf("unable to unlock deposits: %w", err)
 
@@ -834,6 +1173,13 @@ func (f *FSM) UnlockDepositsAction(ctx context.Context,
 	}
 
 	return fsm.OnError
+}
+
+// unlockDeposits resets this loop-in's deposits so they can be selected again.
+func (f *FSM) unlockDeposits(ctx context.Context) error {
+	return f.cfg.DepositManager.TransitionDeposits(
+		ctx, f.loopIn.Deposits, fsm.OnError, deposit.Deposited,
+	)
 }
 
 // createAndPublishHtlcTimeoutSweepTx creates and publishes the htlc timeout

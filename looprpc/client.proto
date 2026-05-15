@@ -102,6 +102,12 @@ service SwapClient {
     */
     rpc FetchL402Token (FetchL402TokenRequest) returns (FetchL402TokenResponse);
 
+    /* loop: `recover`
+    Recover restores the local static-address and L402 state from an encrypted
+    local backup file.
+    */
+    rpc Recover (RecoverRequest) returns (RecoverResponse);
+
     /* loop: `getinfo`
     GetInfo gets basic information about the loop daemon.
     */
@@ -1058,6 +1064,48 @@ message FetchL402TokenRequest {
 }
 
 message FetchL402TokenResponse {
+}
+
+message RecoverRequest {
+    /*
+    Optional path to the encrypted backup file. If omitted, loopd restores from
+    the most recent immutable L402 recovery backup in the active network data
+    directory.
+    */
+    string backup_file = 1;
+}
+
+message RecoverResponse {
+    /*
+    The backup file that was restored.
+    */
+    string backup_file = 1;
+
+    /*
+    Whether a paid L402 token was restored into the local token store.
+    */
+    bool restored_l402 = 2;
+
+    /*
+    Whether static-address state was restored into loopd and lnd.
+    */
+    bool restored_static_address = 3;
+
+    /*
+    The restored static address, if any.
+    */
+    string static_address = 4;
+
+    /*
+    The number of deposits found during best-effort reconciliation.
+    */
+    uint32 num_deposits_found = 5;
+
+    /*
+    Best-effort deposit reconciliation error text, if reconciliation failed
+    after state restore completed.
+    */
+    string deposit_reconciliation_error = 6;
 }
 
 message L402Token {
