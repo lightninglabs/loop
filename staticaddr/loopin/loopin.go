@@ -31,6 +31,23 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
+// ConfirmationRiskDecision records the server's decision on whether it accepts
+// waiting for low-confirmation deposits before paying a static loop-in invoice.
+type ConfirmationRiskDecision string
+
+const (
+	// ConfirmationRiskDecisionNone means no risk decision has been received.
+	ConfirmationRiskDecisionNone ConfirmationRiskDecision = ""
+
+	// ConfirmationRiskDecisionAccepted means the server accepted waiting for
+	// deposit confirmations and the payment deadline has started.
+	ConfirmationRiskDecisionAccepted ConfirmationRiskDecision = "accepted"
+
+	// ConfirmationRiskDecisionRejected means the server stopped waiting for
+	// deposit confirmations before paying the invoice.
+	ConfirmationRiskDecisionRejected ConfirmationRiskDecision = "rejected"
+)
+
 // StaticAddressLoopIn represents the in-memory loop-in information.
 type StaticAddressLoopIn struct {
 	// SwapHash is the hashed preimage of the swap invoice. It represents
@@ -106,6 +123,15 @@ type StaticAddressLoopIn struct {
 
 	// LastUpdateTime is the timestamp of the latest persisted state update.
 	LastUpdateTime time.Time
+
+	// ConfirmationRiskDecision records the server's persisted decision on
+	// low-confirmation deposit risk.
+	ConfirmationRiskDecision ConfirmationRiskDecision
+
+	// ConfirmationRiskDecisionTime is when loopd persisted the server risk
+	// decision. It is used to reconstruct payment-deadline timeouts after
+	// restart.
+	ConfirmationRiskDecisionTime time.Time
 
 	// state is the current state of the swap.
 	state fsm.StateType
