@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/utils/chainhashutil"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -91,7 +92,7 @@ func (s *SQLStore) FetchUnconfirmedSweepBatches(ctx context.Context) (
 	}
 
 	for _, dbBatch := range dbBatches {
-		batch := convertBatchRow(dbBatch)
+		batch, err := convertBatchRow(dbBatch)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +100,7 @@ func (s *SQLStore) FetchUnconfirmedSweepBatches(ctx context.Context) (
 		batches = append(batches, batch)
 	}
 
-	return batches, err
+	return batches, nil
 }
 
 // InsertSweepBatch inserts a batch into the database, returning the id of the
@@ -198,7 +199,7 @@ func (s *SQLStore) GetParentBatch(ctx context.Context, outpoint wire.OutPoint) (
 		return nil, err
 	}
 
-	return convertBatchRow(batch), nil
+	return convertBatchRow(batch)
 }
 
 // UpsertSweep inserts a sweep into the database, or updates an existing sweep
@@ -258,17 +259,24 @@ type dbSweep struct {
 }
 
 // convertBatchRow converts a batch row from db to a sweepbatcher.Batch struct.
-func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
+func convertBatchRow(row sqlc.SweepBatch) (*dbBatch, error) {
 	batch := dbBatch{
 		ID:        row.ID,
 		Confirmed: row.Confirmed,
 	}
 
-	if row.BatchTxID.Valid {
-		err := chainhash.Decode(&batch.BatchTxid, row.BatchTxID.String)
+	// Loop never writes empty batch txids, but tolerate them on read so a
+	// malformed row does not prevent batcher recovery.
+	if row.BatchTxID.Valid && row.BatchTxID.String != "" {
+		hash, err := chainhashutil.NewHashFromStrExact(
+			row.BatchTxID.String,
+		)
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("invalid batch txid %q: %w",
+				row.BatchTxID.String, err)
 		}
+
+		batch.BatchTxid = hash
 	}
 
 	batch.BatchPkScript = row.BatchPkScript
@@ -283,7 +291,7 @@ func convertBatchRow(row sqlc.SweepBatch) *dbBatch {
 
 	batch.MaxTimeoutDistance = row.MaxTimeoutDistance
 
-	return &batch
+	return &batch, nil
 }
 
 // batchToInsertArgs converts a Batch struct to the arguments needed to insert
