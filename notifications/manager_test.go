@@ -202,6 +202,20 @@ func unfinishedSwapNotification(
 	}
 }
 
+func staticLoopInSweepNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_StaticLoopInSweep{
+			StaticLoopInSweep: &swapserverrpc.
+				ServerStaticLoopInSweepNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
 func staticLoopInRiskAcceptedNotification(
 	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
 
@@ -354,6 +368,15 @@ func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
 		close(done)
 	}()
 
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
 	select {
 	case received := <-subChan:
 		require.Equal(t, swapHashA[:], received.SwapHash)
@@ -363,10 +386,57 @@ func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
 	}
 
 	select {
-	case <-done:
+	case received := <-subChan:
+		require.Equal(t, swapHashB[:], received.SwapHash)
 
 	case <-time.After(time.Second):
-		t.Fatal("second unfinished swap notification did not unblock")
+		t.Fatal("second unfinished swap notification was dropped")
+	}
+}
+
+// TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber verifies
+// that a full static-loop-in sweep subscriber channel does not block the global
+// notification receive loop.
+func TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber(
+	t *testing.T) {
+
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := mgr.SubscribeStaticLoopInSweepRequests(subCtx)
+
+	swapHashA := lntypes.Hash{0x12, 0x13}
+	swapHashB := lntypes.Hash{0x14, 0x15}
+
+	mgr.handleNotification(t.Context(), staticLoopInSweepNotification(swapHashA))
+
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(
+			t.Context(), staticLoopInSweepNotification(swapHashB),
+		)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHashA[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not receive first sweep notification")
 	}
 
 	select {
@@ -374,7 +444,7 @@ func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
 		require.Equal(t, swapHashB[:], received.SwapHash)
 
 	case <-time.After(time.Second):
-		t.Fatal("second unfinished swap notification was dropped")
+		t.Fatal("second sweep notification was not queued")
 	}
 }
 

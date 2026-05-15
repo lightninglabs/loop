@@ -122,6 +122,85 @@ type subscriber struct {
 	subCtx   context.Context
 	recvChan any
 	swapHash *lntypes.Hash
+	enqueue  func(any)
+}
+
+func newNotificationQueue[T any](ctx context.Context,
+	recvChan chan T) func(any) {
+
+	type queue struct {
+		sync.Mutex
+
+		pending []T
+		notify  chan struct{}
+	}
+
+	q := &queue{
+		notify: make(chan struct{}, 1),
+	}
+
+	go func() {
+		defer func() {
+			if recover() != nil {
+				log.Debugf("subscriber channel closed before " +
+					"notification delivery")
+			}
+		}()
+
+		for {
+			q.Lock()
+			if len(q.pending) == 0 {
+				q.Unlock()
+
+				select {
+				case <-q.notify:
+					continue
+
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			ntfn := q.pending[0]
+			q.pending = q.pending[1:]
+			q.Unlock()
+
+			select {
+			case recvChan <- ntfn:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return func(ntfn any) {
+		typedNtfn, ok := ntfn.(T)
+		if !ok {
+			log.Warnf("unexpected notification type %T", ntfn)
+			return
+		}
+
+		q.Lock()
+		q.pending = append(q.pending, typedNtfn)
+		q.Unlock()
+
+		select {
+		case q.notify <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func queueNotification[T any](sub subscriber, recvChan chan T, ntfn T) {
+	if sub.enqueue != nil {
+		sub.enqueue(ntfn)
+		return
+	}
+
+	select {
+	case recvChan <- ntfn:
+	case <-sub.subCtx.Done():
+	}
 }
 
 // SubscribeReservations subscribes to the reservation notifications.
@@ -156,6 +235,7 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
+		enqueue:  newNotificationQueue(ctx, notifChan),
 	}
 
 	m.addSubscriber(NotificationTypeStaticLoopInSweepRequest, sub)
@@ -255,6 +335,7 @@ func (m *Manager) SubscribeUnfinishedSwaps(ctx context.Context,
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
+		enqueue:  newNotificationQueue(ctx, notifChan),
 	}
 
 	m.addSubscriber(NotificationTypeUnfinishedSwap, sub)
@@ -424,10 +505,7 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerStaticLoopInSweepNotification)
 
-			select {
-			case recvChan <- staticLoopInSweepRequestNtfn:
-			case <-sub.subCtx.Done():
-			}
+			queueNotification(sub, recvChan, staticLoopInSweepRequestNtfn)
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInRiskAccepted: // nolint: lll
@@ -557,10 +635,7 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerUnfinishedSwapNotification)
 
-			select {
-			case recvChan <- unfinishedSwapNtfn:
-			case <-sub.subCtx.Done():
-			}
+			queueNotification(sub, recvChan, unfinishedSwapNtfn)
 		}
 
 	default:
@@ -583,7 +658,7 @@ func (m *Manager) removeSubscriber(notifType NotificationType, sub subscriber) {
 	subs := m.subscribers[notifType]
 	newSubs := make([]subscriber, 0, len(subs))
 	for _, s := range subs {
-		if s != sub {
+		if s.recvChan != sub.recvChan {
 			newSubs = append(newSubs, s)
 		}
 	}
