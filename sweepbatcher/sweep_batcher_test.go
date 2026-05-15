@@ -4208,9 +4208,9 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
 		batcherStore, sweepStore)
+	runErrChan := make(chan error, 1)
 	go func() {
-		err := batcher.Run(ctx)
-		checkBatcherError(t, err)
+		runErrChan <- batcher.Run(ctx)
 	}()
 
 	// Add many swaps.
@@ -4276,23 +4276,28 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	})
 
 	// We don't know how many spend notification registrations will be
-	// issued, so accept them while waiting for two goroutines to stop.
-	quit := make(chan struct{})
-	registrationChan := make(chan struct{})
+	// issued, so accept them while waiting for all goroutines to stop.
+	addDone := make(chan struct{})
 	go func() {
-		defer close(registrationChan)
-		for {
-			select {
-			case <-lnd.RegisterSpendChannel:
-			case <-quit:
-				return
-			}
-		}
+		defer close(addDone)
+		wg.Wait()
 	}()
 
-	wg.Wait()
-	close(quit)
-	<-registrationChan
+	for addDone != nil || runErrChan != nil {
+		select {
+		case <-lnd.RegisterSpendChannel:
+
+		case <-addDone:
+			addDone = nil
+
+		case err := <-runErrChan:
+			checkBatcherError(t, err)
+			runErrChan = nil
+
+		case <-time.After(test.Timeout):
+			t.Fatalf("expected batcher close during adding to finish")
+		}
+	}
 }
 
 // testSweepBatcherHandleSweepRace reproduces a race between AddSweep and the
