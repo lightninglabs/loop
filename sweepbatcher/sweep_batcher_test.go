@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3764,6 +3765,199 @@ func testAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T,
 // caller context is being canceled.
 func TestAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T) {
 	runTests(t, testAddSweepReturnsContextErrorOnFetchCancellation)
+}
+
+// cancelingStatusStore wraps a batcher store and cancels the test context when
+// Run checks sweep status. This simulates a backend failure that happens after
+// AddSweep already handed the request to the batcher event loop.
+type cancelingStatusStore struct {
+	testBatcherStore
+
+	cancel context.CancelFunc
+	calls  atomic.Int32
+}
+
+// GetSweepStatus cancels the context and returns a driver error on the second
+// status lookup. The first lookup belongs to AddSweep setup; the second lookup
+// belongs to Run/handleSweeps after the request has been accepted.
+func (s *cancelingStatusStore) GetSweepStatus(ctx context.Context,
+	outpoint wire.OutPoint) (bool, error) {
+
+	if s.calls.Add(1) == 2 {
+		s.cancel()
+
+		return false, driver.ErrBadConn
+	}
+
+	return s.testBatcherStore.GetSweepStatus(ctx, outpoint)
+}
+
+// testAddSweepReturnsContextErrorOnRunCancellation asserts that Batcher.Run
+// returns the run context's cancellation error when an already accepted sweep
+// request fails during shutdown.
+func testAddSweepReturnsContextErrorOnRunCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Use a custom fetcher so AddSweep can complete its setup without
+	// needing a swap-store lookup.
+	swapHash := lntypes.Hash{2, 2, 2}
+	amt := btcutil.Amount(1111)
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 1,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      222,
+			AmountRequested: amt,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
+		swapInvoice, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	htlc, err := utils.GetHtlc(
+		swapHash, &swap.SwapContract, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	sweepFetcher := &sweepFetcherMock{
+		store: map[wire.OutPoint]*SweepInfo{
+			op: {
+				ConfTarget:             confTarget,
+				Timeout:                111,
+				SwapInvoicePaymentAddr: *swapPaymentAddr,
+				ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
+				HTLCKeys:               htlcKeys,
+				HTLC:                   *htlc,
+				HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
+				DestAddr:               destAddr,
+			},
+		},
+	}
+	statusStore := &cancelingStatusStore{
+		testBatcherStore: batcherStore,
+		cancel:           cancel,
+	}
+
+	// Avoid fee-estimator calls in this test. The race being tested is the
+	// store lookup that happens after the request reaches Batcher.Run.
+	customFeeRate := func(context.Context, lntypes.Hash,
+		wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.SatPerKWeight(30000), nil
+	}
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		statusStore, sweepFetcher, WithCustomFeeRate(customFeeRate),
+	)
+
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	<-batcher.initDone
+
+	// AddSweep should finish normally. The injected cancellation is tied to
+	// the second status lookup, which is performed later by handleSweeps.
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    amt,
+			Outpoint: op,
+		}},
+	})
+	require.NoError(t, err)
+
+	// Run should report the context cancellation instead of the lower-level
+	// driver error returned by the store.
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotErrorIs(t, err, driver.ErrBadConn)
+
+	case <-time.After(test.Timeout):
+		t.Fatalf("expected batcher to exit")
+	}
+}
+
+// TestAddSweepReturnsContextErrorOnRunCancellation asserts that Run returns
+// the context cancellation error if handling an already accepted sweep request
+// fails while the run context is being canceled.
+func TestAddSweepReturnsContextErrorOnRunCancellation(t *testing.T) {
+	runTests(t, testAddSweepReturnsContextErrorOnRunCancellation)
+}
+
+// testRunReturnsContextErrorOnErrChanCancellation asserts that Run returns the
+// run context's cancellation error when an async batcher error is ready during
+// shutdown.
+func testRunReturnsContextErrorOnErrChanCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	sweepFetcher := &sweepFetcherMock{
+		store: make(map[wire.OutPoint]*SweepInfo),
+	}
+
+	// Run several attempts so the test exercises the errChan branch even
+	// though the run context cancellation branch is ready at the same time.
+	for range 20 {
+		ctx, cancel := context.WithCancel(t.Context())
+
+		batcher := NewBatcher(
+			lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+			testMuSig2SignSweep, testVerifySchnorrSig,
+			lnd.ChainParams, batcherStore, sweepFetcher,
+		)
+
+		runErrChan := make(chan error, 1)
+		go func() {
+			runErrChan <- batcher.Run(ctx)
+		}()
+
+		<-batcher.initDone
+
+		// Queue the backend error from inside the event loop so Run cannot
+		// observe the cancellation until both cases are ready.
+		batcher.testRunInEventLoop(t.Context(), func() {
+			cancel()
+			batcher.errChan <- driver.ErrBadConn
+		})
+
+		select {
+		case err := <-runErrChan:
+			require.ErrorIs(t, err, context.Canceled)
+			require.NotErrorIs(t, err, driver.ErrBadConn)
+
+		case <-time.After(test.Timeout):
+			t.Fatalf("expected batcher to exit")
+		}
+	}
+}
+
+// TestRunReturnsContextErrorOnErrChanCancellation asserts that Run returns the
+// context cancellation error if an async batcher error races with shutdown.
+func TestRunReturnsContextErrorOnErrChanCancellation(t *testing.T) {
+	runTests(t, testRunReturnsContextErrorOnErrChanCancellation)
 }
 
 // testSweepFetcher tests providing custom sweep fetcher to Batcher.

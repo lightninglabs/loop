@@ -675,12 +675,26 @@ func (b *Batcher) Run(ctx context.Context) error {
 	// the database. We will then resume the execution of these batches.
 	batches, err := b.FetchUnconfirmedBatches(runCtx)
 	if err != nil {
+		if ctxErr := runCtx.Err(); ctxErr != nil {
+			infof("FetchUnconfirmedBatches failed during shutdown, "+
+				"returning %v instead of %v.", ctxErr, err)
+
+			return ctxErr
+		}
+
 		return err
 	}
 
 	for _, batch := range batches {
 		err := b.spinUpBatchFromDB(runCtx, batch)
 		if err != nil {
+			if ctxErr := runCtx.Err(); ctxErr != nil {
+				infof("spinUpBatchFromDB failed during shutdown, "+
+					"returning %v instead of %v.", ctxErr, err)
+
+				return ctxErr
+			}
+
 			return err
 		}
 	}
@@ -695,6 +709,14 @@ func (b *Batcher) Run(ctx context.Context) error {
 				runCtx, req.sweeps, req.notifier, req.fast,
 			)
 			if err != nil {
+				if ctxErr := runCtx.Err(); ctxErr != nil {
+					infof("handleSweeps failed during shutdown, "+
+						"returning %v instead of %v.",
+						ctxErr, err)
+
+					return ctxErr
+				}
+
 				warnf("handleSweeps failed: %v.", err)
 
 				return err
@@ -705,6 +727,14 @@ func (b *Batcher) Run(ctx context.Context) error {
 			close(testReq.quit)
 
 		case err := <-b.errChan:
+			if ctxErr := runCtx.Err(); ctxErr != nil {
+				infof("Batcher received an error during shutdown, "+
+					"returning %v instead of %v.",
+					ctxErr, err)
+
+				return ctxErr
+			}
+
 			warnf("Batcher received an error: %v.", err)
 
 			return err
