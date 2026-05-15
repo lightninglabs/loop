@@ -31,6 +31,23 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
+// ConfirmationRiskDecision records the server's decision on whether it accepts
+// waiting for low-confirmation deposits before paying a static loop-in invoice.
+type ConfirmationRiskDecision string
+
+const (
+	// ConfirmationRiskDecisionNone means no risk decision has been received.
+	ConfirmationRiskDecisionNone ConfirmationRiskDecision = ""
+
+	// ConfirmationRiskDecisionAccepted means the server accepted waiting for
+	// deposit confirmations and the payment deadline has started.
+	ConfirmationRiskDecisionAccepted ConfirmationRiskDecision = "accepted"
+
+	// ConfirmationRiskDecisionRejected means the server stopped waiting for
+	// deposit confirmations before paying the invoice.
+	ConfirmationRiskDecisionRejected ConfirmationRiskDecision = "rejected"
+)
+
 // StaticAddressLoopIn represents the in-memory loop-in information.
 type StaticAddressLoopIn struct {
 	// SwapHash is the hashed preimage of the swap invoice. It represents
@@ -93,8 +110,6 @@ type StaticAddressLoopIn struct {
 
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
-	// TODO(hieblmi): Replace this with a getter method that fetches the
-	//      outpoints from the deposits.
 	DepositOutpoints []string
 
 	// SelectedAmount is the amount that the user selected for the swap. If
@@ -105,6 +120,15 @@ type StaticAddressLoopIn struct {
 	// Fast indicates whether the client requested fast publication behavior
 	// on the server side for this static loop in.
 	Fast bool
+
+	// ConfirmationRiskDecision records the server's persisted decision on
+	// low-confirmation deposit risk.
+	ConfirmationRiskDecision ConfirmationRiskDecision
+
+	// ConfirmationRiskDecisionTime is when loopd persisted the server risk
+	// decision. It is used to reconstruct payment-deadline timeouts after
+	// restart.
+	ConfirmationRiskDecisionTime time.Time
 
 	// state is the current state of the swap.
 	state fsm.StateType
@@ -466,12 +490,27 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 
 // RemainingPaymentTimeSeconds returns the remaining time in seconds until the
 // payment timeout is reached. The remaining time is calculated from the
-// initiation time of the swap. If more than the swaps configured payment
+// initiation time of the swap. If more than the swap's configured payment
 // timeout has passed, the remaining time will be negative.
 func (l *StaticAddressLoopIn) RemainingPaymentTimeSeconds() int64 {
 	elapsedSinceInitiation := time.Since(l.InitiationTime).Seconds()
 
-	return int64(l.PaymentTimeoutSeconds) - int64(elapsedSinceInitiation)
+	return l.paymentTimeoutSeconds() - int64(elapsedSinceInitiation)
+}
+
+// PaymentTimeoutDuration returns the configured payment timeout duration,
+// falling back to the default if the swap predates the persisted timeout field.
+func (l *StaticAddressLoopIn) PaymentTimeoutDuration() time.Duration {
+	return time.Duration(l.paymentTimeoutSeconds()) * time.Second
+}
+
+func (l *StaticAddressLoopIn) paymentTimeoutSeconds() int64 {
+	timeoutSeconds := int64(l.PaymentTimeoutSeconds)
+	if timeoutSeconds == 0 {
+		timeoutSeconds = int64(DefaultPaymentTimeoutSeconds)
+	}
+
+	return timeoutSeconds
 }
 
 // Outpoints returns the wire outpoints of the deposits.

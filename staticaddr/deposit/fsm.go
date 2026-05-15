@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -42,9 +43,25 @@ var (
 
 // States.
 var (
-	// Deposited signals that funds at a static address have reached the
-	// confirmation height.
+	// Deposited signals that funds at a static address have been detected
+	// and are available to the client.
 	Deposited = fsm.StateType("Deposited")
+
+	// Replaced signals that a deposit disappeared from the wallet view and
+	// can no longer be spent.
+	//
+	// The concrete case we need to handle is mempool replacement: a user can
+	// receive to the static address, we persist that unconfirmed outpoint, and
+	// then the funding transaction can be replaced or otherwise evicted before
+	// confirmation. Once that happens lnd stops returning the old outpoint from
+	// ListUnspent, but our DB would otherwise keep presenting it as selectable.
+	// Replaced lets us retain the historic record while making it clear that the
+	// original outpoint is no longer a live deposit.
+	//
+	// This state is managed directly by the deposit manager rather than via
+	// DepositStatesV0 because it reflects wallet visibility changes such as
+	// mempool replacement or deep reorgs, not an FSM-driven spend path.
+	Replaced = fsm.StateType("Replaced")
 
 	// Withdrawing signals that the withdrawal transaction has been
 	// broadcast, awaiting sufficient confirmations.
@@ -93,8 +110,8 @@ var (
 // Events.
 var (
 	// OnStart is sent to the fsm once the deposit outpoint has been
-	// sufficiently confirmed. It transitions the fsm into the Deposited
-	// state from where we can trigger a withdrawal, a loopin or an expiry.
+	// detected. It transitions the fsm into the Deposited state from where
+	// we can trigger a withdrawal, a loopin or an expiry.
 	OnStart = fsm.EventType("OnStart")
 
 	// OnWithdrawInitiated is sent to the fsm when a withdrawal has been
@@ -161,12 +178,17 @@ type FSM struct {
 
 	blockNtfnChan chan uint32
 
+	// stopChan requests shutdown of the block notification loop.
+	stopChan chan struct{}
+
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
 	// finalizedDepositChan is used to signal that the deposit has been
 	// finalized and the FSM can be removed from the manager's memory.
 	finalizedDepositChan chan wire.OutPoint
+
+	stopOnce sync.Once
 }
 
 // NewFSM creates a new state machine that can action on all static address
@@ -192,6 +214,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		params:               params,
 		address:              address,
 		blockNtfnChan:        make(chan uint32),
+		stopChan:             make(chan struct{}),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
@@ -227,6 +250,9 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 					ctx, currentHeight,
 				)
 
+			case <-fsm.stopChan:
+				return
+
 			case <-ctx.Done():
 				return
 			}
@@ -234,6 +260,17 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	}(depoFsm)
 
 	return depoFsm, nil
+}
+
+// Stop requests shutdown of the FSM's block notification loop.
+func (f *FSM) Stop() {
+	if f == nil || f.stopChan == nil {
+		return
+	}
+
+	f.stopOnce.Do(func() {
+		close(f.stopChan)
+	})
 }
 
 // handleBlockNotification inspects the current block height and sends the

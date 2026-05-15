@@ -403,6 +403,16 @@ abandon a swap with a given swap hash
 .PP
 \fB--i_know_what_i_am_doing\fP: Specify this flag if you made sure that you read and understood the following consequence of applying this command.
 
+.SH recover
+.PP
+restore static address and L402 state from a local backup file
+
+.PP
+\fB--backup_file\fP="": path to an encrypted backup file; if omitted, loopd selects and validates the latest active-network backup candidate
+
+.PP
+\fB--help, -h\fP: show help
+
 .SH reservations, r
 .PP
 manage reservations
@@ -456,7 +466,7 @@ perform on-chain to off-chain swaps using static addresses.
 
 .SS new, n
 .PP
-Create a new static loop in address.
+Return the static loop in address.
 
 .PP
 \fB--help, -h\fP: show help

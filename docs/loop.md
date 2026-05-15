@@ -418,6 +418,25 @@ The following flags are supported:
 | `--i_know_what_i_am_doing` | Specify this flag if you made sure that you read and understood the following consequence of applying this command | bool |    `false`    |
 | `--help` (`-h`)            | show help                                                                                                          | bool |    `false`    |
 
+### `recover` command
+
+restore static address and L402 state from a local backup file.
+
+Restores the local static-address state and L402 token from an encrypted backup file. If --backup_file is omitted, loopd selects the latest decryptable active-network backup candidate and fully validates it before restoring state.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] recover [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name                | Description                                                                                                          | Type   | Default value |
+|---------------------|----------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--backup_file="…"` | path to an encrypted backup file; if omitted, loopd selects and validates the latest active-network backup candidate | string |
+| `--help` (`-h`)     | show help                                                                                                            | bool   |    `false`    |
+
 ### `reservations` command (aliases: `r`)
 
 manage reservations.
@@ -529,9 +548,9 @@ The following flags are supported:
 
 ### `static new` subcommand (aliases: `n`)
 
-Create a new static loop in address.
+Return the static loop in address.
 
-Requests a new static loop in address from the server. Funds that are 	sent to this address will be locked by a 2:2 multisig between us and the 	loop server, or a timeout path that we can sweep once it opens up. The  	funds can either be cooperatively spent with a signature from the server 	or looped in.
+Returns the current static loop in address. On a fresh installation loopd 	initializes the current static-address generation during startup. If the 	address is still missing, this call will create it on demand. Funds sent 	to the address will be locked by a 2:2 multisig between us and the loop 	server, or a timeout path that we can sweep once it opens up. The funds 	can either be cooperatively spent with a signature from the server or 	looped in.
 
 Usage:
 
