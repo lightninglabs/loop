@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -175,7 +174,7 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &address.Parameters{
+	params := &script.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       10,
@@ -204,7 +203,7 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &address.Parameters{
+	params := &script.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       12,

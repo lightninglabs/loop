@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -48,7 +47,7 @@ func ToPrevOuts(deposits []*deposit.Deposit,
 // CreateMusig2Sessions creates a musig2 session for a number of deposits.
 func CreateMusig2Sessions(ctx context.Context,
 	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
+	addrParams *script.Parameters,
 	staticAddress *script.StaticAddress) ([]*input.MuSig2SessionInfo,
 	[][]byte, error) {
 
@@ -75,7 +74,7 @@ func CreateMusig2Sessions(ctx context.Context,
 // deposits.
 func CreateMusig2SessionsPerDeposit(ctx context.Context,
 	signer lndclient.SignerClient, deposits []*deposit.Deposit,
-	addrParams *address.Parameters,
+	addrParams *script.Parameters,
 	staticAddress *script.StaticAddress) (
 	map[string]*input.MuSig2SessionInfo, map[string][]byte, map[string]int,
 	error) {
@@ -103,7 +102,7 @@ func CreateMusig2SessionsPerDeposit(ctx context.Context,
 
 // CreateMusig2Session creates a musig2 session for the deposit.
 func CreateMusig2Session(ctx context.Context,
-	signer lndclient.SignerClient, addrParams *address.Parameters,
+	signer lndclient.SignerClient, addrParams *script.Parameters,
 	staticAddress *script.StaticAddress) (*input.MuSig2SessionInfo, error) {
 
 	signers := [][]byte{

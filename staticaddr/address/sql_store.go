@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -25,7 +26,7 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateStaticAddress creates a static address record in the database.
 func (s *SqlStore) CreateStaticAddress(ctx context.Context,
-	addrParams *Parameters) error {
+	addrParams *script.Parameters) error {
 
 	createArgs := sqlc.CreateStaticAddressParams{
 		ClientPubkey:     addrParams.ClientPubkey.SerializeCompressed(),
@@ -42,15 +43,15 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 }
 
 // GetAllStaticAddresses returns all address known to the server.
-func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
-	error) {
+func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) (
+	[]*script.Parameters, error) {
 
 	staticAddresses, err := s.baseDB.Queries.AllStaticAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*Parameters
+	var result []*script.Parameters
 	for _, address := range staticAddresses {
 		res, err := s.toAddressParameters(address)
 		if err != nil {
@@ -66,7 +67,7 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
 func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
-	*Parameters, error) {
+	*script.Parameters, error) {
 
 	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
 	if err != nil {
@@ -78,7 +79,7 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 		return nil, err
 	}
 
-	return &Parameters{
+	return &script.Parameters{
 		ClientPubkey: clientPubkey,
 		ServerPubkey: serverPubkey,
 		PkScript:     row.Pkscript,

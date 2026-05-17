@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -109,11 +108,11 @@ type mockAddressManager struct {
 }
 
 func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
-	*address.Parameters, error) {
+	*script.Parameters, error) {
 
 	args := m.Called(ctx)
 
-	return args.Get(0).(*address.Parameters),
+	return args.Get(0).(*script.Parameters),
 		args.Error(1)
 }
 
@@ -365,7 +364,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&address.Parameters{
+	).Return(&script.Parameters{
 		Expiry: defaultExpiry,
 	}, nil)
 

@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -947,18 +948,18 @@ func TestListSwapsFilterAndPagination(t *testing.T) {
 
 // mockAddressStore is a minimal in-memory store for address parameters.
 type mockAddressStore struct {
-	params []*address.Parameters
+	params []*script.Parameters
 }
 
 func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
-	p *address.Parameters) error {
+	p *script.Parameters) error {
 
 	s.params = append(s.params, p)
 	return nil
 }
 
 func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
-	*address.Parameters, error) {
+	*script.Parameters, error) {
 
 	if len(s.params) == 0 {
 		return nil, nil
@@ -968,7 +969,7 @@ func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
 }
 
 func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
-	[]*address.Parameters, error) {
+	[]*script.Parameters, error) {
 
 	return s.params, nil
 }
@@ -1019,14 +1020,14 @@ func TestListUnspentDeposits(t *testing.T) {
 	_, client := mock_lnd.CreateKey(1)
 	_, server := mock_lnd.CreateKey(2)
 	pkScript := []byte("pkscript")
-	addrParams := &address.Parameters{
+	addrParams := &script.Parameters{
 		ClientPubkey: client,
 		ServerPubkey: server,
 		Expiry:       10,
 		PkScript:     pkScript,
 	}
 
-	addrStore := &mockAddressStore{params: []*address.Parameters{addrParams}}
+	addrStore := &mockAddressStore{params: []*script.Parameters{addrParams}}
 
 	// Build an address manager using our mock lnd and fake address store.
 	addrMgr, err := address.NewManager(&address.ManagerConfig{

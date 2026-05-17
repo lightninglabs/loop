@@ -195,7 +195,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 
 	// Create the static address from the parameters the server provided and
 	// store all parameters in the database.
-	addrParams := &Parameters{
+	addrParams := &script.Parameters{
 		ClientPubkey: clientPubKey.PubKey,
 		ServerPubkey: serverPubKey,
 		PkScript:     pkScript,
@@ -338,8 +338,8 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 }
 
 // GetStaticAddressParameters returns the parameters of the static address.
-func (m *Manager) GetStaticAddressParameters(ctx context.Context) (*Parameters,
-	error) {
+func (m *Manager) GetStaticAddressParameters(ctx context.Context) (
+	*script.Parameters, error) {
 
 	params, err := m.cfg.Store.GetAllStaticAddresses(ctx)
 	if err != nil {
