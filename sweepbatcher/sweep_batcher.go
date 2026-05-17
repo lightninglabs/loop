@@ -764,13 +764,33 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 		return fmt.Errorf("presignedHelper is not installed")
 	}
 
+	if err := b.shutdownOrCancelErrIfAny(ctx); err != nil {
+		return err
+	}
+
 	// Find the feerate needed to get into next block. Use conf_target=2,
 	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup EstimateFeeRate failed "+
+				"during shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup MinRelayFee failed during "+
+				"shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get minRelayFeeRate: %w", err)
 	}
 	destPkscript, err := txscript.PayToAddrScript(destAddress)
@@ -798,10 +818,23 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	// outpoint in the batch.
 	primarySweepID := sweeps[0].outpoint
 
-	return presign(
+	err = presign(
 		ctx, b.presignedHelper, destAddress, primarySweepID, sweeps,
 		nextBlockFeeRate, minRelayFeeRate,
 	)
+	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup presign failed during "+
+				"shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // AddSweep loads information about sweeps from the store and fee rate source,

@@ -3960,6 +3960,81 @@ func TestRunReturnsContextErrorOnErrChanCancellation(t *testing.T) {
 	runTests(t, testRunReturnsContextErrorOnErrChanCancellation)
 }
 
+// cancelingPresignedHelper is a PresignedHelper implementation that cancels
+// the caller context while returning a driver-level signing error.
+type cancelingPresignedHelper struct {
+	cancel context.CancelFunc
+}
+
+// DestPkScript satisfies the PresignedHelper interface. It is not used by
+// PresignSweepsGroup, which already receives the destination address directly.
+func (h *cancelingPresignedHelper) DestPkScript(context.Context,
+	wire.OutPoint) ([]byte, error) {
+
+	return nil, nil
+}
+
+// SignTx cancels the caller context and returns a driver-level error, matching
+// the shutdown race this test exercises.
+func (h *cancelingPresignedHelper) SignTx(context.Context, wire.OutPoint,
+	*wire.MsgTx, btcutil.Amount, chainfee.SatPerKWeight,
+	chainfee.SatPerKWeight, bool) (*wire.MsgTx, error) {
+
+	h.cancel()
+
+	return nil, driver.ErrBadConn
+}
+
+// CleanupTransactions satisfies the PresignedHelper interface. It is not
+// exercised by this presigning-only test.
+func (h *cancelingPresignedHelper) CleanupTransactions(context.Context,
+	[]wire.OutPoint) error {
+
+	return nil
+}
+
+// testPresignSweepsGroupReturnsContextErrorOnCancellation asserts that
+// PresignSweepsGroup returns the context cancellation error if presigning fails
+// while the caller context is being canceled.
+func testPresignSweepsGroupReturnsContextErrorOnCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// The store is not used by PresignSweepsGroup, but runTests passes
+	// both mock and SQL-backed stores so the test stays consistent with
+	// the rest of this file.
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, nil, WithPresignedHelper(
+			&cancelingPresignedHelper{cancel: cancel},
+		),
+	)
+
+	err := batcher.PresignSweepsGroup(
+		ctx, []Input{{
+			Value: btcutil.Amount(1_000_000),
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{3, 3},
+				Index: 1,
+			},
+		}}, sweepTimeout, destAddr, nil,
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, driver.ErrBadConn)
+}
+
+// TestPresignSweepsGroupReturnsContextErrorOnCancellation asserts that
+// PresignSweepsGroup returns the context cancellation error if presigning fails
+// while the caller context is being canceled.
+func TestPresignSweepsGroupReturnsContextErrorOnCancellation(t *testing.T) {
+	runTests(t, testPresignSweepsGroupReturnsContextErrorOnCancellation)
+}
+
 // testSweepFetcher tests providing custom sweep fetcher to Batcher.
 func testSweepFetcher(t *testing.T, store testStore,
 	batcherStore testBatcherStore) {
