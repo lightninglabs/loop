@@ -1,25 +1,33 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 const (
-	// MinConfs is the minimum number of confirmations we require for a
-	// deposit to be considered available for loop-ins, coop-spends and
-	// timeouts.
+	// MinConfs is the legacy minimum confirmation target deposits had to
+	// reach before they were considered ready to be used for swaps.
 	MinConfs = 6
 
 	// MaxConfs is unset since we don't require a max number of
@@ -33,6 +41,17 @@ const (
 	// PollInterval is the interval in which we poll for new deposits to our
 	// static address.
 	PollInterval = 10 * time.Second
+
+	// vanishedDepositThreshold is the number of consecutive wallet
+	// observations in which a Deposited outpoint must be missing before we
+	// mark it replaced.
+	//
+	// A single miss can happen during a transient wallet-view gap while lnd is
+	// processing a replacement or reorg. Requiring two misses keeps that narrow
+	// race recoverable without leaving vanished deposits selectable forever. At
+	// the default PollInterval, this means a vanished deposit can remain active
+	// for up to roughly 20 seconds.
+	vanishedDepositThreshold = 2
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -40,6 +59,10 @@ type ManagerConfig struct {
 	// AddressManager is the address manager that is used to fetch static
 	// address parameters.
 	AddressManager AddressManager
+
+	// ChainKit is used to query the best known chain tip when deriving
+	// confirmation heights from wallet UTXOs.
+	ChainKit lndclient.ChainKitClient
 
 	// Store is the database store that is used to store static address
 	// related records.
@@ -58,14 +81,27 @@ type ManagerConfig struct {
 }
 
 // Manager manages the address state machines.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock.
 type Manager struct {
 	cfg *ManagerConfig
 
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
+	// reconcileMu serializes deposit recovery and reconciliation so restore
+	// requests can't race the background polling loop, and new deposits are
+	// discovered and retained exactly once per outpoint.
+	reconcileMu sync.Mutex
+
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
+
+	// missingDeposits counts consecutive wallet observations in which a
+	// Deposited outpoint was missing from the wallet view.
+	missingDeposits map[wire.OutPoint]uint8
 
 	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
@@ -77,6 +113,9 @@ type Manager struct {
 	// been finalized. The manager will adjust its internal state and flush
 	// finalized deposits from its memory.
 	finalizedDepositChan chan wire.OutPoint
+
+	// currentHeight stores the currently best known block height.
+	currentHeight atomic.Uint32
 }
 
 // NewManager creates a new deposit manager.
@@ -84,6 +123,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
 		cfg:                  cfg,
 		activeDeposits:       make(map[wire.OutPoint]*FSM),
+		missingDeposits:      make(map[wire.OutPoint]uint8),
 		deposits:             make(map[wire.OutPoint]*Deposit),
 		finalizedDepositChan: make(chan wire.OutPoint),
 	}
@@ -98,6 +138,19 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
+	var startupHeight uint32
+	select {
+	case height := <-newBlockChan:
+		startupHeight = uint32(height)
+		m.currentHeight.Store(startupHeight)
+
+	case err = <-newBlockErrChan:
+		return err
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	// Recover previous deposits and static address parameters from the DB.
 	err = m.recoverDeposits(ctx)
 	if err != nil {
@@ -108,9 +161,16 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 	// Reconcile immediately on startup so deposits are available
 	// before the first ticker fires.
-	err = m.reconcileDeposits(ctx)
+	_, err = m.ReconcileDeposits(ctx)
 	if err != nil {
 		log.Errorf("unable to reconcile deposits: %v", err)
+	}
+
+	// The startup height was consumed before recovered deposit FSMs existed.
+	// Replay it so already-expired recovered deposits can act immediately.
+	err = m.notifyActiveDeposits(ctx, startupHeight)
+	if err != nil {
+		return err
 	}
 
 	// Start the deposit notifier.
@@ -123,32 +183,22 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			// Inform all active deposits about a new block arrival.
-			m.mu.Lock()
-			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
-			for _, fsm := range m.activeDeposits {
-				activeDeposits = append(activeDeposits, fsm)
+			m.currentHeight.Store(uint32(height))
+
+			_, err := m.ReconcileDeposits(ctx)
+			if err != nil {
+				log.Errorf("unable to reconcile deposits: %v", err)
 			}
-			m.mu.Unlock()
 
-			for _, fsm := range activeDeposits {
-				select {
-				case fsm.blockNtfnChan <- uint32(height):
-
-				case <-fsm.quitChan:
-					continue
-
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			err = m.notifyActiveDeposits(ctx, uint32(height))
+			if err != nil {
+				return err
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
 			// If deposits notify us about their finalization, flush
 			// the finalized deposit from memory.
-			m.mu.Lock()
-			delete(m.activeDeposits, outpoint)
-			m.mu.Unlock()
+			m.removeActiveDeposit(outpoint)
 
 		case err = <-newBlockErrChan:
 			return err
@@ -159,9 +209,39 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	}
 }
 
+// notifyActiveDeposits informs all active deposit FSMs about a new block
+// height.
+func (m *Manager) notifyActiveDeposits(ctx context.Context,
+	height uint32) error {
+
+	m.mu.Lock()
+	activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
+	for _, fsm := range m.activeDeposits {
+		activeDeposits = append(activeDeposits, fsm)
+	}
+	m.mu.Unlock()
+
+	for _, fsm := range activeDeposits {
+		select {
+		case fsm.blockNtfnChan <- height:
+
+		case <-fsm.quitChan:
+			continue
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -171,6 +251,11 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	}
 
 	for i, d := range deposits {
+		err = m.hydrateLegacyDepositAddressParams(ctx, d)
+		if err != nil {
+			return err
+		}
+
 		m.deposits[d.OutPoint] = deposits[i]
 
 		// If the current deposit is final it wasn't active when we
@@ -207,8 +292,71 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	return nil
 }
 
-// pollDeposits polls new deposits to our static address and notifies the
-// manager's event loop about them.
+// hydrateLegacyDepositAddressParams fills in address parameters for deposits
+// that predate the durable deposit-to-static-address link. Those deposits all
+// belonged to the legacy/root static address, so the legacy address manager
+// lookup preserves the behavior that existed before multi-address support.
+func (m *Manager) hydrateLegacyDepositAddressParams(ctx context.Context,
+	deposits ...*Deposit) error {
+
+	needsHydration := false
+	for _, d := range deposits {
+		if d != nil && d.AddressParams == nil {
+			needsHydration = true
+			break
+		}
+	}
+	if !needsHydration {
+		return nil
+	}
+
+	if m.cfg == nil || m.cfg.AddressManager == nil {
+		return nil
+	}
+
+	var legacyParams *address.Parameters
+	for _, d := range deposits {
+		if d == nil || d.AddressParams != nil {
+			continue
+		}
+
+		if legacyParams == nil {
+			params, err := m.cfg.AddressManager.
+				GetStaticAddressParameters(ctx)
+			if err != nil {
+				return fmt.Errorf("unable to recover legacy "+
+					"static address parameters for deposit %v: %w",
+					d.OutPoint, err)
+			}
+			if params == nil {
+				return fmt.Errorf("missing legacy static address "+
+					"parameters for deposit %v", d.OutPoint)
+			}
+
+			if params.ID <= 0 {
+				params.ID, err = m.cfg.AddressManager.
+					GetStaticAddressID(ctx, params.PkScript)
+				if err != nil {
+					return fmt.Errorf("unable to recover legacy "+
+						"static address ID for deposit %v: %w",
+						d.OutPoint, err)
+				}
+			}
+
+			legacyParams = params
+		}
+
+		d.AddressParams = legacyParams
+		d.AddressID = legacyParams.ID
+	}
+
+	return nil
+}
+
+// pollDeposits periodically polls for new deposits to our static address. This
+// complements the block-driven reconciliation in the main event loop: while new
+// blocks trigger reconcileDeposits to promptly detect confirmations, the ticker
+// here catches deposits that appear in the mempool between blocks.
 func (m *Manager) pollDeposits(ctx context.Context) {
 	log.Debugf("Waiting for new static address deposits...")
 
@@ -218,7 +366,7 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				err := m.reconcileDeposits(ctx)
+				_, err := m.ReconcileDeposits(ctx)
 				if err != nil {
 					log.Errorf("unable to reconcile "+
 						"deposits: %v", err)
@@ -235,46 +383,556 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
 // deposit to track its progress.
-func (m *Manager) reconcileDeposits(ctx context.Context) error {
+func (m *Manager) reconcileDeposits(ctx context.Context) (int, error) {
 	log.Tracef("Reconciling new deposits...")
 
-	utxos, err := m.cfg.AddressManager.ListUnspent(
-		ctx, MinConfs, MaxConfs,
-	)
+	utxos, bestHeight, err := m.listUnspentWithBestHeight(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to list new deposits: %w", err)
+		return 0, err
+	}
+
+	err = m.updateDepositConfirmations(ctx, utxos, bestHeight)
+	if err != nil {
+		return 0, fmt.Errorf("unable to update deposit "+
+			"confirmations: %w", err)
+	}
+
+	// If the same outpoint reappeared after a transient wallet-view miss,
+	// reactivate the existing record before we consider it new or vanished.
+	err = m.reviveReappearedDeposits(ctx, utxos, bestHeight)
+	if err != nil {
+		return 0, fmt.Errorf("unable to revive reappeared deposits: %w",
+			err)
+	}
+
+	// After handling reappearances, only still-missing outpoints contribute
+	// towards replacement detection.
+	err = m.invalidateVanishedDeposits(ctx, utxos)
+	if err != nil {
+		return 0, fmt.Errorf("unable to invalidate vanished "+
+			"deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
 	if len(newDeposits) == 0 {
 		log.Tracef("No new deposits...")
-		return nil
+		return 0, nil
 	}
 
 	for _, utxo := range newDeposits {
-		deposit, err := m.createNewDeposit(ctx, utxo)
+		deposit, err := m.createNewDeposit(ctx, utxo, bestHeight)
 		if err != nil {
-			return fmt.Errorf("unable to retain new deposit: %w",
+			return 0, fmt.Errorf("unable to retain new deposit: %w",
 				err)
 		}
 
 		log.Debugf("Received deposit: %v", deposit)
 		err = m.startDepositFsm(ctx, deposit)
 		if err != nil {
-			return fmt.Errorf("unable to start new deposit FSM: %w",
+			return 0, fmt.Errorf("unable to start new deposit FSM: %w",
 				err)
 		}
 	}
 
-	return nil
+	return len(newDeposits), nil
+}
+
+// ReconcileDeposits triggers a best-effort reconciliation pass and returns the
+// number of newly discovered deposits. Recovery calls this after restoring the
+// address because deposit FSM state is not serialized in backups; it must be
+// rebuilt from lnd's current wallet view.
+func (m *Manager) ReconcileDeposits(ctx context.Context) (int, error) {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
+	return m.reconcileDeposits(ctx)
+}
+
+type verifiedRecoveryDeposit struct {
+	outPoint           wire.OutPoint
+	value              btcutil.Amount
+	confirmationHeight int64
+}
+
+// RecoverDeposit verifies a caller-supplied static-address output on-chain,
+// restores the matching concrete static address, directly creates/reactivates
+// the local deposit row, and starts the normal deposit FSM.
+func (m *Manager) RecoverDeposit(ctx context.Context,
+	req *RecoveryRequest) (*RecoveryResult, error) {
+
+	if req == nil {
+		return nil, fmt.Errorf("missing recovery request")
+	}
+
+	verified, err := m.verifyRecoveryOutput(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
+	addrParams, err := m.findRecoveryAddressParams(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	staticAddress, recoveredAddress, err := m.cfg.AddressManager.
+		RestoreAddress(ctx, addrParams)
+	if err != nil {
+		return nil, err
+	}
+	if addrParams.ID <= 0 {
+		addrParams.ID, err = m.cfg.AddressManager.GetStaticAddressID(
+			ctx, addrParams.PkScript,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	recoveredDeposit, recovered, err := m.restoreVerifiedDeposit(
+		ctx, verified, addrParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RecoveryResult{
+		OutPoint:           recoveredDeposit.OutPoint,
+		Value:              recoveredDeposit.Value,
+		ConfirmationHeight: recoveredDeposit.ConfirmationHeight,
+		AddressParams:      recoveredDeposit.AddressParams,
+		StaticAddress:      staticAddress.String(),
+		RecoveredAddress:   recoveredAddress,
+		RecoveredDeposit:   recovered,
+		DepositID:          recoveredDeposit.ID,
+	}, nil
+}
+
+// verifyRecoveryOutput waits for and validates the confirmed transaction output
+// that the caller wants to restore as a static-address deposit.
+func (m *Manager) verifyRecoveryOutput(ctx context.Context,
+	req *RecoveryRequest) (*verifiedRecoveryDeposit, error) {
+
+	if req.HeightHint <= 0 {
+		return nil, fmt.Errorf("height hint must be positive")
+	}
+	if len(req.PkScript) == 0 {
+		return nil, fmt.Errorf("missing pkScript")
+	}
+
+	confChan, errChan, err := m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+		ctx, &req.TxID, req.PkScript, 1, req.HeightHint,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var confTx *chainntnfs.TxConfirmation
+	select {
+	case confTx = <-confChan:
+
+	case err = <-errChan:
+		return nil, err
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	if confTx == nil || confTx.Tx == nil {
+		return nil, fmt.Errorf("missing confirmation transaction")
+	}
+	if confTx.BlockHeight == 0 {
+		return nil, fmt.Errorf("missing confirmation height")
+	}
+	txHash := confTx.Tx.TxHash()
+	if txHash != req.TxID {
+		return nil, fmt.Errorf("confirmation txid %v does not match "+
+			"requested txid %v", txHash, req.TxID)
+	}
+	if req.VOut >= uint32(len(confTx.Tx.TxOut)) {
+		return nil, fmt.Errorf("vout %d not found in transaction",
+			req.VOut)
+	}
+
+	txOut := confTx.Tx.TxOut[req.VOut]
+	if !bytes.Equal(txOut.PkScript, req.PkScript) {
+		return nil, fmt.Errorf("confirmed output pkScript mismatch")
+	}
+	if txOut.Value <= 0 {
+		return nil, fmt.Errorf("confirmed output has invalid value %d",
+			txOut.Value)
+	}
+
+	return &verifiedRecoveryDeposit{
+		outPoint: wire.OutPoint{
+			Hash:  req.TxID,
+			Index: req.VOut,
+		},
+		value:              btcutil.Amount(txOut.Value),
+		confirmationHeight: int64(confTx.BlockHeight),
+	}, nil
+}
+
+// findRecoveryAddressParams locates or derives the static-address parameters
+// that produced the recovered output's pkScript.
+func (m *Manager) findRecoveryAddressParams(ctx context.Context,
+	req *RecoveryRequest) (*address.Parameters, error) {
+
+	if params := m.cfg.AddressManager.GetParameters(req.PkScript); params != nil {
+		return params, nil
+	}
+
+	seedParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if seedParams == nil {
+		return nil, fmt.Errorf("missing static address seed")
+	}
+
+	params, matched, err := m.matchRecoveryAddressParams(
+		ctx, req, seedParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if matched {
+		return params, nil
+	}
+
+	return nil, fmt.Errorf("no static address child matched pkScript")
+}
+
+// matchRecoveryAddressParams scans the supported static-address key families
+// until the caller-supplied pkScript is matched.
+func (m *Manager) matchRecoveryAddressParams(ctx context.Context,
+	req *RecoveryRequest, seedParams *address.Parameters) (
+	*address.Parameters, bool, error) {
+
+	if seedParams == nil {
+		return nil, false, nil
+	}
+	if seedParams.ServerPubkey == nil {
+		return nil, false, fmt.Errorf("missing static address seed " +
+			"server pubkey")
+	}
+	if seedParams.Expiry == 0 {
+		return nil, false, fmt.Errorf("missing static address seed expiry")
+	}
+	if bytes.Equal(seedParams.PkScript, req.PkScript) {
+		return seedParams, true, nil
+	}
+
+	for _, family := range recoveryKeyFamilies(seedParams.KeyLocator.Family) {
+		for index := uint32(0); index <= DefaultRecoveryScanLimit; index++ {
+			params, err := m.deriveRecoveryAddress(
+				ctx, seedParams, family, index, req.HeightHint,
+			)
+			if err != nil {
+				return nil, false, err
+			}
+
+			if bytes.Equal(params.PkScript, req.PkScript) {
+				return params, true, nil
+			}
+		}
+	}
+
+	return nil, false, nil
+}
+
+// recoveryKeyFamilies returns the unique static-address key families that
+// manual recovery should scan for a pkScript match.
+func recoveryKeyFamilies(legacyFamily keychain.KeyFamily) []keychain.KeyFamily {
+	if legacyFamily == 0 {
+		legacyFamily = keychain.KeyFamily(swap.StaticAddressKeyFamily)
+	}
+
+	candidates := []keychain.KeyFamily{
+		legacyFamily,
+		keychain.KeyFamily(swap.StaticMultiAddressKeyFamily),
+		keychain.KeyFamily(swap.StaticAddressChangeKeyFamily),
+	}
+
+	families := make([]keychain.KeyFamily, 0, len(candidates))
+	seen := make(map[keychain.KeyFamily]struct{}, len(candidates))
+	for _, family := range candidates {
+		if _, ok := seen[family]; ok {
+			continue
+		}
+
+		seen[family] = struct{}{}
+		families = append(families, family)
+	}
+
+	return families
+}
+
+// deriveRecoveryAddress reconstructs one candidate static-address child from
+// the seed server parameters and a client key locator.
+func (m *Manager) deriveRecoveryAddress(ctx context.Context,
+	seedParams *address.Parameters, family keychain.KeyFamily,
+	index uint32, initiationHeight int32) (*address.Parameters, error) {
+
+	locator := keychain.KeyLocator{
+		Family: family,
+		Index:  index,
+	}
+	clientKey, err := m.cfg.WalletKit.DeriveKey(ctx, &locator)
+	if err != nil {
+		return nil, fmt.Errorf("unable to derive static address child "+
+			"%d:%d: %w", family, index, err)
+	}
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(seedParams.Expiry),
+		clientKey.PubKey, seedParams.ServerPubkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+
+	return &address.Parameters{
+		ClientPubkey:     clientKey.PubKey,
+		ServerPubkey:     seedParams.ServerPubkey,
+		Expiry:           seedParams.Expiry,
+		PkScript:         pkScript,
+		KeyLocator:       locator,
+		ProtocolVersion:  seedParams.ProtocolVersion,
+		InitiationHeight: initiationHeight,
+	}, nil
+}
+
+// restoreVerifiedDeposit creates or reactivates the deposit row for a verified
+// recovery output.
+func (m *Manager) restoreVerifiedDeposit(ctx context.Context,
+	verified *verifiedRecoveryDeposit,
+	addrParams *address.Parameters) (*Deposit, bool, error) {
+
+	if addrParams == nil || addrParams.ID <= 0 {
+		return nil, false, fmt.Errorf("static address ID must be set")
+	}
+
+	existing, err := m.cfg.Store.DepositForOutpoint(
+		ctx, verified.outPoint.String(),
+	)
+	switch {
+	case err == nil:
+		return m.reactivateVerifiedDeposit(ctx, existing, verified,
+			addrParams)
+
+	case errors.Is(err, ErrDepositNotFound):
+		return m.createVerifiedDeposit(ctx, verified, addrParams)
+
+	default:
+		return nil, false, err
+	}
+}
+
+// createVerifiedDeposit persists a newly recovered deposit and starts its FSM.
+func (m *Manager) createVerifiedDeposit(ctx context.Context,
+	verified *verifiedRecoveryDeposit,
+	addrParams *address.Parameters) (*Deposit, bool, error) {
+
+	timeoutSweepPkScript, err := m.nextTimeoutSweepPkScript(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	id, err := GetRandomDepositID()
+	if err != nil {
+		return nil, false, err
+	}
+
+	d := &Deposit{
+		ID:                   id,
+		state:                Deposited,
+		OutPoint:             verified.outPoint,
+		Value:                verified.value,
+		ConfirmationHeight:   verified.confirmationHeight,
+		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addrParams,
+		AddressID:            addrParams.ID,
+	}
+
+	err = m.cfg.Store.CreateDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	err = m.rememberAndStartDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return d, true, nil
+}
+
+// reactivateVerifiedDeposit refreshes an existing Deposited/Replaced row with
+// verified recovery data and ensures normal FSM tracking is running.
+func (m *Manager) reactivateVerifiedDeposit(ctx context.Context, d *Deposit,
+	verified *verifiedRecoveryDeposit, addrParams *address.Parameters) (
+	*Deposit, bool, error) {
+
+	d.Lock()
+	if d.Value != verified.value {
+		d.Unlock()
+		return nil, false, fmt.Errorf("existing deposit %v has value "+
+			"%v, recovered output has value %v", verified.outPoint,
+			d.Value, verified.value)
+	}
+
+	state := d.state
+	switch state {
+	case Deposited:
+		// Idempotent recovery. We still refresh the verified height and
+		// address linkage below, but report that no deposit row needed to be
+		// recovered.
+
+	case Replaced:
+
+	default:
+		d.Unlock()
+		return nil, false, fmt.Errorf("existing deposit %v is in "+
+			"state %s", verified.outPoint, state)
+	}
+
+	if d.TimeOutSweepPkScript == nil {
+		timeoutSweepPkScript, err := m.nextTimeoutSweepPkScript(ctx)
+		if err != nil {
+			d.Unlock()
+			return nil, false, err
+		}
+		d.TimeOutSweepPkScript = timeoutSweepPkScript
+	}
+
+	d.OutPoint = verified.outPoint
+	d.ConfirmationHeight = verified.confirmationHeight
+	d.AddressParams = addrParams
+	d.AddressID = addrParams.ID
+	d.SetStateNoLock(Deposited)
+
+	err := m.cfg.Store.UpdateRecoveredDeposit(ctx, d)
+	if err != nil {
+		d.SetStateNoLock(state)
+		d.Unlock()
+		return nil, false, err
+	}
+
+	recovered := state == Replaced
+	d.Unlock()
+	err = m.rememberAndStartDeposit(ctx, d)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return d, recovered, nil
+}
+
+// rememberAndStartDeposit indexes a recovered deposit in memory and starts its
+// FSM if it is not already active.
+func (m *Manager) rememberAndStartDeposit(ctx context.Context,
+	d *Deposit) error {
+
+	m.mu.Lock()
+	m.deposits[d.OutPoint] = d
+	delete(m.missingDeposits, d.OutPoint)
+	_, active := m.activeDeposits[d.OutPoint]
+	m.mu.Unlock()
+
+	if active {
+		return nil
+	}
+
+	return m.startDepositFsm(ctx, d)
+}
+
+// nextTimeoutSweepPkScript derives the wallet script used for any future
+// timeout sweep of a recovered deposit.
+func (m *Manager) nextTimeoutSweepPkScript(ctx context.Context) ([]byte, error) {
+	addr, err := m.cfg.WalletKit.NextAddr(
+		ctx, lnwallet.DefaultAccountName,
+		walletrpc.AddressType_TAPROOT_PUBKEY, false,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return txscript.PayToAddrScript(addr)
+}
+
+// listUnspentWithBestHeight returns the wallet's current static-address UTXOs
+// together with a stable chain tip height for any confirmed outputs.
+func (m *Manager) listUnspentWithBestHeight(ctx context.Context) (
+	[]*lnwallet.Utxo, int32, error) {
+
+	utxos, err := m.cfg.AddressManager.ListUnspent(ctx, 0, MaxConfs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("unable to list new deposits: %w", err)
+	}
+
+	needsBestHeight := false
+	for _, utxo := range utxos {
+		if utxo.Confirmations > 0 {
+			needsBestHeight = true
+			break
+		}
+	}
+
+	if !needsBestHeight {
+		return utxos, 0, nil
+	}
+
+	if m.cfg.ChainKit == nil {
+		return nil, 0, errors.New("chain kit client required for " +
+			"confirmed deposits")
+	}
+
+	const maxAttempts = 3
+	for range maxAttempts {
+		_, beforeHeight, err := m.cfg.ChainKit.GetBestBlock(ctx)
+		if err != nil {
+			return nil, 0, fmt.Errorf("unable to get best block "+
+				"before listing deposits: %w", err)
+		}
+
+		utxos, err = m.cfg.AddressManager.ListUnspent(ctx, 0, MaxConfs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("unable to list new deposits: %w",
+				err)
+		}
+
+		_, afterHeight, err := m.cfg.ChainKit.GetBestBlock(ctx)
+		if err != nil {
+			return nil, 0, fmt.Errorf("unable to get best block "+
+				"after listing deposits: %w", err)
+		}
+
+		if beforeHeight == afterHeight {
+			m.currentHeight.Store(uint32(afterHeight))
+			return utxos, afterHeight, nil
+		}
+	}
+
+	return nil, 0, errors.New("unable to get stable best block while " +
+		"listing deposits")
 }
 
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
 func (m *Manager) createNewDeposit(ctx context.Context,
-	utxo *lnwallet.Utxo) (*Deposit, error) {
+	utxo *lnwallet.Utxo, bestHeight int32) (*Deposit, error) {
 
-	blockHeight, err := m.getBlockHeight(ctx, utxo)
+	confirmationHeight, err := confirmationHeightForUtxo(
+		bestHeight, utxo,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +955,29 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+
+	addressID, err := m.cfg.AddressManager.GetStaticAddressID(
+		ctx, utxo.PkScript,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
 		OutPoint:             utxo.OutPoint,
 		Value:                utxo.Value,
-		ConfirmationHeight:   int64(blockHeight),
+		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
+		AddressID:            addressID,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -318,37 +992,242 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	return deposit, nil
 }
 
-// getBlockHeight retrieves the block height of a given utxo.
-func (m *Manager) getBlockHeight(ctx context.Context,
-	utxo *lnwallet.Utxo) (uint32, error) {
+// confirmationHeightForUtxo derives the first confirmation height of a wallet
+// UTXO from a stable best-known chain tip. Unconfirmed UTXOs return 0.
+func confirmationHeightForUtxo(bestHeight int32,
+	utxo *lnwallet.Utxo) (int64, error) {
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+	if utxo.Confirmations <= 0 {
+		return 0, nil
 	}
 
-	notifChan, errChan, err :=
-		m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, &utxo.OutPoint.Hash, addressParams.PkScript,
-			MinConfs, addressParams.InitiationHeight,
+	if bestHeight <= 0 {
+		return 0, fmt.Errorf("invalid best height %d", bestHeight)
+	}
+
+	firstConfirmationHeight := int64(bestHeight) - utxo.Confirmations + 1
+	if firstConfirmationHeight <= 0 {
+		return 0, fmt.Errorf("invalid confirmation height %d for %v "+
+			"with best height %d and %d confirmations",
+			firstConfirmationHeight, utxo.OutPoint, bestHeight,
+			utxo.Confirmations)
+	}
+
+	return firstConfirmationHeight, nil
+}
+
+// updateDepositConfirmations backfills first confirmation heights for deposits
+// that were previously detected unconfirmed.
+func (m *Manager) updateDepositConfirmations(ctx context.Context,
+	utxos []*lnwallet.Utxo, bestHeight int32) error {
+
+	for _, utxo := range utxos {
+		if utxo.Confirmations <= 0 {
+			continue
+		}
+
+		m.mu.Lock()
+		deposit, ok := m.deposits[utxo.OutPoint]
+		m.mu.Unlock()
+		if !ok {
+			continue
+		}
+
+		deposit.Lock()
+		if deposit.ConfirmationHeight > 0 {
+			deposit.Unlock()
+			continue
+		}
+		deposit.Unlock()
+
+		confirmationHeight, err := confirmationHeightForUtxo(
+			bestHeight, utxo,
 		)
-	if err != nil {
-		return 0, err
+		if err != nil {
+			return err
+		}
+
+		deposit.Lock()
+		if deposit.ConfirmationHeight > 0 {
+			deposit.Unlock()
+			continue
+		}
+
+		previousConfirmationHeight := deposit.ConfirmationHeight
+		deposit.ConfirmationHeight = confirmationHeight
+
+		err = m.cfg.Store.UpdateDeposit(ctx, deposit)
+		if err != nil {
+			deposit.ConfirmationHeight = previousConfirmationHeight
+			deposit.Unlock()
+			return err
+		}
+
+		deposit.Unlock()
 	}
 
-	select {
-	case tx := <-notifChan:
-		return tx.BlockHeight, nil
+	return nil
+}
 
-	case err := <-errChan:
-		return 0, err
+// reviveReappearedDeposits reactivates deposits that were previously marked as
+// replaced if the exact same outpoint reappears in the wallet view.
+//
+// This is the inverse of invalidateVanishedDeposits: it lets us
+// recover from a transient ListUnspent gap without inventing a second record
+// for the same outpoint.
+func (m *Manager) reviveReappearedDeposits(ctx context.Context,
+	utxos []*lnwallet.Utxo, bestHeight int32) error {
 
-	case <-ctx.Done():
-		return 0, ctx.Err()
+	type reviveCandidate struct {
+		deposit *Deposit
+		utxo    *lnwallet.Utxo
 	}
+
+	var candidates []reviveCandidate
+
+	m.mu.Lock()
+	for _, utxo := range utxos {
+		delete(m.missingDeposits, utxo.OutPoint)
+
+		deposit, ok := m.deposits[utxo.OutPoint]
+		if !ok {
+			continue
+		}
+
+		if _, active := m.activeDeposits[utxo.OutPoint]; active {
+			continue
+		}
+
+		deposit.Lock()
+		isReplaced := deposit.IsInStateNoLock(Replaced)
+		deposit.Unlock()
+		if !isReplaced {
+			continue
+		}
+
+		candidates = append(candidates, reviveCandidate{
+			deposit: deposit,
+			utxo:    utxo,
+		})
+	}
+	m.mu.Unlock()
+
+	for _, candidate := range candidates {
+		confirmationHeight, err := confirmationHeightForUtxo(
+			bestHeight, candidate.utxo,
+		)
+		if err != nil {
+			return err
+		}
+
+		deposit := candidate.deposit
+		deposit.Lock()
+		if !deposit.IsInStateNoLock(Replaced) {
+			deposit.Unlock()
+			continue
+		}
+
+		previousState := deposit.state
+		previousConfirmationHeight := deposit.ConfirmationHeight
+		deposit.ConfirmationHeight = confirmationHeight
+		deposit.SetStateNoLock(Deposited)
+		err = m.cfg.Store.UpdateDeposit(ctx, deposit)
+		if err != nil {
+			deposit.ConfirmationHeight = previousConfirmationHeight
+			deposit.SetStateNoLock(previousState)
+			deposit.Unlock()
+			return err
+		}
+
+		deposit.Unlock()
+
+		log.Infof("Reactivated deposit %v after it reappeared in "+
+			"wallet view", deposit.OutPoint)
+
+		err = m.startDepositFsm(ctx, deposit)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// invalidateVanishedDeposits marks Deposited outputs as replaced once lnd no
+// longer reports the outpoint in multiple consecutive wallet observations.
+//
+// This closes the gap between wallet state and our DB state when a persisted
+// deposit later disappears from the wallet view, for example because an
+// unconfirmed funding transaction was replaced or because a previously
+// confirmed transaction was evicted by a deep reorg. We only invalidate
+// deposits that are still in the plain Deposited state.
+//
+// That keeps the scope narrow: in-flight states like LoopingIn already have
+// their own recovery/error handling.
+func (m *Manager) invalidateVanishedDeposits(ctx context.Context,
+	utxos []*lnwallet.Utxo) error {
+
+	currentUtxos := make(map[wire.OutPoint]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		currentUtxos[utxo.OutPoint] = struct{}{}
+	}
+
+	m.mu.Lock()
+	candidates := make([]*Deposit, 0, len(m.deposits))
+	for outpoint, deposit := range m.deposits {
+		if _, ok := currentUtxos[outpoint]; ok {
+			delete(m.missingDeposits, outpoint)
+			continue
+		}
+
+		deposit.Lock()
+		isVanishedDeposit := deposit.IsInStateNoLock(Deposited)
+		deposit.Unlock()
+		if !isVanishedDeposit {
+			delete(m.missingDeposits, outpoint)
+			continue
+		}
+
+		m.missingDeposits[outpoint]++
+		if m.missingDeposits[outpoint] < vanishedDepositThreshold {
+			log.Debugf("Waiting for another wallet observation before "+
+				"marking deposit %v replaced", outpoint)
+
+			continue
+		}
+
+		delete(m.missingDeposits, outpoint)
+		candidates = append(candidates, deposit)
+	}
+	m.mu.Unlock()
+
+	for _, deposit := range candidates {
+		deposit.Lock()
+		if !deposit.IsInStateNoLock(Deposited) {
+			deposit.Unlock()
+			continue
+		}
+
+		// Persist the replacement marker before removing the deposit from the
+		// active set so restarted clients and RPC consumers see the same outcome.
+		previousState := deposit.state
+		deposit.SetStateNoLock(Replaced)
+		err := m.cfg.Store.UpdateDeposit(ctx, deposit)
+		if err != nil {
+			deposit.SetStateNoLock(previousState)
+			deposit.Unlock()
+			return err
+		}
+
+		deposit.Unlock()
+
+		m.removeActiveDeposit(deposit.OutPoint)
+
+		log.Infof("Marked vanished deposit %v as replaced",
+			deposit.OutPoint)
+	}
+
+	return nil
 }
 
 // filterNewDeposits filters the given utxos for new deposits that we haven't
@@ -537,9 +1416,32 @@ func unlockDeposits(deposits []*Deposit) {
 	}
 }
 
+func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
+	m.mu.Lock()
+	fsm, ok := m.activeDeposits[outpoint]
+	if ok {
+		delete(m.activeDeposits, outpoint)
+	}
+	m.mu.Unlock()
+
+	if ok {
+		fsm.Stop()
+	}
+}
+
 // GetAllDeposits returns all active deposits.
 func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
-	return m.cfg.Store.AllDeposits(ctx)
+	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.hydrateLegacyDepositAddressParams(ctx, deposits...)
+	if err != nil {
+		return nil, err
+	}
+
+	return deposits, nil
 }
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
@@ -594,6 +1496,11 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 			if ignoreUnknown && errors.Is(err, ErrDepositNotFound) {
 				continue
 			}
+			return nil, err
+		}
+
+		err = m.hydrateLegacyDepositAddressParams(ctx, deposit)
+		if err != nil {
 			return nil, err
 		}
 

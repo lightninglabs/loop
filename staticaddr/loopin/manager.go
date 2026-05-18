@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"sync/atomic"
@@ -20,7 +21,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -78,6 +78,10 @@ type Config struct {
 	// ChainNotifier is the chain notifier that is used to listen for new
 	// blocks.
 	ChainNotifier lndclient.ChainNotifierClient
+
+	// TxOutChecker checks whether selected deposit outpoints are still
+	// available before we sign an HTLC transaction for them.
+	TxOutChecker TxOutChecker
 
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient
@@ -326,7 +330,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	err = m.checkChange(ctx, sweepTx)
 	if err != nil {
 		return err
 	}
@@ -369,8 +373,18 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		map[string]*swapserverrpc.ClientSweeplessSigningInfo,
 		len(req.DepositToNonces),
 	)
+	depositMap := make(map[string]*deposit.Deposit, len(loopIn.Deposits))
+	for _, d := range loopIn.Deposits {
+		depositMap[d.String()] = d
+	}
 
 	for depositOutpoint, nonce := range req.DepositToNonces {
+		d, ok := depositMap[depositOutpoint]
+		if !ok {
+			return fmt.Errorf("deposit %v not found in loop-in",
+				depositOutpoint)
+		}
+
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
 			sigHashes, txscript.SigHashDefault,
 			sweepPacket.UnsignedTx,
@@ -387,7 +401,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 
 		copy(serverNonce[:], nonce)
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
+			ctx, m.cfg.Signer, d,
 		)
 		if err != nil {
 			return err
@@ -452,7 +466,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 // swaps with identical change outputs. The client needs to ensure that any
 // swap referenced by the inputs has a respective change output in the batch.
 func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
+	sweepTx *wire.MsgTx) error {
 
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
@@ -477,42 +491,67 @@ func (m *Manager) checkChange(ctx context.Context,
 		return err
 	}
 
-	var expectedChange btcutil.Amount
+	var expectedChanges []*wire.TxOut
 	for swapHash := range swapHashes {
 		loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
 		if err != nil {
 			return err
 		}
 
-		totalDepositAmount := loopIn.TotalDepositAmount()
-		changeAmt := totalDepositAmount - loopIn.SelectedAmount
-		if changeAmt > 0 && changeAmt < totalDepositAmount {
-			log.Debugf("expected change output to our "+
-				"static address, total_deposit_amount=%v, "+
-				"selected_amount=%v, "+
-				"expected_change_amount=%v ",
-				totalDepositAmount, loopIn.SelectedAmount,
-				changeAmt)
-
-			expectedChange += changeAmt
+		changeAmt := loopIn.ExpectedChangeAmount()
+		if changeAmt == 0 {
+			continue
 		}
+
+		if loopIn.ChangeAddressParams == nil {
+			return fmt.Errorf("missing change address for swap %x",
+				swapHash[:])
+		}
+
+		log.Debugf("expected change output to static address, "+
+			"swap_hash=%x, selected_amount=%v, "+
+			"expected_change_amount=%v", swapHash[:],
+			loopIn.SelectedAmount, changeAmt)
+
+		expectedChanges = append(expectedChanges, &wire.TxOut{
+			Value:    int64(changeAmt),
+			PkScript: loopIn.ChangeAddressParams.PkScript,
+		})
 	}
 
-	if expectedChange == 0 {
+	if len(expectedChanges) == 0 {
 		return nil
 	}
 
-	for _, out := range sweepTx.TxOut {
-		if out.Value == int64(expectedChange) &&
-			bytes.Equal(out.PkScript, changeAddr.PkScript) {
+	// Match expected change outputs as a multiset. This rejects batched
+	// transactions that collapse two equal client change outputs into one
+	// output unless the protocol explicitly negotiates such aggregation.
+	matchedOutputs := make([]bool, len(sweepTx.TxOut))
+	for _, expected := range expectedChanges {
+		var found bool
+		for i, out := range sweepTx.TxOut {
+			if matchedOutputs[i] {
+				continue
+			}
 
-			// We found the expected change output.
-			return nil
+			if out.Value == expected.Value &&
+				bytes.Equal(out.PkScript, expected.PkScript) {
+
+				matchedOutputs[i] = true
+				found = true
+				break
+			}
 		}
+
+		if found {
+			continue
+		}
+
+		return fmt.Errorf("couldn't find expected change of %v "+
+			"satoshis sent to static address", expected.Value)
 	}
 
-	return fmt.Errorf("couldn't find expected change of %v "+
-		"satoshis sent to our static address", expectedChange)
+	return nil
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
@@ -656,19 +695,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				"deposits: %w", err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := m.cfg.AddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		selectedDeposits, err = SelectDeposits(
-			req.SelectedAmount, allDeposits, params.Expiry,
-			m.currentHeight.Load(),
+			req.SelectedAmount, allDeposits, m.currentHeight.Load(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -759,8 +787,10 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
-		SelectedAmount:        req.SelectedAmount,
-		DepositOutpoints:      selectedOutpoints,
+		SelectedAmount: req.SelectedAmount,
+		DepositOutpoints: append(
+			[]string(nil), selectedOutpoints...,
+		),
 		Deposits:              selectedDeposits,
 		Label:                 req.Label,
 		Initiator:             req.Initiator,
@@ -850,20 +880,26 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 	return swaps, nil
 }
 
-// SelectDeposits sorts the deposits by amount in descending order, then by
-// blocks-until-expiry in ascending order. It then selects the deposits that
-// are needed to cover the amount requested without leaving a dust change. It
-// returns an error if the sum of deposits minus dust is less than the requested
-// amount.
+// SelectDeposits sorts deposits by confirmation status first, then by amount in
+// descending order, then by blocks-until-expiry in ascending order. It then
+// selects the deposits that are needed to cover the amount requested without
+// leaving a dust change. It returns an error if the sum of deposits minus dust
+// is less than the requested amount.
 func SelectDeposits(targetAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry uint32,
-	blockHeight uint32) ([]*deposit.Deposit, error) {
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32) (
+	[]*deposit.Deposit, error) {
 
 	// Filter out deposits that are too close to expiry to be swapped.
 	var deposits []*deposit.Deposit
 	for _, d := range unfilteredDeposits {
+		if d.AddressParams == nil {
+			return nil, fmt.Errorf("missing static address parameters "+
+				"for deposit %s", d.OutPoint.String())
+		}
+
 		if !IsSwappable(
-			uint32(d.ConfirmationHeight), blockHeight, csvExpiry,
+			uint32(d.ConfirmationHeight), blockHeight,
+			d.AddressParams.Expiry,
 		) {
 
 			log.Debugf("Skipping deposit %s as it expires before "+
@@ -875,14 +911,25 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		deposits = append(deposits, d)
 	}
 
-	// Sort the deposits by amount in descending order, then by
-	// blocks-until-expiry in ascending order.
+	// Sort confirmed deposits ahead of unconfirmed ones so auto-selection
+	// prefers deposits the server can accept immediately. Within each group
+	// we prefer larger deposits, then earlier expiries.
 	sort.Slice(deposits, func(i, j int) bool {
+		iConfirmed := deposits[i].ConfirmationHeight > 0
+		jConfirmed := deposits[j].ConfirmationHeight > 0
+		if iConfirmed != jConfirmed {
+			return iConfirmed
+		}
+
 		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
-				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
-				csvExpiry - blockHeight
+			iExp := blocksUntilDepositExpiry(
+				uint32(deposits[i].ConfirmationHeight),
+				blockHeight, deposits[i].AddressParams.Expiry,
+			)
+			jExp := blocksUntilDepositExpiry(
+				uint32(deposits[j].ConfirmationHeight),
+				blockHeight, deposits[j].AddressParams.Expiry,
+			)
 
 			return iExp < jExp
 		}
@@ -914,20 +961,33 @@ func SelectDeposits(targetAmount btcutil.Amount,
 // IsSwappable checks if a deposit is swappable. It returns true if the deposit
 // is not expired and the htlc is not too close to expiry.
 func IsSwappable(confirmationHeight, blockHeight, csvExpiry uint32) bool {
-	// The deposit expiry height is the confirmation height plus the csv
-	// expiry.
-	depositExpiryHeight := confirmationHeight + csvExpiry
-
-	// The htlc expiry height is the current height plus the htlc
-	// cltv delta.
-	htlcExpiryHeight := blockHeight + DefaultLoopInOnChainCltvDelta
-
-	// Ensure that the deposit doesn't expire before the htlc.
-	if depositExpiryHeight < htlcExpiryHeight+DepositHtlcDelta {
-		return false
+	if confirmationHeight == 0 {
+		return true
 	}
 
-	return true
+	// The deposit expiry height is the confirmation height plus the csv
+	// expiry.
+	return blocksUntilDepositExpiry(
+		confirmationHeight, blockHeight, csvExpiry,
+	) >= DefaultLoopInOnChainCltvDelta+DepositHtlcDelta
+}
+
+// blocksUntilDepositExpiry returns the remaining number of blocks until a
+// deposit expires. Unconfirmed deposits return MaxUint32 because their CSV has
+// not started yet.
+func blocksUntilDepositExpiry(confirmationHeight, blockHeight,
+	csvExpiry uint32) uint32 {
+
+	if confirmationHeight == 0 {
+		return math.MaxUint32
+	}
+
+	depositExpiryHeight := confirmationHeight + csvExpiry
+	if depositExpiryHeight <= blockHeight {
+		return 0
+	}
+
+	return depositExpiryHeight - blockHeight
 }
 
 // DeduceSwapAmount calculates the swap amount based on the selected amount and

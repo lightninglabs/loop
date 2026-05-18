@@ -218,6 +218,15 @@ func (s *LndMockServices) AddTx(tx *wire.MsgTx) {
 	s.lock.Unlock()
 }
 
+// SetInvoice stores a copy of the given invoice in the mock invoice store.
+func (s *LndMockServices) SetInvoice(invoice *lndclient.Invoice) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	invoiceCopy := *invoice
+	s.Invoices[invoice.Hash] = &invoiceCopy
+}
+
 // IsDone checks whether all channels have been fully emptied. If not this may
 // indicate unexpected behaviour of the code under test.
 func (s *LndMockServices) IsDone() error {

@@ -170,7 +170,9 @@ func (h *mockLightningClient) LookupInvoice(_ context.Context,
 		return nil, fmt.Errorf("invoice: %x not found", hash)
 	}
 
-	return inv, nil
+	invoiceCopy := *inv
+
+	return &invoiceCopy, nil
 }
 
 // ListTransactions returns all known transactions of the backing lnd node.

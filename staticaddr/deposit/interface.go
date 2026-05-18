@@ -23,6 +23,10 @@ type Store interface {
 	// UpdateDeposit updates the deposit in the database.
 	UpdateDeposit(ctx context.Context, deposit *Deposit) error
 
+	// UpdateRecoveredDeposit reactivates an existing deposit row from
+	// manually verified on-chain data and stores its static-address link.
+	UpdateRecoveredDeposit(ctx context.Context, deposit *Deposit) error
+
 	// GetDeposit retrieves a deposit with depositID from the database.
 	GetDeposit(ctx context.Context, depositID ID) (*Deposit, error)
 
@@ -39,6 +43,19 @@ type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
 	GetStaticAddressParameters(ctx context.Context) (*address.Parameters,
 		error)
+
+	// GetStaticAddressID returns the database ID for the static address
+	// behind the given pkScript.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
+	// GetParameters returns active static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
+
+	// RestoreAddress persists/imports the concrete static address behind a
+	// recovered deposit.
+	RestoreAddress(context.Context,
+		*address.Parameters) (*btcutil.AddressTaproot, bool, error)
 
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.

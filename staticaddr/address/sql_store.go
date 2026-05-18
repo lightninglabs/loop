@@ -41,7 +41,14 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 	return s.baseDB.Queries.CreateStaticAddress(ctx, createArgs)
 }
 
-// GetAllStaticAddresses returns all address known to the server.
+// GetStaticAddressID retrieves the database ID for a static address script.
+func (s *SqlStore) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	return s.baseDB.Queries.GetStaticAddressID(ctx, pkScript)
+}
+
+// GetAllStaticAddresses returns all addresses known to the client.
 func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 	error) {
 
@@ -63,6 +70,18 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) ([]*Parameters,
 	return result, nil
 }
 
+// GetLegacyParameters returns the first static address created for this L402.
+func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*Parameters,
+	error) {
+
+	staticAddress, err := s.baseDB.Queries.GetLegacyAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.toAddressParameters(staticAddress)
+}
+
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
 func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
@@ -79,6 +98,7 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 	}
 
 	return &Parameters{
+		ID:           row.ID,
 		ClientPubkey: clientPubkey,
 		ServerPubkey: serverPubkey,
 		PkScript:     row.Pkscript,

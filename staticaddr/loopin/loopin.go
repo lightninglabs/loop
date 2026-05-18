@@ -31,6 +31,23 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
+// ConfirmationRiskDecision records the server's decision on whether it accepts
+// waiting for low-confirmation deposits before paying a static loop-in invoice.
+type ConfirmationRiskDecision string
+
+const (
+	// ConfirmationRiskDecisionNone means no risk decision has been received.
+	ConfirmationRiskDecisionNone ConfirmationRiskDecision = ""
+
+	// ConfirmationRiskDecisionAccepted means the server accepted waiting for
+	// deposit confirmations and the payment deadline has started.
+	ConfirmationRiskDecisionAccepted ConfirmationRiskDecision = "accepted"
+
+	// ConfirmationRiskDecisionRejected means the server stopped waiting for
+	// deposit confirmations before paying the invoice.
+	ConfirmationRiskDecisionRejected ConfirmationRiskDecision = "rejected"
+)
+
 // StaticAddressLoopIn represents the in-memory loop-in information.
 type StaticAddressLoopIn struct {
 	// SwapHash is the hashed preimage of the swap invoice. It represents
@@ -93,8 +110,6 @@ type StaticAddressLoopIn struct {
 
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
-	// TODO(hieblmi): Replace this with a getter method that fetches the
-	//      outpoints from the deposits.
 	DepositOutpoints []string
 
 	// SelectedAmount is the amount that the user selected for the swap. If
@@ -105,6 +120,15 @@ type StaticAddressLoopIn struct {
 	// Fast indicates whether the client requested fast publication behavior
 	// on the server side for this static loop in.
 	Fast bool
+
+	// ConfirmationRiskDecision records the server's persisted decision on
+	// low-confirmation deposit risk.
+	ConfirmationRiskDecision ConfirmationRiskDecision
+
+	// ConfirmationRiskDecisionTime is when loopd persisted the server risk
+	// decision. It is used to reconstruct payment-deadline timeouts after
+	// restart.
+	ConfirmationRiskDecisionTime time.Time
 
 	// state is the current state of the swap.
 	state fsm.StateType
@@ -139,6 +163,11 @@ type StaticAddressLoopIn struct {
 	// Address is the address script that is used for the swap.
 	Address *script.StaticAddress
 
+	// ChangeAddressParams are the static address parameters for the change
+	// output that belongs to this swap. It is set only when SelectedAmount
+	// leaves non-dust change.
+	ChangeAddressParams *address.Parameters
+
 	// HTLC fields.
 
 	// HtlcTxFeeRate is the fee rate that is used for the htlc transaction.
@@ -154,6 +183,16 @@ type StaticAddressLoopIn struct {
 
 	// HtlcTimeoutSweepTxHash is the hash of the htlc timeout sweep tx.
 	HtlcTimeoutSweepTxHash *chainhash.Hash
+
+	// HtlcTxHash is the hash of the confirmed htlc tx published by the
+	// server.
+	HtlcTxHash *chainhash.Hash
+
+	// HtlcOutputIndex is the output index of the confirmed htlc output.
+	HtlcOutputIndex uint32
+
+	// HtlcOutputValue is the value of the confirmed htlc output.
+	HtlcOutputValue btcutil.Amount
 
 	// HtlcTimeoutSweepAddress
 	HtlcTimeoutSweepAddress btcutil.Address
@@ -177,19 +216,36 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := staticutil.ToPrevOuts(
-		l.Deposits, l.AddressParams.PkScript,
-	)
+	prevOuts, err := staticutil.ToPrevOuts(l.Deposits)
 	if err != nil {
 		return nil, err
 	}
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 
 	outpoints := l.Outpoints()
+	if len(tx.TxIn) != len(outpoints) {
+		return nil, fmt.Errorf("htlc tx input count %d does not "+
+			"match deposits %d", len(tx.TxIn), len(outpoints))
+	}
+	if len(musig2sessions) != len(outpoints) {
+		return nil, fmt.Errorf("musig2 session count %d does not "+
+			"match deposits %d", len(musig2sessions), len(outpoints))
+	}
+	if len(counterPartyNonces) != len(outpoints) {
+		return nil, fmt.Errorf("server nonce count %d does not "+
+			"match deposits %d", len(counterPartyNonces),
+			len(outpoints))
+	}
+
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
 	sigs := make([][]byte, len(outpoints))
 
 	for idx, outpoint := range outpoints {
+		if musig2sessions[idx] == nil {
+			return nil, fmt.Errorf("missing musig2 session for "+
+				"deposit input %d", idx)
+		}
+
 		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
 			outpoint) {
 
@@ -262,11 +318,10 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 	// change.
 	var (
 		swapAmt      = l.TotalDepositAmount()
-		changeAmount btcutil.Amount
+		changeAmount = l.ExpectedChangeAmount()
 	)
 	if l.SelectedAmount > 0 {
 		swapAmt = l.SelectedAmount
-		changeAmount = l.TotalDepositAmount() - l.SelectedAmount
 	}
 
 	// Calculate htlc tx fee for server provided fee rate.
@@ -302,9 +357,14 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 
 	// We expect change to be sent back to our static address output script.
 	if changeAmount > 0 {
+		if l.ChangeAddressParams == nil {
+			return nil, fmt.Errorf("missing static address change " +
+				"parameters")
+		}
+
 		msgTx.AddTxOut(&wire.TxOut{
 			Value:    int64(changeAmount),
-			PkScript: l.AddressParams.PkScript,
+			PkScript: l.ChangeAddressParams.PkScript,
 		})
 	}
 
@@ -364,36 +424,18 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
-	htlcTx, err := l.createHtlcTx(
-		network, l.HtlcTxFeeRate, maxFeePercentage,
+	htlcOutpoint, htlcOutValue, err := l.confirmedHtlcOutpoint(
+		network, maxFeePercentage,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// The HTLC output is always at index 0 (createHtlcTx adds it first).
-	// If there is a change output, it is at index 1. Verify this invariant
-	// so we fail fast if createHtlcTx's layout ever changes.
-	const htlcInputIndex = uint32(0)
-	if len(htlcTx.TxOut) == 2 {
-		if bytes.Equal(
-			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
-		) {
-
-			return nil, fmt.Errorf("htlc tx output layout " +
-				"invariant violated: expected HTLC output " +
-				"at index 0, got change output")
-		}
-	}
-
 	// Add the htlc input.
 	sweepTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: wire.OutPoint{
-			Hash:  htlcTx.TxHash(),
-			Index: htlcInputIndex,
-		},
-		SignatureScript: htlc.SigScript,
-		Sequence:        htlc.SuccessSequence(),
+		PreviousOutPoint: htlcOutpoint,
+		SignatureScript:  htlc.SigScript,
+		Sequence:         htlc.SuccessSequence(),
 	})
 
 	// Add the sweep output.
@@ -404,7 +446,6 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
@@ -443,6 +484,56 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 	return sweepTx, nil
 }
 
+// confirmedHtlcOutpoint returns the exact confirmed htlc outpoint when it has
+// been persisted. Older loop-ins fall back to reconstructing the standard-fee
+// htlc tx, which was the historical behavior before we stored the actual
+// server-published variant.
+func (l *StaticAddressLoopIn) confirmedHtlcOutpoint(
+	network *chaincfg.Params, maxFeePercentage float64) (wire.OutPoint,
+	int64, error) {
+
+	if l.HtlcTxHash != nil {
+		if l.HtlcOutputValue <= 0 {
+			return wire.OutPoint{}, 0, fmt.Errorf("missing htlc "+
+				"output value for confirmed htlc tx %v",
+				l.HtlcTxHash)
+		}
+
+		return wire.OutPoint{
+			Hash:  *l.HtlcTxHash,
+			Index: l.HtlcOutputIndex,
+		}, int64(l.HtlcOutputValue), nil
+	}
+
+	htlcTx, err := l.createHtlcTx(
+		network, l.HtlcTxFeeRate, maxFeePercentage,
+	)
+	if err != nil {
+		return wire.OutPoint{}, 0, err
+	}
+
+	// The HTLC output is always at index 0 (createHtlcTx adds it first).
+	// If there is a change output, it is at index 1. Verify this invariant
+	// so we fail fast if createHtlcTx's layout ever changes.
+	const htlcInputIndex = uint32(0)
+	if len(htlcTx.TxOut) == 2 && l.ChangeAddressParams != nil {
+		if bytes.Equal(
+			htlcTx.TxOut[0].PkScript,
+			l.ChangeAddressParams.PkScript,
+		) {
+
+			return wire.OutPoint{}, 0, fmt.Errorf("htlc tx " +
+				"output layout invariant violated: expected " +
+				"HTLC output at index 0, got change output")
+		}
+	}
+
+	return wire.OutPoint{
+		Hash:  htlcTx.TxHash(),
+		Index: htlcInputIndex,
+	}, htlcTx.TxOut[htlcInputIndex].Value, nil
+}
+
 // pubkeyTo33ByteSlice converts a pubkey to a 33 byte slice.
 func pubkeyTo33ByteSlice(pubkey *btcec.PublicKey) [33]byte {
 	var pubkeyBytes [33]byte
@@ -464,14 +555,45 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 	return total
 }
 
+// ExpectedChangeAmount returns the change that a fractional loop-in should send
+// to its generated static change address. A full-amount loop-in has no change.
+func (l *StaticAddressLoopIn) ExpectedChangeAmount() btcutil.Amount {
+	if l.SelectedAmount <= 0 {
+		return 0
+	}
+
+	totalDepositAmount := l.TotalDepositAmount()
+	changeAmount := totalDepositAmount - l.SelectedAmount
+	if changeAmount <= 0 || changeAmount >= totalDepositAmount {
+		return 0
+	}
+
+	return changeAmount
+}
+
 // RemainingPaymentTimeSeconds returns the remaining time in seconds until the
 // payment timeout is reached. The remaining time is calculated from the
-// initiation time of the swap. If more than the swaps configured payment
+// initiation time of the swap. If more than the swap's configured payment
 // timeout has passed, the remaining time will be negative.
 func (l *StaticAddressLoopIn) RemainingPaymentTimeSeconds() int64 {
 	elapsedSinceInitiation := time.Since(l.InitiationTime).Seconds()
 
-	return int64(l.PaymentTimeoutSeconds) - int64(elapsedSinceInitiation)
+	return l.paymentTimeoutSeconds() - int64(elapsedSinceInitiation)
+}
+
+// PaymentTimeoutDuration returns the configured payment timeout duration,
+// falling back to the default if the swap predates the persisted timeout field.
+func (l *StaticAddressLoopIn) PaymentTimeoutDuration() time.Duration {
+	return time.Duration(l.paymentTimeoutSeconds()) * time.Second
+}
+
+func (l *StaticAddressLoopIn) paymentTimeoutSeconds() int64 {
+	timeoutSeconds := int64(l.PaymentTimeoutSeconds)
+	if timeoutSeconds == 0 {
+		timeoutSeconds = int64(DefaultPaymentTimeoutSeconds)
+	}
+
+	return timeoutSeconds
 }
 
 // Outpoints returns the wire outpoints of the deposits.

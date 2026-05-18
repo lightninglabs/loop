@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	loop_looprpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/notifications"
+	"github.com/lightninglabs/loop/recovery"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
@@ -555,10 +556,30 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	// Static address loop-in store setup is needed by the notification
+	// manager so confirmation-risk decisions are durable before fan-out.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
 	// Start the notification manager.
 	notificationCfg := &notifications.Config{
 		Client:       loop_swaprpc.NewSwapServerClient(swapClient.Conn),
 		CurrentToken: swapClient.L402Store.CurrentToken,
+		PersistStaticLoopInRiskDecision: func(ctx context.Context,
+			swapHash lntypes.Hash, accepted bool) error {
+
+			decision := loopin.ConfirmationRiskDecisionRejected
+			if accepted {
+				decision = loopin.ConfirmationRiskDecisionAccepted
+			}
+
+			return staticAddressLoopInStore.
+				RecordStaticAddressRiskDecision(
+					ctx, swapHash, decision,
+				)
+		},
 	}
 	notificationManager := notifications.NewManager(notificationCfg)
 
@@ -577,13 +598,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		withdrawalManager    *withdraw.Manager
 		openChannelManager   *openchannel.Manager
 		staticLoopInManager  *loopin.Manager
+		recoveryService      *recovery.Service
 	)
 
 	// Static address manager setup.
 	staticAddressStore := address.NewSqlStore(baseDb)
 	addrCfg := &address.ManagerConfig{
 		AddressClient: staticAddressClient,
-		FetchL402:     swapClient.Server.FetchL402,
+		FetchL402: func(ctx context.Context) error {
+			return swapClient.Server.FetchL402(ctx)
+		},
 		Store:         staticAddressStore,
 		WalletKit:     d.lnd.WalletKit,
 		ChainParams:   d.lnd.ChainParams,
@@ -601,6 +625,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	depositStore := deposit.NewSqlStore(baseDb)
 	depoCfg := &deposit.ManagerConfig{
 		AddressManager: staticAddressManager,
+		ChainKit:       d.lnd.ChainKit,
 		Store:          depositStore,
 		WalletKit:      d.lnd.WalletKit,
 		ChainNotifier:  d.lnd.ChainNotifier,
@@ -641,12 +666,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 	openChannelManager = openchannel.NewManager(openChannelCfg)
 
-	// Static address loop-in manager setup.
-	staticAddressLoopInStore := loopin.NewSqlStore(
-		loopdb.NewTypedStore[loopin.Querier](baseDb),
-		clock.NewDefaultClock(), d.lnd.ChainParams,
-	)
-
 	// Run the deposit swap hash migration.
 	err = loopin.MigrateDepositSwapHash(
 		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
@@ -678,6 +697,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		Store:                                staticAddressLoopInStore,
 		WalletKit:                            d.lnd.WalletKit,
 		ChainNotifier:                        d.lnd.ChainNotifier,
+		TxOutChecker:                         loopin.NewLndTxOutChecker(d.lnd.Client),
 		NotificationManager:                  notificationManager,
 		ChainParams:                          d.lnd.ChainParams,
 		Signer:                               d.lnd.Signer,
@@ -688,6 +708,48 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	if err != nil {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
 	}
+
+	// Keep startup restore/write-backup free of deposit reconciliation so we
+	// don't create deposit FSMs before the deposit manager is running.
+	startupRecoveryService := recovery.NewService(
+		d.cfg.DataDir, d.cfg.Network, d.lnd.Signer, d.lnd.WalletKit,
+		staticAddressManager, nil,
+	)
+
+	restoreResult, restoredFromBackup, err :=
+		startupRecoveryService.RestoreLatestOnFreshInstall(d.mainCtx)
+	if err != nil {
+		return fmt.Errorf("unable to restore latest recovery "+
+			"backup on fresh install: %w", err)
+	}
+	if restoredFromBackup {
+		infof("Restored fresh install from encrypted recovery "+
+			"backup %s", restoreResult.BackupFile)
+	} else {
+		_, err = staticAddressManager.EnsureStaticAddressSeed(
+			d.mainCtx,
+		)
+		if err != nil {
+			warnf("Unable to initialize static address generation "+
+				"during startup: %v", err)
+		}
+	}
+
+	backupFile, err := startupRecoveryService.WriteBackup(d.mainCtx)
+	if err != nil {
+		warnf("Unable to write startup recovery backup: %v", err)
+	}
+	if backupFile != "" {
+		infof("Wrote encrypted recovery backup to %s after "+
+			"initializing the current L402 generation", backupFile)
+	}
+
+	// Runtime recovery is wired with the deposit manager so explicit
+	// recovery RPCs can reconcile restored static-address deposits.
+	recoveryService = recovery.NewService(
+		d.cfg.DataDir, d.cfg.Network, d.lnd.Signer, d.lnd.WalletKit,
+		staticAddressManager, depositManager,
+	)
 
 	var (
 		reservationManager *reservation.Manager
@@ -753,6 +815,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager:  staticLoopInManager,
 		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
+		recoveryService:      recoveryService,
 		stopDaemon:           d.Stop,
 	}
 
