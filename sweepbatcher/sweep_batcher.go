@@ -675,12 +675,26 @@ func (b *Batcher) Run(ctx context.Context) error {
 	// the database. We will then resume the execution of these batches.
 	batches, err := b.FetchUnconfirmedBatches(runCtx)
 	if err != nil {
+		if ctxErr := runCtx.Err(); ctxErr != nil {
+			infof("FetchUnconfirmedBatches failed during shutdown, "+
+				"returning %v instead of %v.", ctxErr, err)
+
+			return ctxErr
+		}
+
 		return err
 	}
 
 	for _, batch := range batches {
 		err := b.spinUpBatchFromDB(runCtx, batch)
 		if err != nil {
+			if ctxErr := runCtx.Err(); ctxErr != nil {
+				infof("spinUpBatchFromDB failed during shutdown, "+
+					"returning %v instead of %v.", ctxErr, err)
+
+				return ctxErr
+			}
+
 			return err
 		}
 	}
@@ -695,6 +709,14 @@ func (b *Batcher) Run(ctx context.Context) error {
 				runCtx, req.sweeps, req.notifier, req.fast,
 			)
 			if err != nil {
+				if ctxErr := runCtx.Err(); ctxErr != nil {
+					infof("handleSweeps failed during shutdown, "+
+						"returning %v instead of %v.",
+						ctxErr, err)
+
+					return ctxErr
+				}
+
 				warnf("handleSweeps failed: %v.", err)
 
 				return err
@@ -705,6 +727,14 @@ func (b *Batcher) Run(ctx context.Context) error {
 			close(testReq.quit)
 
 		case err := <-b.errChan:
+			if ctxErr := runCtx.Err(); ctxErr != nil {
+				infof("Batcher received an error during shutdown, "+
+					"returning %v instead of %v.",
+					ctxErr, err)
+
+				return ctxErr
+			}
+
 			warnf("Batcher received an error: %v.", err)
 
 			return err
@@ -734,13 +764,33 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 		return fmt.Errorf("presignedHelper is not installed")
 	}
 
+	if err := b.shutdownOrCancelErrIfAny(ctx); err != nil {
+		return err
+	}
+
 	// Find the feerate needed to get into next block. Use conf_target=2,
 	nextBlockFeeRate, err := b.wallet.EstimateFeeRate(ctx, 2)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup EstimateFeeRate failed "+
+				"during shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get nextBlockFeeRate: %w", err)
 	}
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup MinRelayFee failed during "+
+				"shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get minRelayFeeRate: %w", err)
 	}
 	destPkscript, err := txscript.PayToAddrScript(destAddress)
@@ -768,10 +818,23 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 	// outpoint in the batch.
 	primarySweepID := sweeps[0].outpoint
 
-	return presign(
+	err = presign(
 		ctx, b.presignedHelper, destAddress, primarySweepID, sweeps,
 		nextBlockFeeRate, minRelayFeeRate,
 	)
+	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("PresignSweepsGroup presign failed during "+
+				"shutdown, returning %v instead of %v.",
+				exitErr, err)
+
+			return exitErr
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // AddSweep loads information about sweeps from the store and fee rate source,
@@ -780,16 +843,21 @@ func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
 // times, but the sweeps (including the order of them) must be the same. If
 // notifier is provided, the batcher sends back sweeping results through it.
 func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
-	// If the batcher is shutting down, quit now.
-	select {
-	case <-b.quit:
-		return ErrBatcherShuttingDown
-
-	default:
+	// If the batcher or the caller is shutting down, quit now.
+	err := b.shutdownOrCancelErrIfAny(ctx)
+	if err != nil {
+		return err
 	}
 
 	sweeps, err := b.fetchSweeps(ctx, *sweepReq)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("fetchSweeps failed during shutdown, returning "+
+				"%v instead of %v.", exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("fetchSweeps failed: %w", err)
 	}
 
@@ -803,6 +871,14 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 
 	completed, err := b.store.GetSweepStatus(ctx, sweep.outpoint)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("GetSweepStatus failed for sweep %v during "+
+				"shutdown, returning %v instead of %v.",
+				sweep.outpoint, exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get the status of sweep %v: %w",
 			sweep.outpoint, err)
 	}
@@ -816,6 +892,14 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 		// on-chain confirmations to prevent issues caused by reorgs.
 		parentBatch, err = b.store.GetParentBatch(ctx, sweep.outpoint)
 		if err != nil {
+			if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+				infof("GetParentBatch failed for sweep %v "+
+					"during shutdown, returning %v instead "+
+					"of %v.", sweep.outpoint, exitErr, err)
+
+				return exitErr
+			}
+
 			return fmt.Errorf("unable to get parent batch for "+
 				"sweep %x: %w", sweep.swapHash[:6], err)
 		}
@@ -827,6 +911,13 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
+		if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+			infof("MinRelayFee failed during shutdown, returning "+
+				"%v instead of %v.", exitErr, err)
+
+			return exitErr
+		}
+
 		return fmt.Errorf("failed to get min relay fee: %w", err)
 	}
 
@@ -839,6 +930,15 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 			b.chainParams,
 		)
 		if err != nil {
+			if exitErr := b.shutdownOrCancelErrIfAny(ctx); exitErr != nil {
+				infof("ensurePresigned failed for primary "+
+					"sweep %v during shutdown, returning %v "+
+					"instead of %v.", sweep.outpoint,
+					exitErr, err)
+
+				return exitErr
+			}
+
 			return fmt.Errorf("inputs with primarySweep %v were "+
 				"not presigned (call PresignSweepsGroup "+
 				"first): %w", sweep.outpoint, err)
@@ -861,7 +961,24 @@ func (b *Batcher) AddSweep(ctx context.Context, sweepReq *SweepRequest) error {
 
 	case <-b.quit:
 		return ErrBatcherShuttingDown
+
+	case <-ctx.Done():
+		return b.shutdownOrCancelErrIfAny(ctx)
 	}
+}
+
+// shutdownOrCancelErrIfAny returns the terminal error to use when caller-facing
+// batcher methods race with shutdown or caller cancellation. It returns nil if
+// the operation should continue.
+func (b *Batcher) shutdownOrCancelErrIfAny(ctx context.Context) error {
+	select {
+	case <-b.quit:
+		return ErrBatcherShuttingDown
+
+	default:
+	}
+
+	return ctx.Err()
 }
 
 // testRunInEventLoop runs a function in the event loop blocking until
