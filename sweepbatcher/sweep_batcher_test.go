@@ -3,11 +3,13 @@ package sweepbatcher
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3711,6 +3713,328 @@ func (f *sweepFetcherMock) FetchSweep(ctx context.Context, _ lntypes.Hash,
 	return f.store[outpoint], nil
 }
 
+// cancelingSweepFetcher cancels its caller context while returning a backend
+// fetch error.
+type cancelingSweepFetcher struct {
+	cancel context.CancelFunc
+}
+
+func (f *cancelingSweepFetcher) FetchSweep(context.Context, lntypes.Hash,
+	wire.OutPoint) (*SweepInfo, error) {
+
+	// Simulate the caller canceling while the backend returns a
+	// driver-level error.
+	f.cancel()
+
+	return nil, driver.ErrBadConn
+}
+
+// testAddSweepReturnsContextErrorOnFetchCancellation asserts that AddSweep
+// returns context.Canceled instead of a backend error when sweep fetching races
+// with caller cancellation.
+func testAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, &cancelingSweepFetcher{cancel: cancel},
+	)
+
+	err := batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Inputs: []Input{{
+			Value: 1111,
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{1, 1},
+				Index: 1,
+			},
+		}},
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, driver.ErrBadConn)
+}
+
+// TestAddSweepReturnsContextErrorOnFetchCancellation asserts that AddSweep
+// returns the context cancellation error if sweep fetching fails while the
+// caller context is being canceled.
+func TestAddSweepReturnsContextErrorOnFetchCancellation(t *testing.T) {
+	runTests(t, testAddSweepReturnsContextErrorOnFetchCancellation)
+}
+
+// cancelingStatusStore wraps a batcher store and cancels the test context when
+// Run checks sweep status. This simulates a backend failure that happens after
+// AddSweep already handed the request to the batcher event loop.
+type cancelingStatusStore struct {
+	testBatcherStore
+
+	cancel context.CancelFunc
+	calls  atomic.Int32
+}
+
+// GetSweepStatus cancels the context and returns a driver error on the second
+// status lookup. The first lookup belongs to AddSweep setup; the second lookup
+// belongs to Run/handleSweeps after the request has been accepted.
+func (s *cancelingStatusStore) GetSweepStatus(ctx context.Context,
+	outpoint wire.OutPoint) (bool, error) {
+
+	if s.calls.Add(1) == 2 {
+		s.cancel()
+
+		return false, driver.ErrBadConn
+	}
+
+	return s.testBatcherStore.GetSweepStatus(ctx, outpoint)
+}
+
+// testAddSweepReturnsContextErrorOnRunCancellation asserts that Batcher.Run
+// returns the run context's cancellation error when an already accepted sweep
+// request fails during shutdown.
+func testAddSweepReturnsContextErrorOnRunCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Use a custom fetcher so AddSweep can complete its setup without
+	// needing a swap-store lookup.
+	swapHash := lntypes.Hash{2, 2, 2}
+	amt := btcutil.Amount(1111)
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{2, 2},
+		Index: 1,
+	}
+
+	swap := &loopdb.LoopOutContract{
+		SwapContract: loopdb.SwapContract{
+			CltvExpiry:      222,
+			AmountRequested: amt,
+			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
+			HtlcKeys:        htlcKeys,
+		},
+		DestAddr:        destAddr,
+		SwapInvoice:     swapInvoice,
+		SweepConfTarget: confTarget,
+	}
+
+	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
+		swapInvoice, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	htlc, err := utils.GetHtlc(
+		swapHash, &swap.SwapContract, lnd.ChainParams,
+	)
+	require.NoError(t, err)
+
+	sweepFetcher := &sweepFetcherMock{
+		store: map[wire.OutPoint]*SweepInfo{
+			op: {
+				ConfTarget:             confTarget,
+				Timeout:                111,
+				SwapInvoicePaymentAddr: *swapPaymentAddr,
+				ProtocolVersion:        loopdb.ProtocolVersionMuSig2,
+				HTLCKeys:               htlcKeys,
+				HTLC:                   *htlc,
+				HTLCSuccessEstimator:   htlc.AddSuccessToEstimator,
+				DestAddr:               destAddr,
+			},
+		},
+	}
+	statusStore := &cancelingStatusStore{
+		testBatcherStore: batcherStore,
+		cancel:           cancel,
+	}
+
+	// Avoid fee-estimator calls in this test. The race being tested is the
+	// store lookup that happens after the request reaches Batcher.Run.
+	customFeeRate := func(context.Context, lntypes.Hash,
+		wire.OutPoint) (chainfee.SatPerKWeight, error) {
+
+		return chainfee.SatPerKWeight(30000), nil
+	}
+
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		statusStore, sweepFetcher, WithCustomFeeRate(customFeeRate),
+	)
+
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	<-batcher.initDone
+
+	// AddSweep should finish normally. The injected cancellation is tied to
+	// the second status lookup, which is performed later by handleSweeps.
+	err = batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: swapHash,
+		Inputs: []Input{{
+			Value:    amt,
+			Outpoint: op,
+		}},
+	})
+	require.NoError(t, err)
+
+	// Run should report the context cancellation instead of the lower-level
+	// driver error returned by the store.
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotErrorIs(t, err, driver.ErrBadConn)
+
+	case <-time.After(test.Timeout):
+		t.Fatalf("expected batcher to exit")
+	}
+}
+
+// TestAddSweepReturnsContextErrorOnRunCancellation asserts that Run returns
+// the context cancellation error if handling an already accepted sweep request
+// fails while the run context is being canceled.
+func TestAddSweepReturnsContextErrorOnRunCancellation(t *testing.T) {
+	runTests(t, testAddSweepReturnsContextErrorOnRunCancellation)
+}
+
+// testRunReturnsContextErrorOnErrChanCancellation asserts that Run returns the
+// run context's cancellation error when an async batcher error is ready during
+// shutdown.
+func testRunReturnsContextErrorOnErrChanCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	sweepFetcher := &sweepFetcherMock{
+		store: make(map[wire.OutPoint]*SweepInfo),
+	}
+
+	// Run several attempts so the test exercises the errChan branch even
+	// though the run context cancellation branch is ready at the same time.
+	for range 20 {
+		ctx, cancel := context.WithCancel(t.Context())
+
+		batcher := NewBatcher(
+			lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+			testMuSig2SignSweep, testVerifySchnorrSig,
+			lnd.ChainParams, batcherStore, sweepFetcher,
+		)
+
+		runErrChan := make(chan error, 1)
+		go func() {
+			runErrChan <- batcher.Run(ctx)
+		}()
+
+		<-batcher.initDone
+
+		// Queue the backend error from inside the event loop so Run cannot
+		// observe the cancellation until both cases are ready.
+		batcher.testRunInEventLoop(t.Context(), func() {
+			cancel()
+			batcher.errChan <- driver.ErrBadConn
+		})
+
+		select {
+		case err := <-runErrChan:
+			require.ErrorIs(t, err, context.Canceled)
+			require.NotErrorIs(t, err, driver.ErrBadConn)
+
+		case <-time.After(test.Timeout):
+			t.Fatalf("expected batcher to exit")
+		}
+	}
+}
+
+// TestRunReturnsContextErrorOnErrChanCancellation asserts that Run returns the
+// context cancellation error if an async batcher error races with shutdown.
+func TestRunReturnsContextErrorOnErrChanCancellation(t *testing.T) {
+	runTests(t, testRunReturnsContextErrorOnErrChanCancellation)
+}
+
+// cancelingPresignedHelper is a PresignedHelper implementation that cancels
+// the caller context while returning a driver-level signing error.
+type cancelingPresignedHelper struct {
+	cancel context.CancelFunc
+}
+
+// DestPkScript satisfies the PresignedHelper interface. It is not used by
+// PresignSweepsGroup, which already receives the destination address directly.
+func (h *cancelingPresignedHelper) DestPkScript(context.Context,
+	wire.OutPoint) ([]byte, error) {
+
+	return nil, nil
+}
+
+// SignTx cancels the caller context and returns a driver-level error, matching
+// the shutdown race this test exercises.
+func (h *cancelingPresignedHelper) SignTx(context.Context, wire.OutPoint,
+	*wire.MsgTx, btcutil.Amount, chainfee.SatPerKWeight,
+	chainfee.SatPerKWeight, bool) (*wire.MsgTx, error) {
+
+	h.cancel()
+
+	return nil, driver.ErrBadConn
+}
+
+// CleanupTransactions satisfies the PresignedHelper interface. It is not
+// exercised by this presigning-only test.
+func (h *cancelingPresignedHelper) CleanupTransactions(context.Context,
+	[]wire.OutPoint) error {
+
+	return nil
+}
+
+// testPresignSweepsGroupReturnsContextErrorOnCancellation asserts that
+// PresignSweepsGroup returns the context cancellation error if presigning fails
+// while the caller context is being canceled.
+func testPresignSweepsGroupReturnsContextErrorOnCancellation(t *testing.T,
+	_ testStore, batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// The store is not used by PresignSweepsGroup, but runTests passes
+	// both mock and SQL-backed stores so the test stays consistent with
+	// the rest of this file.
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, nil, WithPresignedHelper(
+			&cancelingPresignedHelper{cancel: cancel},
+		),
+	)
+
+	err := batcher.PresignSweepsGroup(
+		ctx, []Input{{
+			Value: btcutil.Amount(1_000_000),
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{3, 3},
+				Index: 1,
+			},
+		}}, sweepTimeout, destAddr, nil,
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, driver.ErrBadConn)
+}
+
+// TestPresignSweepsGroupReturnsContextErrorOnCancellation asserts that
+// PresignSweepsGroup returns the context cancellation error if presigning fails
+// while the caller context is being canceled.
+func TestPresignSweepsGroupReturnsContextErrorOnCancellation(t *testing.T) {
+	runTests(t, testPresignSweepsGroupReturnsContextErrorOnCancellation)
+}
+
 // testSweepFetcher tests providing custom sweep fetcher to Batcher.
 func testSweepFetcher(t *testing.T, store testStore,
 	batcherStore testBatcherStore) {
@@ -3884,9 +4208,9 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	batcher := NewBatcher(lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
 		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
 		batcherStore, sweepStore)
+	runErrChan := make(chan error, 1)
 	go func() {
-		err := batcher.Run(ctx)
-		checkBatcherError(t, err)
+		runErrChan <- batcher.Run(ctx)
 	}()
 
 	// Add many swaps.
@@ -3952,23 +4276,28 @@ func testSweepBatcherCloseDuringAdding(t *testing.T, store testStore,
 	})
 
 	// We don't know how many spend notification registrations will be
-	// issued, so accept them while waiting for two goroutines to stop.
-	quit := make(chan struct{})
-	registrationChan := make(chan struct{})
+	// issued, so accept them while waiting for all goroutines to stop.
+	addDone := make(chan struct{})
 	go func() {
-		defer close(registrationChan)
-		for {
-			select {
-			case <-lnd.RegisterSpendChannel:
-			case <-quit:
-				return
-			}
-		}
+		defer close(addDone)
+		wg.Wait()
 	}()
 
-	wg.Wait()
-	close(quit)
-	<-registrationChan
+	for addDone != nil || runErrChan != nil {
+		select {
+		case <-lnd.RegisterSpendChannel:
+
+		case <-addDone:
+			addDone = nil
+
+		case err := <-runErrChan:
+			checkBatcherError(t, err)
+			runErrChan = nil
+
+		case <-time.After(test.Timeout):
+			t.Fatalf("expected batcher close during adding to finish")
+		}
+	}
 }
 
 // testSweepBatcherHandleSweepRace reproduces a race between AddSweep and the
