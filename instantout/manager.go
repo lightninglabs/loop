@@ -159,14 +159,12 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		protocolVersion: CurrentProtocolVersion(),
 		sweepAddress:    sweepAddr,
 	}
+	m.Unlock()
 
 	instantOut, err := NewFSM(m.cfg, ProtocolVersionFullReservation)
 	if err != nil {
-		m.Unlock()
 		return nil, err
 	}
-	m.activeInstantOuts[instantOut.InstantOut.SwapHash] = instantOut
-	m.Unlock()
 
 	// Start the instantout FSM.
 	go func() {
@@ -185,6 +183,10 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	m.Lock()
+	m.activeInstantOuts[instantOut.InstantOut.SwapHash] = instantOut
+	m.Unlock()
 
 	return instantOut, nil
 }
