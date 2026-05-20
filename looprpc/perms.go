@@ -82,7 +82,7 @@ var RequiredPermissions = map[string][]bakery.Op{
 	}},
 	"/looprpc.SwapClient/NewStaticAddress": {{
 		Entity: "swap",
-		Action: "read",
+		Action: "execute",
 	}, {
 		Entity: "loop",
 		Action: "in",
@@ -150,6 +150,20 @@ var RequiredPermissions = map[string][]bakery.Op{
 	"/looprpc.SwapClient/FetchL402Token": {{
 		Entity: "auth",
 		Action: "write",
+	}},
+	"/looprpc.SwapClient/Recover": {{
+		Entity: "auth",
+		Action: "write",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/RecoverDeposit": {{
+		Entity: "swap",
+		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "in",
 	}},
 	"/looprpc.SwapClient/SuggestSwaps": {{
 		Entity: "suggestions",

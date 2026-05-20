@@ -18,7 +18,7 @@ import (
 
 var (
 	testReservationId  = []byte{0x01, 0x02}
-	testReservationId2 = []byte{0x01, 0x02}
+	testReservationId2 = []byte{0x03, 0x04}
 )
 
 // mockNotificationsClient implements the NotificationsClient interface for testing.
@@ -185,6 +185,521 @@ func getTestNotification(resId []byte) *swapserverrpc.SubscribeNotificationsResp
 				ReservationId: resId,
 			},
 		},
+	}
+}
+
+func unfinishedSwapNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_UnfinishedSwap{
+			UnfinishedSwap: &swapserverrpc.
+				ServerUnfinishedSwapNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+func staticLoopInSweepNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_StaticLoopInSweep{
+			StaticLoopInSweep: &swapserverrpc.
+				ServerStaticLoopInSweepNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+func staticLoopInRiskAcceptedNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_StaticLoopInRiskAccepted{
+			StaticLoopInRiskAccepted: &swapserverrpc.
+				ServerStaticLoopInRiskAcceptedNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+func staticLoopInRiskRejectedNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_StaticLoopInRiskRejected{
+			StaticLoopInRiskRejected: &swapserverrpc.
+				ServerStaticLoopInRiskRejectedNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+type staticLoopInRiskNotification interface {
+	GetSwapHash() []byte
+}
+
+func assertStaticLoopInRiskNotificationSwapScoped[
+	T staticLoopInRiskNotification](t *testing.T,
+	subscribe func(*Manager, context.Context, lntypes.Hash) <-chan T,
+	notification func(lntypes.Hash) *swapserverrpc.
+		SubscribeNotificationsResponse, label string,
+	swapHashA, swapHashB lntypes.Hash) {
+
+	t.Helper()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChanA := subscribe(mgr, subCtx, swapHashA)
+	subChanB := subscribe(mgr, subCtx, swapHashB)
+
+	mgr.handleNotification(t.Context(), notification(swapHashA))
+
+	select {
+	case received := <-subChanA:
+		require.Equal(t, swapHashA[:], received.GetSwapHash())
+
+	case <-time.After(time.Second):
+		t.Fatalf("did not receive first swap risk %s notification",
+			label)
+	}
+
+	select {
+	case received := <-subChanB:
+		t.Fatalf("second swap received wrong notification: %x",
+			received.GetSwapHash())
+
+	default:
+	}
+
+	mgr.handleNotification(t.Context(), notification(swapHashB))
+
+	select {
+	case received := <-subChanB:
+		require.Equal(t, swapHashB[:], received.GetSwapHash())
+
+	case <-time.After(time.Second):
+		t.Fatalf("did not receive second swap risk %s notification",
+			label)
+	}
+}
+
+// TestManager_SlowSubscriberDoesNotBlock tests that a subscriber with a full
+// notification channel does not block delivery to other subscribers.
+func TestManager_SlowSubscriberDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	slowCtx, slowCancel := context.WithCancel(t.Context())
+	defer slowCancel()
+	slowChan := mgr.SubscribeReservations(slowCtx)
+
+	fastCtx, fastCancel := context.WithCancel(t.Context())
+	defer fastCancel()
+	fastChan := mgr.SubscribeReservations(fastCtx)
+
+	firstNotif := getTestNotification(testReservationId)
+	mgr.handleNotification(t.Context(), firstNotif)
+
+	received := <-fastChan
+	require.Equal(t, testReservationId, received.ReservationId)
+
+	secondNotif := getTestNotification(testReservationId2)
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(t.Context(), secondNotif)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case received = <-fastChan:
+		require.Equal(t, testReservationId2, received.ReservationId)
+
+	case <-time.After(time.Second):
+		t.Fatal("fast subscriber did not receive notification")
+	}
+
+	require.Len(t, slowChan, 1)
+}
+
+// TestManager_UnfinishedSwapNotificationWaitsForSubscriber verifies that
+// unfinished swap recovery notifications are not dropped when the local
+// subscriber is briefly behind.
+func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
+	t.Parallel()
+
+	assertQueuedSwapHashNotifications(
+		t,
+		func(mgr *Manager, ctx context.Context) <-chan *swapserverrpc.
+			ServerUnfinishedSwapNotification {
+
+			return mgr.SubscribeUnfinishedSwaps(ctx)
+		},
+		unfinishedSwapNotification,
+		func(ntfn *swapserverrpc.ServerUnfinishedSwapNotification) []byte {
+			return ntfn.SwapHash
+		},
+		lntypes.Hash{0x02, 0x03}, lntypes.Hash{0x04, 0x05},
+		"did not receive first unfinished swap notification",
+		"second unfinished swap notification was dropped",
+	)
+}
+
+// TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber verifies
+// that a full static-loop-in sweep subscriber channel does not block the global
+// notification receive loop.
+func TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber(
+	t *testing.T) {
+
+	t.Parallel()
+
+	assertQueuedSwapHashNotifications(
+		t,
+		func(mgr *Manager, ctx context.Context) <-chan *swapserverrpc.
+			ServerStaticLoopInSweepNotification {
+
+			return mgr.SubscribeStaticLoopInSweepRequests(ctx)
+		},
+		staticLoopInSweepNotification,
+		func(ntfn *swapserverrpc.ServerStaticLoopInSweepNotification) []byte {
+			return ntfn.SwapHash
+		},
+		lntypes.Hash{0x12, 0x13}, lntypes.Hash{0x14, 0x15},
+		"did not receive first sweep notification",
+		"second sweep notification was not queued",
+	)
+}
+
+func assertQueuedSwapHashNotifications[T any](t *testing.T,
+	subscribe func(*Manager, context.Context) <-chan T,
+	notification func(lntypes.Hash) *swapserverrpc.
+		SubscribeNotificationsResponse,
+	swapHash func(T) []byte, swapHashA, swapHashB lntypes.Hash,
+	firstFailureMsg, secondFailureMsg string) {
+
+	t.Helper()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := subscribe(mgr, subCtx)
+
+	mgr.handleNotification(t.Context(), notification(swapHashA))
+
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(t.Context(), notification(swapHashB))
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHashA[:], swapHash(received))
+
+	case <-time.After(time.Second):
+		t.Fatal(firstFailureMsg)
+	}
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHashB[:], swapHash(received))
+
+	case <-time.After(time.Second):
+		t.Fatal(secondFailureMsg)
+	}
+}
+
+// TestManager_StaticLoopInRiskAcceptedNotification tests that the Manager
+// forwards static loop in risk accepted notifications to subscribers.
+func TestManager_StaticLoopInRiskAcceptedNotification(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	swapHash := lntypes.Hash{0x04, 0x05}
+
+	subChan := mgr.SubscribeStaticLoopInRiskAccepted(subCtx, swapHash)
+
+	mgr.handleNotification(
+		t.Context(),
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskAccepted{
+				StaticLoopInRiskAccepted: &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not receive risk accepted notification")
+	}
+}
+
+// TestManager_StaticLoopInRiskDecisionPersists verifies that risk decisions are
+// handed to the durable callback before they are treated as delivered.
+func TestManager_StaticLoopInRiskDecisionPersists(t *testing.T) {
+	t.Parallel()
+
+	type persistedDecision struct {
+		swapHash lntypes.Hash
+		accepted bool
+	}
+
+	persisted := make(chan persistedDecision, 2)
+	mgr := NewManager(&Config{
+		PersistStaticLoopInRiskDecision: func(_ context.Context,
+			swapHash lntypes.Hash, accepted bool) error {
+
+			persisted <- persistedDecision{
+				swapHash: swapHash,
+				accepted: accepted,
+			}
+
+			return nil
+		},
+	})
+
+	acceptedHash := lntypes.Hash{0x16, 0x17}
+	rejectedHash := lntypes.Hash{0x18, 0x19}
+
+	mgr.handleNotification(
+		t.Context(), staticLoopInRiskAcceptedNotification(acceptedHash),
+	)
+	mgr.handleNotification(
+		t.Context(), staticLoopInRiskRejectedNotification(rejectedHash),
+	)
+
+	select {
+	case decision := <-persisted:
+		require.Equal(t, acceptedHash, decision.swapHash)
+		require.True(t, decision.accepted)
+
+	case <-time.After(time.Second):
+		t.Fatal("accepted risk decision was not persisted")
+	}
+
+	select {
+	case decision := <-persisted:
+		require.Equal(t, rejectedHash, decision.swapHash)
+		require.False(t, decision.accepted)
+
+	case <-time.After(time.Second):
+		t.Fatal("rejected risk decision was not persisted")
+	}
+}
+
+// TestManager_StaticLoopInRiskDecisionReplayOnPersistFailure verifies that an
+// early risk notification is still cached if the swap row does not exist yet.
+func TestManager_StaticLoopInRiskDecisionReplayOnPersistFailure(t *testing.T) {
+	t.Parallel()
+
+	swapHash := lntypes.Hash{0x1a, 0x1b}
+	mgr := NewManager(&Config{
+		PersistStaticLoopInRiskDecision: func(_ context.Context,
+			_ lntypes.Hash, _ bool) error {
+
+			return errors.New("swap not stored yet")
+		},
+	})
+
+	mgr.handleNotification(
+		t.Context(), staticLoopInRiskAcceptedNotification(swapHash),
+	)
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := mgr.SubscribeStaticLoopInRiskAccepted(subCtx, swapHash)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not replay risk notification after persist failure")
+	}
+}
+
+// TestManager_StaticLoopInRiskAcceptedNotificationSwapScoped verifies that a
+// notification for one swap does not occupy another swap's subscriber channel.
+func TestManager_StaticLoopInRiskAcceptedNotificationSwapScoped(t *testing.T) {
+	t.Parallel()
+
+	assertStaticLoopInRiskNotificationSwapScoped(
+		t, func(m *Manager, ctx context.Context,
+			swapHash lntypes.Hash) <-chan *swapserverrpc.
+			ServerStaticLoopInRiskAcceptedNotification {
+
+			return m.SubscribeStaticLoopInRiskAccepted(ctx, swapHash)
+		}, staticLoopInRiskAcceptedNotification, "accepted",
+		lntypes.Hash{0x04, 0x05}, lntypes.Hash{0x06, 0x07},
+	)
+}
+
+// TestManager_StaticLoopInRiskAcceptedNotificationReplay tests that the Manager
+// replays a risk accepted notification that arrives before the swap-specific
+// subscriber is registered.
+func TestManager_StaticLoopInRiskAcceptedNotificationReplay(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	swapHash := lntypes.Hash{0x06, 0x07}
+	mgr.handleNotification(
+		t.Context(),
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskAccepted{
+				StaticLoopInRiskAccepted: &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := mgr.SubscribeStaticLoopInRiskAccepted(subCtx, swapHash)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not replay risk accepted notification")
+	}
+}
+
+// TestManager_StaticLoopInRiskRejectedNotification tests that the Manager
+// forwards static loop in risk rejected notifications to subscribers.
+func TestManager_StaticLoopInRiskRejectedNotification(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	swapHash := lntypes.Hash{0x08, 0x09}
+
+	subChan := mgr.SubscribeStaticLoopInRiskRejected(subCtx, swapHash)
+
+	mgr.handleNotification(
+		t.Context(),
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskRejected{
+				StaticLoopInRiskRejected: &swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not receive risk rejected notification")
+	}
+}
+
+// TestManager_StaticLoopInRiskRejectedNotificationSwapScoped verifies that a
+// notification for one swap does not occupy another swap's subscriber channel.
+func TestManager_StaticLoopInRiskRejectedNotificationSwapScoped(t *testing.T) {
+	t.Parallel()
+
+	assertStaticLoopInRiskNotificationSwapScoped(
+		t, func(m *Manager, ctx context.Context,
+			swapHash lntypes.Hash) <-chan *swapserverrpc.
+			ServerStaticLoopInRiskRejectedNotification {
+
+			return m.SubscribeStaticLoopInRiskRejected(ctx, swapHash)
+		}, staticLoopInRiskRejectedNotification, "rejected",
+		lntypes.Hash{0x08, 0x09}, lntypes.Hash{0x0a, 0x0b},
+	)
+}
+
+// TestManager_StaticLoopInRiskRejectedNotificationReplay tests that the Manager
+// replays a risk rejected notification that arrives before the swap-specific
+// subscriber is registered.
+func TestManager_StaticLoopInRiskRejectedNotificationReplay(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	swapHash := lntypes.Hash{0x0a, 0x0b}
+	mgr.handleNotification(
+		t.Context(),
+		&swapserverrpc.SubscribeNotificationsResponse{
+			Notification: &swapserverrpc.
+				SubscribeNotificationsResponse_StaticLoopInRiskRejected{
+				StaticLoopInRiskRejected: &swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification{
+					SwapHash: swapHash[:],
+				},
+			},
+		},
+	)
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := mgr.SubscribeStaticLoopInRiskRejected(subCtx, swapHash)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHash[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("did not replay risk rejected notification")
 	}
 }
 

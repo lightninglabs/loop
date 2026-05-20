@@ -75,10 +75,23 @@ func (s *mockSigner) VerifyMessage(ctx context.Context, msg, sig []byte,
 	return mockAssertion, nil
 }
 
-func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
-	*keychain.KeyLocator) ([32]byte, error) {
+func (s *mockSigner) DeriveSharedKey(_ context.Context, pubKey *btcec.PublicKey,
+	locator *keychain.KeyLocator) ([32]byte, error) {
 
-	return [32]byte{4, 5, 6}, nil
+	if locator == nil {
+		return [32]byte{}, fmt.Errorf("missing key locator")
+	}
+	if pubKey == nil {
+		return [32]byte{}, fmt.Errorf("missing pubkey")
+	}
+
+	privKey, _ := CreateKey(int32(locator.Index))
+	sharedSecret := btcec.GenerateSharedSecret(privKey, pubKey)
+
+	var result [32]byte
+	copy(result[:], sharedSecret)
+
+	return result, nil
 }
 
 // MuSig2CreateSession creates a new MuSig2 signing session using the local

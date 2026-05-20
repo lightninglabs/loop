@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -32,6 +33,8 @@ type mockWalletKit struct {
 
 	lnd      *LndMockServices
 	keyIndex int32
+
+	importedTaprootScripts map[string]struct{}
 
 	feeEstimateLock sync.Mutex
 	feeEstimates    map[int32]chainfee.SatPerKWeight
@@ -337,6 +340,22 @@ func (m *mockWalletKit) ImportPublicKey(ctx context.Context,
 // wallet. The imported script will act as a pay-to-taproot address.
 func (m *mockWalletKit) ImportTaprootScript(ctx context.Context,
 	tapscript *waddrmgr.Tapscript) (btcutil.Address, error) {
+
+	taprootKey, err := tapscript.TaprootKey()
+	if err != nil {
+		return nil, err
+	}
+
+	if m.importedTaprootScripts == nil {
+		m.importedTaprootScripts = make(map[string]struct{})
+	}
+
+	key := string(schnorr.SerializePubKey(taprootKey))
+	if _, ok := m.importedTaprootScripts[key]; ok {
+		return nil, fmt.Errorf("taproot script already exists")
+	}
+
+	m.importedTaprootScripts[key] = struct{}{}
 
 	return nil, nil
 }
