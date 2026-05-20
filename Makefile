@@ -156,10 +156,10 @@ mod-tidy:
 
 mod-check:
 	@$(call print, "Checking modules.")
-	GOPROXY=direct $(GOMOD) tidy
-	cd swapserverrpc/ && GOPROXY=direct $(GOMOD) tidy
-	cd looprpc/ && GOPROXY=direct $(GOMOD) tidy
-	cd tools/ && GOPROXY=direct $(GOMOD) tidy
+	GOPROXY=https://proxy.golang.org,direct $(GOMOD) tidy
+	cd swapserverrpc/ && GOPROXY=https://proxy.golang.org,direct $(GOMOD) tidy
+	cd looprpc/ && GOPROXY=https://proxy.golang.org,direct $(GOMOD) tidy
+	cd tools/ && GOPROXY=https://proxy.golang.org,direct $(GOMOD) tidy
 	if test -n "$$(git status --porcelain)"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
 sqlc:
