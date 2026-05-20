@@ -632,13 +632,15 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	err error) fsm.EventType {
 	// We might get here from a canceled context, we create a new context
 	// with a timeout to unlock the reservations.
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	unlockCtx, cancel := context.WithTimeout(
+		context.Background(), time.Second*30,
+	)
 	defer cancel()
 
 	// Unlock the reservations.
 	for _, reservation := range f.InstantOut.Reservations {
 		err := f.cfg.ReservationManager.UnlockReservation(
-			ctx, reservation.ID,
+			unlockCtx, reservation.ID,
 		)
 		if err != nil {
 			f.Errorf("error unlocking reservation: %v", err)
@@ -650,7 +652,9 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	// release the reservations. This can be done in a goroutine as we
 	// wan't to fail the fsm early.
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+		ctx, cancel := context.WithTimeout(
+			context.Background(), time.Second*30,
+		)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
 			ctx, &swapserverrpc.CancelInstantSwapRequest{
