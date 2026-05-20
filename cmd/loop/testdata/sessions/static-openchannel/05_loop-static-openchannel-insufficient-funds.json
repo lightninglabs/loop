@@ -1,0 +1,97 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--network=regtest",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "openchannel",
+      "--node_key",
+      "02fe50e9103469869b3431ac8d3ef9692ba54a725ef1ea0599d05028f4d81a5bf4",
+      "--local_amt",
+      "500000",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.0-beta commit=v0.32.1-beta-71-gbed29e41d84c34147ca60fb1aa99ecc6f2c8a079 commit_hash=bed29e41d84c34147ca60fb1aa99ecc6f2c8a079",
+    "run_error": "rpc error: code = Unknown desc = error selecting deposits: insufficient funds to cover swap amount, try manually selecting deposits",
+    "duration": 32744709,
+    "clock_start_unix": 1769407086
+  },
+  "events": [
+    {
+      "time_ms": 8,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "request",
+        "message_type": "looprpc.StaticOpenChannelRequest",
+        "payload": {
+          "open_channel_request": {
+            "sat_per_vbyte": "0",
+            "node_pubkey": "Av5Q6RA0aYabNDGsjT75aSulSnJe8eoFmdBQKPTYGlv0",
+            "node_pubkey_string": "",
+            "local_funding_amount": "500000",
+            "push_sat": "0",
+            "target_conf": 0,
+            "sat_per_byte": "0",
+            "private": false,
+            "min_htlc_msat": "0",
+            "remote_csv_delay": 0,
+            "min_confs": 1,
+            "spend_unconfirmed": false,
+            "close_address": "",
+            "funding_shim": null,
+            "remote_max_value_in_flight_msat": "0",
+            "remote_max_htlcs": 0,
+            "max_local_csv": 0,
+            "commitment_type": "UNKNOWN_COMMITMENT_TYPE",
+            "zero_conf": false,
+            "scid_alias": false,
+            "base_fee": "0",
+            "fee_rate": "0",
+            "use_base_fee": false,
+            "use_fee_rate": false,
+            "remote_chan_reserve_sat": "0",
+            "fund_max": false,
+            "memo": "",
+            "outpoints": []
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 32,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = error selecting deposits: insufficient funds to cover swap amount, try manually selecting deposits",
+        "status": {
+          "code": 2,
+          "message": "error selecting deposits: insufficient funds to cover swap amount, try manually selecting deposits"
+        }
+      }
+    },
+    {
+      "time_ms": 32,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] rpc error: code = Unknown desc = error selecting deposits: insufficient funds to cover swap amount, try manually selecting deposits\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 32,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = error selecting deposits: insufficient funds to cover swap amount, try manually selecting deposits"
+      }
+    }
+  ]
+}

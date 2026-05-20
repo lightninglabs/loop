@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--network=regtest",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "listdeposits",
+      "--filter",
+      "channel_published",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.0-beta commit=v0.32.1-beta-71-gbed29e41d84c34147ca60fb1aa99ecc6f2c8a079 commit_hash=bed29e41d84c34147ca60fb1aa99ecc6f2c8a079",
+    "duration": 19305482,
+    "clock_start_unix": 1769407086
+  },
+  "events": [
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "CHANNEL_PUBLISHED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "eny+m5DyPUeqkusQqdMj96zm6eqrW3c3nGNCLBXaGcg=",
+              "state": "CHANNEL_PUBLISHED",
+              "outpoint": "0e70673c1da3343648c26f779555346f30d235314838b1160826d0d5c29b4fba:1",
+              "value": "500000",
+              "confirmation_height": "127",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "/5pDsggvkGouJ1iTQiDEzjI5PrKCOyklF64IHhba3tk=",
+              "state": "CHANNEL_PUBLISHED",
+              "outpoint": "d2d6e50f157f0d31b8688a4af4f064edf3454714e92369b2c8c4d82477edbaca:0",
+              "value": "1000000",
+              "confirmation_height": "127",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"filtered_deposits\": [\n",
+          "        {\n",
+          "            \"blocks_until_expiry\": \"14395\",\n",
+          "            \"confirmation_height\": \"127\",\n",
+          "            \"id\": \"7a7cbe9b90f23d47aa92eb10a9d323f7ace6e9eaab5b77379c63422c15da19c8\",\n",
+          "            \"outpoint\": \"0e70673c1da3343648c26f779555346f30d235314838b1160826d0d5c29b4fba:1\",\n",
+          "            \"state\": \"CHANNEL_PUBLISHED\",\n",
+          "            \"swap_hash\": \"\",\n",
+          "            \"value\": \"500000\"\n",
+          "        },\n",
+          "        {\n",
+          "            \"blocks_until_expiry\": \"14395\",\n",
+          "            \"confirmation_height\": \"127\",\n",
+          "            \"id\": \"ff9a43b2082f906a2e2758934220c4ce32393eb2823b292517ae081e16daded9\",\n",
+          "            \"outpoint\": \"d2d6e50f157f0d31b8688a4af4f064edf3454714e92369b2c8c4d82477edbaca:0\",\n",
+          "            \"state\": \"CHANNEL_PUBLISHED\",\n",
+          "            \"swap_hash\": \"\",\n",
+          "            \"value\": \"1000000\"\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

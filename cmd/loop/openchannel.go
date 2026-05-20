@@ -24,7 +24,7 @@ var (
 
 var openChannelCommand = &cli.Command{
 	Name:  "openchannel",
-	Usage: "Open a channel to a an existing peer.",
+	Usage: "Open a channel to an existing peer.",
 	Description: `
 	Attempt to open a new channel to an existing peer with the key 
 	node-key.
