@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -62,7 +61,7 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
-			params: &address.Parameters{
+			params: &script.Parameters{
 				ClientPubkey:    clientKey.PubKey(),
 				ServerPubkey:    serverKey.PubKey(),
 				ProtocolVersion: version.ProtocolVersion_V0,
@@ -274,12 +273,12 @@ func testValidateLoopInContract(_ int32, _ int32) error {
 // mockAddressManager is a minimal AddressManager implementation used by the
 // test FSM setup.
 type mockAddressManager struct {
-	params *address.Parameters
+	params *script.Parameters
 }
 
 // GetStaticAddressParameters returns the configured address parameters.
 func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
-	*address.Parameters, error) {
+	*script.Parameters, error) {
 
 	return m.params, nil
 }

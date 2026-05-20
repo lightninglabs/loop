@@ -8,8 +8,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -310,9 +310,9 @@ func TestCheckChange(t *testing.T) {
 	ctx := context.Background()
 
 	// Prepare a common change address and an alternate address.
-	changeAddr := &address.Parameters{PkScript: []byte{0xaa, 0xbb}}
-	otherAddr := &address.Parameters{PkScript: []byte{0xcc, 0xdd}}
-	serverAddr := &address.Parameters{PkScript: []byte{0xee, 0xff}}
+	changeAddr := &script.Parameters{PkScript: []byte{0xaa, 0xbb}}
+	otherAddr := &script.Parameters{PkScript: []byte{0xcc, 0xdd}}
+	serverAddr := &script.Parameters{PkScript: []byte{0xee, 0xff}}
 
 	// Prepare swaps (loop-ins) with varying deposit totals and selections.
 	// Helper to make a swap with deposits and selected amount.
@@ -378,7 +378,7 @@ func TestCheckChange(t *testing.T) {
 		name           string
 		inDeps         []*deposit.Deposit // deposits referenced by tx inputs
 		outputs        []*wire.TxOut      // outputs in sweep tx
-		addr           *address.Parameters
+		addr           *script.Parameters
 		expectErr      bool
 		expectedErrMsg string
 	}

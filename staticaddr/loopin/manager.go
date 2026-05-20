@@ -20,8 +20,8 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
-	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
@@ -452,7 +452,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 // swaps with identical change outputs. The client needs to ensure that any
 // swap referenced by the inputs has a respective change output in the batch.
 func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *address.Parameters) error {
+	sweepTx *wire.MsgTx, changeAddr *script.Parameters) error {
 
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
