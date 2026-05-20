@@ -263,6 +263,12 @@ func (i *InstantOut) signMusig2Tx(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if len(musig2sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions")
+	}
+	if len(counterPartyNonces) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of peer nonces")
+	}
 
 	prevOutFetcher := inputs.GetPrevoutFetcher()
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
@@ -328,6 +334,12 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 	inputs, err := i.getInputReservations()
 	if err != nil {
 		return nil, err
+	}
+	if len(musig2Sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions")
+	}
+	if len(serverSigs) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of peer signatures")
 	}
 
 	for idx := range inputs {
