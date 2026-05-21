@@ -1395,6 +1395,18 @@ func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
 	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
 	error) {
 
+	enableExperimental := s.config != nil && s.config.EnableExperimental
+	params := in.GetParameters()
+	if params.GetLoopInSource() ==
+		looprpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS &&
+		!enableExperimental {
+
+		return nil, status.Error(
+			codes.FailedPrecondition,
+			liquidity.ErrStaticAddressAutoloopExperimental.Error(),
+		)
+	}
+
 	err := s.liquidityMgr.SetParameters(ctx, in.Parameters)
 	if err != nil {
 		return nil, err

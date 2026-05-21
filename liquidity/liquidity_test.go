@@ -387,6 +387,7 @@ func TestPersistParams(t *testing.T) {
 		LoopInSource:    clientrpc.LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS,
 	}
 	cfg, _ := newTestConfig()
+	cfg.EnableStaticAddressAutoloop = true
 	manager := NewManager(cfg)
 
 	ctx := t.Context()
@@ -438,6 +439,26 @@ func TestPersistParams(t *testing.T) {
 		t, LoopInSourceStaticAddress,
 		manager.GetParameters().LoopInSource,
 	)
+}
+
+// TestStaticAddressAutoloopRequiresExperimental verifies that static-address
+// loop-in sources are rejected unless the daemon enabled the experimental
+// static autoloop path.
+func TestStaticAddressAutoloopRequiresExperimental(t *testing.T) {
+	ctx := t.Context()
+
+	cfg, _ := newTestConfig()
+	manager := NewManager(cfg)
+
+	params := manager.GetParameters()
+	params.LoopInSource = LoopInSourceStaticAddress
+
+	err := manager.setParameters(ctx, params)
+	require.ErrorIs(t, err, ErrStaticAddressAutoloopExperimental)
+
+	cfg.EnableStaticAddressAutoloop = true
+	err = manager.setParameters(ctx, params)
+	require.NoError(t, err)
 }
 
 // TestRestrictedSuggestions tests getting of swap suggestions when we have

@@ -168,6 +168,11 @@ var (
 	// account address type is not or vice versa.
 	ErrAccountAndAddrType = errors.New("account and address type have " +
 		"to be both either set or unset")
+
+	// ErrStaticAddressAutoloopExperimental is returned when static-address
+	// autoloop is configured without the daemon experimental flag.
+	ErrStaticAddressAutoloopExperimental = errors.New("static address " +
+		"autoloop requires --experimental")
 )
 
 // Config contains the external functionality required to run the
@@ -225,6 +230,10 @@ type Config struct {
 	StaticLoopIn func(ctx context.Context,
 		request *loop.StaticAddressLoopInRequest) (
 		*StaticLoopInDispatchResult, error)
+
+	// EnableStaticAddressAutoloop allows the liquidity manager to accept
+	// static-address loop-in sources for new autoloop parameters.
+	EnableStaticAddressAutoloop bool
 
 	// LoopInTerms returns the terms for a loop in swap.
 	LoopInTerms func(ctx context.Context,
@@ -391,6 +400,15 @@ func (m *Manager) SetParameters(ctx context.Context,
 // provided are valid.
 func (m *Manager) setParameters(ctx context.Context,
 	params Parameters) error {
+
+	// Static-address autoloop is still experimental. Check this before
+	// any network-dependent validation so persisted params cannot start
+	// the feature after a restart without the daemon opt-in.
+	if params.LoopInSource == LoopInSourceStaticAddress &&
+		!m.cfg.EnableStaticAddressAutoloop {
+
+		return ErrStaticAddressAutoloopExperimental
+	}
 
 	restrictions, err := m.cfg.Restrictions(
 		ctx, swap.TypeOut, getInitiator(m.params),

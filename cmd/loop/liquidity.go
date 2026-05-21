@@ -343,7 +343,8 @@ var setParamsCommand = &cli.Command{
 		&cli.StringFlag{
 			Name: "loopinsource",
 			Usage: "the loop-in source to use for autoloop rules: " +
-				"wallet or static-address.",
+				"wallet or static-address. Static-address " +
+				"requires loopd --experimental.",
 		},
 		&cli.BoolFlag{
 			Name: "easyautoloop",

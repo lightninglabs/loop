@@ -28,6 +28,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -279,6 +281,29 @@ func TestStaticAddressLoopInRejectsReservedLabel(t *testing.T) {
 		},
 	)
 	require.ErrorContains(t, err, labels.ErrReservedPrefix.Error())
+}
+
+// TestSetLiquidityParamsRejectsStaticAutoloopWithoutExperimental verifies that
+// users must restart loopd with --experimental before enabling static-address
+// autoloop.
+func TestSetLiquidityParamsRejectsStaticAutoloopWithoutExperimental(
+	t *testing.T) {
+
+	server := &swapClientServer{
+		config: &Config{},
+	}
+
+	_, err := server.SetLiquidityParams(
+		t.Context(), &looprpc.SetLiquidityParamsRequest{
+			Parameters: &looprpc.LiquidityParameters{
+				LoopInSource: looprpc.
+					LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS,
+			},
+		},
+	)
+	require.Error(t, err)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.ErrorContains(t, err, "--experimental")
 }
 
 // TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner

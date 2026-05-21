@@ -735,7 +735,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	liquidityMgr := getLiquidityManager(
-		swapClient, staticLoopInManager,
+		swapClient, staticLoopInManager, d.cfg.EnableExperimental,
 	)
 
 	// Now finally fully initialize the swap client RPC server instance.

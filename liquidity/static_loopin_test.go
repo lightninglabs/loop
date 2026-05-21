@@ -286,6 +286,7 @@ func TestSuggestSwapsStaticLoopInNoCandidate(t *testing.T) {
 	ctx := t.Context()
 
 	cfg, lnd := newTestConfig()
+	cfg.EnableStaticAddressAutoloop = true
 	cfg.PrepareStaticLoopIn = func(context.Context, route.Vertex,
 		btcutil.Amount, btcutil.Amount, string, string,
 		[]string) (*PreparedStaticLoopIn, error) {
@@ -330,6 +331,7 @@ func TestSuggestSwapsMixedInFlightCount(t *testing.T) {
 	ctx := t.Context()
 
 	cfg, lnd := newTestConfig()
+	cfg.EnableStaticAddressAutoloop = true
 	cfg.PrepareStaticLoopIn = func(_ context.Context, peer route.Vertex,
 		_, _ btcutil.Amount, label, initiator string,
 		_ []string) (*PreparedStaticLoopIn, error) {
@@ -388,6 +390,7 @@ func TestAutoLoopDispatchesStaticLoopIn(t *testing.T) {
 	ctx := t.Context()
 
 	cfg, lnd := newTestConfig()
+	cfg.EnableStaticAddressAutoloop = true
 
 	var (
 		prepareCalls     int

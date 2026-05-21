@@ -120,7 +120,8 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 }
 
 func getLiquidityManager(client *loop.Client,
-	staticLoopInManager *loopin.Manager) *liquidity.Manager {
+	staticLoopInManager *loopin.Manager,
+	enableExperimental bool) *liquidity.Manager {
 
 	listStaticLoopIn := func(
 		ctx context.Context) ([]*liquidity.StaticLoopInInfo, error) {
@@ -259,6 +260,7 @@ func getLiquidityManager(client *loop.Client,
 		PutLiquidityParams:   client.Store.PutLiquidityParams,
 		FetchLiquidityParams: client.Store.FetchLiquidityParams,
 	}
+	mngrCfg.EnableStaticAddressAutoloop = enableExperimental
 
 	return liquidity.NewManager(mngrCfg)
 }
