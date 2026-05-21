@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "suggestswaps",
+      "--network",
+      "regtest"
+    ],
+    "version": "0.33.0-beta commit=v0.33.0-beta-74-g6a3c3e1df5f807b450d3ba663f4824f6588e1c13 commit_hash=6a3c3e1df5f807b450d3ba663f4824f6588e1c13",
+    "duration": 44264819,
+    "clock_start_unix": 1779406653
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SuggestSwaps",
+        "event": "request",
+        "message_type": "looprpc.SuggestSwapsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 43,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SuggestSwaps",
+        "event": "response",
+        "message_type": "looprpc.SuggestSwapsResponse",
+        "payload": {
+          "loop_out": [],
+          "loop_in": [],
+          "static_loop_in": [
+            {
+              "outpoints": [
+                "9cfb0ec5ab2c851b4db5fe372cc3573f4074c436e50b13d2b7d214e45571def9:1"
+              ],
+              "max_swap_fee_satoshis": "1828",
+              "last_hop": "AgN4nvpxLgk471Ol2/D2BGUJ9l/FOlv8dRHcZ/6+oaFl",
+              "label": "[reserved]: autoloop-in",
+              "initiator": "autoloop",
+              "route_hints": [],
+              "private": false,
+              "payment_timeout_seconds": 0,
+              "amount": "500000",
+              "fast": false
+            }
+          ],
+          "disqualified": [
+            {
+              "channel_id": "127543348887552",
+              "pubkey": "",
+              "reason": "AUTO_REASON_CUSTOM_CHANNEL_DATA"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 43,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"disqualified\": [\n",
+          "        {\n",
+          "            \"channel_id\": \"127543348887552\",\n",
+          "            \"pubkey\": \"\",\n",
+          "            \"reason\": \"AUTO_REASON_CUSTOM_CHANNEL_DATA\"\n",
+          "        }\n",
+          "    ],\n",
+          "    \"loop_in\": [],\n",
+          "    \"loop_out\": [],\n",
+          "    \"static_loop_in\": [\n",
+          "        {\n",
+          "            \"amount\": \"500000\",\n",
+          "            \"fast\": false,\n",
+          "            \"initiator\": \"autoloop\",\n",
+          "            \"label\": \"[reserved]: autoloop-in\",\n",
+          "            \"last_hop\": \"0203789efa712e0938ef53a5dbf0f6046509f65fc53a5bfc7511dc67febea1a165\",\n",
+          "            \"max_swap_fee_satoshis\": \"1828\",\n",
+          "            \"outpoints\": [\n",
+          "                \"9cfb0ec5ab2c851b4db5fe372cc3573f4074c436e50b13d2b7d214e45571def9:1\"\n",
+          "            ],\n",
+          "            \"payment_timeout_seconds\": 0,\n",
+          "            \"private\": false,\n",
+          "            \"route_hints\": []\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 44,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "setparams",
+      "--network",
+      "regtest",
+      "--loopinsource",
+      "static-address",
+      "--minamt",
+      "250000",
+      "--maxamt",
+      "1000000",
+      "--feepercent",
+      "5",
+      "--autoloop",
+      "--autobudget",
+      "50000",
+      "--autoinflight",
+      "1"
+    ],
+    "version": "0.33.0-beta commit=v0.33.0-beta-74-g6a3c3e1df5f807b450d3ba663f4824f6588e1c13 commit_hash=6a3c3e1df5f807b450d3ba663f4824f6588e1c13",
+    "duration": 32231921,
+    "clock_start_unix": 1779406641
+  },
+  "events": [
+    {
+      "time_ms": 10,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.GetLiquidityParamsRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 16,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.LiquidityParameters",
+        "payload": {
+          "rules": [
+            {
+              "channel_id": "0",
+              "swap_type": "LOOP_IN",
+              "pubkey": "AgN4nvpxLgk471Ol2/D2BGUJ9l/FOlv8dRHcZ/6+oaFl",
+              "type": "THRESHOLD",
+              "incoming_threshold": 0,
+              "outgoing_threshold": 60
+            }
+          ],
+          "fee_ppm": "50000",
+          "sweep_fee_rate_sat_per_vbyte": "0",
+          "max_swap_fee_ppm": "0",
+          "max_routing_fee_ppm": "0",
+          "max_prepay_routing_fee_ppm": "0",
+          "max_prepay_sat": "0",
+          "max_miner_fee_sat": "0",
+          "sweep_conf_target": 100,
+          "failure_backoff_sec": "86400",
+          "autoloop": true,
+          "autoloop_budget_sat": "50000",
+          "autoloop_budget_start_sec": "0",
+          "auto_max_in_flight": "1",
+          "min_swap_amount": "250000",
+          "max_swap_amount": "1000000",
+          "htlc_conf_target": 6,
+          "autoloop_dest_address": "",
+          "autoloop_budget_refresh_period_sec": "604800",
+          "autoloop_budget_last_refresh": "1779405910",
+          "easy_autoloop": false,
+          "easy_autoloop_local_target_sat": "0",
+          "account": "",
+          "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+          "easy_asset_params": {},
+          "fast_swap_publication": true,
+          "easy_autoloop_excluded_peers": [],
+          "loop_in_source": "LOOP_IN_SOURCE_STATIC_ADDRESS"
+        }
+      }
+    },
+    {
+      "time_ms": 18,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "request",
+        "message_type": "looprpc.SetLiquidityParamsRequest",
+        "payload": {
+          "parameters": {
+            "rules": [
+              {
+                "channel_id": "0",
+                "swap_type": "LOOP_IN",
+                "pubkey": "AgN4nvpxLgk471Ol2/D2BGUJ9l/FOlv8dRHcZ/6+oaFl",
+                "type": "THRESHOLD",
+                "incoming_threshold": 0,
+                "outgoing_threshold": 60
+              }
+            ],
+            "fee_ppm": "50000",
+            "sweep_fee_rate_sat_per_vbyte": "0",
+            "max_swap_fee_ppm": "0",
+            "max_routing_fee_ppm": "0",
+            "max_prepay_routing_fee_ppm": "0",
+            "max_prepay_sat": "0",
+            "max_miner_fee_sat": "0",
+            "sweep_conf_target": 100,
+            "failure_backoff_sec": "86400",
+            "autoloop": true,
+            "autoloop_budget_sat": "50000",
+            "autoloop_budget_start_sec": "0",
+            "auto_max_in_flight": "1",
+            "min_swap_amount": "250000",
+            "max_swap_amount": "1000000",
+            "htlc_conf_target": 6,
+            "autoloop_dest_address": "",
+            "autoloop_budget_refresh_period_sec": "604800",
+            "autoloop_budget_last_refresh": "1779405910",
+            "easy_autoloop": false,
+            "easy_autoloop_local_target_sat": "0",
+            "account": "",
+            "account_addr_type": "ADDRESS_TYPE_UNKNOWN",
+            "easy_asset_params": {},
+            "fast_swap_publication": true,
+            "easy_autoloop_excluded_peers": [],
+            "loop_in_source": "LOOP_IN_SOURCE_STATIC_ADDRESS"
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 31,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/SetLiquidityParams",
+        "event": "response",
+        "message_type": "looprpc.SetLiquidityParamsResponse",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 32,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
