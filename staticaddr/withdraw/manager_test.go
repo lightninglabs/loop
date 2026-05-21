@@ -79,10 +79,14 @@ func TestSignMusig2Tx_MissingSigningInfo(t *testing.T) {
 	// Create sessions for both deposits.
 	sessions := map[string]*input.MuSig2SessionInfo{
 		deposit1Key: {
-			SessionID: [32]byte{1},
+			SessionID: [32]byte{
+				1,
+			},
 		},
 		deposit2Key: {
-			SessionID: [32]byte{2},
+			SessionID: [32]byte{
+				2,
+			},
 		},
 	}
 
@@ -142,12 +146,14 @@ func TestSignMusig2Tx_MissingSigningInfo(t *testing.T) {
 
 	// Expect an error. The function should validate that sigInfo has
 	// entries for all sessions before attempting to sign.
-	require.ErrorContains(t, err, "unexpected number of partial "+
-		"signatures from server")
+	require.ErrorContains(
+		t, err, "unexpected number of partial signatures from server",
+	)
 }
 
 // TestSignMusig2Tx_MismatchedIndex tests that signMusig2Tx should error when
-// sigInfo has all expected keys but one maps to the wrong index in depositsToIdx.
+// sigInfo has all expected keys but one maps to the wrong index in
+// depositsToIdx.
 //
 // This test documents expected behavior. The function should validate that
 // each deposit maps to a unique index in [0, len(tx.TxIn)-1] before signing,
@@ -191,10 +197,14 @@ func TestSignMusig2Tx_MismatchedIndex(t *testing.T) {
 	// Create sessions for both deposits.
 	sessions := map[string]*input.MuSig2SessionInfo{
 		deposit1Key: {
-			SessionID: [32]byte{1},
+			SessionID: [32]byte{
+				1,
+			},
 		},
 		deposit2Key: {
-			SessionID: [32]byte{2},
+			SessionID: [32]byte{
+				2,
+			},
 		},
 	}
 
@@ -306,10 +316,14 @@ func TestSignMusig2Tx_MissingOutpointInDepositMap(t *testing.T) {
 	// Create sessions for both deposits.
 	sessions := map[string]*input.MuSig2SessionInfo{
 		deposit1Key: {
-			SessionID: [32]byte{1},
+			SessionID: [32]byte{
+				1,
+			},
 		},
 		deposit2Key: {
-			SessionID: [32]byte{2},
+			SessionID: [32]byte{
+				2,
+			},
 		},
 	}
 
@@ -392,9 +406,12 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(1000)
 
 	// Helper to create deposits.
-	createDeposit := func(value btcutil.Amount, idx uint32) *deposit.Deposit {
+	createDeposit := func(value btcutil.Amount,
+		idx uint32) *deposit.Deposit {
+
 		hash := chainhash.Hash{}
 		hash[0] = byte(idx)
+
 		return &deposit.Deposit{
 			OutPoint: wire.OutPoint{
 				Hash:  hash,
@@ -431,8 +448,8 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 				createDeposit(100000, 0),
 			},
 			// Set localAmount such that change after feeWithChange
-			// would be dust, but change after feeWithoutChange >= 0.
-			// This triggers case: change-feeWithoutChange >= 0
+			// would be dust, but change after feeWithoutChange >=
+			// 0. This triggers case: change-feeWithoutChange >= 0
 			localAmount:    99300, // Leaves ~700 sats which is dust
 			feeRate:        feeRate,
 			withdrawAddr:   taprootAddr,
@@ -477,7 +494,9 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 		{
 			name: "min channel size guard - exactly minimum",
 			deposits: []*deposit.Deposit{
-				createDeposit(funding.MinChanFundingSize+1000, 0),
+				createDeposit(
+					funding.MinChanFundingSize+1000, 0,
+				),
 			},
 			localAmount:    0,
 			feeRate:        feeRate,
@@ -553,6 +572,7 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			if tc.expectedErr != "" {
 				require.Error(t, err)
 				require.ErrorContains(t, err, tc.expectedErr)
+
 				return
 			}
 
@@ -567,18 +587,23 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			// If this is a channel open, verify min channel size.
 			if tc.commitmentType != lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE {
 				require.GreaterOrEqual(
-					t, withdrawAmt, funding.MinChanFundingSize,
+					t, withdrawAmt,
+					funding.MinChanFundingSize,
 				)
 			}
 
 			// If expecting dust to be given to miners, verify
 			// changeAmt is 0.
 			if tc.expectDustFee {
-				require.Equal(t, btcutil.Amount(0), changeAmt,
-					"change should be 0 when dust is given to miners")
+				require.Equal(
+					t, btcutil.Amount(0), changeAmt, "ch"+
+						"ange should be 0 when "+
+						"dust is given to miners",
+				)
 			}
 
-			// Verify total accounting: inputs = withdrawal + change + fees.
+			// Verify total accounting: inputs = withdrawal + change
+			// + fees.
 			totalInputs := btcutil.Amount(0)
 			for _, d := range tc.deposits {
 				totalInputs += d.Value
@@ -596,12 +621,20 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			// When dust is given to miners, the "fee" includes both
 			// the transaction fee and the dust amount.
 			if tc.expectDustFee {
-				// Total should equal withdrawal + implicit fee (including dust)
+				// Total should equal withdrawal + implicit fee
+				// (including dust)
 				implicitFee := totalInputs - withdrawAmt - changeAmt
-				require.Greater(t, implicitFee, fee,
-					"implicit fee should be greater than tx fee when dust is given to miners")
+				require.Greater(
+					t, implicitFee, fee, "implicit fee "+
+						"should be greater than tx "+
+						"fee when dust is given to "+
+						"miners",
+				)
 			} else {
-				require.Equal(t, totalInputs, withdrawAmt+changeAmt+fee)
+				require.Equal(
+					t, totalInputs,
+					withdrawAmt+changeAmt+fee,
+				)
 			}
 		})
 	}

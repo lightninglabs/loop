@@ -89,8 +89,8 @@ func fetchChannelEdgesByID(ctx context.Context,
 func parseOutPoint(s string) (*wire.OutPoint, error) {
 	split := strings.Split(s, ":")
 	if len(split) != 2 {
-		return nil, fmt.Errorf("expecting outpoint to be in format "+
-			"of txid:index: %s", s)
+		return nil, fmt.Errorf("expecting outpoint to be in format of "+
+			"txid:index: %s", s)
 	}
 
 	index, err := strconv.ParseInt(split[1], 10, 32)
@@ -181,15 +181,16 @@ func SelectHopHints(ctx context.Context, lndClient lndclient.LightningClient,
 
 			return fetchChannelEdgesByID(ctx, lndClient, chanID)
 		},
-		GetAlias: func(id lnwire.ChannelID) (
-			lnwire.ShortChannelID, error) {
+		GetAlias: func(id lnwire.ChannelID) (lnwire.ShortChannelID,
+			error) {
 
 			return getAlias(aliasCache, id)
 		},
 	}
 
 	routeHints := invoicesrpcSelectHopHints(
-		lnwire.MilliSatoshi(amt*1000), cfg, openChannels, numMaxHophints,
+		lnwire.MilliSatoshi(amt*1000), cfg, openChannels,
+		numMaxHophints,
 	)
 
 	return routeHints, nil
@@ -197,8 +198,8 @@ func SelectHopHints(ctx context.Context, lndClient lndclient.LightningClient,
 
 // chanCanBeHopHint returns true if the target channel is eligible to be a hop
 // hint.
-func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
-	*models.ChannelEdgePolicy, bool) {
+func chanCanBeHopHint(channel *HopHintInfo,
+	cfg *SelectHopHintsCfg) (*models.ChannelEdgePolicy, bool) {
 
 	// Since we're only interested in our private channels, we'll skip
 	// public ones.
@@ -208,9 +209,9 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 
 	// Make sure the channel is active.
 	if !channel.IsActive {
-		log.Debugf("Skipping channel %v due to not "+
-			"being eligible to forward payments",
-			channel.ShortChannelID)
+		log.Debugf("Skipping channel %v due to not being eligible to "+
+			"forward payments", channel.ShortChannelID)
+
 		return nil, false
 	}
 
@@ -223,15 +224,16 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 	copy(remotePub[:], channel.RemotePubkey.SerializeCompressed())
 	isRemoteNodePublic, err := cfg.IsPublicNode(remotePub)
 	if err != nil {
-		log.Errorf("Unable to determine if node %x "+
-			"is advertised: %v", remotePub, err)
+		log.Errorf("Unable to determine if node %x is advertised: %v",
+			remotePub, err)
+
 		return nil, false
 	}
 
 	if !isRemoteNodePublic {
-		log.Debugf("Skipping channel %v due to "+
-			"counterparty %x being unadvertised",
-			channel.ShortChannelID, remotePub)
+		log.Debugf("Skipping channel %v due to counterparty %x being "+
+			"unadvertised", channel.ShortChannelID, remotePub)
+
 		return nil, false
 	}
 
@@ -247,6 +249,7 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 			log.Errorf("Unable to fetch the routing policies for "+
 				"the edges of the channel %v: %v",
 				channel.ShortChannelID, err)
+
 			return nil, false
 		}
 	}
@@ -265,9 +268,8 @@ func chanCanBeHopHint(channel *HopHintInfo, cfg *SelectHopHintsCfg) (
 
 // addHopHint creates a hop hint out of the passed channel and channel policy.
 // The new hop hint is appended to the passed slice.
-func addHopHint(hopHints *[][]zpay32.HopHint,
-	channel *HopHintInfo, chanPolicy *models.ChannelEdgePolicy,
-	aliasScid lnwire.ShortChannelID) {
+func addHopHint(hopHints *[][]zpay32.HopHint, channel *HopHintInfo,
+	chanPolicy *models.ChannelEdgePolicy, aliasScid lnwire.ShortChannelID) {
 
 	hopHint := zpay32.HopHint{
 		NodeID:      channel.RemotePubkey,
@@ -347,11 +349,12 @@ type SelectHopHintsCfg struct {
 //
 // We limit our number of hop hints like this to keep our invoice size down,
 // and to avoid leaking all our private channels when we don't need to.
-func sufficientHints(numHints, maxHints, scalingFactor int, amount,
-	totalHintAmount lnwire.MilliSatoshi) bool {
+func sufficientHints(numHints, maxHints, scalingFactor int,
+	amount, totalHintAmount lnwire.MilliSatoshi) bool {
 
 	if numHints >= maxHints {
 		log.Debug("Reached maximum number of hop hints")
+
 		return true
 	}
 
@@ -359,8 +362,7 @@ func sufficientHints(numHints, maxHints, scalingFactor int, amount,
 	if totalHintAmount >= requiredAmount {
 		log.Debugf("Total hint amount: %v has reached target hint "+
 			"bandwidth: %v (invoice amount: %v * factor: %v)",
-			totalHintAmount, requiredAmount, amount,
-			scalingFactor)
+			totalHintAmount, requiredAmount, amount, scalingFactor)
 
 		return true
 	}
@@ -374,8 +376,8 @@ func sufficientHints(numHints, maxHints, scalingFactor int, amount,
 //
 // TODO(sputn1ck): remove when https://github.com/lightningnetwork/lnd/pull/7065
 // is merged to a new lnd release.
-func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi, cfg *SelectHopHintsCfg,
-	openChannels []*HopHintInfo,
+func invoicesrpcSelectHopHints(amtMSat lnwire.MilliSatoshi,
+	cfg *SelectHopHintsCfg, openChannels []*HopHintInfo,
 	numMaxHophints int) [][]zpay32.HopHint {
 
 	// We'll add our hop hints in two passes, first we'll add all channels

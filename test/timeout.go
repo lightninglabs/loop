@@ -43,6 +43,7 @@ func Guard(t *testing.T, opts ...GuardOption) func() {
 			}
 
 			panic("test timeout")
+
 		case <-done:
 		}
 	}()

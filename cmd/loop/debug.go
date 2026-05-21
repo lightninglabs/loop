@@ -42,12 +42,15 @@ func forceAutoloop(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient, func(), error) {
+func getDebugClient(ctx context.Context, cmd *cli.Command) (looprpc.DebugClient,
+	func(), error) {
+
 	conn, cleanup, err := sessionTransport.Dial(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	debugClient := looprpc.NewDebugClient(conn)
+
 	return debugClient, cleanup, nil
 }

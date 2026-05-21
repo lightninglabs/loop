@@ -52,12 +52,9 @@ func (f *FSM) InitAction(ctx context.Context,
 
 	reservation, err := NewReservation(
 		reservationRequest.reservationID,
-		reservationRequest.serverPubkey,
-		keyRes.PubKey,
-		reservationRequest.value,
-		reservationRequest.expiry,
-		reservationRequest.heightHint,
-		keyRes.KeyLocator,
+		reservationRequest.serverPubkey, keyRes.PubKey,
+		reservationRequest.value, reservationRequest.expiry,
+		reservationRequest.heightHint, keyRes.KeyLocator,
 		ProtocolVersionServerInitiated,
 	)
 	if err != nil {
@@ -100,6 +97,7 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 	)
 	if err != nil {
 		f.Errorf("unable to subscribe to conf notification: %v", err)
+
 		return f.HandleError(err)
 	}
 
@@ -108,6 +106,7 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 	)
 	if err != nil {
 		f.Errorf("unable to subscribe to block notifications: %v", err)
+
 		return f.HandleError(err)
 	}
 
@@ -116,10 +115,12 @@ func (f *FSM) SubscribeToConfirmationAction(ctx context.Context,
 		select {
 		case err := <-errConfChan:
 			f.Errorf("conf subscription error: %v", err)
+
 			return f.HandleError(err)
 
 		case err := <-errBlockChan:
 			f.Errorf("block subscription error: %v", err)
+
 			return f.HandleError(err)
 
 		case confInfo := <-confChan:
@@ -159,15 +160,19 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 	notifCtx, cancel := context.WithCancel(ctx)
 
 	blockHeightChan, errEpochChan, err := f.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(notifCtx)
+		RegisterBlockEpochNtfn(
+			notifCtx,
+		)
 	if err != nil {
 		cancel()
+
 		return f.HandleError(err)
 	}
 
 	pkScript, err := f.reservation.GetPkScript()
 	if err != nil {
 		cancel()
+
 		return f.HandleError(err)
 	}
 
@@ -177,6 +182,7 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 	)
 	if err != nil {
 		cancel()
+
 		return f.HandleError(err)
 	}
 
@@ -188,6 +194,7 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 		)
 		if err != nil {
 			f.handleAsyncError(ctx, err)
+
 			return
 		}
 		if op == fsm.NoOp {
@@ -204,8 +211,8 @@ func (f *FSM) AsyncWaitForExpiredOrSweptAction(ctx context.Context,
 
 func (f *FSM) handleSubcriptions(ctx context.Context,
 	blockHeightChan <-chan int32, spendChan <-chan *chainntnfs.SpendDetail,
-	errEpochChan <-chan error, errSpendChan <-chan error,
-) (fsm.EventType, error) {
+	errEpochChan <-chan error, errSpendChan <-chan error) (fsm.EventType,
+	error) {
 
 	for {
 		select {
@@ -220,6 +227,7 @@ func (f *FSM) handleSubcriptions(ctx context.Context,
 
 			if expired {
 				f.Debugf("Reservation expired")
+
 				return OnTimedOut, nil
 			}
 

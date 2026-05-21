@@ -90,6 +90,7 @@ func NewTestPgFixture(t *testing.T, expiry time.Duration) *TestPgFixture {
 		if err != nil {
 			return err
 		}
+
 		return testDB.Ping()
 	})
 	require.NoError(t, err, "Could not connect to docker")

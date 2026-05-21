@@ -26,8 +26,9 @@ func (l *loopOutSwapSuggestion) amount() btcutil.Amount {
 // fees returns the maximum fees we could possibly pay for this swap.
 func (l *loopOutSwapSuggestion) fees() btcutil.Amount {
 	return worstCaseOutFees(
-		l.OutRequest.MaxPrepayRoutingFee, l.OutRequest.MaxSwapRoutingFee,
-		l.OutRequest.MaxSwapFee, l.OutRequest.MaxMinerFee,
+		l.OutRequest.MaxPrepayRoutingFee,
+		l.OutRequest.MaxSwapRoutingFee, l.OutRequest.MaxSwapFee,
+		l.OutRequest.MaxMinerFee,
 	)
 }
 

@@ -288,7 +288,9 @@ func TestAutoLoopEnabled(t *testing.T) {
 		{
 			request: chan1Swap,
 			response: &loop.LoopOutSwapInfo{
-				SwapHash: lntypes.Hash{3},
+				SwapHash: lntypes.Hash{
+					3,
+				},
 			},
 		},
 	}
@@ -736,7 +738,9 @@ func TestAutoLoopInEnabled(t *testing.T) {
 			MaxAutoInFlight:           2,
 			FailureBackOff:            time.Hour,
 			FeeLimit:                  NewFeePortion(swapFeePPM),
-			ChannelRules:              make(map[lnwire.ShortChannelID]*SwapRule),
+			ChannelRules: make(
+				map[lnwire.ShortChannelID]*SwapRule,
+			),
 			PeerRules: map[route.Vertex]*SwapRule{
 				peer1: rule,
 				peer2: rule,
@@ -804,7 +808,9 @@ func TestAutoLoopInEnabled(t *testing.T) {
 			{
 				request: peer1Swap,
 				response: &loop.LoopInSwapInfo{
-					SwapHash: lntypes.Hash{1},
+					SwapHash: lntypes.Hash{
+						1,
+					},
 				},
 			},
 		},
@@ -851,7 +857,9 @@ func TestAutoLoopInEnabled(t *testing.T) {
 			{
 				request: peer2Swap,
 				response: &loop.LoopInSwapInfo{
-					SwapHash: lntypes.Hash{2},
+					SwapHash: lntypes.Hash{
+						2,
+					},
 				},
 			},
 		},
@@ -1027,7 +1035,9 @@ func TestAutoloopBothTypes(t *testing.T) {
 			{
 				request: loopOutSwap,
 				response: &loop.LoopOutSwapInfo{
-					SwapHash: lntypes.Hash{1},
+					SwapHash: lntypes.Hash{
+						1,
+					},
 				},
 			},
 		},
@@ -1035,7 +1045,9 @@ func TestAutoloopBothTypes(t *testing.T) {
 			{
 				request: loopInSwap,
 				response: &loop.LoopInSwapInfo{
-					SwapHash: lntypes.Hash{2},
+					SwapHash: lntypes.Hash{
+						2,
+					},
 				},
 			},
 		},
@@ -1599,23 +1611,25 @@ func TestEasyAssetAutoloop(t *testing.T) {
 		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 		// For testing, simply return asset units 1:1 to satoshis.
 		assetPriceFunc := func(ctx context.Context, assetId string,
-			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
-			btcutil.Amount, error) {
+			peerPubkey []byte, assetAmt uint64,
+			minSatAmt btcutil.Amount) (btcutil.Amount, error) {
 
 			return btcutil.Amount(assetAmt), nil
 		}
 		c.manager.cfg.GetAssetPrice = assetPriceFunc
 		c.start()
 
-		// In this scenario we expect a swap of maxAmt (here chosen as 50000)
-		// on our single asset channel.
+		// In this scenario we expect a swap of maxAmt (here chosen as
+		// 50000) on our single asset channel.
 		maxAmt := 50000
 		chanSwap := &loop.OutRequest{
-			Amount:          btcutil.Amount(maxAmt),
-			DestAddr:        addr,
-			OutgoingChanSet: loopdb.ChannelSet{assetChan.ChannelID},
-			Label:           labels.AutoloopLabel(swap.TypeOut),
-			Initiator:       autoloopSwapInitiator,
+			Amount:   btcutil.Amount(maxAmt),
+			DestAddr: addr,
+			OutgoingChanSet: loopdb.ChannelSet{
+				assetChan.ChannelID,
+			},
+			Label:     labels.AutoloopLabel(swap.TypeOut),
+			Initiator: autoloopSwapInitiator,
 		}
 		quotesOut := []quoteRequestResp{
 			{
@@ -1641,7 +1655,9 @@ func TestEasyAssetAutoloop(t *testing.T) {
 			{
 				request: chanSwap,
 				response: &loop.LoopOutSwapInfo{
-					SwapHash: lntypes.Hash{1},
+					SwapHash: lntypes.Hash{
+						1,
+					},
 				},
 			},
 		}
@@ -1685,8 +1701,9 @@ func TestEasyAssetAutoloop(t *testing.T) {
 			CustomChannelData: customChanDataBytes1,
 		}
 		assetChan2 := lndclient.ChannelInfo{
-			Active:            true,
-			ChannelID:         chanID2.ToUint64(), // different channel ID
+			Active: true,
+			// different channel ID
+			ChannelID:         chanID2.ToUint64(),
 			PubKeyBytes:       peer2,
 			CustomChannelData: customChanDataBytes2,
 		}
@@ -1713,22 +1730,25 @@ func TestEasyAssetAutoloop(t *testing.T) {
 
 		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 		assetPriceFunc := func(ctx context.Context, assetId string,
-			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
-			btcutil.Amount, error) {
+			peerPubkey []byte, assetAmt uint64,
+			minSatAmt btcutil.Amount) (btcutil.Amount, error) {
 
 			return btcutil.Amount(assetAmt), nil
 		}
 		c.manager.cfg.GetAssetPrice = assetPriceFunc
 		c.start()
 
-		// Expect a swap on the channel with the higher local balance (assetChan2).
+		// Expect a swap on the channel with the higher local balance
+		// (assetChan2).
 		maxAmt := 40000
 		chanSwap := &loop.OutRequest{
-			Amount:          btcutil.Amount(maxAmt),
-			DestAddr:        addr,
-			OutgoingChanSet: loopdb.ChannelSet{assetChan2.ChannelID},
-			Label:           labels.AutoloopLabel(swap.TypeOut),
-			Initiator:       autoloopSwapInitiator,
+			Amount:   btcutil.Amount(maxAmt),
+			DestAddr: addr,
+			OutgoingChanSet: loopdb.ChannelSet{
+				assetChan2.ChannelID,
+			},
+			Label:     labels.AutoloopLabel(swap.TypeOut),
+			Initiator: autoloopSwapInitiator,
 		}
 		quotesOut := []quoteRequestResp{
 			{
@@ -1754,7 +1774,9 @@ func TestEasyAssetAutoloop(t *testing.T) {
 			{
 				request: chanSwap,
 				response: &loop.LoopOutSwapInfo{
-					SwapHash: lntypes.Hash{1},
+					SwapHash: lntypes.Hash{
+						1,
+					},
 				},
 			},
 		}
@@ -1827,8 +1849,8 @@ func TestEasyAssetAutoloop(t *testing.T) {
 
 		c := newAutoloopTestCtx(t, params, channels, testRestrictions)
 		assetPriceFunc := func(ctx context.Context, assetId string,
-			peerPubkey []byte, assetAmt uint64, minSatAmt btcutil.Amount) (
-			btcutil.Amount, error) {
+			peerPubkey []byte, assetAmt uint64,
+			minSatAmt btcutil.Amount) (btcutil.Amount, error) {
 
 			return btcutil.Amount(assetAmt), nil
 		}
@@ -1838,11 +1860,13 @@ func TestEasyAssetAutoloop(t *testing.T) {
 		maxAmtAsset := 50000
 
 		assetSwap := &loop.OutRequest{
-			Amount:          btcutil.Amount(maxAmtAsset),
-			DestAddr:        addr,
-			OutgoingChanSet: loopdb.ChannelSet{assetChan.ChannelID},
-			Label:           labels.AutoloopLabel(swap.TypeOut),
-			Initiator:       autoloopSwapInitiator,
+			Amount:   btcutil.Amount(maxAmtAsset),
+			DestAddr: addr,
+			OutgoingChanSet: loopdb.ChannelSet{
+				assetChan.ChannelID,
+			},
+			Label:     labels.AutoloopLabel(swap.TypeOut),
+			Initiator: autoloopSwapInitiator,
 		}
 		quotesOut := []quoteRequestResp{
 			{
@@ -1868,7 +1892,9 @@ func TestEasyAssetAutoloop(t *testing.T) {
 			{
 				request: assetSwap,
 				response: &loop.LoopOutSwapInfo{
-					SwapHash: lntypes.Hash{1},
+					SwapHash: lntypes.Hash{
+						1,
+					},
 				},
 			},
 		}

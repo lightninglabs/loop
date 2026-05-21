@@ -46,9 +46,7 @@ type testContext struct {
 // mockVerifySchnorrSigFail is used to simulate failed taproot keyspend
 // signature verification. If passed to the executeConfig we'll test an
 // uncooperative server and will fall back to scriptspend sweep.
-func mockVerifySchnorrSigFail(pubKey *btcec.PublicKey, hash,
-	sig []byte) error {
-
+func mockVerifySchnorrSigFail(pubKey *btcec.PublicKey, hash, sig []byte) error {
 	return fmt.Errorf("invalid sig")
 }
 
@@ -64,8 +62,7 @@ func mockVerifySchnorrSigSuccess(pubKey *btcec.PublicKey, hash,
 func mockMuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
 	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
-	prevoutMap map[wire.OutPoint]*wire.TxOut) (
-	[]byte, []byte, error) {
+	prevoutMap map[wire.OutPoint]*wire.TxOut) ([]byte, []byte, error) {
 
 	return nil, nil, nil
 }
@@ -187,6 +184,7 @@ func (ctx *testContext) assertIsDone() {
 	select {
 	case <-ctx.statusChan:
 		ctx.Context.T.Fatalf("not all status updates read")
+
 	default:
 	}
 }
@@ -222,6 +220,7 @@ func (ctx *testContext) assertStatus(expectedState loopdb.SwapState) {
 			if update.State == expectedState {
 				return
 			}
+
 		case <-time.After(test.Timeout):
 			ctx.Context.T.Fatalf("expected status %v not "+
 				"received in time", expectedState)

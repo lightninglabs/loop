@@ -85,8 +85,8 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 		sweeps, destAddr, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to construct unsigned tx "+
-			"for feeRate %v: %w", feeRate, err)
+		return fmt.Errorf("failed to construct unsigned tx for "+
+			"feeRate %v: %w", feeRate, err)
 	}
 
 	// Check of a presigned transaction exists.
@@ -99,10 +99,10 @@ func ensurePresigned(ctx context.Context, newSweeps []*sweep,
 		ctx, primarySweepID, tx, batchAmt, feeRate, feeRate, loadOnly,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to find a presigned transaction "+
-			"for feeRate %v, txid of the template is %v, inputs: %d, "+
-			"outputs: %d: %w", feeRate, tx.TxHash(),
-			len(tx.TxIn), len(tx.TxOut), err)
+		return fmt.Errorf("failed to find a presigned transaction for "+
+			"feeRate %v, txid of the template is %v, inputs: %d, "+
+			"outputs: %d: %w", feeRate, tx.TxHash(), len(tx.TxIn),
+			len(tx.TxOut), err)
 	}
 
 	// Check the SignTx worked correctly.
@@ -277,8 +277,8 @@ func (b *batch) presign(ctx context.Context, newSweeps []*sweep) error {
 			sweeps, nextBlockFeeRate, minRelayFeeRate,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to presign a transaction "+
-				"of %d sweeps: %w", len(sweeps), err)
+			return fmt.Errorf("failed to presign a transaction of "+
+				"%d sweeps: %w", len(sweeps), err)
 		}
 
 		// Cut a group to proceed to next suffix of original groups.
@@ -304,8 +304,8 @@ type presigner interface {
 	// It is only called with loadOnly=true by ensurePresigned.
 	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
 		tx *wire.MsgTx, inputAmt btcutil.Amount,
-		minRelayFee, feeRate chainfee.SatPerKWeight,
-		loadOnly bool) (*wire.MsgTx, error)
+		minRelayFee, feeRate chainfee.SatPerKWeight, loadOnly bool) (
+		*wire.MsgTx, error)
 }
 
 // presign tries to presign batch sweep transactions of the sweeps. It signs
@@ -435,8 +435,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// Make sure that no external address is used.
 	for _, sweep := range b.sweeps {
 		if sweep.isExternalAddr {
-			return 0, fmt.Errorf("external address was used with " +
-				"a custom transaction signer"), false
+			return 0, fmt.Errorf("external address was " +
+				"used with a custom transaction signer"), false
 		}
 	}
 
@@ -461,12 +461,11 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Cache the destination address.
 	address, err := getPresignedSweepsDestAddr(
-		ctx, b.cfg.presignedHelper, b.primarySweepID,
-		b.cfg.chainParams,
+		ctx, b.cfg.presignedHelper, b.primarySweepID, b.cfg.chainParams,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find destination address: %w",
-			err), false
+		return 0, fmt.Errorf("failed to find destination "+
+			"address: %w", err), false
 	}
 
 	// Construct unsigned batch transaction.
@@ -510,11 +509,13 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	// Make sure tx weight matches the expected value.
 	realWeight := lntypes.WeightUnit(
-		blockchain.GetTransactionWeight(btcutil.NewTx(tx)),
+		blockchain.GetTransactionWeight(
+			btcutil.NewTx(tx),
+		),
 	)
 	if realWeight != weight {
-		b.Warnf("actual weight of tx %v is %v, estimated as %d",
-			txHash, realWeight, weight)
+		b.Warnf("actual weight of tx %v is %v, estimated as %d", txHash,
+			realWeight, weight)
 	}
 
 	// Find actual fee rate of the signed transaction. It may differ from
@@ -528,11 +529,10 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 
 	numSweeps := len(tx.TxIn)
 	numChange := len(tx.TxOut) - 1
-	b.Infof("attempting to publish custom signed tx=%v, desiredFeerate=%v,"+
-		" signedFeeRate=%v, weight=%v, fee=%v, sweeps=%d, "+
-		"changeOutputs=%d, destAddr=%s",
-		txHash, feeRate, signedFeeRate, realWeight, fee, numSweeps,
-		numChange, address)
+	b.Infof("attempting to publish custom signed tx=%v, "+
+		"desiredFeerate=%v, signedFeeRate=%v, weight=%v, fee=%v, "+
+		"sweeps=%d, changeOutputs=%d, destAddr=%s", txHash, feeRate,
+		signedFeeRate, realWeight, fee, numSweeps, numChange, address)
 	b.debugLogTx("serialized batch", tx)
 
 	// Publish the transaction.
@@ -585,9 +585,9 @@ func getPresignedSweepsDestAddr(ctx context.Context, helper destPkScripter,
 
 	address, err := pkScript.Address(chainParams)
 	if err != nil {
-		return nil, fmt.Errorf("pkScript.Address failed for "+
-			"pkScript %x returned for primarySweepID %v: %w",
-			pkScriptBytes, primarySweepID, err)
+		return nil, fmt.Errorf("pkScript.Address failed for pkScript "+
+			"%x returned for primarySweepID %v: %w", pkScriptBytes,
+			primarySweepID, err)
 	}
 
 	return address, nil
@@ -618,8 +618,8 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 				txIn.PreviousOutPoint)
 		}
 		if seq != txIn.Sequence {
-			return fmt.Errorf("sequence mismatch in input %s: "+
-				"%d in unsigned, %d in signed",
+			return fmt.Errorf("sequence mismatch in input %s: %d "+
+				"in unsigned, %d in signed",
 				txIn.PreviousOutPoint, seq, txIn.Sequence)
 		}
 		delete(unsignedMap, txIn.PreviousOutPoint)
@@ -655,7 +655,9 @@ func CheckSignedTx(unsignedTx, signedTx *wire.MsgTx, inputAmt btcutil.Amount,
 	// Find the feerate of signedTx.
 	fee := inputAmt - totalOutputValue
 	weight := lntypes.WeightUnit(
-		blockchain.GetTransactionWeight(btcutil.NewTx(signedTx)),
+		blockchain.GetTransactionWeight(
+			btcutil.NewTx(signedTx),
+		),
 	)
 	feeRate := chainfee.NewSatPerKWeight(fee, weight)
 	if feeRate < minRelayFee {

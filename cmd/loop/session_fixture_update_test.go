@@ -109,8 +109,8 @@ func maybeUpdateSessionFixture(path string, fixture sessionFile,
 
 // rewriteSessionFixture rewrites stdout, stderr and run_error while leaving
 // the rest of the recorded interaction unchanged.
-func rewriteSessionFixture(fixture sessionFile,
-	output replayedSessionOutput) (sessionFile, bool, error) {
+func rewriteSessionFixture(fixture sessionFile, output replayedSessionOutput) (
+	sessionFile, bool, error) {
 
 	updated := fixture
 	changed := false
@@ -266,14 +266,18 @@ func replaceTextEventsWithCanonical(events []sessionEvent, kind string,
 
 	if len(indices) > 0 {
 		firstIdx := indices[0]
-		updated := make([]sessionEvent, 0,
-			len(events)-len(indices)+len(replacements))
+		updated := make(
+			[]sessionEvent, 0,
+			len(events)-len(indices)+len(replacements),
+		)
 
 		inserted := false
 		for i, event := range events {
 			if event.Kind == kind {
 				if !inserted && i == firstIdx {
-					updated = append(updated, replacements...)
+					updated = append(
+						updated, replacements...,
+					)
 					inserted = true
 				}
 				continue
@@ -479,8 +483,10 @@ func TestUpdateRecordedSessionsEnabled(t *testing.T) {
 	t.Setenv(updateRecordedSessionsEnvVar, "invalid")
 	enabled, err = updateRecordedSessionsEnabled()
 	require.False(t, enabled)
-	require.EqualError(t, err,
-		"invalid LOOP_UPDATE_RECORDED_SESSIONS value \"invalid\"")
+	require.EqualError(
+		t, err,
+		"invalid LOOP_UPDATE_RECORDED_SESSIONS value \"invalid\"",
+	)
 }
 
 // TestRewriteSessionFixtureUpdatesMatchingChunks verifies that bless mode
@@ -550,8 +556,10 @@ func TestRewriteSessionFixtureReplacesChangedChunkCount(t *testing.T) {
 func TestRewriteSessionFixtureSkipsNormalizedTimestampNoise(t *testing.T) {
 	fixture := sessionFile{
 		Events: []sessionEvent{
-			textEvent(t, 3, eventStdout,
-				"2026-05-04T10:00:00-05:00\n"),
+			textEvent(
+				t, 3, eventStdout,
+				"2026-05-04T10:00:00-05:00\n",
+			),
 			exitEvent(t, 4, nil),
 		},
 	}

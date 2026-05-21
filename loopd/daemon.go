@@ -162,11 +162,12 @@ func (d *Daemon) Start() error {
 	// and we can just return the error.
 	err = d.initialize(true)
 	if errors.Is(err, bbolt.ErrTimeout) {
+
 		// We're trying to be started as a standalone Loop daemon, most
 		// likely LiT is already running and blocking the DB
 		return fmt.Errorf("%v: make sure no other loop daemon process "+
-			"(standalone or embedded in lightning-terminal) is"+
-			"running", err)
+			"(standalone or embedded in lightning-terminal) "+
+			"isrunning", err)
 	}
 	if err != nil {
 		return err
@@ -182,6 +183,7 @@ func (d *Daemon) Start() error {
 		if stopErr != nil {
 			errorf("Error while stopping daemon: %v", stopErr)
 		}
+
 		return startErr
 	}
 
@@ -212,11 +214,13 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// can just return the error.
 	err := d.initialize(withMacaroonService)
 	if errors.Is(err, bbolt.ErrTimeout) {
+
 		// We're trying to be started inside LiT so there most likely is
 		// another standalone Loop process blocking the DB.
-		return fmt.Errorf("%v: make sure no other loop daemon "+
-			"process is running", err)
+		return fmt.Errorf("%v: make sure no other loop daemon process "+
+			"is running", err)
 	}
+
 	return err
 }
 
@@ -337,8 +341,10 @@ func (d *Daemon) startWebServers() error {
 		}
 
 		d.wg.Go(func() {
-			infof("REST proxy listening on %s",
-				d.restListener.Addr())
+			infof(
+				"REST proxy listening on %s",
+				d.restListener.Addr(),
+			)
 			err := d.restServer.Serve(d.restListener)
 			// ErrServerClosed is always returned when the proxy is
 			// shut down, so don't log it.
@@ -443,8 +449,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	sweeperDb := sweepbatcher.NewSQLStore(
-		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb),
-		chainParams,
+		loopdb.NewTypedStore[sweepbatcher.Querier](baseDb), chainParams,
 	)
 
 	// We need to know the current block height to properly initialize
@@ -465,12 +470,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			d.mainCtx, &taprpc.GetInfoRequest{},
 		)
 		if err != nil {
-			return fmt.Errorf("unable to get asset client info: %v", err)
+			return fmt.Errorf("unable to get asset client info: %v",
+				err)
 		}
 		if getInfo.LndIdentityPubkey != d.lnd.NodePubkey.String() {
-			return fmt.Errorf("asset client pubkey %v does not match "+
-				"lnd pubkey %v", getInfo.LndIdentityPubkey,
-				d.lnd.NodePubkey)
+			return fmt.Errorf("asset client pubkey %v does not "+
+				"match lnd pubkey %v",
+				getInfo.LndIdentityPubkey, d.lnd.NodePubkey)
 		}
 
 		infof("Using asset client with version %v", getInfo.Version)
@@ -542,6 +548,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		)
 		if err != nil {
 			cleanupMacaroonStore()
+
 			return err
 		}
 
@@ -551,6 +558,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			// shut down at this point.
 			cleanupMacaroonStore()
 			clientCleanup()
+
 			return err
 		}
 	}
@@ -610,8 +618,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Static address deposit withdrawal manager setup.
 	withdrawalStore := withdraw.NewSqlStore(
-		loopdb.NewTypedStore[withdraw.Querier](baseDb),
-		depositStore,
+		loopdb.NewTypedStore[withdraw.Querier](baseDb), depositStore,
 	)
 	withdrawalCfg := &withdraw.ManagerConfig{
 		StaticAddressServerClient: staticAddressClient,
@@ -668,22 +675,26 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
-		Server:                               staticAddressClient,
-		QuoteGetter:                          swapClient.Server,
-		LndClient:                            d.lnd.Client,
-		InvoicesClient:                       d.lnd.Invoices,
-		NodePubkey:                           d.lnd.NodePubkey,
-		AddressManager:                       staticAddressManager,
-		DepositManager:                       depositManager,
-		Store:                                staticAddressLoopInStore,
-		WalletKit:                            d.lnd.WalletKit,
-		ChainNotifier:                        d.lnd.ChainNotifier,
-		NotificationManager:                  notificationManager,
-		ChainParams:                          d.lnd.ChainParams,
-		Signer:                               d.lnd.Signer,
-		ValidateLoopInContract:               loop.ValidateLoopInContract,
-		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
-		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
+		Server:                 staticAddressClient,
+		QuoteGetter:            swapClient.Server,
+		LndClient:              d.lnd.Client,
+		InvoicesClient:         d.lnd.Invoices,
+		NodePubkey:             d.lnd.NodePubkey,
+		AddressManager:         staticAddressManager,
+		DepositManager:         depositManager,
+		Store:                  staticAddressLoopInStore,
+		WalletKit:              d.lnd.WalletKit,
+		ChainNotifier:          d.lnd.ChainNotifier,
+		NotificationManager:    notificationManager,
+		ChainParams:            d.lnd.ChainParams,
+		Signer:                 d.lnd.Signer,
+		ValidateLoopInContract: loop.ValidateLoopInContract,
+		MaxStaticAddrHtlcFeePercentage: d.
+			cfg.
+			MaxStaticAddrHtlcFeePercentage,
+		MaxStaticAddrHtlcBackupFeePercentage: d.
+			cfg.
+			MaxStaticAddrHtlcBackupFeePercentage,
 	}, blockHeight)
 	if err != nil {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
@@ -762,6 +773,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		if d.macaroonService == nil {
 			cleanupMacaroonStore()
 			clientCleanup()
+
 			return err
 		}
 
@@ -774,6 +786,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 		cleanupMacaroonStore()
 		clientCleanup()
+
 		return err
 	}
 
@@ -836,6 +849,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
+
 			return fmt.Errorf("reservation server not ready: %v",
 				timeOutCtx.Err())
 
@@ -865,6 +879,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
+
 			return fmt.Errorf("instantout server not ready: %v",
 				timeOutCtx.Err())
 
@@ -894,6 +909,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
+
 			return fmt.Errorf("static address manager not "+
 				"ready: %v", timeOutCtx.Err())
 
@@ -923,8 +939,9 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
-			return fmt.Errorf("static address deposit manager "+
-				"not ready: %v", timeOutCtx.Err())
+
+			return fmt.Errorf("static address deposit manager not "+
+				"ready: %v", timeOutCtx.Err())
 
 		case <-initChan:
 			cancel()
@@ -957,6 +974,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
+
 			return fmt.Errorf("static address withdrawal manager "+
 				"server not ready: %v", timeOutCtx.Err())
 
@@ -988,16 +1006,17 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		})
 
-		// Wait for the static address loop-in manager to be ready before
-		// starting the grpc server.
+		// Wait for the static address loop-in manager to be ready
+		// before starting the grpc server.
 		timeOutCtx, cancel := context.WithTimeout(
 			d.mainCtx, initManagerTimeout,
 		)
 		select {
 		case <-timeOutCtx.Done():
 			cancel()
-			return fmt.Errorf("static address loop-in manager "+
-				"not ready: %v", timeOutCtx.Err())
+
+			return fmt.Errorf("static address loop-in manager not "+
+				"ready: %v", timeOutCtx.Err())
 
 		case <-initChan:
 			cancel()
@@ -1005,8 +1024,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	loop.Resume(
-		d.mainCtx, notificationManager, swapClient.Store,
-		d.impl.Conn, d.lnd, clock.NewDefaultClock(),
+		d.mainCtx, notificationManager, swapClient.Store, d.impl.Conn,
+		d.lnd, clock.NewDefaultClock(),
 	)
 
 	// Last, start our internal error handler. This will return exactly one
@@ -1024,8 +1043,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		// signal the caller that we're done.
 		select {
 		case runtimeErr = <-d.internalErrChan:
-			errorf("Runtime error in daemon, shutting down: "+
-				"%v", runtimeErr)
+			errorf(
+				"Runtime error in daemon, shutting down: %v",
+				runtimeErr,
+			)
 
 		case <-d.quit:
 		}

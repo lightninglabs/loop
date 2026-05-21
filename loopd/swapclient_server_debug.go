@@ -30,12 +30,14 @@ func (d *Daemon) registerDebugServer() {
 // if one is suggested. This endpoint is only for testing purposes and cannot be
 // used on mainnet.
 func (s *swapClientServer) ForceAutoLoop(ctx context.Context,
-	_ *looprpc.ForceAutoLoopRequest) (*looprpc.ForceAutoLoopResponse, error) {
+	_ *looprpc.ForceAutoLoopRequest) (*looprpc.ForceAutoLoopResponse,
+	error) {
 
 	if s.network == lndclient.NetworkMainnet {
 		return nil, fmt.Errorf("force autoloop not allowed on mainnet")
 	}
 
 	err := s.liquidityMgr.ForceAutoLoop(ctx)
+
 	return &looprpc.ForceAutoLoopResponse{}, err
 }

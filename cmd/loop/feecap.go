@@ -27,8 +27,7 @@ const (
 // server-quoted fee already exceeds the resolved cap the caller receives an
 // error so the swap can be rejected before confirmation.
 func resolveMaxSwapFee(quoteReq *looprpc.QuoteRequest,
-	quote *looprpc.InQuoteResponse,
-	satIsSet bool, maxFeeSat uint64,
+	quote *looprpc.InQuoteResponse, satIsSet bool, maxFeeSat uint64,
 	ppmIsSet bool, maxFeePpm uint64) (btcutil.Amount, error) {
 
 	// If a flag is used, make sure the value is within a reasonable range.
@@ -71,8 +70,8 @@ func resolveMaxSwapFee(quoteReq *looprpc.QuoteRequest,
 		ppmCapSat = ppmCapForSwapAmount(swapAmt, maxFeePpm)
 		if ppmCapSat == 0 {
 			return 0, fmt.Errorf("ppm cap rounds to 0 sat for "+
-				"swap amount %d; use --max_swap_fee_sat "+
-				"instead", swapAmt)
+				"swap amount %d; use "+
+				"--max_swap_fee_sat instead", swapAmt)
 		}
 	}
 
@@ -93,8 +92,8 @@ func resolveMaxSwapFee(quoteReq *looprpc.QuoteRequest,
 
 	// Reject early if the quote already exceeds the cap.
 	if quote.SwapFeeSat > int64(resolvedSat) {
-		return 0, fmt.Errorf("quoted swap fee %d sat exceeds "+
-			"maximum allowed %d sat", quote.SwapFeeSat, resolvedSat)
+		return 0, fmt.Errorf("quoted swap fee %d sat exceeds maximum "+
+			"allowed %d sat", quote.SwapFeeSat, resolvedSat)
 	}
 
 	return btcutil.Amount(int64(resolvedSat)), nil

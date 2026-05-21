@@ -78,8 +78,8 @@ func TestStaticAddressScript(t *testing.T) {
 
 				// This is what gets signed.
 				taprootSigHash, err := txscript.CalcTaprootSignatureHash(
-					sigHashes, txscript.SigHashDefault, tx, 0,
-					prevOutFetcher,
+					sigHashes, txscript.SigHashDefault, tx,
+					0, prevOutFetcher,
 				)
 				require.NoError(t, err)
 
@@ -227,19 +227,21 @@ func assertEngineExecution(t *testing.T, valid bool,
 		done, err = vm.Step()
 		if err != nil && valid {
 			fmt.Println(debugBuf.String())
-			t.Fatalf("spend test case failed, spend "+
-				"should be valid: %v", err)
+			t.Fatalf("spend test case failed, spend should be "+
+				"valid: %v", err)
 		} else if err == nil && !valid && done {
 			fmt.Println(debugBuf.String())
-			t.Fatalf("spend test case succeed, spend "+
-				"should be invalid: %v", err)
+			t.Fatalf("spend test case succeed, spend should be "+
+				"invalid: %v", err)
 		}
 
 		debugBuf.WriteString(
 			fmt.Sprintf("Stack: %v", vm.GetStack()),
 		)
 		debugBuf.WriteString(
-			fmt.Sprintf("AltStack: %v", vm.GetAltStack()),
+			fmt.Sprintf(
+				"AltStack: %v", vm.GetAltStack(),
+			),
 		)
 	}
 
@@ -252,7 +254,5 @@ func assertEngineExecution(t *testing.T, valid bool,
 	}
 
 	fmt.Println(debugBuf.String())
-	t.Fatalf(
-		"%v spend test case execution ended with: %v", validity, vmErr,
-	)
+	t.Fatalf("%v spend test case execution ended with: %v", validity, vmErr)
 }

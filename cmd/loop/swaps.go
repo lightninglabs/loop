@@ -55,8 +55,8 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	if cmd.Bool("loop_out_only") && cmd.Bool("loop_in_only") {
-		return fmt.Errorf("only one of loop_out_only and loop_in_only " +
-			"can be set")
+		return fmt.Errorf("only one of loop_out_only and " +
+			"loop_in_only can be set")
 	}
 
 	filter := &looprpc.ListSwapsFilter{}
@@ -65,6 +65,7 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 	switch {
 	case cmd.Bool("loop_out_only"):
 		filter.SwapType = looprpc.ListSwapsFilter_LOOP_OUT
+
 	case cmd.Bool("loop_in_only"):
 		filter.SwapType = looprpc.ListSwapsFilter_LOOP_IN
 	}
@@ -77,11 +78,14 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 	// element.
 	var outgoingChanSet []uint64
 	if cmd.IsSet(channelFlag.Name) {
-		for chanString := range strings.SplitSeq(cmd.String(channelFlag.Name), ",") {
+		for chanString := range strings.SplitSeq(
+			cmd.String(channelFlag.Name),
+			",",
+		) {
 			chanID, err := strconv.ParseUint(chanString, 10, 64)
 			if err != nil {
-				return fmt.Errorf("error parsing channel id "+
-					"\"%v\"", chanString)
+				return fmt.Errorf("error parsing "+
+					"channel id \"%v\"", chanString)
 			}
 			outgoingChanSet = append(outgoingChanSet, chanID)
 		}
@@ -123,6 +127,7 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printRespJSON(resp)
+
 	return nil
 }
 
@@ -148,8 +153,10 @@ func swapInfo(ctx context.Context, cmd *cli.Command) error {
 	switch {
 	case cmd.IsSet("id"):
 		id = cmd.String("id")
+
 	case cmd.NArg() > 0:
 		id = args.First()
+
 	default:
 		// Show command help if no arguments and flags were provided.
 		return showCommandHelp(ctx, cmd)
@@ -170,13 +177,16 @@ func swapInfo(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	resp, err := client.SwapInfo(
-		ctx, &looprpc.SwapInfoRequest{Id: idBytes},
+		ctx, &looprpc.SwapInfoRequest{
+			Id: idBytes,
+		},
 	)
 	if err != nil {
 		return err
 	}
 
 	printRespJSON(resp)
+
 	return nil
 }
 
@@ -243,5 +253,6 @@ func abandonSwap(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printRespJSON(resp)
+
 	return nil
 }

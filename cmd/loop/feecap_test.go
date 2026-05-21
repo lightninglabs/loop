@@ -147,8 +147,7 @@ func TestResolveMaxSwapFee(t *testing.T) {
 			}
 
 			got, err := resolveMaxSwapFee(
-				quoteReq, quote,
-				tc.satIsSet, tc.maxSat,
+				quoteReq, quote, tc.satIsSet, tc.maxSat,
 				tc.ppmIsSet, tc.maxPpm,
 			)
 			if tc.wantErr != "" {

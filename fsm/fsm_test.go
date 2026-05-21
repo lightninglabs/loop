@@ -23,7 +23,9 @@ type TestStateMachineContext struct {
 func (c *TestStateMachineContext) GetStates() States {
 	return States{
 		"State1": State{
-			Action: func(_ context.Context, ctx EventContext) EventType {
+			Action: func(_ context.Context,
+				ctx EventContext) EventType {
+
 				return "Event1"
 			},
 			Transitions: Transitions{
@@ -31,7 +33,9 @@ func (c *TestStateMachineContext) GetStates() States {
 			},
 		},
 		"State2": State{
-			Action: func(_ context.Context, ctx EventContext) EventType {
+			Action: func(_ context.Context,
+				ctx EventContext) EventType {
+
 				return "NoOp"
 			},
 			Transitions: Transitions{},

@@ -23,9 +23,8 @@ func terms(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	printAmountRange := func(minAmt, maxAmt int64) {
-		fmt.Printf("Amount: %d - %d\n",
-			btcutil.Amount(minAmt), btcutil.Amount(maxAmt),
-		)
+		fmt.Printf("Amount: %d - %d\n", btcutil.Amount(minAmt),
+			btcutil.Amount(maxAmt))
 	}
 
 	fmt.Println("Loop Out")
@@ -36,12 +35,10 @@ func terms(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println(err)
 	} else {
 		printAmountRange(
-			loopOutTerms.MinSwapAmount,
-			loopOutTerms.MaxSwapAmount,
+			loopOutTerms.MinSwapAmount, loopOutTerms.MaxSwapAmount,
 		)
-		fmt.Printf("Cltv delta: %d - %d\n",
-			loopOutTerms.MinCltvDelta, loopOutTerms.MaxCltvDelta,
-		)
+		fmt.Printf("Cltv delta: %d - %d\n", loopOutTerms.MinCltvDelta,
+			loopOutTerms.MaxCltvDelta)
 	}
 
 	fmt.Println()
@@ -55,8 +52,7 @@ func terms(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println(err)
 	} else {
 		printAmountRange(
-			loopInTerms.MinSwapAmount,
-			loopInTerms.MaxSwapAmount,
+			loopInTerms.MinSwapAmount, loopInTerms.MaxSwapAmount,
 		)
 	}
 

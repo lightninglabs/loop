@@ -47,7 +47,9 @@ type SqliteSwapStore struct {
 
 // NewSqliteStore attempts to open a new sqlite database based on the passed
 // config.
-func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapStore, error) {
+func NewSqliteStore(cfg *SqliteConfig,
+	network *chaincfg.Params) (*SqliteSwapStore, error) {
+
 	// The set of pragma options are accepted using query options. For now
 	// we only want to ensure that foreign key constraints are properly
 	// enforced.
@@ -95,9 +97,8 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 	// with the series of pragma options as a query URL string. For more
 	// details on the formatting here, see the modernc.org/sqlite docs:
 	// https://pkg.go.dev/modernc.org/sqlite#Driver.Open.
-	dsn := fmt.Sprintf(
-		"%v?%v", cfg.DatabaseFileName, sqliteOptions.Encode(),
-	)
+	dsn := fmt.Sprintf("%v?%v", cfg.DatabaseFileName,
+		sqliteOptions.Encode())
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -140,6 +141,7 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 	err = baseDB.FixFaultyTimestamps(ctx)
 	if err != nil {
 		log.Errorf("Failed to fix faulty timestamps: %v", err)
+
 		return nil, err
 	}
 
@@ -184,12 +186,13 @@ type BaseDB struct {
 // BeginTx wraps the normal sql specific BeginTx method with the TxOptions
 // interface. This interface is then mapped to the concrete sql tx options
 // struct.
-func (db *BaseDB) BeginTx(ctx context.Context,
-	opts TxOptions) (*sql.Tx, error) {
+func (db *BaseDB) BeginTx(ctx context.Context, opts TxOptions) (*sql.Tx,
+	error) {
 
 	sqlOptions := sql.TxOptions{
 		ReadOnly: opts.ReadOnly(),
 	}
+
 	return db.DB.BeginTx(ctx, &sqlOptions)
 }
 
@@ -227,7 +230,8 @@ func (db *BaseDB) ExecTx(ctx context.Context, txOptions TxOptions,
 func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	// Manually fetch all the loop out swaps.
 	rows, err := db.DB.QueryContext(
-		ctx, "SELECT swap_hash, swap_invoice, publication_deadline FROM loopout_swaps",
+		ctx, "SELECT swap_hash, swap_invoice, publication_deadline "+
+			"FROM loopout_swaps",
 	)
 	if err != nil {
 		return err
@@ -249,7 +253,8 @@ func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 	for rows.Next() {
 		var swap LoopOutRow
 		err := rows.Scan(
-			&swap.Hash, &swap.SwapInvoice, &swap.PublicationDeadline,
+			&swap.Hash, &swap.SwapInvoice,
+			&swap.PublicationDeadline,
 		)
 		if err != nil {
 			return err

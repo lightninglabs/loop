@@ -21,7 +21,11 @@ func TestConvertingReservations(t *testing.T) {
 	}
 
 	reservations := []*reservation.Reservation{
-		{ID: resId1}, {ID: resId2},
+		{
+			ID: resId1,
+		}, {
+			ID: resId2,
+		},
 	}
 
 	byteSlice := reservationIdsToByteSlice(reservations)

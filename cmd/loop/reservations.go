@@ -51,5 +51,6 @@ func listReservations(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	printRespJSON(resp)
+
 	return nil
 }

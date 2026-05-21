@@ -25,9 +25,8 @@ type testSweeper struct {
 // weight estimator. It returns also the fee rate and transaction weight.
 func (s testSweeper) GetSweepFeeDetails(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32,
-	label string) (btcutil.Amount, chainfee.SatPerKWeight,
-	lntypes.WeightUnit, error) {
+	destAddr btcutil.Address, sweepConfTarget int32, label string) (
+	btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit, error) {
 
 	var feeRate chainfee.SatPerKWeight
 	switch {

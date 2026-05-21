@@ -35,11 +35,15 @@ const (
 	) * 4
 
 	coopTwoSweepBatchWeight          = coopNewBatchWeight + coopInputWeight
-	coopSingleSweepChangeBatchWeight = coopInputWeight + batchOutputWeight + changeOutputWeight
-	coopDoubleSweepChangeBatchWeight = 2*coopInputWeight + batchOutputWeight + changeOutputWeight
-	nonCoopTwoSweepBatchWeight       = coopTwoSweepBatchWeight + 2*nonCoopPenalty
-	v2v3BatchWeight                  = nonCoopTwoSweepBatchWeight - 25
-	mixedTwoSweepBatchWeight         = coopTwoSweepBatchWeight + nonCoopPenalty
+	coopSingleSweepChangeBatchWeight = coopInputWeight + batchOutputWeight +
+		changeOutputWeight
+	coopDoubleSweepChangeBatchWeight = 2*coopInputWeight +
+		batchOutputWeight + changeOutputWeight
+	nonCoopTwoSweepBatchWeight = coopTwoSweepBatchWeight +
+		2*nonCoopPenalty
+	v2v3BatchWeight          = nonCoopTwoSweepBatchWeight - 25
+	mixedTwoSweepBatchWeight = coopTwoSweepBatchWeight +
+		nonCoopPenalty
 )
 
 // testHtlcV2SuccessEstimator adds weight of non-cooperative input to estimator
@@ -53,6 +57,7 @@ func testHtlcV2SuccessEstimator(estimator *input.TxWeightEstimator) error {
 	if err != nil {
 		return err
 	}
+
 	return htlc.AddSuccessToEstimator(estimator)
 }
 
@@ -61,14 +66,15 @@ func testHtlcV2SuccessEstimator(estimator *input.TxWeightEstimator) error {
 func testHtlcV3SuccessEstimator(estimator *input.TxWeightEstimator) error {
 	swapHash := lntypes.Hash{1, 1, 1}
 	htlc, err := swap.NewHtlcV3(
-		input.MuSig2Version100RC2, 111,
-		htlcKeys.SenderInternalPubKey, htlcKeys.ReceiverInternalPubKey,
-		htlcKeys.SenderScriptKey, htlcKeys.ReceiverScriptKey, swapHash,
+		input.MuSig2Version100RC2, 111, htlcKeys.SenderInternalPubKey,
+		htlcKeys.ReceiverInternalPubKey, htlcKeys.SenderScriptKey,
+		htlcKeys.ReceiverScriptKey, swapHash,
 		&chaincfg.RegressionNetParams,
 	)
 	if err != nil {
 		return err
 	}
+
 	return htlc.AddSuccessToEstimator(estimator)
 }
 
@@ -81,11 +87,19 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 	p2pkhAddr := (*btcutil.AddressPubKeyHash)(nil)
 
 	outpoint1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	outpoint2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 
@@ -260,11 +274,19 @@ func TestEstimateSweepFeeIncrement(t *testing.T) {
 func TestEstimateBatchWeight(t *testing.T) {
 	// Useful variables reused in test cases.
 	outpoint1 := wire.OutPoint{
-		Hash:  chainhash.Hash{1, 1, 1},
+		Hash: chainhash.Hash{
+			1,
+			1,
+			1,
+		},
 		Index: 1,
 	}
 	outpoint2 := wire.OutPoint{
-		Hash:  chainhash.Hash{2, 2, 2},
+		Hash: chainhash.Hash{
+			2,
+			2,
+			2,
+		},
 		Index: 2,
 	}
 	se2 := testHtlcV2SuccessEstimator
@@ -548,7 +570,9 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{newBatchSignal},
+			wantBestBatchesIds: []int32{
+				newBatchSignal,
+			},
 		},
 
 		{
@@ -568,7 +592,10 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+			},
 		},
 
 		{
@@ -588,7 +615,10 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -613,7 +643,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+				2,
+			},
 		},
 
 		{
@@ -638,7 +672,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: highFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				2,
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -663,7 +701,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: highFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				2,
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -688,7 +730,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: highFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				2,
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -713,7 +759,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: highFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{2, newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				2,
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -738,7 +788,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+				2,
+			},
 		},
 
 		{
@@ -763,7 +817,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+				2,
+			},
 		},
 
 		{
@@ -788,7 +846,11 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  nonCoopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal, 2},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+				2,
+			},
 		},
 
 		{
@@ -815,7 +877,9 @@ func TestSelectBatches(t *testing.T) {
 				Weight:         coopNewBatchWeight,
 				IsExternalAddr: true,
 			},
-			wantBestBatchesIds: []int32{newBatchSignal},
+			wantBestBatchesIds: []int32{
+				newBatchSignal,
+			},
 		},
 
 		{
@@ -841,7 +905,10 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: highFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+			},
 		},
 
 		{
@@ -861,7 +928,10 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{newBatchSignal, 1},
+			wantBestBatchesIds: []int32{
+				newBatchSignal,
+				1,
+			},
 		},
 
 		{
@@ -882,7 +952,10 @@ func TestSelectBatches(t *testing.T) {
 				FeeRate: lowFeeRate,
 				Weight:  coopNewBatchWeight,
 			},
-			wantBestBatchesIds: []int32{1, newBatchSignal},
+			wantBestBatchesIds: []int32{
+				1,
+				newBatchSignal,
+			},
 		},
 	}
 

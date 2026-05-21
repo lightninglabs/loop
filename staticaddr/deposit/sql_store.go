@@ -159,8 +159,8 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 
 // DepositForOutpoint retrieves the deposit with the given outpoint from the
 // database.
-func (s *SqlStore) DepositForOutpoint(ctx context.Context,
-	outpoint string) (*Deposit, error) {
+func (s *SqlStore) DepositForOutpoint(ctx context.Context, outpoint string) (
+	*Deposit, error) {
 
 	var deposit *Deposit
 	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlReadOpts(),
@@ -242,8 +242,8 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 }
 
 // ToDeposit converts an sql deposit to a deposit.
-func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
-	error) {
+func ToDeposit(row sqlc.Deposit,
+	lastUpdate sqlc.DepositUpdate) (*Deposit, error) {
 
 	id := ID{}
 	err := id.FromByteSlice(row.DepositID)

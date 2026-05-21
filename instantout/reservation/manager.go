@@ -50,7 +50,9 @@ func (m *Manager) Run(ctx context.Context, height int32,
 	}
 
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(runCtx)
+		RegisterBlockEpochNtfn(
+			runCtx,
+		)
 	if err != nil {
 		return err
 	}
@@ -70,7 +72,9 @@ func (m *Manager) Run(ctx context.Context, height int32,
 			if !ok {
 				// The channel has been closed, we'll stop the
 				// reservation manager.
-				log.Debugf("Stopping reservation manager (ntfnChan closed)")
+				log.Debugf("Stopping reservation manager " +
+					"(ntfnChan closed)")
+
 				return nil
 			}
 
@@ -88,6 +92,7 @@ func (m *Manager) Run(ctx context.Context, height int32,
 
 		case <-runCtx.Done():
 			log.Debugf("Stopping reservation manager")
+
 			return nil
 		}
 	}
@@ -130,7 +135,9 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 
 	// Send the init event to the state machine.
 	go func() {
-		err = reservationFSM.SendEvent(ctx, OnServerRequest, initContext)
+		err = reservationFSM.SendEvent(
+			ctx, OnServerRequest, initContext,
+		)
 		if err != nil {
 			log.Errorf("Error sending init event: %v", err)
 		}
@@ -144,10 +151,11 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	)
 	if err != nil {
 		if reservationFSM.LastActionError != nil {
-			return nil, fmt.Errorf("error waiting for "+
-				"state: %v, last action error: %v",
-				err, reservationFSM.LastActionError)
+			return nil, fmt.Errorf("error waiting for state: %v, "+
+				"last action error: %v", err,
+				reservationFSM.LastActionError)
 		}
+
 		return nil, err
 	}
 
@@ -237,6 +245,7 @@ func (m *Manager) UnlockReservation(ctx context.Context, id ID) error {
 	// Try to send the unlock event to the reservation.
 	err := reservation.SendEvent(ctx, OnUnlocked, nil)
 	if err != nil && strings.Contains(err.Error(), "config error") {
+
 		// If the error is a config error, we can ignore it, as the
 		// reservation is already unlocked.
 		return nil

@@ -72,8 +72,8 @@ func newLoopOutSweepFeerateProvider(sweeper sweeper,
 
 // GetMinFeeRate returns minimum required feerate for a sweep by swap hash.
 func (p *loopOutSweepFeerateProvider) GetMinFeeRate(ctx context.Context,
-	swapHash lntypes.Hash,
-	_ wire.OutPoint) (chainfee.SatPerKWeight, error) {
+	swapHash lntypes.Hash, _ wire.OutPoint) (chainfee.SatPerKWeight,
+	error) {
 
 	_, feeRate, err := p.GetConfTargetAndFeeRate(ctx, swapHash)
 
@@ -158,9 +158,10 @@ func (p *loopOutSweepFeerateProvider) GetConfTargetAndFeeRate(
 		newConfTarget := min(confTarget, int32(urgentSweepConfTarget))
 
 		log.Infof("Swap %x is about to expire (blocksUntilExpiry=%d), "+
-			"reducing its confTarget from %d to %d and multiplying"+
-			" feerate by %v.", swapHash[:6], blocksUntilExpiry,
-			confTarget, newConfTarget, urgentSweepConfTargetFactor)
+			"reducing its confTarget from %d to %d and "+
+			"multiplying feerate by %v.", swapHash[:6],
+			blocksUntilExpiry, confTarget, newConfTarget,
+			urgentSweepConfTargetFactor)
 
 		confTarget = newConfTarget
 		feeFactor = urgentSweepConfTargetFactor

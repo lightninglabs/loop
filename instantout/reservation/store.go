@@ -144,8 +144,8 @@ func (r *SQLStore) UpdateReservation(ctx context.Context,
 }
 
 // GetReservation retrieves the reservation from the database.
-func (r *SQLStore) GetReservation(ctx context.Context,
-	reservationId ID) (*Reservation, error) {
+func (r *SQLStore) GetReservation(ctx context.Context, reservationId ID) (
+	*Reservation, error) {
 
 	var reservation *Reservation
 	err := r.baseDb.ExecTx(ctx, loopdb.NewSqlReadOpts(),
@@ -210,9 +210,8 @@ func (r *SQLStore) ListReservations(ctx context.Context) ([]*Reservation,
 				}
 
 				if len(reservationUpdates) == 0 {
-					return errors.New(
-						"no reservation updates",
-					)
+					return errors.New("no reservation " +
+						"updates")
 				}
 
 				res, err := sqlReservationToReservation(
@@ -238,8 +237,7 @@ func (r *SQLStore) ListReservations(ctx context.Context) ([]*Reservation,
 
 // sqlReservationToReservation converts a sql reservation to a reservation.
 func sqlReservationToReservation(row sqlc.Reservation,
-	lastUpdate sqlc.ReservationUpdate) (*Reservation,
-	error) {
+	lastUpdate sqlc.ReservationUpdate) (*Reservation, error) {
 
 	id := ID{}
 	err := id.FromByteSlice(row.ReservationID)
@@ -268,7 +266,10 @@ func sqlReservationToReservation(row sqlc.Reservation,
 	var outpoint *wire.OutPoint
 	if row.OutIndex.Valid {
 		outpoint = wire.NewOutPoint(
-			txHash, uint32(unmarshalSqlNullInt32(row.OutIndex)),
+			txHash,
+			uint32(
+				unmarshalSqlNullInt32(row.OutIndex),
+			),
 		)
 	}
 

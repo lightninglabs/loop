@@ -88,8 +88,9 @@ func sweepHtlc(ctx context.Context, cmd *cli.Command) error {
 	// Report publish status in a user-friendly way based on response.
 	switch {
 	case resp.GetNotRequested() != nil:
-		fmt.Println("publish: not requested (pass --publish to " +
-			"broadcast)")
+		fmt.Println(
+			"publish: not requested (pass --publish to broadcast)",
+		)
 
 	case resp.GetPublished() != nil:
 		fmt.Println("publish: success")

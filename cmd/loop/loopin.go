@@ -96,8 +96,10 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 	switch {
 	case cmd.IsSet("amt"):
 		amtStr = strconv.FormatUint(cmd.Uint64("amt"), 10)
+
 	case cmd.NArg() == 1:
 		amtStr = args.First()
+
 	default:
 		// Show command help if no arguments and flags were provided.
 		return showCommandHelp(ctx, cmd)
@@ -171,11 +173,9 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 	// makes sense to abort the loop in this case.
 	if !external && quote.HtlcPublishFeeSat ==
 		int64(loop.MinerFeeEstimationFailed) {
-
-		return fmt.Errorf("miner fee estimation not " +
-			"possible, lnd has insufficient funds to " +
-			"create a sample transaction for selected " +
-			"amount")
+		return fmt.Errorf("miner fee estimation not possible, lnd " +
+			"has insufficient funds to create a sample " +
+			"transaction for selected amount")
 	}
 
 	limits := getInLimits(quote)

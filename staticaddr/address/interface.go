@@ -15,6 +15,5 @@ type Store interface {
 		addrParams *script.Parameters) error
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) ([]*script.Parameters,
-		error)
+	GetAllStaticAddresses(ctx context.Context) ([]*script.Parameters, error)
 }

@@ -71,15 +71,12 @@ var (
 	// errBalanceTooLow is returned when the loop out amount can't be
 	// satisfied given total balance of the selection of channels to loop
 	// out on.
-	errBalanceTooLow = errors.New(
-		"channel balance too low for loop out amount",
-	)
+	errBalanceTooLow = errors.New("channel balance too low for loop out " +
+		"amount")
 
 	// errInvalidAddress is returned when the destination address is of
 	// an unsupported format such as P2PK or P2TR addresses.
-	errInvalidAddress = errors.New(
-		"invalid or unsupported address",
-	)
+	errInvalidAddress = errors.New("invalid or unsupported address")
 )
 
 // swapClientServer implements the grpc service exposed by loopd.
@@ -117,8 +114,7 @@ type swapClientServer struct {
 // progress can be tracked via the LoopOutStatus stream that is returned from
 // Monitor().
 func (s *swapClientServer) LoopOut(ctx context.Context,
-	in *looprpc.LoopOutRequest) (
-	*looprpc.SwapResponse, error) {
+	in *looprpc.LoopOutRequest) (*looprpc.SwapResponse, error) {
 
 	infof("Loop out request received")
 
@@ -154,7 +150,8 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 
 		isExternalAddr = true
 
-	case in.Account != "" && in.AccountAddrType == looprpc.AddressType_ADDRESS_TYPE_UNKNOWN:
+	case in.Account != "" &&
+		in.AccountAddrType == looprpc.AddressType_ADDRESS_TYPE_UNKNOWN:
 		return nil, liquidity.ErrAccountAndAddrType
 
 	case in.Account != "":
@@ -174,8 +171,8 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 			ctx, in.Account, addrType, false,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("NextAddr from account error: "+
-				"%v", err)
+			return nil, fmt.Errorf("NextAddr from account "+
+				"error: %v", err)
 		}
 
 		isExternalAddr = true
@@ -200,7 +197,9 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	// Infer if the publication deadline is set in milliseconds.
-	publicationDeadline := getPublicationDeadline(in.SwapPublicationDeadline)
+	publicationDeadline := getPublicationDeadline(
+		in.SwapPublicationDeadline,
+	)
 
 	req := &loop.OutRequest{
 		Amount:                  btcutil.Amount(in.Amt),
@@ -224,26 +223,20 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	if in.AssetInfo != nil {
 		if len(in.AssetInfo.AssetId) != 0 &&
 			len(in.AssetInfo.AssetId) != 32 {
-
-			return nil, fmt.Errorf(
-				"asset id must be set to a 32 byte value",
-			)
+			return nil, fmt.Errorf("asset id must be set to a 32 " +
+				"byte value")
 		}
 
 		if len(in.AssetRfqInfo.PrepayRfqId) != 0 &&
 			len(in.AssetRfqInfo.PrepayRfqId) != 32 {
-
-			return nil, fmt.Errorf(
-				"prepay rfq id must be set to a 32 byte value",
-			)
+			return nil, fmt.Errorf("prepay rfq id must be set to " +
+				"a 32 byte value")
 		}
 
 		if len(in.AssetRfqInfo.SwapRfqId) != 0 &&
 			len(in.AssetRfqInfo.SwapRfqId) != 32 {
-
-			return nil, fmt.Errorf(
-				"swap rfq id must be set to a 32 byte value",
-			)
+			return nil, fmt.Errorf("swap rfq id must be set to a " +
+				"32 byte value")
 		}
 
 		req.AssetId = in.AssetInfo.AssetId
@@ -252,12 +245,15 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	}
 
 	switch {
-	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0: // nolint:staticcheck
-		return nil, errors.New("loop_out_channel and outgoing_" +
-			"chan_ids are mutually exclusive")
+	case in.LoopOutChannel != 0 &&
+		len(in.OutgoingChanSet) > 0: // nolint:staticcheck
+		return nil, errors.New("loop_out_channel and " +
+			"outgoing_chan_ids are mutually exclusive")
 
 	case in.LoopOutChannel != 0: // nolint:staticcheck
-		req.OutgoingChanSet = loopdb.ChannelSet{in.LoopOutChannel} // nolint:staticcheck
+		req.OutgoingChanSet = loopdb.ChannelSet{
+			in.LoopOutChannel,
+		} // nolint:staticcheck
 
 	default:
 		req.OutgoingChanSet = in.OutgoingChanSet
@@ -266,6 +262,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	info, err := s.impl.LoopOut(ctx, req)
 	if err != nil {
 		errorf("LoopOut: %v", err)
+
 		return nil, err
 	}
 
@@ -441,7 +438,9 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 			}
 
 			assetInfo = &looprpc.AssetLoopOutInfo{
-				AssetId: hex.EncodeToString(loopSwap.AssetSwapInfo.AssetId), // nolint:lll
+				AssetId: hex.EncodeToString(
+					loopSwap.AssetSwapInfo.AssetId,
+				), // nolint:lll
 				AssetCostOffchain: loopSwap.AssetSwapInfo.PrepayPaidAmt +
 					loopSwap.AssetSwapInfo.SwapPaidAmt, // nolint:lll
 				AssetName: assetName,
@@ -636,6 +635,7 @@ func (s *swapClientServer) ListSwaps(ctx context.Context,
 		Swaps:         rpcSwaps,
 		NextStartTime: nextStartTime,
 	}
+
 	return &response, nil
 }
 
@@ -666,10 +666,10 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 		return false
 	}
 
-	// If timestamp filters are set, only return swaps within the specified time range.
+	// If timestamp filters are set, only return swaps within the specified
+	// time range.
 	if filter.StartTimestampNs > 0 &&
 		swapInfo.InitiationTime.UnixNano() < filter.StartTimestampNs {
-
 		return false
 	}
 
@@ -683,9 +683,9 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 
 		// Compare the outgoing channel set by using reflect.DeepEqual
 		// which compares the underlying arrays.
-		if !reflect.DeepEqual(swapInfo.OutgoingChanSet,
-			filter.OutgoingChanSet) {
-
+		if !reflect.DeepEqual(
+			swapInfo.OutgoingChanSet, filter.OutgoingChanSet,
+		) {
 			return false
 		}
 	}
@@ -732,13 +732,13 @@ func (s *swapClientServer) SwapInfo(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
 	}
+
 	return s.marshallSwap(ctx, &swp)
 }
 
 // AbandonSwap requests the server to abandon a swap with the given hash.
 func (s *swapClientServer) AbandonSwap(ctx context.Context,
-	req *looprpc.AbandonSwapRequest) (*looprpc.AbandonSwapResponse,
-	error) {
+	req *looprpc.AbandonSwapRequest) (*looprpc.AbandonSwapResponse, error) {
 
 	if !req.IKnowWhatIAmDoing {
 		return nil, fmt.Errorf("please read the AbandonSwap API " +
@@ -787,6 +787,7 @@ func (s *swapClientServer) LoopOutTerms(ctx context.Context,
 	terms, err := s.impl.LoopOutTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
 		errorf("Terms request: %v", err)
+
 		return nil, err
 	}
 
@@ -824,9 +825,8 @@ func (s *swapClientServer) LoopOutQuote(ctx context.Context,
 	if req.AssetInfo != nil {
 		if req.AssetInfo.AssetId == nil ||
 			req.AssetInfo.AssetEdgeNode == nil {
-
-			return nil, fmt.Errorf(
-				"asset id and edge node must both be set")
+			return nil, fmt.Errorf("asset id and edge node must " +
+				"both be set")
 		}
 		loopOutQuoteReq.AssetRFQRequest = &loop.AssetRFQRequest{
 			AssetId:            req.AssetInfo.AssetId,
@@ -877,6 +877,7 @@ func (s *swapClientServer) GetLoopInTerms(ctx context.Context,
 	terms, err := s.impl.LoopInTerms(ctx, defaultLoopdInitiator)
 	if err != nil {
 		errorf("Terms request: %v", err)
+
 		return nil, err
 	}
 
@@ -901,7 +902,10 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	htlcConfTarget, err := validateLoopInRequest(
 		req.ConfTarget, req.ExternalHtlc,
-		uint32(len(req.DepositOutpoints)), selectedAmount,
+		uint32(
+			len(req.DepositOutpoints),
+		),
+		selectedAmount,
 		autoSelectDeposits,
 	)
 	if err != nil {
@@ -911,8 +915,8 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	// The fast flag is only available for static loop in quote requests.
 	if req.Fast {
 		if !autoSelectDeposits && len(req.DepositOutpoints) == 0 {
-			return nil, fmt.Errorf("fast flag is only " +
-				"available for static address requests")
+			return nil, fmt.Errorf("fast flag is only available " +
+				"for static address requests")
 		}
 	}
 
@@ -972,7 +976,6 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 		if len(req.DepositOutpoints) !=
 			len(depositList.FilteredDeposits) {
-
 			return nil, fmt.Errorf("expected %d deposits, got %d",
 				len(req.DepositOutpoints),
 				len(depositList.FilteredDeposits))
@@ -996,9 +999,8 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			totalDepositAmount, selectedAmount,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error calculating "+
-				"swap amount from selected amount: %v",
-				err)
+			return nil, fmt.Errorf("error calculating swap amount "+
+				"from selected amount: %v", err)
 		}
 	}
 
@@ -1171,6 +1173,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 	swapInfo, err := s.impl.LoopIn(ctx, req)
 	if err != nil {
 		errorf("Loop in: %v", err)
+
 		return nil, err
 	}
 
@@ -1213,7 +1216,9 @@ func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 		}
 
 		id, err := l402.DecodeIdentifier(
-			bytes.NewReader(token.BaseMacaroon().Id()),
+			bytes.NewReader(
+				token.BaseMacaroon().Id(),
+			),
 		)
 		if err != nil {
 			return nil, err
@@ -1247,8 +1252,10 @@ func (s *swapClientServer) GetL402Tokens(ctx context.Context,
 func (s *swapClientServer) GetLsatTokens(ctx context.Context,
 	req *looprpc.TokensRequest) (*looprpc.TokensResponse, error) {
 
-	warnf("Received deprecated call GetLsatTokens. Please update the " +
-		"client software. Calling GetL402Tokens now.")
+	warnf(
+		"Received deprecated call GetLsatTokens. Please update the " +
+			"client software. Calling GetL402Tokens now.",
+	)
 
 	return s.GetL402Tokens(ctx, req)
 }
@@ -1353,8 +1360,9 @@ func (s *swapClientServer) StopDaemon(ctx context.Context,
 
 	// Ensure we have a shutdown handler to invoke.
 	if s.stopDaemon == nil {
-		return nil, status.Error(codes.Unimplemented,
-			"stop daemon not supported")
+		return nil, status.Error(
+			codes.Unimplemented, "stop daemon not supported",
+		)
 	}
 
 	// Initiate the shutdown sequence.
@@ -1369,8 +1377,8 @@ func (s *swapClientServer) SweepHtlc(ctx context.Context,
 	req *looprpc.SweepHtlcRequest) (*looprpc.SweepHtlcResponse, error) {
 
 	return sweepHtlc(
-		ctx, req, s.lnd.ChainParams, s.impl.Store,
-		s.lnd.ChainNotifier, s.lnd.WalletKit, s.lnd.Signer,
+		ctx, req, s.lnd.ChainParams, s.impl.Store, s.lnd.ChainNotifier,
+		s.lnd.WalletKit, s.lnd.Signer,
 	)
 }
 
@@ -1392,8 +1400,8 @@ func (s *swapClientServer) GetLiquidityParams(_ context.Context,
 // SetLiquidityParams attempts to set our current liquidity manager's
 // parameters.
 func (s *swapClientServer) SetLiquidityParams(ctx context.Context,
-	in *looprpc.SetLiquidityParamsRequest) (*looprpc.SetLiquidityParamsResponse,
-	error) {
+	in *looprpc.SetLiquidityParamsRequest) (
+	*looprpc.SetLiquidityParamsResponse, error) {
 
 	err := s.liquidityMgr.SetParameters(ctx, in.Parameters)
 	if err != nil {
@@ -1414,7 +1422,6 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 
 	case nil:
-
 	default:
 		return nil, err
 	}
@@ -1492,12 +1499,13 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 
 // ListReservations lists all existing reservations the client has ever made.
 func (s *swapClientServer) ListReservations(ctx context.Context,
-	_ *looprpc.ListReservationsRequest) (
-	*looprpc.ListReservationsResponse, error) {
+	_ *looprpc.ListReservationsRequest) (*looprpc.ListReservationsResponse,
+	error) {
 
 	if s.reservationManager == nil {
-		return nil, status.Error(codes.Unimplemented,
-			"Restart loop with --experimental")
+		return nil, status.Error(
+			codes.Unimplemented, "Restart loop with --experimental",
+		)
 	}
 	reservations, err := s.reservationManager.GetReservations(
 		ctx,
@@ -1515,12 +1523,12 @@ func (s *swapClientServer) ListReservations(ctx context.Context,
 
 // InstantOut initiates an instant out swap.
 func (s *swapClientServer) InstantOut(ctx context.Context,
-	req *looprpc.InstantOutRequest) (*looprpc.InstantOutResponse,
-	error) {
+	req *looprpc.InstantOutRequest) (*looprpc.InstantOutResponse, error) {
 
 	if s.instantOutManager == nil {
-		return nil, status.Error(codes.Unimplemented,
-			"Restart loop with --experimental")
+		return nil, status.Error(
+			codes.Unimplemented, "Restart loop with --experimental",
+		)
 	}
 
 	reservationIds := make([]reservation.ID, len(req.ReservationIds))
@@ -1559,12 +1567,13 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 // InstantOutQuote returns a quote for an instant out swap with the provided
 // parameters.
 func (s *swapClientServer) InstantOutQuote(ctx context.Context,
-	req *looprpc.InstantOutQuoteRequest) (
-	*looprpc.InstantOutQuoteResponse, error) {
+	req *looprpc.InstantOutQuoteRequest) (*looprpc.InstantOutQuoteResponse,
+	error) {
 
 	if s.instantOutManager == nil {
-		return nil, status.Error(codes.Unimplemented,
-			"Restart loop with --experimental")
+		return nil, status.Error(
+			codes.Unimplemented, "Restart loop with --experimental",
+		)
 	}
 
 	quote, err := s.instantOutManager.GetInstantOutQuote(
@@ -1583,12 +1592,13 @@ func (s *swapClientServer) InstantOutQuote(ctx context.Context,
 // ListInstantOuts returns a list of all currently known instant out swaps and
 // their current status.
 func (s *swapClientServer) ListInstantOuts(ctx context.Context,
-	_ *looprpc.ListInstantOutsRequest) (
-	*looprpc.ListInstantOutsResponse, error) {
+	_ *looprpc.ListInstantOutsRequest) (*looprpc.ListInstantOutsResponse,
+	error) {
 
 	if s.instantOutManager == nil {
-		return nil, status.Error(codes.Unimplemented,
-			"Restart loop with --experimental")
+		return nil, status.Error(
+			codes.Unimplemented, "Restart loop with --experimental",
+		)
 	}
 
 	instantOuts, err := s.instantOutManager.ListInstantOuts(ctx)
@@ -1629,8 +1639,8 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 // NewStaticAddress is the rpc endpoint for loop clients to request a new static
 // address.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	_ *looprpc.NewStaticAddressRequest) (
-	*looprpc.NewStaticAddressResponse, error) {
+	_ *looprpc.NewStaticAddressRequest) (*looprpc.NewStaticAddressResponse,
+	error) {
 
 	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
 	if err != nil {
@@ -1790,7 +1800,6 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	outpoints := req.Outpoints
 	if req.StateFilter != looprpc.DepositState_UNKNOWN_STATE &&
 		len(outpoints) > 0 {
-
 		return nil, fmt.Errorf("can either filter by state or " +
 			"outpoints")
 	}
@@ -1815,6 +1824,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	} else {
 		f := func(d *deposit.Deposit) bool {
 			if req.StateFilter == looprpc.DepositState_UNKNOWN_STATE {
+
 				// Per default, we return deposits in all
 				// states.
 				return true
@@ -2112,7 +2122,8 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 
 	// Build a list of used deposits for the response.
 	usedDeposits := filter(
-		loopIn.Deposits, func(d *deposit.Deposit) bool { return true },
+		loopIn.Deposits,
+		func(d *deposit.Deposit) bool { return true },
 	)
 
 	err = s.populateBlocksUntilExpiry(ctx, usedDeposits)
@@ -2174,14 +2185,15 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 			deposits[i].ConfirmationHeight +
 				int64(params.Expiry) - bestBlockHeight
 	}
+
 	return nil
 }
 
 // StaticOpenChannel initiates an open channel request using static address
 // deposits.
 func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
-	req *looprpc.StaticOpenChannelRequest) (*looprpc.StaticOpenChannelResponse,
-	error) {
+	req *looprpc.StaticOpenChannelRequest) (
+	*looprpc.StaticOpenChannelResponse, error) {
 
 	infof("Static open channel request received")
 
@@ -2432,6 +2444,7 @@ func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
 				case subscriber <- swp:
 				case <-mainCtx.Done():
 					s.swapsLock.Unlock()
+
 					return
 				}
 			}
@@ -2454,8 +2467,8 @@ func validateConfTarget(target, defaultTarget int32) (int32, error) {
 
 	// Ensure the target respects our minimum threshold.
 	case target < minConfTarget:
-		return 0, fmt.Errorf("%w: A confirmation target of at "+
-			"least %v must be provided", errConfTargetTooLow,
+		return 0, fmt.Errorf("%w: A confirmation target of at least "+
+			"%v must be provided", errConfTargetTooLow,
 			minConfTarget)
 
 	default:
@@ -2536,6 +2549,7 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	// If this is an asset payment, we'll check that we have the necessary
 	// outbound asset capacaity to fulfill the request.
 	if req.AssetInfo != nil {
+
 		// Todo(sputn1ck) actually check outbound capacity.
 		return validateConfTarget(
 			req.SweepConfTarget, loop.DefaultSweepConfTarget,
@@ -2578,14 +2592,15 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	// the available channel set and the fact that equal splitting is
 	// used for MPP.
 	requiredBalance := btcutil.Amount(req.Amt + req.MaxSwapRoutingFee)
-	isRoutable, _ := hasBandwidth(activeChannelSet, requiredBalance,
-		int(maxParts))
+	isRoutable, _ := hasBandwidth(
+		activeChannelSet, requiredBalance, int(maxParts),
+	)
 
 	if !isRoutable {
-		return 0, fmt.Errorf("%w: Requested swap amount of %d "+
-			"sats along with the maximum routing fee of %d sats "+
-			"is more than what can be routed given current state "+
-			"of the channel set", errBalanceTooLow, req.Amt,
+		return 0, fmt.Errorf("%w: Requested swap amount of %d sats "+
+			"along with the maximum routing fee of %d sats is "+
+			"more than what can be routed given current state of "+
+			"the channel set", errBalanceTooLow, req.Amt,
 			req.MaxSwapRoutingFee)
 	}
 
@@ -2605,14 +2620,19 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	maxParts int) (bool, int) {
 
-	tracef("Checking if %v sats can be routed with %v parts over "+
-		"channel set of length %v", amt, maxParts, len(channels))
+	tracef(
+		"Checking if %v sats can be routed with %v parts over "+
+			"channel set of length %v", amt, maxParts,
+		len(channels),
+	)
 
 	localBalances := make([]btcutil.Amount, len(channels))
 	var totalBandwidth btcutil.Amount
 	for i, channel := range channels {
-		tracef("Channel %v: local=%v remote=%v", channel.ChannelID,
-			channel.LocalBalance, channel.RemoteBalance)
+		tracef(
+			"Channel %v: local=%v remote=%v", channel.ChannelID,
+			channel.LocalBalance, channel.RemoteBalance,
+		)
 
 		localBalances[i] = channel.LocalBalance
 		totalBandwidth += channel.LocalBalance
@@ -2626,8 +2646,10 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	logLocalBalances := func(shard int) {
 		tracef("Local balances for %v shards:", shard)
 		for i, balance := range localBalances {
-			tracef("Channel %v: localBalances[%v]=%v",
-				channels[i].ChannelID, i, balance)
+			tracef(
+				"Channel %v: localBalances[%v]=%v",
+				channels[i].ChannelID, i, balance,
+			)
 		}
 	}
 
@@ -2640,18 +2662,24 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 			// TODO(hieblmi): Consider channel reserves because the
 			//      channel can't send its full local balance.
 			if localBalances[i] >= split {
-				tracef("len(shards)=%v: Local channel "+
-					"balance %v can pay %v sats",
-					shard, localBalances[i], split)
+				tracef(
+					"len(shards)=%v: Local channel "+
+						"balance %v can pay %v sats",
+					shard, localBalances[i], split,
+				)
 
 				localBalances[i] -= split
-				tracef("len(shards)=%v: Subtracted "+
-					"%v sats from localBalance[%v]=%v",
-					shard, split, i, localBalances[i])
+				tracef(
+					"len(shards)=%v: Subtracted %v sats "+
+						"from localBalance[%v]=%v",
+					shard, split, i, localBalances[i],
+				)
 
 				amt -= split
-				tracef("len(shards)=%v: Remaining total "+
-					"amount amt=%v", shard, amt)
+				tracef(
+					"len(shards)=%v: Remaining total "+
+						"amount amt=%v", shard, amt,
+				)
 
 				paid = true
 				shard++
@@ -2669,21 +2697,27 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 		}
 
 		if !paid {
-			tracef("len(shards)=%v: No channel could pay %v "+
-				"sats, halving payment to %v and trying again",
-				split/2)
+			tracef(
+				"len(shards)=%v: No channel could pay %v "+
+					"sats, halving payment to %v and "+
+					"trying again", split/2,
+			)
 
 			split /= 2
 		} else {
-			tracef("len(shards)=%v: Payment was made, trying "+
-				"to pay remaining sats %v", shard, amt)
+			tracef(
+				"len(shards)=%v: Payment was made, trying "+
+					"to pay remaining sats %v", shard, amt,
+			)
 
 			split = amt
 		}
 	}
 
-	tracef("Payment is not routable, remaining amount that can't be "+
-		"sent: %v sats", amt)
+	tracef(
+		"Payment is not routable, remaining amount that can't be "+
+			"sent: %v sats", amt,
+	)
 
 	logLocalBalances(maxParts)
 
@@ -2699,8 +2733,10 @@ func getPublicationDeadline(unixTimestamp uint64) time.Time {
 		// Likely a millisecond timestamp
 		secs := unixTimestamp / 1000
 		nsecs := (unixTimestamp % 1000) * 1e6
+
 		return time.Unix(int64(secs), int64(nsecs))
 	} else {
+
 		// Likely a second timestamp
 		return time.Unix(int64(unixTimestamp), 0)
 	}

@@ -28,8 +28,7 @@ func MigrateDepositSwapHash(ctx context.Context, db loopdb.SwapStore,
 		return fmt.Errorf("unable to check migration status: %w", err)
 	}
 	if migrationDone {
-		log.Infof("Deposit swap hash migration already done, " +
-			"skipping")
+		log.Infof("Deposit swap hash migration already done, skipping")
 
 		return nil
 	}
@@ -69,8 +68,8 @@ func MigrateDepositSwapHash(ctx context.Context, db loopdb.SwapStore,
 				depositsToSwapHashes[deposit.ID] = swap.SwapHash
 			} else {
 				log.Warnf("Duplicate deposit ID %s found for "+
-					"outpoint %s, skipping",
-					deposit.ID, outpoint)
+					"outpoint %s, skipping", deposit.ID,
+					outpoint)
 			}
 		}
 	}

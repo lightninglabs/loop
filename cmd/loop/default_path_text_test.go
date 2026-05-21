@@ -74,8 +74,8 @@ func TestDefaultPathText(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := defaultPathText(test.value, test.homeFn)
 			require.Equalf(
-				t, test.want, got,
-				"defaultPathText(%q)", test.value,
+				t, test.want, got, "defaultPathText(%q)",
+				test.value,
 			)
 		})
 	}

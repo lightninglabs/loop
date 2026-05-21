@@ -70,50 +70,48 @@ func (r RoutingPluginType) String() string {
 }
 
 type swapServerClient interface {
-	GetLoopOutTerms(ctx context.Context, initiator string) (
-		*LoopOutTerms, error)
+	GetLoopOutTerms(ctx context.Context,
+		initiator string) (*LoopOutTerms, error)
 
 	GetLoopOutQuote(ctx context.Context, amt btcutil.Amount, expiry int32,
-		swapPublicationDeadline time.Time, initiator string) (
-		*LoopOutQuote, error)
+		swapPublicationDeadline time.Time,
+		initiator string) (*LoopOutQuote, error)
 
-	GetLoopInTerms(ctx context.Context, initiator string) (
-		*LoopInTerms, error)
+	GetLoopInTerms(ctx context.Context,
+		initiator string) (*LoopInTerms, error)
 
 	GetLoopInQuote(ctx context.Context, amt btcutil.Amount,
 		pubKey route.Vertex, lastHop *route.Vertex,
-		routeHints [][]zpay32.HopHint,
-		initiator string, numDeposits uint32,
-		fast bool) (*LoopInQuote, error)
+		routeHints [][]zpay32.HopHint, initiator string,
+		numDeposits uint32, fast bool) (*LoopInQuote, error)
 
 	Probe(ctx context.Context, amt btcutil.Amount, target route.Vertex,
 		lastHop *route.Vertex, routeHints [][]zpay32.HopHint) error
 
-	NewLoopOutSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount, expiry int32,
-		receiverKey [33]byte, swapPublicationDeadline time.Time,
+	NewLoopOutSwap(ctx context.Context, swapHash lntypes.Hash,
+		amount btcutil.Amount, expiry int32, receiverKey [33]byte,
+		swapPublicationDeadline time.Time,
 		initiator string) (*newLoopOutResponse, error)
 
 	PushLoopOutPreimage(ctx context.Context,
 		preimage lntypes.Preimage) error
 
-	NewLoopInSwap(ctx context.Context,
-		swapHash lntypes.Hash, amount btcutil.Amount, senderScriptKey,
+	NewLoopInSwap(ctx context.Context, swapHash lntypes.Hash,
+		amount btcutil.Amount, senderScriptKey,
 		senderInternalKey [33]byte, swapInvoice, probeInvoice string,
-		lastHop *route.Vertex, initiator string) (
-		*newLoopInResponse, error)
+		lastHop *route.Vertex,
+		initiator string) (*newLoopInResponse, error)
 
 	// SubscribeLoopOutUpdates subscribes to loop out server state.
-	SubscribeLoopOutUpdates(ctx context.Context,
-		hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)
+	SubscribeLoopOutUpdates(ctx context.Context, hash lntypes.Hash) (
+		<-chan *ServerUpdate, <-chan error, error)
 
 	// SubscribeLoopInUpdates subscribes to loop in server state.
-	SubscribeLoopInUpdates(ctx context.Context,
-		hash lntypes.Hash) (<-chan *ServerUpdate, <-chan error, error)
+	SubscribeLoopInUpdates(ctx context.Context, hash lntypes.Hash) (
+		<-chan *ServerUpdate, <-chan error, error)
 
 	// CancelLoopOutSwap cancels a loop out swap.
-	CancelLoopOutSwap(ctx context.Context,
-		details *outCancelDetails) error
+	CancelLoopOutSwap(ctx context.Context, details *outCancelDetails) error
 
 	// RecommendRoutingPlugin asks the server for routing plugin
 	// recommendation for off-chain payment(s) of a swap.
@@ -121,23 +119,21 @@ type swapServerClient interface {
 		paymentAddr [32]byte) (RoutingPluginType, error)
 
 	// ReportRoutingResult reports a routing result corresponding to a swap.
-	ReportRoutingResult(ctx context.Context,
-		swapHash lntypes.Hash, paymentAddr [32]byte,
-		plugin RoutingPluginType, success bool, attempts int32,
-		totalTime int64) error
+	ReportRoutingResult(ctx context.Context, swapHash lntypes.Hash,
+		paymentAddr [32]byte, plugin RoutingPluginType, success bool,
+		attempts int32, totalTime int64) error
 
 	// MuSig2SignSweep calls the server to cooperatively sign the MuSig2
 	// htlc spend. Returns the server's nonce and partial signature.
 	MuSig2SignSweep(ctx context.Context,
 		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
-		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) (
-		[]byte, []byte, error)
+		paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) ([]byte,
+		[]byte, error)
 
 	// PushKey sends the client's HTLC internal key associated with the
 	// swap to the server.
-	PushKey(ctx context.Context,
-		protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
-		clientInternalPrivateKey [32]byte) error
+	PushKey(ctx context.Context, protocolVersion loopdb.ProtocolVersion,
+		swapHash lntypes.Hash, clientInternalPrivateKey [32]byte) error
 
 	// FetchL402 is a helper function that tries to fetch an l402 token
 	// from the server.
@@ -163,8 +159,8 @@ func (s *grpcSwapServerClient) stop() {
 
 var _ swapServerClient = (*grpcSwapServerClient)(nil)
 
-func newSwapServerClient(cfg *ClientConfig, l402Store l402.Store) (
-	*grpcSwapServerClient, error) {
+func newSwapServerClient(cfg *ClientConfig,
+	l402Store l402.Store) (*grpcSwapServerClient, error) {
 
 	// Create the server connection with the interceptor that will handle
 	// the L402 protocol for us.
@@ -270,8 +266,8 @@ func (s *grpcSwapServerClient) GetLoopInTerms(ctx context.Context,
 
 func (s *grpcSwapServerClient) GetLoopInQuote(ctx context.Context,
 	amt btcutil.Amount, pubKey route.Vertex, lastHop *route.Vertex,
-	routeHints [][]zpay32.HopHint, initiator string,
-	numDeposits uint32, fast bool) (*LoopInQuote, error) {
+	routeHints [][]zpay32.HopHint, initiator string, numDeposits uint32,
+	fast bool) (*LoopInQuote, error) {
 
 	err := s.Probe(ctx, amt, pubKey, lastHop, routeHints)
 	if err != nil && status.Code(err) != codes.Unavailable {
@@ -380,6 +376,7 @@ func (s *grpcSwapServerClient) Probe(ctx context.Context, amt btcutil.Amount,
 	}
 
 	_, err = s.server.Probe(rpcCtx, req)
+
 	return err
 }
 
@@ -525,6 +522,7 @@ func (s *grpcSwapServerClient) SubscribeLoopInUpdates(ctx context.Context,
 	}
 
 	updateChan, errChan := s.makeServerUpdate(ctx, receive)
+
 	return updateChan, errChan, nil
 }
 
@@ -556,6 +554,7 @@ func (s *grpcSwapServerClient) SubscribeLoopOutUpdates(ctx context.Context,
 	}
 
 	updateChan, errChan := s.makeServerUpdate(ctx, receive)
+
 	return updateChan, errChan, nil
 }
 
@@ -584,13 +583,14 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 			// If we get a nil error, we proceed with to delivering
 			// the update we have just received.
 			case nil:
-
 			// If we get an EOF error, the server is finished
 			// sending us updates, so we return with a non-nil
 			// a subscription complete error to inform the caller
 			// that they will no longer receive updates.
+
 			case io.EOF:
 				errChan <- errServerSubscriptionComplete
+
 				return
 
 			// If we receive a non-nil error, we exit.
@@ -612,11 +612,12 @@ func (s *grpcSwapServerClient) makeServerUpdate(ctx context.Context,
 			select {
 			// Try to send our update to the update channel.
 			case updateChan <- response:
-
 			// If the client cancels their context, we exit with
 			// no error.
+
 			case <-ctx.Done():
 				errChan <- nil
+
 				return
 			}
 		}
@@ -683,13 +684,15 @@ func (s *grpcSwapServerClient) CancelLoopOutSwap(ctx context.Context,
 	}
 
 	_, err = s.server.CancelLoopOutSwap(ctx, req)
+
 	return err
 }
 
 // RecommendRoutingPlugin asks the server for routing plugin recommendation for
 // off-chain payment(s) of a swap.
 func (s *grpcSwapServerClient) RecommendRoutingPlugin(ctx context.Context,
-	swapHash lntypes.Hash, paymentAddr [32]byte) (RoutingPluginType, error) {
+	swapHash lntypes.Hash, paymentAddr [32]byte) (RoutingPluginType,
+	error) {
 
 	req := &swapserverrpc.RecommendRoutingPluginReq{
 		ProtocolVersion: loopdb.CurrentRPCProtocolVersion(),
@@ -749,6 +752,7 @@ func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
 	defer rpcCancel()
 
 	_, err := s.server.ReportRoutingResult(rpcCtx, req)
+
 	return err
 }
 
@@ -756,8 +760,8 @@ func (s *grpcSwapServerClient) ReportRoutingResult(ctx context.Context,
 // spend. Returns the server's nonce and partial signature.
 func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
-	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) (
-	[]byte, []byte, error) {
+	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte) ([]byte, []byte,
+	error) {
 
 	req := &swapserverrpc.MuSig2SignSweepReq{
 		ProtocolVersion: swapserverrpc.ProtocolVersion(protocolVersion),
@@ -786,8 +790,7 @@ func (s *grpcSwapServerClient) MuSig2SignSweep(ctx context.Context,
 func (s *grpcSwapServerClient) MultiMuSig2SignSweep(ctx context.Context,
 	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
 	paymentAddr [32]byte, nonce []byte, sweepTxPsbt []byte,
-	prevoutMap map[wire.OutPoint]*wire.TxOut) (
-	[]byte, []byte, error) {
+	prevoutMap map[wire.OutPoint]*wire.TxOut) ([]byte, []byte, error) {
 
 	prevOutInfo := make([]*swapserverrpc.PrevoutInfo, 0, len(prevoutMap))
 	for prevOut, txOut := range prevoutMap {
@@ -837,6 +840,7 @@ func (s *grpcSwapServerClient) PushKey(ctx context.Context,
 	defer rpcCancel()
 
 	_, err := s.server.PushKey(rpcCtx, req)
+
 	return err
 }
 
@@ -849,6 +853,7 @@ func (s *grpcSwapServerClient) FetchL402(ctx context.Context) error {
 	defer rpcCancel()
 
 	_, err := s.server.FetchL402(rpcCtx, req)
+
 	return err
 }
 
@@ -895,8 +900,8 @@ func rpcRouteCancel(details *outCancelDetails) (
 // proxyAddr indicates that a SOCKS proxy found at the address should be used to
 // establish the connection.
 func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
-	tlsPath string, interceptor *l402.ClientInterceptor) (*grpc.ClientConn,
-	error) {
+	tlsPath string,
+	interceptor *l402.ClientInterceptor) (*grpc.ClientConn, error) {
 
 	// Create a dial options array.
 	opts := []grpc.DialOption{
@@ -935,7 +940,9 @@ func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
 	if proxyAddress != "" {
 		log.Infof("Proxying connection to %v over Tor SOCKS proxy %v",
 			address, proxyAddress)
-		torDialer := func(_ context.Context, addr string) (net.Conn, error) {
+		torDialer := func(_ context.Context, addr string) (net.Conn,
+			error) {
+
 			return tor.Dial(
 				addr, proxyAddress, false, false,
 				tor.DefaultConnTimeout,

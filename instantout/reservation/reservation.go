@@ -99,6 +99,7 @@ func NewReservation(id ID, serverPubkey, clientPubkey *btcec.PublicKey,
 	if keyLocator.Family == 0 {
 		return nil, errors.New("key locator family is 0")
 	}
+
 	return &Reservation{
 		ID:               id,
 		Value:            value,

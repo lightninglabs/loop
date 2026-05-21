@@ -60,19 +60,21 @@ func assertEngineExecution(t *testing.T, valid bool,
 		done, err = vm.Step()
 		if err != nil && valid {
 			fmt.Println(debugBuf.String())
-			t.Fatalf("spend test case failed, spend "+
-				"should be valid: %v", err)
+			t.Fatalf("spend test case failed, spend should be "+
+				"valid: %v", err)
 		} else if err == nil && !valid && done {
 			fmt.Println(debugBuf.String())
-			t.Fatalf("spend test case succeed, spend "+
-				"should be invalid: %v", err)
+			t.Fatalf("spend test case succeed, spend should be "+
+				"invalid: %v", err)
 		}
 
 		debugBuf.WriteString(
 			fmt.Sprintf("Stack: %v", vm.GetStack()),
 		)
 		debugBuf.WriteString(
-			fmt.Sprintf("AltStack: %v", vm.GetAltStack()),
+			fmt.Sprintf(
+				"AltStack: %v", vm.GetAltStack(),
+			),
 		)
 	}
 
@@ -85,9 +87,7 @@ func assertEngineExecution(t *testing.T, valid bool,
 	}
 
 	fmt.Println(debugBuf.String())
-	t.Fatalf(
-		"%v spend test case execution ended with: %v", validity, vmErr,
-	)
+	t.Fatalf("%v spend test case execution ended with: %v", validity, vmErr)
 }
 
 // TestHtlcV2 tests the HTLC V2 script success and timeout spend cases.
@@ -146,10 +146,14 @@ func TestHtlcV2(t *testing.T) {
 
 	// Create signers for sender and receiver.
 	senderSigner := &input.MockSigner{
-		Privkeys: []*btcec.PrivateKey{senderPrivKey},
+		Privkeys: []*btcec.PrivateKey{
+			senderPrivKey,
+		},
 	}
 	receiverSigner := &input.MockSigner{
-		Privkeys: []*btcec.PrivateKey{receiverPrivKey},
+		Privkeys: []*btcec.PrivateKey{
+			receiverPrivKey,
+		},
 	}
 	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
 		htlc.PkScript, 800_000,
@@ -282,7 +286,11 @@ func TestHtlcV2(t *testing.T) {
 			// key.
 			"timeout case cannot spend with wrong key",
 			func(t *testing.T) wire.TxWitness {
-				bogusKey := [33]byte{0xb, 0xa, 0xd}
+				bogusKey := [33]byte{
+					0xb,
+					0xa,
+					0xd,
+				}
 
 				// Create the htlc with the bogus key.
 				htlc, err = NewHtlcV2(
@@ -321,8 +329,8 @@ func TestHtlcV2(t *testing.T) {
 			newEngine := func() (*txscript.Engine, error) {
 				return txscript.NewEngine(
 					htlc.PkScript, sweepTx, 0,
-					txscript.StandardVerifyFlags, nil,
-					nil, int64(htlcValue), prevOutFetcher,
+					txscript.StandardVerifyFlags, nil, nil,
+					int64(htlcValue), prevOutFetcher,
 				)
 			}
 

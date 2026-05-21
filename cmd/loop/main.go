@@ -135,8 +135,9 @@ func installSessionSignalHandler(cancel context.CancelFunc) func() {
 				continue
 			}
 
-			// A second signal requests immediate shutdown. Finalize the
-			// session first because os.Exit skips deferred cleanup.
+			// A second signal requests immediate shutdown. Finalize
+			// the session first because os.Exit skips deferred
+			// cleanup.
 			_ = sessionRec.Finalize(fmt.Errorf("signal: %s", sig))
 			os.Exit(130)
 		}
@@ -238,6 +239,7 @@ func printRespJSON(resp proto.Message) {
 	jsonBytes, err := lnrpc.ProtoJSONMarshalOpts.Marshal(resp)
 	if err != nil {
 		fmt.Println("unable to decode response: ", err)
+
 		return
 	}
 
@@ -248,8 +250,10 @@ func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "[loop] %v\n", err)
 	if sessionRec != nil {
 		if finalizeErr := sessionRec.Finalize(err); finalizeErr != nil {
-			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
-				"session: %v\n", finalizeErr)
+			fmt.Fprintf(
+				os.Stderr, "[loop] unable to finalize "+
+					"session: %v\n", finalizeErr,
+			)
 		}
 	}
 	os.Exit(1)
@@ -265,7 +269,9 @@ func main() {
 	// Intercept clock and stdio if needed.
 	if sessionRec != nil {
 		restoreClock := hookClock(
-			clock.NewTestClock(sessionRec.ClockStart()),
+			clock.NewTestClock(
+				sessionRec.ClockStart(),
+			),
 		)
 		defer restoreClock()
 
@@ -302,8 +308,10 @@ func main() {
 
 	if sessionRec != nil {
 		if err := sessionRec.Finalize(nil); err != nil {
-			fmt.Fprintf(os.Stderr, "[loop] unable to finalize "+
-				"session: %v\n", err)
+			fmt.Fprintf(
+				os.Stderr, "[loop] unable to finalize "+
+					"session: %v\n", err,
+			)
 		}
 	}
 }
@@ -346,8 +354,8 @@ func getClient(cmd *cli.Command) (looprpc.SwapClientClient, func(), error) {
 
 // getClientWithConn returns both the SwapClient RPC client and the underlying
 // gRPC connection so callers can perform connection-aware actions.
-func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
-	daemonConn, func(), error) {
+func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient, daemonConn,
+	func(), error) {
 
 	conn, cleanup, err := sessionTransport.Dial(cmd)
 	if err != nil {
@@ -355,6 +363,7 @@ func getClientWithConn(cmd *cli.Command) (looprpc.SwapClientClient,
 	}
 
 	loopClient := looprpc.NewSwapClientClient(conn)
+
 	return loopClient, conn, cleanup, nil
 }
 
@@ -473,9 +482,11 @@ func getOutLimits(amt btcutil.Amount,
 	quote *looprpc.OutQuoteResponse) *outLimits {
 
 	maxSwapRoutingFee := getMaxRoutingFee(amt)
-	maxPrepayRoutingFee := getMaxRoutingFee(btcutil.Amount(
-		quote.PrepayAmtSat,
-	))
+	maxPrepayRoutingFee := getMaxRoutingFee(
+		btcutil.Amount(
+			quote.PrepayAmtSat,
+		),
+	)
 	maxPrepayAmt := btcutil.Amount(quote.PrepayAmtSat)
 
 	return &outLimits{
@@ -491,8 +502,8 @@ func getOutLimits(amt btcutil.Amount,
 	}
 }
 
-func displayInDetails(req *looprpc.QuoteRequest,
-	resp *looprpc.InQuoteResponse, verbose bool) error {
+func displayInDetails(req *looprpc.QuoteRequest, resp *looprpc.InQuoteResponse,
+	verbose bool) error {
 
 	if req.ExternalHtlc {
 		fmt.Printf("On-chain fee for external loop in is not " +
@@ -523,9 +534,8 @@ func displayOutDetails(l *outLimits, warning string, req *looprpc.QuoteRequest,
 	if verbose {
 		fmt.Println()
 		fmt.Printf(satAmtFmt, "Max on-chain fee:", l.maxMinerFee)
-		fmt.Printf(satAmtFmt,
-			"Max off-chain swap routing fee:", l.maxSwapRoutingFee,
-		)
+		fmt.Printf(satAmtFmt, "Max off-chain swap routing fee:",
+			l.maxSwapRoutingFee)
 		fmt.Printf(satAmtFmt, "Max off-chain prepay routing fee:",
 			l.maxPrepayRoutingFee)
 	}
@@ -563,15 +573,15 @@ func logSwap(swap *looprpc.SwapStatus) {
 	// If our swap failed, we add our failure reason to the state.
 	swapState := fmt.Sprintf("%v", swap.State)
 	if swap.State == looprpc.SwapState_FAILED {
-		swapState = fmt.Sprintf("%v (%v)", swapState, swap.FailureReason)
+		swapState = fmt.Sprintf("%v (%v)", swapState,
+			swap.FailureReason)
 	}
 
 	if swap.Type == looprpc.SwapType_LOOP_OUT {
 		fmt.Printf("%v %v %v %v - %v",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
 			swap.Type, swapState, btcutil.Amount(swap.Amt),
-			swap.HtlcAddressP2Wsh,
-		)
+			swap.HtlcAddressP2Wsh)
 	} else {
 		fmt.Printf("%v %v %v %v -",
 			time.Unix(0, swap.LastUpdateTime).Format(time.RFC3339),
@@ -591,8 +601,7 @@ func logSwap(swap *looprpc.SwapStatus) {
 		swap.State != looprpc.SwapState_PREIMAGE_REVEALED {
 
 		fmt.Printf(" (cost: server %v, onchain %v, offchain %v)",
-			swap.CostServer, swap.CostOnchain, swap.CostOffchain,
-		)
+			swap.CostServer, swap.CostOnchain, swap.CostOffchain)
 	}
 
 	fmt.Println()
@@ -682,5 +691,6 @@ func readMacaroon(macPath string) (grpc.DialOption, error) {
 		return nil, fmt.Errorf("error creating macaroon credential: %v",
 			err)
 	}
+
 	return grpc.WithPerRPCCredentials(cred), nil
 }

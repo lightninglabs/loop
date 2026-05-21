@@ -86,8 +86,8 @@ var (
 	// defaultRFQExpiry is the default expiry time for RFQs.
 	defaultRFQExpiry = 5 * time.Minute
 
-	// defaultRFQMaxLimitMultiplier is the default maximum fee multiplier for
-	// RFQs.
+	// defaultRFQMaxLimitMultiplier is the default maximum fee multiplier
+	// for RFQs.
 	defaultRFQMaxLimitMultiplier = 1.2
 )
 
@@ -179,8 +179,8 @@ type ClientConfig struct {
 
 // NewClient returns a new instance to initiate swaps with.
 func NewClient(dbDir string, loopDB loopdb.SwapStore,
-	sweeperDb sweepbatcher.BatcherStore, cfg *ClientConfig) (
-	*Client, func(), error) {
+	sweeperDb sweepbatcher.BatcherStore, cfg *ClientConfig) (*Client,
+	func(), error) {
 
 	l402Store, err := l402.NewFileStore(dbDir)
 	if err != nil {
@@ -209,7 +209,9 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		Lnd: cfg.Lnd,
 	}
 
-	verifySchnorrSig := func(pubKey *btcec.PublicKey, hash, sig []byte) error {
+	verifySchnorrSig := func(pubKey *btcec.PublicKey, hash,
+		sig []byte) error {
+
 		schnorrSig, err := schnorr.ParseSignature(sig)
 		if err != nil {
 			return err
@@ -226,8 +228,9 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		loopDB, cfg.Lnd.ChainParams,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("sweepbatcher."+
-			"NewSweepFetcherFromSwapStore failed: %w", err)
+		return nil, nil, fmt.Errorf(
+			"sweepbatcher.NewSweepFetcherFromSwapStore failed: %w",
+			err)
 	}
 
 	// There is circular dependency between executor and sweepbatcher, as
@@ -281,9 +284,11 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 			}
 			skippedTxns[*txid] = struct{}{}
 		}
-		batcherOpts = append(batcherOpts, sweepbatcher.WithSkippedTxns(
-			skippedTxns,
-		))
+		batcherOpts = append(
+			batcherOpts, sweepbatcher.WithSkippedTxns(
+				skippedTxns,
+			),
+		)
 	}
 
 	batcher := sweepbatcher.NewBatcher(
@@ -533,15 +538,14 @@ func (s *Client) resumeSwaps(ctx context.Context,
 // automatically after restarts.
 //
 // The return value is a hash that uniquely identifies the new swap.
-func (s *Client) LoopOut(globalCtx context.Context,
-	request *OutRequest) (*LoopOutSwapInfo, error) {
+func (s *Client) LoopOut(globalCtx context.Context, request *OutRequest) (
+	*LoopOutSwapInfo, error) {
 
 	if request.AssetId != nil {
 		if request.AssetPrepayRfqId == nil ||
 			request.AssetSwapRfqId == nil {
-
-			return nil, errors.New("asset prepay and swap rfq ids " +
-				"must be set when using an asset id")
+			return nil, errors.New("asset prepay and swap rfq " +
+				"ids must be set when using an asset id")
 		}
 
 		// Verify that if we have an asset id set, we have a valid asset
@@ -551,14 +555,11 @@ func (s *Client) LoopOut(globalCtx context.Context,
 				"when using an asset id")
 		}
 
-		log.Infof("LoopOut %v sats to %v with asset %x",
-			request.Amount, request.DestAddr, request.AssetId,
-		)
+		log.Infof("LoopOut %v sats to %v with asset %x", request.Amount,
+			request.DestAddr, request.AssetId)
 	} else {
-		log.Infof("LoopOut %v to %v (channels: %v)",
-			request.Amount, request.DestAddr,
-			request.OutgoingChanSet,
-		)
+		log.Infof("LoopOut %v to %v (channels: %v)", request.Amount,
+			request.DestAddr, request.OutgoingChanSet)
 	}
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
@@ -750,13 +751,10 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 }
 
 // LoopIn initiates a loop in swap.
-func (s *Client) LoopIn(globalCtx context.Context,
-	request *LoopInRequest) (*LoopInSwapInfo, error) {
+func (s *Client) LoopIn(globalCtx context.Context, request *LoopInRequest) (
+	*LoopInSwapInfo, error) {
 
-	log.Infof("Loop in %v (last hop: %v)",
-		request.Amount,
-		request.LastHop,
-	)
+	log.Infof("Loop in %v (last hop: %v)", request.Amount, request.LastHop)
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
 		return nil, err
@@ -802,8 +800,8 @@ func (s *Client) LoopIn(globalCtx context.Context,
 // LoopInQuote takes an amount and returns a breakdown of estimated costs for
 // the client. Both the swap server and the on-chain fee estimator are queried
 // to get to build the quote response.
-func (s *Client) LoopInQuote(ctx context.Context,
-	request *LoopInQuoteRequest) (*LoopInQuote, error) {
+func (s *Client) LoopInQuote(ctx context.Context, request *LoopInQuoteRequest) (
+	*LoopInQuote, error) {
 
 	// Retrieve current server terms to calculate swap fee.
 	terms, err := s.Server.GetLoopInTerms(ctx, request.Initiator)
@@ -945,8 +943,10 @@ func wrapGrpcError(message string, err error) error {
 	grpcStatus, _ := status.FromError(err)
 
 	return status.Error(
-		grpcStatus.Code(), fmt.Sprintf("%v: %v", message,
-			grpcStatus.Message()),
+		grpcStatus.Code(),
+		fmt.Sprintf(
+			"%v: %v", message, grpcStatus.Message(),
+		),
 	)
 }
 
@@ -976,6 +976,7 @@ func (s *Client) AbandonSwap(ctx context.Context,
 	case s.abandonChans[req.SwapHash] <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
+
 	default:
 		// This is to avoid writing to a full channel.
 	}
@@ -988,8 +989,8 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 	request *LoopOutQuoteRequest) (*LoopOutRfq, error) {
 
 	if s.AssetClient == nil {
-		return nil, errors.New("asset client must be set " +
-			"when trying to loop out with an asset")
+		return nil, errors.New("asset client must be set when trying " +
+			"to loop out with an asset")
 	}
 	rfqReq := request.AssetRFQRequest
 	if rfqReq.Expiry == 0 {
@@ -1002,9 +1003,8 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 
 	// First we'll get the prepay rfq.
 	prepayRfq, err := s.AssetClient.GetRfqForAsset(
-		ctx, quote.PrepayAmount, rfqReq.AssetId,
-		rfqReq.AssetEdgeNode, rfqReq.Expiry,
-		rfqReq.MaxLimitMultiplier,
+		ctx, quote.PrepayAmount, rfqReq.AssetId, rfqReq.AssetEdgeNode,
+		rfqReq.Expiry, rfqReq.MaxLimitMultiplier,
 	)
 	if err != nil {
 		return nil, err
@@ -1023,9 +1023,8 @@ func (s *Client) getAssetRfq(ctx context.Context, quote *LoopOutQuote,
 		quote.PrepayAmount
 
 	swapRfq, err := s.AssetClient.GetRfqForAsset(
-		ctx, invoiceAmt, rfqReq.AssetId,
-		rfqReq.AssetEdgeNode, rfqReq.Expiry,
-		rfqReq.MaxLimitMultiplier,
+		ctx, invoiceAmt, rfqReq.AssetId, rfqReq.AssetEdgeNode,
+		rfqReq.Expiry, rfqReq.MaxLimitMultiplier,
 	)
 	if err != nil {
 		return nil, err

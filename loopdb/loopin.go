@@ -46,12 +46,12 @@ func (s *LoopIn) LastUpdateTime() time.Time {
 }
 
 // serializeLoopInContract serialize the loop in contract into a byte slice.
-func serializeLoopInContract(swap *LoopInContract) (
-	[]byte, error) {
-
+func serializeLoopInContract(swap *LoopInContract) ([]byte, error) {
 	var b bytes.Buffer
 
-	if err := binary.Write(&b, byteOrder, swap.InitiationTime.UnixNano()); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.InitiationTime.UnixNano(),
+	); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +59,9 @@ func serializeLoopInContract(swap *LoopInContract) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.AmountRequested); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.AmountRequested,
+	); err != nil {
 		return nil, err
 	}
 
@@ -91,7 +93,9 @@ func serializeLoopInContract(swap *LoopInContract) (
 		return nil, err
 	}
 
-	if err := binary.Write(&b, byteOrder, swap.InitiationHeight); err != nil {
+	if err := binary.Write(
+		&b, byteOrder, swap.InitiationHeight,
+	); err != nil {
 		return nil, err
 	}
 
@@ -140,7 +144,8 @@ func getLabel(bucket *bbolt.Bucket) string {
 	return string(label)
 }
 
-// deserializeLoopInContract deserializes the loop in contract from a byte slice.
+// deserializeLoopInContract deserializes the loop in contract from a byte
+// slice.
 func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 	r := bytes.NewReader(value)
 
@@ -188,11 +193,15 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.InitiationHeight); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.InitiationHeight,
+	); err != nil {
 		return nil, err
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.HtlcConfTarget); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.HtlcConfTarget,
+	); err != nil {
 		return nil, err
 	}
 
@@ -205,7 +214,9 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 		contract.LastHop = &lastHop
 	}
 
-	if err := binary.Read(r, byteOrder, &contract.ExternalHtlc); err != nil {
+	if err := binary.Read(
+		r, byteOrder, &contract.ExternalHtlc,
+	); err != nil {
 		return nil, err
 	}
 

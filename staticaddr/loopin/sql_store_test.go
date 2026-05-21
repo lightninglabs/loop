@@ -45,7 +45,12 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	d1, d2 := &deposit.Deposit{
 		ID: loopingDepositID,
 		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Hash: chainhash.Hash{
+				0x1a,
+				0x2b,
+				0x3c,
+				0x4d,
+			},
 			Index: 0,
 		},
 		Value: btcutil.Amount(100_000),
@@ -56,7 +61,12 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 		&deposit.Deposit{
 			ID: loopedInDepositID,
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4e},
+				Hash: chainhash.Hash{
+					0x2a,
+					0x2b,
+					0x3c,
+					0x4e,
+				},
 				Index: 1,
 			},
 			Value: btcutil.Amount(200_000),
@@ -95,10 +105,19 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	// Create pending swap.
 	swapHashPending := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
 	swapPending := StaticAddressLoopIn{
-		SwapHash:                swapHashPending,
-		SwapPreimage:            lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
-		DepositOutpoints:        []string{d1.OutPoint.String()},
-		Deposits:                []*deposit.Deposit{d1},
+		SwapHash: swapHashPending,
+		SwapPreimage: lntypes.Preimage{
+			0x1,
+			0x2,
+			0x3,
+			0x4,
+		},
+		DepositOutpoints: []string{
+			d1.OutPoint.String(),
+		},
+		Deposits: []*deposit.Deposit{
+			d1,
+		},
 		ClientPubkey:            clientPubKey,
 		ServerPubkey:            serverPubKey,
 		HtlcTimeoutSweepAddress: addr,
@@ -111,10 +130,19 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	// Create succeeded swap.
 	swapHashSucceeded := lntypes.Hash{0x2, 0x2, 0x3, 0x5}
 	swapSucceeded := StaticAddressLoopIn{
-		SwapHash:                swapHashSucceeded,
-		SwapPreimage:            lntypes.Preimage{0x2, 0x2, 0x3, 0x5},
-		DepositOutpoints:        []string{d2.OutPoint.String()},
-		Deposits:                []*deposit.Deposit{d2},
+		SwapHash: swapHashSucceeded,
+		SwapPreimage: lntypes.Preimage{
+			0x2,
+			0x2,
+			0x3,
+			0x5,
+		},
+		DepositOutpoints: []string{
+			d2.OutPoint.String(),
+		},
+		Deposits: []*deposit.Deposit{
+			d2,
+		},
 		ClientPubkey:            clientPubKey,
 		ServerPubkey:            serverPubKey,
 		HtlcTimeoutSweepAddress: addr,
@@ -124,12 +152,17 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	err = swapStore.CreateLoopIn(ctxb, &swapSucceeded)
 	require.NoError(t, err)
 
-	pendingSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(ctxb, PendingStates)
+	pendingSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctxb, PendingStates,
+	)
 	require.NoError(t, err)
 
 	require.Len(t, pendingSwaps, 1)
 	require.Equal(t, swapHashPending, pendingSwaps[0].SwapHash)
-	require.Equal(t, []string{d1.OutPoint.String()}, pendingSwaps[0].DepositOutpoints)
+	require.Equal(
+		t, []string{d1.OutPoint.String()},
+		pendingSwaps[0].DepositOutpoints,
+	)
 	require.Equal(t, SignHtlcTx, pendingSwaps[0].GetState())
 
 	pendingDeposits := pendingSwaps[0].Deposits
@@ -139,12 +172,17 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d1.Value, pendingDeposits[0].Value)
 	require.Equal(t, deposit.LoopingIn, pendingDeposits[0].GetState())
 
-	finalizedSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(ctxb, FinalStates)
+	finalizedSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctxb, FinalStates,
+	)
 	require.NoError(t, err)
 
 	require.Len(t, finalizedSwaps, 1)
 	require.Equal(t, swapHashSucceeded, finalizedSwaps[0].SwapHash)
-	require.Equal(t, []string{d2.OutPoint.String()}, finalizedSwaps[0].DepositOutpoints)
+	require.Equal(
+		t, []string{d2.OutPoint.String()},
+		finalizedSwaps[0].DepositOutpoints,
+	)
 	require.Equal(t, Succeeded, finalizedSwaps[0].GetState())
 
 	finalizedDeposits := finalizedSwaps[0].Deposits
@@ -180,7 +218,12 @@ func TestCreateLoopIn(t *testing.T) {
 	d1, d2 := &deposit.Deposit{
 		ID: newID(),
 		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Hash: chainhash.Hash{
+				0x1a,
+				0x2b,
+				0x3c,
+				0x4d,
+			},
 			Index: 0,
 		},
 		Value: btcutil.Amount(100_000),
@@ -191,7 +234,12 @@ func TestCreateLoopIn(t *testing.T) {
 		&deposit.Deposit{
 			ID: newID(),
 			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4e},
+				Hash: chainhash.Hash{
+					0x2a,
+					0x2b,
+					0x3c,
+					0x4e,
+				},
 				Index: 1,
 			},
 			Value: btcutil.Amount(200_000),
@@ -221,11 +269,19 @@ func TestCreateLoopIn(t *testing.T) {
 	// Create pending swap.
 	swapHashPending := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
 	swapPending := StaticAddressLoopIn{
-		SwapHash:     swapHashPending,
-		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
+		SwapHash: swapHashPending,
+		SwapPreimage: lntypes.Preimage{
+			0x1,
+			0x2,
+			0x3,
+			0x4,
+		},
 		DepositOutpoints: []string{d1.OutPoint.String(),
 			d2.OutPoint.String()},
-		Deposits:                []*deposit.Deposit{d1, d2},
+		Deposits: []*deposit.Deposit{
+			d1,
+			d2,
+		},
 		ClientPubkey:            clientPubKey,
 		ServerPubkey:            serverPubKey,
 		HtlcTimeoutSweepAddress: addr,
@@ -255,8 +311,10 @@ func TestCreateLoopIn(t *testing.T) {
 	swap, err := swapStore.GetLoopInByHash(ctxb, swapHashPending)
 	require.NoError(t, err)
 	require.Equal(t, swapHashPending, swap.SwapHash)
-	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
-		swap.DepositOutpoints)
+	require.Equal(
+		t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
+		swap.DepositOutpoints,
+	)
 	require.Equal(t, SignHtlcTx, swap.GetState())
 
 	require.Len(t, swap.Deposits, 2)

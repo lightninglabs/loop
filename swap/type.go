@@ -21,8 +21,10 @@ func (t Type) String() string {
 	switch t {
 	case TypeIn:
 		return "In"
+
 	case TypeOut:
 		return "Out"
+
 	default:
 		return "Unknown"
 	}

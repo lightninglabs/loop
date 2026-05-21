@@ -151,7 +151,6 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 	if request.AssetId != nil {
 		if request.AssetPrepayRfqId == nil ||
 			request.AssetSwapRfqId == nil {
-
 			return nil, errors.New("both rfq ids must be set for " +
 				"asset swaps")
 		}
@@ -271,7 +270,9 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Persist the data before exiting this function, so that the caller
 	// can trust that this swap will be resumed on restart.
-	err = cfg.store.CreateLoopOut(globalCtx, swapHash, &swap.LoopOutContract)
+	err = cfg.store.CreateLoopOut(
+		globalCtx, swapHash, &swap.LoopOutContract,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot store swap: %v", err)
 	}
@@ -288,8 +289,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 // resumeLoopOutSwap returns a swap object representing a pending swap that has
 // been restored from the database.
-func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
-) (*loopOutSwap, error) {
+func resumeLoopOutSwap(cfg *swapConfig,
+	pend *loopdb.LoopOut) (*loopOutSwap, error) {
 
 	hash := lntypes.Hash(sha256.Sum256(pend.Contract.Preimage[:]))
 
@@ -352,7 +353,9 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 	// In order to avoid potentially dangerous ownership sharing
 	// we copy the outgoing channel set.
 	if s.OutgoingChanSet != nil {
-		outgoingChanSet := make(loopdb.ChannelSet, len(s.OutgoingChanSet))
+		outgoingChanSet := make(
+			loopdb.ChannelSet, len(s.OutgoingChanSet),
+		)
 		copy(outgoingChanSet[:], s.OutgoingChanSet[:])
 
 		info.OutgoingChanSet = outgoingChanSet
@@ -373,8 +376,8 @@ func (s *loopOutSwap) sendUpdate(ctx context.Context) error {
 
 // execute starts/resumes the swap. It is a thin wrapper around
 // executeAndFinalize to conveniently handle the error case.
-func (s *loopOutSwap) execute(mainCtx context.Context,
-	cfg *executeConfig, height int32) error {
+func (s *loopOutSwap) execute(mainCtx context.Context, cfg *executeConfig,
+	height int32) error {
 
 	defer s.wg.Wait()
 
@@ -476,13 +479,9 @@ func (s *loopOutSwap) executeAndFinalize(globalCtx context.Context) error {
 	}
 
 	// Mark swap completed in store.
-	s.log.Infof("Swap completed: %v "+
-		"(final cost: server %v, onchain %v, offchain %v)",
-		s.state,
-		s.cost.Server,
-		s.cost.Onchain,
-		s.cost.Offchain,
-	)
+	s.log.Infof("Swap completed: %v (final cost: server %v, onchain %v, "+
+		"offchain %v)", s.state, s.cost.Server, s.cost.Onchain,
+		s.cost.Offchain)
 
 	return s.persistState(globalCtx)
 }
@@ -589,11 +588,14 @@ func (s *loopOutSwap) executeSwap(globalCtx context.Context) error {
 	s.log.Infof("Htlc value: %v", htlcValue)
 
 	// Verify amount if preimage hasn't been revealed yet.
-	if s.state != loopdb.StatePreimageRevealed && htlcValue < s.AmountRequested {
+	if s.state != loopdb.StatePreimageRevealed &&
+		htlcValue < s.AmountRequested {
+
 		log.Warnf("Swap amount too low, expected %v but received %v",
 			s.AmountRequested, htlcValue)
 
 		s.state = loopdb.StateFailInsufficientValue
+
 		return nil
 	}
 
@@ -745,6 +747,7 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 		if err != nil {
 			result.err = err
 			sendResult(result)
+
 			return
 		}
 
@@ -766,11 +769,11 @@ func (s *loopOutSwap) payInvoice(ctx context.Context, invoice string,
 }
 
 // payInvoiceAsync is the asynchronously executed part of paying an invoice.
-func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
-	invoice string, maxFee btcutil.Amount,
-	outgoingChanIds loopdb.ChannelSet, paymentTimeout time.Duration,
-	pluginType RoutingPluginType, reportPluginResult bool, rfqId []byte) (
-	*lndclient.PaymentStatus, error) {
+func (s *loopOutSwap) payInvoiceAsync(ctx context.Context, invoice string,
+	maxFee btcutil.Amount, outgoingChanIds loopdb.ChannelSet,
+	paymentTimeout time.Duration, pluginType RoutingPluginType,
+	reportPluginResult bool, rfqId []byte) (*lndclient.PaymentStatus,
+	error) {
 
 	// Extract hash from payment request. Unfortunately the request
 	// components aren't available directly.
@@ -851,7 +854,10 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		// Newer versions will ignore the old field and only use the new
 		// field.
 		htlc := rfqmsg.NewHtlc(
-			nil, fn.Some(rfq), fn.Some([]rfqmsg.ID{rfq}),
+			nil, fn.Some(rfq),
+			fn.Some(
+				[]rfqmsg.ID{rfq},
+			),
 		)
 		htlcMapRecords, err := tlv.RecordsToMap(htlc.Records())
 		if err != nil {
@@ -883,10 +889,10 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		}
 
 		if err := s.swapKit.server.ReportRoutingResult(
-			ctx, s.hash, s.swapInvoicePaymentAddr,
-			reportType, paymentSuccess, int32(attempts),
-			dt.Milliseconds(),
+			ctx, s.hash, s.swapInvoicePaymentAddr, reportType,
+			paymentSuccess, int32(attempts), dt.Milliseconds(),
 		); err != nil {
+
 			s.log.Warnf("Failed to report routing result: %v", err)
 		}
 	}
@@ -929,7 +935,6 @@ func (s *loopOutSwap) sendPaymentWithRetry(ctx context.Context,
 		// Retry if the payment has timed out, or return here.
 		if tryCount > maxRetries || paymentStatus.FailureReason !=
 			lnrpc.PaymentFailureReason_FAILURE_REASON_TIMEOUT {
-
 			return paymentStatus, tryCount, nil
 		}
 
@@ -993,10 +998,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 
 	// Wait for confirmation of the on-chain htlc by watching for a tx
 	// producing the swap script output.
-	s.log.Infof(
-		"Register %v conf ntfn for swap script on chain (hh=%v)",
-		s.HtlcConfirmations, s.InitiationHeight,
-	)
+	s.log.Infof("Register %v conf ntfn for swap script on chain (hh=%v)",
+		s.HtlcConfirmations, s.InitiationHeight)
 
 	// If we've revealed the preimage in a previous run, we expect to have
 	// recorded the htlc tx hash. We use this to re-register for
@@ -1036,9 +1039,9 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 				return false
 			}
 
-			s.log.Infof("Max preimage reveal height %v "+
-				"exceeded (current height %v)",
-				maxPreimageRevealHeight, s.height)
+			s.log.Infof("Max preimage reveal height %v exceeded "+
+				"(current height %v)", maxPreimageRevealHeight,
+				s.height)
 
 			s.state = loopdb.StateFailTimeout
 
@@ -1051,8 +1054,8 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 		if checkMaxRevealHeightExceeded() {
 			return nil, nil
 		}
-		s.log.Infof("Waiting for either htlc on-chain confirmation or " +
-			"off-chain payment failure")
+		s.log.Infof("Waiting for either htlc on-chain confirmation " +
+			"or off-chain payment failure")
 	loop:
 		for {
 			select {
@@ -1074,6 +1077,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 						ctx, paymentTypeInvoice,
 						result.status,
 					)
+
 					return nil, nil
 				}
 
@@ -1132,8 +1136,10 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 		select {
 		case err := <-htlcErrChan:
 			return nil, err
+
 		case htlcConfNtfn := <-htlcConfChan:
 			txConf = htlcConfNtfn
+
 		case <-globalCtx.Done():
 			return nil, globalCtx.Err()
 		}
@@ -1269,14 +1275,12 @@ func (s *loopOutSwap) waitForHtlcSpendConfirmedV2(globalCtx context.Context,
 			// either.
 			canSweep := s.canSweep()
 			if !canSweep {
-				s.log.Infof("Aborting swap, timed " +
-					"out on-chain")
+				s.log.Infof("Aborting swap, timed out on-chain")
 
 				s.state = loopdb.StateFailTimeout
 				err := s.persistState(ctx)
 				if err != nil {
-					log.Warnf("unable to persist " +
-						"state")
+					log.Warnf("unable to persist state")
 				}
 
 				return nil, nil
@@ -1439,9 +1443,9 @@ func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
 	}
 
 	if swapInvoiceHash != swapHash {
-		return fmt.Errorf(
-			"cannot initiate swap, swap invoice hash %v not equal "+
-				"generated swap hash %v", swapInvoiceHash, swapHash)
+		return fmt.Errorf("cannot initiate swap, swap invoice hash %v "+
+			"not equal generated swap hash %v", swapInvoiceHash,
+			swapHash)
 	}
 
 	_, _, _, prepayInvoiceAmt, err := swap.DecodeInvoice(
@@ -1453,8 +1457,8 @@ func validateLoopOutContract(lnd *lndclient.LndServices, request *OutRequest,
 
 	swapFee := swapInvoiceAmt + prepayInvoiceAmt - request.Amount
 	if swapFee > request.MaxSwapFee {
-		log.Warnf("Swap fee %v exceeding maximum of %v",
-			swapFee, request.MaxSwapFee)
+		log.Warnf("Swap fee %v exceeding maximum of %v", swapFee,
+			request.MaxSwapFee)
 
 		return ErrSwapFeeTooHigh
 	}
@@ -1487,6 +1491,7 @@ func (s *loopOutSwap) canSweep() bool {
 			s.height)
 
 		s.state = loopdb.StateFailTimeout
+
 		return false
 	}
 
@@ -1552,8 +1557,7 @@ type resumeManager struct {
 // Resume starts the resume manager which listens for unfinished swaps
 // from the server and attempts to recover them.
 func Resume(ctx context.Context, ntfnManager NotificationManager,
-	swapStore loopdb.SwapStore,
-	swapClientConn *grpc.ClientConn,
+	swapStore loopdb.SwapStore, swapClientConn *grpc.ClientConn,
 	lnd *lndclient.GrpcLndServices, clock clock.Clock) {
 
 	resumeManager := &resumeManager{
@@ -1562,7 +1566,9 @@ func Resume(ctx context.Context, ntfnManager NotificationManager,
 		swapClient:  swapserverrpc.NewSwapServerClient(swapClientConn),
 		lnd:         lnd,
 		clock:       clock,
-		reqChan:     make(chan *swapserverrpc.ServerUnfinishedSwapNotification, 1),
+		reqChan: make(
+			chan *swapserverrpc.ServerUnfinishedSwapNotification, 1,
+		),
 	}
 	go resumeManager.start(ctx)
 }
@@ -1657,6 +1663,7 @@ trackChanLoop:
 	}
 
 	if swap.LastUpdate().Cost.Server == 0 {
+
 		// If the server cost is zero resume the payment.
 		return m.resumeLoopOutPayment(ctx, swap)
 	}
@@ -1694,8 +1701,8 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 	amtRequested := swap.Contract.AmountRequested
 
 	if inv.Value.ToSatoshis() > swap.Contract.MaxSwapFee*2+amtRequested {
-		return fmt.Errorf("invoice amount %v exceeds max "+
-			"allowed %v", inv.Value.ToSatoshis(),
+		return fmt.Errorf("invoice amount %v exceeds max allowed %v",
+			inv.Value.ToSatoshis(),
 			swap.Contract.MaxSwapFee+amtRequested)
 	}
 
@@ -1713,11 +1720,13 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 		select {
 		case payResp := <-payChan:
 			if payResp.FailureReason.String() != "" {
-				return fmt.Errorf("payment error: %v", payResp.FailureReason)
+				return fmt.Errorf("payment error: %v",
+					payResp.FailureReason)
 			}
 			if payResp.State == lnrpc.Payment_SUCCEEDED {
 				cost := swap.LastUpdate().Cost
-				cost.Server = payResp.Value.ToSatoshis() - amtRequested
+				cost.Server = payResp.Value.ToSatoshis() -
+					amtRequested
 				cost.Offchain = payResp.Fee.ToSatoshis()
 				// Payment succeeded.
 				updateTime := m.clock.Now()

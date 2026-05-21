@@ -65,13 +65,17 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	err := m.recoverInstantOuts(runCtx)
 	if err != nil {
 		close(initChan)
+
 		return err
 	}
 
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.
-		RegisterBlockEpochNtfn(ctx)
+		RegisterBlockEpochNtfn(
+			ctx,
+		)
 	if err != nil {
 		close(initChan)
+
 		return err
 	}
 
@@ -163,6 +167,7 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 	instantOut, err := NewFSM(m.cfg, ProtocolVersionFullReservation)
 	if err != nil {
 		m.Unlock()
+
 		return nil, err
 	}
 	m.activeInstantOuts[instantOut.InstantOut.SwapHash] = instantOut
@@ -217,8 +222,8 @@ type Quote struct {
 }
 
 // GetInstantOutQuote returns a quote for an instant out.
-func (m *Manager) GetInstantOutQuote(ctx context.Context,
-	amt btcutil.Amount, reservationIDs [][]byte) (Quote, error) {
+func (m *Manager) GetInstantOutQuote(ctx context.Context, amt btcutil.Amount,
+	reservationIDs [][]byte) (Quote, error) {
 
 	if len(reservationIDs) == 0 {
 		return Quote{}, fmt.Errorf("no reservations selected")
@@ -248,7 +253,11 @@ func (m *Manager) GetInstantOutQuote(ctx context.Context,
 
 	// The on chain chainFee is the chainFee rate times the estimated
 	// sweepless sweep transaction size.
-	chainFee := feeRate.FeeForWeight(sweeplessSweepWeight(len(reservationIDs)))
+	chainFee := feeRate.FeeForWeight(
+		sweeplessSweepWeight(
+			len(reservationIDs),
+		),
+	)
 
 	return Quote{
 		ServiceFee: btcutil.Amount(quoteRes.SwapFee),

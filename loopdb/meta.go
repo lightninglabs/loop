@@ -76,6 +76,7 @@ func setDBVersion(tx *bbolt.Tx, version uint32) error {
 
 	scratch := make([]byte, 4)
 	byteOrder.PutUint32(scratch, version)
+
 	return metaBucket.Put(dbVersionKey, scratch)
 }
 
@@ -96,9 +97,8 @@ func syncVersions(db *bbolt.DB, chainParams *chaincfg.Params) error {
 	// user is probably trying to revert to a prior version of lnd. We fail
 	// here to prevent reversions and unintended corruption.
 	case currentVersion > latestDBVersion:
-		log.Errorf("Refusing to revert from db_version=%d to "+
-			"lower version=%d", currentVersion,
-			latestDBVersion)
+		log.Errorf("Refusing to revert from db_version=%d to lower "+
+			"version=%d", currentVersion, latestDBVersion)
 
 		return ErrDBReversion
 
@@ -118,8 +118,8 @@ func syncVersions(db *bbolt.DB, chainParams *chaincfg.Params) error {
 
 			migration := migrations[v]
 			if err := migration(tx, chainParams); err != nil {
-				log.Infof("Unable to apply migration #%v",
-					v+1)
+				log.Infof("Unable to apply migration #%v", v+1)
+
 				return err
 			}
 		}
