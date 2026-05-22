@@ -2,7 +2,9 @@ package loopd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -12,9 +14,11 @@ import (
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
@@ -115,7 +119,103 @@ func openDatabase(cfg *Config, chainParams *chaincfg.Params) (loopdb.SwapStore,
 	return db, &baseDb, nil
 }
 
-func getLiquidityManager(client *loop.Client) *liquidity.Manager {
+func getLiquidityManager(client *loop.Client,
+	staticLoopInManager *loopin.Manager,
+	enableExperimental bool) *liquidity.Manager {
+
+	listStaticLoopIn := func(
+		ctx context.Context) ([]*liquidity.StaticLoopInInfo, error) {
+
+		if staticLoopInManager == nil {
+			return nil, nil
+		}
+
+		swaps, err := staticLoopInManager.GetAllSwaps(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		result := make(
+			[]*liquidity.StaticLoopInInfo, 0, len(swaps),
+		)
+		for _, staticSwap := range swaps {
+			state := staticSwap.GetState()
+			pending := slices.Contains(loopin.PendingStates, state)
+			failed := state == loopin.Failed ||
+				state == loopin.HtlcTimeoutSwept
+
+			result = append(result, &liquidity.StaticLoopInInfo{
+				Label:          staticSwap.Label,
+				QuotedSwapFee:  staticSwap.QuotedSwapFee,
+				HtlcTxFeeRate:  staticSwap.HtlcTxFeeRate,
+				LastHop:        staticSwap.LastHopVertex(),
+				LastUpdateTime: staticSwap.LastUpdateTime,
+				Pending:        pending,
+				Failed:         failed,
+				BlocksLoopIn: pending &&
+					state != loopin.PaymentReceived,
+				NumDeposits: len(staticSwap.Deposits),
+				HasChange: staticSwap.SelectedAmount > 0 &&
+					staticSwap.SelectedAmount <
+						staticSwap.TotalDepositAmount(),
+			})
+		}
+
+		return result, nil
+	}
+
+	prepareStaticLoopIn := func(ctx context.Context, peer route.Vertex,
+		minAmount, amount btcutil.Amount, label, initiator string,
+		excludedOutpoints []string) (*liquidity.PreparedStaticLoopIn,
+		error) {
+
+		if staticLoopInManager == nil {
+			return nil, errors.New(
+				"static loop in manager unavailable",
+			)
+		}
+
+		request, numDeposits, hasChange, err :=
+			staticLoopInManager.PrepareAutoloopLoopIn(
+				ctx, peer, minAmount, amount, label,
+				initiator, excludedOutpoints,
+			)
+		if errors.Is(err, loopin.ErrNoAutoloopCandidate) {
+			return nil, liquidity.ErrNoStaticLoopInCandidate
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return &liquidity.PreparedStaticLoopIn{
+			Request:     *request,
+			NumDeposits: numDeposits,
+			HasChange:   hasChange,
+		}, nil
+	}
+
+	staticLoopIn := func(ctx context.Context,
+		request *loop.StaticAddressLoopInRequest) (
+		*liquidity.StaticLoopInDispatchResult, error) {
+
+		if staticLoopInManager == nil {
+			return nil, errors.New(
+				"static loop in manager unavailable",
+			)
+		}
+
+		swapInfo, err := staticLoopInManager.DeliverLoopInRequest(
+			ctx, request,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return &liquidity.StaticLoopInDispatchResult{
+			SwapHash: swapInfo.SwapHash,
+		}, nil
+	}
+
 	mngrCfg := &liquidity.Config{
 		AutoloopTicker: ticker.NewForce(liquidity.DefaultAutoloopTicker),
 		LoopOut:        client.LoopOut,
@@ -150,6 +250,9 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		ListLoopOut:          client.Store.FetchLoopOutSwaps,
 		GetLoopOut:           client.Store.FetchLoopOutSwap,
 		ListLoopIn:           client.Store.FetchLoopInSwaps,
+		ListStaticLoopIn:     listStaticLoopIn,
+		PrepareStaticLoopIn:  prepareStaticLoopIn,
+		StaticLoopIn:         staticLoopIn,
 		LoopInTerms:          client.LoopInTerms,
 		LoopOutTerms:         client.LoopOutTerms,
 		GetAssetPrice:        client.AssetClient.GetAssetPrice,
@@ -157,6 +260,7 @@ func getLiquidityManager(client *loop.Client) *liquidity.Manager {
 		PutLiquidityParams:   client.Store.PutLiquidityParams,
 		FetchLiquidityParams: client.Store.FetchLiquidityParams,
 	}
+	mngrCfg.EnableStaticAddressAutoloop = enableExperimental
 
 	return liquidity.NewManager(mngrCfg)
 }

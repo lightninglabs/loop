@@ -734,12 +734,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		)
 	}
 
+	liquidityMgr := getLiquidityManager(
+		swapClient, staticLoopInManager, d.cfg.EnableExperimental,
+	)
+
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
 		config:               d.cfg,
 		network:              lndclient.Network(d.cfg.Network),
 		impl:                 swapClient,
-		liquidityMgr:         getLiquidityManager(swapClient),
+		liquidityMgr:         liquidityMgr,
 		lnd:                  &d.lnd.LndServices,
 		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
 		subscribers:          make(map[int]chan<- any),

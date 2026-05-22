@@ -6,12 +6,9 @@
       "--network",
       "regtest"
     ],
-    "env": {
-      "HOME": "/home/user"
-    },
-    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
-    "duration": 213058408,
-    "clock_start_unix": 1769407086
+    "version": "0.33.0-beta commit=v0.33.0-beta-74-g6a3c3e1df5f807b450d3ba663f4824f6588e1c13 commit_hash=6a3c3e1df5f807b450d3ba663f4824f6588e1c13",
+    "duration": 12324887,
+    "clock_start_unix": 1779406647
   },
   "events": [
     {
@@ -25,15 +22,24 @@
       }
     },
     {
-      "time_ms": 212,
+      "time_ms": 5,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/GetLiquidityParams",
         "event": "response",
         "message_type": "looprpc.LiquidityParameters",
         "payload": {
-          "rules": [],
-          "fee_ppm": "20000",
+          "rules": [
+            {
+              "channel_id": "0",
+              "swap_type": "LOOP_IN",
+              "pubkey": "AgN4nvpxLgk471Ol2/D2BGUJ9l/FOlv8dRHcZ/6+oaFl",
+              "type": "THRESHOLD",
+              "incoming_threshold": 0,
+              "outgoing_threshold": 60
+            }
+          ],
+          "fee_ppm": "50000",
           "sweep_fee_rate_sat_per_vbyte": "0",
           "max_swap_fee_ppm": "0",
           "max_routing_fee_ppm": "0",
@@ -42,16 +48,16 @@
           "max_miner_fee_sat": "0",
           "sweep_conf_target": 100,
           "failure_backoff_sec": "86400",
-          "autoloop": false,
-          "autoloop_budget_sat": "335544",
+          "autoloop": true,
+          "autoloop_budget_sat": "50000",
           "autoloop_budget_start_sec": "0",
           "auto_max_in_flight": "1",
-          "min_swap_amount": "0",
-          "max_swap_amount": "0",
+          "min_swap_amount": "250000",
+          "max_swap_amount": "1000000",
           "htlc_conf_target": 6,
           "autoloop_dest_address": "",
           "autoloop_budget_refresh_period_sec": "604800",
-          "autoloop_budget_last_refresh": "1770076824",
+          "autoloop_budget_last_refresh": "1779405910",
           "easy_autoloop": false,
           "easy_autoloop_local_target_sat": "0",
           "account": "",
@@ -59,12 +65,12 @@
           "easy_asset_params": {},
           "fast_swap_publication": true,
           "easy_autoloop_excluded_peers": [],
-          "loop_in_source": "LOOP_IN_SOURCE_WALLET"
+          "loop_in_source": "LOOP_IN_SOURCE_STATIC_ADDRESS"
         }
       }
     },
     {
-      "time_ms": 212,
+      "time_ms": 12,
       "kind": "stdout",
       "data": {
         "lines": [
@@ -72,10 +78,10 @@
           "    \"account\": \"\",\n",
           "    \"account_addr_type\": \"ADDRESS_TYPE_UNKNOWN\",\n",
           "    \"auto_max_in_flight\": \"1\",\n",
-          "    \"autoloop\": false,\n",
-          "    \"autoloop_budget_last_refresh\": \"1770076824\",\n",
+          "    \"autoloop\": true,\n",
+          "    \"autoloop_budget_last_refresh\": \"1779405910\",\n",
           "    \"autoloop_budget_refresh_period_sec\": \"604800\",\n",
-          "    \"autoloop_budget_sat\": \"335544\",\n",
+          "    \"autoloop_budget_sat\": \"50000\",\n",
           "    \"autoloop_budget_start_sec\": \"0\",\n",
           "    \"autoloop_dest_address\": \"\",\n",
           "    \"easy_asset_params\": {},\n",
@@ -84,17 +90,26 @@
           "    \"easy_autoloop_local_target_sat\": \"0\",\n",
           "    \"failure_backoff_sec\": \"86400\",\n",
           "    \"fast_swap_publication\": true,\n",
-          "    \"fee_ppm\": \"20000\",\n",
+          "    \"fee_ppm\": \"50000\",\n",
           "    \"htlc_conf_target\": 6,\n",
-          "    \"loop_in_source\": \"LOOP_IN_SOURCE_WALLET\",\n",
+          "    \"loop_in_source\": \"LOOP_IN_SOURCE_STATIC_ADDRESS\",\n",
           "    \"max_miner_fee_sat\": \"0\",\n",
           "    \"max_prepay_routing_fee_ppm\": \"0\",\n",
           "    \"max_prepay_sat\": \"0\",\n",
           "    \"max_routing_fee_ppm\": \"0\",\n",
-          "    \"max_swap_amount\": \"0\",\n",
+          "    \"max_swap_amount\": \"1000000\",\n",
           "    \"max_swap_fee_ppm\": \"0\",\n",
-          "    \"min_swap_amount\": \"0\",\n",
-          "    \"rules\": [],\n",
+          "    \"min_swap_amount\": \"250000\",\n",
+          "    \"rules\": [\n",
+          "        {\n",
+          "            \"channel_id\": \"0\",\n",
+          "            \"incoming_threshold\": 0,\n",
+          "            \"outgoing_threshold\": 60,\n",
+          "            \"pubkey\": \"0203789efa712e0938ef53a5dbf0f6046509f65fc53a5bfc7511dc67febea1a165\",\n",
+          "            \"swap_type\": \"LOOP_IN\",\n",
+          "            \"type\": \"THRESHOLD\"\n",
+          "        }\n",
+          "    ],\n",
           "    \"sweep_conf_target\": 100,\n",
           "    \"sweep_fee_rate_sat_per_vbyte\": \"0\"\n",
           "}\n"
@@ -102,7 +117,7 @@
       }
     },
     {
-      "time_ms": 213,
+      "time_ms": 12,
       "kind": "exit",
       "data": {}
     }

@@ -192,7 +192,7 @@ type Config struct {
 	MaxStaticAddrHtlcFeePercentage       float64 `long:"maxstaticaddrhtlcfeepercentage" description:"The maximum fee percentage that the server can charge for the htlc tx."`
 	MaxStaticAddrHtlcBackupFeePercentage float64 `long:"maxstaticaddrhtlcbackupfeepercentage" description:"The maximum fee percentage that the server can charge for the htlc backup tx. The backup transaction is only used in rare cases when the regular htlc tx is not confirmed on time. These backup transactions refer to high fee or extremely high fee transactions in the API."`
 
-	EnableExperimental bool `long:"experimental" description:"Enable experimental features: reservations"`
+	EnableExperimental bool `long:"experimental" description:"Enable experimental features: reservations, static autoloop"`
 
 	MigrationRPCBatchSize int `long:"migrationrpcbatchsize" description:"The RPC batch size to use during migrations."`
 

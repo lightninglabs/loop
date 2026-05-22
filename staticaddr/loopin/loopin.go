@@ -27,6 +27,7 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 )
 
@@ -104,6 +105,9 @@ type StaticAddressLoopIn struct {
 	// Fast indicates whether the client requested fast publication behavior
 	// on the server side for this static loop in.
 	Fast bool
+
+	// LastUpdateTime is the timestamp of the latest persisted state update.
+	LastUpdateTime time.Time
 
 	// state is the current state of the swap.
 	state fsm.StateType
@@ -484,6 +488,21 @@ func (l *StaticAddressLoopIn) Outpoints() []wire.OutPoint {
 	}
 
 	return outpoints
+}
+
+// LastHopVertex returns the swap's last hop as a route vertex when the field
+// is present and well formed.
+func (l *StaticAddressLoopIn) LastHopVertex() *route.Vertex {
+	if len(l.LastHop) == 0 {
+		return nil
+	}
+
+	vertex, err := route.NewVertexFromBytes(l.LastHop)
+	if err != nil {
+		return nil
+	}
+
+	return &vertex
 }
 
 // GetState returns the current state of the loop-in swap.

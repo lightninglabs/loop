@@ -2,23 +2,20 @@
   "metadata": {
     "args": [
       "/home/user/bin/loop",
-      "setrule",
+      "setparams",
       "--network",
       "regtest",
-      "--incoming_threshold",
-      "40",
-      "125344325763072"
+      "--loopinsource",
+      "static-address"
     ],
-    "env": {
-      "HOME": "/home/user"
-    },
-    "version": "0.31.7-beta commit=v0.31.7-beta-28-g6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845 commit_hash=6d8ddfc59ddc2dcfd1a9b4e4b3c53a9cf15dd845",
-    "duration": 204743867,
-    "clock_start_unix": 1769407086
+    "version": "0.33.0-beta commit=v0.33.0-beta-74-g6a3c3e1df5f807b450d3ba663f4824f6588e1c13 commit_hash=6a3c3e1df5f807b450d3ba663f4824f6588e1c13",
+    "run_error": "rpc error: code = FailedPrecondition desc = static address autoloop requires --experimental",
+    "duration": 12501068,
+    "clock_start_unix": 1779406912
   },
   "events": [
     {
-      "time_ms": 2,
+      "time_ms": 4,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/GetLiquidityParams",
@@ -28,23 +25,14 @@
       }
     },
     {
-      "time_ms": 135,
+      "time_ms": 11,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/GetLiquidityParams",
         "event": "response",
         "message_type": "looprpc.LiquidityParameters",
         "payload": {
-          "rules": [
-            {
-              "channel_id": "0",
-              "swap_type": "LOOP_OUT",
-              "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
-              "type": "THRESHOLD",
-              "incoming_threshold": 10,
-              "outgoing_threshold": 0
-            }
-          ],
+          "rules": [],
           "fee_ppm": "20000",
           "sweep_fee_rate_sat_per_vbyte": "0",
           "max_swap_fee_ppm": "0",
@@ -63,7 +51,7 @@
           "htlc_conf_target": 6,
           "autoloop_dest_address": "",
           "autoloop_budget_refresh_period_sec": "604800",
-          "autoloop_budget_last_refresh": "1770076824",
+          "autoloop_budget_last_refresh": "1779406903",
           "easy_autoloop": false,
           "easy_autoloop_local_target_sat": "0",
           "account": "",
@@ -76,7 +64,7 @@
       }
     },
     {
-      "time_ms": 135,
+      "time_ms": 11,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/SetLiquidityParams",
@@ -84,24 +72,7 @@
         "message_type": "looprpc.SetLiquidityParamsRequest",
         "payload": {
           "parameters": {
-            "rules": [
-              {
-                "channel_id": "0",
-                "swap_type": "LOOP_OUT",
-                "pubkey": "A0+ogC/cn4wTfo8szi5NMOWQoTFOFr0GCsfXctxpj/S8",
-                "type": "THRESHOLD",
-                "incoming_threshold": 10,
-                "outgoing_threshold": 0
-              },
-              {
-                "channel_id": "125344325763072",
-                "swap_type": "LOOP_OUT",
-                "pubkey": "",
-                "type": "THRESHOLD",
-                "incoming_threshold": 40,
-                "outgoing_threshold": 0
-              }
-            ],
+            "rules": [],
             "fee_ppm": "20000",
             "sweep_fee_rate_sat_per_vbyte": "0",
             "max_swap_fee_ppm": "0",
@@ -120,7 +91,7 @@
             "htlc_conf_target": 6,
             "autoloop_dest_address": "",
             "autoloop_budget_refresh_period_sec": "604800",
-            "autoloop_budget_last_refresh": "1770076824",
+            "autoloop_budget_last_refresh": "1779406903",
             "easy_autoloop": false,
             "easy_autoloop_local_target_sat": "0",
             "account": "",
@@ -128,25 +99,39 @@
             "easy_asset_params": {},
             "fast_swap_publication": true,
             "easy_autoloop_excluded_peers": [],
-            "loop_in_source": "LOOP_IN_SOURCE_WALLET"
+            "loop_in_source": "LOOP_IN_SOURCE_STATIC_ADDRESS"
           }
         }
       }
     },
     {
-      "time_ms": 204,
+      "time_ms": 12,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/SetLiquidityParams",
-        "event": "response",
-        "message_type": "looprpc.SetLiquidityParamsResponse",
-        "payload": {}
+        "event": "error",
+        "error": "rpc error: code = FailedPrecondition desc = static address autoloop requires --experimental",
+        "status": {
+          "code": 9,
+          "message": "static address autoloop requires --experimental"
+        }
       }
     },
     {
-      "time_ms": 204,
+      "time_ms": 12,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] rpc error: code = FailedPrecondition desc = static address autoloop requires --experimental\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 12,
       "kind": "exit",
-      "data": {}
+      "data": {
+        "run_error": "rpc error: code = FailedPrecondition desc = static address autoloop requires --experimental"
+      }
     }
   ]
 }

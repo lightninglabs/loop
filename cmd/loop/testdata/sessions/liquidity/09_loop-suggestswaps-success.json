@@ -46,7 +46,8 @@
           "{\n",
           "    \"disqualified\": [],\n",
           "    \"loop_in\": [],\n",
-          "    \"loop_out\": []\n",
+          "    \"loop_out\": [],\n",
+          "    \"static_loop_in\": []\n",
           "}\n"
         ]
       }
