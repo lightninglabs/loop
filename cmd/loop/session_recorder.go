@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,20 @@ var grpcMarshalOptions = protojson.MarshalOptions{
 	EmitUnpopulated: true,
 }
 
+// marshalSessionJSON encodes nested session payloads without HTML escaping so
+// recorded fixture strings stay byte-for-byte close to the CLI text.
+func marshalSessionJSON(value any) ([]byte, error) {
+	var buf bytes.Buffer
+
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
 // sessionRecorder captures CLI IO and gRPC traffic for replay.
 type sessionRecorder struct {
 	mu       sync.Mutex
@@ -80,9 +95,9 @@ type sessionMetadata struct {
 	Args           []string          `json:"args"`
 	Env            map[string]string `json:"env"`
 	Version        string            `json:"version"`
-	ClockStartUnix int64             `json:"clock_start_unix"`
 	RunError       *string           `json:"run_error,omitempty"`
 	Duration       *time.Duration    `json:"duration,omitempty"`
+	ClockStartUnix int64             `json:"clock_start_unix"`
 }
 
 // sessionEvent records a single timestamped payload entry.
@@ -262,7 +277,7 @@ func ensureSessionBaseDir(baseDir string) error {
 
 // logEvent records a new event with the elapsed timestamp.
 func (r *sessionRecorder) logEvent(kind string, payload any) {
-	data, err := json.Marshal(payload)
+	data, err := marshalSessionJSON(payload)
 	if err != nil {
 		r.mu.Lock()
 		if r.eventErr == nil {
@@ -434,6 +449,7 @@ func (r *sessionRecorder) finalize(runErr error) error {
 		defer file.Close()
 
 		encoder := json.NewEncoder(file)
+		encoder.SetEscapeHTML(false)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(fileContent); err != nil {
 			finalizeErr = errors.Join(err, eventErr, hookErr)
@@ -563,7 +579,7 @@ func (r *sessionRecorder) logGRPCMessage(method, event string, msg any,
 				payload.Payload = data
 			}
 		} else {
-			data, err := json.Marshal(msg)
+			data, err := marshalSessionJSON(msg)
 			if err == nil {
 				payload.Payload = data
 			}

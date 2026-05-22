@@ -85,6 +85,7 @@ func writeSessionFilePath(path string, fixture sessionFile) error {
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
+	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
 
 	return encoder.Encode(fixture)
@@ -152,7 +153,7 @@ func rewriteSessionFixture(fixture sessionFile,
 func rewriteExitEventRunError(events []sessionEvent, runError *string,
 	changed bool) ([]sessionEvent, bool, error) {
 
-	data, err := json.Marshal(exitPayload{
+	data, err := marshalSessionJSON(exitPayload{
 		RunError: cloneOptionalString(runError),
 	})
 	if err != nil {
@@ -338,7 +339,7 @@ func buildReplacementTextEvents(events []sessionEvent, indices []int,
 
 	replacements := make([]sessionEvent, 0, len(chunks))
 	for i, chunk := range chunks {
-		data, err := json.Marshal(newTextPayload(chunk))
+		data, err := marshalSessionJSON(newTextPayload(chunk))
 		if err != nil {
 			return nil, err
 		}
@@ -571,7 +572,7 @@ func TestRewriteSessionFixtureSkipsNormalizedTimestampNoise(t *testing.T) {
 func textEvent(t *testing.T, timeMS int64, kind, text string) sessionEvent {
 	t.Helper()
 
-	data, err := json.Marshal(newTextPayload(text))
+	data, err := marshalSessionJSON(newTextPayload(text))
 	require.NoError(t, err)
 
 	return sessionEvent{
@@ -585,7 +586,7 @@ func textEvent(t *testing.T, timeMS int64, kind, text string) sessionEvent {
 func exitEvent(t *testing.T, timeMS int64, runError *string) sessionEvent {
 	t.Helper()
 
-	data, err := json.Marshal(exitPayload{
+	data, err := marshalSessionJSON(exitPayload{
 		RunError: cloneOptionalString(runError),
 	})
 	require.NoError(t, err)
