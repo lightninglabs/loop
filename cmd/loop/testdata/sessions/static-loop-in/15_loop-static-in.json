@@ -93,6 +93,37 @@
     },
     {
       "time_ms": 65,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 65,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressSummaryResponse",
+        "payload": {
+          "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "relative_expiry_blocks": "14400",
+          "total_num_deposits": 1,
+          "value_unconfirmed_satoshis": "0",
+          "value_deposited_satoshis": "2500000",
+          "value_expired_satoshis": "0",
+          "value_withdrawn_satoshis": "0",
+          "value_looped_in_satoshis": "0",
+          "value_htlc_timeout_sweeps_satoshis": "0",
+          "value_channels_opened": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 65,
       "kind": "stdout",
       "data": {
         "lines": [
