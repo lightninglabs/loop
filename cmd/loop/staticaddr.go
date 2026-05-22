@@ -559,13 +559,6 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		return errors.New("no deposited outputs available")
 	}
 
-	summary, err := client.GetStaticAddressSummary(
-		ctx, &looprpc.StaticAddressSummaryRequest{},
-	)
-	if err != nil {
-		return err
-	}
-
 	var depositOutpoints []string
 	switch {
 	case isAllSelected && isUtxoSelected:
@@ -623,6 +616,13 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	// Warn the user if any selected deposits have fewer than 6
 	// confirmations, as the swap payment won't be received immediately
 	// for those.
+	summary, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
 	depositsToCheck := warningDepositOutpoints(
 		allDeposits, depositOutpoints, autoSelectDepositsForQuote,
 		quoteReq.Amt,
