@@ -1,11 +1,14 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
@@ -14,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -218,6 +222,80 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	require.ErrorIs(t, err, quoteErr)
 	require.NotContains(t, err.Error(), labels.ErrReservedPrefix.Error())
 	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
+// TestHandleLoopInSweepReqRejectsInvalidServerNonce ensures that a malformed
+// MuSig2 nonce returned by the server is rejected before it reaches the signer.
+func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
+	ctx := t.Context()
+
+	changeAddr := &script.Parameters{
+		PkScript: []byte{0xaa, 0xbb},
+	}
+
+	const confirmationHeight = 0
+	dep := makeDeposit(7, 0, 10_000, confirmationHeight)
+	depOutpoint := outpointString(dep)
+
+	swapHash := lntypes.Hash{9}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{depOutpoint},
+		SelectedAmount:   dep.Value,
+	}
+	loopIn.SetState(Succeeded)
+
+	sweepTx := makeSweepTx(
+		[]wire.OutPoint{dep.OutPoint},
+		[]*wire.TxOut{{
+			Value:    int64(dep.Value),
+			PkScript: []byte{0xcc, 0xdd},
+		}},
+	)
+	sweepPacket, err := psbt.NewFromUnsignedTx(sweepTx)
+	require.NoError(t, err)
+
+	var psbtBuf bytes.Buffer
+	require.NoError(t, sweepPacket.Serialize(&psbtBuf))
+
+	mgr := &Manager{
+		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				params: changeAddr,
+			},
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					depOutpoint: dep,
+				},
+			},
+			Store: &mockStore{
+				loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+					swapHash: loopIn,
+				},
+				mapIDs: map[lntypes.Hash][]deposit.ID{
+					swapHash: {dep.ID},
+				},
+			},
+		},
+	}
+
+	req := &swapserverrpc.ServerStaticLoopInSweepNotification{
+		SweepTxPsbt: psbtBuf.Bytes(),
+		SwapHash:    swapHash[:],
+		DepositToNonces: map[string][]byte{
+			depOutpoint: make([]byte, musig2.PubNonceSize-1),
+		},
+		PrevoutInfo: []*swapserverrpc.PrevoutInfo{{
+			Value:       uint64(dep.Value),
+			PkScript:    changeAddr.PkScript,
+			TxidBytes:   dep.Hash[:],
+			OutputIndex: dep.Index,
+		}},
+	}
+
+	err = mgr.handleLoopInSweepReq(ctx, req)
+	require.ErrorContains(t, err, "invalid server nonce")
+	require.ErrorContains(t, err, depOutpoint)
 }
 
 // mockDepositManager implements DepositManager for tests.

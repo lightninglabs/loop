@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -375,6 +376,105 @@ func TestSignMusig2Tx_MissingOutpointInDepositMap(t *testing.T) {
 
 	// Expect an error indicating the missing outpoint.
 	require.ErrorContains(t, err, "tx outpoint not in deposit index map")
+}
+
+// TestSignMusig2Tx_InvalidServerSigningInfo tests that malformed server
+// signing data is rejected before it is passed to the signer.
+func TestSignMusig2Tx_InvalidServerSigningInfo(t *testing.T) {
+	t.Parallel()
+
+	tx := wire.NewMsgTx(2)
+	outpoint := wire.OutPoint{
+		Hash:  [32]byte{1},
+		Index: 0,
+	}
+	tx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: outpoint,
+	})
+
+	pkScript := []byte{
+		0x51, 0x20, // OP_1 OP_PUSHBYTES_32
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	tx.AddTxOut(&wire.TxOut{
+		Value:    10000,
+		PkScript: pkScript,
+	})
+
+	depositKey := outpoint.String()
+	sessions := map[string]*input.MuSig2SessionInfo{
+		depositKey: {
+			SessionID: [32]byte{1},
+		},
+	}
+	depositsToIdx := map[string]int{
+		depositKey: 0,
+	}
+	prevOutFetcher := txscript.NewMultiPrevOutFetcher(
+		map[wire.OutPoint]*wire.TxOut{
+			outpoint: {
+				Value:    5000,
+				PkScript: pkScript,
+			},
+		},
+	)
+
+	validNonce := make([]byte, musig2.PubNonceSize)
+	validSig := make([]byte, input.MuSig2PartialSigSize)
+
+	tests := []struct {
+		name        string
+		signingInfo *swapserverrpc.ServerPsbtWithdrawSigningInfo
+		errContains string
+	}{
+		{
+			name:        "nil signing info",
+			signingInfo: nil,
+			errContains: "missing signing info",
+		},
+		{
+			name: "invalid nonce length",
+			signingInfo: &swapserverrpc.ServerPsbtWithdrawSigningInfo{
+				Nonce: validNonce[:musig2.PubNonceSize-1],
+				Sig:   validSig,
+			},
+			errContains: "invalid nonce length",
+		},
+		{
+			name: "invalid partial signature length",
+			signingInfo: &swapserverrpc.ServerPsbtWithdrawSigningInfo{
+				Nonce: validNonce,
+				Sig:   validSig[:input.MuSig2PartialSigSize-1],
+			},
+			errContains: "invalid partial signature length",
+		},
+	}
+
+	lnd := test.NewMockLnd()
+	m := &Manager{
+		cfg: &ManagerConfig{
+			Signer: lnd.Signer,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sigInfo := map[string]*swapserverrpc.ServerPsbtWithdrawSigningInfo{
+				depositKey: tc.signingInfo,
+			}
+
+			_, err := m.signMusig2Tx(
+				context.Background(), prevOutFetcher, lnd.Signer,
+				tx.Copy(), sessions, sigInfo, depositsToIdx,
+			)
+			require.ErrorContains(t, err, tc.errContains)
+		})
+	}
 }
 
 // TestCalculateWithdrawalTxValues tests various edge cases in withdrawal
