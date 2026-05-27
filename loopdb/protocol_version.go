@@ -24,7 +24,7 @@ const (
 	ProtocolVersionSegwitLoopIn ProtocolVersion = 2
 
 	// ProtocolVersionPreimagePush indicates that the client will push loop
-	// out preimages to the sever to speed up claim.
+	// out preimages to the server to speed up claim.
 	ProtocolVersionPreimagePush ProtocolVersion = 3
 
 	// ProtocolVersionUserExpiryLoopOut indicates that the client will
