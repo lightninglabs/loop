@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/input"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -31,6 +33,13 @@ var (
 	testMinSwapAmount              = btcutil.Amount(10000)
 	testMaxSwapAmount              = btcutil.Amount(1000000)
 )
+
+// mockMuSig2SigningData returns size-correct placeholder data. Client tests
+// only assert response handling, not MuSig2 cryptographic validity.
+func mockMuSig2SigningData() ([]byte, []byte, error) {
+	return make([]byte, musig2.PubNonceSize),
+		make([]byte, input.MuSig2PartialSigSize), nil
+}
 
 // serverMock is used in client unit tests to simulate swap server behaviour.
 type serverMock struct {
@@ -276,7 +285,7 @@ func (s *serverMock) MuSig2SignSweep(_ context.Context, _ loopdb.ProtocolVersion
 	_ lntypes.Hash, _ [32]byte, _ []byte, _ []byte) ([]byte,
 	[]byte, error) {
 
-	return nil, nil, nil
+	return mockMuSig2SigningData()
 }
 
 func (s *serverMock) MultiMuSig2SignSweep(ctx context.Context,
@@ -285,7 +294,7 @@ func (s *serverMock) MultiMuSig2SignSweep(ctx context.Context,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) (
 	[]byte, []byte, error) {
 
-	return nil, nil, nil
+	return mockMuSig2SigningData()
 }
 
 func (s *serverMock) PushKey(_ context.Context, _ loopdb.ProtocolVersion,

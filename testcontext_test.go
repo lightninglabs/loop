@@ -67,7 +67,7 @@ func mockMuSig2SignSweep(ctx context.Context,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) (
 	[]byte, []byte, error) {
 
-	return nil, nil, nil
+	return mockMuSig2SigningData()
 }
 
 func newSwapClient(t *testing.T, config *clientConfig) *Client {
