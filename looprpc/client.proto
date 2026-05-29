@@ -2143,6 +2143,31 @@ message StaticAddressLoopInSwap {
     The deposits that were used for this swap.
     */
     repeated Deposit deposits = 6;
+
+    /*
+    Initiation time of the swap.
+    */
+    int64 initiation_time = 7;
+
+    /*
+    Last update time of the swap.
+    */
+    int64 last_update_time = 8;
+
+    /*
+    Swap server cost.
+    */
+    int64 cost_server = 9;
+
+    /*
+    On-chain transaction cost.
+    */
+    int64 cost_onchain = 10;
+
+    /*
+    Off-chain routing fees.
+    */
+    int64 cost_offchain = 11;
 }
 
 enum StaticAddressLoopInSwapState {

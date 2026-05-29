@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
@@ -304,6 +305,72 @@ func TestSetLiquidityParamsRejectsStaticAutoloopWithoutExperimental(
 	require.Error(t, err)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.ErrorContains(t, err, "--experimental")
+}
+
+// TestStaticAddressLoopInTimestamp verifies that zero timestamps are omitted
+// from static loop-in responses instead of passing a zero time to UnixNano.
+func TestStaticAddressLoopInTimestamp(t *testing.T) {
+	require.Zero(t, staticAddressLoopInTimestamp(time.Time{}))
+
+	timestamp := time.Unix(1_234, 567).UTC()
+	require.Equal(
+		t, timestamp.UnixNano(),
+		staticAddressLoopInTimestamp(timestamp),
+	)
+}
+
+// TestStaticAddressLoopInSwapServerCost verifies that static loop-in server
+// costs are only reported once the invoice payment was received. Timeout path
+// costs are not persisted today, so they are intentionally not estimated here.
+func TestStaticAddressLoopInSwapServerCost(t *testing.T) {
+	const quoteFee = btcutil.Amount(1_234)
+
+	tests := []struct {
+		name       string
+		state      fsm.StateType
+		wantServer int64
+	}{
+		{
+			name:  "pending before payment",
+			state: loopin.SignHtlcTx,
+		},
+		{
+			name:       "payment received",
+			state:      loopin.PaymentReceived,
+			wantServer: int64(quoteFee),
+		},
+		{
+			name:       "succeeded",
+			state:      loopin.Succeeded,
+			wantServer: int64(quoteFee),
+		},
+		{
+			name:       "succeeded transition failed",
+			state:      loopin.SucceededTransitioningFailed,
+			wantServer: int64(quoteFee),
+		},
+		{
+			name:  "timeout swept",
+			state: loopin.HtlcTimeoutSwept,
+		},
+		{
+			name:  "failed",
+			state: loopin.Failed,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			swap := &loopin.StaticAddressLoopIn{
+				QuotedSwapFee: quoteFee,
+			}
+			swap.SetState(test.state)
+
+			costServer := staticAddressLoopInSwapServerCost(swap)
+
+			require.Equal(t, test.wantServer, costServer)
+		})
+	}
 }
 
 // TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner

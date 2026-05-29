@@ -1966,6 +1966,10 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 
 	var clientSwaps []*looprpc.StaticAddressLoopInSwap
 	for _, swp := range swaps {
+		if swp == nil {
+			continue
+		}
+
 		chainParams, err := s.network.ChainParams()
 		if err != nil {
 			return nil, fmt.Errorf("error getting chain params")
@@ -2005,6 +2009,9 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		if swp.SelectedAmount > 0 {
 			swapAmount = swp.SelectedAmount
 		}
+		costServer := staticAddressLoopInSwapServerCost(swp)
+		initiationTime := staticAddressLoopInTimestamp(swp.InitiationTime)
+		lastUpdateTime := staticAddressLoopInTimestamp(swp.LastUpdateTime)
 		swap := &looprpc.StaticAddressLoopInSwap{
 			SwapHash:                     swp.SwapHash[:],
 			DepositOutpoints:             swp.DepositOutpoints,
@@ -2012,6 +2019,9 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			SwapAmountSatoshis:           int64(swapAmount),
 			PaymentRequestAmountSatoshis: payReqAmount,
 			Deposits:                     protoDeposits,
+			InitiationTime:               initiationTime,
+			LastUpdateTime:               lastUpdateTime,
+			CostServer:                   costServer,
 		}
 
 		clientSwaps = append(clientSwaps, swap)
@@ -2020,6 +2030,31 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 	return &looprpc.ListStaticAddressSwapsResponse{
 		Swaps: clientSwaps,
 	}, nil
+}
+
+func staticAddressLoopInTimestamp(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+
+	return t.UnixNano()
+}
+
+// staticAddressLoopInSwapServerCost returns the paid server cost using the
+// legacy ListSwaps cost semantics. Static loop-ins currently only persist the
+// accepted quote fee, and that fee is paid once the swap invoice settles.
+// Timeout-path miner fees are not persisted, so cost_onchain and cost_offchain
+// remain zero instead of returning an estimate as an actual cost.
+func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
+	switch swp.GetState() {
+	case loopin.PaymentReceived, loopin.Succeeded,
+		loopin.SucceededTransitioningFailed:
+
+		return int64(swp.QuotedSwapFee)
+
+	default:
+		return 0
+	}
 }
 
 // GetStaticAddressSummary returns a summary of static address-related
