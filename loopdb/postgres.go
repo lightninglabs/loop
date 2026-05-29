@@ -39,7 +39,7 @@ type PostgresConfig struct {
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
-// DSN returns the dns to connect to the database.
+// DSN returns the data source name used to connect to the database.
 func (s *PostgresConfig) DSN(hidePassword bool) string {
 	var sslMode = "disable"
 	if s.RequireSSL {

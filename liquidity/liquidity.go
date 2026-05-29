@@ -340,7 +340,7 @@ func (m *Manager) Run(ctx context.Context) error {
 				}
 			}
 
-			// Try to automatically dispach an asset auto-loop.
+			// Try to automatically dispatch an asset auto-loop.
 			for assetID := range m.params.AssetAutoloopParams {
 				err = m.easyAssetAutoloop(ctx, assetID)
 				if err != nil {

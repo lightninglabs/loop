@@ -478,7 +478,7 @@ func testCustomSweepConfTarget(t *testing.T) {
 		require.Equal(t, swap.Preimage, preimage)
 	}
 
-	// Now that we have pushed our preimage to the sever, we send an update
+	// Now that we have pushed our preimage to the server, we send an update
 	// indicating that our off chain htlc is settled. We do this so that
 	// we don't have to keep consuming preimage pushes from our server mock
 	// for every sweep attempt.
@@ -779,22 +779,22 @@ func testPreimagePush(t *testing.T) {
 	require.NoError(t, <-errChan)
 }
 
-// TestFailedOffChainCancelation tests sending of a cancelation message to
+// TestFailedOffChainCancellation tests sending of a cancellation message to
 // the server when a swap fails due to off-chain routing.
-func TestFailedOffChainCancelation(t *testing.T) {
+func TestFailedOffChainCancellation(t *testing.T) {
 	t.Run("stable protocol", func(t *testing.T) {
-		testFailedOffChainCancelation(t)
+		testFailedOffChainCancellation(t)
 	})
 
 	t.Run("experimental protocol", func(t *testing.T) {
 		loopdb.EnableExperimentalProtocol()
 		defer loopdb.ResetCurrentProtocolVersion()
 
-		testFailedOffChainCancelation(t)
+		testFailedOffChainCancellation(t)
 	})
 }
 
-func testFailedOffChainCancelation(t *testing.T) {
+func testFailedOffChainCancellation(t *testing.T) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -873,7 +873,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 					FailureSourceIndex: 1,
 				},
 			},
-			// Add one htlc that failed in the network at wide.
+			// Add one htlc that failed in the network at large.
 			{
 				Status: lnrpc.HTLCAttempt_FAILED,
 				Route: &lnrpc.Route{
@@ -892,7 +892,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 		State: lnrpc.Payment_SUCCEEDED,
 	}
 
-	// We want to fail our swap payment and succeed the prepush, so we send
+	// We want to fail our swap payment and succeed the prepayment, so we send
 	// a failure update to the payment that has the larger amount.
 	if pmt1.Amount > pmt2.Amount {
 		pmt1.TrackPaymentMessage.Updates <- failUpdate
@@ -908,7 +908,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 	require.NoError(t, err)
 
 	payAddr := invoice.PaymentAddr.UnwrapOrFail(t)
-	swapCancelation := &outCancelDetails{
+	swapCancellation := &outCancelDetails{
 		hash:        swap.hash,
 		paymentAddr: payAddr,
 		metadata: routeCancelMetadata{
@@ -920,7 +920,7 @@ func testFailedOffChainCancelation(t *testing.T) {
 			},
 		},
 	}
-	server.assertSwapCanceled(t, swapCancelation)
+	server.assertSwapCanceled(t, swapCancellation)
 
 	// Finally, the swap should be recorded with failed off chain timeout.
 	cfg.store.(*loopdb.StoreMock).AssertLoopOutState(

@@ -78,7 +78,7 @@ func TestAutoLoopDisabled(t *testing.T) {
 	c.stop()
 }
 
-// TestAutoLoopEnabled tests enabling the liquidity manger's autolooper. To keep
+// TestAutoLoopEnabled tests enabling the liquidity manager's autolooper. To keep
 // the test simple, we do not update actual lnd channel balances, but rather
 // run our mock with two channels that will always require a loop out according
 // to our rules. This allows us to test the other restrictions placed on the

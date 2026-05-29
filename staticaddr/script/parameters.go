@@ -18,8 +18,8 @@ type Parameters struct {
 	// used for the 2-of-2 funding output.
 	ServerPubkey *btcec.PublicKey
 
-	// Expiry is the CSV timout value at which the client can claim the
-	// static address's timout path.
+	// Expiry is the CSV timeout value at which the client can claim the
+	// static address's timeout path.
 	Expiry uint32
 
 	// PkScript is the unique static address's output script.

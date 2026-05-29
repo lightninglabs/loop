@@ -379,12 +379,14 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			return err
 		}
 
-		var (
-			serverNonce [musig2.PubNonceSize]byte
-			sigHash     [32]byte
-		)
+		var sigHash [32]byte
 
-		copy(serverNonce[:], nonce)
+		serverNonce, err := byteSliceTo66ByteSlice(nonce)
+		if err != nil {
+			return fmt.Errorf("invalid server nonce for "+
+				"deposit %v: %w", depositOutpoint, err)
+		}
+
 		musig2Session, err := staticutil.CreateMusig2Session(
 			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
 		)

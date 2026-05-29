@@ -1882,6 +1882,12 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 		return nil, err
 	}
 
+	if err := validateServerMuSig2SigningData(
+		serverNonce, serverSig,
+	); err != nil {
+		return nil, err
+	}
+
 	var serverPublicNonce [musig2.PubNonceSize]byte
 	copy(serverPublicNonce[:], serverNonce)
 
@@ -1932,6 +1938,26 @@ func (b *batch) musig2sign(ctx context.Context, inputIndex int, sweep sweep,
 	}
 
 	return finalSig, nil
+}
+
+// validateServerMuSig2SigningData rejects malformed MuSig2 cosigning data
+// received from the server by checking that the nonce and partial signature
+// have the expected lengths before they are passed to the signer.
+func validateServerMuSig2SigningData(serverNonce,
+	serverSig []byte) error {
+
+	if len(serverNonce) != musig2.PubNonceSize {
+		return fmt.Errorf("invalid server nonce length: got %d, "+
+			"want %d", len(serverNonce), musig2.PubNonceSize)
+	}
+
+	if len(serverSig) != input.MuSig2PartialSigSize {
+		return fmt.Errorf("invalid server partial signature "+
+			"length: got %d, want %d", len(serverSig),
+			input.MuSig2PartialSigSize)
+	}
+
+	return nil
 }
 
 // updateRbfRate updates the fee rate we should use for the new batch

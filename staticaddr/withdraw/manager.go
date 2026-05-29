@@ -793,13 +793,32 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 
 	// We'll now add the nonce to our session and sign the tx.
 	for deposit, sigAndNonce := range sigInfo {
+		if sigAndNonce == nil {
+			return nil, fmt.Errorf("missing signing info for "+
+				"deposit %v", deposit)
+		}
+
 		session, ok := sessions[deposit]
 		if !ok {
 			return nil, errors.New("session not found")
 		}
 
-		nonce := [musig2.PubNonceSize]byte{}
+		if len(sigAndNonce.Nonce) != musig2.PubNonceSize {
+			return nil, fmt.Errorf("invalid nonce length for "+
+				"deposit %v: got %d, want %d", deposit,
+				len(sigAndNonce.Nonce), musig2.PubNonceSize)
+		}
+
+		if len(sigAndNonce.Sig) != input.MuSig2PartialSigSize {
+			return nil, fmt.Errorf("invalid partial signature "+
+				"length for deposit %v: got %d, want %d",
+				deposit, len(sigAndNonce.Sig),
+				input.MuSig2PartialSigSize)
+		}
+
+		var nonce [musig2.PubNonceSize]byte
 		copy(nonce[:], sigAndNonce.Nonce)
+
 		haveAllNonces, err := signer.MuSig2RegisterNonces(
 			ctx, session.SessionID,
 			[][musig2.PubNonceSize]byte{nonce},

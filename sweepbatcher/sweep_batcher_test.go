@@ -15,6 +15,7 @@ import (
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -87,7 +88,62 @@ func testMuSig2SignSweep(ctx context.Context,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) (
 	[]byte, []byte, error) {
 
-	return nil, nil, nil
+	return testMuSig2SigningData()
+}
+
+// testMuSig2SigningData returns size-correct placeholder data. These tests
+// only exercise control flow around the signing response, not cryptographic
+// validity.
+func testMuSig2SigningData() ([]byte, []byte, error) {
+	return make([]byte, musig2.PubNonceSize),
+		make([]byte, input.MuSig2PartialSigSize), nil
+}
+
+// TestValidateServerMuSig2SigningData ensures that MuSig2 cosigning data from
+// the server is accepted when well-formed and rejected when the nonce or
+// partial signature has an unexpected length.
+func TestValidateServerMuSig2SigningData(t *testing.T) {
+	validNonce, validSig, err := testMuSig2SigningData()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name        string
+		serverNonce []byte
+		serverSig   []byte
+		errContains string
+	}{
+		{
+			name:        "valid signing data",
+			serverNonce: validNonce,
+			serverSig:   validSig,
+		},
+		{
+			name:        "invalid nonce length",
+			serverNonce: validNonce[:musig2.PubNonceSize-1],
+			serverSig:   validSig,
+			errContains: "invalid server nonce length",
+		},
+		{
+			name:        "invalid partial signature length",
+			serverNonce: validNonce,
+			serverSig:   validSig[:input.MuSig2PartialSigSize-1],
+			errContains: "invalid server partial signature length",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateServerMuSig2SigningData(
+				tc.serverNonce, tc.serverSig,
+			)
+			if tc.errContains == "" {
+				require.NoError(t, err)
+				return
+			}
+
+			require.ErrorContains(t, err, tc.errContains)
+		})
+	}
 }
 
 var customSignature = func() []byte {
@@ -5024,7 +5080,7 @@ func testWithMixedBatch(t *testing.T, store testStore,
 		[]byte, []byte, error) {
 
 		if swapHash == swapHashes[2] {
-			return nil, nil, nil
+			return testMuSig2SigningData()
 		} else {
 			return nil, nil, fmt.Errorf("test error")
 		}
@@ -5377,14 +5433,14 @@ func testWithMixedBatchLarge(t *testing.T, store testStore,
 			} else {
 				swapHash2Used = true
 
-				return nil, nil, nil
+				return testMuSig2SigningData()
 			}
 
 		case swapHash == preimages[5].Hash():
-			return nil, nil, nil
+			return testMuSig2SigningData()
 
 		case swapHash == preimages[8].Hash():
-			return nil, nil, nil
+			return testMuSig2SigningData()
 
 		default:
 			return nil, nil, fmt.Errorf("test error")
@@ -5431,7 +5487,7 @@ func testWithMixedBatchCoopOnly(t *testing.T, store testStore,
 		prevoutMap map[wire.OutPoint]*wire.TxOut) (
 		[]byte, []byte, error) {
 
-		return nil, nil, nil
+		return testMuSig2SigningData()
 	}
 
 	// All the sweeps are cooperative.
