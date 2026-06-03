@@ -28,7 +28,7 @@
           "   listunspent, l   List unspent static address outputs.\n",
           "   listdeposits     Displays static address deposits. A filter can be applied to only show deposits in a specific state.\n",
           "   listwithdrawals  Display a summary of past withdrawals.\n",
-          "   listswaps        Shows a list of finalized static address swaps.\n",
+          "   listswaps        Shows a list of static address swaps.\n",
           "   withdraw, w      Withdraw from static address deposits.\n",
           "   summary, s       Display a summary of static address related information.\n",
           "   in               Loop in funds from static address deposits.\n",

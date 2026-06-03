@@ -601,7 +601,7 @@ The following flags are supported:
 
 ### `static listswaps` subcommand
 
-Shows a list of finalized static address swaps.
+Shows a list of static address swaps.
 
 Usage:
 

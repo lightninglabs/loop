@@ -349,7 +349,7 @@ func listWithdrawals(ctx context.Context, cmd *cli.Command) error {
 
 var listStaticAddressSwapsCommand = &cli.Command{
 	Name:  "listswaps",
-	Usage: "Shows a list of finalized static address swaps.",
+	Usage: "Shows a list of static address swaps.",
 	Description: `
 	`,
 	Action: listStaticAddressSwaps,
