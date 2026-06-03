@@ -2807,6 +2807,31 @@
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "The deposits that were used for this swap."
+        },
+        "initiation_time": {
+          "type": "string",
+          "format": "int64",
+          "description": "Initiation time of the swap."
+        },
+        "last_update_time": {
+          "type": "string",
+          "format": "int64",
+          "description": "Last update time of the swap."
+        },
+        "cost_server": {
+          "type": "string",
+          "format": "int64",
+          "description": "Swap server cost."
+        },
+        "cost_onchain": {
+          "type": "string",
+          "format": "int64",
+          "description": "On-chain transaction cost."
+        },
+        "cost_offchain": {
+          "type": "string",
+          "format": "int64",
+          "description": "Off-chain routing fees."
         }
       }
     },

@@ -5874,7 +5874,17 @@ type StaticAddressLoopInSwap struct {
 	// fees.
 	PaymentRequestAmountSatoshis int64 `protobuf:"varint,5,opt,name=payment_request_amount_satoshis,json=paymentRequestAmountSatoshis,proto3" json:"payment_request_amount_satoshis,omitempty"`
 	// The deposits that were used for this swap.
-	Deposits      []*Deposit `protobuf:"bytes,6,rep,name=deposits,proto3" json:"deposits,omitempty"`
+	Deposits []*Deposit `protobuf:"bytes,6,rep,name=deposits,proto3" json:"deposits,omitempty"`
+	// Initiation time of the swap.
+	InitiationTime int64 `protobuf:"varint,7,opt,name=initiation_time,json=initiationTime,proto3" json:"initiation_time,omitempty"`
+	// Last update time of the swap.
+	LastUpdateTime int64 `protobuf:"varint,8,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
+	// Swap server cost.
+	CostServer int64 `protobuf:"varint,9,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
+	// On-chain transaction cost.
+	CostOnchain int64 `protobuf:"varint,10,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
+	// Off-chain routing fees.
+	CostOffchain  int64 `protobuf:"varint,11,opt,name=cost_offchain,json=costOffchain,proto3" json:"cost_offchain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5949,6 +5959,41 @@ func (x *StaticAddressLoopInSwap) GetDeposits() []*Deposit {
 		return x.Deposits
 	}
 	return nil
+}
+
+func (x *StaticAddressLoopInSwap) GetInitiationTime() int64 {
+	if x != nil {
+		return x.InitiationTime
+	}
+	return 0
+}
+
+func (x *StaticAddressLoopInSwap) GetLastUpdateTime() int64 {
+	if x != nil {
+		return x.LastUpdateTime
+	}
+	return 0
+}
+
+func (x *StaticAddressLoopInSwap) GetCostServer() int64 {
+	if x != nil {
+		return x.CostServer
+	}
+	return 0
+}
+
+func (x *StaticAddressLoopInSwap) GetCostOnchain() int64 {
+	if x != nil {
+		return x.CostOnchain
+	}
+	return 0
+}
+
+func (x *StaticAddressLoopInSwap) GetCostOffchain() int64 {
+	if x != nil {
+		return x.CostOffchain
+	}
+	return 0
 }
 
 type StaticAddressLoopInRequest struct {
@@ -6972,14 +7017,21 @@ const file_client_proto_rawDesc = "" +
 	"\x1dtotal_deposit_amount_satoshis\x18\x03 \x01(\x03R\x1atotalDepositAmountSatoshis\x12:\n" +
 	"\x19withdrawn_amount_satoshis\x18\x04 \x01(\x03R\x17withdrawnAmountSatoshis\x124\n" +
 	"\x16change_amount_satoshis\x18\x05 \x01(\x03R\x14changeAmountSatoshis\x12/\n" +
-	"\x13confirmation_height\x18\x06 \x01(\rR\x12confirmationHeight\"\xc7\x02\n" +
+	"\x13confirmation_height\x18\x06 \x01(\rR\x12confirmationHeight\"\x83\x04\n" +
 	"\x17StaticAddressLoopInSwap\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12+\n" +
 	"\x11deposit_outpoints\x18\x02 \x03(\tR\x10depositOutpoints\x12;\n" +
 	"\x05state\x18\x03 \x01(\x0e2%.looprpc.StaticAddressLoopInSwapStateR\x05state\x120\n" +
 	"\x14swap_amount_satoshis\x18\x04 \x01(\x03R\x12swapAmountSatoshis\x12E\n" +
 	"\x1fpayment_request_amount_satoshis\x18\x05 \x01(\x03R\x1cpaymentRequestAmountSatoshis\x12,\n" +
-	"\bdeposits\x18\x06 \x03(\v2\x10.looprpc.DepositR\bdeposits\"\xef\x02\n" +
+	"\bdeposits\x18\x06 \x03(\v2\x10.looprpc.DepositR\bdeposits\x12'\n" +
+	"\x0finitiation_time\x18\a \x01(\x03R\x0einitiationTime\x12(\n" +
+	"\x10last_update_time\x18\b \x01(\x03R\x0elastUpdateTime\x12\x1f\n" +
+	"\vcost_server\x18\t \x01(\x03R\n" +
+	"costServer\x12!\n" +
+	"\fcost_onchain\x18\n" +
+	" \x01(\x03R\vcostOnchain\x12#\n" +
+	"\rcost_offchain\x18\v \x01(\x03R\fcostOffchain\"\xef\x02\n" +
 	"\x1aStaticAddressLoopInRequest\x12\x1c\n" +
 	"\toutpoints\x18\x01 \x03(\tR\toutpoints\x121\n" +
 	"\x15max_swap_fee_satoshis\x18\x02 \x01(\x03R\x12maxSwapFeeSatoshis\x12\x19\n" +
