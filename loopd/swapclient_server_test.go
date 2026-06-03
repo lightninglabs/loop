@@ -24,6 +24,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -371,6 +372,188 @@ func TestStaticAddressLoopInSwapServerCost(t *testing.T) {
 			require.Equal(t, test.wantServer, costServer)
 		})
 	}
+}
+
+// TestListStaticAddressSwapsPopulatesTimingAndCosts verifies that the RPC
+// response maps stored static loop-in timing fields and cost fields.
+func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
+	ctx := t.Context()
+	lnd := mock_lnd.NewMockLnd()
+
+	const (
+		paymentRequestAmount = btcutil.Amount(50_000)
+		quotedSwapFee        = btcutil.Amount(1_234)
+		depositValue         = btcutil.Amount(51_234)
+		depositConfHeight    = int64(590)
+		staticAddressExpiry  = uint32(25)
+	)
+
+	_, swapInvoice, err := lnd.Client.AddInvoice(
+		ctx, &invoicesrpc.AddInvoiceData{
+			Value: lnwire.NewMSatFromSatoshis(paymentRequestAmount),
+		},
+	)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{1, 2, 3}
+	depositID := deposit.ID{4, 5, 6}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{7, 8, 9},
+		Index: 1,
+	}
+	testDeposit := &deposit.Deposit{
+		ID:                 depositID,
+		OutPoint:           depositOutpoint,
+		Value:              depositValue,
+		ConfirmationHeight: depositConfHeight,
+		SwapHash:           &swapHash,
+	}
+	testDeposit.SetState(deposit.LoopedIn)
+
+	initiationTime := time.Unix(1_234, 567).UTC()
+	lastUpdateTime := time.Unix(2_345, 678).UTC()
+	staticLoopIn := &loopin.StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		SwapInvoice:      swapInvoice,
+		InitiationTime:   initiationTime,
+		LastUpdateTime:   lastUpdateTime,
+		QuotedSwapFee:    quotedSwapFee,
+		DepositOutpoints: []string{depositOutpoint.String()},
+		Deposits:         []*deposit.Deposit{testDeposit},
+	}
+	staticLoopIn.SetState(loopin.Succeeded)
+
+	depositStore := &mockDepositStore{
+		byOutpoint: map[string]*deposit.Deposit{
+			depositOutpoint.String(): testDeposit,
+		},
+	}
+	depositMgr := deposit.NewManager(&deposit.ManagerConfig{
+		Store: depositStore,
+	})
+
+	staticLoopInMgr, err := loopin.NewManager(&loopin.Config{
+		Store: &mockStaticAddressLoopInStore{
+			swaps: []*loopin.StaticAddressLoopIn{staticLoopIn},
+		},
+		DepositManager: depositMgr,
+	}, 1)
+	require.NoError(t, err)
+
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	addrStore := &mockAddressStore{
+		params: []*script.Parameters{{
+			ClientPubkey: clientPubkey,
+			ServerPubkey: serverPubkey,
+			Expiry:       staticAddressExpiry,
+			PkScript:     []byte("pkscript"),
+		}},
+	}
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
+		Store:       addrStore,
+		WalletKit:   lnd.WalletKit,
+		ChainParams: lnd.ChainParams,
+	}, 1)
+	require.NoError(t, err)
+
+	server := &swapClientServer{
+		network:              lndclient.NetworkTestnet,
+		lnd:                  &lnd.LndServices,
+		staticAddressManager: addrMgr,
+		depositManager:       depositMgr,
+		staticLoopInManager:  staticLoopInMgr,
+	}
+	resp, err := server.ListStaticAddressSwaps(
+		ctx, &looprpc.ListStaticAddressSwapsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.Swaps, 1)
+
+	swap := resp.Swaps[0]
+	require.Equal(t, swapHash[:], swap.SwapHash)
+	require.Equal(t, []string{depositOutpoint.String()}, swap.DepositOutpoints)
+	require.Equal(
+		t, looprpc.StaticAddressLoopInSwapState_SUCCEEDED, swap.State,
+	)
+	require.Equal(t, int64(depositValue), swap.SwapAmountSatoshis)
+	require.Equal(
+		t, int64(paymentRequestAmount), swap.PaymentRequestAmountSatoshis,
+	)
+	require.Equal(t, initiationTime.UnixNano(), swap.InitiationTime)
+	require.Equal(t, lastUpdateTime.UnixNano(), swap.LastUpdateTime)
+	require.Equal(t, int64(quotedSwapFee), swap.CostServer)
+	require.Zero(t, swap.CostOnchain)
+	require.Zero(t, swap.CostOffchain)
+	require.Len(t, swap.Deposits, 1)
+
+	rpcDeposit := swap.Deposits[0]
+	require.Equal(t, depositID[:], rpcDeposit.Id)
+	require.Equal(t, depositOutpoint.String(), rpcDeposit.Outpoint)
+	require.Equal(t, int64(depositValue), rpcDeposit.Value)
+	require.Equal(t, depositConfHeight, rpcDeposit.ConfirmationHeight)
+	require.Equal(t, swapHash[:], rpcDeposit.SwapHash)
+	require.Equal(t, looprpc.DepositState_LOOPED_IN, rpcDeposit.State)
+	require.Equal(
+		t, depositConfHeight+int64(staticAddressExpiry)-600,
+		rpcDeposit.BlocksUntilExpiry,
+	)
+}
+
+// mockStaticAddressLoopInStore is a minimal in-memory loop-in store for RPC
+// response mapping tests.
+type mockStaticAddressLoopInStore struct {
+	swaps []*loopin.StaticAddressLoopIn
+}
+
+// CreateLoopIn satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) CreateLoopIn(_ context.Context,
+	_ *loopin.StaticAddressLoopIn) error {
+
+	return nil
+}
+
+// UpdateLoopIn satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) UpdateLoopIn(_ context.Context,
+	_ *loopin.StaticAddressLoopIn) error {
+
+	return nil
+}
+
+// GetStaticAddressLoopInSwapsByStates returns the configured loop-ins.
+func (s *mockStaticAddressLoopInStore) GetStaticAddressLoopInSwapsByStates(
+	_ context.Context, _ []fsm.StateType) ([]*loopin.StaticAddressLoopIn,
+	error) {
+
+	return s.swaps, nil
+}
+
+// IsStored satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) IsStored(_ context.Context,
+	_ lntypes.Hash) (bool, error) {
+
+	return false, nil
+}
+
+// GetLoopInByHash returns the configured loop-in with the given hash.
+func (s *mockStaticAddressLoopInStore) GetLoopInByHash(_ context.Context,
+	swapHash lntypes.Hash) (*loopin.StaticAddressLoopIn, error) {
+
+	for _, swp := range s.swaps {
+		if swp.SwapHash == swapHash {
+			return swp, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// SwapHashesForDepositIDs satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) SwapHashesForDepositIDs(
+	_ context.Context, _ []deposit.ID) (map[lntypes.Hash][]deposit.ID,
+	error) {
+
+	return nil, nil
 }
 
 // TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner
@@ -1140,10 +1323,16 @@ func (s *mockDepositStore) DepositForOutpoint(_ context.Context,
 	}
 	return nil, nil
 }
+
 func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 	error) {
 
-	return nil, nil
+	deposits := make([]*deposit.Deposit, 0, len(s.byOutpoint))
+	for _, d := range s.byOutpoint {
+		deposits = append(deposits, d)
+	}
+
+	return deposits, nil
 }
 
 // TestListUnspentDeposits tests filtering behavior of ListUnspentDeposits.
