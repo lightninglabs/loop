@@ -14,11 +14,9 @@ require (
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
-	github.com/jackc/pgconn v1.14.3
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.3.13-beta
 	github.com/lightninglabs/lndclient v0.20.0-8
 	github.com/lightninglabs/loop/looprpc v1.0.7
@@ -46,10 +44,14 @@ require (
 )
 
 require (
+	github.com/jackc/pgconn v1.14.3 // indirect
+	github.com/lib/pq v1.10.9 // indirect
+)
+
+require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
-	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/NebulousLabs/fastrand v0.0.0-20181203155948-6fb6489aac4e // indirect
 	github.com/NebulousLabs/go-upnp v0.0.0-20180202185039-29b680b06c82 // indirect
@@ -132,7 +134,7 @@ require (
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
-	github.com/lightningnetwork/lnd/kvdb v1.4.16 // indirect
+	github.com/lightningnetwork/lnd/kvdb v1.5.1 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.12-0.20260113193010-8565d12e40b1 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -242,4 +244,4 @@ replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
 // checking later if the domain reappears and replace can be removed.
 replace dario.cat/mergo => github.com/darccio/mergo v1.0.1
 
-go 1.25.5
+go 1.25.10
