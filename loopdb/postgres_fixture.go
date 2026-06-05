@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
@@ -86,7 +86,7 @@ func NewTestPgFixture(t *testing.T, expiry time.Duration) *TestPgFixture {
 
 	var testDB *sql.DB
 	err = pool.Retry(func() error {
-		testDB, err = sql.Open("postgres", databaseURL)
+		testDB, err = sql.Open(pgxDriver, databaseURL)
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func (f *TestPgFixture) TearDown(t *testing.T) {
 
 // ClearDB clears the database.
 func (f *TestPgFixture) ClearDB(t *testing.T) {
-	dbConn, err := sql.Open("postgres", f.GetDSN())
+	dbConn, err := sql.Open(pgxDriver, f.GetDSN())
 	require.NoError(t, err)
 
 	_, err = dbConn.ExecContext(

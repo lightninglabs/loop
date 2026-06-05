@@ -8,14 +8,16 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	postgres_migrate "github.com/golang-migrate/migrate/v4/database/postgres"
+	pgx_migrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	dsnTemplate = "postgres://%v:%v@%v:%d/%v?sslmode=%v"
+	pgxDriver   = "pgx/v5"
 )
 
 var (
@@ -86,7 +88,7 @@ func NewPostgresStore(cfg *PostgresConfig,
 
 	log.Infof("Using SQL database '%s'", cfg.DSN(true))
 
-	rawDb, err := sql.Open("pgx", cfg.DSN(false))
+	rawDb, err := sql.Open(pgxDriver, cfg.DSN(false))
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +99,9 @@ func NewPostgresStore(cfg *PostgresConfig,
 		// system.
 		//
 		// First, we'll need to open up a new migration instance for
-		// our current target database: sqlite.
-		driver, err := postgres_migrate.WithInstance(
-			rawDb, &postgres_migrate.Config{},
+		// our current target database: postgres.
+		driver, err := pgx_migrate.WithInstance(
+			rawDb, &pgx_migrate.Config{},
 		)
 		if err != nil {
 			return nil, err
