@@ -10,7 +10,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
-	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
+	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
@@ -192,7 +192,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 	case isAllSelected:
 	case isUtxoSelected:
 		utxos := cmd.StringSlice("utxo")
-		outpoints, err = lndcommands.UtxosToOutpoints(utxos)
+		outpoints, err = lnd.UtxosToOutpoints(utxos)
 		if err != nil {
 			return err
 		}
