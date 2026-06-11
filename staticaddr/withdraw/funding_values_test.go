@@ -235,6 +235,11 @@ func TestCalculateWithdrawalTxValuesCommitmentTypeParity(t *testing.T) {
 			commitmentType: lnrpc.CommitmentType_SIMPLE_TAPROOT,
 			addr:           taprootAddr,
 		},
+		{
+			name:           "production taproot and p2tr",
+			commitmentType: lnrpc.CommitmentType_TAPROOT,
+			addr:           taprootAddr,
+		},
 	}
 
 	selectedAmounts := []btcutil.Amount{

@@ -574,6 +574,11 @@ func TestResolveCommitmentType(t *testing.T) {
 			expectedType:   lnrpc.CommitmentType_SIMPLE_TAPROOT,
 		},
 		{
+			name:           "production taproot supported",
+			commitmentType: lnrpc.CommitmentType_TAPROOT,
+			expectedType:   lnrpc.CommitmentType_TAPROOT,
+		},
+		{
 			name:              "legacy rejected",
 			commitmentType:    lnrpc.CommitmentType_LEGACY,
 			expectedErrSubstr: "unsupported commitment type",

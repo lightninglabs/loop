@@ -773,6 +773,9 @@ func resolveCommitmentType(commitmentType lnrpc.CommitmentType) (
 	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
 		return lnrpc.CommitmentType_SIMPLE_TAPROOT, nil
 
+	case lnrpc.CommitmentType_TAPROOT:
+		return lnrpc.CommitmentType_TAPROOT, nil
+
 	default:
 		return lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE, fmt.Errorf(
 			"unsupported commitment type %v", commitmentType,

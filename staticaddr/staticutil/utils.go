@@ -232,8 +232,10 @@ func estimateFee(numInputs int, feeRate chainfee.SatPerKWeight,
 
 	// Add the funding output based on commitment type.
 	switch commitmentType {
-	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
+	case lnrpc.CommitmentType_SIMPLE_TAPROOT,
+		lnrpc.CommitmentType_TAPROOT:
 		we.AddP2TROutput()
+
 	default:
 		we.AddP2WSHOutput()
 	}
