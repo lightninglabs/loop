@@ -130,7 +130,7 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 
 // TestInitHtlcActionPreservesRouteHints asserts that static-address loop-in
 // propagates explicit route hints into the encoded swap invoice sent to the
-// server. This currently fails because lndclient.AddInvoice drops route hints.
+// server.
 func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	t.Parallel()
 
