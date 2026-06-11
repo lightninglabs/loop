@@ -48,7 +48,6 @@ func NewMockLnd() *LndMockServices {
 			ChainParams:   &chaincfg.TestNet3Params,
 			Versioner:     versioner,
 		},
-		SendPaymentChannel:           make(chan PaymentChannelMessage),
 		ConfChannel:                  make(chan *chainntnfs.TxConfirmation),
 		RegisterConfChannel:          make(chan *ConfRegistration),
 		RegisterSpendChannel:         make(chan *SpendRegistration),
@@ -95,12 +94,6 @@ func NewMockLnd() *LndMockServices {
 	return &lnd
 }
 
-// PaymentChannelMessage is the data that passed through SendPaymentChannel.
-type PaymentChannelMessage struct {
-	PaymentRequest string
-	Done           chan lndclient.PaymentResult
-}
-
 // TrackPaymentMessage is the data that passed through TrackPaymentChannel.
 type TrackPaymentMessage struct {
 	Hash lntypes.Hash
@@ -138,7 +131,6 @@ type PublishHandler func(ctx context.Context, tx *wire.MsgTx,
 type LndMockServices struct {
 	lndclient.LndServices
 
-	SendPaymentChannel   chan PaymentChannelMessage
 	SpendChannel         chan *chainntnfs.SpendDetail
 	TxPublishChannel     chan *wire.MsgTx
 	SendOutputsChannel   chan wire.MsgTx
@@ -221,12 +213,6 @@ func (s *LndMockServices) AddTx(tx *wire.MsgTx) {
 // IsDone checks whether all channels have been fully emptied. If not this may
 // indicate unexpected behaviour of the code under test.
 func (s *LndMockServices) IsDone() error {
-	select {
-	case <-s.SendPaymentChannel:
-		return errors.New("SendPaymentChannel not empty")
-	default:
-	}
-
 	select {
 	case <-s.SpendChannel:
 		return errors.New("SpendChannel not empty")

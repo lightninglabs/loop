@@ -656,12 +656,6 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 		require.NoError(t, <-errChan)
 
 		select {
-		case <-ctx.lnd.SendPaymentChannel:
-			t.Fatal("unexpected payment sent")
-		default:
-		}
-
-		select {
 		case <-ctx.lnd.SendOutputsChannel:
 			t.Fatal("unexpected tx published")
 		default:
