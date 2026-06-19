@@ -56,8 +56,8 @@ type Querier interface {
 		swapHash []byte) (sqlc.GetStaticAddressLoopInSwapRow, error)
 
 	// GetStaticAddressLoopInSwapsByStates retrieves all swaps with the
-	// given states. The states string is an input for the IN primitive in
-	// sqlite, hence the format needs to be '{State1,State2,...}'.
+	// given states. The states string is comma-separated so the query can
+	// match complete state names by wrapping it with comma sentinels.
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 		states sql.NullString) ([]sqlc.GetStaticAddressLoopInSwapsByStatesRow,
 		error)
@@ -203,7 +203,7 @@ func (s *SqlStore) GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 }
 
 func toJointStringStates(states []fsm.StateType) string {
-	return "{" + strings.Join(toStrings(states), ",") + "}"
+	return strings.Join(toStrings(states), ",")
 }
 
 func toStrings(states []fsm.StateType) []string {
