@@ -270,6 +270,192 @@ func testValidateLoopInContract(_ int32, _ int32) error {
 	return nil
 }
 
+// TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
+// created before a server-side rejection is canceled immediately.
+func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	loopIn := &StaticAddressLoopIn{
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: &noopDepositManager{},
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInErr: errors.New("server rejected swap"),
+		},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	// The init step should fail and synchronously trigger deferred invoice
+	// cleanup.
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, loopIn.SwapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+}
+
+// TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
+// fee guard also cancels the pre-created invoice before returning an error.
+func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: &noopDepositManager{},
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInResp: &swapserverrpc.ServerStaticAddressLoopInResponse{
+				HtlcServerPubKey: serverKey.PubKey().
+					SerializeCompressed(),
+				HtlcExpiry: mockLnd.Height +
+					DefaultLoopInOnChainCltvDelta,
+				StandardHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{
+					FeeRate: 1_000_000,
+				},
+				HighFeeHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{},
+				ExtremeFeeHtlcInfo: &swapserverrpc.
+					ServerHtlcSigningInfo{},
+			},
+		},
+		ValidateLoopInContract: func(int32, int32) error {
+			return nil
+		},
+		MaxStaticAddrHtlcFeePercentage:       0,
+		MaxStaticAddrHtlcBackupFeePercentage: 1,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	// The fee guard runs before persistence, so the deferred cleanup must
+	// cancel the invoice on this error path as well.
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, loopIn.SwapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+}
+
+// TestUnlockDepositsActionCancelsInvoice verifies that stored swaps that enter
+// the generic error unlock path also clean up their swap invoice.
+func TestUnlockDepositsActionCancelsInvoice(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	dep := &deposit.Deposit{
+		Value: 200_000,
+	}
+	swapHash := lntypes.Hash{0x44, 0x55}
+	depositMgr := &recordingDepositManager{}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			DepositManager: depositMgr,
+			InvoicesClient: mockLnd.LndServices.Invoices,
+		},
+		loopIn: &StaticAddressLoopIn{
+			SwapHash:    swapHash,
+			SwapInvoice: "lnbc1test",
+			Deposits:    []*deposit.Deposit{dep},
+		},
+	}
+
+	event := f.UnlockDepositsAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.NoError(t, f.LastActionError)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	require.Len(t, depositMgr.transitions, 1)
+	require.Equal(t, []*deposit.Deposit{dep}, depositMgr.transitions[0].deposits)
+	require.Equal(t, fsm.OnError, depositMgr.transitions[0].event)
+	require.Equal(t, deposit.Deposited, depositMgr.transitions[0].state)
+}
+
+// TestUnlockDepositsActionReportsTransitionError ensures the unlock path
+// preserves the real deposit transition failure for callers that need to log it.
+func TestUnlockDepositsActionReportsTransitionError(t *testing.T) {
+	depositMgr := &recordingDepositManager{
+		err: errors.New("transition failed"),
+	}
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			DepositManager: depositMgr,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{{Value: 200_000}},
+		},
+	}
+
+	event := f.UnlockDepositsAction(t.Context(), nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "unable to unlock deposits",
+	)
+	require.ErrorContains(t, f.LastActionError, "transition failed")
+}
+
 // mockAddressManager is a minimal AddressManager implementation used by the
 // test FSM setup.
 type mockAddressManager struct {
@@ -326,4 +512,57 @@ func (n *noopDepositManager) GetActiveDepositsInState(fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
 	return nil, nil
+}
+
+type depositTransition struct {
+	deposits []*deposit.Deposit
+	event    fsm.EventType
+	state    fsm.StateType
+}
+
+type recordingDepositManager struct {
+	noopDepositManager
+
+	err         error
+	transitions []depositTransition
+}
+
+// TransitionDeposits records the transition and returns the configured error.
+func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
+	deposits []*deposit.Deposit, event fsm.EventType,
+	state fsm.StateType) error {
+
+	r.transitions = append(r.transitions, depositTransition{
+		deposits: deposits,
+		event:    event,
+		state:    state,
+	})
+
+	return r.err
+}
+
+// initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
+// response without standing up the full gRPC client.
+type initHtlcTestServer struct {
+	swapserverrpc.StaticAddressServerClient
+
+	loopInResp *swapserverrpc.ServerStaticAddressLoopInResponse
+	loopInErr  error
+}
+
+// ServerStaticAddressLoopIn returns the canned response configured by the test.
+func (s *initHtlcTestServer) ServerStaticAddressLoopIn(context.Context,
+	*swapserverrpc.ServerStaticAddressLoopInRequest, ...grpc.CallOption,
+) (*swapserverrpc.ServerStaticAddressLoopInResponse, error) {
+
+	return s.loopInResp, s.loopInErr
+}
+
+// PushStaticAddressHtlcSigs accepts the abandonment signal used by error-path
+// tests without adding additional assertions.
+func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(context.Context,
+	*swapserverrpc.PushStaticAddressHtlcSigsRequest, ...grpc.CallOption,
+) (*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
+
+	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
 }
