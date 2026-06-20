@@ -162,12 +162,13 @@ type LndMockServices struct {
 	// keyed by hash string.
 	Invoices map[lntypes.Hash]*lndclient.Invoice
 
-	Channels            []lndclient.ChannelInfo
-	ChannelEdges        map[uint64]*lndclient.ChannelEdge
-	ClosedChannels      []lndclient.ClosedChannel
-	ForwardingEvents    []lndclient.ForwardingEvent
-	Payments            []lndclient.Payment
-	MissionControlState []lndclient.MissionControlEntry
+	Channels             []lndclient.ChannelInfo
+	ChannelEdges         map[uint64]*lndclient.ChannelEdge
+	ClosedChannels       []lndclient.ClosedChannel
+	ForwardingEvents     []lndclient.ForwardingEvent
+	Payments             []lndclient.Payment
+	ListPaymentsRequests []lndclient.ListPaymentsRequest
+	MissionControlState  []lndclient.MissionControlEntry
 
 	WaitForFinished func()
 
@@ -183,6 +184,20 @@ func (s *LndMockServices) EpochSubscribers() int32 {
 	defer s.lock.Unlock()
 
 	return int32(len(s.blockHeightListeners))
+}
+
+// ListPaymentsRequestsSnapshot returns a copy of all ListPayments requests
+// recorded by the mock.
+func (s *LndMockServices) ListPaymentsRequestsSnapshot() []lndclient.ListPaymentsRequest {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	requests := make(
+		[]lndclient.ListPaymentsRequest, len(s.ListPaymentsRequests),
+	)
+	copy(requests, s.ListPaymentsRequests)
+
+	return requests
 }
 
 // NotifyHeight notifies a new block height.

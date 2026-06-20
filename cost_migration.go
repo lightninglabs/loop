@@ -142,6 +142,7 @@ func MigrateLoopOutCosts(ctx context.Context, lnd lndclient.LndServices,
 			ctx, lndclient.ListPaymentsRequest{
 				Offset:      offset,
 				MaxPayments: uint64(paymentBatchSize),
+				OmitHops:    true,
 			},
 		)
 		if err != nil {

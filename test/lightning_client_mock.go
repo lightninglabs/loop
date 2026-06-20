@@ -266,6 +266,11 @@ func (h *mockLightningClient) ListPayments(_ context.Context,
 	req lndclient.ListPaymentsRequest) (*lndclient.ListPaymentsResponse,
 	error) {
 
+	h.lnd.lock.Lock()
+	defer h.lnd.lock.Unlock()
+
+	h.lnd.ListPaymentsRequests = append(h.lnd.ListPaymentsRequests, req)
+
 	if req.Offset >= uint64(len(h.lnd.Payments)) {
 		return &lndclient.ListPaymentsResponse{}, nil
 	}
@@ -273,7 +278,8 @@ func (h *mockLightningClient) ListPayments(_ context.Context,
 	lastIndexOffset := req.Offset + req.MaxPayments
 	lastIndexOffset = min(lastIndexOffset, uint64(len(h.lnd.Payments)))
 
-	result := h.lnd.Payments[req.Offset:lastIndexOffset]
+	result := make([]lndclient.Payment, lastIndexOffset-req.Offset)
+	copy(result, h.lnd.Payments[req.Offset:lastIndexOffset])
 
 	return &lndclient.ListPaymentsResponse{
 		Payments:         result,
