@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/lightninglabs/loop/looprpc"
-	lndcommands "github.com/lightningnetwork/lnd/cmd/commands"
+	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/urfave/cli/v3"
 )
@@ -271,7 +271,7 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	if cmd.IsSet("utxo") {
 		utxos := cmd.StringSlice("utxo")
 
-		outpoints, err := lndcommands.UtxosToOutpoints(utxos)
+		outpoints, err := lnd.UtxosToOutpoints(utxos)
 		if err != nil {
 			return fmt.Errorf("unable to decode utxos: %w", err)
 		}

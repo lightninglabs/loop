@@ -24,10 +24,24 @@ var (
 	// LoopMinRequiredLndVersion is the minimum required version of lnd that
 	// is compatible with the current version of the loop client. Also all
 	// listed build tags/subservers need to be enabled.
+	//
+	// IMPORTANT: bump this whenever the client starts using an lnd RPC
+	// method or message field that does not exist in older lnd, to the lnd
+	// release that introduced that API (see the maintenance note in
+	// AGENTS.md). The current floor of v0.18.4-beta is set by the highest
+	// such dependency the client has today:
+	//   - routerrpc.SendPaymentRequest.first_hop_custom_records and
+	//     lnrpc.Route.custom_channel_data, used by asset loop outs
+	//     (loopout.go): both added in lnd v0.18.4-beta.
+	//   - walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw, read by
+	//     the sweep batcher fee floor via lndclient WalletKit.MinRelayFee
+	//     (sweepbatcher/, loopd/sweep_htlc.go): added in lnd v0.18.3-beta.
+	//     On older lnd this field silently decodes to 0, disabling the
+	//     sweeper's min-relay fee floor.
 	LoopMinRequiredLndVersion = &verrpc.Version{
 		AppMajor: 0,
-		AppMinor: 17,
-		AppPatch: 0,
+		AppMinor: 18,
+		AppPatch: 4,
 		BuildTags: []string{
 			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
 		},

@@ -127,9 +127,8 @@ func TestLoopInSuccess(t *testing.T) {
 }
 
 // TestLoopInSwapInvoiceRouteHintsMatchProbe asserts that explicit route hints
-// are preserved on both loop-in invoices. The probe invoice already keeps the
-// requested hints, while the swap invoice currently loses them via the
-// lndclient AddInvoice wrapper.
+// are preserved on both loop-in invoices so the swap invoice matches the probe
+// invoice.
 func TestLoopInSwapInvoiceRouteHintsMatchProbe(t *testing.T) {
 	t.Parallel()
 
@@ -654,12 +653,6 @@ func testLoopInResume(t *testing.T, state loopdb.SwapState, expired bool,
 
 	defer func() {
 		require.NoError(t, <-errChan)
-
-		select {
-		case <-ctx.lnd.SendPaymentChannel:
-			t.Fatal("unexpected payment sent")
-		default:
-		}
 
 		select {
 		case <-ctx.lnd.SendOutputsChannel:

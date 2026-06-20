@@ -29,21 +29,6 @@ type mockLightningClient struct {
 	wg  sync.WaitGroup
 }
 
-// PayInvoice pays an invoice.
-func (h *mockLightningClient) PayInvoice(ctx context.Context, invoice string,
-	maxFee btcutil.Amount,
-	outgoingChannel *uint64) chan lndclient.PaymentResult {
-
-	done := make(chan lndclient.PaymentResult, 1)
-
-	h.lnd.SendPaymentChannel <- PaymentChannelMessage{
-		PaymentRequest: invoice,
-		Done:           done,
-	}
-
-	return done
-}
-
 // DecodePaymentRequest returns a non-nil payment request.
 func (h *mockLightningClient) DecodePaymentRequest(_ context.Context,
 	_ string) (*lndclient.PaymentRequest, error) {

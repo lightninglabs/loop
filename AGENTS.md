@@ -51,3 +51,24 @@ The project is a client daemon (`loopd`) that connects to a user's `lnd` node an
 *   **Cryptography:** Extensively uses Taproot and MuSig2 for efficiency, privacy, and complex spending conditions, especially in the `instantout` and `staticaddr` features.
 *   **Labeling (`labels/`):** A utility to create and validate labels for swaps, which helps distinguish between user-initiated and automated swaps (e.g., `[reserved]: autoloop-out`).
 *   **Assets (`assets/`):** Contains logic for interacting with `tapd` (Taproot Assets Protocol Daemon), allowing Loop to facilitate swaps involving assets other than Bitcoin.
+
+**5. Minimum `lnd` Version (`loopd/run.go`):**
+
+`loopd` enforces a minimum `lnd` version at startup through
+`LoopMinRequiredLndVersion` in `loopd/run.go` (handed to `lndclient` as
+`CheckVersion`). This is a hard gate: loopd refuses to start against an older
+`lnd` node.
+
+**Maintenance rule:** whenever you start using an `lnd` gRPC method or message
+field that does not exist in older `lnd`, bump `LoopMinRequiredLndVersion` to the
+`lnd` release that introduced that API, and record which API drove the bump in the
+comment above the variable. Pin it to the *real* floor of the APIs the client uses
+— do **not** just track the `go.mod` dependency. Historically this value only
+tracked `go.mod` and drifted out of sync with the APIs actually called (it sat at
+0.17.0 while the client already depended on 0.18.4 APIs). To find the introducing
+release, grep the field/method across `lnd` version tags, e.g.
+`git grep <field> <tag> -- <proto-file>`. As of the current floor (**v0.18.4-beta**)
+the binding dependencies are the asset loop-out fields
+`routerrpc.SendPaymentRequest.first_hop_custom_records` and
+`lnrpc.Route.custom_channel_data` (lnd v0.18.4-beta), plus the sweep-batcher fee
+floor `walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw` (lnd v0.18.3-beta).
