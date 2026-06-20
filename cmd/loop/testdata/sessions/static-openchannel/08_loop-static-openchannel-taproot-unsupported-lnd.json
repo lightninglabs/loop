@@ -1,0 +1,106 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "openchannel",
+      "--node_key",
+      "026eca9330cc3e589505c4a240ea1f7f551e5765b1aae9040c6667141da657eae6",
+      "--fundmax",
+      "--utxo",
+      "dc942b3252ded50abc30ef4e8614d392ab0f091acab75fdd09e18a07f6ac36e6:0",
+      "--channel_type",
+      "taproot",
+      "--private",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit= commit_hash=",
+    "run_error": "rpc error: code = Unknown desc = channel_type=taproot is not supported by the connected lnd; update LND to v0.21.0-beta or later to use this channel type: got error from server: rpc error: code = Unknown desc = unhandled request channel type 7",
+    "duration": 39639744,
+    "clock_start_unix": 1782158339
+  },
+  "events": [
+    {
+      "time_ms": 7,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "request",
+        "message_type": "looprpc.StaticOpenChannelRequest",
+        "payload": {
+          "open_channel_request": {
+            "sat_per_vbyte": "0",
+            "node_pubkey": "Am7KkzDMPliVBcSiQOoff1UeV2WxqukEDGZnFB2mV+rm",
+            "node_pubkey_string": "",
+            "local_funding_amount": "0",
+            "push_sat": "0",
+            "target_conf": 0,
+            "sat_per_byte": "0",
+            "private": true,
+            "min_htlc_msat": "0",
+            "remote_csv_delay": 0,
+            "min_confs": 1,
+            "spend_unconfirmed": false,
+            "close_address": "",
+            "funding_shim": null,
+            "remote_max_value_in_flight_msat": "0",
+            "remote_max_htlcs": 0,
+            "max_local_csv": 0,
+            "commitment_type": "TAPROOT",
+            "zero_conf": false,
+            "scid_alias": false,
+            "base_fee": "0",
+            "fee_rate": "0",
+            "use_base_fee": false,
+            "use_fee_rate": false,
+            "remote_chan_reserve_sat": "0",
+            "fund_max": true,
+            "memo": "",
+            "outpoints": [
+              {
+                "txid_bytes": "",
+                "txid_str": "dc942b3252ded50abc30ef4e8614d392ab0f091acab75fdd09e18a07f6ac36e6",
+                "output_index": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 39,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = channel_type=taproot is not supported by the connected lnd; update LND to v0.21.0-beta or later to use this channel type: got error from server: rpc error: code = Unknown desc = unhandled request channel type 7",
+        "status": {
+          "code": 2,
+          "message": "channel_type=taproot is not supported by the connected lnd; update LND to v0.21.0-beta or later to use this channel type: got error from server: rpc error: code = Unknown desc = unhandled request channel type 7"
+        }
+      }
+    },
+    {
+      "time_ms": 39,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] rpc error: code = Unknown desc = channel_type=taproot is not supported by the connected lnd; update LND to v0.21.0-beta or later to use this channel type: got error from server: rpc error: code = Unknown desc = unhandled request channel type 7\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 39,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = channel_type=taproot is not supported by the connected lnd; update LND to v0.21.0-beta or later to use this channel type: got error from server: rpc error: code = Unknown desc = unhandled request channel type 7"
+      }
+    }
+  ]
+}

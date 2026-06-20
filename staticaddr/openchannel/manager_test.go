@@ -601,6 +601,33 @@ func TestResolveCommitmentType(t *testing.T) {
 	}
 }
 
+// TestMaybeWrapTaprootUnsupportedError verifies that generic old-lnd channel
+// type rejections become actionable for Loop users selecting production
+// taproot channels.
+func TestMaybeWrapTaprootUnsupportedError(t *testing.T) {
+	t.Parallel()
+
+	baseErr := errors.New("got error from server: rpc error: " +
+		"code = Unknown desc = unhandled request channel type 7")
+	req := &lnrpc.OpenChannelRequest{
+		CommitmentType: lnrpc.CommitmentType_TAPROOT,
+	}
+
+	err := maybeWrapTaprootUnsupportedError(req, baseErr)
+	require.ErrorContains(
+		t, err, "channel_type=taproot is not supported",
+	)
+	require.ErrorContains(
+		t, err, "update LND to v0.21.0-beta or later",
+	)
+	require.ErrorIs(t, err, baseErr)
+
+	req.CommitmentType = lnrpc.CommitmentType_SIMPLE_TAPROOT
+	err = maybeWrapTaprootUnsupportedError(req, baseErr)
+	require.ErrorIs(t, err, baseErr)
+	require.NotContains(t, err.Error(), "update LND")
+}
+
 // ---------------------------------------------------------------------------
 // Mock types for PSBT channel open flow tests.
 // ---------------------------------------------------------------------------

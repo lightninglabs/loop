@@ -13,13 +13,11 @@ import (
 )
 
 const (
-	defaultUtxoMinConf = 1
-)
-
-var (
+	defaultUtxoMinConf       = 1
 	channelTypeTweakless     = "tweakless"
 	channelTypeAnchors       = "anchors"
-	channelTypeSimpleTaproot = "taproot"
+	channelTypeSimpleTaproot = "simple-taproot"
+	channelTypeTaproot       = "taproot"
 )
 
 var openChannelCommand = &cli.Command{
@@ -137,9 +135,9 @@ var openChannelCommand = &cli.Command{
 		&cli.StringFlag{
 			Name: "channel_type",
 			Usage: fmt.Sprintf("(optional) the type of channel to "+
-				"propose to the remote peer (%q, %q, %q)",
+				"propose to the remote peer (%q, %q, %q, %q)",
 				channelTypeTweakless, channelTypeAnchors,
-				channelTypeSimpleTaproot),
+				channelTypeSimpleTaproot, channelTypeTaproot),
 		},
 		&cli.BoolFlag{
 			Name: "zero_conf",
@@ -322,6 +320,7 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	switch channelType {
 	case "":
 		break
+
 	case channelTypeTweakless:
 		req.CommitmentType = lnrpc.CommitmentType_STATIC_REMOTE_KEY
 
@@ -330,6 +329,10 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 
 	case channelTypeSimpleTaproot:
 		req.CommitmentType = lnrpc.CommitmentType_SIMPLE_TAPROOT
+
+	case channelTypeTaproot:
+		req.CommitmentType = lnrpc.CommitmentType_TAPROOT
+
 	default:
 		return fmt.Errorf("unsupported channel type %v", channelType)
 	}

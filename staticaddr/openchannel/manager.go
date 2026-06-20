@@ -368,6 +368,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	if err == nil {
 		return chanOutpoint, nil
 	}
+	err = maybeWrapTaprootUnsupportedError(reqClone, err)
 
 	log.Infof("error opening channel: %v", err)
 
@@ -780,6 +781,30 @@ func resolveCommitmentType(commitmentType lnrpc.CommitmentType) (
 			"unsupported commitment type %v", commitmentType,
 		)
 	}
+}
+
+// maybeWrapTaprootUnsupportedError turns lnd's generic unknown channel type
+// error into a user-actionable message for Loop's production taproot channel
+// type.
+func maybeWrapTaprootUnsupportedError(req *lnrpc.OpenChannelRequest,
+	err error) error {
+
+	if err == nil || req.CommitmentType != lnrpc.CommitmentType_TAPROOT {
+		return err
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errMsg, "unhandled request channel type"),
+		strings.Contains(errMsg, "unknown channel type"),
+		strings.Contains(errMsg, "unsupported channel type"):
+
+		return fmt.Errorf("channel_type=taproot is not supported "+
+			"by the connected lnd; update LND to v0.21.0-beta "+
+			"or later to use this channel type: %w", err)
+	}
+
+	return err
 }
 
 // checkPsbtFlags make sure a request to open a channel doesn't set any
