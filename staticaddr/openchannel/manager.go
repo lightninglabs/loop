@@ -310,6 +310,8 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			return nil, err
 		}
 
+		// If a local funding amount is set, coin-select deposits to
+		// cover it. Otherwise fundmax uses all available deposits.
 		if req.LocalFundingAmount != 0 {
 			deposits, err = staticutil.SelectDeposits(
 				deposits, req.LocalFundingAmount,
@@ -319,9 +321,6 @@ func (m *Manager) OpenChannel(ctx context.Context,
 				return nil, fmt.Errorf("error selecting "+
 					"deposits: %w", err)
 			}
-		} else {
-			// The fundmax flag is set, hence we select all deposits
-			// for funding the channel.
 		}
 	}
 

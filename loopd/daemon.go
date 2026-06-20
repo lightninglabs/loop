@@ -33,7 +33,7 @@ import (
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
-	"go.etcd.io/bbolt"
+	bbolterrors "go.etcd.io/bbolt/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -161,7 +161,7 @@ func (d *Daemon) Start() error {
 	// and error handlers. If this fails, then nothing has been started yet,
 	// and we can just return the error.
 	err = d.initialize(true)
-	if errors.Is(err, bbolt.ErrTimeout) {
+	if errors.Is(err, bbolterrors.ErrTimeout) {
 		// We're trying to be started as a standalone Loop daemon, most
 		// likely LiT is already running and blocking the DB
 		return fmt.Errorf("%v: make sure no other loop daemon process "+
@@ -211,7 +211,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// handlers. If this fails, then nothing has been started yet, and we
 	// can just return the error.
 	err := d.initialize(withMacaroonService)
-	if errors.Is(err, bbolt.ErrTimeout) {
+	if errors.Is(err, bbolterrors.ErrTimeout) {
 		// We're trying to be started inside LiT so there most likely is
 		// another standalone Loop process blocking the DB.
 		return fmt.Errorf("%v: make sure no other loop daemon "+
@@ -994,7 +994,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		d.wg.Go(func() {
 			infof("Starting static address open channel manager")
 			err := openChannelManager.Run(d.mainCtx)
-			if err != nil && !errors.Is(context.Canceled, err) {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				d.internalErrChan <- err
 			}
 			infof("Static address open channel manager stopped")

@@ -559,8 +559,11 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 		req.AutoloopBudgetSat != 0 {
 
 		params.AutoFeeRefreshPeriod = InfiniteDuration
+		// Keep reading the legacy start field so old stored
+		// liquidity parameters migrate to the refresh-period model.
+		budgetStartSec := req.AutoloopBudgetStartSec //nolint:staticcheck
 		params.AutoloopBudgetLastRefresh = time.Unix(
-			int64(req.AutoloopBudgetStartSec), 0)
+			int64(budgetStartSec), 0)
 	}
 
 	for _, rule := range req.Rules {

@@ -2,8 +2,6 @@ package loopdb
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -48,9 +46,7 @@ func TestMigrationUpdates(t *testing.T) {
 	ctxb := context.Background()
 
 	// Restore a legacy database.
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	tempPath := filepath.Join(tempDirName, dbFileName)
 	db, err := bbolt.Open(tempPath, 0600, nil)

@@ -55,14 +55,16 @@ linters:
     - wsl_v5
     - noinlineerr
   settings:
+    staticcheck:
+      checks:
+        - all
+        - -QF*
+        - -ST*
     gosec:
       excludes:
         - G402
         - G306
         - G115
-    staticcheck:
-      checks:
-        - -SA1019
     tagliatelle:
       case:
         rules:
