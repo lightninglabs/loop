@@ -45,6 +45,10 @@ const (
 	// htlc-confirmed subscriber before dropping the notification.
 	htlcConfirmedSubscriberSendTimeout = 200 * time.Millisecond
 
+	// defaultMaxQueuedNotifications is the default number of notifications
+	// we queue per subscriber before dropping new notifications.
+	defaultMaxQueuedNotifications = 1024
+
 	// current_version is the current version of the notification listener.
 	current_version = swapserverrpc.SubscribeNotificationsRequest_V1
 )
@@ -72,6 +76,10 @@ type Config struct {
 	// MinAliveConnTime is the minimum time that the connection to the
 	// server needs to be alive before we consider it a successful.
 	MinAliveConnTime time.Duration
+
+	// MaxQueuedNotifications is the maximum number of notifications that
+	// can wait in each subscriber's delivery queue.
+	MaxQueuedNotifications int
 }
 
 // Manager is a manager for notifications that the swap server sends to the
@@ -92,6 +100,9 @@ func NewManager(cfg *Config) *Manager {
 	if cfg.MinAliveConnTime == 0 {
 		cfg.MinAliveConnTime = defaultMinAliveConnTime
 	}
+	if cfg.MaxQueuedNotifications <= 0 {
+		cfg.MaxQueuedNotifications = defaultMaxQueuedNotifications
+	}
 
 	return &Manager{
 		cfg:         cfg,
@@ -102,6 +113,113 @@ func NewManager(cfg *Config) *Manager {
 type subscriber struct {
 	subCtx   context.Context
 	recvChan any
+	enqueue  func(any)
+}
+
+// newNotificationQueue creates a per-subscriber FIFO delivery function.
+func newNotificationQueue[T any](ctx context.Context,
+	recvChan chan T, maxPending int) func(any) {
+
+	type queue struct {
+		sync.Mutex
+
+		pending []T
+		notify  chan struct{}
+		closed  bool
+	}
+
+	q := &queue{
+		notify: make(chan struct{}, 1),
+	}
+
+	closeQueue := func() {
+		q.Lock()
+		q.closed = true
+		q.pending = nil
+		q.Unlock()
+	}
+
+	go func() {
+		defer close(recvChan)
+		defer closeQueue()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			q.Lock()
+			if len(q.pending) == 0 {
+				q.Unlock()
+
+				select {
+				case <-q.notify:
+					continue
+
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			ntfn := q.pending[0]
+			var zero T
+			q.pending[0] = zero
+			q.pending = q.pending[1:]
+			q.Unlock()
+
+			select {
+			case recvChan <- ntfn:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return func(ntfn any) {
+		typedNtfn, ok := ntfn.(T)
+		if !ok {
+			log.Warnf("unexpected notification type %T", ntfn)
+			return
+		}
+
+		q.Lock()
+		if q.closed {
+			q.Unlock()
+			return
+		}
+		if len(q.pending) >= maxPending {
+			q.Unlock()
+			log.Warnf("dropping notification for slow subscriber: "+
+				"queue depth %d reached", maxPending)
+			return
+		}
+
+		q.pending = append(q.pending, typedNtfn)
+		q.Unlock()
+
+		select {
+		case q.notify <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// queueNotification queues or synchronously sends a must-deliver notification.
+func queueNotification[T any](sub subscriber, recvChan chan T, ntfn T) {
+	if sub.enqueue != nil {
+		sub.enqueue(ntfn)
+		return
+	}
+
+	log.Warnf("subscriber has no notification queue, falling back to " +
+		"blocking send")
+
+	select {
+	case recvChan <- ntfn:
+	case <-sub.subCtx.Done():
+	}
 }
 
 // SubscribeReservations subscribes to the reservation notifications.
@@ -136,6 +254,9 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
+		enqueue: newNotificationQueue(
+			ctx, notifChan, m.cfg.MaxQueuedNotifications,
+		),
 	}
 
 	m.addSubscriber(NotificationTypeStaticLoopInSweepRequest, sub)
@@ -145,7 +266,6 @@ func (m *Manager) SubscribeStaticLoopInSweepRequests(ctx context.Context,
 			NotificationTypeStaticLoopInSweepRequest,
 			sub,
 		)
-		close(notifChan)
 	})
 
 	return notifChan
@@ -161,12 +281,14 @@ func (m *Manager) SubscribeUnfinishedSwaps(ctx context.Context,
 	sub := subscriber{
 		subCtx:   ctx,
 		recvChan: notifChan,
+		enqueue: newNotificationQueue(
+			ctx, notifChan, m.cfg.MaxQueuedNotifications,
+		),
 	}
 
 	m.addSubscriber(NotificationTypeUnfinishedSwap, sub)
 	context.AfterFunc(ctx, func() {
 		m.removeSubscriber(NotificationTypeUnfinishedSwap, sub)
-		close(notifChan)
 	})
 
 	return notifChan
@@ -332,7 +454,13 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerReservationNotification)
 
-			recvChan <- reservationNtfn
+			select {
+			case recvChan <- reservationNtfn:
+			case <-sub.subCtx.Done():
+			default:
+				log.Debugf("Dropping reservation " +
+					"notification for slow subscriber")
+			}
 		}
 	case *swapserverrpc.SubscribeNotificationsResponse_StaticLoopInSweep: // nolint: lll
 		// We'll forward the static loop in sweep request to all
@@ -345,7 +473,7 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerStaticLoopInSweepNotification)
 
-			recvChan <- staticLoopInSweepRequestNtfn
+			queueNotification(sub, recvChan, staticLoopInSweepRequestNtfn)
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_UnfinishedSwap: // nolint: lll
@@ -359,7 +487,7 @@ func (m *Manager) handleNotification(ntfn *swapserverrpc.
 			recvChan := sub.recvChan.(chan *swapserverrpc.
 				ServerUnfinishedSwapNotification)
 
-			recvChan <- unfinishedSwapNtfn
+			queueNotification(sub, recvChan, unfinishedSwapNtfn)
 		}
 
 	case *swapserverrpc.SubscribeNotificationsResponse_HtlcConfirmed:
@@ -403,7 +531,7 @@ func (m *Manager) removeSubscriber(notifType NotificationType, sub subscriber) {
 	subs := m.subscribers[notifType]
 	newSubs := make([]subscriber, 0, len(subs))
 	for _, s := range subs {
-		if s != sub {
+		if s.recvChan != sub.recvChan {
 			newSubs = append(newSubs, s)
 		}
 	}

@@ -20,7 +20,7 @@ import (
 
 var (
 	testReservationId  = []byte{0x01, 0x02}
-	testReservationId2 = []byte{0x01, 0x02}
+	testReservationId2 = []byte{0x03, 0x04}
 )
 
 // mockNotificationsClient implements the NotificationsClient interface for testing.
@@ -187,6 +187,276 @@ func getTestNotification(resId []byte) *swapserverrpc.SubscribeNotificationsResp
 				ReservationId: resId,
 			},
 		},
+	}
+}
+
+// unfinishedSwapNotification builds an unfinished swap notification.
+func unfinishedSwapNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_UnfinishedSwap{
+			UnfinishedSwap: &swapserverrpc.
+				ServerUnfinishedSwapNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+// staticLoopInSweepNotification builds a static loop-in sweep notification.
+func staticLoopInSweepNotification(
+	swapHash lntypes.Hash) *swapserverrpc.SubscribeNotificationsResponse {
+
+	return &swapserverrpc.SubscribeNotificationsResponse{
+		Notification: &swapserverrpc.
+			SubscribeNotificationsResponse_StaticLoopInSweep{
+			StaticLoopInSweep: &swapserverrpc.
+				ServerStaticLoopInSweepNotification{
+				SwapHash: swapHash[:],
+			},
+		},
+	}
+}
+
+// TestManager_SlowReservationSubscriberDoesNotBlock tests that a reservation
+// subscriber with a full notification channel does not block delivery to other
+// subscribers. Reservation notifications are best-effort, so slow subscribers
+// drop new notifications instead of queueing them.
+func TestManager_SlowReservationSubscriberDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	slowCtx, slowCancel := context.WithCancel(t.Context())
+	defer slowCancel()
+	slowChan := mgr.SubscribeReservations(slowCtx)
+
+	fastCtx, fastCancel := context.WithCancel(t.Context())
+	defer fastCancel()
+	fastChan := mgr.SubscribeReservations(fastCtx)
+
+	firstNotif := getTestNotification(testReservationId)
+	mgr.handleNotification(firstNotif)
+
+	received := <-fastChan
+	require.Equal(t, testReservationId, received.ReservationId)
+
+	secondNotif := getTestNotification(testReservationId2)
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(secondNotif)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case received = <-fastChan:
+		require.Equal(t, testReservationId2, received.ReservationId)
+
+	case <-time.After(time.Second):
+		t.Fatal("fast subscriber did not receive notification")
+	}
+
+	require.Len(t, slowChan, 1)
+
+	select {
+	case received = <-slowChan:
+		require.Equal(t, testReservationId, received.ReservationId)
+
+	case <-time.After(time.Second):
+		t.Fatal("slow subscriber did not receive first notification")
+	}
+
+	select {
+	case received = <-slowChan:
+		t.Fatalf("slow subscriber received dropped notification %x",
+			received.ReservationId)
+
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestManager_UnfinishedSwapNotificationWaitsForSubscriber verifies that
+// unfinished swap recovery notifications are not dropped when the local
+// subscriber is briefly behind.
+func TestManager_UnfinishedSwapNotificationWaitsForSubscriber(t *testing.T) {
+	t.Parallel()
+
+	assertQueuedSwapHashNotifications(
+		t,
+		func(mgr *Manager, ctx context.Context) <-chan *swapserverrpc.
+			ServerUnfinishedSwapNotification {
+
+			return mgr.SubscribeUnfinishedSwaps(ctx)
+		},
+		unfinishedSwapNotification,
+		func(ntfn *swapserverrpc.ServerUnfinishedSwapNotification) []byte {
+			return ntfn.SwapHash
+		},
+		lntypes.Hash{0x02, 0x03}, lntypes.Hash{0x04, 0x05},
+		"did not receive first unfinished swap notification",
+		"second unfinished swap notification was dropped",
+	)
+}
+
+// TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber verifies
+// that a full static-loop-in sweep subscriber channel does not block the global
+// notification receive loop.
+func TestManager_StaticLoopInSweepNotificationQueuesForSlowSubscriber(
+	t *testing.T) {
+
+	t.Parallel()
+
+	assertQueuedSwapHashNotifications(
+		t,
+		func(mgr *Manager, ctx context.Context) <-chan *swapserverrpc.
+			ServerStaticLoopInSweepNotification {
+
+			return mgr.SubscribeStaticLoopInSweepRequests(ctx)
+		},
+		staticLoopInSweepNotification,
+		func(ntfn *swapserverrpc.ServerStaticLoopInSweepNotification) []byte {
+			return ntfn.SwapHash
+		},
+		lntypes.Hash{0x12, 0x13}, lntypes.Hash{0x14, 0x15},
+		"did not receive first sweep notification",
+		"second sweep notification was not queued",
+	)
+}
+
+// TestManager_QueuedNotificationChannelClosesOnCancel verifies that queued
+// subscribers own their channel shutdown even when delivery is blocked.
+func TestManager_QueuedNotificationChannelClosesOnCancel(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	subChan := mgr.SubscribeUnfinishedSwaps(subCtx)
+
+	swapHashA := lntypes.Hash{0x21, 0x22}
+	mgr.handleNotification(unfinishedSwapNotification(swapHashA))
+
+	require.Eventually(t, func() bool {
+		return len(subChan) == 1
+	}, time.Second, 10*time.Millisecond)
+
+	swapHashB := lntypes.Hash{0x23, 0x24}
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(unfinishedSwapNotification(swapHashB))
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	subCancel()
+
+	select {
+	case received, ok := <-subChan:
+		require.True(t, ok)
+		require.Equal(t, swapHashA[:], received.SwapHash)
+
+	case <-time.After(time.Second):
+		t.Fatal("first unfinished swap notification was not delivered")
+	}
+
+	require.Eventually(t, func() bool {
+		select {
+		case _, ok := <-subChan:
+			return !ok
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+}
+
+// TestNotificationQueueDropsAtCapacity checks the queue's explicit drop policy
+// once a subscriber reaches its configured backlog limit.
+func TestNotificationQueueDropsAtCapacity(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	recvChan := make(chan int, 1)
+	enqueue := newNotificationQueue(ctx, recvChan, 0)
+
+	enqueue(1)
+
+	select {
+	case ntfn := <-recvChan:
+		t.Fatalf("received dropped notification %d", ntfn)
+
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// assertQueuedSwapHashNotifications checks queued delivery for swap hashes.
+func assertQueuedSwapHashNotifications[T any](t *testing.T,
+	subscribe func(*Manager, context.Context) <-chan T,
+	notification func(lntypes.Hash) *swapserverrpc.
+		SubscribeNotificationsResponse,
+	swapHash func(T) []byte, swapHashA, swapHashB lntypes.Hash,
+	firstFailureMsg, secondFailureMsg string) {
+
+	t.Helper()
+
+	mgr := NewManager(&Config{})
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+
+	subChan := subscribe(mgr, subCtx)
+
+	mgr.handleNotification(notification(swapHashA))
+
+	done := make(chan struct{})
+	go func() {
+		mgr.handleNotification(notification(swapHashB))
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHashA[:], swapHash(received))
+
+	case <-time.After(time.Second):
+		t.Fatal(firstFailureMsg)
+	}
+
+	select {
+	case received := <-subChan:
+		require.Equal(t, swapHashB[:], swapHash(received))
+
+	case <-time.After(time.Second):
+		t.Fatal(secondFailureMsg)
 	}
 }
 
