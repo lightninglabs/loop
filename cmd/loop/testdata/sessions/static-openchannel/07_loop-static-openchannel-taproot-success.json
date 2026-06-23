@@ -1,0 +1,104 @@
+{
+  "metadata": {
+    "args": [
+      "/home/user/bin/loop",
+      "--rpcserver=localhost:11010",
+      "--loopdir=/redacted/loop",
+      "--tlscertpath=/redacted/loop/regtest/tls.cert",
+      "--macaroonpath=/redacted/loop/regtest/loop.macaroon",
+      "static",
+      "openchannel",
+      "--node_key",
+      "03465f68fd39358667678f8353a31e0d99475e3fd2fb4e58daf7dbfabe04c011f4",
+      "--fundmax",
+      "--utxo",
+      "89f6fd2ee96445c6e48278e7eaaca7de8e342904f20609ce72c0d27afb443e2d:1",
+      "--channel_type",
+      "taproot",
+      "--private",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.2-beta commit=v0.33.2-beta-bump-lnd-21-a-7-g21019e684ed06e2267382f473dfeaafb81a33310 commit_hash=21019e684ed06e2267382f473dfeaafb81a33310",
+    "duration": 295879956,
+    "clock_start_unix": 1782002722
+  },
+  "events": [
+    {
+      "time_ms": 2,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "request",
+        "message_type": "looprpc.StaticOpenChannelRequest",
+        "payload": {
+          "open_channel_request": {
+            "sat_per_vbyte": "0",
+            "node_pubkey": "A0ZfaP05NYZnZ4+DU6MeDZlHXj/S+05Y2vfb+r4EwBH0",
+            "node_pubkey_string": "",
+            "local_funding_amount": "0",
+            "push_sat": "0",
+            "target_conf": 0,
+            "sat_per_byte": "0",
+            "private": true,
+            "min_htlc_msat": "0",
+            "remote_csv_delay": 0,
+            "min_confs": 1,
+            "spend_unconfirmed": false,
+            "close_address": "",
+            "funding_shim": null,
+            "remote_max_value_in_flight_msat": "0",
+            "remote_max_htlcs": 0,
+            "max_local_csv": 0,
+            "commitment_type": "TAPROOT",
+            "zero_conf": false,
+            "scid_alias": false,
+            "base_fee": "0",
+            "fee_rate": "0",
+            "use_base_fee": false,
+            "use_fee_rate": false,
+            "remote_chan_reserve_sat": "0",
+            "fund_max": true,
+            "memo": "",
+            "outpoints": [
+              {
+                "txid_bytes": "",
+                "txid_str": "89f6fd2ee96445c6e48278e7eaaca7de8e342904f20609ce72c0d27afb443e2d",
+                "output_index": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "time_ms": 295,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/StaticOpenChannel",
+        "event": "response",
+        "message_type": "looprpc.StaticOpenChannelResponse",
+        "payload": {
+          "channel_open_outpoint": "302a41b53946494306e415bdf4724e88b2cf2b37ad2f36dc075db00cc6499e9f:0"
+        }
+      }
+    },
+    {
+      "time_ms": 295,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"channel_open_outpoint\": \"302a41b53946494306e415bdf4724e88b2cf2b37ad2f36dc075db00cc6499e9f:0\"\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 295,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

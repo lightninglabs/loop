@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"go.etcd.io/bbolt"
+	bbolterrors "go.etcd.io/bbolt/errors"
 )
 
 var (
@@ -197,9 +198,9 @@ func NewBoltSwapStore(dbPath string, chainParams *chaincfg.Params) (
 	bdb, err := bboltOpen(path, 0600, &bbolt.Options{
 		Timeout: DefaultLoopDBTimeout,
 	})
-	if errors.Is(err, bbolt.ErrTimeout) {
+	if errors.Is(err, bbolterrors.ErrTimeout) {
 		return nil, fmt.Errorf("%w: couldn't obtain exclusive lock on "+
-			"%s, timed out after %v", bbolt.ErrTimeout, path,
+			"%s, timed out after %v", bbolterrors.ErrTimeout, path,
 			DefaultLoopDBTimeout)
 	}
 	if err != nil {

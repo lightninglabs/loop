@@ -67,7 +67,7 @@
           "   --max_local_csv uint                    (optional) the maximum number of blocks that we will allow the remote peer to require we wait before accessing our funds in the case of a unilateral close. (default: 0)\n",
           "   --close_address string                  (optional) an address to enforce payout of our funds to on cooperative close. Note that if this value is set on channel open, you will *not* be able to cooperatively close to a different address.\n",
           "   --remote_max_value_in_flight_msat uint  (optional) the maximum value in msat that can be pending within the channel at any given time (default: 0)\n",
-          "   --channel_type string                   (optional) the type of channel to propose to the remote peer (\"tweakless\", \"anchors\", \"taproot\")\n",
+          "   --channel_type string                   (optional) the type of channel to propose to the remote peer (\"tweakless\", \"anchors\", \"simple-taproot\", \"taproot\")\n",
           "   --zero_conf                             (optional) whether a zero-conf channel open should be attempted. (default: false)\n",
           "   --scid_alias                            (optional) whether a scid-alias channel type should be negotiated. (default: false)\n",
           "   --remote_reserve_sats uint              (optional) the minimum number of satoshis we require the remote node to keep as a direct payment. If not specified, a default of 1% of the channel capacity will be used. (default: 0)\n",

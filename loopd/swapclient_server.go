@@ -251,6 +251,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 		req.AssetSwapRfqId = in.AssetRfqInfo.SwapRfqId
 	}
 
+	// Keep accepting the deprecated single-channel field for older clients.
 	switch {
 	case in.LoopOutChannel != 0 && len(in.OutgoingChanSet) > 0: // nolint:staticcheck
 		return nil, errors.New("loop_out_channel and outgoing_" +
@@ -273,7 +274,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	resp := &looprpc.SwapResponse{
 		Id:            info.SwapHash.String(),
 		IdBytes:       info.SwapHash[:],
-		HtlcAddress:   htlcAddress,
+		HtlcAddress:   htlcAddress, //nolint:staticcheck
 		ServerMessage: info.ServerMessage,
 	}
 
@@ -1182,11 +1183,11 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 
 	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {
 		p2wshAddr := swapInfo.HtlcAddressP2WSH.String()
-		response.HtlcAddress = p2wshAddr
+		response.HtlcAddress = p2wshAddr //nolint:staticcheck
 		response.HtlcAddressP2Wsh = p2wshAddr
 	} else {
 		p2trAddr := swapInfo.HtlcAddressP2TR.String()
-		response.HtlcAddress = p2trAddr
+		response.HtlcAddress = p2trAddr //nolint:staticcheck
 		response.HtlcAddressP2Tr = p2trAddr
 	}
 

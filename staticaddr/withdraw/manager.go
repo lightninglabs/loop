@@ -1108,7 +1108,8 @@ func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 
 	if commitmentType != lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE {
 		switch commitmentType {
-		case lnrpc.CommitmentType_SIMPLE_TAPROOT:
+		case lnrpc.CommitmentType_SIMPLE_TAPROOT,
+			lnrpc.CommitmentType_TAPROOT:
 			weightEstimator.AddP2TROutput()
 
 		default:

@@ -271,9 +271,6 @@ func TestSelectDeposits(t *testing.T) {
 	// High fee rate: 100 sat/vbyte = 25000 sat/kw.
 	highFeeRate := chainfee.SatPerKVByte(100_000).FeePerKWeight()
 
-	anchors := lnrpc.CommitmentType_ANCHORS
-	taproot := lnrpc.CommitmentType_SIMPLE_TAPROOT
-
 	tests := []struct {
 		name           string
 		deposits       []*deposit.Deposit
@@ -290,7 +287,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(1_000, 2_000),
 			amount:         1_000_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantErr:        "insufficient funds",
 		},
 		{
@@ -298,7 +295,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(100_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantErr:        "insufficient funds",
 		},
 		{
@@ -310,7 +307,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(51_000),
 			amount:         50_000,
 			feeRate:        highFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantErr:        "insufficient funds",
 		},
 		{
@@ -327,7 +324,7 @@ func TestSelectDeposits(t *testing.T) {
 			),
 			amount:         400_000,
 			feeRate:        highFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      2,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				require.Equal(
@@ -345,7 +342,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(500_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      1,
 		},
 		{
@@ -353,7 +350,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(60_000, 60_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      2,
 		},
 		{
@@ -361,7 +358,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(10_000, 200_000, 50_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      1,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				// Should pick the 200k deposit.
@@ -388,13 +385,13 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(35_500, 35_500, 10_000),
 			amount:         50_000,
 			feeRate:        highFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      3,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				total := depositSum(selected)
 				fee := estimateFee(
 					len(selected), highFeeRate,
-					anchors,
+					lnrpc.CommitmentType_ANCHORS,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -407,7 +404,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(40_000, 40_000, 40_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      3,
 		},
 		{
@@ -415,7 +412,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(100_000, 50_000),
 			amount:         99_000,
 			feeRate:        0,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      1,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				// With zero fee, 100k covers 99k + 0 + dust.
@@ -430,12 +427,12 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(200_000, 100_000, 50_000),
 			amount:         100_000,
 			feeRate:        highFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				total := depositSum(selected)
 				fee := estimateFee(
 					len(selected), highFeeRate,
-					anchors,
+					lnrpc.CommitmentType_ANCHORS,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -448,7 +445,15 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(500_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: taproot,
+			commitmentType: lnrpc.CommitmentType_SIMPLE_TAPROOT,
+			wantCount:      1,
+		},
+		{
+			name:           "production taproot commitment type",
+			deposits:       makeDeposits(500_000),
+			amount:         100_000,
+			feeRate:        lowFeeRate,
+			commitmentType: lnrpc.CommitmentType_TAPROOT,
 			wantCount:      1,
 		},
 		{
@@ -459,12 +464,12 @@ func TestSelectDeposits(t *testing.T) {
 			),
 			amount:         50_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				total := depositSum(selected)
 				fee := estimateFee(
 					len(selected), lowFeeRate,
-					anchors,
+					lnrpc.CommitmentType_ANCHORS,
 				)
 				require.GreaterOrEqual(
 					t, total,
@@ -484,12 +489,12 @@ func TestSelectDeposits(t *testing.T) {
 			),
 			amount:         150_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				total := depositSum(selected)
 				fee := estimateFee(
 					len(selected), lowFeeRate,
-					anchors,
+					lnrpc.CommitmentType_ANCHORS,
 				)
 				// Core invariant: selected amount covers
 				// requested amount + fee + dust.
@@ -506,7 +511,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(10_000, 20_000, 300_000),
 			amount:         100_000,
 			feeRate:        lowFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      1,
 			validate: func(t *testing.T, selected []*deposit.Deposit) {
 				require.Equal(
@@ -525,7 +530,7 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:       makeDeposits(60_000, 60_000),
 			amount:         50_000,
 			feeRate:        highFeeRate,
-			commitmentType: anchors,
+			commitmentType: lnrpc.CommitmentType_ANCHORS,
 			wantCount:      2,
 		},
 	}

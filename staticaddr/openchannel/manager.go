@@ -310,6 +310,8 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			return nil, err
 		}
 
+		// If a local funding amount is set, coin-select deposits to
+		// cover it. Otherwise fundmax uses all available deposits.
 		if req.LocalFundingAmount != 0 {
 			deposits, err = staticutil.SelectDeposits(
 				deposits, req.LocalFundingAmount,
@@ -319,9 +321,6 @@ func (m *Manager) OpenChannel(ctx context.Context,
 				return nil, fmt.Errorf("error selecting "+
 					"deposits: %w", err)
 			}
-		} else {
-			// The fundmax flag is set, hence we select all deposits
-			// for funding the channel.
 		}
 	}
 
@@ -369,6 +368,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	if err == nil {
 		return chanOutpoint, nil
 	}
+	err = maybeWrapTaprootUnsupportedError(reqClone, err)
 
 	log.Infof("error opening channel: %v", err)
 
@@ -773,11 +773,38 @@ func resolveCommitmentType(commitmentType lnrpc.CommitmentType) (
 	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
 		return lnrpc.CommitmentType_SIMPLE_TAPROOT, nil
 
+	case lnrpc.CommitmentType_TAPROOT:
+		return lnrpc.CommitmentType_TAPROOT, nil
+
 	default:
 		return lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE, fmt.Errorf(
 			"unsupported commitment type %v", commitmentType,
 		)
 	}
+}
+
+// maybeWrapTaprootUnsupportedError turns lnd's generic unknown channel type
+// error into a user-actionable message for Loop's production taproot channel
+// type.
+func maybeWrapTaprootUnsupportedError(req *lnrpc.OpenChannelRequest,
+	err error) error {
+
+	if err == nil || req.CommitmentType != lnrpc.CommitmentType_TAPROOT {
+		return err
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errMsg, "unhandled request channel type"),
+		strings.Contains(errMsg, "unknown channel type"),
+		strings.Contains(errMsg, "unsupported channel type"):
+
+		return fmt.Errorf("channel_type=taproot is not supported "+
+			"by the connected lnd; update LND to v0.21.0-beta "+
+			"or later to use this channel type: %w", err)
+	}
+
+	return err
 }
 
 // checkPsbtFlags make sure a request to open a channel doesn't set any

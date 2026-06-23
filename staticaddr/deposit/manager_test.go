@@ -71,6 +71,10 @@ func (m *mockStaticAddressClient) PushStaticAddressHtlcSigs(ctx context.Context,
 		args.Error(1)
 }
 
+// ServerWithdrawDeposits implements the deprecated RPC required by the
+// generated client interface. Production code uses ServerPsbtWithdrawDeposits.
+//
+//nolint:staticcheck
 func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 	in *swapserverrpc.ServerWithdrawRequest,
 	opts ...grpc.CallOption) (*swapserverrpc.ServerWithdrawResponse,

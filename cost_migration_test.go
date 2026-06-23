@@ -163,6 +163,11 @@ func TestCostMigration(t *testing.T) {
 	// Now we can run the migration.
 	err = MigrateLoopOutCosts(context.Background(), lnd.LndServices, 1, store)
 	require.NoError(t, err)
+	listPaymentsRequests := lnd.ListPaymentsRequestsSnapshot()
+	require.NotEmpty(t, listPaymentsRequests)
+	for _, req := range listPaymentsRequests {
+		require.True(t, req.OmitHops)
+	}
 
 	// Finally check that the swap cost has been updated correctly.
 	swap, err := store.FetchLoopOutSwap(

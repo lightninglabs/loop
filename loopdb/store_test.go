@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
+	bbolterrors "go.etcd.io/bbolt/errors"
 )
 
 var (
@@ -62,7 +62,7 @@ func TestNewBoltSwapStoreTimeout(t *testing.T) {
 		bboltOpen = origOpen
 	})
 
-	wrappedErr := fmt.Errorf("wrapped: %w", bbolt.ErrTimeout)
+	wrappedErr := fmt.Errorf("wrapped: %w", bbolterrors.ErrTimeout)
 	bboltOpen = func(path string, mode os.FileMode,
 		options *bbolt.Options) (*bbolt.DB, error) {
 
@@ -74,7 +74,7 @@ func TestNewBoltSwapStoreTimeout(t *testing.T) {
 
 	store, err := NewBoltSwapStore(tempDir, &chaincfg.MainNetParams)
 	require.Nil(t, store)
-	require.ErrorIs(t, err, bbolt.ErrTimeout)
+	require.ErrorIs(t, err, bbolterrors.ErrTimeout)
 	require.ErrorContains(t, err, "couldn't obtain exclusive lock")
 }
 
@@ -142,10 +142,7 @@ func TestLoopOutStore(t *testing.T) {
 // testLoopOutStore tests the basic functionality of the current bbolt
 // swap store for specific swap parameters.
 func testLoopOutStore(t *testing.T, pendingSwap *LoopOutContract) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	require.NoError(t, err)
@@ -284,9 +281,7 @@ func TestLoopInStore(t *testing.T) {
 }
 
 func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	require.NoError(t, err)
@@ -366,11 +361,7 @@ func testLoopInStore(t *testing.T, pendingSwap LoopInContract) {
 // TestVersionNew tests that a new database is initialized with the current
 // version.
 func TestVersionNew(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	store, err := NewBoltSwapStore(tempDirName, &chaincfg.MainNetParams)
 	if err != nil {
@@ -390,11 +381,7 @@ func TestVersionNew(t *testing.T) {
 // TestVersionMigrated tests that an existing version zero database is migrated
 // to the latest version.
 func TestVersionMigrated(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	createVersionZeroDb(t, tempDirName)
 
@@ -459,11 +446,7 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 	}
 
 	// Restore a legacy database.
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	tempPath := filepath.Join(tempDirName, dbFileName)
 	db, err := bbolt.Open(tempPath, 0600, nil)
@@ -498,9 +481,7 @@ func TestLegacyOutgoingChannel(t *testing.T) {
 // TestLiquidityParams checks that reading and writing to liquidty bucket are
 // as expected.
 func TestLiquidityParams(t *testing.T) {
-	tempDirName, err := ioutil.TempDir("", "clientstore")
-	require.NoError(t, err, "failed to db")
-	defer os.RemoveAll(tempDirName)
+	tempDirName := t.TempDir()
 
 	ctxb := context.Background()
 

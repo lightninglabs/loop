@@ -207,7 +207,7 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	fmt.Printf("Swap initiated\n")
-	fmt.Printf("ID:           %v\n", resp.Id)
+	fmt.Printf("ID:           %x\n", resp.IdBytes)
 
 	if resp.HtlcAddressP2Tr != "" {
 		fmt.Printf("HTLC address (P2TR): %v\n", resp.HtlcAddressP2Tr)
