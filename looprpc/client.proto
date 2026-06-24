@@ -188,7 +188,8 @@ service SwapClient {
         returns (ListStaticAddressDepositsResponse);
 
     /* loop:`listwithdrawals`
-    ListStaticAddressWithdrawals returns a list of static address withdrawals.
+    ListStaticAddressWithdrawals returns a list of static address withdrawals,
+    including pending withdrawals that have not yet been confirmed.
     */
     rpc ListStaticAddressWithdrawals (ListStaticAddressWithdrawalRequest)
         returns (ListStaticAddressWithdrawalResponse);
@@ -2081,7 +2082,8 @@ message Deposit {
 
 message StaticAddressWithdrawal {
     /*
-    The transaction id of the withdrawal transaction.
+    The transaction id of the withdrawal transaction. It is empty until the
+    confirmed transaction is persisted.
     */
     string tx_id = 1;
 
@@ -2098,17 +2100,19 @@ message StaticAddressWithdrawal {
     /*
     The actual amount that was withdrawn from the selected deposits. This value
     represents the sum of selected deposit values minus tx fees minus optional
-    change output.
+    change output. It is zero until the confirmed transaction is persisted.
     */
     int64 withdrawn_amount_satoshis = 4;
 
     /*
-    An optional change.
+    An optional change. It is zero until the confirmed transaction is
+    persisted.
     */
     int64 change_amount_satoshis = 5;
 
     /*
-    The confirmation block height of the withdrawal transaction.
+    The confirmation block height of the withdrawal transaction. It is zero
+    until the withdrawal is confirmed.
     */
     uint32 confirmation_height = 6;
 }

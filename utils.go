@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/graph/db/models"
@@ -85,30 +82,6 @@ func fetchChannelEdgesByID(ctx context.Context,
 	return edgeInfo, policy1, policy2, nil
 }
 
-// parseOutPoint attempts to parse an outpoint from the passed in string.
-func parseOutPoint(s string) (*wire.OutPoint, error) {
-	split := strings.Split(s, ":")
-	if len(split) != 2 {
-		return nil, fmt.Errorf("expecting outpoint to be in format "+
-			"of txid:index: %s", s)
-	}
-
-	index, err := strconv.ParseInt(split[1], 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode output index: %v", err)
-	}
-
-	txid, err := chainhash.NewHashFromStr(split[0])
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse hex string: %v", err)
-	}
-
-	return &wire.OutPoint{
-		Hash:  *txid,
-		Index: uint32(index),
-	}, nil
-}
-
 // getAlias tries to get the ShortChannelId from the passed ChannelId and
 // aliasCache.
 func getAlias(aliasCache map[lnwire.ChannelID]lnwire.ShortChannelID,
@@ -143,9 +116,12 @@ func SelectHopHints(ctx context.Context, lndClient lndclient.LightningClient,
 			}
 		}
 
-		outPoint, err := parseOutPoint(channel.ChannelPoint)
+		outPoint, err := wire.NewOutPointFromString(
+			channel.ChannelPoint,
+		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to parse outpoint: %w",
+				err)
 		}
 
 		remotePubkey, err := btcec.ParsePubKey(channel.PubKeyBytes[:])

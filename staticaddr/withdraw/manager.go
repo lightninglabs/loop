@@ -92,8 +92,8 @@ type ManagerConfig struct {
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient
 
-	// Store is the store that is used to persist the finalized withdrawal
-	// transactions.
+	// Store is the store that is used to persist pending and finalized
+	// withdrawal records.
 	Store *SqlStore
 }
 
@@ -1207,7 +1207,8 @@ func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
 	}
 }
 
-// GetAllWithdrawals returns all finalized withdrawals from the store.
+// GetAllWithdrawals returns all pending and finalized withdrawals from the
+// store.
 func (m *Manager) GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error) {
 	return m.cfg.Store.GetAllWithdrawals(ctx)
 }

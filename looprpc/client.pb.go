@@ -5771,7 +5771,8 @@ func (x *Deposit) GetSwapHash() []byte {
 
 type StaticAddressWithdrawal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The transaction id of the withdrawal transaction.
+	// The transaction id of the withdrawal transaction. It is empty until the
+	// confirmed transaction is persisted.
 	TxId string `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
 	// The selected deposits that is withdrawn from.
 	Deposits []*Deposit `protobuf:"bytes,2,rep,name=deposits,proto3" json:"deposits,omitempty"`
@@ -5779,11 +5780,13 @@ type StaticAddressWithdrawal struct {
 	TotalDepositAmountSatoshis int64 `protobuf:"varint,3,opt,name=total_deposit_amount_satoshis,json=totalDepositAmountSatoshis,proto3" json:"total_deposit_amount_satoshis,omitempty"`
 	// The actual amount that was withdrawn from the selected deposits. This value
 	// represents the sum of selected deposit values minus tx fees minus optional
-	// change output.
+	// change output. It is zero until the confirmed transaction is persisted.
 	WithdrawnAmountSatoshis int64 `protobuf:"varint,4,opt,name=withdrawn_amount_satoshis,json=withdrawnAmountSatoshis,proto3" json:"withdrawn_amount_satoshis,omitempty"`
-	// An optional change.
+	// An optional change. It is zero until the confirmed transaction is
+	// persisted.
 	ChangeAmountSatoshis int64 `protobuf:"varint,5,opt,name=change_amount_satoshis,json=changeAmountSatoshis,proto3" json:"change_amount_satoshis,omitempty"`
-	// The confirmation block height of the withdrawal transaction.
+	// The confirmation block height of the withdrawal transaction. It is zero
+	// until the withdrawal is confirmed.
 	ConfirmationHeight uint32 `protobuf:"varint,6,opt,name=confirmation_height,json=confirmationHeight,proto3" json:"confirmation_height,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
