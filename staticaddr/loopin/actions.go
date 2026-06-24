@@ -92,13 +92,14 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// swap amount minus the fees that the server charges for the swap. The
 	// swap amount is either the total value of the selected deposits, or
 	// the selected amount if a specific amount was requested.
-	swapAmount := f.loopIn.TotalDepositAmount()
+	totalDepositAmount := f.loopIn.TotalDepositAmount()
+	swapAmount := totalDepositAmount
+	var changeAmount btcutil.Amount
 	var hasChange bool
 	if f.loopIn.SelectedAmount > 0 {
 		swapAmount = f.loopIn.SelectedAmount
-		remainingAmount := f.loopIn.TotalDepositAmount() - swapAmount
-		hasChange = remainingAmount > 0 && remainingAmount <
-			f.loopIn.TotalDepositAmount()
+		changeAmount = totalDepositAmount - swapAmount
+		hasChange = changeAmount > 0 && changeAmount < totalDepositAmount
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
@@ -247,44 +248,62 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	maxHtlcTxBackupFee := btcutil.Amount(amt *
 		f.cfg.MaxStaticAddrHtlcBackupFeePercentage)
 
+	htlcWeight := f.loopIn.htlcWeight(hasChange)
 	feeRate := chainfee.SatPerKWeight(loopInResp.StandardHtlcInfo.FeeRate)
-	fee := feeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
+	fee := feeRate.FeeForWeight(htlcWeight)
+	highFeeRate := chainfee.SatPerKWeight(loopInResp.HighFeeHtlcInfo.FeeRate)
+	highFee := highFeeRate.FeeForWeight(htlcWeight)
+	extremelyHighFeeRate := chainfee.SatPerKWeight(
+		loopInResp.ExtremeFeeHtlcInfo.FeeRate,
+	)
+	extremelyHighFee := extremelyHighFeeRate.FeeForWeight(htlcWeight)
+
+	f.Debugf("htlc fee validation: "+
+		"deposit_count=%d, total_deposit=%v, "+
+		"swap_amount=%v, change_amount=%v, has_change=%v, "+
+		"htlc_weight=%v, standard_fee_rate=%v, standard_fee=%v, "+
+		"high_fee_rate=%v, high_fee=%v, extreme_fee_rate=%v, "+
+		"extreme_fee=%v, max_fee=%v, max_backup_fee=%v",
+		len(f.loopIn.Deposits), totalDepositAmount, swapAmount,
+		changeAmount, hasChange, htlcWeight, feeRate, fee, highFeeRate,
+		highFee, extremelyHighFeeRate, extremelyHighFee, maxHtlcTxFee,
+		maxHtlcTxBackupFee)
+
 	if fee > maxHtlcTxFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()
 
-		log.Errorf("server htlc tx fee is higher than the configured "+
-			"allowed maximum: %v > %v", fee, maxHtlcTxFee)
+		f.Errorf("server standard htlc tx fee is higher than the "+
+			"configured allowed maximum: %v > %v "+
+			"(fee_rate=%v, weight=%v)",
+			fee, maxHtlcTxFee, feeRate, htlcWeight)
 
 		return returnError(ErrFeeTooHigh)
 	}
 	f.loopIn.HtlcTxFeeRate = feeRate
 
-	highFeeRate := chainfee.SatPerKWeight(loopInResp.HighFeeHtlcInfo.FeeRate)
-	fee = highFeeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
-	if fee > maxHtlcTxBackupFee {
+	if highFee > maxHtlcTxBackupFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()
 
-		log.Errorf("server htlc backup tx fee is higher than the "+
-			"configured allowed maximum: %v > %v", fee,
-			maxHtlcTxBackupFee)
+		f.Errorf("server high-fee htlc backup tx fee is higher "+
+			"than the configured allowed maximum: %v > %v "+
+			"(fee_rate=%v, weight=%v)",
+			highFee, maxHtlcTxBackupFee, highFeeRate, htlcWeight)
 
 		return returnError(ErrFeeTooHigh)
 	}
 	f.loopIn.HtlcTxHighFeeRate = highFeeRate
 
-	extremelyHighFeeRate := chainfee.SatPerKWeight(
-		loopInResp.ExtremeFeeHtlcInfo.FeeRate,
-	)
-	fee = extremelyHighFeeRate.FeeForWeight(f.loopIn.htlcWeight(hasChange))
-	if fee > maxHtlcTxBackupFee {
+	if extremelyHighFee > maxHtlcTxBackupFee {
 		// Abort the swap by pushing empty sigs to the server.
 		pushEmptySigs()
 
-		log.Errorf("server htlc backup tx fee is higher than the "+
-			"configured allowed maximum: %v > %v", fee,
-			maxHtlcTxBackupFee)
+		f.Errorf("server extreme-fee htlc backup tx fee is "+
+			"higher than the configured allowed maximum: %v > %v "+
+			"(fee_rate=%v, weight=%v)",
+			extremelyHighFee, maxHtlcTxBackupFee,
+			extremelyHighFeeRate, htlcWeight)
 
 		return returnError(ErrFeeTooHigh)
 	}
