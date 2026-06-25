@@ -2,12 +2,10 @@
 .TH loop 1
 
 .SH NAME
-.PP
-loop - control plane for your loopd
+loop \- control plane for your loopd
 
 
 .SH SYNOPSIS
-.PP
 loop
 
 .EX
@@ -29,7 +27,6 @@ loop [GLOBAL OPTIONS] [command [COMMAND OPTIONS]] [ARGUMENTS...]
 
 
 .SH GLOBAL OPTIONS
-.PP
 \fB--help, -h\fP: show help
 
 .PP
@@ -53,7 +50,6 @@ loop [GLOBAL OPTIONS] [command [COMMAND OPTIONS]] [ARGUMENTS...]
 
 .SH COMMANDS
 .SH out
-.PP
 perform an off-chain to on-chain swap (looping out)
 
 .PP
@@ -105,7 +101,6 @@ perform an off-chain to on-chain swap (looping out)
 \fB--verbose, -v\fP: show expanded details
 
 .SH in
-.PP
 perform an on-chain to off-chain swap (loop in)
 
 .PP
@@ -139,28 +134,24 @@ perform an on-chain to off-chain swap (loop in)
 \fB--verbose, -v\fP: show expanded details
 
 .SH terms
-.PP
 Display the current swap terms imposed by the server.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH monitor
-.PP
 monitor progress of any active swaps
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH quote
-.PP
 get a quote for the cost of a swap
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS in
-.PP
 get a quote for the cost of a loop in swap
 
 .PP
@@ -185,7 +176,6 @@ get a quote for the cost of a loop in swap
 \fB--verbose, -v\fP: show expanded details
 
 .SS out
-.PP
 get a quote for the cost of a loop out swap
 
 .PP
@@ -201,21 +191,18 @@ get a quote for the cost of a loop out swap
 \fB--verbose, -v\fP: show expanded details
 
 .SH listauth
-.PP
 list all L402 tokens
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH fetchl402
-.PP
 fetches a new L402 authentication token from the server
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH listswaps
-.PP
 list all swaps in the local database
 
 .PP
@@ -246,7 +233,6 @@ list all swaps in the local database
 \fB--start_time_ns\fP="": Unix timestamp in nanoseconds to select swaps initiated after this time (default: 0)
 
 .SH swapinfo
-.PP
 show the status of a swap
 
 .PP
@@ -256,14 +242,12 @@ show the status of a swap
 \fB--id\fP="": the ID of the swap (default: 0)
 
 .SH getparams
-.PP
 show liquidity manager parameters
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH setrule
-.PP
 set liquidity manager rule for a channel/peer
 
 .PP
@@ -282,14 +266,12 @@ set liquidity manager rule for a channel/peer
 \fB--type\fP="": the type of swap to perform, set to 'out' for acquiring inbound liquidity or 'in' for acquiring outbound liquidity. (default: out)
 
 .SH suggestswaps
-.PP
 show a list of suggested swaps
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH setparams
-.PP
 update the parameters set for the liquidity manager
 
 .PP
@@ -380,14 +362,12 @@ update the parameters set for the liquidity manager
 \fB--sweeplimit\fP="": the limit placed on our estimated sweep fee in sat/vByte. (default: 0)
 
 .SH getinfo
-.PP
 show general information about the loop daemon
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH abandonswap
-.PP
 abandon a swap with a given swap hash
 
 .PP
@@ -397,21 +377,18 @@ abandon a swap with a given swap hash
 \fB--i_know_what_i_am_doing\fP: Specify this flag if you made sure that you read and understood the following consequence of applying this command.
 
 .SH reservations, r
-.PP
 manage reservations
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS list, l
-.PP
 list all reservations
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH instantout
-.PP
 perform an instant off-chain to on-chain swap (looping out)
 
 .PP
@@ -424,14 +401,12 @@ perform an instant off-chain to on-chain swap (looping out)
 \fB--help, -h\fP: show help
 
 .SH listinstantouts
-.PP
 list all instant out swaps
 
 .PP
 \fB--help, -h\fP: show help
 
 .SH stop
-.PP
 stop the loop daemon
 
 .PP
@@ -441,21 +416,18 @@ stop the loop daemon
 \fB--wait\fP: wait until loopd fully shuts down
 
 .SH static, s
-.PP
 perform on-chain to off-chain swaps using static addresses.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS new, n
-.PP
 Create a new static loop in address.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS listunspent, l
-.PP
 List unspent static address outputs.
 
 .PP
@@ -468,7 +440,6 @@ List unspent static address outputs.
 \fB--min_confs\fP="": The minimum amount of confirmations an output should have to be listed. (default: 0)
 
 .SS listdeposits
-.PP
 Displays static address deposits. A filter can be applied to only show deposits in a specific state.
 
 .PP
@@ -493,21 +464,18 @@ failed
 \fB--help, -h\fP: show help
 
 .SS listwithdrawals
-.PP
 Display a summary of past withdrawals.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS listswaps
-.PP
 Shows a list of static address swaps.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS withdraw, w
-.PP
 Withdraw from static address deposits.
 
 .PP
@@ -529,14 +497,12 @@ Withdraw from static address deposits.
 \fB--utxo\fP="": specify utxos as outpoints(tx:idx) which willbe withdrawn. (default: [])
 
 .SS summary, s
-.PP
 Display a summary of static address related information.
 
 .PP
 \fB--help, -h\fP: show help
 
 .SS in
-.PP
 Loop in funds from static address deposits.
 
 .PP
@@ -582,7 +548,6 @@ Loop in funds from static address deposits.
 \fB--verbose, -v\fP: show expanded details
 
 .SS openchannel
-.PP
 Open a channel to an existing peer.
 
 .PP
