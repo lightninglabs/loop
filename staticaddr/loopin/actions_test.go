@@ -54,10 +54,10 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
 
 	// Seed the mock invoice store so LookupInvoice succeeds.
-	mockLnd.Invoices[swapHash] = &lndclient.Invoice{
+	mockLnd.SetInvoice(&lndclient.Invoice{
 		Hash:  swapHash,
 		State: invoices.ContractOpen,
-	}
+	})
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -268,6 +268,133 @@ func testStaticAddressRouteHints() [][]zpay32.HopHint {
 // testValidateLoopInContract accepts all server contract parameters in tests.
 func testValidateLoopInContract(_ int32, _ int32) error {
 	return nil
+}
+
+// TestOriginalDepositOutpointUnavailableRequiresMissingTxOut verifies that a
+// present txout does not trigger the RBF cancellation path.
+func TestOriginalDepositOutpointUnavailableRequiresMissingTxOut(t *testing.T) {
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{1},
+		Index: 0,
+	}
+
+	txOutChecker := &testTxOutChecker{
+		txOut: &wire.TxOut{Value: 10_000},
+	}
+	f := &FSM{
+		cfg: &Config{
+			TxOutChecker: txOutChecker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			DepositOutpoints: []string{originalOutpoint.String()},
+		},
+	}
+
+	unavailable, err := f.originalDepositOutpointUnavailable(t.Context())
+	require.NoError(t, err)
+	require.False(t, unavailable)
+	require.Equal(t, []wire.OutPoint{originalOutpoint}, txOutChecker.outpoints)
+	require.Equal(t, []bool{true}, txOutChecker.includeMempool)
+}
+
+// TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable verifies that a
+// pending loop-in is canceled before HTLC signing if GetTxOut with mempool
+// awareness reports that one of the originally selected outpoints is gone.
+func TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	swapHash := lntypes.Hash{9, 8, 7}
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{1},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{originalOutpoint.String()},
+	}
+
+	txOutChecker := &testTxOutChecker{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		TxOutChecker:   txOutChecker,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.SignHtlcTxAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "original deposit outpoint no longer available",
+	)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	require.Equal(t, []wire.OutPoint{originalOutpoint}, txOutChecker.outpoints)
+	require.Equal(t, []bool{true}, txOutChecker.includeMempool)
+}
+
+// TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError verifies that lookup
+// failures are treated as errors, but do not cancel the invoice. The invoice is
+// only canceled when GetTxOut explicitly returns nil for an original outpoint.
+func TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	swapHash := lntypes.Hash{9, 8, 6}
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{3},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{originalOutpoint.String()},
+	}
+
+	txOutChecker := &testTxOutChecker{
+		err: errors.New("backend unavailable"),
+	}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		TxOutChecker:   txOutChecker,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.SignHtlcTxAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "unable to get txout",
+	)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice should not have been canceled: %x", hash)
+	default:
+	}
 }
 
 // TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
@@ -544,6 +671,24 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	})
 
 	return r.err
+}
+
+type testTxOutChecker struct {
+	txOut *wire.TxOut
+	err   error
+
+	outpoints      []wire.OutPoint
+	includeMempool []bool
+}
+
+// GetTxOut records lookup parameters and returns the configured result.
+func (t *testTxOutChecker) GetTxOut(_ context.Context,
+	outpoint wire.OutPoint, includeMempool bool) (*wire.TxOut, error) {
+
+	t.outpoints = append(t.outpoints, outpoint)
+	t.includeMempool = append(t.includeMempool, includeMempool)
+
+	return t.txOut, t.err
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
