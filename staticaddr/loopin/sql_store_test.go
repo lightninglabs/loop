@@ -377,3 +377,76 @@ func TestCreateLoopIn(t *testing.T) {
 		time.Microsecond,
 	)
 }
+
+// TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins
+// keep the original outpoint snapshot stored when the swap was created.
+func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
+	ctxb := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+		Index: 0,
+	}
+	currentOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x5a, 0x6b, 0x7c, 0x8d},
+		Index: 1,
+	}
+
+	d := &deposit.Deposit{
+		ID:       depositID,
+		OutPoint: oldOutpoint,
+		Value:    btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
+
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctxb, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
+	swap := StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
+		DepositOutpoints:        []string{oldOutpoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	swap.SetState(SignHtlcTx)
+
+	require.NoError(t, swapStore.CreateLoopIn(ctxb, &swap))
+
+	d.OutPoint = currentOutpoint
+	d.ConfirmationHeight = 42
+	require.NoError(t, depositStore.UpdateDeposit(ctxb, d))
+
+	storedSwap, err := swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.Equal(
+		t, []string{oldOutpoint.String()},
+		storedSwap.DepositOutpoints,
+	)
+	require.Len(t, storedSwap.Deposits, 1)
+	require.Equal(t, currentOutpoint, storedSwap.Deposits[0].OutPoint)
+	require.Equal(t, int64(42), storedSwap.Deposits[0].ConfirmationHeight)
+}
