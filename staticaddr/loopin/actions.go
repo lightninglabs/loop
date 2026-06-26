@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -343,7 +344,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 // cancelSwapInvoice best-effort cancels the current swap invoice using a
 // detached timeout-limited context.
 func (f *FSM) cancelSwapInvoice() {
-	if f.loopIn.SwapInvoice == "" {
+	if f.loopIn.SwapHash == (lntypes.Hash{}) {
 		return
 	}
 
@@ -388,6 +389,39 @@ func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
 	}
 }
 
+// originalDepositOutpointUnavailable checks the original selected deposit
+// outpoints against the chain backend's UTXO view.
+func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
+	bool, error) {
+
+	if f.cfg.TxOutChecker == nil {
+		return false, nil
+	}
+
+	const includeMempool = true
+	for _, outpointStr := range f.loopIn.DepositOutpoints {
+		outpoint, err := wire.NewOutPointFromString(outpointStr)
+		if err != nil {
+			return false, fmt.Errorf("invalid deposit outpoint %q: %w",
+				outpointStr, err)
+		}
+
+		txOut, err := f.cfg.TxOutChecker.GetTxOut(
+			ctx, *outpoint, includeMempool,
+		)
+		if err != nil {
+			return false, fmt.Errorf("unable to get txout %v: %w",
+				outpoint, err)
+		}
+
+		if txOut == nil {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // SignHtlcTxAction is called if the htlc was initialized and the server
 // provided the necessary information to construct the htlc tx. We sign the htlc
 // tx and send the signatures to the server.
@@ -395,6 +429,18 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	var err error
+
+	outpointUnavailable, err := f.originalDepositOutpointUnavailable(ctx)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	if outpointUnavailable {
+		err = errors.New("original deposit outpoint no longer available")
+		f.Warnf("%v, canceling swap invoice", err)
+		f.cancelSwapInvoice()
+
+		return f.HandleError(err)
+	}
 
 	f.loopIn.AddressParams, err =
 		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
