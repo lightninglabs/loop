@@ -29,6 +29,10 @@ func (r *ID) FromByteSlice(b []byte) error {
 
 // Deposit bundles an utxo at a static address together with manager-relevant
 // data.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock.
 type Deposit struct {
 	sync.Mutex
 
@@ -45,7 +49,8 @@ type Deposit struct {
 	Value btcutil.Amount
 
 	// ConfirmationHeight is the absolute height at which the deposit was
-	// first confirmed.
+	// first confirmed. A value of zero means the deposit is still
+	// unconfirmed.
 	ConfirmationHeight int64
 
 	// TimeOutSweepPkScript is the pk script that is used to sweep the
@@ -69,6 +74,10 @@ func (d *Deposit) IsInFinalState() bool {
 	d.Lock()
 	defer d.Unlock()
 
+	return d.isInFinalStateNoLock()
+}
+
+func (d *Deposit) isInFinalStateNoLock() bool {
 	return d.state == Expired || d.state == Withdrawn ||
 		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
 		d.state == ChannelPublished
@@ -77,6 +86,10 @@ func (d *Deposit) IsInFinalState() bool {
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
+
+	if d.ConfirmationHeight <= 0 {
+		return false
+	}
 
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
