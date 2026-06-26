@@ -384,7 +384,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	for _, d := range deposits {
 		// Deposited now includes mempool outputs for static loop-ins, but
 		// withdrawals still require the deposit input to be confirmed.
-		if d.ConfirmationHeight <= 0 {
+		if d.GetConfirmationHeight() <= 0 {
 			return "", "", fmt.Errorf("can't withdraw, " +
 				"unconfirmed deposits can't be withdrawn")
 		}

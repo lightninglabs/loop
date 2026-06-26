@@ -329,7 +329,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	for _, d := range deposits {
 		// Deposited now includes mempool outputs for static loop-ins, but
 		// channel opens still require the deposit input to be confirmed.
-		if d.ConfirmationHeight <= 0 {
+		if d.GetConfirmationHeight() <= 0 {
 			return nil, ErrOpeningChannelUnavailableDeposits
 		}
 	}
@@ -415,7 +415,7 @@ func (m *Manager) OpenChannel(ctx context.Context,
 func filterConfirmedDeposits(deposits []*deposit.Deposit) []*deposit.Deposit {
 	confirmed := make([]*deposit.Deposit, 0, len(deposits))
 	for _, d := range deposits {
-		if d.ConfirmationHeight <= 0 {
+		if d.GetConfirmationHeight() <= 0 {
 			continue
 		}
 
