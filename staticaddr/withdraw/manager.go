@@ -320,6 +320,11 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		allWithdrawing bool
 	)
 
+	err := m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to refresh deposits: %w", err)
+	}
+
 	// Ensure that the deposits are in a state in which they can be
 	// withdrawn.
 	deposits, allDeposited = m.cfg.DepositManager.AllOutpointsActiveDeposits(
@@ -384,16 +389,13 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	for _, d := range deposits {
 		// Deposited now includes mempool outputs for static loop-ins, but
 		// withdrawals still require the deposit input to be confirmed.
-		if d.ConfirmationHeight <= 0 {
+		if d.GetConfirmationHeight() <= 0 {
 			return "", "", fmt.Errorf("can't withdraw, " +
 				"unconfirmed deposits can't be withdrawn")
 		}
 	}
 
-	var (
-		withdrawalAddress btcutil.Address
-		err               error
-	)
+	var withdrawalAddress btcutil.Address
 
 	// Check if the user provided an address to withdraw to. If not, we'll
 	// generate a new address for them.
@@ -678,7 +680,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	d := deposits[0]
 	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
 		ctx, &d.OutPoint, addrParams.PkScript,
-		int32(d.ConfirmationHeight),
+		int32(d.GetConfirmationHeight()),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to register spend ntfn: %w", err)

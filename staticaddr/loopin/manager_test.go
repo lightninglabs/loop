@@ -334,6 +334,10 @@ type mockDepositManager struct {
 	byOutpoint map[string]*deposit.Deposit
 }
 
+func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
+}
+
 func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 	[]*deposit.Deposit, error) {
 

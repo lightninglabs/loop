@@ -33,6 +33,9 @@ func (r *ID) FromByteSlice(b []byte) error {
 // Lock order: if both Manager.mu and a Deposit lock are needed, acquire
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
 // Deposit lock.
+//
+// The state and ConfirmationHeight fields are mutable and protected by the
+// deposit lock.
 type Deposit struct {
 	sync.Mutex
 
@@ -92,6 +95,20 @@ func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	}
 
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
+}
+
+// GetConfirmationHeight returns the deposit confirmation height.
+func (d *Deposit) GetConfirmationHeight() int64 {
+	d.Lock()
+	defer d.Unlock()
+
+	return d.ConfirmationHeight
+}
+
+// GetConfirmationHeightNoLock returns the deposit confirmation height without
+// acquiring the deposit lock.
+func (d *Deposit) GetConfirmationHeightNoLock() int64 {
+	return d.ConfirmationHeight
 }
 
 func (d *Deposit) GetState() fsm.StateType {

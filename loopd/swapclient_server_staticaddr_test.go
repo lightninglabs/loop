@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -13,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,6 +62,33 @@ func (s *staticAddrDepositStore) AllDeposits(context.Context) (
 	return s.allDeposits, nil
 }
 
+type staticAddrTestAddressManager struct{}
+
+func (s *staticAddrTestAddressManager) GetStaticAddressParameters(
+	context.Context) (*script.Parameters, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) GetStaticAddress(
+	context.Context) (*script.StaticAddress, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) ListUnspent(context.Context,
+	int32, int32) ([]*lnwallet.Utxo, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) GetTaprootAddress(
+	*btcec.PublicKey, *btcec.PublicKey, int64) (*btcutil.AddressTaproot,
+	error) {
+
+	return nil, nil
+}
+
 // newTestDepositManager creates a deposit manager backed by seeded deposits.
 func newTestDepositManager(
 	deposits ...*deposit.Deposit) *deposit.Manager {
@@ -70,6 +99,7 @@ func newTestDepositManager(
 	}
 
 	return deposit.NewManager(&deposit.ManagerConfig{
+		AddressManager: &staticAddrTestAddressManager{},
 		Store: &staticAddrDepositStore{
 			allDeposits: deposits,
 			byOutpoint:  byOutpoint,
@@ -104,6 +134,79 @@ func newTestStaticAddressContext(t *testing.T) (*address.Manager,
 	require.NoError(t, err)
 
 	return addrMgr, mock
+}
+
+// TestListStaticAddressDepositsReturnsVisibleDeposits verifies normal deposit
+// listings include visible deposit records.
+func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
+	t.Parallel()
+
+	available := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 2,
+		},
+	}
+	available.SetState(deposit.Deposited)
+
+	addrMgr, lnd := newTestStaticAddressContext(t)
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(available),
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	resp, err := server.ListStaticAddressDeposits(
+		context.Background(), &looprpc.ListStaticAddressDepositsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.FilteredDeposits, 1)
+	require.Equal(
+		t, available.OutPoint.String(),
+		resp.FilteredDeposits[0].Outpoint,
+	)
+}
+
+// TestGetStaticAddressSummaryTotalsDeposits verifies visible deposits are
+// included in static address summary totals.
+func TestGetStaticAddressSummaryTotalsDeposits(t *testing.T) {
+	t.Parallel()
+
+	unconfirmed := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 4,
+		},
+		Value:              btcutil.Amount(2_000),
+		ConfirmationHeight: 0,
+	}
+	unconfirmed.SetState(deposit.Deposited)
+
+	confirmed := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{5},
+			Index: 5,
+		},
+		Value:              btcutil.Amount(3_000),
+		ConfirmationHeight: 123,
+	}
+	confirmed.SetState(deposit.Deposited)
+
+	addrMgr, _ := newTestStaticAddressContext(t)
+	server := &swapClientServer{
+		depositManager: newTestDepositManager(
+			unconfirmed, confirmed,
+		),
+		staticAddressManager: addrMgr,
+	}
+
+	resp, err := server.GetStaticAddressSummary(
+		context.Background(), &looprpc.StaticAddressSummaryRequest{},
+	)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, resp.TotalNumDeposits)
+	require.EqualValues(t, 2_000, resp.ValueUnconfirmedSatoshis)
+	require.EqualValues(t, 3_000, resp.ValueDepositedSatoshis)
 }
 
 // TestGetLoopInQuoteRejectsUnavailableSelectedDeposit verifies manual quote

@@ -36,6 +36,10 @@ type mockDepositManager struct {
 	calls           []transitionCall
 }
 
+func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
+}
+
 func (m *mockDepositManager) AllOutpointsActiveDeposits([]wire.OutPoint,
 	fsm.StateType) ([]*deposit.Deposit, bool) {
 

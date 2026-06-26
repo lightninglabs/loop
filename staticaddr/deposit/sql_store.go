@@ -47,7 +47,7 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		TxHash:               deposit.Hash[:],
 		OutIndex:             int32(deposit.Index),
 		Amount:               int64(deposit.Value),
-		ConfirmationHeight:   deposit.ConfirmationHeight,
+		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
 	}
 
@@ -83,7 +83,7 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 			Valid: true,
 		}
 		confirmationHeight = sql.NullInt64{
-			Int64: deposit.ConfirmationHeight,
+			Int64: deposit.GetConfirmationHeightNoLock(),
 		}
 	)
 
