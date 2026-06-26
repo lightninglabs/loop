@@ -754,8 +754,12 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
-		SelectedAmount:        req.SelectedAmount,
-		DepositOutpoints:      selectedOutpoints,
+		SelectedAmount: req.SelectedAmount,
+		// Copy into a nil slice so the swap owns a stable snapshot
+		// instead of aliasing the caller's selectedOutpoints slice.
+		DepositOutpoints: append(
+			[]string(nil), selectedOutpoints...,
+		),
 		Deposits:              selectedDeposits,
 		Label:                 req.Label,
 		Initiator:             req.Initiator,
