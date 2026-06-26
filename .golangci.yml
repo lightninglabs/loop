@@ -3,7 +3,7 @@ run:
   go: "1.26"
 
   # timeout for analysis
-  timeout: 4m
+  timeout: 8m
 
 linters:
   default: all
