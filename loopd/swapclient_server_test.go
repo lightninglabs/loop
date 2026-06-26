@@ -535,6 +535,14 @@ func (s *mockStaticAddressLoopInStore) IsStored(_ context.Context,
 	return false, nil
 }
 
+// RecordStaticAddressRiskDecision satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) RecordStaticAddressRiskDecision(
+	_ context.Context, _ lntypes.Hash,
+	_ loopin.ConfirmationRiskDecision) error {
+
+	return nil
+}
+
 // GetLoopInByHash returns the configured loop-in with the given hash.
 func (s *mockStaticAddressLoopInStore) GetLoopInByHash(_ context.Context,
 	swapHash lntypes.Hash) (*loopin.StaticAddressLoopIn, error) {
