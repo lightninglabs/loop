@@ -320,6 +320,11 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		allWithdrawing bool
 	)
 
+	err := m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to refresh deposits: %w", err)
+	}
+
 	// Ensure that the deposits are in a state in which they can be
 	// withdrawn.
 	deposits, allDeposited = m.cfg.DepositManager.AllOutpointsActiveDeposits(
@@ -390,10 +395,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	var (
-		withdrawalAddress btcutil.Address
-		err               error
-	)
+	var withdrawalAddress btcutil.Address
 
 	// Check if the user provided an address to withdraw to. If not, we'll
 	// generate a new address for them.

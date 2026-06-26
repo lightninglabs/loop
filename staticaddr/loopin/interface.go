@@ -45,6 +45,9 @@ type AddressManager interface {
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// EnsureDepositsFresh reconciles active deposits with the wallet view.
+	EnsureDepositsFresh(ctx context.Context) error
+
 	// GetAllDeposits returns all known deposits from the database store.
 	GetAllDeposits(ctx context.Context) ([]*deposit.Deposit, error)
 
