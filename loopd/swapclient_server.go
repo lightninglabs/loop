@@ -921,6 +921,12 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	// number of deposits to quote for.
 	numDeposits := 0
 	if autoSelectDeposits {
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		deposits, err := s.depositManager.GetActiveDepositsInState(
 			deposit.Deposited,
 		)
@@ -955,6 +961,12 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 		numDeposits = len(selectedDeposits)
 	} else if len(req.DepositOutpoints) > 0 {
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		// If deposits are selected, we need to retrieve them to
 		// calculate the total value which we request a quote for.
 		depositList, err := s.ListStaticAddressDeposits(
@@ -985,9 +997,11 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		// server can probe the selected value and calculate the per
 		// input fee.
 		for _, deposit := range depositList.FilteredDeposits {
-			// For a manual quote we require the current state to be
-			// Deposited so a stale client-side outpoint selection
-			// fails early instead of making it to swap initiation.
+			// ListStaticAddressDeposits only returns deposits that are visible
+			// in the manager's live view. For a manual quote we additionally
+			// require the current state to be Deposited so stale client-side
+			// outpoint selection fails early instead of making it to swap
+			// initiation.
 			if deposit.State != looprpc.DepositState_DEPOSITED {
 				return nil, fmt.Errorf("deposit %s is not "+
 					"currently available", deposit.Outpoint)
@@ -1768,6 +1782,12 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		return nil, fmt.Errorf("must select either all or some utxos")
 
 	case isAllSelected:
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		deposits, err := s.depositManager.GetActiveDepositsInState(
 			deposit.Deposited,
 		)
@@ -1834,7 +1854,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 			"outpoints")
 	}
 
-	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	allDeposits, err := s.depositManager.GetVisibleDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2071,7 +2091,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	_ *looprpc.StaticAddressSummaryRequest) (
 	*looprpc.StaticAddressSummaryResponse, error) {
 
-	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	allDeposits, err := s.depositManager.GetVisibleDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}

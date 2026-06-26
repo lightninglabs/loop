@@ -751,6 +751,11 @@ func (m *mockAddressManager) GetStaticAddress(_ context.Context) (
 // noopDepositManager is a stub DepositManager used to satisfy FSM config.
 type noopDepositManager struct{}
 
+// EnsureDepositsFresh implements DepositManager with a no-op.
+func (n *noopDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
+}
+
 // GetAllDeposits implements DepositManager with a no-op.
 func (n *noopDepositManager) GetAllDeposits(_ context.Context) (
 	[]*deposit.Deposit, error) {

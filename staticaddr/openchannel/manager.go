@@ -268,11 +268,6 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		).FeePerKWeight()
 	}
 
-	// There are three ways in which we select deposits to open a channel
-	// with. 1.) The user manually selects the deposits. 2.) The user only
-	// selects a local channel amount in which case we coin-select deposits
-	// to cover for it. 3.) The user selects the fundmax flag, in which case
-	// we select all deposits to fund the channel.
 	if len(req.Outpoints) > 0 {
 		// Ensure that the deposits are in a state in which they are
 		// available for a channel open.
@@ -291,6 +286,12 @@ func (m *Manager) OpenChannel(ctx context.Context,
 				"request", duplicate)
 		}
 
+		err = m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		deposits, allActive =
 			m.cfg.DepositManager.AllOutpointsActiveDeposits(
 				outpoints, deposit.Deposited,
@@ -299,6 +300,12 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			return nil, ErrOpeningChannelUnavailableDeposits
 		}
 	} else {
+		err = m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		// We have to select the deposits that are used to fund the
 		// channel.
 		deposits, err = m.cfg.DepositManager.GetActiveDepositsInState(
