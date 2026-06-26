@@ -131,6 +131,37 @@
       "time_ms": 50,
       "kind": "grpc",
       "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 50,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressSummaryResponse",
+        "payload": {
+          "static_address": "bcrt1p604kzzh28764kkw45yps48weergwljggamhhe7tqfglzjzang6cs43f2m2",
+          "relative_expiry_blocks": "14400",
+          "total_num_deposits": 4,
+          "value_unconfirmed_satoshis": "0",
+          "value_deposited_satoshis": "2546150",
+          "value_expired_satoshis": "0",
+          "value_withdrawn_satoshis": "0",
+          "value_looped_in_satoshis": "0",
+          "value_htlc_timeout_sweeps_satoshis": "0",
+          "value_channels_opened": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 50,
+      "kind": "grpc",
+      "data": {
         "method": "/looprpc.SwapClient/StaticAddressLoopIn",
         "event": "request",
         "message_type": "looprpc.StaticAddressLoopInRequest",
