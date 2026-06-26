@@ -349,6 +349,31 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
 		swap.DepositOutpoints)
 	require.Equal(t, SignHtlcTx, swap.GetState())
+	require.Equal(
+		t, ConfirmationRiskDecisionNone,
+		swap.ConfirmationRiskDecision,
+	)
+
+	decisionTime := time.Unix(123, 0).UTC()
+	testClock.SetTime(decisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionAccepted,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, lntypes.Hash{0x9, 0x9, 0x9},
+		ConfirmationRiskDecisionRejected,
+	)
+	require.ErrorIs(t, err, ErrLoopInNotFound)
 
 	require.Len(t, swap.Deposits, 2)
 
