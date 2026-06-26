@@ -96,7 +96,7 @@ type swapClientServer struct {
 	reservationManager   *reservation.Manager
 	instantOutManager    *instantout.Manager
 	staticAddressManager *address.Manager
-	depositManager       *deposit.Manager
+	depositManager       staticAddressDepositManager
 	withdrawalManager    *withdraw.Manager
 	staticLoopInManager  *loopin.Manager
 	openChannelManager   *openchannel.Manager
@@ -110,6 +110,31 @@ type swapClientServer struct {
 
 	// stopDaemon is invoked to trigger a graceful shutdown of the daemon.
 	stopDaemon func()
+}
+
+// staticAddressDepositManager is the deposit manager behavior required by the
+// RPC server.
+type staticAddressDepositManager interface {
+	// EnsureDepositsFresh reconciles tracked deposits with lnd's current
+	// wallet view before user-facing deposit selection.
+	EnsureDepositsFresh(context.Context) error
+
+	// GetActiveDepositsInState returns active deposits that are currently in
+	// the requested state.
+	GetActiveDepositsInState(fsm.StateType) ([]*deposit.Deposit, error)
+
+	// DepositsForOutpoints returns known deposit records for the requested
+	// outpoints, optionally skipping unknown outpoints.
+	DepositsForOutpoints(context.Context, []string, bool) (
+		[]*deposit.Deposit, error)
+
+	// GetVisibleDeposits returns deposits that should be shown in normal
+	// user-facing views.
+	GetVisibleDeposits(context.Context) ([]*deposit.Deposit, error)
+
+	// GetAllDeposits returns all known deposit records, including historical
+	// records that are no longer user-visible.
+	GetAllDeposits(context.Context) ([]*deposit.Deposit, error)
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -977,15 +1002,22 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			return nil, fmt.Errorf("expected %d deposits, got %d",
 				len(req.DepositOutpoints),
 				len(depositList.FilteredDeposits))
-		} else {
-			numDeposits = len(depositList.FilteredDeposits)
 		}
+		numDeposits = len(depositList.FilteredDeposits)
 
 		// In case we quote for deposits, we send the server both the
 		// selected value and the number of deposits. This is so the
 		// server can probe the selected value and calculate the per
 		// input fee.
 		for _, deposit := range depositList.FilteredDeposits {
+			// For a manual quote we require the current state to be
+			// Deposited so a stale client-side outpoint selection
+			// fails early instead of making it to swap initiation.
+			if deposit.State != looprpc.DepositState_DEPOSITED {
+				return nil, fmt.Errorf("deposit %s is not "+
+					"currently available", deposit.Outpoint)
+			}
+
 			totalDepositAmount += btcutil.Amount(
 				deposit.Value,
 			)
@@ -1693,58 +1725,40 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	// ListUnspentRaw returns the unspent wallet view of the backing lnd
-	// wallet. It might be that deposits show up there that are actually
-	// not spendable because they already have been used but not yet spent
-	// by the server. We filter out such deposits here.
+	// wallet. Static loop-in initiation requires an active deposit record,
+	// so only deposits that are both wallet-visible and tracked as
+	// Deposited are returned here.
 	var (
 		outpoints []string
 		isUnspent = make(map[wire.OutPoint]struct{})
 	)
 
-	// Keep track of confirmed outpoints that we need to check against our
-	// database.
-	confirmedToCheck := make(map[wire.OutPoint]struct{})
-
 	for _, utxo := range utxos {
-		if utxo.Confirmations < deposit.MinConfs {
-			// Unconfirmed deposits are always available.
-			isUnspent[utxo.OutPoint] = struct{}{}
-		} else {
-			// Confirmed deposits need to be checked.
-			outpoints = append(outpoints, utxo.OutPoint.String())
-			confirmedToCheck[utxo.OutPoint] = struct{}{}
-		}
+		outpoints = append(outpoints, utxo.OutPoint.String())
+	}
+
+	err = s.depositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check the spent status of the deposits by looking at their states.
-	ignoreUnknownOutpoints := false
+	ignoreUnknownOutpoints := true
 	deposits, err := s.depositManager.DepositsForOutpoints(
 		ctx, outpoints, ignoreUnknownOutpoints,
 	)
 	if err != nil {
 		return nil, err
 	}
+
 	for _, d := range deposits {
-		// A nil deposit means we don't have a record for it. We'll
-		// handle this case after the loop.
 		if d == nil {
 			continue
 		}
 
-		// If the deposit is in the "Deposited" state, it's available.
 		if d.IsInState(deposit.Deposited) {
 			isUnspent[d.OutPoint] = struct{}{}
 		}
-
-		// We have a record for this deposit, so we no longer need to
-		// check it.
-		delete(confirmedToCheck, d.OutPoint)
-	}
-
-	// Any remaining outpoints in confirmedToCheck are ones that lnd knows
-	// about but we don't. These are new, unspent deposits.
-	for op := range confirmedToCheck {
-		isUnspent[op] = struct{}{}
 	}
 
 	// Prepare the list of unspent deposits for the rpc response.
@@ -1791,8 +1805,9 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 			return nil, err
 		}
 
-		for _, d := range deposits {
-			outpoints = append(outpoints, d.OutPoint)
+		outpoints, err = withdrawAllDepositOutpoints(deposits)
+		if err != nil {
+			return nil, err
 		}
 
 	case isUtxoSelected:
@@ -1813,6 +1828,25 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		WithdrawalTxHash: txhash,
 		Address:          address,
 	}, err
+}
+
+// withdrawAllDepositOutpoints returns all deposit outpoints for an `all`
+// withdrawal request. The request must fail if any deposited output is still
+// unconfirmed because `all` should not silently downgrade to a subset.
+func withdrawAllDepositOutpoints(deposits []*deposit.Deposit) ([]wire.OutPoint,
+	error) {
+
+	outpoints := make([]wire.OutPoint, 0, len(deposits))
+	for _, d := range deposits {
+		if d.GetConfirmationHeight() <= 0 {
+			return nil, fmt.Errorf("can't withdraw all deposits while " +
+				"some deposits are unconfirmed")
+		}
+
+		outpoints = append(outpoints, d.OutPoint)
+	}
+
+	return outpoints, nil
 }
 
 // ListStaticAddressDeposits returns a list of all sufficiently confirmed
@@ -1988,9 +2022,10 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			for _, d := range ds {
 				state := toClientDepositState(d.GetState())
 				confirmationHeight := d.GetConfirmationHeight()
-				blocksUntilExpiry := confirmationHeight +
-					int64(addrParams.Expiry) -
-					int64(lndInfo.BlockHeight)
+				blocksUntilExpiry := depositBlocksUntilExpiry(
+					confirmationHeight, addrParams.Expiry,
+					int64(lndInfo.BlockHeight),
+				)
 
 				pd := &looprpc.Deposit{
 					Id:                 d.ID[:],
@@ -2082,23 +2117,16 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		htlcTimeoutSwept    int64
 	)
 
-	// Value unconfirmed.
-	utxos, err := s.staticAddressManager.ListUnspent(
-		ctx, 0, deposit.MinConfs-1,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, u := range utxos {
-		valueUnconfirmed += int64(u.Value)
-	}
-
-	// Confirmed total values by category.
+	// Total values by category.
 	for _, d := range allDeposits {
 		value := int64(d.Value)
 		switch d.GetState() {
 		case deposit.Deposited:
-			valueDeposited += value
+			if d.GetConfirmationHeight() <= 0 {
+				valueUnconfirmed += value
+			} else {
+				valueDeposited += value
+			}
 
 		case deposit.Expired:
 			valueExpired += value
@@ -2248,11 +2276,25 @@ func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
 		return err
 	}
 	for i := range len(deposits) {
-		deposits[i].BlocksUntilExpiry =
-			deposits[i].ConfirmationHeight +
-				int64(params.Expiry) - bestBlockHeight
+		deposits[i].BlocksUntilExpiry = depositBlocksUntilExpiry(
+			deposits[i].ConfirmationHeight, params.Expiry,
+			bestBlockHeight,
+		)
 	}
 	return nil
+}
+
+// depositBlocksUntilExpiry returns the remaining blocks until a deposit
+// expires. Unconfirmed deposits return the full CSV value because the timeout
+// has not started yet.
+func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
+	bestBlockHeight int64) int64 {
+
+	if confirmationHeight <= 0 {
+		return int64(expiry)
+	}
+
+	return confirmationHeight + int64(expiry) - bestBlockHeight
 }
 
 // StaticOpenChannel initiates an open channel request using static address
