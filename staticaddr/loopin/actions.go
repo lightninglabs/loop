@@ -850,17 +850,83 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		}
 	}()
 
-	startPaymentDeadline := func(reason string) {
+	depositsInState := func(state fsm.StateType) bool {
+		if len(f.loopIn.Deposits) == 0 {
+			return false
+		}
+
+		for _, d := range f.loopIn.Deposits {
+			if d == nil {
+				return false
+			}
+
+			d.Lock()
+			inState := d.IsInStateNoLock(state)
+			d.Unlock()
+			if !inState {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	invoiceCanceledForNonPayment := invoice.State == invoices.ContractCanceled
+	depositsLockedForHtlcTimeout := depositsInState(
+		deposit.SweepHtlcTimeout,
+	)
+
+	startPaymentDeadline := func(reason string, startedAt time.Time) {
 		if deadlineStarted || invoice.State == invoices.ContractCanceled {
 			return
 		}
 
 		timeout := f.loopIn.PaymentTimeoutDuration()
+		if !startedAt.IsZero() {
+			timeout -= time.Since(startedAt)
+			if timeout < 0 {
+				timeout = 0
+			}
+		}
 
 		f.Infof("starting payment deadline after %s", reason)
 		deadlineTimer = time.NewTimer(timeout)
 		deadlineChan = deadlineTimer.C
 		deadlineStarted = true
+	}
+
+	transitionDepositsToHtlcTimeout := func(reason string) {
+		if depositsLockedForHtlcTimeout ||
+			depositsInState(deposit.SweepHtlcTimeout) {
+
+			depositsLockedForHtlcTimeout = true
+			return
+		}
+
+		err = f.cfg.DepositManager.TransitionDeposits(
+			ctx, f.loopIn.Deposits,
+			deposit.OnSweepingHtlcTimeout,
+			deposit.SweepHtlcTimeout,
+		)
+		if err != nil {
+			f.Errorf("unable to transition deposits to the htlc "+
+				"timeout sweeping state after %s: %v",
+				reason, err)
+
+			return
+		}
+
+		depositsLockedForHtlcTimeout = true
+	}
+
+	startLegacyFallback := func(reason string, currentHeight int32) {
+		if deadlineStarted || invoice.State == invoices.ContractCanceled {
+			return
+		}
+
+		if f.shouldStartLegacyConfirmationFallback(ctx, currentHeight) {
+			startPaymentDeadline(reason, time.Time{})
+		}
 	}
 
 	if invoice.State == invoices.ContractCanceled {
@@ -879,6 +945,110 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		// Reuse the same helper as InitHtlcAction so timeout cleanup
 		// follows the same detached-context path as early-init cleanup.
 		f.cancelSwapInvoice()
+		invoice.State = invoices.ContractCanceled
+		invoiceCanceledForNonPayment = true
+	}
+
+	riskDecisionTime := func(decision ConfirmationRiskDecision) time.Time {
+		now := time.Now()
+		if f.cfg.Store == nil {
+			return now
+		}
+
+		storedLoopIn, err := f.cfg.Store.GetLoopInByHash(
+			ctx, f.loopIn.SwapHash,
+		)
+		if err != nil {
+			f.Warnf("unable to reload persisted risk decision for "+
+				"swap %v: %v", f.loopIn.SwapHash, err)
+
+			return now
+		}
+
+		if storedLoopIn == nil {
+			return now
+		}
+
+		hasPersistedDecision :=
+			storedLoopIn.ConfirmationRiskDecision == decision &&
+				!storedLoopIn.ConfirmationRiskDecisionTime.IsZero()
+
+		if !hasPersistedDecision {
+			err = f.cfg.Store.RecordStaticAddressRiskDecision(
+				ctx, f.loopIn.SwapHash, decision,
+			)
+			if err != nil {
+				f.Warnf("unable to persist replayed risk "+
+					"decision for swap %v: %v",
+					f.loopIn.SwapHash, err)
+
+				return now
+			}
+
+			storedLoopIn, err = f.cfg.Store.GetLoopInByHash(
+				ctx, f.loopIn.SwapHash,
+			)
+			if err != nil {
+				f.Warnf("unable to reload persisted risk "+
+					"decision for swap %v: %v",
+					f.loopIn.SwapHash, err)
+
+				return now
+			}
+			if storedLoopIn == nil ||
+				storedLoopIn.ConfirmationRiskDecision != decision ||
+				storedLoopIn.ConfirmationRiskDecisionTime.IsZero() {
+
+				return now
+			}
+		}
+
+		f.loopIn.ConfirmationRiskDecision =
+			storedLoopIn.ConfirmationRiskDecision
+		f.loopIn.ConfirmationRiskDecisionTime =
+			storedLoopIn.ConfirmationRiskDecisionTime
+
+		return storedLoopIn.ConfirmationRiskDecisionTime
+	}
+
+	handleRiskRejected := func(reason string) fsm.EventType {
+		cancelInvoiceSubscription()
+		f.cancelSwapInvoice()
+		invoice.State = invoices.ContractCanceled
+		invoiceCanceledForNonPayment = true
+		decisionTime := riskDecisionTime(
+			ConfirmationRiskDecisionRejected,
+		)
+		f.loopIn.ConfirmationRiskDecision =
+			ConfirmationRiskDecisionRejected
+		f.loopIn.ConfirmationRiskDecisionTime = decisionTime
+		riskAcceptedChan = nil
+		riskRejectedChan = nil
+
+		return f.HandleError(fmt.Errorf(
+			"server rejected confirmation risk wait after %s", reason,
+		))
+	}
+
+	switch f.loopIn.ConfirmationRiskDecision {
+	case ConfirmationRiskDecisionAccepted:
+		startPaymentDeadline(
+			"recovered risk accepted notification",
+			f.loopIn.ConfirmationRiskDecisionTime,
+		)
+
+	case ConfirmationRiskDecisionRejected:
+		return handleRiskRejected("recovered risk rejection")
+	}
+
+	info, err := f.cfg.LndClient.GetInfo(ctx)
+	if err != nil {
+		f.Warnf("unable to query current height for legacy confirmation "+
+			"fallback: %v", err)
+	} else {
+		startLegacyFallback(
+			"legacy confirmation fallback", int32(info.BlockHeight),
+		)
 	}
 
 	for {
@@ -887,6 +1057,11 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			f.Infof("htlc tx confirmed")
 
 			htlcConfirmed = true
+			if invoiceCanceledForNonPayment {
+				transitionDepositsToHtlcTimeout(
+					"htlc confirmation after invoice cancellation",
+				)
+			}
 
 		case err = <-htlcErrConfChan:
 			if ctx.Err() != nil {
@@ -959,7 +1134,16 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				continue
 			}
 
-			startPaymentDeadline("risk accepted notification")
+			startedAt := riskDecisionTime(
+				ConfirmationRiskDecisionAccepted,
+			)
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionAccepted
+			f.loopIn.ConfirmationRiskDecisionTime = startedAt
+			startPaymentDeadline(
+				"risk accepted notification",
+				f.loopIn.ConfirmationRiskDecisionTime,
+			)
 
 		case riskRejected, ok := <-riskRejectedChan:
 			if !ok {
@@ -974,47 +1158,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				continue
 			}
 
-			cancelInvoiceSubscription()
-			f.cancelSwapInvoice()
-
-			return f.HandleError(errors.New(
-				"server rejected confirmation risk wait",
-			))
+			return handleRiskRejected("risk rejection")
 
 		case currentHeight := <-blockChan:
-			if !deadlineStarted &&
-				invoice.State != invoices.ContractCanceled {
-
-				err = f.refreshSelectedDeposits(ctx)
-				if err != nil {
-					f.Warnf("unable to refresh selected "+
-						"deposits for legacy confirmation "+
-						"fallback: %v", err)
-				} else {
-					depositConfirmationHeights :=
-						selectedDepositConfirmationHeights(
-							f.loopIn,
-						)
-
-					if legacyMinConfsReached(
-						f.loopIn.DepositOutpoints,
-						depositConfirmationHeights,
-						currentHeight,
-					) {
-
-						// This fallback is a compatibility path for
-						// servers that do not send confirmation-risk
-						// notifications. Reaching legacy MinConfs is
-						// treated as synthetic risk acceptance, so the
-						// payment window starts here just as it would
-						// when a modern server sends an acceptance
-						// notification.
-						startPaymentDeadline(
-							"legacy confirmation fallback",
-						)
-					}
-				}
-			}
+			startLegacyFallback(
+				"legacy confirmation fallback", currentHeight,
+			)
 
 			// If the htlc is confirmed but blockChan fires before
 			// htlcConfChan, we would wrongfully assume that the
@@ -1044,25 +1193,21 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				// If the htlc hasn't confirmed but the timeout
 				// path opened up, and we didn't receive the
 				// swap payment, we consider the swap attempt to
-				// be failed. We cancelled the invoice, but
-				// don't need to unlock the deposits because
-				// that happened when the payment deadline was
-				// reached.
+				// be failed. Now that the HTLC can no longer
+				// confirm, the deposits can be made available
+				// again.
+				err = f.unlockDeposits(ctx)
+				if err != nil {
+					f.Errorf("unable to unlock deposits "+
+						"after htlc timeout: %v", err)
+				}
+
 				return OnSwapTimedOut
 			}
 
 			// If the htlc has confirmed and the timeout path has
 			// opened up we sweep the funds back to us.
-			err = f.cfg.DepositManager.TransitionDeposits(
-				ctx, f.loopIn.Deposits,
-				deposit.OnSweepingHtlcTimeout,
-				deposit.SweepHtlcTimeout,
-			)
-			if err != nil {
-				log.Errorf("unable to transition "+
-					"deposits to the htlc timeout "+
-					"sweeping state: %v", err)
-			}
+			transitionDepositsToHtlcTimeout("htlc timeout")
 
 			return OnSweepHtlcTimeout
 

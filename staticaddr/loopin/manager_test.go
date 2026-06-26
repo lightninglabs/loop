@@ -524,6 +524,13 @@ func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return false, nil
 }
 
+// RecordStaticAddressRiskDecision implements Store for manager tests.
+func (s *mockStore) RecordStaticAddressRiskDecision(context.Context,
+	lntypes.Hash, ConfirmationRiskDecision) error {
+
+	return nil
+}
+
 func (s *mockStore) GetLoopInByHash(_ context.Context,
 	swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
 
