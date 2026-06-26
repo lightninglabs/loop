@@ -246,8 +246,10 @@ func filterAutoloopCandidateDeposits(maxAmount btcutil.Amount,
 			continue
 		}
 
-		residualLife := candidateDeposit.ConfirmationHeight +
-			int64(csvExpiry) - int64(blockHeight)
+		residualLife := int64(blocksUntilDepositExpiry(
+			uint32(candidateDeposit.ConfirmationHeight),
+			blockHeight, csvExpiry,
+		))
 
 		eligibleDeposits = append(
 			eligibleDeposits, autoloopCandidateDeposit{
