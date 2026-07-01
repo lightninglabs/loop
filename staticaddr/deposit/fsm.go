@@ -451,17 +451,14 @@ func (f *FSM) updateDeposit(ctx context.Context,
 		return
 	}
 
-	type checkStateFunc func(state fsm.StateType) bool
-	type setStateFunc func(state fsm.StateType)
-	checkFunc := checkStateFunc(f.deposit.IsInState)
-	setFunc := setStateFunc(f.deposit.SetState)
-	if _, ok := lockedEvents[notification.Event]; ok {
-		checkFunc = f.deposit.IsInStateNoLock
-		setFunc = f.deposit.SetStateNoLock
+	_, alreadyLocked := lockedEvents[notification.Event]
+	if !alreadyLocked {
+		f.deposit.Lock()
+		defer f.deposit.Unlock()
 	}
 
-	setFunc(notification.NextState)
-	if isUpdateSkipped(notification, checkFunc) {
+	f.deposit.SetStateNoLock(notification.NextState)
+	if isUpdateSkipped(notification, f.deposit.IsInStateNoLock) {
 		return
 	}
 

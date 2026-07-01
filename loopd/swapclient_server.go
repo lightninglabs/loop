@@ -1896,7 +1896,7 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 				Id:                 d.ID[:],
 				Outpoint:           d.OutPoint.String(),
 				Value:              int64(d.Value),
-				ConfirmationHeight: d.ConfirmationHeight,
+				ConfirmationHeight: d.GetConfirmationHeight(),
 				State: toClientDepositState(
 					d.GetState(),
 				),
@@ -1987,7 +1987,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			protoDeposits = make([]*looprpc.Deposit, 0, len(ds))
 			for _, d := range ds {
 				state := toClientDepositState(d.GetState())
-				blocksUntilExpiry := d.ConfirmationHeight +
+				confirmationHeight := d.GetConfirmationHeight()
+				blocksUntilExpiry := confirmationHeight +
 					int64(addrParams.Expiry) -
 					int64(lndInfo.BlockHeight)
 
@@ -1996,7 +1997,7 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 					State:              state,
 					Outpoint:           d.OutPoint.String(),
 					Value:              int64(d.Value),
-					ConfirmationHeight: d.ConfirmationHeight,
+					ConfirmationHeight: confirmationHeight,
 					SwapHash:           d.SwapHash[:],
 					BlocksUntilExpiry:  blocksUntilExpiry,
 				}
@@ -2304,7 +2305,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			),
 			Outpoint:           outpoint,
 			Value:              int64(d.Value),
-			ConfirmationHeight: d.ConfirmationHeight,
+			ConfirmationHeight: d.GetConfirmationHeight(),
 			SwapHash:           swapHash,
 		}
 
