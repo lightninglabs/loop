@@ -393,7 +393,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		LoopedIn: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry: Expired,
+				OnExpiry: LoopedIn,
 			},
 			Action: f.FinalizeDepositAction,
 		},
@@ -412,7 +412,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		Withdrawn: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry:    Expired,
+				OnExpiry:    Withdrawn,
 				OnWithdrawn: Withdrawn,
 			},
 			Action: f.FinalizeDepositAction,
