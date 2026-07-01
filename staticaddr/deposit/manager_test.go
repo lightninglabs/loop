@@ -237,6 +237,10 @@ func TestManager(t *testing.T) {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	select {
 	case <-initChan:
@@ -296,6 +300,61 @@ func TestManager(t *testing.T) {
 
 		return len(testContext.manager.activeDeposits) == 0
 	}, defaultTimeout, 10*time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager did not stop")
+	}
+}
+
+// TestManagerReplaysStartupBlockToRecoveredDeposits verifies that the initial
+// block epoch consumed during startup is delivered to recovered deposit FSMs.
+func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const defaultTimeout = 30 * time.Second
+
+	testContext := newManagerTestContext(t)
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	// Send only the startup block at the recovered deposit's expiry height.
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive sign request")
+	}
+
+	select {
+	case <-testContext.mockLnd.TxPublishChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive published expiry tx")
+	}
 
 	cancel()
 	select {

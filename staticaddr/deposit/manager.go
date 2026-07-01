@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/txscript"
@@ -18,9 +19,8 @@ import (
 )
 
 const (
-	// MinConfs is the minimum number of confirmations we require for a
-	// deposit to be considered available for loop-ins, coop-spends and
-	// timeouts.
+	// MinConfs is the legacy minimum confirmation target deposits had to
+	// reach before they were considered ready to be used for swaps.
 	MinConfs = 6
 
 	// MaxConfs is unset since we don't require a max number of
@@ -87,6 +87,9 @@ type Manager struct {
 	// been finalized. The manager will adjust its internal state and flush
 	// finalized deposits from its memory.
 	finalizedDepositChan chan wire.OutPoint
+
+	// currentHeight stores the currently best known block height.
+	currentHeight atomic.Uint32
 }
 
 // NewManager creates a new deposit manager.
@@ -108,6 +111,19 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
+	var startupHeight uint32
+	select {
+	case height := <-newBlockChan:
+		startupHeight = uint32(height)
+		m.currentHeight.Store(startupHeight)
+
+	case err = <-newBlockErrChan:
+		return err
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	// Recover previous deposits and static address parameters from the DB.
 	err = m.recoverDeposits(ctx)
 	if err != nil {
@@ -123,6 +139,13 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		log.Errorf("unable to reconcile deposits: %v", err)
 	}
 
+	// The startup height was consumed before recovered deposit FSMs existed.
+	// Replay it so already-expired recovered deposits can act immediately.
+	err = m.notifyActiveDeposits(ctx, startupHeight)
+	if err != nil {
+		return err
+	}
+
 	// Start the deposit notifier.
 	m.pollDeposits(ctx)
 
@@ -133,7 +156,14 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			err := m.notifyActiveDeposits(ctx, uint32(height))
+			m.currentHeight.Store(uint32(height))
+
+			err := m.reconcileDeposits(ctx)
+			if err != nil {
+				log.Errorf("unable to reconcile deposits: %v", err)
+			}
+
+			err = m.notifyActiveDeposits(ctx, uint32(height))
 			if err != nil {
 				return err
 			}
@@ -227,8 +257,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	return nil
 }
 
-// pollDeposits polls new deposits to our static address and notifies the
-// manager's event loop about them.
+// pollDeposits periodically polls for new deposits to our static address. This
+// complements the block-driven reconciliation in the main event loop: while new
+// blocks trigger reconcileDeposits to promptly detect confirmations, the ticker
+// here catches deposits that appear in the mempool between blocks.
 func (m *Manager) pollDeposits(ctx context.Context) {
 	log.Debugf("Waiting for new static address deposits...")
 
@@ -262,10 +294,17 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	log.Tracef("Reconciling new deposits...")
 
 	utxos, err := m.cfg.AddressManager.ListUnspent(
-		ctx, MinConfs, MaxConfs,
+		ctx, 0, MaxConfs,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to list new deposits: %w", err)
+	}
+
+	currentHeight := m.currentHeight.Load()
+	err = m.updateDepositConfirmations(ctx, utxos, currentHeight)
+	if err != nil {
+		return fmt.Errorf("unable to update deposit "+
+			"confirmations: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
@@ -275,7 +314,7 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	}
 
 	for _, utxo := range newDeposits {
-		deposit, err := m.createNewDeposit(ctx, utxo)
+		deposit, err := m.createNewDeposit(ctx, utxo, currentHeight)
 		if err != nil {
 			return fmt.Errorf("unable to retain new deposit: %w",
 				err)
@@ -295,9 +334,11 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
 func (m *Manager) createNewDeposit(ctx context.Context,
-	utxo *lnwallet.Utxo) (*Deposit, error) {
+	utxo *lnwallet.Utxo, currentHeight uint32) (*Deposit, error) {
 
-	blockHeight, err := m.getBlockHeight(ctx, utxo)
+	confirmationHeight, err := confirmationHeightForUtxo(
+		currentHeight, utxo,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +366,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		state:                Deposited,
 		OutPoint:             utxo.OutPoint,
 		Value:                utxo.Value,
-		ConfirmationHeight:   int64(blockHeight),
+		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 	}
 
@@ -341,37 +382,84 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	return deposit, nil
 }
 
-// getBlockHeight retrieves the block height of a given utxo.
-func (m *Manager) getBlockHeight(ctx context.Context,
-	utxo *lnwallet.Utxo) (uint32, error) {
+// confirmationHeightForUtxo derives the first confirmation height of a wallet
+// UTXO from the manager's current block height. Unconfirmed UTXOs return 0.
+func confirmationHeightForUtxo(currentHeight uint32,
+	utxo *lnwallet.Utxo) (int64, error) {
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+	if utxo.Confirmations <= 0 {
+		return 0, nil
 	}
 
-	notifChan, errChan, err :=
-		m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, &utxo.OutPoint.Hash, addressParams.PkScript,
-			MinConfs, addressParams.InitiationHeight,
-		)
-	if err != nil {
-		return 0, err
+	if currentHeight == 0 {
+		return 0, errors.New("current block height unavailable")
 	}
 
-	select {
-	case tx := <-notifChan:
-		return tx.BlockHeight, nil
-
-	case err := <-errChan:
-		return 0, err
-
-	case <-ctx.Done():
-		return 0, ctx.Err()
+	firstConfirmationHeight := int64(currentHeight) - utxo.Confirmations + 1
+	if firstConfirmationHeight <= 0 {
+		return 0, fmt.Errorf("invalid confirmation height %d for %v "+
+			"with current height %d and %d confirmations",
+			firstConfirmationHeight, utxo.OutPoint, currentHeight,
+			utxo.Confirmations)
 	}
+
+	return firstConfirmationHeight, nil
+}
+
+// updateDepositConfirmations syncs first confirmation heights for deposits that
+// are visible in lnd's wallet view.
+func (m *Manager) updateDepositConfirmations(ctx context.Context,
+	utxos []*lnwallet.Utxo, currentHeight uint32) error {
+
+	for _, utxo := range utxos {
+		m.mu.Lock()
+		deposit, ok := m.deposits[utxo.OutPoint]
+		m.mu.Unlock()
+		if !ok {
+			continue
+		}
+
+		deposit.Lock()
+		previousConfirmationHeight := deposit.ConfirmationHeight
+
+		var confirmationHeight int64
+		switch {
+		case utxo.Confirmations <= 0:
+			confirmationHeight = 0
+
+		case previousConfirmationHeight > 0:
+			deposit.Unlock()
+			continue
+
+		default:
+			var err error
+			confirmationHeight, err = confirmationHeightForUtxo(
+				currentHeight, utxo,
+			)
+			if err != nil {
+				deposit.Unlock()
+				return err
+			}
+		}
+
+		if deposit.ConfirmationHeight == confirmationHeight {
+			deposit.Unlock()
+			continue
+		}
+
+		deposit.ConfirmationHeight = confirmationHeight
+
+		err := m.cfg.Store.UpdateDeposit(ctx, deposit)
+		if err != nil {
+			deposit.ConfirmationHeight = previousConfirmationHeight
+			deposit.Unlock()
+			return err
+		}
+
+		deposit.Unlock()
+	}
+
+	return nil
 }
 
 // filterNewDeposits filters the given utxos for new deposits that we haven't
