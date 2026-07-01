@@ -73,6 +73,10 @@ func (d *Deposit) IsInFinalState() bool {
 	d.Lock()
 	defer d.Unlock()
 
+	return d.isInFinalStateNoLock()
+}
+
+func (d *Deposit) isInFinalStateNoLock() bool {
 	return d.state == Expired || d.state == Withdrawn ||
 		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
 		d.state == ChannelPublished
