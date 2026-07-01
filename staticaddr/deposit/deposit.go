@@ -29,6 +29,10 @@ func (r *ID) FromByteSlice(b []byte) error {
 
 // Deposit bundles an utxo at a static address together with manager-relevant
 // data.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock.
 type Deposit struct {
 	sync.Mutex
 
