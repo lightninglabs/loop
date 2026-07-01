@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/outpoint"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
@@ -28,8 +29,8 @@ func ToPrevOuts(deposits []*deposit.Deposit,
 	for i, d := range deposits {
 		outpoints[i] = d.OutPoint
 	}
-	if err := deposit.CheckDuplicates(outpoints); err != nil {
-		return nil, err
+	if duplicate, ok := outpoint.FirstDuplicate(outpoints); ok {
+		return nil, fmt.Errorf("duplicate outpoint %v", duplicate)
 	}
 
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
