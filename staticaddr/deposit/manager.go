@@ -146,9 +146,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case outpoint := <-m.finalizedDepositChan:
 			// If deposits notify us about their finalization, flush
 			// the finalized deposit from memory.
-			m.mu.Lock()
-			delete(m.activeDeposits, outpoint)
-			m.mu.Unlock()
+			m.removeActiveDeposit(outpoint)
 
 		case err = <-newBlockErrChan:
 			return err
@@ -541,6 +539,20 @@ func lockDeposits(deposits []*Deposit) {
 func unlockDeposits(deposits []*Deposit) {
 	for _, d := range deposits {
 		d.Unlock()
+	}
+}
+
+// removeActiveDeposit removes and stops the FSM for an active outpoint.
+func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
+	m.mu.Lock()
+	fsm, ok := m.activeDeposits[outpoint]
+	if ok {
+		delete(m.activeDeposits, outpoint)
+	}
+	m.mu.Unlock()
+
+	if ok {
+		fsm.Stop()
 	}
 }
 

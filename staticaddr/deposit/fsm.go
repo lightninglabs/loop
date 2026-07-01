@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -160,6 +161,12 @@ type FSM struct {
 
 	blockNtfnChan chan uint32
 
+	// stopChan requests shutdown of the block notification loop.
+	stopChan chan struct{}
+
+	// stopOnce ensures Stop is idempotent.
+	stopOnce sync.Once
+
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
@@ -191,6 +198,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		params:               params,
 		address:              address,
 		blockNtfnChan:        make(chan uint32),
+		stopChan:             make(chan struct{}),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
@@ -226,6 +234,9 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 					ctx, currentHeight,
 				)
 
+			case <-fsm.stopChan:
+				return
+
 			case <-ctx.Done():
 				return
 			}
@@ -233,6 +244,17 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	}(depoFsm)
 
 	return depoFsm, nil
+}
+
+// Stop requests shutdown of the FSM's block notification loop.
+func (f *FSM) Stop() {
+	if f == nil || f.stopChan == nil {
+		return
+	}
+
+	f.stopOnce.Do(func() {
+		close(f.stopChan)
+	})
 }
 
 // handleBlockNotification inspects the current block height and sends the
