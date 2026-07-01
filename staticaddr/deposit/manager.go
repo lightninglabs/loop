@@ -520,6 +520,10 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 
 	outpoints := make([]wire.OutPoint, len(deposits))
 	for i, d := range deposits {
+		if d == nil {
+			return fmt.Errorf("nil deposit at index %d", i)
+		}
+
 		outpoints[i] = d.OutPoint
 	}
 	if err := CheckDuplicates(outpoints); err != nil {
@@ -536,6 +540,13 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 
 	lockDeposits(deposits)
 	defer unlockDeposits(deposits)
+	for _, deposit := range deposits {
+		if deposit.isInFinalStateNoLock() {
+			return fmt.Errorf("deposit %v is no longer active in "+
+				"state %v", deposit.OutPoint, deposit.state)
+		}
+	}
+
 	for _, sm := range stateMachines {
 		err := sm.SendEvent(ctx, event, nil)
 		if err != nil {
