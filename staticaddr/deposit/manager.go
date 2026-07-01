@@ -68,6 +68,10 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
+	// reconcileMu serializes deposit reconciliation so new deposits are
+	// discovered and retained exactly once per outpoint.
+	reconcileMu sync.Mutex
+
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
@@ -250,6 +254,9 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 // far. It picks the newly identified deposits and starts a state machine per
 // deposit to track its progress.
 func (m *Manager) reconcileDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Tracef("Reconciling new deposits...")
 
 	utxos, err := m.cfg.AddressManager.ListUnspent(
