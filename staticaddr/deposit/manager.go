@@ -438,7 +438,7 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 
 	filteredDeposits := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
-		if !d.IsInStateNoLock(stateFilter) {
+		if !d.isInStateNoLock(stateFilter) {
 			continue
 		}
 
@@ -446,8 +446,8 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	}
 
 	sort.Slice(filteredDeposits, func(i, j int) bool {
-		return filteredDeposits[i].ConfirmationHeight <
-			filteredDeposits[j].ConfirmationHeight
+		return filteredDeposits[i].GetConfirmationHeightNoLock() <
+			filteredDeposits[j].GetConfirmationHeightNoLock()
 	})
 
 	return filteredDeposits, nil
@@ -481,7 +481,7 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	lockDeposits(deposits)
 	defer unlockDeposits(deposits)
 	for _, d := range deposits {
-		if !d.IsInStateNoLock(targetState) {
+		if !d.isInStateNoLock(targetState) {
 			return nil, false
 		}
 	}
@@ -543,7 +543,8 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	for _, deposit := range deposits {
 		if deposit.isInFinalStateNoLock() {
 			return fmt.Errorf("deposit %v is no longer active in "+
-				"state %v", deposit.OutPoint, deposit.state)
+				"state %v", deposit.OutPoint,
+				deposit.getStateNoLock())
 		}
 	}
 
@@ -597,6 +598,9 @@ func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
 func (m *Manager) UpdateDeposit(ctx context.Context, d *Deposit) error {
+	d.Lock()
+	defer d.Unlock()
+
 	return m.cfg.Store.UpdateDeposit(ctx, d)
 }
 

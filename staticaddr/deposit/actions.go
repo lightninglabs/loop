@@ -139,7 +139,7 @@ func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
 		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
-		int32(f.deposit.ConfirmationHeight),
+		int32(f.deposit.GetConfirmationHeight()),
 	)
 	if err != nil {
 		return f.HandleError(err)
