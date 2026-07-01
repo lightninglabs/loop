@@ -861,8 +861,9 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// Filter out deposits that are too close to expiry to be swapped.
 	var deposits []*deposit.Deposit
 	for _, d := range unfilteredDeposits {
+		confirmationHeight := d.GetConfirmationHeight()
 		if !IsSwappable(
-			uint32(d.ConfirmationHeight), blockHeight, csvExpiry,
+			uint32(confirmationHeight), blockHeight, csvExpiry,
 		) {
 
 			log.Debugf("Skipping deposit %s as it expires before "+
@@ -878,9 +879,9 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// blocks-until-expiry in ascending order.
 	sort.Slice(deposits, func(i, j int) bool {
 		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
+			iExp := uint32(deposits[i].GetConfirmationHeight()) +
 				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
+			jExp := uint32(deposits[j].GetConfirmationHeight()) +
 				csvExpiry - blockHeight
 
 			return iExp < jExp

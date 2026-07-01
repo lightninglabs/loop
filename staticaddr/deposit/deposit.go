@@ -33,6 +33,9 @@ func (r *ID) FromByteSlice(b []byte) error {
 // Lock order: if both Manager.mu and a Deposit lock are needed, acquire
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
 // Deposit lock.
+//
+// The state and ConfirmationHeight fields are mutable and protected by the
+// deposit lock.
 type Deposit struct {
 	sync.Mutex
 
@@ -98,6 +101,10 @@ func (d *Deposit) GetState() fsm.StateType {
 	return d.state
 }
 
+func (d *Deposit) getStateNoLock() fsm.StateType {
+	return d.state
+}
+
 func (d *Deposit) SetState(state fsm.StateType) {
 	d.Lock()
 	defer d.Unlock()
@@ -105,7 +112,7 @@ func (d *Deposit) SetState(state fsm.StateType) {
 	d.state = state
 }
 
-func (d *Deposit) SetStateNoLock(state fsm.StateType) {
+func (d *Deposit) setStateNoLock(state fsm.StateType) {
 	d.state = state
 }
 
@@ -116,8 +123,22 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 	return d.state == state
 }
 
-func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// GetConfirmationHeight returns the deposit confirmation height.
+func (d *Deposit) GetConfirmationHeight() int64 {
+	d.Lock()
+	defer d.Unlock()
+
+	return d.ConfirmationHeight
+}
+
+// GetConfirmationHeightNoLock returns the deposit confirmation height without
+// acquiring the deposit lock.
+func (d *Deposit) GetConfirmationHeightNoLock() int64 {
+	return d.ConfirmationHeight
 }
 
 // GetRandomDepositID generates a random deposit ID.
