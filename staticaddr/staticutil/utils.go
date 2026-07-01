@@ -24,19 +24,20 @@ import (
 func ToPrevOuts(deposits []*deposit.Deposit,
 	pkScript []byte) (map[wire.OutPoint]*wire.TxOut, error) {
 
+	outpoints := make([]wire.OutPoint, len(deposits))
+	for i, d := range deposits {
+		outpoints[i] = d.OutPoint
+	}
+	if err := deposit.CheckDuplicates(outpoints); err != nil {
+		return nil, err
+	}
+
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
-	for _, d := range deposits {
-		outpoint := wire.OutPoint{
-			Hash:  d.Hash,
-			Index: d.Index,
-		}
+	for i, d := range deposits {
+		outpoint := outpoints[i]
 		txOut := &wire.TxOut{
 			Value:    int64(d.Value),
 			PkScript: pkScript,
-		}
-		if _, ok := prevOuts[outpoint]; ok {
-			return nil, fmt.Errorf("duplicate outpoint %v",
-				outpoint)
 		}
 		prevOuts[outpoint] = txOut
 	}
