@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/outpoint"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -439,6 +440,10 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	targetState fsm.StateType) ([]*Deposit, bool) {
 
+	if outpoint.HasDuplicates(outpoints) {
+		return nil, false
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -496,6 +501,9 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	outpoints := make([]wire.OutPoint, len(deposits))
 	for i, d := range deposits {
 		outpoints[i] = d.OutPoint
+	}
+	if outpoint.HasDuplicates(outpoints) {
+		return fmt.Errorf("duplicate deposit outpoint")
 	}
 
 	m.mu.Lock()

@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/outpoint"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -284,13 +285,10 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		// Check for duplicate outpoints which would lead to fee
 		// miscalculation and an invalid PSBT with the same input
 		// listed twice.
-		seen := make(map[wire.OutPoint]struct{}, len(outpoints))
-		for _, op := range outpoints {
-			if _, ok := seen[op]; ok {
-				return nil, fmt.Errorf("duplicate outpoint "+
-					"%v in request", op)
-			}
-			seen[op] = struct{}{}
+		duplicate, ok := outpoint.FirstDuplicate(outpoints)
+		if ok {
+			return nil, fmt.Errorf("duplicate outpoint %v in "+
+				"request", duplicate)
 		}
 
 		deposits, allActive =
