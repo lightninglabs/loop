@@ -467,12 +467,28 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 
 // RemainingPaymentTimeSeconds returns the remaining time in seconds until the
 // payment timeout is reached. The remaining time is calculated from the
-// initiation time of the swap. If more than the swaps configured payment
+// initiation time of the swap. If more than the swap's configured payment
 // timeout has passed, the remaining time will be negative.
 func (l *StaticAddressLoopIn) RemainingPaymentTimeSeconds() int64 {
 	elapsedSinceInitiation := time.Since(l.InitiationTime).Seconds()
 
-	return int64(l.PaymentTimeoutSeconds) - int64(elapsedSinceInitiation)
+	return l.paymentTimeoutSeconds() - int64(elapsedSinceInitiation)
+}
+
+// PaymentTimeoutDuration returns the configured payment timeout duration,
+// falling back to the default if the swap predates the persisted timeout field.
+func (l *StaticAddressLoopIn) PaymentTimeoutDuration() time.Duration {
+	return time.Duration(l.paymentTimeoutSeconds()) * time.Second
+}
+
+// paymentTimeoutSeconds returns the configured timeout in seconds.
+func (l *StaticAddressLoopIn) paymentTimeoutSeconds() int64 {
+	timeoutSeconds := int64(l.PaymentTimeoutSeconds)
+	if timeoutSeconds == 0 {
+		timeoutSeconds = int64(DefaultPaymentTimeoutSeconds)
+	}
+
+	return timeoutSeconds
 }
 
 // Outpoints returns the wire outpoints of the deposits.
