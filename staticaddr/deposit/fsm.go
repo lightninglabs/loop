@@ -42,8 +42,8 @@ var (
 
 // States.
 var (
-	// Deposited signals that funds at a static address have reached the
-	// confirmation height.
+	// Deposited signals that funds at a static address have been detected
+	// and are available to the client.
 	Deposited = fsm.StateType("Deposited")
 
 	// Withdrawing signals that the withdrawal transaction has been
@@ -93,8 +93,8 @@ var (
 // Events.
 var (
 	// OnStart is sent to the fsm once the deposit outpoint has been
-	// sufficiently confirmed. It transitions the fsm into the Deposited
-	// state from where we can trigger a withdrawal, a loopin or an expiry.
+	// detected. It transitions the fsm into the Deposited state from where
+	// we can trigger a withdrawal, a loopin or an expiry.
 	OnStart = fsm.EventType("OnStart")
 
 	// OnWithdrawInitiated is sent to the fsm when a withdrawal has been

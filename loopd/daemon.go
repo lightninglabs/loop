@@ -622,6 +622,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	depositStore := deposit.NewSqlStore(baseDb)
 	depoCfg := &deposit.ManagerConfig{
 		AddressManager: staticAddressManager,
+		ChainKit:       d.lnd.ChainKit,
 		Store:          depositStore,
 		WalletKit:      d.lnd.WalletKit,
 		ChainNotifier:  d.lnd.ChainNotifier,
