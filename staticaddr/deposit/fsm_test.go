@@ -71,6 +71,53 @@ func TestHandleBlockNotificationIgnoresFinalStates(t *testing.T) {
 	}
 }
 
+// TestFinalStatesIgnoreQueuedExpiry verifies that a queued OnExpiry event cannot
+// overwrite a deposit that already reached a final state.
+func TestFinalStatesIgnoreQueuedExpiry(t *testing.T) {
+	t.Parallel()
+
+	finalStates := []fsm.StateType{
+		Expired,
+		Withdrawn,
+		LoopedIn,
+		HtlcTimeoutSwept,
+		ChannelPublished,
+	}
+
+	for i, state := range finalStates {
+		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
+
+			outpoint := wire.OutPoint{
+				Hash:  chainhash.Hash{byte(i + 1)},
+				Index: uint32(i),
+			}
+			deposit := &Deposit{
+				OutPoint: outpoint,
+			}
+			deposit.SetState(state)
+
+			depositFSM := &FSM{
+				cfg: &ManagerConfig{
+					Store: new(mockStore),
+				},
+				deposit:              deposit,
+				quitChan:             make(chan struct{}),
+				finalizedDepositChan: make(chan wire.OutPoint, 1),
+			}
+			depositFSM.StateMachine = fsm.NewStateMachineWithState(
+				depositFSM.DepositStatesV0(), state,
+				DefaultObserverSize,
+			)
+			depositFSM.ActionEntryFunc = depositFSM.updateDeposit
+
+			err := depositFSM.SendEvent(t.Context(), OnExpiry, nil)
+			require.NoError(t, err)
+			require.Equal(t, state, deposit.GetState())
+		})
+	}
+}
+
 // TestLoopingInTransitionsToSweepHtlcTimeout verifies that a deposit selected
 // by a loop-in can be moved into the timeout sweep state if the server confirms
 // the HTLC without paying the invoice.
