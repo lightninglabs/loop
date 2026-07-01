@@ -353,6 +353,11 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// still pending, we publish the expiry sweep.
 				OnExpiry: PublishExpirySweep,
 
+				// If the server publishes the HTLC without
+				// paying us, we need to keep the deposit locked
+				// until the HTLC timeout path can be swept.
+				OnSweepingHtlcTimeout: SweepHtlcTimeout,
+
 				OnLoopInInitiated: LoopingIn,
 
 				OnRecover:   LoopingIn,
