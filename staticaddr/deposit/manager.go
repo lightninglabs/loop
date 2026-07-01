@@ -59,6 +59,10 @@ type ManagerConfig struct {
 }
 
 // Manager manages the address state machines.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock.
 type Manager struct {
 	cfg *ManagerConfig
 
