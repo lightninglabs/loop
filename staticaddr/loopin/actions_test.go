@@ -205,6 +205,75 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	}
 }
 
+// TestSweepHtlcTimeoutActionNoOpOnShutdown ensures that a shutdown during
+// timeout sweep publication keeps the FSM in the same state so it can resume
+// after restart.
+func TestSweepHtlcTimeoutActionNoOpOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	mockLnd := test.NewMockLnd()
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			LndClient: mockLnd.Client,
+			WalletKit: mockLnd.WalletKit,
+		},
+		loopIn: &StaticAddressLoopIn{},
+	}
+
+	event := f.SweepHtlcTimeoutAction(ctx, nil)
+	require.Equal(t, fsm.NoOp, event)
+	require.Nil(t, f.LastActionError)
+}
+
+// TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown ensures that a shutdown
+// while waiting for the timeout sweep confirmation keeps the FSM resumable.
+func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	sweepAddr, err := mockLnd.WalletKit.NextAddr(ctx, "", 0, false)
+	require.NoError(t, err)
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			ChainNotifier: mockLnd.ChainNotifier,
+		},
+		loopIn: &StaticAddressLoopIn{
+			HtlcTimeoutSweepAddress: sweepAddr,
+			InitiationHeight:        uint32(mockLnd.Height),
+		},
+	}
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorHtlcTimeoutSweepAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("timeout sweep conf registration not received: %v",
+			ctx.Err())
+	}
+
+	cancel()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+		require.Nil(t, f.LastActionError)
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout sweep monitor did not return")
+	}
+}
+
 // TestInitHtlcActionPreservesRouteHints asserts that static-address loop-in
 // propagates explicit route hints into the encoded swap invoice sent to the
 // server.
