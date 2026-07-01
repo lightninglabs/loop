@@ -1,7 +1,9 @@
 package deposit
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -10,6 +12,65 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// TestHandleBlockNotificationIgnoresFinalStates verifies that a block-driven
+// expiry notification cannot mutate deposits that already reached a final
+// state but have not yet been removed from the manager's active set.
+func TestHandleBlockNotificationIgnoresFinalStates(t *testing.T) {
+	t.Parallel()
+
+	finalStates := []fsm.StateType{
+		Expired,
+		Withdrawn,
+		LoopedIn,
+		HtlcTimeoutSwept,
+		ChannelPublished,
+	}
+
+	for i, state := range finalStates {
+		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
+
+			outpoint := wire.OutPoint{
+				Hash:  chainhash.Hash{byte(i + 1)},
+				Index: uint32(i),
+			}
+			deposit := &Deposit{
+				OutPoint:           outpoint,
+				ConfirmationHeight: 1,
+			}
+			deposit.SetState(state)
+
+			depositFSM := &FSM{
+				cfg: &ManagerConfig{
+					Store: new(mockStore),
+				},
+				deposit:              deposit,
+				params:               &script.Parameters{Expiry: 1},
+				quitChan:             make(chan struct{}),
+				finalizedDepositChan: make(chan wire.OutPoint, 1),
+			}
+			depositFSM.StateMachine = fsm.NewStateMachineWithState(
+				depositFSM.DepositStatesV0(), state,
+				DefaultObserverSize,
+			)
+			depositFSM.ActionEntryFunc = depositFSM.updateDeposit
+
+			depositFSM.handleBlockNotification(context.Background(), 3)
+
+			require.Never(t, func() bool {
+				return deposit.GetState() != state
+			}, 100*time.Millisecond, 10*time.Millisecond)
+
+			select {
+			case finalized := <-depositFSM.finalizedDepositChan:
+				t.Fatalf("unexpected finalization for %v", finalized)
+
+			default:
+			}
+		})
+	}
+}
 
 // TestLoopingInTransitionsToSweepHtlcTimeout verifies that a deposit selected
 // by a loop-in can be moved into the timeout sweep state if the server confirms

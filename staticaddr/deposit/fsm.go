@@ -241,6 +241,10 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 func (f *FSM) handleBlockNotification(ctx context.Context,
 	currentHeight uint32) {
 
+	if f.deposit.IsInFinalState() {
+		return
+	}
+
 	// If the deposit is expired but not yet sufficiently confirmed, we
 	// republish the expiry sweep transaction.
 	if f.deposit.IsExpired(currentHeight, f.params.Expiry) {
