@@ -810,10 +810,10 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 
 		select {
 		// The context is cancelled when the server is shutting
-		// down. In that case we give up broadcasting attempts
-		// and return an error.
+		// down. Keep the current state so recovery resumes
+		// broadcasting attempts after restart.
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 
 		case <-time.After(htlcTimeoutSweepRetryDelay):
 		}
@@ -847,6 +847,10 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 		)
 
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to register to the htlc timeout "+
 			"sweep tx: %w", err)
 
@@ -856,6 +860,10 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 	for {
 		select {
 		case err := <-errChan:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			return f.HandleError(err)
 
 		case conf := <-htlcTimeoutTxidChan:
@@ -879,7 +887,7 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 			return OnHtlcTimeoutSwept
 
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 		}
 	}
 }
