@@ -128,24 +128,9 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			// Inform all active deposits about a new block arrival.
-			m.mu.Lock()
-			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
-			for _, fsm := range m.activeDeposits {
-				activeDeposits = append(activeDeposits, fsm)
-			}
-			m.mu.Unlock()
-
-			for _, fsm := range activeDeposits {
-				select {
-				case fsm.blockNtfnChan <- uint32(height):
-
-				case <-fsm.quitChan:
-					continue
-
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			err := m.notifyActiveDeposits(ctx, uint32(height))
+			if err != nil {
+				return err
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
@@ -160,6 +145,33 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// notifyActiveDeposits informs all active deposit FSMs about a new block
+// height.
+func (m *Manager) notifyActiveDeposits(ctx context.Context,
+	height uint32) error {
+
+	m.mu.Lock()
+	activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
+	for _, fsm := range m.activeDeposits {
+		activeDeposits = append(activeDeposits, fsm)
+	}
+	m.mu.Unlock()
+
+	for _, fsm := range activeDeposits {
+		select {
+		case fsm.blockNtfnChan <- height:
+
+		case <-fsm.quitChan:
+			continue
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 // recoverDeposits recovers static address parameters, previous deposits and
