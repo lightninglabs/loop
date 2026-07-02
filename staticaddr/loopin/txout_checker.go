@@ -40,15 +40,14 @@ func (c *lndTxOutChecker) GetTxOut(ctx context.Context,
 	}
 
 	outpointStr := outpoint.String()
+	var txOut *wire.TxOut
 	for _, tx := range txs {
 		for _, prevOutpoint := range tx.PreviousOutpoints {
 			if prevOutpoint.GetOutpoint() == outpointStr {
 				return nil, nil
 			}
 		}
-	}
 
-	for _, tx := range txs {
 		if tx.Tx == nil {
 			continue
 		}
@@ -65,8 +64,8 @@ func (c *lndTxOutChecker) GetTxOut(ctx context.Context,
 			return nil, nil
 		}
 
-		return tx.Tx.TxOut[outpoint.Index], nil
+		txOut = tx.Tx.TxOut[outpoint.Index]
 	}
 
-	return nil, nil
+	return txOut, nil
 }
