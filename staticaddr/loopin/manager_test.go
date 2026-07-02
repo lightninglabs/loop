@@ -298,6 +298,65 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	require.ErrorContains(t, err, depOutpoint)
 }
 
+// TestActiveDepositsForLoopInUsesCurrentDepositOutpoints verifies that
+// recovery checks the current deposit outpoints reconstructed by the store
+// rather than the original outpoint snapshot persisted on the swap.
+func TestActiveDepositsForLoopInUsesCurrentDepositOutpoints(t *testing.T) {
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0xaa},
+		Index: 0,
+	}
+	currentDeposit := makeDeposit(0xbb, 1, 10_000, 42)
+
+	manager := &Manager{
+		cfg: &Config{
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					currentDeposit.OutPoint.String(): currentDeposit,
+				},
+			},
+		},
+	}
+
+	deposits, allActive := manager.activeDepositsForLoopIn(
+		&StaticAddressLoopIn{
+			DepositOutpoints: []string{oldOutpoint.String()},
+			Deposits:         []*deposit.Deposit{currentDeposit},
+		},
+	)
+	require.True(t, allActive)
+	require.Equal(t, []*deposit.Deposit{currentDeposit}, deposits)
+}
+
+// TestGetAllSwapsPreservesStoreDeposits verifies that list responses keep the
+// store's swap_hash/deposit-id reconstruction even when DepositOutpoints is an
+// original input snapshot and the deposit's current outpoint has changed.
+func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0xcc},
+		Index: 0,
+	}
+	currentDeposit := makeDeposit(0xdd, 1, 10_000, 42)
+	swap := &StaticAddressLoopIn{
+		DepositOutpoints: []string{oldOutpoint.String()},
+		Deposits:         []*deposit.Deposit{currentDeposit},
+	}
+
+	manager := &Manager{
+		cfg: &Config{
+			Store: &mockStore{
+				swaps: []*StaticAddressLoopIn{swap},
+			},
+		},
+	}
+
+	swaps, err := manager.GetAllSwaps(t.Context())
+	require.NoError(t, err)
+	require.Len(t, swaps, 1)
+	require.Equal(t, []string{oldOutpoint.String()}, swaps[0].DepositOutpoints)
+	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
 	// activeDeposits is the set returned by GetActiveDepositsInState.
@@ -316,7 +375,7 @@ func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 func (m *mockDepositManager) AllStringOutpointsActiveDeposits(outpoints []string,
 	state fsm.StateType) ([]*deposit.Deposit, bool) {
 
-	if state != deposit.Deposited {
+	if state != deposit.Deposited && state != fsm.EmptyState {
 		return nil, false
 	}
 
@@ -408,6 +467,7 @@ func (m *mockQuoteGetter) GetLoopInQuote(_ context.Context,
 
 // mockStore implements StaticAddressLoopInStore for tests.
 type mockStore struct {
+	swaps   []*StaticAddressLoopIn
 	loopIns map[lntypes.Hash]*StaticAddressLoopIn
 	mapIDs  map[lntypes.Hash][]deposit.ID
 }
@@ -427,7 +487,7 @@ func (s *mockStore) UpdateLoopIn(_ context.Context,
 func (s *mockStore) GetStaticAddressLoopInSwapsByStates(_ context.Context,
 	_ []fsm.StateType) ([]*StaticAddressLoopIn, error) {
 
-	return nil, nil
+	return s.swaps, nil
 }
 func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return false, nil
