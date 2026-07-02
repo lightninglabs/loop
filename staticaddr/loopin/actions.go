@@ -565,6 +565,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			subscribeCtx, f.loopIn.SwapHash,
 		)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to subscribe to swap "+
 			"invoice: %w", err)
 
@@ -592,6 +596,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	htlcConfChan, htlcErrConfChan, err := registerHtlcConf()
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to monitor htlc tx confirmation: %w",
 			err)
 
@@ -602,6 +610,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	registerBlocks := f.cfg.ChainNotifier.RegisterBlockEpochNtfn
 	blockChan, blockChanErr, err := registerBlocks(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to subscribe to new blocks: %w", err)
 
 		return f.HandleError(err)
@@ -611,6 +623,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	invoice, err := f.cfg.LndClient.LookupInvoice(ctx, f.loopIn.SwapHash)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to look up invoice by swap hash: %w",
 			err)
 
@@ -666,6 +682,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			htlcConfirmed = true
 
 		case err = <-htlcErrConfChan:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			f.Errorf("htlc tx conf chan error, re-registering: "+
 				"%v", err)
 
@@ -676,6 +696,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// Re-register for htlc confirmation.
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
 				err = fmt.Errorf("unable to re-register for "+
 					"htlc tx confirmation: %w", err)
 
@@ -690,6 +714,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
 				err = fmt.Errorf("unable to monitor htlc tx "+
 					"confirmation: %v", err)
 
@@ -761,6 +789,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return OnSweepHtlcTimeout
 
 		case err = <-blockChanErr:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			f.Errorf("block subscription error: %v", err)
 
 			return f.HandleError(err)
@@ -784,7 +816,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			f.Errorf("invoice subscription error: %v", err)
 
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 		}
 	}
 }

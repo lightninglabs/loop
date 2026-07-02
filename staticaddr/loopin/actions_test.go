@@ -205,6 +205,97 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceAndHtlcTxNoOpOnShutdown ensures that a shutdown while the
+// client is monitoring an HTLC-signed loop-in keeps the swap resumable instead
+// of entering the generic unlock path.
+func TestMonitorInvoiceAndHtlcTxNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	runCtx, stop := context.WithCancel(ctx)
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 6}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.Invoices[swapHash] = &lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	}
+
+	depositMgr := &recordingDepositManager{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(runCtx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	stop()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Nil(t, f.LastActionError)
+	require.Empty(t, depositMgr.transitions)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled on shutdown: %v", hash)
+
+	default:
+	}
+}
+
 // TestSweepHtlcTimeoutActionNoOpOnShutdown ensures that a shutdown during
 // timeout sweep publication keeps the FSM in the same state so it can resume
 // after restart.
