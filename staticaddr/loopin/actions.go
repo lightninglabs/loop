@@ -709,8 +709,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	if invoice.State != invoices.ContractCanceled {
 		// If the invoice is still live we set the timeout to the
 		// remaining payment time. If too much time has elapsed, e.g.
-		// after a restart, we set the timeout to 0 to cancel the
-		// invoice and unlock the deposits immediately.
+		// after a restart, we cancel the invoice immediately and keep
+		// monitoring the HTLC until it can no longer confirm.
 		remainingTimeSeconds := f.loopIn.RemainingPaymentTimeSeconds()
 
 		// If the invoice isn't cancelled yet and the payment timeout
