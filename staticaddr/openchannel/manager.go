@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/outpoint"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -267,11 +268,6 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		).FeePerKWeight()
 	}
 
-	// There are three ways in which we select deposits to open a channel
-	// with. 1.) The user manually selects the deposits. 2.) The user only
-	// selects a local channel amount in which case we coin-select deposits
-	// to cover for it. 3.) The user selects the fundmax flag, in which case
-	// we select all deposits to fund the channel.
 	if len(req.Outpoints) > 0 {
 		// Ensure that the deposits are in a state in which they are
 		// available for a channel open.
@@ -284,13 +280,16 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		// Check for duplicate outpoints which would lead to fee
 		// miscalculation and an invalid PSBT with the same input
 		// listed twice.
-		seen := make(map[wire.OutPoint]struct{}, len(outpoints))
-		for _, op := range outpoints {
-			if _, ok := seen[op]; ok {
-				return nil, fmt.Errorf("duplicate outpoint "+
-					"%v in request", op)
-			}
-			seen[op] = struct{}{}
+		duplicate, ok := outpoint.FirstDuplicate(outpoints)
+		if ok {
+			return nil, fmt.Errorf("duplicate outpoint %v in "+
+				"request", duplicate)
+		}
+
+		err = m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
 		}
 
 		deposits, allActive =
@@ -301,6 +300,12 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			return nil, ErrOpeningChannelUnavailableDeposits
 		}
 	} else {
+		err = m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		// We have to select the deposits that are used to fund the
 		// channel.
 		deposits, err = m.cfg.DepositManager.GetActiveDepositsInState(
@@ -309,6 +314,10 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+
+		// Automatic channel funding must ignore mempool deposits because
+		// they cannot yet be used as funding inputs.
+		deposits = filterConfirmedDeposits(deposits)
 
 		// If a local funding amount is set, coin-select deposits to
 		// cover it. Otherwise fundmax uses all available deposits.
@@ -321,6 +330,14 @@ func (m *Manager) OpenChannel(ctx context.Context,
 				return nil, fmt.Errorf("error selecting "+
 					"deposits: %w", err)
 			}
+		}
+	}
+
+	for _, d := range deposits {
+		// Deposited now includes mempool outputs for static loop-ins, but
+		// channel opens still require the deposit input to be confirmed.
+		if d.GetConfirmationHeight() <= 0 {
+			return nil, ErrOpeningChannelUnavailableDeposits
 		}
 	}
 
@@ -397,6 +414,22 @@ func (m *Manager) OpenChannel(ctx context.Context,
 	}
 
 	return nil, err
+}
+
+// filterConfirmedDeposits filters the given deposits and returns only those
+// that have a positive confirmation height, i.e. deposits that have been
+// confirmed on-chain.
+func filterConfirmedDeposits(deposits []*deposit.Deposit) []*deposit.Deposit {
+	confirmed := make([]*deposit.Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if d.GetConfirmationHeight() <= 0 {
+			continue
+		}
+
+		confirmed = append(confirmed, d)
+	}
+
+	return confirmed
 }
 
 // openChannelPsbt starts an interactive channel open protocol that uses a

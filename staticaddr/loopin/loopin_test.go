@@ -147,6 +147,21 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 			"the HTLC output")
 }
 
+func TestPaymentTimeoutDuration(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(
+		t, time.Duration(DefaultPaymentTimeoutSeconds)*time.Second,
+		(&StaticAddressLoopIn{}).PaymentTimeoutDuration(),
+	)
+	require.Equal(
+		t, 42*time.Second,
+		(&StaticAddressLoopIn{
+			PaymentTimeoutSeconds: 42,
+		}).PaymentTimeoutDuration(),
+	)
+}
+
 // newStaticAddress creates a StaticAddress for testing.
 func newStaticAddress(clientKey, serverKey *btcec.PublicKey,
 	csvExpiry int64) (*script.StaticAddress, error) {

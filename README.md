@@ -64,6 +64,28 @@ To execute a Loop In:
 loop in <amt_in_satoshis>
 ```
 
+### Static Address Recovery
+Loop now keeps at most one encrypted immutable recovery backup per paid L402
+generation in the active network data directory. A backup is written only after
+Loop has both the paid `l402.token` and the concrete static-address parameters
+for that generation.
+
+The backup is encrypted with a key derived by the backing `lnd` wallet. It is
+therefore only useful with that same `lnd` instance, or with an `lnd` restored
+from the same seed/key material. The Loop backup file alone is not enough to
+recover static-address access.
+
+Existing static-address users get this backup backfilled on the next startup
+with the upgraded client. A fresh install that has no local L402 or
+static-address state first checks for an existing recovery backup in the active
+network directory. If none is restored, startup materializes the initial
+paid-L402/static-address generation and writes its backup.
+
+The follow-up multi-address work is expected to keep this one-backup-per-L402
+model and use the deterministic receive/change key-family metadata already
+stored in the backup. See [recovery/README.md](./recovery/README.md) for the
+full recovery model and the planned multi-address outlook.
+
 ### More info
 
 - [Loop FAQs](./docs/faqs.md)
