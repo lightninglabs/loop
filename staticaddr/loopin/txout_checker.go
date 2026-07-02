@@ -8,7 +8,7 @@ import (
 )
 
 // lndTxOutChecker checks outpoint availability using lnd's wallet transaction
-// view. It returns nil for outputs already spent by a wallet-known transaction.
+// view. It omits outputs already spent by a wallet-known transaction.
 type lndTxOutChecker struct {
 	client lndclient.LightningClient
 }
@@ -20,35 +20,39 @@ func NewLndTxOutChecker(client lndclient.LightningClient) TxOutChecker {
 	}
 }
 
-// GetTxOut returns the tx output if lnd's transaction view still reports the
-// outpoint as unspent.
-func (c *lndTxOutChecker) GetTxOut(ctx context.Context,
-	outpoint wire.OutPoint, includeMempool bool) (*wire.TxOut, error) {
+// GetTxOuts returns all requested tx outputs that lnd's transaction view still
+// reports as unspent.
+func (c *lndTxOutChecker) GetTxOuts(ctx context.Context,
+	outpoints []wire.OutPoint) (map[wire.OutPoint]*wire.TxOut, error) {
 
-	endHeight := int32(0)
-	if includeMempool {
-		endHeight = -1
+	outpointByString := make(map[string]wire.OutPoint, len(outpoints))
+	outpointsByHash := make(map[string][]wire.OutPoint, len(outpoints))
+	for _, outpoint := range outpoints {
+		outpointByString[outpoint.String()] = outpoint
+		outpointsByHash[outpoint.Hash.String()] = append(
+			outpointsByHash[outpoint.Hash.String()], outpoint,
+		)
 	}
 
 	// We need lnd's wallet transaction view rather than only the funding
 	// transaction: a matching previous outpoint tells us the deposit has
-	// already been spent by a wallet-known transaction. When mempool spends
-	// matter, lnd exposes them through ListTransactions with endHeight=-1.
-	txs, err := c.client.ListTransactions(ctx, 0, endHeight)
+	// already been spent by a wallet-known transaction. Use endHeight=-1 so
+	// lnd includes unconfirmed transactions and mempool spends.
+	txs, err := c.client.ListTransactions(ctx, 0, -1)
 	if err != nil {
 		return nil, err
 	}
 
-	outpointStr := outpoint.String()
+	txOuts := make(map[wire.OutPoint]*wire.TxOut, len(outpoints))
+	spent := make(map[wire.OutPoint]struct{}, len(outpoints))
 	for _, tx := range txs {
 		for _, prevOutpoint := range tx.PreviousOutpoints {
-			if prevOutpoint.GetOutpoint() == outpointStr {
-				return nil, nil
+			outpoint, ok := outpointByString[prevOutpoint.GetOutpoint()]
+			if ok {
+				spent[outpoint] = struct{}{}
 			}
 		}
-	}
 
-	for _, tx := range txs {
 		if tx.Tx == nil {
 			continue
 		}
@@ -57,16 +61,19 @@ func (c *lndTxOutChecker) GetTxOut(ctx context.Context,
 		if txHash == "" {
 			txHash = tx.Tx.TxHash().String()
 		}
-		if txHash != outpoint.Hash.String() {
-			continue
-		}
 
-		if int(outpoint.Index) >= len(tx.Tx.TxOut) {
-			return nil, nil
-		}
+		for _, outpoint := range outpointsByHash[txHash] {
+			if int(outpoint.Index) >= len(tx.Tx.TxOut) {
+				continue
+			}
 
-		return tx.Tx.TxOut[outpoint.Index], nil
+			txOuts[outpoint] = tx.Tx.TxOut[outpoint.Index]
+		}
 	}
 
-	return nil, nil
+	for outpoint := range spent {
+		delete(txOuts, outpoint)
+	}
+
+	return txOuts, nil
 }

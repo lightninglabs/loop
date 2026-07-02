@@ -462,8 +462,7 @@ func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
 		t, f.LastActionError, "deposit "+
 			dep.OutPoint.String()+" is no longer available",
 	)
-	require.Equal(t, []wire.OutPoint{dep.OutPoint}, checker.outpoints)
-	require.Equal(t, []bool{true}, checker.includeMempool)
+	require.Equal(t, [][]wire.OutPoint{{dep.OutPoint}}, checker.outpoints)
 }
 
 func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
@@ -495,7 +494,6 @@ func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
 	err := f.checkDepositsAvailable(t.Context())
 	require.ErrorContains(t, err, "deposit outpoint snapshot mismatch")
 	require.Empty(t, checker.outpoints)
-	require.Empty(t, checker.includeMempool)
 }
 
 // mockStaticAddressServer captures static-address loop-in requests in tests.
@@ -849,18 +847,23 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 }
 
 type recordingTxOutChecker struct {
-	outpoints      []wire.OutPoint
-	includeMempool []bool
+	outpoints [][]wire.OutPoint
+	txOuts    map[wire.OutPoint]*wire.TxOut
+	err       error
 }
 
-// GetTxOut records the request and reports that the outpoint is unavailable.
-func (r *recordingTxOutChecker) GetTxOut(_ context.Context,
-	outpoint wire.OutPoint, includeMempool bool) (*wire.TxOut, error) {
+// GetTxOuts records the request and returns the configured available outputs.
+func (r *recordingTxOutChecker) GetTxOuts(_ context.Context,
+	outpoints []wire.OutPoint) (map[wire.OutPoint]*wire.TxOut, error) {
 
-	r.outpoints = append(r.outpoints, outpoint)
-	r.includeMempool = append(r.includeMempool, includeMempool)
+	r.outpoints = append(
+		r.outpoints, append([]wire.OutPoint(nil), outpoints...),
+	)
+	if r.err != nil {
+		return nil, r.err
+	}
 
-	return nil, nil
+	return r.txOuts, nil
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server

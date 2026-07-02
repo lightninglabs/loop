@@ -544,16 +544,13 @@ func (f *FSM) checkDepositsAvailable(ctx context.Context) error {
 		return nil
 	}
 
-	for _, outpoint := range outpoints {
-		txOut, err := f.cfg.TxOutChecker.GetTxOut(
-			ctx, outpoint, true,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to check deposit %v: %w",
-				outpoint, err)
-		}
+	txOuts, err := f.cfg.TxOutChecker.GetTxOuts(ctx, outpoints)
+	if err != nil {
+		return fmt.Errorf("unable to check deposits: %w", err)
+	}
 
-		if txOut == nil {
+	for _, outpoint := range outpoints {
+		if txOuts[outpoint] == nil {
 			return fmt.Errorf("deposit %v is no longer available",
 				outpoint)
 		}

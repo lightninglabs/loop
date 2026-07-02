@@ -21,7 +21,11 @@ func TestLndTxOutChecker(t *testing.T) {
 		Index: 1,
 	}
 
-	t.Run("returns live tx output", func(t *testing.T) {
+	t.Run("returns live tx outputs", func(t *testing.T) {
+		otherOutpoint := wire.OutPoint{
+			Hash:  fundingTx.TxHash(),
+			Index: 0,
+		}
 		client := &mockTxListLightningClient{
 			txs: []lndclient.Transaction{{
 				Tx: fundingTx,
@@ -29,12 +33,18 @@ func TestLndTxOutChecker(t *testing.T) {
 		}
 
 		checker := NewLndTxOutChecker(client)
-		txOut, err := checker.GetTxOut(t.Context(), outpoint, false)
+		txOuts, err := checker.GetTxOuts(
+			t.Context(), []wire.OutPoint{outpoint, otherOutpoint},
+		)
 		require.NoError(t, err)
-		require.Equal(t, fundingTx.TxOut[outpoint.Index], txOut)
+		require.Equal(t, fundingTx.TxOut[outpoint.Index], txOuts[outpoint])
+		require.Equal(
+			t, fundingTx.TxOut[otherOutpoint.Index],
+			txOuts[otherOutpoint],
+		)
 		require.Equal(t, []txListCall{{
 			startHeight: 0,
-			endHeight:   0,
+			endHeight:   -1,
 		}}, client.calls)
 	})
 
@@ -50,9 +60,11 @@ func TestLndTxOutChecker(t *testing.T) {
 		}
 
 		checker := NewLndTxOutChecker(client)
-		txOut, err := checker.GetTxOut(t.Context(), outpoint, true)
+		txOuts, err := checker.GetTxOuts(
+			t.Context(), []wire.OutPoint{outpoint},
+		)
 		require.NoError(t, err)
-		require.Nil(t, txOut)
+		require.Nil(t, txOuts[outpoint])
 		require.Equal(t, []txListCall{{
 			startHeight: 0,
 			endHeight:   -1,
@@ -66,9 +78,11 @@ func TestLndTxOutChecker(t *testing.T) {
 		}
 
 		checker := NewLndTxOutChecker(client)
-		txOut, err := checker.GetTxOut(t.Context(), outpoint, false)
+		txOuts, err := checker.GetTxOuts(
+			t.Context(), []wire.OutPoint{outpoint},
+		)
 		require.ErrorIs(t, err, expectedErr)
-		require.Nil(t, txOut)
+		require.Nil(t, txOuts)
 	})
 }
 

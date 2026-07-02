@@ -106,14 +106,13 @@ type QuoteGetter interface {
 		numDeposits uint32, fast bool) (*loop.LoopInQuote, error)
 }
 
-// TxOutChecker checks whether an outpoint is still available in the chain
+// TxOutChecker checks whether outpoints are still available in the chain
 // backend's UTXO view.
 type TxOutChecker interface {
-	// GetTxOut returns nil if the outpoint is unavailable or spent. The
-	// includeMempool flag must be passed through to the underlying chain
-	// backend.
-	GetTxOut(ctx context.Context, outpoint wire.OutPoint,
-		includeMempool bool) (*wire.TxOut, error)
+	// GetTxOuts returns entries for the requested outpoints that are
+	// available and unspent. Missing entries are unavailable or spent.
+	GetTxOuts(ctx context.Context, outpoints []wire.OutPoint) (
+		map[wire.OutPoint]*wire.TxOut, error)
 }
 
 type NotificationManager interface {
