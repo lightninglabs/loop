@@ -692,6 +692,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
 		LndClient:                            d.lnd.Client,
+		TxOutChecker:                         loopin.NewLndTxOutChecker(d.lnd.Client),
 		InvoicesClient:                       d.lnd.Invoices,
 		NodePubkey:                           d.lnd.NodePubkey,
 		AddressManager:                       staticAddressManager,

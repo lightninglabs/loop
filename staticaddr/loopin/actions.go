@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -413,6 +414,11 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	err = f.checkDepositsAvailable(ctx)
+	if err != nil {
+		return f.HandleError(err)
+	}
+
 	// Create a musig2 session for each deposit and different htlc tx fee
 	// rates.
 	createSession := staticutil.CreateMusig2Sessions
@@ -524,6 +530,68 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	// htlc tx without paying the invoice. In this case we need to wait till
 	// the htlc times out and then sweep it back to us.
 	return OnHtlcTxSigned
+}
+
+// checkDepositsAvailable verifies that all loop-in deposits are still available
+// before the client signs the HTLC transaction.
+func (f *FSM) checkDepositsAvailable(ctx context.Context) error {
+	outpoints, err := f.validateSigningDepositOutpoints()
+	if err != nil {
+		return err
+	}
+
+	if f.cfg.TxOutChecker == nil {
+		return nil
+	}
+
+	txOuts, err := f.cfg.TxOutChecker.GetTxOuts(ctx, outpoints)
+	if err != nil {
+		return fmt.Errorf("unable to check deposits: %w", err)
+	}
+
+	for _, outpoint := range outpoints {
+		if txOuts[outpoint] == nil {
+			return fmt.Errorf("deposit %v is no longer available",
+				outpoint)
+		}
+	}
+
+	return nil
+}
+
+// validateSigningDepositOutpoints verifies that the current deposit rows match
+// the server-side outpoint snapshot before signing the HTLC transaction.
+func (f *FSM) validateSigningDepositOutpoints() ([]wire.OutPoint, error) {
+	currentOutpoints := f.loopIn.Outpoints()
+	if len(f.loopIn.DepositOutpoints) == 0 {
+		return currentOutpoints, nil
+	}
+
+	if len(f.loopIn.DepositOutpoints) != len(currentOutpoints) {
+		return nil, fmt.Errorf("deposit outpoint snapshot has %d "+
+			"outpoints, current deposits have %d",
+			len(f.loopIn.DepositOutpoints), len(currentOutpoints))
+	}
+
+	snapshotOutpoints := make(
+		[]wire.OutPoint, len(f.loopIn.DepositOutpoints),
+	)
+	for i, snapshot := range f.loopIn.DepositOutpoints {
+		outpoint, err := wire.NewOutPointFromString(snapshot)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse deposit "+
+				"outpoint snapshot %q: %w", snapshot, err)
+		}
+
+		snapshotOutpoints[i] = *outpoint
+		if *outpoint != currentOutpoints[i] {
+			return nil, fmt.Errorf("deposit outpoint snapshot "+
+				"mismatch at index %d: snapshot %v, "+
+				"current %v", i, outpoint, currentOutpoints[i])
+		}
+	}
+
+	return snapshotOutpoints, nil
 }
 
 // cleanUpSessions releases allocated memory of the musig2 sessions.

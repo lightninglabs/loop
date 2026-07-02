@@ -430,6 +430,72 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	test.RequireRouteHintsEqual(t, loopIn.RouteHints, routeHints)
 }
 
+func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x77},
+			Index: 2,
+		},
+		Value: 200_000,
+	}
+	checker := &recordingTxOutChecker{}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				params: &script.Parameters{
+					ProtocolVersion: version.ProtocolVersion_V0,
+				},
+			},
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits:         []*deposit.Deposit{dep},
+			DepositOutpoints: []string{dep.OutPoint.String()},
+		},
+	}
+
+	event := f.SignHtlcTxAction(t.Context(), nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "deposit "+
+			dep.OutPoint.String()+" is no longer available",
+	)
+	require.Equal(t, [][]wire.OutPoint{{dep.OutPoint}}, checker.outpoints)
+}
+
+func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
+	t *testing.T) {
+
+	currentOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x89},
+		Index: 1,
+	}
+	snapshotOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x88},
+		Index: 0,
+	}
+	checker := &recordingTxOutChecker{}
+
+	f := &FSM{
+		cfg: &Config{
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{{
+				OutPoint: currentOutpoint,
+				Value:    200_000,
+			}},
+			DepositOutpoints: []string{snapshotOutpoint.String()},
+		},
+	}
+
+	err := f.checkDepositsAvailable(t.Context())
+	require.ErrorContains(t, err, "deposit outpoint snapshot mismatch")
+	require.Empty(t, checker.outpoints)
+}
+
 // mockStaticAddressServer captures static-address loop-in requests in tests.
 type mockStaticAddressServer struct {
 	swapserverrpc.StaticAddressServerClient
@@ -778,6 +844,26 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	})
 
 	return r.err
+}
+
+type recordingTxOutChecker struct {
+	outpoints [][]wire.OutPoint
+	txOuts    map[wire.OutPoint]*wire.TxOut
+	err       error
+}
+
+// GetTxOuts records the request and returns the configured available outputs.
+func (r *recordingTxOutChecker) GetTxOuts(_ context.Context,
+	outpoints []wire.OutPoint) (map[wire.OutPoint]*wire.TxOut, error) {
+
+	r.outpoints = append(
+		r.outpoints, append([]wire.OutPoint(nil), outpoints...),
+	)
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	return r.txOuts, nil
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
