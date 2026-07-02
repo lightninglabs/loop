@@ -470,9 +470,9 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 // initiation time of the swap. If more than the swap's configured payment
 // timeout has passed, the remaining time will be negative.
 func (l *StaticAddressLoopIn) RemainingPaymentTimeSeconds() int64 {
-	elapsedSinceInitiation := time.Since(l.InitiationTime).Seconds()
+	deadline := l.InitiationTime.Add(l.PaymentTimeoutDuration())
 
-	return l.paymentTimeoutSeconds() - int64(elapsedSinceInitiation)
+	return int64(time.Until(deadline).Seconds())
 }
 
 // PaymentTimeoutDuration returns the configured payment timeout duration,
