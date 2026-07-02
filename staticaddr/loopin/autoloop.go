@@ -30,6 +30,11 @@ func (m *Manager) PrepareAutoloopLoopIn(ctx context.Context,
 		return nil, 0, false, ErrNoAutoloopCandidate
 	}
 
+	err := m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return nil, 0, false, err
+	}
+
 	allDeposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
 		deposit.Deposited,
 	)

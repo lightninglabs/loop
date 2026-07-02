@@ -219,6 +219,49 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 		args.Get(1).(chan error), args.Error(2)
 }
 
+type MockChainKit struct {
+	mock.Mock
+}
+
+// RawClientWithMacAuth implements lndclient.ChainKitClient for tests.
+func (m *MockChainKit) RawClientWithMacAuth(
+	ctx context.Context) (context.Context, time.Duration,
+	chainrpc.ChainKitClient) {
+
+	return ctx, 0, nil
+}
+
+// GetBlock implements lndclient.ChainKitClient for tests.
+func (m *MockChainKit) GetBlock(context.Context, chainhash.Hash) (
+	*wire.MsgBlock, error) {
+
+	panic("unexpected GetBlock call")
+}
+
+// GetBlockHeader implements lndclient.ChainKitClient for tests.
+func (m *MockChainKit) GetBlockHeader(context.Context, chainhash.Hash) (
+	*wire.BlockHeader, error) {
+
+	panic("unexpected GetBlockHeader call")
+}
+
+// GetBestBlock returns the configured best-block mock response.
+func (m *MockChainKit) GetBestBlock(ctx context.Context) (
+	chainhash.Hash, int32, error) {
+
+	args := m.Called(ctx)
+
+	return args.Get(0).(chainhash.Hash), args.Get(1).(int32),
+		args.Error(2)
+}
+
+// GetBlockHash implements lndclient.ChainKitClient for tests.
+func (m *MockChainKit) GetBlockHash(context.Context, int64) (
+	chainhash.Hash, error) {
+
+	panic("unexpected GetBlockHash call")
+}
+
 // TestManager checks that the manager processes the right channel notifications
 // while a deposit is expiring.
 func TestManager(t *testing.T) {
@@ -236,6 +279,10 @@ func TestManager(t *testing.T) {
 	go func() {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
+
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
 
 	// Ensure that the manager has been initialized.
 	select {
@@ -296,6 +343,61 @@ func TestManager(t *testing.T) {
 
 		return len(testContext.manager.activeDeposits) == 0
 	}, defaultTimeout, 10*time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager did not stop")
+	}
+}
+
+// TestManagerReplaysStartupBlockToRecoveredDeposits verifies that the initial
+// block epoch consumed during startup is delivered to recovered deposit FSMs.
+func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const defaultTimeout = 30 * time.Second
+
+	testContext := newManagerTestContext(t)
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	// Send only the startup block at the recovered deposit's expiry height.
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive sign request")
+	}
+
+	select {
+	case <-testContext.mockLnd.TxPublishChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive published expiry tx")
+	}
 
 	cancel()
 	select {

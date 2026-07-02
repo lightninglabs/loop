@@ -555,10 +555,30 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	// Static address loop-in store setup is needed by the notification
+	// manager so confirmation-risk decisions are durable before fan-out.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
 	// Start the notification manager.
 	notificationCfg := &notifications.Config{
 		Client:       loop_swaprpc.NewSwapServerClient(swapClient.Conn),
 		CurrentToken: swapClient.L402Store.CurrentToken,
+		PersistStaticLoopInRiskDecision: func(ctx context.Context,
+			swapHash lntypes.Hash, accepted bool) error {
+
+			decision := loopin.ConfirmationRiskDecisionRejected
+			if accepted {
+				decision = loopin.ConfirmationRiskDecisionAccepted
+			}
+
+			return staticAddressLoopInStore.
+				RecordStaticAddressRiskDecision(
+					ctx, swapHash, decision,
+				)
+		},
 	}
 	notificationManager := notifications.NewManager(notificationCfg)
 
@@ -622,6 +642,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	depositStore := deposit.NewSqlStore(baseDb)
 	depoCfg := &deposit.ManagerConfig{
 		AddressManager: staticAddressManager,
+		ChainKit:       d.lnd.ChainKit,
 		Store:          depositStore,
 		WalletKit:      d.lnd.WalletKit,
 		ChainNotifier:  d.lnd.ChainNotifier,
@@ -662,12 +683,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 	openChannelManager = openchannel.NewManager(openChannelCfg)
 
-	// Static address loop-in manager setup.
-	staticAddressLoopInStore := loopin.NewSqlStore(
-		loopdb.NewTypedStore[loopin.Querier](baseDb),
-		clock.NewDefaultClock(), d.lnd.ChainParams,
-	)
-
 	// Run the deposit swap hash migration.
 	err = loopin.MigrateDepositSwapHash(
 		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
@@ -692,6 +707,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
 		LndClient:                            d.lnd.Client,
+		TxOutChecker:                         loopin.NewLndTxOutChecker(d.lnd.Client),
 		InvoicesClient:                       d.lnd.Invoices,
 		NodePubkey:                           d.lnd.NodePubkey,
 		AddressManager:                       staticAddressManager,

@@ -3,6 +3,7 @@ package loopin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,82 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+func TestHandleInvoiceUpdate(t *testing.T) {
+	t.Parallel()
+
+	swapHash := lntypes.Hash{1, 2, 3}
+	tests := []struct {
+		name      string
+		state     invoices.ContractState
+		event     fsm.EventType
+		done      bool
+		errString string
+	}{
+		{
+			name:  "open",
+			state: invoices.ContractOpen,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "accepted",
+			state: invoices.ContractAccepted,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "settled",
+			state: invoices.ContractSettled,
+			event: OnPaymentReceived,
+			done:  true,
+		},
+		{
+			name:  "canceled",
+			state: invoices.ContractCanceled,
+			event: fsm.NoOp,
+		},
+		{
+			name:      "unexpected",
+			state:     invoices.ContractState(99),
+			event:     fsm.OnError,
+			done:      true,
+			errString: "unexpected invoice state",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				loopIn: &StaticAddressLoopIn{
+					SwapHash: swapHash,
+				},
+			}
+
+			event, done := f.handleInvoiceUpdate(
+				lndclient.InvoiceUpdate{
+					Invoice: lndclient.Invoice{
+						State: test.state,
+					},
+				},
+			)
+			require.Equal(t, test.event, event)
+			require.Equal(t, test.done, done)
+
+			if test.errString == "" {
+				require.Nil(t, f.LastActionError)
+			} else {
+				require.ErrorContains(
+					t, f.LastActionError, test.errString,
+				)
+				require.ErrorContains(
+					t, f.LastActionError, fmt.Sprint(swapHash),
+				)
+			}
+		})
+	}
+}
 
 // TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr ensures that an error from
 // the HTLC confirmation subscription triggers a re-registration. Without the
@@ -45,7 +122,7 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 		SwapHash:              swapHash,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
-		InitiationTime:        time.Now(),
+		InitiationTime:        time.Now().Add(-time.Hour),
 		ProtocolVersion:       version.ProtocolVersion_V0,
 		ClientPubkey:          clientKey.PubKey(),
 		ServerPubkey:          serverKey.PubKey(),
@@ -54,10 +131,10 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
 
 	// Seed the mock invoice store so LookupInvoice succeeds.
-	mockLnd.Invoices[swapHash] = &lndclient.Invoice{
+	mockLnd.SetInvoice(&lndclient.Invoice{
 		Hash:  swapHash,
 		State: invoices.ContractOpen,
-	}
+	})
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -128,6 +205,257 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceAndHtlcTxNoOpOnShutdown ensures that a shutdown while the
+// client is monitoring an HTLC-signed loop-in keeps the swap resumable instead
+// of entering the generic unlock path.
+func TestMonitorInvoiceAndHtlcTxNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	runCtx, stop := context.WithCancel(ctx)
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 6}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.Invoices[swapHash] = &lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	}
+
+	depositMgr := &recordingDepositManager{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(runCtx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	stop()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Nil(t, f.LastActionError)
+	require.Empty(t, depositMgr.transitions)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled on shutdown: %v", hash)
+
+	default:
+	}
+}
+
+// TestSweepHtlcTimeoutActionNoOpOnShutdown ensures that a shutdown during
+// timeout sweep publication keeps the FSM in the same state so it can resume
+// after restart.
+func TestSweepHtlcTimeoutActionNoOpOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	mockLnd := test.NewMockLnd()
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			LndClient: mockLnd.Client,
+			WalletKit: mockLnd.WalletKit,
+		},
+		loopIn: &StaticAddressLoopIn{},
+	}
+
+	event := f.SweepHtlcTimeoutAction(ctx, nil)
+	require.Equal(t, fsm.NoOp, event)
+	require.Nil(t, f.LastActionError)
+}
+
+// TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown ensures that a shutdown
+// while waiting for the timeout sweep confirmation keeps the FSM resumable.
+func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	sweepAddr, err := mockLnd.WalletKit.NextAddr(ctx, "", 0, false)
+	require.NoError(t, err)
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			ChainNotifier: mockLnd.ChainNotifier,
+		},
+		loopIn: &StaticAddressLoopIn{
+			HtlcTimeoutSweepAddress: sweepAddr,
+			InitiationHeight:        uint32(mockLnd.Height),
+		},
+	}
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorHtlcTimeoutSweepAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("timeout sweep conf registration not received: %v",
+			ctx.Err())
+	}
+
+	cancel()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+		require.Nil(t, f.LastActionError)
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout sweep monitor did not return")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock verifies that daemon
+// shutdown exits the monitor action without treating the swap as failed.
+func TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	runCtx, stop := context.WithCancel(ctx)
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{1, 2, 4}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(runCtx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	stop()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.NoError(t, f.LastActionError)
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		t.Fatalf("deposit transition on shutdown: %v", transition)
+
+	default:
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled on shutdown: %v", hash)
+
+	default:
+	}
+}
+
 // TestInitHtlcActionPreservesRouteHints asserts that static-address loop-in
 // propagates explicit route hints into the encoded swap invoice sent to the
 // server.
@@ -189,6 +517,41 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.NoError(t, err)
 
 	test.RequireRouteHintsEqual(t, loopIn.RouteHints, routeHints)
+}
+
+func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x77},
+			Index: 2,
+		},
+		Value: 200_000,
+	}
+	checker := &testTxOutChecker{}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				params: &script.Parameters{
+					ProtocolVersion: version.ProtocolVersion_V0,
+				},
+			},
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{dep},
+		},
+	}
+
+	event := f.SignHtlcTxAction(t.Context(), nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "deposit "+
+			dep.OutPoint.String()+" is no longer available",
+	)
+	require.Equal(t, []wire.OutPoint{dep.OutPoint}, checker.outpoints)
+	require.Equal(t, []bool{true}, checker.includeMempool)
 }
 
 // mockStaticAddressServer captures static-address loop-in requests in tests.
@@ -268,6 +631,1561 @@ func testStaticAddressRouteHints() [][]zpay32.HopHint {
 // testValidateLoopInContract accepts all server contract parameters in tests.
 func testValidateLoopInContract(_ int32, _ int32) error {
 	return nil
+}
+
+// TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted verifies that the
+// payment timeout does not start until the server notifies us that confirmation
+// risk was accepted.
+func TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 6}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{7},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskAccepted: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskAcceptedNotification, 1,
+		),
+	}
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:       mockLnd.ChainNotifier,
+		DepositManager:      depositMgr,
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled before risk acceptance: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	notificationMgr.riskAccepted <- &swapserverrpc.ServerStaticLoopInRiskAcceptedNotification{
+		SwapHash: swapHash[:],
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled immediately after risk acceptance: %v",
+			hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		require.Equal(t, []*deposit.Deposit{
+			loopIn.Deposits[0],
+		}, transition.deposits)
+		require.Equal(t, fsm.OnError, transition.event)
+		require.Equal(t, deposit.Deposited, transition.state)
+
+	case <-ctx.Done():
+		t.Fatalf("deposits were not unlocked: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime verifies that live
+// risk notifications use the durable receipt time, not the local channel
+// receive time, when reconstructing the payment deadline.
+func TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 7}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{8},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskAccepted: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskAcceptedNotification, 1,
+		),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:       mockLnd.ChainNotifier,
+		DepositManager:      &noopDepositManager{},
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+		Store: &mockStore{
+			loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+				swapHash: {
+					ConfirmationRiskDecision: ConfirmationRiskDecisionAccepted,
+					ConfirmationRiskDecisionTime: time.Now().Add(
+						-time.Minute,
+					),
+				},
+			},
+		},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled before risk acceptance: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	notificationMgr.riskAccepted <- &swapserverrpc.
+		ServerStaticLoopInRiskAcceptedNotification{
+		SwapHash: swapHash[:],
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxPersistsReplayedRiskAccepted verifies that a risk
+// notification replayed after the swap row exists is written back to the store.
+func TestMonitorInvoiceAndHtlcTxPersistsReplayedRiskAccepted(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 6, 10}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{14},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskAccepted: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskAcceptedNotification, 1,
+		),
+	}
+	store := &recordingRiskStore{
+		mockStore: &mockStore{
+			loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+				swapHash: {},
+			},
+		},
+		decisions: make(chan ConfirmationRiskDecision, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:       mockLnd.ChainNotifier,
+		DepositManager:      &noopDepositManager{},
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+		Store:               store,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	notificationMgr.riskAccepted <- &swapserverrpc.
+		ServerStaticLoopInRiskAcceptedNotification{
+		SwapHash: swapHash[:],
+	}
+
+	select {
+	case decision := <-store.decisions:
+		require.Equal(t, ConfirmationRiskDecisionAccepted, decision)
+
+	case <-ctx.Done():
+		t.Fatalf("risk decision was not persisted: %v", ctx.Err())
+	}
+
+	stored := store.loopIns[swapHash]
+	require.Equal(t, ConfirmationRiskDecisionAccepted,
+		stored.ConfirmationRiskDecision)
+	require.False(t, stored.ConfirmationRiskDecisionTime.IsZero())
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxPersistsRiskRejected verifies that a server-side
+// confirmation risk rejection is persisted and exits through the generic error
+// path so the FSM unlocks deposits.
+func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 6, 7}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{9},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        mockLnd.Height,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskRejected: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskRejectedNotification, 1,
+		),
+	}
+
+	store := &recordingRiskStore{
+		mockStore: &mockStore{
+			loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+				swapHash: {},
+			},
+		},
+		decisions: make(chan ConfirmationRiskDecision, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:       mockLnd.ChainNotifier,
+		DepositManager:      &noopDepositManager{},
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+		Store:               store,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	notificationMgr.riskRejected <- &swapserverrpc.ServerStaticLoopInRiskRejectedNotification{ // nolint: lll
+		SwapHash: swapHash[:],
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case decision := <-store.decisions:
+		require.Equal(t, ConfirmationRiskDecisionRejected, decision)
+
+	case <-ctx.Done():
+		t.Fatalf("risk decision was not persisted: %v", ctx.Err())
+	}
+
+	stored := store.loopIns[swapHash]
+	require.Equal(t, ConfirmationRiskDecisionRejected,
+		stored.ConfirmationRiskDecision)
+	require.False(t, stored.ConfirmationRiskDecisionTime.IsZero())
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.OnError, event)
+		require.ErrorContains(
+			t, f.LastActionError,
+			"server rejected confirmation risk wait",
+		)
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision verifies that a
+// persisted risk acceptance restarts the payment deadline with elapsed time
+// preserved after restart.
+func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 6, 8}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{12},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                     swapHash,
+		HtlcCltvExpiry:               2_000,
+		InitiationHeight:             uint32(mockLnd.Height),
+		InitiationTime:               time.Now(),
+		ProtocolVersion:              version.ProtocolVersion_V0,
+		ClientPubkey:                 clientKey.PubKey(),
+		ServerPubkey:                 serverKey.PubKey(),
+		PaymentTimeoutSeconds:        1,
+		ConfirmationRiskDecision:     ConfirmationRiskDecisionAccepted,
+		ConfirmationRiskDecisionTime: time.Now().Add(-time.Minute),
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		require.Equal(t, fsm.OnError, transition.event)
+		require.Equal(t, deposit.Deposited, transition.state)
+
+	case <-ctx.Done():
+		t.Fatalf("deposits were not unlocked: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision verifies that a
+// persisted risk rejection still cancels after restart and exits through the
+// generic error path so the FSM unlocks deposits.
+func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 6, 9}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{13},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                     swapHash,
+		HtlcCltvExpiry:               mockLnd.Height,
+		InitiationHeight:             uint32(mockLnd.Height),
+		InitiationTime:               time.Now(),
+		ProtocolVersion:              version.ProtocolVersion_V0,
+		ClientPubkey:                 clientKey.PubKey(),
+		ServerPubkey:                 serverKey.PubKey(),
+		PaymentTimeoutSeconds:        3_600,
+		ConfirmationRiskDecision:     ConfirmationRiskDecisionRejected,
+		ConfirmationRiskDecisionTime: time.Now(),
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.OnError, event)
+		require.ErrorContains(
+			t, f.LastActionError,
+			"server rejected confirmation risk wait",
+		)
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxDoesNotCancelWhenOriginalOutpointVanishes
+// verifies that once the monitor state is reached, a missing original deposit
+// outpoint does not cancel the invoice. After HTLC signatures are handed to the
+// server, the outpoint can disappear because the server published the expected
+// HTLC transaction.
+func TestMonitorInvoiceAndHtlcTxDoesNotCancelWhenOriginalOutpointVanishes(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 7, 9}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{10},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	txOutChecker := &testTxOutChecker{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: &noopDepositManager{},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+		TxOutChecker:   txOutChecker,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice should not have been canceled: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+
+	require.Empty(t, txOutChecker.outpoints)
+	require.Empty(t, txOutChecker.includeMempool)
+}
+
+// TestMonitorInvoiceAndHtlcTxDoesNotCancelAcceptedInvoiceForMissingOutpoint
+// verifies that the outpoint-vanished fallback is only active before payment
+// has started. Once the invoice is accepted, the original deposit may disappear
+// because the server has moved forward with the swap.
+func TestMonitorInvoiceAndHtlcTxDoesNotCancelAcceptedInvoiceForMissingOutpoint(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{6, 8, 10}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{11},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractAccepted,
+	})
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: &noopDepositManager{},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+		TxOutChecker:   &testTxOutChecker{},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice should not have been canceled: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case <-resultChan:
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxStartsDeadlineAtLegacyMinConfs verifies that the
+// monitor action preserves the legacy payment deadline fallback when no risk
+// decision has been observed locally.
+func TestMonitorInvoiceAndHtlcTxStartsDeadlineAtLegacyMinConfs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{7, 8, 9}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{8},
+		Index: 0,
+	}
+	depositRecord := &deposit.Deposit{
+		OutPoint: depositOutpoint,
+	}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{depositRecord},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier: mockLnd.ChainNotifier,
+		DepositManager: &noopDepositManager{
+			deposits: []*deposit.Deposit{depositRecord},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled before deposit confirmation: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	confirmationHeight := int64(mockLnd.Height) - deposit.MinConfs + 1
+	depositRecord.Lock()
+	depositRecord.ConfirmationHeight = confirmationHeight
+	depositRecord.Unlock()
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled immediately after deposit "+
+			"confirmation: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackWithNotificationManager
+// verifies that the legacy payment deadline fallback still applies when the
+// notification manager is configured but no risk decision has been observed.
+func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackWithNotificationManager(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{7, 8, 10}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{9},
+		Index: 0,
+	}
+	depositRecord := &deposit.Deposit{
+		OutPoint: depositOutpoint,
+	}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{depositRecord},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskAccepted: make(
+			chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification,
+			1,
+		),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier: mockLnd.ChainNotifier,
+		DepositManager: &noopDepositManager{
+			deposits: []*deposit.Deposit{depositRecord},
+		},
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	confirmationHeight := int64(mockLnd.Height) - deposit.MinConfs + 1
+	depositRecord.Lock()
+	depositRecord.ConfirmationHeight = confirmationHeight
+	depositRecord.Unlock()
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled before payment deadline: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight verifies that
+// recovery can arm the legacy payment deadline without waiting for a later
+// block notification.
+func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{7, 8, 12}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{13},
+		Index: 0,
+	}
+	staleDeposit := &deposit.Deposit{
+		OutPoint:           depositOutpoint,
+		ConfirmationHeight: 0,
+	}
+	confirmationHeight := int64(mockLnd.Height) - deposit.MinConfs + 1
+	freshDeposit := &deposit.Deposit{
+		OutPoint:           depositOutpoint,
+		ConfirmationHeight: confirmationHeight,
+	}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{staleDeposit},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier: &silentBlockChainNotifier{
+			ChainNotifierClient: mockLnd.ChainNotifier,
+		},
+		DepositManager: &noopDepositManager{
+			deposits: []*deposit.Deposit{freshDeposit},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled before payment deadline: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback verifies that a
+// recovered monitor state does not rely on stale selected-deposit snapshots when
+// deciding whether the legacy payment deadline fallback has opened.
+func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{7, 8, 11}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{12},
+		Index: 0,
+	}
+	staleDeposit := &deposit.Deposit{
+		OutPoint:           depositOutpoint,
+		ConfirmationHeight: 0,
+	}
+	confirmationHeight := int64(mockLnd.Height) - deposit.MinConfs + 1
+	freshDeposit := &deposit.Deposit{
+		OutPoint:           depositOutpoint,
+		ConfirmationHeight: confirmationHeight,
+	}
+	type depositLookup struct {
+		outpoints     []string
+		ignoreUnknown bool
+	}
+	depositLookups := make(chan depositLookup, 1)
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 1,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{staleDeposit},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier: mockLnd.ChainNotifier,
+		DepositManager: &noopDepositManager{
+			deposits: []*deposit.Deposit{freshDeposit},
+			depositsForOutpoints: func(outpoints []string,
+				ignoreUnknown bool) {
+
+				select {
+				case depositLookups <- depositLookup{
+					outpoints: append(
+						[]string(nil), outpoints...,
+					),
+					ignoreUnknown: ignoreUnknown,
+				}:
+				default:
+				}
+			},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled immediately after deposit "+
+			"confirmation: %v", hash)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	select {
+	case lookup := <-depositLookups:
+		require.Equal(t, []string{
+			depositOutpoint.String(),
+		}, lookup.outpoints)
+		require.False(t, lookup.ignoreUnknown)
+
+	case <-ctx.Done():
+		t.Fatalf("deposit refresh was not called: %v", ctx.Err())
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline verifies that
+// deposits are unlocked even if the payment deadline never started before the
+// HTLC timeout path opened.
+func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{10, 11, 12}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{10},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        mockLnd.Height,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := &recordingDepositManager{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnSwapTimedOut, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Equal(t, []fsm.EventType{fsm.OnError}, depositMgr.events)
+	require.Equal(t, []fsm.StateType{deposit.Deposited}, depositMgr.states)
+}
+
+// waitForMonitorSubscriptions waits until invoice and HTLC watchers are active.
+func waitForMonitorSubscriptions(t *testing.T, ctx context.Context,
+	mockLnd *test.LndMockServices) {
+
+	t.Helper()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+}
+
+// TestOriginalDepositOutpointUnavailableRequiresMissingTxOut verifies that a
+// present txout does not trigger the RBF cancellation path.
+func TestOriginalDepositOutpointUnavailableRequiresMissingTxOut(t *testing.T) {
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{1},
+		Index: 0,
+	}
+
+	txOutChecker := &testTxOutChecker{
+		txOut: &wire.TxOut{Value: 10_000},
+	}
+	f := &FSM{
+		cfg: &Config{
+			TxOutChecker: txOutChecker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			DepositOutpoints: []string{originalOutpoint.String()},
+		},
+	}
+
+	unavailable, err := f.originalDepositOutpointUnavailable(t.Context())
+	require.NoError(t, err)
+	require.False(t, unavailable)
+	require.Equal(t, []wire.OutPoint{originalOutpoint}, txOutChecker.outpoints)
+	require.Equal(t, []bool{true}, txOutChecker.includeMempool)
+}
+
+// TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable verifies that a
+// pending loop-in is canceled before HTLC signing if GetTxOut with mempool
+// awareness reports that one of the originally selected outpoints is gone.
+func TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	swapHash := lntypes.Hash{9, 8, 7}
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{1},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{originalOutpoint.String()},
+	}
+
+	txOutChecker := &testTxOutChecker{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		TxOutChecker:   txOutChecker,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.SignHtlcTxAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "original deposit outpoint no longer available",
+	)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	require.Equal(t, []wire.OutPoint{originalOutpoint}, txOutChecker.outpoints)
+	require.Equal(t, []bool{true}, txOutChecker.includeMempool)
+}
+
+// TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError verifies that lookup
+// failures are treated as errors, but do not cancel the invoice. The invoice is
+// only canceled when GetTxOut explicitly returns nil for an original outpoint.
+func TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	swapHash := lntypes.Hash{9, 8, 6}
+	originalOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{3},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{originalOutpoint.String()},
+	}
+
+	txOutChecker := &testTxOutChecker{
+		err: errors.New("backend unavailable"),
+	}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		TxOutChecker:   txOutChecker,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.SignHtlcTxAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "unable to get txout",
+	)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice should not have been canceled: %x", hash)
+	default:
+	}
 }
 
 // TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
@@ -477,7 +2395,16 @@ func (m *mockAddressManager) GetStaticAddress(_ context.Context) (
 }
 
 // noopDepositManager is a stub DepositManager used to satisfy FSM config.
-type noopDepositManager struct{}
+type noopDepositManager struct {
+	deposits             []*deposit.Deposit
+	depositsForOutpoints func([]string, bool)
+	depositErr           error
+}
+
+// EnsureDepositsFresh implements DepositManager with a no-op.
+func (n *noopDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
+}
 
 // GetAllDeposits implements DepositManager with a no-op.
 func (n *noopDepositManager) GetAllDeposits(_ context.Context) (
@@ -501,10 +2428,14 @@ func (n *noopDepositManager) TransitionDeposits(context.Context,
 }
 
 // DepositsForOutpoints implements DepositManager with a no-op.
-func (n *noopDepositManager) DepositsForOutpoints(context.Context, []string,
-	bool) ([]*deposit.Deposit, error) {
+func (n *noopDepositManager) DepositsForOutpoints(_ context.Context,
+	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
 
-	return nil, nil
+	if n.depositsForOutpoints != nil {
+		n.depositsForOutpoints(outpoints, ignoreUnknown)
+	}
+
+	return n.deposits, n.depositErr
 }
 
 // GetActiveDepositsInState implements DepositManager with a no-op.
@@ -524,7 +2455,12 @@ type recordingDepositManager struct {
 	noopDepositManager
 
 	err         error
+	errs        []error
 	transitions []depositTransition
+
+	transitionChan chan depositTransition
+	events         []fsm.EventType
+	states         []fsm.StateType
 }
 
 // TransitionDeposits records the transition and returns the configured error.
@@ -532,13 +2468,116 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	deposits []*deposit.Deposit, event fsm.EventType,
 	state fsm.StateType) error {
 
-	r.transitions = append(r.transitions, depositTransition{
+	transition := depositTransition{
 		deposits: deposits,
 		event:    event,
 		state:    state,
-	})
+	}
+
+	r.transitions = append(r.transitions, transition)
+	r.events = append(r.events, event)
+	r.states = append(r.states, state)
+
+	if r.transitionChan != nil {
+		r.transitionChan <- transition
+	}
+
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+
+		return err
+	}
 
 	return r.err
+}
+
+type recordingRiskStore struct {
+	*mockStore
+
+	decisions chan ConfirmationRiskDecision
+}
+
+// RecordStaticAddressRiskDecision records a risk decision in the mock store.
+func (s *recordingRiskStore) RecordStaticAddressRiskDecision(
+	_ context.Context, swapHash lntypes.Hash,
+	decision ConfirmationRiskDecision) error {
+
+	loopIn, ok := s.loopIns[swapHash]
+	if !ok {
+		return ErrLoopInNotFound
+	}
+
+	loopIn.ConfirmationRiskDecision = decision
+	loopIn.ConfirmationRiskDecisionTime = time.Now()
+
+	select {
+	case s.decisions <- decision:
+	default:
+	}
+
+	return nil
+}
+
+// mockNotificationManager allows tests to push server notifications directly to
+// monitor actions.
+type mockNotificationManager struct {
+	riskAccepted chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification
+	riskRejected chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification
+}
+
+type silentBlockChainNotifier struct {
+	lndclient.ChainNotifierClient
+}
+
+// RegisterBlockEpochNtfn implements ChainNotifierClient without delivering an
+// initial block. Tests use it to assert current-height recovery behavior without
+// relying on a block notification.
+func (s *silentBlockChainNotifier) RegisterBlockEpochNtfn(context.Context) (
+	chan int32, chan error, error) {
+
+	return make(chan int32), make(chan error), nil
+}
+
+// SubscribeStaticLoopInSweepRequests implements NotificationManager.
+func (m *mockNotificationManager) SubscribeStaticLoopInSweepRequests(
+	context.Context) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	return make(chan *swapserverrpc.ServerStaticLoopInSweepNotification)
+}
+
+// SubscribeStaticLoopInRiskAccepted implements NotificationManager.
+func (m *mockNotificationManager) SubscribeStaticLoopInRiskAccepted(
+	context.Context, lntypes.Hash,
+) <-chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification {
+
+	return m.riskAccepted
+}
+
+// SubscribeStaticLoopInRiskRejected implements NotificationManager.
+func (m *mockNotificationManager) SubscribeStaticLoopInRiskRejected(
+	context.Context, lntypes.Hash,
+) <-chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification {
+
+	return m.riskRejected
+}
+
+type testTxOutChecker struct {
+	txOut *wire.TxOut
+	err   error
+
+	outpoints      []wire.OutPoint
+	includeMempool []bool
+}
+
+// GetTxOut records lookup parameters and returns the configured result.
+func (t *testTxOutChecker) GetTxOut(_ context.Context,
+	outpoint wire.OutPoint, includeMempool bool) (*wire.TxOut, error) {
+
+	t.outpoints = append(t.outpoints, outpoint)
+	t.includeMempool = append(t.includeMempool, includeMempool)
+
+	return t.txOut, t.err
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server

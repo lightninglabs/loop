@@ -29,10 +29,15 @@ type transitionCall struct {
 }
 
 type mockDepositManager struct {
+	activeDeposits  []*deposit.Deposit
 	openingDeposits []*deposit.Deposit
 	getErr          error
 	transitionErrs  map[fsm.EventType]error
 	calls           []transitionCall
+}
+
+func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
 }
 
 func (m *mockDepositManager) AllOutpointsActiveDeposits([]wire.OutPoint,
@@ -44,15 +49,19 @@ func (m *mockDepositManager) AllOutpointsActiveDeposits([]wire.OutPoint,
 func (m *mockDepositManager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
-	if stateFilter != deposit.OpeningChannel {
-		return nil, nil
+	switch stateFilter {
+	case deposit.Deposited:
+		return m.activeDeposits, nil
+
+	case deposit.OpeningChannel:
+		if m.getErr != nil {
+			return nil, m.getErr
+		}
+
+		return m.openingDeposits, nil
 	}
 
-	if m.getErr != nil {
-		return nil, m.getErr
-	}
-
-	return m.openingDeposits, nil
+	return nil, nil
 }
 
 func (m *mockDepositManager) TransitionDeposits(_ context.Context,
@@ -462,6 +471,97 @@ func TestOpenChannelDuplicateOutpoints(t *testing.T) {
 
 	_, err := manager.OpenChannel(context.Background(), req)
 	require.ErrorContains(t, err, "duplicate outpoint")
+}
+
+// TestOpenChannelSkipsUnconfirmedAutoSelection verifies that automatic coin
+// selection ignores mempool deposits and keeps using confirmed ones.
+func TestOpenChannelSkipsUnconfirmedAutoSelection(t *testing.T) {
+	t.Parallel()
+
+	confirmedA := &deposit.Deposit{
+		OutPoint:           testOutPoint(1),
+		Value:              160_000,
+		ConfirmationHeight: 10,
+	}
+	confirmedB := &deposit.Deposit{
+		OutPoint:           testOutPoint(2),
+		Value:              140_000,
+		ConfirmationHeight: 11,
+	}
+	unconfirmed := &deposit.Deposit{
+		OutPoint: testOutPoint(3),
+		Value:    500_000,
+	}
+
+	depositManager := &mockDepositManager{
+		activeDeposits: []*deposit.Deposit{
+			unconfirmed, confirmedA, confirmedB,
+		},
+		transitionErrs: map[fsm.EventType]error{
+			deposit.OnOpeningChannel: errors.New("stop after selection"),
+		},
+	}
+	manager := &Manager{
+		cfg: &Config{
+			DepositManager: depositManager,
+		},
+	}
+
+	req := &lnrpc.OpenChannelRequest{
+		NodePubkey:         make([]byte, 33),
+		LocalFundingAmount: 100_000,
+		SatPerVbyte:        10,
+	}
+
+	_, err := manager.OpenChannel(context.Background(), req)
+	require.ErrorContains(t, err, "stop after selection")
+	require.Len(t, depositManager.calls, 1)
+	require.Equal(t, deposit.OnOpeningChannel, depositManager.calls[0].event)
+	require.NotContains(t, depositManager.calls[0].outpoints, unconfirmed.OutPoint)
+}
+
+// TestOpenChannelFundMaxSkipsUnconfirmed verifies that fundmax only locks
+// confirmed deposits.
+func TestOpenChannelFundMaxSkipsUnconfirmed(t *testing.T) {
+	t.Parallel()
+
+	confirmed := &deposit.Deposit{
+		OutPoint:           testOutPoint(1),
+		Value:              200_000,
+		ConfirmationHeight: 10,
+	}
+	unconfirmed := &deposit.Deposit{
+		OutPoint: testOutPoint(2),
+		Value:    300_000,
+	}
+
+	depositManager := &mockDepositManager{
+		activeDeposits: []*deposit.Deposit{
+			unconfirmed, confirmed,
+		},
+		transitionErrs: map[fsm.EventType]error{
+			deposit.OnOpeningChannel: errors.New("stop after selection"),
+		},
+	}
+	manager := &Manager{
+		cfg: &Config{
+			DepositManager: depositManager,
+		},
+	}
+
+	req := &lnrpc.OpenChannelRequest{
+		NodePubkey:  make([]byte, 33),
+		FundMax:     true,
+		SatPerVbyte: 10,
+	}
+
+	_, err := manager.OpenChannel(context.Background(), req)
+	require.ErrorContains(t, err, "stop after selection")
+	require.Len(t, depositManager.calls, 1)
+	require.Equal(
+		t, []wire.OutPoint{confirmed.OutPoint},
+		depositManager.calls[0].outpoints,
+	)
 }
 
 // TestValidateInitialPsbtFlags verifies that request fields incompatible with

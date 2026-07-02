@@ -47,7 +47,7 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		TxHash:               deposit.Hash[:],
 		OutIndex:             int32(deposit.Index),
 		Amount:               int64(deposit.Value),
-		ConfirmationHeight:   deposit.ConfirmationHeight,
+		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
 	}
 
@@ -69,11 +69,15 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 }
 
 // UpdateDeposit updates the deposit in the database.
+//
+// Callers that pass a live deposit must hold the deposit lock while calling
+// this method. The deposit FSM already does this for state transitions, and
+// Manager.UpdateDeposit wraps external callers with the same lock.
 func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 	insertUpdateArgs := sqlc.InsertDepositUpdateParams{
 		DepositID:       deposit.ID[:],
 		UpdateTimestamp: s.clock.Now().UTC(),
-		UpdateState:     string(deposit.state),
+		UpdateState:     string(deposit.GetStateNoLock()),
 	}
 
 	var (
@@ -83,7 +87,7 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 			Valid: true,
 		}
 		confirmationHeight = sql.NullInt64{
-			Int64: deposit.ConfirmationHeight,
+			Int64: deposit.GetConfirmationHeightNoLock(),
 		}
 	)
 
