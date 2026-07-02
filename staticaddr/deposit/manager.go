@@ -61,7 +61,8 @@ type ManagerConfig struct {
 //
 // Lock order: if both Manager.mu and a Deposit lock are needed, acquire
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
-// Deposit lock.
+// Deposit lock. Multiple deposits must be locked with lockDeposits, which
+// canonicalizes lock order by outpoint.
 type Manager struct {
 	cfg *ManagerConfig
 
@@ -433,8 +434,8 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 		deposits = append(deposits, fsm.deposit)
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
 
 	filteredDeposits := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
@@ -478,8 +479,8 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 		return deposits, true
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
 	for _, d := range deposits {
 		if !d.isInStateNoLock(targetState) {
 			return nil, false
@@ -538,8 +539,8 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 		return fmt.Errorf("deposits not found in active deposits")
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
 	for _, deposit := range deposits {
 		if deposit.isInFinalStateNoLock() {
 			return fmt.Errorf("deposit %v is no longer active in "+
@@ -565,14 +566,26 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	return nil
 }
 
-func lockDeposits(deposits []*Deposit) {
-	for _, d := range deposits {
+// lockDeposits locks deposits in canonical outpoint order and returns the
+// ordered slice that must be passed to unlockDeposits.
+func lockDeposits(deposits []*Deposit) []*Deposit {
+	lockedDeposits := append([]*Deposit(nil), deposits...)
+	sort.Slice(lockedDeposits, func(i, j int) bool {
+		return lockedDeposits[i].OutPoint.String() <
+			lockedDeposits[j].OutPoint.String()
+	})
+
+	for _, d := range lockedDeposits {
 		d.Lock()
 	}
+
+	return lockedDeposits
 }
 
+// unlockDeposits unlocks deposits in reverse lock order.
 func unlockDeposits(deposits []*Deposit) {
-	for _, d := range deposits {
+	for i := len(deposits) - 1; i >= 0; i-- {
+		d := deposits[i]
 		d.Unlock()
 	}
 }

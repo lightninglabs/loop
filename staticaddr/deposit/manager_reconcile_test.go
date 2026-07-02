@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -55,4 +56,73 @@ func TestTransitionDepositsRejectsDuplicateOutpoints(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "duplicate deposit outpoint")
 	require.Equal(t, Deposited, deposit.GetState())
+}
+
+// TestLockDepositsCanonicalizesOutpoints verifies that lockDeposits takes a
+// canonical copy of the caller's slice so overlapping multi-deposit operations
+// cannot lock deposits in conflicting request orders.
+func TestLockDepositsCanonicalizesOutpoints(t *testing.T) {
+	depositA := &Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1},
+			Index: 0,
+		},
+	}
+	depositB := &Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 0,
+		},
+	}
+
+	deposits := []*Deposit{depositB, depositA}
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
+
+	require.Equal(t, []*Deposit{depositA, depositB}, lockedDeposits)
+	require.Equal(t, []*Deposit{depositB, depositA}, deposits)
+}
+
+// TestLockDepositsAllowsReversedConcurrentRequests exercises the reviewer
+// case where overlapping callers request the same deposits in opposite orders.
+func TestLockDepositsAllowsReversedConcurrentRequests(t *testing.T) {
+	depositA := &Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 0,
+		},
+	}
+	depositB := &Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 0,
+		},
+	}
+
+	start := make(chan struct{})
+	done := make(chan struct{}, 2)
+	lockAndUnlock := func(deposits []*Deposit) {
+		<-start
+
+		for range 100 {
+			lockedDeposits := lockDeposits(deposits)
+			unlockDeposits(lockedDeposits)
+		}
+
+		done <- struct{}{}
+	}
+
+	go lockAndUnlock([]*Deposit{depositA, depositB})
+	go lockAndUnlock([]*Deposit{depositB, depositA})
+
+	close(start)
+
+	for range 2 {
+		select {
+		case <-done:
+
+		case <-time.After(time.Second):
+			t.Fatal("reversed deposit lock requests deadlocked")
+		}
+	}
 }
