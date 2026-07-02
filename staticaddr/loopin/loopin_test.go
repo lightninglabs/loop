@@ -147,6 +147,42 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 			"the HTLC output")
 }
 
+// TestPaymentTimeoutDuration verifies that zero timeout values fall back to the
+// default payment timeout duration.
+func TestPaymentTimeoutDuration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		paymentTimeoutSeconds uint32
+		expected              time.Duration
+	}{
+		{
+			name:     "default",
+			expected: time.Duration(DefaultPaymentTimeoutSeconds) * time.Second,
+		},
+		{
+			name:                  "configured",
+			paymentTimeoutSeconds: 42,
+			expected:              42 * time.Second,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			loopIn := &StaticAddressLoopIn{
+				PaymentTimeoutSeconds: test.paymentTimeoutSeconds,
+			}
+
+			require.Equal(
+				t, test.expected, loopIn.PaymentTimeoutDuration(),
+			)
+		})
+	}
+}
+
 // newStaticAddress creates a StaticAddress for testing.
 func newStaticAddress(clientKey, serverKey *btcec.PublicKey,
 	csvExpiry int64) (*script.StaticAddress, error) {
