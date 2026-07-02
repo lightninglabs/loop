@@ -1193,7 +1193,7 @@ var rfc3339TimestampRegex = regexp.MustCompile(
 // timeStringTimestampRegex matches time.String-style timestamps embedded in
 // CLI output.
 var timeStringTimestampRegex = regexp.MustCompile(
-	`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4} [A-Z]{2,5}`,
+	`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4} (?:[A-Z]{2,5}|[+-]\d{2}(?:\d{2})?)`,
 )
 
 // normalizeTimestamps rewrites embedded timestamps to UTC to avoid
@@ -1214,7 +1214,14 @@ func normalizeTimestamps(text string) string {
 
 	// Normalize time.String timestamps next.
 	timeReplacer := func(ts string) string {
-		parsed, err := time.Parse("2006-01-02 15:04:05 -0700 MST", ts)
+		zoneNameIndex := strings.LastIndex(ts, " ")
+		if zoneNameIndex <= 0 {
+			return ts
+		}
+
+		parsed, err := time.Parse(
+			"2006-01-02 15:04:05 -0700", ts[:zoneNameIndex],
+		)
 		if err != nil {
 			return ts
 		}
@@ -1227,6 +1234,41 @@ func normalizeTimestamps(text string) string {
 	)
 
 	return text
+}
+
+// TestNormalizeTimestamps verifies that timestamp normalization handles the
+// timestamp formats emitted by CLI commands in different local time zones.
+func TestNormalizeTimestamps(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "rfc3339",
+			text: "updated: 2026-01-26T01:28:06-05:00\n",
+			want: "updated: 2026-01-26T06:28:06Z\n",
+		},
+		{
+			name: "alphabetic time string zone",
+			text: "deadline: 2026-01-26 01:28:06 -0500 EST\n",
+			want: "deadline: 2026-01-26 06:28:06 +0000 UTC\n",
+		},
+		{
+			name: "numeric time string zone",
+			text: "deadline: 2026-01-26 03:28:06 -0300 -03\n",
+			want: "deadline: 2026-01-26 06:28:06 +0000 UTC\n",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := normalizeTimestamps(testCase.text)
+			require.Equal(t, testCase.want, got)
+		})
+	}
 }
 
 // TestCloneCommandForReplayResetsFlagState verifies cloned commands reset flag
