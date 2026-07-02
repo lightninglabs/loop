@@ -359,6 +359,35 @@ func (f *FSM) cancelSwapInvoice() {
 	}
 }
 
+// handleInvoiceUpdate applies the monitor state's invoice-update semantics and
+// reports whether the update produced a terminal event.
+func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
+	fsm.EventType, bool) {
+
+	switch update.State {
+	case invoices.ContractOpen:
+		return fsm.NoOp, false
+
+	case invoices.ContractAccepted:
+		return fsm.NoOp, false
+
+	case invoices.ContractSettled:
+		f.Debugf("received off-chain payment update %v", update.State)
+		return OnPaymentReceived, true
+
+	case invoices.ContractCanceled:
+		// If the invoice was canceled we only log here since we still need
+		// to monitor until the htlc timed out.
+		log.Warnf("invoice for swap hash %v canceled", f.loopIn.SwapHash)
+		return fsm.NoOp, false
+
+	default:
+		err := fmt.Errorf("unexpected invoice state %v for swap hash %v "+
+			"canceled", update.State, f.loopIn.SwapHash)
+		return f.HandleError(err), true
+	}
+}
+
 // SignHtlcTxAction is called if the htlc was initialized and the server
 // provided the necessary information to construct the htlc tx. We sign the htlc
 // tx and send the signatures to the server.
@@ -381,6 +410,11 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	if err != nil {
 		err = fmt.Errorf("unable to get static address: %w", err)
 
+		return f.HandleError(err)
+	}
+
+	err = f.checkDepositsAvailable(ctx)
+	if err != nil {
 		return f.HandleError(err)
 	}
 
@@ -497,6 +531,29 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	return OnHtlcTxSigned
 }
 
+func (f *FSM) checkDepositsAvailable(ctx context.Context) error {
+	if f.cfg.TxOutChecker == nil {
+		return nil
+	}
+
+	for _, d := range f.loopIn.Deposits {
+		txOut, err := f.cfg.TxOutChecker.GetTxOut(
+			ctx, d.OutPoint, true,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to check deposit %v: %w",
+				d.OutPoint, err)
+		}
+
+		if txOut == nil {
+			return fmt.Errorf("deposit %v is no longer available",
+				d.OutPoint)
+		}
+	}
+
+	return nil
+}
+
 // cleanUpSessions releases allocated memory of the musig2 sessions.
 func (f *FSM) cleanUpSessions(ctx context.Context,
 	sessions []*input.MuSig2SessionInfo) {
@@ -536,6 +593,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			subscribeCtx, f.loopIn.SwapHash,
 		)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to subscribe to swap "+
 			"invoice: %w", err)
 
@@ -563,6 +624,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	htlcConfChan, htlcErrConfChan, err := registerHtlcConf()
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to monitor htlc tx confirmation: %w",
 			err)
 
@@ -573,6 +638,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	registerBlocks := f.cfg.ChainNotifier.RegisterBlockEpochNtfn
 	blockChan, blockChanErr, err := registerBlocks(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to subscribe to new blocks: %w", err)
 
 		return f.HandleError(err)
@@ -582,6 +651,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	invoice, err := f.cfg.LndClient.LookupInvoice(ctx, f.loopIn.SwapHash)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to look up invoice by swap hash: %w",
 			err)
 
@@ -596,8 +669,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	if invoice.State != invoices.ContractCanceled {
 		// If the invoice is still live we set the timeout to the
 		// remaining payment time. If too much time has elapsed, e.g.
-		// after a restart, we set the timeout to 0 to cancel the
-		// invoice and unlock the deposits immediately.
+		// after a restart, we cancel the invoice immediately and keep
+		// monitoring the HTLC until it can no longer confirm.
 		remainingTimeSeconds := f.loopIn.RemainingPaymentTimeSeconds()
 
 		// If the invoice isn't cancelled yet and the payment timeout
@@ -637,6 +710,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			htlcConfirmed = true
 
 		case err = <-htlcErrConfChan:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			f.Errorf("htlc tx conf chan error, re-registering: "+
 				"%v", err)
 
@@ -647,6 +724,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// Re-register for htlc confirmation.
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
 				err = fmt.Errorf("unable to re-register for "+
 					"htlc tx confirmation: %w", err)
 
@@ -661,6 +742,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
 				err = fmt.Errorf("unable to monitor htlc tx "+
 					"confirmation: %v", err)
 
@@ -732,40 +817,34 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return OnSweepHtlcTimeout
 
 		case err = <-blockChanErr:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			f.Errorf("block subscription error: %v", err)
 
 			return f.HandleError(err)
 
-		case update := <-invoiceUpdateChan:
-			switch update.State {
-			case invoices.ContractOpen:
-			case invoices.ContractAccepted:
-			case invoices.ContractSettled:
-				f.Debugf("received off-chain payment update "+
-					"%v", update.State)
-
-				return OnPaymentReceived
-
-			case invoices.ContractCanceled:
-				// If the invoice was canceled we only log here
-				// since we still need to monitor until the htlc
-				// timed out.
-				log.Warnf("invoice for swap hash %v canceled",
-					f.loopIn.SwapHash)
-
-			default:
-				err = fmt.Errorf("unexpected invoice state %v "+
-					"for swap hash %v canceled",
-					update.State, f.loopIn.SwapHash)
-
-				return f.HandleError(err)
+		case update, ok := <-invoiceUpdateChan:
+			if !ok {
+				invoiceUpdateChan = nil
+				continue
 			}
 
-		case err = <-invoiceErrChan:
+			if event, done := f.handleInvoiceUpdate(update); done {
+				return event
+			}
+
+		case err, ok := <-invoiceErrChan:
+			if !ok {
+				invoiceErrChan = nil
+				continue
+			}
+
 			f.Errorf("invoice subscription error: %v", err)
 
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 		}
 	}
 }
@@ -791,10 +870,10 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 
 		select {
 		// The context is cancelled when the server is shutting
-		// down. In that case we give up broadcasting attempts
-		// and return an error.
+		// down. Keep the current state so recovery resumes
+		// broadcasting attempts after restart.
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 
 		case <-time.After(htlcTimeoutSweepRetryDelay):
 		}
@@ -828,6 +907,10 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 		)
 
 	if err != nil {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		err = fmt.Errorf("unable to register to the htlc timeout "+
 			"sweep tx: %w", err)
 
@@ -837,6 +920,10 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 	for {
 		select {
 		case err := <-errChan:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
 			return f.HandleError(err)
 
 		case conf := <-htlcTimeoutTxidChan:
@@ -860,7 +947,7 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 			return OnHtlcTimeoutSwept
 
 		case <-ctx.Done():
-			return f.HandleError(ctx.Err())
+			return fsm.NoOp
 		}
 	}
 }

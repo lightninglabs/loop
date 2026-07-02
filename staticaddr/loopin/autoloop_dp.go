@@ -234,9 +234,9 @@ func filterAutoloopCandidateDeposits(maxAmount btcutil.Amount,
 			continue
 		}
 
+		confirmationHeight := candidateDeposit.GetConfirmationHeight()
 		swappable := IsSwappable(
-			uint32(candidateDeposit.ConfirmationHeight),
-			blockHeight, csvExpiry,
+			uint32(confirmationHeight), blockHeight, csvExpiry,
 		)
 		if !swappable {
 			continue
@@ -246,7 +246,7 @@ func filterAutoloopCandidateDeposits(maxAmount btcutil.Amount,
 			continue
 		}
 
-		residualLife := candidateDeposit.ConfirmationHeight +
+		residualLife := confirmationHeight +
 			int64(csvExpiry) - int64(blockHeight)
 
 		eligibleDeposits = append(
