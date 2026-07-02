@@ -413,6 +413,11 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	err = f.checkDepositsAvailable(ctx)
+	if err != nil {
+		return f.HandleError(err)
+	}
+
 	// Create a musig2 session for each deposit and different htlc tx fee
 	// rates.
 	createSession := staticutil.CreateMusig2Sessions
@@ -524,6 +529,29 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	// htlc tx without paying the invoice. In this case we need to wait till
 	// the htlc times out and then sweep it back to us.
 	return OnHtlcTxSigned
+}
+
+func (f *FSM) checkDepositsAvailable(ctx context.Context) error {
+	if f.cfg.TxOutChecker == nil {
+		return nil
+	}
+
+	for _, d := range f.loopIn.Deposits {
+		txOut, err := f.cfg.TxOutChecker.GetTxOut(
+			ctx, d.OutPoint, true,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to check deposit %v: %w",
+				d.OutPoint, err)
+		}
+
+		if txOut == nil {
+			return fmt.Errorf("deposit %v is no longer available",
+				d.OutPoint)
+		}
+	}
+
+	return nil
 }
 
 // cleanUpSessions releases allocated memory of the musig2 sessions.

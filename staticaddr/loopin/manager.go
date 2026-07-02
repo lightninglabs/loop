@@ -56,6 +56,10 @@ type Config struct {
 	// LndClient is used to add invoices and select hop hints.
 	LndClient lndclient.LightningClient
 
+	// TxOutChecker checks that selected deposits are still available before
+	// the client gives the server HTLC signatures.
+	TxOutChecker TxOutChecker
+
 	// InvoicesClient is used to subscribe to invoice settlements and
 	// cancel invoices.
 	InvoicesClient lndclient.InvoicesClient

@@ -428,6 +428,41 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	test.RequireRouteHintsEqual(t, loopIn.RouteHints, routeHints)
 }
 
+func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x77},
+			Index: 2,
+		},
+		Value: 200_000,
+	}
+	checker := &recordingTxOutChecker{}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				params: &script.Parameters{
+					ProtocolVersion: version.ProtocolVersion_V0,
+				},
+			},
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{dep},
+		},
+	}
+
+	event := f.SignHtlcTxAction(t.Context(), nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "deposit "+
+			dep.OutPoint.String()+" is no longer available",
+	)
+	require.Equal(t, []wire.OutPoint{dep.OutPoint}, checker.outpoints)
+	require.Equal(t, []bool{true}, checker.includeMempool)
+}
+
 // mockStaticAddressServer captures static-address loop-in requests in tests.
 type mockStaticAddressServer struct {
 	swapserverrpc.StaticAddressServerClient
@@ -776,6 +811,21 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	})
 
 	return r.err
+}
+
+type recordingTxOutChecker struct {
+	outpoints      []wire.OutPoint
+	includeMempool []bool
+}
+
+// GetTxOut records the request and reports that the outpoint is unavailable.
+func (r *recordingTxOutChecker) GetTxOut(_ context.Context,
+	outpoint wire.OutPoint, includeMempool bool) (*wire.TxOut, error) {
+
+	r.outpoints = append(r.outpoints, outpoint)
+	r.includeMempool = append(r.includeMempool, includeMempool)
+
+	return nil, nil
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
