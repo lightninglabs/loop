@@ -615,7 +615,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 					"address: %w", err)
 			}
 
-			//nolint:ll
+			//nolint:lll
 			signedTx, unsignedPsbt, err := m.cfg.WithdrawalManager.CreateFinalizedWithdrawalTx(
 				ctx, deposits, channelFundingAddress, feeRate,
 				fundingAmount, req.CommitmentType,
