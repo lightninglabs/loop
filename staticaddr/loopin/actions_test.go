@@ -3,6 +3,7 @@ package loopin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,84 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+// TestHandleInvoiceUpdate verifies that invoice state updates map to the
+// monitor events expected by the static address loop-in FSM.
+func TestHandleInvoiceUpdate(t *testing.T) {
+	t.Parallel()
+
+	swapHash := lntypes.Hash{1, 2, 3}
+	tests := []struct {
+		name      string
+		state     invoices.ContractState
+		event     fsm.EventType
+		done      bool
+		errString string
+	}{
+		{
+			name:  "open",
+			state: invoices.ContractOpen,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "accepted",
+			state: invoices.ContractAccepted,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "settled",
+			state: invoices.ContractSettled,
+			event: OnPaymentReceived,
+			done:  true,
+		},
+		{
+			name:  "canceled",
+			state: invoices.ContractCanceled,
+			event: fsm.NoOp,
+		},
+		{
+			name:      "unexpected",
+			state:     invoices.ContractState(99),
+			event:     fsm.OnError,
+			done:      true,
+			errString: "unexpected invoice state",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				loopIn: &StaticAddressLoopIn{
+					SwapHash: swapHash,
+				},
+			}
+
+			event, done := f.handleInvoiceUpdate(
+				lndclient.InvoiceUpdate{
+					Invoice: lndclient.Invoice{
+						State: test.state,
+					},
+				},
+			)
+			require.Equal(t, test.event, event)
+			require.Equal(t, test.done, done)
+
+			if test.errString == "" {
+				require.Nil(t, f.LastActionError)
+			} else {
+				require.ErrorContains(
+					t, f.LastActionError, test.errString,
+				)
+				require.ErrorContains(
+					t, f.LastActionError, fmt.Sprint(swapHash),
+				)
+			}
+		})
+	}
+}
 
 // TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr ensures that an error from
 // the HTLC confirmation subscription triggers a re-registration. Without the

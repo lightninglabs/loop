@@ -359,6 +359,35 @@ func (f *FSM) cancelSwapInvoice() {
 	}
 }
 
+// handleInvoiceUpdate applies the monitor state's invoice-update semantics and
+// reports whether the update produced a terminal event.
+func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
+	fsm.EventType, bool) {
+
+	switch update.State {
+	case invoices.ContractOpen:
+		return fsm.NoOp, false
+
+	case invoices.ContractAccepted:
+		return fsm.NoOp, false
+
+	case invoices.ContractSettled:
+		f.Debugf("received off-chain payment update %v", update.State)
+		return OnPaymentReceived, true
+
+	case invoices.ContractCanceled:
+		// If the invoice was canceled we only log here since we still need
+		// to monitor until the htlc timed out.
+		log.Warnf("invoice for swap hash %v canceled", f.loopIn.SwapHash)
+		return fsm.NoOp, false
+
+	default:
+		err := fmt.Errorf("unexpected invoice state %v for swap hash %v "+
+			"canceled", update.State, f.loopIn.SwapHash)
+		return f.HandleError(err), true
+	}
+}
+
 // SignHtlcTxAction is called if the htlc was initialized and the server
 // provided the necessary information to construct the htlc tx. We sign the htlc
 // tx and send the signatures to the server.
@@ -737,28 +766,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return f.HandleError(err)
 
 		case update := <-invoiceUpdateChan:
-			switch update.State {
-			case invoices.ContractOpen:
-			case invoices.ContractAccepted:
-			case invoices.ContractSettled:
-				f.Debugf("received off-chain payment update "+
-					"%v", update.State)
-
-				return OnPaymentReceived
-
-			case invoices.ContractCanceled:
-				// If the invoice was canceled we only log here
-				// since we still need to monitor until the htlc
-				// timed out.
-				log.Warnf("invoice for swap hash %v canceled",
-					f.loopIn.SwapHash)
-
-			default:
-				err = fmt.Errorf("unexpected invoice state %v "+
-					"for swap hash %v canceled",
-					update.State, f.loopIn.SwapHash)
-
-				return f.HandleError(err)
+			if event, done := f.handleInvoiceUpdate(update); done {
+				return event
 			}
 
 		case err = <-invoiceErrChan:
