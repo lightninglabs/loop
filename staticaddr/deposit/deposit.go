@@ -9,11 +9,39 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 // ID is a unique identifier for a deposit.
 type ID [IdLength]byte
+
+// DefaultRecoveryScanLimit is the highest child index scanned per static
+// address key family when manually recovering a deposit.
+const DefaultRecoveryScanLimit = 20
+
+// RecoveryRequest describes one static-address output that should be verified
+// on-chain and restored locally.
+type RecoveryRequest struct {
+	TxID       chainhash.Hash
+	VOut       uint32
+	HeightHint int32
+	PkScript   []byte
+}
+
+// RecoveryResult describes the restored deposit and matched static address.
+type RecoveryResult struct {
+	OutPoint           wire.OutPoint
+	Value              btcutil.Amount
+	ConfirmationHeight int64
+	AddressParams      *address.Parameters
+	StaticAddress      string
+	RecoveredAddress   bool
+	RecoveredDeposit   bool
+	DepositID          ID
+}
 
 // FromByteSlice creates a deposit id from a byte slice.
 func (r *ID) FromByteSlice(b []byte) error {
@@ -29,6 +57,13 @@ func (r *ID) FromByteSlice(b []byte) error {
 
 // Deposit bundles an utxo at a static address together with manager-relevant
 // data.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock.
+//
+// The state and ConfirmationHeight fields are mutable and protected by the
+// deposit lock.
 type Deposit struct {
 	sync.Mutex
 
@@ -45,7 +80,8 @@ type Deposit struct {
 	Value btcutil.Amount
 
 	// ConfirmationHeight is the absolute height at which the deposit was
-	// first confirmed.
+	// first confirmed. A value of zero means the deposit is still
+	// unconfirmed.
 	ConfirmationHeight int64
 
 	// TimeOutSweepPkScript is the pk script that is used to sweep the
@@ -62,6 +98,15 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// AddressParams are the static address parameters that produced this
+	// deposit's pkScript. Spending code must use these per-deposit
+	// parameters rather than assuming all deposits belong to one address.
+	AddressParams *address.Parameters
+
+	// AddressID is the database ID of the static address that produced this
+	// deposit's pkScript.
+	AddressID int32
 }
 
 // IsInFinalState returns true if the deposit is final.
@@ -69,6 +114,12 @@ func (d *Deposit) IsInFinalState() bool {
 	d.Lock()
 	defer d.Unlock()
 
+	return d.isInFinalStateNoLock()
+}
+
+// isInFinalStateNoLock returns true if the deposit is final without acquiring
+// the deposit lock.
+func (d *Deposit) isInFinalStateNoLock() bool {
 	return d.state == Expired || d.state == Withdrawn ||
 		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
 		d.state == ChannelPublished
@@ -77,6 +128,10 @@ func (d *Deposit) IsInFinalState() bool {
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
+
+	if d.ConfirmationHeight <= 0 {
+		return false
+	}
 
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
@@ -88,6 +143,15 @@ func (d *Deposit) GetState() fsm.StateType {
 	return d.state
 }
 
+func (d *Deposit) getStateNoLock() fsm.StateType {
+	return d.state
+}
+
+// GetStateNoLock returns the deposit state without acquiring the deposit lock.
+func (d *Deposit) GetStateNoLock() fsm.StateType {
+	return d.getStateNoLock()
+}
+
 func (d *Deposit) SetState(state fsm.StateType) {
 	d.Lock()
 	defer d.Unlock()
@@ -95,8 +159,13 @@ func (d *Deposit) SetState(state fsm.StateType) {
 	d.state = state
 }
 
-func (d *Deposit) SetStateNoLock(state fsm.StateType) {
+func (d *Deposit) setStateNoLock(state fsm.StateType) {
 	d.state = state
+}
+
+// SetStateNoLock sets the deposit state without acquiring the deposit lock.
+func (d *Deposit) SetStateNoLock(state fsm.StateType) {
+	d.setStateNoLock(state)
 }
 
 func (d *Deposit) IsInState(state fsm.StateType) bool {
@@ -106,8 +175,41 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 	return d.state == state
 }
 
-func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// IsInStateNoLock returns whether the deposit is in the given state without
+// acquiring the deposit lock.
+func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+	return d.isInStateNoLock(state)
+}
+
+// GetConfirmationHeight returns the deposit confirmation height.
+func (d *Deposit) GetConfirmationHeight() int64 {
+	d.Lock()
+	defer d.Unlock()
+
+	return d.ConfirmationHeight
+}
+
+// GetConfirmationHeightNoLock returns the deposit confirmation height without
+// acquiring the deposit lock.
+func (d *Deposit) GetConfirmationHeightNoLock() int64 {
+	return d.ConfirmationHeight
+}
+
+// GetStaticAddressScript reconstructs the static address script for this
+// deposit's matched address parameters.
+func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
+	if d.AddressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters")
+	}
+
+	return script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(d.AddressParams.Expiry),
+		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
+	)
 }
 
 // GetRandomDepositID generates a random deposit ID.

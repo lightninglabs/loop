@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -40,10 +42,17 @@ type AddressManager interface {
 	// GetStaticAddress returns the deposit address for the given client and
 	// server public keys.
 	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+
+	// NewChangeAddress derives and persists a fresh static address from the
+	// change key family for this operation's change output.
+	NewChangeAddress(ctx context.Context) (*address.Parameters, error)
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// EnsureDepositsFresh reconciles active deposits with the wallet view.
+	EnsureDepositsFresh(ctx context.Context) error
+
 	// GetAllDeposits returns all known deposits from the database store.
 	GetAllDeposits(ctx context.Context) ([]*deposit.Deposit, error)
 
@@ -87,6 +96,11 @@ type StaticAddressLoopInStore interface {
 	// IsStored checks if the loop-in is already stored in the database.
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
 
+	// RecordStaticAddressRiskDecision persists the server's
+	// confirmation-risk decision for the loop-in identified by swapHash.
+	RecordStaticAddressRiskDecision(ctx context.Context,
+		swapHash lntypes.Hash, decision ConfirmationRiskDecision) error
+
 	// GetLoopInByHash returns the loop-in swap with the given hash.
 	GetLoopInByHash(ctx context.Context, swapHash lntypes.Hash) (
 		*StaticAddressLoopIn, error)
@@ -105,10 +119,33 @@ type QuoteGetter interface {
 		numDeposits uint32, fast bool) (*loop.LoopInQuote, error)
 }
 
+// TxOutChecker checks whether outpoints are still available in the chain
+// backend's UTXO view.
+type TxOutChecker interface {
+	// GetTxOuts returns entries for the requested outpoints that are
+	// available and unspent. Missing entries are unavailable or spent.
+	GetTxOuts(ctx context.Context, outpoints []wire.OutPoint) (
+		map[wire.OutPoint]*wire.TxOut, error)
+}
+
 type NotificationManager interface {
 	// SubscribeStaticLoopInSweepRequests subscribes to the static loop in
 	// sweep requests. These are sent by the server to the client to request
 	// a sweep of a static loop in that has been finished.
 	SubscribeStaticLoopInSweepRequests(ctx context.Context,
 	) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification
+
+	// SubscribeStaticLoopInRiskAccepted subscribes to static loop in risk
+	// accepted notifications. These are sent by the server after the selected
+	// deposits are accepted by confirmation risk tracking.
+	SubscribeStaticLoopInRiskAccepted(
+		ctx context.Context, swapHash lntypes.Hash,
+	) <-chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification
+
+	// SubscribeStaticLoopInRiskRejected subscribes to static loop in risk
+	// rejected notifications. These are sent by the server if it aborts the
+	// confirmation risk wait before payment.
+	SubscribeStaticLoopInRiskRejected(
+		ctx context.Context, swapHash lntypes.Hash,
+	) <-chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification
 }

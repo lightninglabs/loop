@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -79,6 +80,27 @@ func TestSelectDeposits(t *testing.T) {
 			deposits:    []*deposit.Deposit{d1, d2, d3},
 			targetValue: 1_000_000,
 			expected:    []*deposit.Deposit{d3},
+			expectedErr: "",
+		},
+		{
+			name: "prefer confirmed deposit over larger unconfirmed one",
+			deposits: []*deposit.Deposit{
+				{
+					Value:              2_000_000,
+					ConfirmationHeight: 0,
+				},
+				{
+					Value:              1_500_000,
+					ConfirmationHeight: 5_004,
+				},
+			},
+			targetValue: 1_000_000,
+			expected: []*deposit.Deposit{
+				{
+					Value:              1_500_000,
+					ConfirmationHeight: 5_004,
+				},
+			},
 			expectedErr: "",
 		},
 		{
@@ -172,9 +194,11 @@ func TestSelectDeposits(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setTestDepositParams(tc.deposits, tc.csvExpiry)
+			setTestDepositParams(tc.expected, tc.csvExpiry)
+
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -298,6 +322,79 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	require.ErrorContains(t, err, depOutpoint)
 }
 
+// TestActiveDepositsForLoopInUsesCurrentDepositOutpoints verifies that
+// recovery checks the current deposit outpoints reconstructed by the store
+// rather than the original outpoint snapshot persisted on the swap.
+func TestActiveDepositsForLoopInUsesCurrentDepositOutpoints(t *testing.T) {
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0xaa},
+		Index: 0,
+	}
+	currentDeposit := makeDeposit(0xbb, 1, 10_000, 42)
+
+	manager := &Manager{
+		cfg: &Config{
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					currentDeposit.OutPoint.String(): currentDeposit,
+				},
+			},
+		},
+	}
+
+	deposits, allActive := manager.activeDepositsForLoopIn(
+		&StaticAddressLoopIn{
+			DepositOutpoints: []string{oldOutpoint.String()},
+			Deposits:         []*deposit.Deposit{currentDeposit},
+		},
+	)
+	require.True(t, allActive)
+	require.Equal(t, []*deposit.Deposit{currentDeposit}, deposits)
+}
+
+// TestGetAllSwapsPreservesStoreDeposits verifies that list responses keep the
+// store's swap_hash/deposit-id reconstruction even when DepositOutpoints is an
+// original input snapshot and the deposit's current outpoint has changed.
+func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
+	oldOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0xcc},
+		Index: 0,
+	}
+	currentDeposit := makeDeposit(0xdd, 1, 10_000, 42)
+	swap := &StaticAddressLoopIn{
+		DepositOutpoints: []string{oldOutpoint.String()},
+		Deposits:         []*deposit.Deposit{currentDeposit},
+	}
+
+	manager := &Manager{
+		cfg: &Config{
+			Store: &mockStore{
+				swaps: []*StaticAddressLoopIn{swap},
+			},
+		},
+	}
+
+	swaps, err := manager.GetAllSwaps(t.Context())
+	require.NoError(t, err)
+	require.Len(t, swaps, 1)
+	require.Equal(t, []string{oldOutpoint.String()}, swaps[0].DepositOutpoints)
+	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
+}
+
+func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
+	for _, d := range deposits {
+		d.AddressParams = &address.Parameters{
+			Expiry: expiry,
+		}
+	}
+}
+
+// TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered
+// swappable because its CSV timeout has not started yet.
+func TestIsSwappableUnconfirmed(t *testing.T) {
+	require.True(t, IsSwappable(0, 5000, 1000))
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
 	// activeDeposits is the set returned by GetActiveDepositsInState.
@@ -305,6 +402,10 @@ type mockDepositManager struct {
 
 	// byOutpoint maps outpoint strings to deposits for direct lookups.
 	byOutpoint map[string]*deposit.Deposit
+}
+
+func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
 }
 
 func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
@@ -316,7 +417,7 @@ func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 func (m *mockDepositManager) AllStringOutpointsActiveDeposits(outpoints []string,
 	state fsm.StateType) ([]*deposit.Deposit, bool) {
 
-	if state != deposit.Deposited {
+	if state != deposit.Deposited && state != fsm.EmptyState {
 		return nil, false
 	}
 
@@ -408,6 +509,7 @@ func (m *mockQuoteGetter) GetLoopInQuote(_ context.Context,
 
 // mockStore implements StaticAddressLoopInStore for tests.
 type mockStore struct {
+	swaps   []*StaticAddressLoopIn
 	loopIns map[lntypes.Hash]*StaticAddressLoopIn
 	mapIDs  map[lntypes.Hash][]deposit.ID
 }
@@ -427,10 +529,17 @@ func (s *mockStore) UpdateLoopIn(_ context.Context,
 func (s *mockStore) GetStaticAddressLoopInSwapsByStates(_ context.Context,
 	_ []fsm.StateType) ([]*StaticAddressLoopIn, error) {
 
-	return nil, nil
+	return s.swaps, nil
 }
 func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return false, nil
+}
+
+// RecordStaticAddressRiskDecision implements Store for manager tests.
+func (s *mockStore) RecordStaticAddressRiskDecision(context.Context,
+	lntypes.Hash, ConfirmationRiskDecision) error {
+
+	return nil
 }
 
 func (s *mockStore) GetLoopInByHash(_ context.Context,
@@ -517,9 +626,9 @@ func TestCheckChange(t *testing.T) {
 		var hash lntypes.Hash
 		hash[0] = h
 		li := &StaticAddressLoopIn{
-			Deposits:       deposits,
-			SelectedAmount: selected,
-			AddressParams:  changeAddr,
+			Deposits:            deposits,
+			SelectedAmount:      selected,
+			ChangeAddressParams: changeAddr,
 		}
 		return hash, li
 	}
@@ -574,7 +683,6 @@ func TestCheckChange(t *testing.T) {
 		name           string
 		inDeps         []*deposit.Deposit // deposits referenced by tx inputs
 		outputs        []*wire.TxOut      // outputs in sweep tx
-		addr           *script.Parameters
 		expectErr      bool
 		expectedErrMsg string
 	}
@@ -590,7 +698,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: serverAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "single swap change present",
@@ -605,43 +712,59 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "multiple swaps different change amounts",
-			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)=900
+			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
 					PkScript: serverAddr.PkScript,
 				},
 				{
-					Value:    900,
+					Value:    500,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    400,
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
-			name:   "two swaps with identical change values sum correctly",
-			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)=800
+			name:   "two swaps with identical change values both present",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
 					PkScript: serverAddr.PkScript,
 				},
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+			},
+		},
+		{
+			name:   "collapsed identical change output rejected",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
+			outputs: []*wire.TxOut{
 				{
 					Value:    800,
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
+			expectErr:      true,
+			expectedErrMsg: "couldn't find expected change",
 		},
 		{
 			name:           "missing change output results in error",
 			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
 			outputs:        []*wire.TxOut{},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -658,7 +781,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -675,7 +797,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -696,7 +817,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 	}
 
@@ -719,7 +839,7 @@ func TestCheckChange(t *testing.T) {
 			mgr.cfg.DepositManager = mdm
 
 			tx := makeSweepTx(inputs, tc.outputs)
-			err := mgr.checkChange(ctx, tx, tc.addr)
+			err := mgr.checkChange(ctx, tx)
 			if tc.expectErr {
 				require.Error(t, err)
 				if tc.expectedErrMsg != "" {

@@ -102,6 +102,18 @@ service SwapClient {
     */
     rpc FetchL402Token (FetchL402TokenRequest) returns (FetchL402TokenResponse);
 
+    /* loop: `recover`
+    Recover restores the local static-address and L402 state from an encrypted
+    local backup file.
+    */
+    rpc Recover (RecoverRequest) returns (RecoverResponse);
+
+    /* loop: `recoverdeposit`
+    RecoverDeposit verifies one static-address deposit on-chain and restores
+    its local address/deposit state without relying on wallet reconciliation.
+    */
+    rpc RecoverDeposit (RecoverDepositRequest) returns (RecoverDepositResponse);
+
     /* loop: `getinfo`
     GetInfo gets basic information about the loop daemon.
     */
@@ -1060,6 +1072,117 @@ message FetchL402TokenRequest {
 message FetchL402TokenResponse {
 }
 
+message RecoverRequest {
+    /*
+    Optional path to the encrypted backup file. If omitted, loopd restores from
+    the most recent immutable L402 recovery backup in the active network data
+    directory.
+    */
+    string backup_file = 1;
+}
+
+message RecoverResponse {
+    /*
+    The backup file that was restored.
+    */
+    string backup_file = 1;
+
+    /*
+    Whether a paid L402 token was restored into the local token store.
+    */
+    bool restored_l402 = 2;
+
+    /*
+    Whether static-address state was restored into loopd and lnd.
+    */
+    bool restored_static_address = 3;
+
+    /*
+    The restored static address, if any.
+    */
+    string static_address = 4;
+
+    /*
+    The number of deposits found during best-effort reconciliation.
+    */
+    uint32 num_deposits_found = 5;
+
+    /*
+    Best-effort deposit reconciliation error text, if reconciliation failed
+    after state restore completed.
+    */
+    string deposit_reconciliation_error = 6;
+}
+
+message RecoverDepositRequest {
+    /*
+    The transaction ID that created the static-address deposit output.
+    */
+    string txid = 1;
+
+    /*
+    The output index in the transaction.
+    */
+    uint32 vout = 2;
+
+    /*
+    The block height hint used when registering the confirmation notification.
+    */
+    int32 height_hint = 3;
+
+    /*
+    The expected static-address P2TR pkScript encoded as hex.
+    */
+    string pkscript_hex = 4;
+}
+
+message RecoverDepositResponse {
+    /*
+    The recovered deposit outpoint in the form txid:index.
+    */
+    string outpoint = 1;
+
+    /*
+    The recovered output value in satoshis.
+    */
+    int64 value = 2;
+
+    /*
+    The block height at which the deposit transaction confirmed.
+    */
+    int64 confirmation_height = 3;
+
+    /*
+    The matched client key family.
+    */
+    int32 client_key_family = 4;
+
+    /*
+    The matched client key index.
+    */
+    uint32 client_key_index = 5;
+
+    /*
+    The static address that owns the recovered deposit.
+    */
+    string static_address = 6;
+
+    /*
+    Whether a static-address row or wallet import was restored.
+    */
+    bool recovered_address = 7;
+
+    /*
+    Whether a deposit row was created or reactivated.
+    */
+    bool recovered_deposit = 8;
+
+    /*
+    The recovered deposit ID.
+    */
+    bytes deposit_id = 9;
+}
+
 message L402Token {
     /*
     The base macaroon that was baked by the auth server.
@@ -1767,6 +1890,14 @@ message NewStaticAddressRequest {
     The client's public key for the 2-of-2 MuSig2 taproot static address.
     */
     bytes client_key = 1;
+
+    /*
+    If set, loopd initiates a deposit by calling lnd's SendCoins API. If the
+    request's addr field is empty, loopd creates and funds a new static
+    address. If addr is set, it must be an existing static address known to
+    loopd.
+    */
+    lnrpc.SendCoinsRequest send_coins_request = 2;
 }
 
 message NewStaticAddressResponse {
@@ -1779,6 +1910,11 @@ message NewStaticAddressResponse {
     The CSV expiry of the static address.
     */
     uint32 expiry = 2;
+
+    /*
+    The response from lnd's SendCoins API, if a deposit was initiated.
+    */
+    lnrpc.SendCoinsResponse send_coins_response = 3;
 }
 
 message ListUnspentDepositsRequest {
@@ -2077,6 +2213,11 @@ message Deposit {
     set if the deposit is part of a loop-in swap.
     */
     bytes swap_hash = 7;
+
+    /*
+    The static address that the deposit was sent to.
+    */
+    string static_address = 8;
 }
 
 message StaticAddressWithdrawal {

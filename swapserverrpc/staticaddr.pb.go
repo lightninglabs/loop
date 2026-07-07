@@ -387,8 +387,15 @@ type ServerPsbtWithdrawRequest struct {
 	WithdrawalPsbt []byte `protobuf:"bytes,1,opt,name=withdrawal_psbt,json=withdrawalPsbt,proto3" json:"withdrawal_psbt,omitempty"`
 	// The map of deposit txid:idx to the nonce used by the client.
 	DepositToNonces map[string][]byte `protobuf:"bytes,2,rep,name=deposit_to_nonces,json=depositToNonces,proto3" json:"deposit_to_nonces,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The map of deposit txid:idx to the client static address pubkey that
+	// was used to derive the deposit output. The server combines this key
+	// with the L402's server pubkey and expiry to validate each input.
+	DepositToClientPubkeys map[string][]byte `protobuf:"bytes,3,rep,name=deposit_to_client_pubkeys,json=depositToClientPubkeys,proto3" json:"deposit_to_client_pubkeys,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Optional change output metadata for withdrawals that return funds to a
+	// newly generated static address.
+	ChangeOutput  *StaticAddressChangeOutput `protobuf:"bytes,4,opt,name=change_output,json=changeOutput,proto3" json:"change_output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ServerPsbtWithdrawRequest) Reset() {
@@ -431,6 +438,20 @@ func (x *ServerPsbtWithdrawRequest) GetWithdrawalPsbt() []byte {
 func (x *ServerPsbtWithdrawRequest) GetDepositToNonces() map[string][]byte {
 	if x != nil {
 		return x.DepositToNonces
+	}
+	return nil
+}
+
+func (x *ServerPsbtWithdrawRequest) GetDepositToClientPubkeys() map[string][]byte {
+	if x != nil {
+		return x.DepositToClientPubkeys
+	}
+	return nil
+}
+
+func (x *ServerPsbtWithdrawRequest) GetChangeOutput() *StaticAddressChangeOutput {
+	if x != nil {
+		return x.ChangeOutput
 	}
 	return nil
 }
@@ -544,6 +565,69 @@ func (x *ServerPsbtWithdrawSigningInfo) GetSig() []byte {
 	return nil
 }
 
+type StaticAddressChangeOutput struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The client static address pubkey used to derive the change output.
+	ClientPubkey []byte `protobuf:"bytes,1,opt,name=client_pubkey,json=clientPubkey,proto3" json:"client_pubkey,omitempty"`
+	// The expected output script for the static address change output.
+	PkScript []byte `protobuf:"bytes,2,opt,name=pk_script,json=pkScript,proto3" json:"pk_script,omitempty"`
+	// The expected change amount in satoshis.
+	Amount        int64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StaticAddressChangeOutput) Reset() {
+	*x = StaticAddressChangeOutput{}
+	mi := &file_staticaddr_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StaticAddressChangeOutput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StaticAddressChangeOutput) ProtoMessage() {}
+
+func (x *StaticAddressChangeOutput) ProtoReflect() protoreflect.Message {
+	mi := &file_staticaddr_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StaticAddressChangeOutput.ProtoReflect.Descriptor instead.
+func (*StaticAddressChangeOutput) Descriptor() ([]byte, []int) {
+	return file_staticaddr_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StaticAddressChangeOutput) GetClientPubkey() []byte {
+	if x != nil {
+		return x.ClientPubkey
+	}
+	return nil
+}
+
+func (x *StaticAddressChangeOutput) GetPkScript() []byte {
+	if x != nil {
+		return x.PkScript
+	}
+	return nil
+}
+
+func (x *StaticAddressChangeOutput) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
 type ServerStaticAddressLoopInRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The client's public key for the htlc output.
@@ -589,14 +673,21 @@ type ServerStaticAddressLoopInRequest struct {
 	Amount uint64 `protobuf:"varint,9,opt,name=amount,proto3" json:"amount,omitempty"`
 	// If set, request the server to use fast publication behavior for this
 	// swap.
-	Fast          bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
+	Fast bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
+	// The map of deposit txid:idx to the client static address pubkey that
+	// was used to derive the deposit output. The server combines this key
+	// with the L402's server pubkey and expiry to validate each input.
+	DepositToClientPubkeys map[string][]byte `protobuf:"bytes,11,rep,name=deposit_to_client_pubkeys,json=depositToClientPubkeys,proto3" json:"deposit_to_client_pubkeys,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Optional change output metadata for fractional loop-ins that return
+	// funds to a newly generated static address.
+	ChangeOutput  *StaticAddressChangeOutput `protobuf:"bytes,12,opt,name=change_output,json=changeOutput,proto3" json:"change_output,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ServerStaticAddressLoopInRequest) Reset() {
 	*x = ServerStaticAddressLoopInRequest{}
-	mi := &file_staticaddr_proto_msgTypes[8]
+	mi := &file_staticaddr_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +699,7 @@ func (x *ServerStaticAddressLoopInRequest) String() string {
 func (*ServerStaticAddressLoopInRequest) ProtoMessage() {}
 
 func (x *ServerStaticAddressLoopInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[8]
+	mi := &file_staticaddr_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +712,7 @@ func (x *ServerStaticAddressLoopInRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerStaticAddressLoopInRequest.ProtoReflect.Descriptor instead.
 func (*ServerStaticAddressLoopInRequest) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{8}
+	return file_staticaddr_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ServerStaticAddressLoopInRequest) GetHtlcClientPubKey() []byte {
@@ -694,6 +785,20 @@ func (x *ServerStaticAddressLoopInRequest) GetFast() bool {
 	return false
 }
 
+func (x *ServerStaticAddressLoopInRequest) GetDepositToClientPubkeys() map[string][]byte {
+	if x != nil {
+		return x.DepositToClientPubkeys
+	}
+	return nil
+}
+
+func (x *ServerStaticAddressLoopInRequest) GetChangeOutput() *StaticAddressChangeOutput {
+	if x != nil {
+		return x.ChangeOutput
+	}
+	return nil
+}
+
 type ServerStaticAddressLoopInResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The server's public key for the htlc output.
@@ -715,7 +820,7 @@ type ServerStaticAddressLoopInResponse struct {
 
 func (x *ServerStaticAddressLoopInResponse) Reset() {
 	*x = ServerStaticAddressLoopInResponse{}
-	mi := &file_staticaddr_proto_msgTypes[9]
+	mi := &file_staticaddr_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +832,7 @@ func (x *ServerStaticAddressLoopInResponse) String() string {
 func (*ServerStaticAddressLoopInResponse) ProtoMessage() {}
 
 func (x *ServerStaticAddressLoopInResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[9]
+	mi := &file_staticaddr_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +845,7 @@ func (x *ServerStaticAddressLoopInResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ServerStaticAddressLoopInResponse.ProtoReflect.Descriptor instead.
 func (*ServerStaticAddressLoopInResponse) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{9}
+	return file_staticaddr_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ServerStaticAddressLoopInResponse) GetHtlcServerPubKey() []byte {
@@ -790,7 +895,7 @@ type ServerHtlcSigningInfo struct {
 
 func (x *ServerHtlcSigningInfo) Reset() {
 	*x = ServerHtlcSigningInfo{}
-	mi := &file_staticaddr_proto_msgTypes[10]
+	mi := &file_staticaddr_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +907,7 @@ func (x *ServerHtlcSigningInfo) String() string {
 func (*ServerHtlcSigningInfo) ProtoMessage() {}
 
 func (x *ServerHtlcSigningInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[10]
+	mi := &file_staticaddr_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +920,7 @@ func (x *ServerHtlcSigningInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerHtlcSigningInfo.ProtoReflect.Descriptor instead.
 func (*ServerHtlcSigningInfo) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{10}
+	return file_staticaddr_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ServerHtlcSigningInfo) GetNonces() [][]byte {
@@ -848,7 +953,7 @@ type PushStaticAddressHtlcSigsRequest struct {
 
 func (x *PushStaticAddressHtlcSigsRequest) Reset() {
 	*x = PushStaticAddressHtlcSigsRequest{}
-	mi := &file_staticaddr_proto_msgTypes[11]
+	mi := &file_staticaddr_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +965,7 @@ func (x *PushStaticAddressHtlcSigsRequest) String() string {
 func (*PushStaticAddressHtlcSigsRequest) ProtoMessage() {}
 
 func (x *PushStaticAddressHtlcSigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[11]
+	mi := &file_staticaddr_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +978,7 @@ func (x *PushStaticAddressHtlcSigsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushStaticAddressHtlcSigsRequest.ProtoReflect.Descriptor instead.
 func (*PushStaticAddressHtlcSigsRequest) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{11}
+	return file_staticaddr_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PushStaticAddressHtlcSigsRequest) GetSwapHash() []byte {
@@ -916,7 +1021,7 @@ type ClientHtlcSigningInfo struct {
 
 func (x *ClientHtlcSigningInfo) Reset() {
 	*x = ClientHtlcSigningInfo{}
-	mi := &file_staticaddr_proto_msgTypes[12]
+	mi := &file_staticaddr_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -928,7 +1033,7 @@ func (x *ClientHtlcSigningInfo) String() string {
 func (*ClientHtlcSigningInfo) ProtoMessage() {}
 
 func (x *ClientHtlcSigningInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[12]
+	mi := &file_staticaddr_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -941,7 +1046,7 @@ func (x *ClientHtlcSigningInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientHtlcSigningInfo.ProtoReflect.Descriptor instead.
 func (*ClientHtlcSigningInfo) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{12}
+	return file_staticaddr_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ClientHtlcSigningInfo) GetNonces() [][]byte {
@@ -966,7 +1071,7 @@ type PushStaticAddressHtlcSigsResponse struct {
 
 func (x *PushStaticAddressHtlcSigsResponse) Reset() {
 	*x = PushStaticAddressHtlcSigsResponse{}
-	mi := &file_staticaddr_proto_msgTypes[13]
+	mi := &file_staticaddr_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1083,7 @@ func (x *PushStaticAddressHtlcSigsResponse) String() string {
 func (*PushStaticAddressHtlcSigsResponse) ProtoMessage() {}
 
 func (x *PushStaticAddressHtlcSigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[13]
+	mi := &file_staticaddr_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -991,7 +1096,7 @@ func (x *PushStaticAddressHtlcSigsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use PushStaticAddressHtlcSigsResponse.ProtoReflect.Descriptor instead.
 func (*PushStaticAddressHtlcSigsResponse) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{13}
+	return file_staticaddr_proto_rawDescGZIP(), []int{14}
 }
 
 type PushStaticAddressSweeplessSigsRequest struct {
@@ -1013,7 +1118,7 @@ type PushStaticAddressSweeplessSigsRequest struct {
 
 func (x *PushStaticAddressSweeplessSigsRequest) Reset() {
 	*x = PushStaticAddressSweeplessSigsRequest{}
-	mi := &file_staticaddr_proto_msgTypes[14]
+	mi := &file_staticaddr_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +1130,7 @@ func (x *PushStaticAddressSweeplessSigsRequest) String() string {
 func (*PushStaticAddressSweeplessSigsRequest) ProtoMessage() {}
 
 func (x *PushStaticAddressSweeplessSigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[14]
+	mi := &file_staticaddr_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,7 +1143,7 @@ func (x *PushStaticAddressSweeplessSigsRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use PushStaticAddressSweeplessSigsRequest.ProtoReflect.Descriptor instead.
 func (*PushStaticAddressSweeplessSigsRequest) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{14}
+	return file_staticaddr_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PushStaticAddressSweeplessSigsRequest) GetSwapHash() []byte {
@@ -1082,7 +1187,7 @@ type ClientSweeplessSigningInfo struct {
 
 func (x *ClientSweeplessSigningInfo) Reset() {
 	*x = ClientSweeplessSigningInfo{}
-	mi := &file_staticaddr_proto_msgTypes[15]
+	mi := &file_staticaddr_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1199,7 @@ func (x *ClientSweeplessSigningInfo) String() string {
 func (*ClientSweeplessSigningInfo) ProtoMessage() {}
 
 func (x *ClientSweeplessSigningInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[15]
+	mi := &file_staticaddr_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1212,7 @@ func (x *ClientSweeplessSigningInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientSweeplessSigningInfo.ProtoReflect.Descriptor instead.
 func (*ClientSweeplessSigningInfo) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{15}
+	return file_staticaddr_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ClientSweeplessSigningInfo) GetNonce() []byte {
@@ -1132,7 +1237,7 @@ type PushStaticAddressSweeplessSigsResponse struct {
 
 func (x *PushStaticAddressSweeplessSigsResponse) Reset() {
 	*x = PushStaticAddressSweeplessSigsResponse{}
-	mi := &file_staticaddr_proto_msgTypes[16]
+	mi := &file_staticaddr_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1144,7 +1249,7 @@ func (x *PushStaticAddressSweeplessSigsResponse) String() string {
 func (*PushStaticAddressSweeplessSigsResponse) ProtoMessage() {}
 
 func (x *PushStaticAddressSweeplessSigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_staticaddr_proto_msgTypes[16]
+	mi := &file_staticaddr_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1157,7 +1262,7 @@ func (x *PushStaticAddressSweeplessSigsResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use PushStaticAddressSweeplessSigsResponse.ProtoReflect.Descriptor instead.
 func (*PushStaticAddressSweeplessSigsResponse) Descriptor() ([]byte, []int) {
-	return file_staticaddr_proto_rawDescGZIP(), []int{16}
+	return file_staticaddr_proto_rawDescGZIP(), []int{17}
 }
 
 var File_staticaddr_proto protoreflect.FileDescriptor
@@ -1184,11 +1289,16 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\rchange_amount\x18\x06 \x01(\x03R\fchangeAmount:\x02\x18\x01\"m\n" +
 	"\x16ServerWithdrawResponse\x12*\n" +
 	"\x11musig2_sweep_sigs\x18\x01 \x03(\fR\x0fmusig2SweepSigs\x12#\n" +
-	"\rserver_nonces\x18\x02 \x03(\fR\fserverNonces:\x02\x18\x01\"\xed\x01\n" +
+	"\rserver_nonces\x18\x02 \x03(\fR\fserverNonces:\x02\x18\x01\"\xfc\x03\n" +
 	"\x19ServerPsbtWithdrawRequest\x12'\n" +
 	"\x0fwithdrawal_psbt\x18\x01 \x01(\fR\x0ewithdrawalPsbt\x12c\n" +
-	"\x11deposit_to_nonces\x18\x02 \x03(\v27.looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntryR\x0fdepositToNonces\x1aB\n" +
+	"\x11deposit_to_nonces\x18\x02 \x03(\v27.looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntryR\x0fdepositToNonces\x12y\n" +
+	"\x19deposit_to_client_pubkeys\x18\x03 \x03(\v2>.looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntryR\x16depositToClientPubkeys\x12G\n" +
+	"\rchange_output\x18\x04 \x01(\v2\".looprpc.StaticAddressChangeOutputR\fchangeOutput\x1aB\n" +
 	"\x14DepositToNoncesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1aI\n" +
+	"\x1bDepositToClientPubkeysEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\xf1\x01\n" +
 	"\x1aServerPsbtWithdrawResponse\x12\x12\n" +
@@ -1199,7 +1309,11 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2&.looprpc.ServerPsbtWithdrawSigningInfoR\x05value:\x028\x01\"G\n" +
 	"\x1dServerPsbtWithdrawSigningInfo\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x10\n" +
-	"\x03sig\x18\x02 \x01(\fR\x03sig\"\xae\x03\n" +
+	"\x03sig\x18\x02 \x01(\fR\x03sig\"u\n" +
+	"\x19StaticAddressChangeOutput\x12#\n" +
+	"\rclient_pubkey\x18\x01 \x01(\fR\fclientPubkey\x12\x1b\n" +
+	"\tpk_script\x18\x02 \x01(\fR\bpkScript\x12\x16\n" +
+	"\x06amount\x18\x03 \x01(\x03R\x06amount\"\xc5\x05\n" +
 	" ServerStaticAddressLoopInRequest\x12-\n" +
 	"\x13htlc_client_pub_key\x18\x01 \x01(\fR\x10htlcClientPubKey\x12\x1b\n" +
 	"\tswap_hash\x18\x02 \x01(\fR\bswapHash\x12+\n" +
@@ -1212,7 +1326,12 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\x17payment_timeout_seconds\x18\b \x01(\rR\x15paymentTimeoutSeconds\x12\x16\n" +
 	"\x06amount\x18\t \x01(\x04R\x06amount\x12\x12\n" +
 	"\x04fast\x18\n" +
-	" \x01(\bR\x04fast\"\xe1\x02\n" +
+	" \x01(\bR\x04fast\x12\x80\x01\n" +
+	"\x19deposit_to_client_pubkeys\x18\v \x03(\v2E.looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntryR\x16depositToClientPubkeys\x12G\n" +
+	"\rchange_output\x18\f \x01(\v2\".looprpc.StaticAddressChangeOutputR\fchangeOutput\x1aI\n" +
+	"\x1bDepositToClientPubkeysEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\xe1\x02\n" +
 	"!ServerStaticAddressLoopInResponse\x12-\n" +
 	"\x13htlc_server_pub_key\x18\x01 \x01(\fR\x10htlcServerPubKey\x12\x1f\n" +
 	"\vhtlc_expiry\x18\x02 \x01(\x05R\n" +
@@ -1267,7 +1386,7 @@ func file_staticaddr_proto_rawDescGZIP() []byte {
 }
 
 var file_staticaddr_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_staticaddr_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_staticaddr_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_staticaddr_proto_goTypes = []any{
 	(StaticAddressProtocolVersion)(0),              // 0: looprpc.StaticAddressProtocolVersion
 	(*ServerNewAddressRequest)(nil),                // 1: looprpc.ServerNewAddressRequest
@@ -1278,53 +1397,60 @@ var file_staticaddr_proto_goTypes = []any{
 	(*ServerPsbtWithdrawRequest)(nil),              // 6: looprpc.ServerPsbtWithdrawRequest
 	(*ServerPsbtWithdrawResponse)(nil),             // 7: looprpc.ServerPsbtWithdrawResponse
 	(*ServerPsbtWithdrawSigningInfo)(nil),          // 8: looprpc.ServerPsbtWithdrawSigningInfo
-	(*ServerStaticAddressLoopInRequest)(nil),       // 9: looprpc.ServerStaticAddressLoopInRequest
-	(*ServerStaticAddressLoopInResponse)(nil),      // 10: looprpc.ServerStaticAddressLoopInResponse
-	(*ServerHtlcSigningInfo)(nil),                  // 11: looprpc.ServerHtlcSigningInfo
-	(*PushStaticAddressHtlcSigsRequest)(nil),       // 12: looprpc.PushStaticAddressHtlcSigsRequest
-	(*ClientHtlcSigningInfo)(nil),                  // 13: looprpc.ClientHtlcSigningInfo
-	(*PushStaticAddressHtlcSigsResponse)(nil),      // 14: looprpc.PushStaticAddressHtlcSigsResponse
-	(*PushStaticAddressSweeplessSigsRequest)(nil),  // 15: looprpc.PushStaticAddressSweeplessSigsRequest
-	(*ClientSweeplessSigningInfo)(nil),             // 16: looprpc.ClientSweeplessSigningInfo
-	(*PushStaticAddressSweeplessSigsResponse)(nil), // 17: looprpc.PushStaticAddressSweeplessSigsResponse
-	nil,                 // 18: looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
-	nil,                 // 19: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
-	nil,                 // 20: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
-	(*PrevoutInfo)(nil), // 21: looprpc.PrevoutInfo
+	(*StaticAddressChangeOutput)(nil),              // 9: looprpc.StaticAddressChangeOutput
+	(*ServerStaticAddressLoopInRequest)(nil),       // 10: looprpc.ServerStaticAddressLoopInRequest
+	(*ServerStaticAddressLoopInResponse)(nil),      // 11: looprpc.ServerStaticAddressLoopInResponse
+	(*ServerHtlcSigningInfo)(nil),                  // 12: looprpc.ServerHtlcSigningInfo
+	(*PushStaticAddressHtlcSigsRequest)(nil),       // 13: looprpc.PushStaticAddressHtlcSigsRequest
+	(*ClientHtlcSigningInfo)(nil),                  // 14: looprpc.ClientHtlcSigningInfo
+	(*PushStaticAddressHtlcSigsResponse)(nil),      // 15: looprpc.PushStaticAddressHtlcSigsResponse
+	(*PushStaticAddressSweeplessSigsRequest)(nil),  // 16: looprpc.PushStaticAddressSweeplessSigsRequest
+	(*ClientSweeplessSigningInfo)(nil),             // 17: looprpc.ClientSweeplessSigningInfo
+	(*PushStaticAddressSweeplessSigsResponse)(nil), // 18: looprpc.PushStaticAddressSweeplessSigsResponse
+	nil,                 // 19: looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
+	nil,                 // 20: looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry
+	nil,                 // 21: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
+	nil,                 // 22: looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry
+	nil,                 // 23: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
+	(*PrevoutInfo)(nil), // 24: looprpc.PrevoutInfo
 }
 var file_staticaddr_proto_depIdxs = []int32{
 	0,  // 0: looprpc.ServerNewAddressRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
 	3,  // 1: looprpc.ServerNewAddressResponse.params:type_name -> looprpc.ServerAddressParameters
-	21, // 2: looprpc.ServerWithdrawRequest.outpoints:type_name -> looprpc.PrevoutInfo
-	18, // 3: looprpc.ServerPsbtWithdrawRequest.deposit_to_nonces:type_name -> looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
-	19, // 4: looprpc.ServerPsbtWithdrawResponse.signing_info:type_name -> looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
-	0,  // 5: looprpc.ServerStaticAddressLoopInRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
-	11, // 6: looprpc.ServerStaticAddressLoopInResponse.standard_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	11, // 7: looprpc.ServerStaticAddressLoopInResponse.high_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	11, // 8: looprpc.ServerStaticAddressLoopInResponse.extreme_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	13, // 9: looprpc.PushStaticAddressHtlcSigsRequest.standard_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	13, // 10: looprpc.PushStaticAddressHtlcSigsRequest.high_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	13, // 11: looprpc.PushStaticAddressHtlcSigsRequest.extreme_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	20, // 12: looprpc.PushStaticAddressSweeplessSigsRequest.signing_info:type_name -> looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
-	8,  // 13: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry.value:type_name -> looprpc.ServerPsbtWithdrawSigningInfo
-	16, // 14: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry.value:type_name -> looprpc.ClientSweeplessSigningInfo
-	1,  // 15: looprpc.StaticAddressServer.ServerNewAddress:input_type -> looprpc.ServerNewAddressRequest
-	4,  // 16: looprpc.StaticAddressServer.ServerWithdrawDeposits:input_type -> looprpc.ServerWithdrawRequest
-	6,  // 17: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:input_type -> looprpc.ServerPsbtWithdrawRequest
-	9,  // 18: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:input_type -> looprpc.ServerStaticAddressLoopInRequest
-	12, // 19: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:input_type -> looprpc.PushStaticAddressHtlcSigsRequest
-	15, // 20: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:input_type -> looprpc.PushStaticAddressSweeplessSigsRequest
-	2,  // 21: looprpc.StaticAddressServer.ServerNewAddress:output_type -> looprpc.ServerNewAddressResponse
-	5,  // 22: looprpc.StaticAddressServer.ServerWithdrawDeposits:output_type -> looprpc.ServerWithdrawResponse
-	7,  // 23: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:output_type -> looprpc.ServerPsbtWithdrawResponse
-	10, // 24: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:output_type -> looprpc.ServerStaticAddressLoopInResponse
-	14, // 25: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:output_type -> looprpc.PushStaticAddressHtlcSigsResponse
-	17, // 26: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:output_type -> looprpc.PushStaticAddressSweeplessSigsResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	24, // 2: looprpc.ServerWithdrawRequest.outpoints:type_name -> looprpc.PrevoutInfo
+	19, // 3: looprpc.ServerPsbtWithdrawRequest.deposit_to_nonces:type_name -> looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
+	20, // 4: looprpc.ServerPsbtWithdrawRequest.deposit_to_client_pubkeys:type_name -> looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry
+	9,  // 5: looprpc.ServerPsbtWithdrawRequest.change_output:type_name -> looprpc.StaticAddressChangeOutput
+	21, // 6: looprpc.ServerPsbtWithdrawResponse.signing_info:type_name -> looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
+	0,  // 7: looprpc.ServerStaticAddressLoopInRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
+	22, // 8: looprpc.ServerStaticAddressLoopInRequest.deposit_to_client_pubkeys:type_name -> looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry
+	9,  // 9: looprpc.ServerStaticAddressLoopInRequest.change_output:type_name -> looprpc.StaticAddressChangeOutput
+	12, // 10: looprpc.ServerStaticAddressLoopInResponse.standard_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	12, // 11: looprpc.ServerStaticAddressLoopInResponse.high_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	12, // 12: looprpc.ServerStaticAddressLoopInResponse.extreme_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	14, // 13: looprpc.PushStaticAddressHtlcSigsRequest.standard_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	14, // 14: looprpc.PushStaticAddressHtlcSigsRequest.high_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	14, // 15: looprpc.PushStaticAddressHtlcSigsRequest.extreme_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	23, // 16: looprpc.PushStaticAddressSweeplessSigsRequest.signing_info:type_name -> looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
+	8,  // 17: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry.value:type_name -> looprpc.ServerPsbtWithdrawSigningInfo
+	17, // 18: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry.value:type_name -> looprpc.ClientSweeplessSigningInfo
+	1,  // 19: looprpc.StaticAddressServer.ServerNewAddress:input_type -> looprpc.ServerNewAddressRequest
+	4,  // 20: looprpc.StaticAddressServer.ServerWithdrawDeposits:input_type -> looprpc.ServerWithdrawRequest
+	6,  // 21: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:input_type -> looprpc.ServerPsbtWithdrawRequest
+	10, // 22: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:input_type -> looprpc.ServerStaticAddressLoopInRequest
+	13, // 23: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:input_type -> looprpc.PushStaticAddressHtlcSigsRequest
+	16, // 24: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:input_type -> looprpc.PushStaticAddressSweeplessSigsRequest
+	2,  // 25: looprpc.StaticAddressServer.ServerNewAddress:output_type -> looprpc.ServerNewAddressResponse
+	5,  // 26: looprpc.StaticAddressServer.ServerWithdrawDeposits:output_type -> looprpc.ServerWithdrawResponse
+	7,  // 27: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:output_type -> looprpc.ServerPsbtWithdrawResponse
+	11, // 28: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:output_type -> looprpc.ServerStaticAddressLoopInResponse
+	15, // 29: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:output_type -> looprpc.PushStaticAddressHtlcSigsResponse
+	18, // 30: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:output_type -> looprpc.PushStaticAddressSweeplessSigsResponse
+	25, // [25:31] is the sub-list for method output_type
+	19, // [19:25] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_staticaddr_proto_init() }
@@ -1339,7 +1465,7 @@ func file_staticaddr_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_staticaddr_proto_rawDesc), len(file_staticaddr_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

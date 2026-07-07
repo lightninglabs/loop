@@ -7,7 +7,8 @@ INSERT INTO deposits (
     confirmation_height,
     timeout_sweep_pk_script,
     expiry_sweep_txid,
-    finalized_withdrawal_tx
+    finalized_withdrawal_tx,
+    static_address_id
 ) VALUES (
              $1,
              $2,
@@ -16,7 +17,8 @@ INSERT INTO deposits (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9
          );
 
 -- name: UpdateDeposit :exec
@@ -27,6 +29,18 @@ SET
     confirmation_height = $4,
     expiry_sweep_txid = $5,
     finalized_withdrawal_tx = $6
+WHERE
+    deposits.deposit_id = $1;
+
+-- name: UpdateRecoveredDeposit :exec
+UPDATE deposits
+SET
+    tx_hash = $2,
+    out_index = $3,
+    amount = $4,
+    confirmation_height = $5,
+    timeout_sweep_pk_script = $6,
+    static_address_id = $7
 WHERE
     deposits.deposit_id = $1;
 
@@ -43,17 +57,35 @@ INSERT INTO deposit_updates (
 
 -- name: GetDeposit :one
 SELECT
-    *
+    d.*,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height
 FROM
-    deposits
+    deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
 WHERE
     deposit_id = $1;
 
 -- name: DepositForOutpoint :one
 SELECT
-    *
+    d.*,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height
 FROM
-    deposits
+    deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
 WHERE
     tx_hash = $1
 AND
@@ -61,11 +93,20 @@ AND
 
 -- name: AllDeposits :many
 SELECT
-    *
+    d.*,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height
 FROM
-    deposits
+    deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
 ORDER BY
-    id ASC;
+    d.id ASC;
 
 -- name: GetLatestDepositUpdate :one
 SELECT
@@ -77,3 +118,8 @@ WHERE
 ORDER BY
     update_timestamp DESC
 LIMIT 1;
+
+-- name: SetAllNullDepositsStaticAddressID :exec
+UPDATE deposits
+SET static_address_id = $1
+WHERE static_address_id IS NULL;

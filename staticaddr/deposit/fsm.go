@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -41,8 +42,8 @@ var (
 
 // States.
 var (
-	// Deposited signals that funds at a static address have reached the
-	// confirmation height.
+	// Deposited signals that funds at a static address have been detected
+	// and are available to the client.
 	Deposited = fsm.StateType("Deposited")
 
 	// Withdrawing signals that the withdrawal transaction has been
@@ -92,8 +93,8 @@ var (
 // Events.
 var (
 	// OnStart is sent to the fsm once the deposit outpoint has been
-	// sufficiently confirmed. It transitions the fsm into the Deposited
-	// state from where we can trigger a withdrawal, a loopin or an expiry.
+	// detected. It transitions the fsm into the Deposited state from where
+	// we can trigger a withdrawal, a loopin or an expiry.
 	OnStart = fsm.EventType("OnStart")
 
 	// OnWithdrawInitiated is sent to the fsm when a withdrawal has been
@@ -160,6 +161,12 @@ type FSM struct {
 
 	blockNtfnChan chan uint32
 
+	// stopChan requests shutdown of the block notification loop.
+	stopChan chan struct{}
+
+	// stopOnce ensures Stop is idempotent.
+	stopOnce sync.Once
+
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
@@ -174,13 +181,13 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
+	if deposit.AddressParams == nil {
+		return nil, fmt.Errorf("missing deposit static address " +
+			"parameters")
 	}
+	params := deposit.AddressParams
 
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}
@@ -191,6 +198,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		params:               params,
 		address:              address,
 		blockNtfnChan:        make(chan uint32),
+		stopChan:             make(chan struct{}),
 		quitChan:             make(chan struct{}),
 		finalizedDepositChan: finalizedDepositChan,
 	}
@@ -226,6 +234,9 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 					ctx, currentHeight,
 				)
 
+			case <-fsm.stopChan:
+				return
+
 			case <-ctx.Done():
 				return
 			}
@@ -235,11 +246,26 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	return depoFsm, nil
 }
 
+// Stop requests shutdown of the FSM's block notification loop.
+func (f *FSM) Stop() {
+	if f == nil || f.stopChan == nil {
+		return
+	}
+
+	f.stopOnce.Do(func() {
+		close(f.stopChan)
+	})
+}
+
 // handleBlockNotification inspects the current block height and sends the
 // OnExpiry event to publish the expiry sweep transaction if the deposit timed
 // out, or it republishes the expiry sweep transaction if it was not yet swept.
 func (f *FSM) handleBlockNotification(ctx context.Context,
 	currentHeight uint32) {
+
+	if f.deposit.IsInFinalState() {
+		return
+	}
 
 	// If the deposit is expired but not yet sufficiently confirmed, we
 	// republish the expiry sweep transaction.
@@ -353,6 +379,11 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// still pending, we publish the expiry sweep.
 				OnExpiry: PublishExpirySweep,
 
+				// If the server publishes the HTLC without
+				// paying us, we need to keep the deposit locked
+				// until the HTLC timeout path can be swept.
+				OnSweepingHtlcTimeout: SweepHtlcTimeout,
+
 				OnLoopInInitiated: LoopingIn,
 
 				OnRecover:   LoopingIn,
@@ -362,7 +393,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		LoopedIn: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry: Expired,
+				OnExpiry: LoopedIn,
 			},
 			Action: f.FinalizeDepositAction,
 		},
@@ -381,7 +412,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 		},
 		Withdrawn: fsm.State{
 			Transitions: fsm.Transitions{
-				OnExpiry:    Expired,
+				OnExpiry:    Withdrawn,
 				OnWithdrawn: Withdrawn,
 			},
 			Action: f.FinalizeDepositAction,
@@ -421,17 +452,14 @@ func (f *FSM) updateDeposit(ctx context.Context,
 		return
 	}
 
-	type checkStateFunc func(state fsm.StateType) bool
-	type setStateFunc func(state fsm.StateType)
-	checkFunc := checkStateFunc(f.deposit.IsInState)
-	setFunc := setStateFunc(f.deposit.SetState)
-	if _, ok := lockedEvents[notification.Event]; ok {
-		checkFunc = f.deposit.IsInStateNoLock
-		setFunc = f.deposit.SetStateNoLock
+	_, alreadyLocked := lockedEvents[notification.Event]
+	if !alreadyLocked {
+		f.deposit.Lock()
+		defer f.deposit.Unlock()
 	}
 
-	setFunc(notification.NextState)
-	if isUpdateSkipped(notification, checkFunc) {
+	f.deposit.setStateNoLock(notification.NextState)
+	if isUpdateSkipped(notification, f.deposit.isInStateNoLock) {
 		return
 	}
 
@@ -507,10 +535,10 @@ func (f *FSM) Errorf(format string, args ...any) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
+func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 	error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, err
 	}
@@ -518,10 +546,10 @@ func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.params.ClientPubkey,
+			PubKey: f.deposit.AddressParams.ClientPubkey,
 		},
 		Output: wire.NewTxOut(
-			int64(f.deposit.Value), f.params.PkScript,
+			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
 		),
 		HashType:   txscript.SigHashDefault,
 		InputIndex: 0,
