@@ -378,6 +378,90 @@ func TestCreateLoopIn(t *testing.T) {
 	)
 }
 
+// TestGetLoopInByHashOrdersDepositsBySnapshot ensures recovered deposits are
+// ordered by the stored swap input snapshot, which is the signing order shared
+// with the server.
+func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
+	ctx := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	newID := func() deposit.ID {
+		did, err := deposit.GetRandomDepositID()
+		require.NoError(t, err)
+
+		return did
+	}
+
+	d1 := &deposit.Deposit{
+		ID: newID(),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x11},
+			Index: 0,
+		},
+		Value: 100_000,
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+	d2 := &deposit.Deposit{
+		ID: newID(),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x22},
+			Index: 1,
+		},
+		Value: 200_000,
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
+		},
+	}
+
+	require.NoError(t, depositStore.CreateDeposit(ctx, d1))
+	require.NoError(t, depositStore.CreateDeposit(ctx, d2))
+
+	d1.SetState(deposit.LoopingIn)
+	d2.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctx, d1))
+	require.NoError(t, depositStore.UpdateDeposit(ctx, d2))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
+	swap := StaticAddressLoopIn{
+		SwapHash:     swapHash,
+		SwapPreimage: lntypes.Preimage{0x1, 0x2, 0x3, 0x4},
+		DepositOutpoints: []string{
+			d2.OutPoint.String(), d1.OutPoint.String(),
+		},
+		Deposits:                []*deposit.Deposit{d2, d1},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	swap.SetState(SignHtlcTx)
+
+	require.NoError(t, swapStore.CreateLoopIn(ctx, &swap))
+
+	storedSwap, err := swapStore.GetLoopInByHash(ctx, swapHash)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		d2.OutPoint.String(), d1.OutPoint.String(),
+	}, storedSwap.DepositOutpoints)
+	require.Len(t, storedSwap.Deposits, 2)
+	require.Equal(t, d2.ID, storedSwap.Deposits[0].ID)
+	require.Equal(t, d1.ID, storedSwap.Deposits[1].ID)
+}
+
 // TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins
 // keep the original outpoint snapshot stored when the swap was created.
 func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
