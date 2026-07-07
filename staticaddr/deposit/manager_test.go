@@ -237,6 +237,10 @@ func TestManager(t *testing.T) {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	select {
 	case <-initChan:
@@ -307,6 +311,91 @@ func TestManager(t *testing.T) {
 	}
 }
 
+// TestManagerReplaysStartupBlockToRecoveredDeposits verifies that the initial
+// block epoch consumed during startup is delivered to recovered deposit FSMs.
+func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const defaultTimeout = 30 * time.Second
+
+	testContext := newManagerTestContext(t)
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	// Send only the startup block at the recovered deposit's expiry height.
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive sign request")
+	}
+
+	select {
+	case <-testContext.mockLnd.TxPublishChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive published expiry tx")
+	}
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager did not stop")
+	}
+}
+
+func TestRecoverDepositsKeepsSpentWithdrawing(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 2,
+		},
+		state:              Withdrawing,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+
+	deposits, err := testContext.manager.GetActiveDepositsInState(Withdrawing)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, storedDeposit.OutPoint, deposits[0].OutPoint)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -323,6 +412,39 @@ type ManagerTestContext struct {
 
 // newManagerTestContext creates a new test context for the reservation manager.
 func newManagerTestContext(t *testing.T) *ManagerTestContext {
+	ID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	utxo := &lnwallet.Utxo{
+		AddressType:   lnwallet.TaprootPubkey,
+		Value:         btcutil.Amount(100000),
+		Confirmations: int64(defaultDepositConfirmations),
+		PkScript:      []byte("pkscript"),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{},
+			Index: 0xffffffff,
+		},
+	}
+
+	storedDeposits := []*Deposit{
+		{
+			ID:                   ID,
+			state:                Deposited,
+			OutPoint:             utxo.OutPoint,
+			Value:                utxo.Value,
+			ConfirmationHeight:   3,
+			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+		},
+	}
+
+	return newManagerTestContextWithStoredDeposits(
+		t, storedDeposits, []*lnwallet.Utxo{utxo},
+	)
+}
+
+func newManagerTestContextWithStoredDeposits(t *testing.T,
+	storedDeposits []*Deposit, utxos []*lnwallet.Utxo) *ManagerTestContext {
+
 	mockLnd := test.NewMockLnd()
 	lndContext := test.NewContext(t, mockLnd)
 
@@ -334,29 +456,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	confErrChan := make(chan error)
 	blockChan := make(chan int32)
 	blockErrChan := make(chan error)
-
-	ID, err := GetRandomDepositID()
-	utxo := &lnwallet.Utxo{
-		AddressType:   lnwallet.TaprootPubkey,
-		Value:         btcutil.Amount(100000),
-		Confirmations: int64(defaultDepositConfirmations),
-		PkScript:      []byte("pkscript"),
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{},
-			Index: 0xffffffff,
-		},
-	}
-	require.NoError(t, err)
-	storedDeposits := []*Deposit{
-		{
-			ID:                   ID,
-			state:                Deposited,
-			OutPoint:             utxo.OutPoint,
-			Value:                utxo.Value,
-			ConfirmationHeight:   3,
-			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
-		},
-	}
 
 	mockStore.On(
 		"AllDeposits", mock.Anything,
@@ -374,7 +473,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
-	).Return([]*lnwallet.Utxo{utxo}, nil)
+	).Return(utxos, nil)
 
 	// Define the expected return values for the mocks.
 	mockChainNotifier.On(

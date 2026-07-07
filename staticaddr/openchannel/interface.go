@@ -12,6 +12,9 @@ import (
 )
 
 type DepositManager interface {
+	// EnsureDepositsFresh reconciles active deposits with the wallet view.
+	EnsureDepositsFresh(ctx context.Context) error
+
 	// AllOutpointsActiveDeposits returns all deposits that are in the
 	// given state. If the state filter is fsm.StateTypeNone, all deposits
 	// are returned.

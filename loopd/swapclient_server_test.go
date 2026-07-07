@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -533,6 +534,14 @@ func (s *mockStaticAddressLoopInStore) IsStored(_ context.Context,
 	_ lntypes.Hash) (bool, error) {
 
 	return false, nil
+}
+
+// RecordStaticAddressRiskDecision satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) RecordStaticAddressRiskDecision(
+	_ context.Context, _ lntypes.Hash,
+	_ loopin.ConfirmationRiskDecision) error {
+
+	return nil
 }
 
 // GetLoopInByHash returns the configured loop-in with the given hash.
@@ -1321,7 +1330,7 @@ func (s *mockDepositStore) DepositForOutpoint(_ context.Context,
 	if d, ok := s.byOutpoint[outpoint]; ok {
 		return d, nil
 	}
-	return nil, nil
+	return nil, deposit.ErrDepositNotFound
 }
 
 func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
@@ -1333,6 +1342,90 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 	}
 
 	return deposits, nil
+}
+
+// listUnspentDepositManager backs ListUnspentDeposits tests without requiring
+// the full deposit manager event loop.
+type listUnspentDepositManager struct {
+	byOutpoint map[string]*deposit.Deposit
+
+	ensureDepositsFreshCalls int
+	onEnsureDepositsFresh    func(*listUnspentDepositManager)
+}
+
+func (m *listUnspentDepositManager) EnsureDepositsFresh(
+	context.Context) error {
+
+	m.ensureDepositsFreshCalls++
+	if m.onEnsureDepositsFresh != nil {
+		m.onEnsureDepositsFresh(m)
+	}
+
+	return nil
+}
+
+func (m *listUnspentDepositManager) GetActiveDepositsInState(
+	state fsm.StateType) ([]*deposit.Deposit, error) {
+
+	deposits := make([]*deposit.Deposit, 0, len(m.byOutpoint))
+	for _, d := range m.byOutpoint {
+		if !d.IsInState(state) {
+			continue
+		}
+
+		deposits = append(deposits, d)
+	}
+
+	return deposits, nil
+}
+
+func (m *listUnspentDepositManager) DepositsForOutpoints(
+	_ context.Context, outpoints []string, ignoreUnknown bool) (
+	[]*deposit.Deposit, error) {
+
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	seen := make(map[string]struct{}, len(outpoints))
+	for i, outpoint := range outpoints {
+		if _, ok := seen[outpoint]; ok {
+			return nil, fmt.Errorf("duplicate outpoint %s "+
+				"at index %d", outpoint, i)
+		}
+		seen[outpoint] = struct{}{}
+
+		d, ok := m.byOutpoint[outpoint]
+		if !ok {
+			if ignoreUnknown {
+				continue
+			}
+
+			return nil, deposit.ErrDepositNotFound
+		}
+
+		deposits = append(deposits, d)
+	}
+
+	return deposits, nil
+}
+
+func (m *listUnspentDepositManager) GetVisibleDeposits(
+	context.Context) ([]*deposit.Deposit, error) {
+
+	return m.allDeposits(), nil
+}
+
+func (m *listUnspentDepositManager) GetAllDeposits(
+	context.Context) ([]*deposit.Deposit, error) {
+
+	return m.allDeposits(), nil
+}
+
+func (m *listUnspentDepositManager) allDeposits() []*deposit.Deposit {
+	deposits := make([]*deposit.Deposit, 0, len(m.byOutpoint))
+	for _, d := range m.byOutpoint {
+		deposits = append(deposits, d)
+	}
+
+	return deposits
 }
 
 // TestListUnspentDeposits tests filtering behavior of ListUnspentDeposits.
@@ -1376,39 +1469,41 @@ func TestListUnspentDeposits(t *testing.T) {
 		}
 	}
 
-	minConfs := int64(deposit.MinConfs)
-	utxoBelow := makeUtxo(0, minConfs-1) // always included
-	utxoAt := makeUtxo(1, minConfs)      // included only if Deposited
-	utxoAbove1 := makeUtxo(2, minConfs+1)
-	utxoAbove2 := makeUtxo(3, minConfs+2)
+	utxoUnknown := makeUtxo(0, 0)
+	utxoDeposited := makeUtxo(1, 1)
+	utxoWithdrawn := makeUtxo(2, 2)
+	utxoLoopingIn := makeUtxo(3, 5)
+	utxoConfirmedUnknown := makeUtxo(4, 3)
 
 	// Helper to build the deposit manager with specific states.
 	buildDepositMgr := func(
-		states map[wire.OutPoint]fsm.StateType) *deposit.Manager {
+		states map[wire.OutPoint]fsm.StateType) *listUnspentDepositManager {
 
-		store := &mockDepositStore{
+		depMgr := &listUnspentDepositManager{
 			byOutpoint: make(map[string]*deposit.Deposit),
 		}
 		for op, state := range states {
 			d := &deposit.Deposit{OutPoint: op}
 			d.SetState(state)
-			store.byOutpoint[op.String()] = d
+			depMgr.byOutpoint[op.String()] = d
 		}
 
-		return deposit.NewManager(&deposit.ManagerConfig{Store: store})
+		return depMgr
 	}
 
-	// Include below-min-conf and >=min with Deposited; exclude others.
-	t.Run("below min conf always, Deposited included, others excluded",
+	// Only known Deposited records are available. Unknown deposits and
+	// known non-Deposited states are excluded.
+	t.Run("only known Deposited included",
 		func(t *testing.T) {
 			mock.SetListUnspent([]*lnwallet.Utxo{
-				utxoBelow, utxoAt, utxoAbove1, utxoAbove2,
+				utxoUnknown, utxoDeposited, utxoWithdrawn,
+				utxoLoopingIn,
 			})
 
 			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Deposited,
-				utxoAbove1.OutPoint: deposit.Withdrawn,
-				utxoAbove2.OutPoint: deposit.LoopingIn,
+				utxoDeposited.OutPoint: deposit.Deposited,
+				utxoWithdrawn.OutPoint: deposit.Withdrawn,
+				utxoLoopingIn.OutPoint: deposit.LoopingIn,
 			})
 
 			server := &swapClientServer{
@@ -1420,9 +1515,10 @@ func TestListUnspentDeposits(t *testing.T) {
 				ctx, &looprpc.ListUnspentDepositsRequest{},
 			)
 			require.NoError(t, err)
+			require.Equal(t, 1, depMgr.ensureDepositsFreshCalls)
 
-			// Expect utxoBelow and utxoAt only.
-			require.Len(t, resp.Utxos, 2)
+			// Expect the Deposited utxo only.
+			require.Len(t, resp.Utxos, 1)
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
@@ -1430,25 +1526,23 @@ func TestListUnspentDeposits(t *testing.T) {
 				// same across utxos.
 				require.NotEmpty(t, u.StaticAddress)
 			}
-			_, ok1 := got[utxoBelow.OutPoint.String()]
-			_, ok2 := got[utxoAt.OutPoint.String()]
-			require.True(t, ok1)
-			require.True(t, ok2)
+			_, ok := got[utxoDeposited.OutPoint.String()]
+			require.True(t, ok)
 		})
 
-	// Swap states, now include utxoBelow and utxoAbove1.
-	t.Run("Deposited on >=min included; non-Deposited excluded",
+	// Confirmation depth no longer changes availability; state does.
+	t.Run("availability ignores conf depth once deposit state is known",
 		func(t *testing.T) {
 			mock.SetListUnspent(
 				[]*lnwallet.Utxo{
-					utxoBelow, utxoAt, utxoAbove1,
-					utxoAbove2,
+					utxoUnknown, utxoDeposited,
+					utxoWithdrawn, utxoLoopingIn,
 				})
 
 			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
-				utxoAt.OutPoint:     deposit.Withdrawn,
-				utxoAbove1.OutPoint: deposit.Deposited,
-				utxoAbove2.OutPoint: deposit.Withdrawn,
+				utxoDeposited.OutPoint: deposit.Deposited,
+				utxoWithdrawn.OutPoint: deposit.Withdrawn,
+				utxoLoopingIn.OutPoint: deposit.LoopingIn,
 			})
 
 			server := &swapClientServer{
@@ -1460,26 +1554,32 @@ func TestListUnspentDeposits(t *testing.T) {
 				ctx, &looprpc.ListUnspentDepositsRequest{},
 			)
 			require.NoError(t, err)
+			require.Equal(t, 1, depMgr.ensureDepositsFreshCalls)
 
-			require.Len(t, resp.Utxos, 2)
+			require.Len(t, resp.Utxos, 1)
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
 			}
-			_, ok1 := got[utxoBelow.OutPoint.String()]
-			_, ok2 := got[utxoAbove1.OutPoint.String()]
-			require.True(t, ok1)
-			require.True(t, ok2)
+			_, ok := got[utxoDeposited.OutPoint.String()]
+			require.True(t, ok)
 		})
 
-	// Confirmed UTXO not present in store should be included.
-	t.Run("confirmed utxo not in store is included", func(t *testing.T) {
-		// Only return a confirmed UTXO from lnd and make sure the
-		// deposit manager/store doesn't know about it.
-		mock.SetListUnspent([]*lnwallet.Utxo{utxoAbove2})
+	// A wallet-visible UTXO reconciled by EnsureDepositsFresh should be
+	// returned in the same ListUnspentDeposits call.
+	t.Run("freshly reconciled wallet utxo is included", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoConfirmedUnknown})
 
-		// Empty store (no states for any outpoint).
 		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{})
+		depMgr.onEnsureDepositsFresh = func(
+			m *listUnspentDepositManager) {
+
+			d := &deposit.Deposit{
+				OutPoint: utxoConfirmedUnknown.OutPoint,
+			}
+			d.SetState(deposit.Deposited)
+			m.byOutpoint[d.OutPoint.String()] = d
+		}
 
 		server := &swapClientServer{
 			staticAddressManager: addrMgr,
@@ -1490,13 +1590,12 @@ func TestListUnspentDeposits(t *testing.T) {
 			ctx, &looprpc.ListUnspentDepositsRequest{},
 		)
 		require.NoError(t, err)
+		require.Equal(t, 1, depMgr.ensureDepositsFreshCalls)
 
-		// We expect the confirmed UTXO to be included even though it
-		// doesn't exist in the store yet.
 		require.Len(t, resp.Utxos, 1)
 		require.Equal(
-			t, utxoAbove2.OutPoint.String(), resp.Utxos[0].Outpoint,
+			t, utxoConfirmedUnknown.OutPoint.String(),
+			resp.Utxos[0].Outpoint,
 		)
-		require.NotEmpty(t, resp.Utxos[0].StaticAddress)
 	})
 }
