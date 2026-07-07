@@ -110,6 +110,11 @@ func (d *Deposit) getStateNoLock() fsm.StateType {
 	return d.state
 }
 
+// GetStateNoLock returns the deposit state without acquiring the deposit lock.
+func (d *Deposit) GetStateNoLock() fsm.StateType {
+	return d.getStateNoLock()
+}
+
 func (d *Deposit) SetState(state fsm.StateType) {
 	d.Lock()
 	defer d.Unlock()
@@ -121,6 +126,11 @@ func (d *Deposit) setStateNoLock(state fsm.StateType) {
 	d.state = state
 }
 
+// SetStateNoLock sets the deposit state without acquiring the deposit lock.
+func (d *Deposit) SetStateNoLock(state fsm.StateType) {
+	d.setStateNoLock(state)
+}
+
 func (d *Deposit) IsInState(state fsm.StateType) bool {
 	d.Lock()
 	defer d.Unlock()
@@ -130,6 +140,12 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 
 func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// IsInStateNoLock returns whether the deposit is in the given state without
+// acquiring the deposit lock.
+func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+	return d.isInStateNoLock(state)
 }
 
 // GetConfirmationHeight returns the deposit confirmation height.
