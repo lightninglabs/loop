@@ -136,6 +136,79 @@ func newTestStaticAddressContext(t *testing.T) (*address.Manager,
 	return addrMgr, mock
 }
 
+// TestListStaticAddressDepositsReturnsVisibleDeposits verifies normal deposit
+// listings include visible deposit records.
+func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
+	t.Parallel()
+
+	available := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 2,
+		},
+	}
+	available.SetState(deposit.Deposited)
+
+	addrMgr, lnd := newTestStaticAddressContext(t)
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(available),
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	resp, err := server.ListStaticAddressDeposits(
+		context.Background(), &looprpc.ListStaticAddressDepositsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.FilteredDeposits, 1)
+	require.Equal(
+		t, available.OutPoint.String(),
+		resp.FilteredDeposits[0].Outpoint,
+	)
+}
+
+// TestGetStaticAddressSummaryTotalsDeposits verifies visible deposits are
+// included in static address summary totals.
+func TestGetStaticAddressSummaryTotalsDeposits(t *testing.T) {
+	t.Parallel()
+
+	unconfirmed := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 4,
+		},
+		Value:              btcutil.Amount(2_000),
+		ConfirmationHeight: 0,
+	}
+	unconfirmed.SetState(deposit.Deposited)
+
+	confirmed := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{5},
+			Index: 5,
+		},
+		Value:              btcutil.Amount(3_000),
+		ConfirmationHeight: 123,
+	}
+	confirmed.SetState(deposit.Deposited)
+
+	addrMgr, _ := newTestStaticAddressContext(t)
+	server := &swapClientServer{
+		depositManager: newTestDepositManager(
+			unconfirmed, confirmed,
+		),
+		staticAddressManager: addrMgr,
+	}
+
+	resp, err := server.GetStaticAddressSummary(
+		context.Background(), &looprpc.StaticAddressSummaryRequest{},
+	)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, resp.TotalNumDeposits)
+	require.EqualValues(t, 2_000, resp.ValueUnconfirmedSatoshis)
+	require.EqualValues(t, 3_000, resp.ValueDepositedSatoshis)
+}
+
 // TestGetLoopInQuoteRejectsUnavailableSelectedDeposit verifies manual quote
 // requests fail for selected deposits that are no longer available.
 func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {

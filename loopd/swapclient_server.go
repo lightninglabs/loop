@@ -1022,9 +1022,11 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		// server can probe the selected value and calculate the per
 		// input fee.
 		for _, deposit := range depositList.FilteredDeposits {
-			// For a manual quote we require the current state to be
-			// Deposited so a stale client-side outpoint selection
-			// fails early instead of making it to swap initiation.
+			// ListStaticAddressDeposits only returns deposits that are visible
+			// in the manager's live view. For a manual quote we additionally
+			// require the current state to be Deposited so stale client-side
+			// outpoint selection fails early instead of making it to swap
+			// initiation.
 			if deposit.State != looprpc.DepositState_DEPOSITED {
 				return nil, fmt.Errorf("deposit %s is not "+
 					"currently available", deposit.Outpoint)
@@ -1882,7 +1884,7 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 			"outpoints")
 	}
 
-	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	allDeposits, err := s.depositManager.GetVisibleDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2119,7 +2121,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	_ *looprpc.StaticAddressSummaryRequest) (
 	*looprpc.StaticAddressSummaryResponse, error) {
 
-	allDeposits, err := s.depositManager.GetAllDeposits(ctx)
+	allDeposits, err := s.depositManager.GetVisibleDeposits(ctx)
 	if err != nil {
 		return nil, err
 	}
