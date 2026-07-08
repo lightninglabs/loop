@@ -284,6 +284,15 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 	}()
 }
 
+// EnsureDepositsFresh reconciles the cached active deposit set with lnd's
+// current wallet view. Spending paths call this before selecting deposits so
+// stale persisted records are not treated as live funds. This can happen when
+// an unconfirmed funding transaction is replaced, a confirmed deposit is
+// reorged out, or the output was spent outside the active manager path.
+func (m *Manager) EnsureDepositsFresh(ctx context.Context) error {
+	return m.reconcileDeposits(ctx)
+}
+
 // reconcileDeposits fetches all spends to our static addresses from our lnd
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
@@ -306,6 +315,11 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to update deposit "+
 			"confirmations: %w", err)
+	}
+
+	err = m.syncActiveDeposits(ctx, utxos)
+	if err != nil {
+		return fmt.Errorf("unable to sync active deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
@@ -451,6 +465,96 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// syncActiveDeposits reconciles the live active set with lnd's current wallet
+// view. Known Deposited records that are visible but inactive become active
+// again, and active Deposited records that are no longer wallet-visible are
+// removed from the live set. The DB record is left untouched as historical
+// evidence that the outpoint was once detected.
+func (m *Manager) syncActiveDeposits(ctx context.Context,
+	utxos []*lnwallet.Utxo) error {
+
+	currentUtxos := make(map[wire.OutPoint]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		currentUtxos[utxo.OutPoint] = struct{}{}
+	}
+
+	type deactivatedDeposit struct {
+		outpoint wire.OutPoint
+		fsm      *FSM
+	}
+
+	toActivate := make([]*Deposit, 0, len(utxos))
+	var toDeactivate []deactivatedDeposit
+	func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		toDeactivate = make(
+			[]deactivatedDeposit, 0, len(m.activeDeposits),
+		)
+
+		for _, utxo := range utxos {
+			deposit, ok := m.deposits[utxo.OutPoint]
+			if !ok {
+				continue
+			}
+
+			if _, active := m.activeDeposits[utxo.OutPoint]; active {
+				continue
+			}
+
+			if !deposit.IsInState(Deposited) {
+				continue
+			}
+
+			toActivate = append(toActivate, deposit)
+		}
+
+		for outpoint, fsm := range m.activeDeposits {
+			if _, ok := currentUtxos[outpoint]; ok {
+				continue
+			}
+
+			if fsm == nil || fsm.deposit == nil {
+				continue
+			}
+
+			if !fsm.deposit.IsInState(Deposited) {
+				continue
+			}
+
+			delete(m.activeDeposits, outpoint)
+			toDeactivate = append(toDeactivate, deactivatedDeposit{
+				outpoint: outpoint,
+				fsm:      fsm,
+			})
+		}
+	}()
+
+	for _, deactivated := range toDeactivate {
+		deactivated.fsm.Stop()
+
+		log.Infof("Removed vanished deposit %v from active set",
+			deactivated.outpoint)
+	}
+
+	for _, deposit := range toActivate {
+		if !deposit.IsInState(Deposited) {
+			continue
+		}
+
+		err := m.startDepositFsm(ctx, deposit)
+		if err != nil {
+			m.removeActiveDeposit(deposit.OutPoint)
+
+			return err
+		}
+
+		log.Infof("Reactivated visible deposit %v", deposit.OutPoint)
 	}
 
 	return nil
@@ -687,9 +791,39 @@ func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
 	}
 }
 
-// GetAllDeposits returns all active deposits.
+// GetAllDeposits returns all known deposits from the database.
 func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return m.cfg.Store.AllDeposits(ctx)
+}
+
+// GetVisibleDeposits returns deposits that should be exposed through normal
+// user-facing views. The database can contain historical Deposited rows whose
+// outpoints are no longer present in lnd's current wallet view, for example
+// after replacement or reorg. Once the manager has recovered its live cache,
+// plain Deposited records are only visible while their outpoint is in the
+// active set.
+func (m *Manager) GetVisibleDeposits(ctx context.Context) ([]*Deposit, error) {
+	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	liveCacheReady := len(m.deposits) > 0
+	filtered := make([]*Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if liveCacheReady && d.IsInState(Deposited) {
+			if _, ok := m.activeDeposits[d.OutPoint]; !ok {
+				continue
+			}
+		}
+
+		filtered = append(filtered, d)
+	}
+
+	return filtered, nil
 }
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.

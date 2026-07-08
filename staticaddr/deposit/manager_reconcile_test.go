@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/test"
@@ -101,9 +103,18 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		}
 
 		errCount++
-		require.ErrorContains(t, err, "unable to start new deposit FSM")
+		errMsg := err.Error()
+		require.True(
+			t,
+			strings.Contains(
+				errMsg, "unable to start new deposit FSM",
+			) || strings.Contains(
+				errMsg, "unable to sync active deposits",
+			),
+			"unexpected error: %v", err,
+		)
 	}
-	require.Equal(t, 1, errCount)
+	require.Equal(t, 2, errCount)
 }
 
 // TestReconcileConfirmedDepositUsesCurrentHeight verifies confirmation heights
@@ -232,6 +243,102 @@ func TestUpdateDepositConfirmationsRecomputesPositiveHeight(t *testing.T) {
 	mockStore.AssertExpectations(t)
 }
 
+// TestReconcileDepositsDeactivatesVanishedUnconfirmedDeposit verifies that a
+// missing wallet outpoint is removed from the live active set without mutating
+// its historical DB state.
+func TestReconcileDepositsDeactivatesVanishedUnconfirmedDeposit(t *testing.T) {
+	ctx := t.Context()
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{2},
+		Index: 7,
+	}
+
+	deposit := &Deposit{
+		OutPoint: outpoint,
+	}
+	deposit.SetState(Deposited)
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{}, nil)
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          new(mockStore),
+	})
+	manager.deposits[outpoint] = deposit
+	fsm := &FSM{
+		deposit:  deposit,
+		stopChan: make(chan struct{}),
+		quitChan: make(chan struct{}),
+	}
+	go func() {
+		<-fsm.stopChan
+		close(fsm.quitChan)
+	}()
+	manager.activeDeposits[outpoint] = fsm
+
+	require.NoError(t, manager.reconcileDeposits(ctx))
+	require.Equal(t, Deposited, deposit.GetState())
+	require.Empty(t, manager.activeDeposits)
+	select {
+	case <-fsm.quitChan:
+
+	case <-time.After(time.Second):
+		t.Fatal("fsm did not stop after deposit vanished")
+	}
+}
+
+// TestReconcileDepositsDeactivatesVanishedConfirmedDeposit verifies that a
+// previously confirmed deposit is also removed from the live active set if it
+// vanishes from the wallet view.
+func TestReconcileDepositsDeactivatesVanishedConfirmedDeposit(t *testing.T) {
+	ctx := context.Background()
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{9},
+		Index: 4,
+	}
+
+	deposit := &Deposit{
+		OutPoint:           outpoint,
+		ConfirmationHeight: 123,
+	}
+	deposit.SetState(Deposited)
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{}, nil)
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          new(mockStore),
+	})
+	manager.deposits[outpoint] = deposit
+	fsm := &FSM{
+		deposit:  deposit,
+		stopChan: make(chan struct{}),
+		quitChan: make(chan struct{}),
+	}
+	go func() {
+		<-fsm.stopChan
+		close(fsm.quitChan)
+	}()
+	manager.activeDeposits[outpoint] = fsm
+
+	require.NoError(t, manager.reconcileDeposits(ctx))
+	require.Equal(t, Deposited, deposit.GetState())
+	require.EqualValues(t, 123, deposit.ConfirmationHeight)
+	require.Empty(t, manager.activeDeposits)
+	select {
+	case <-fsm.quitChan:
+
+	case <-time.After(time.Second):
+		t.Fatal("fsm did not stop after confirmed deposit vanished")
+	}
+}
+
 // TestAllOutpointsActiveDepositsRejectsDuplicateOutpoints verifies that a
 // duplicated selection is rejected before the manager tries to lock the same
 // deposit twice.
@@ -347,6 +454,199 @@ func TestLockDepositsAllowsReversedConcurrentRequests(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("reversed deposit lock requests deadlocked")
 		}
+	}
+}
+
+// TestReconcileDepositsReactivatesReappearedDeposit verifies that the same
+// outpoint can become active again if lnd reports it after a prior wallet-view
+// miss.
+func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
+	ctx := context.Background()
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{3},
+		Index: 5,
+	}
+
+	deposit := &Deposit{
+		OutPoint:           outpoint,
+		Value:              btcutil.Amount(100_000),
+		ConfirmationHeight: 77,
+	}
+	deposit.SetState(Deposited)
+
+	utxo := &lnwallet.Utxo{
+		OutPoint:      outpoint,
+		Value:         deposit.Value,
+		Confirmations: 0,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{utxo}, nil)
+	mockAddressManager.On(
+		"GetStaticAddressParameters", mock.Anything,
+	).Return(&script.Parameters{
+		ProtocolVersion: version.ProtocolVersion_V0,
+	}, nil)
+	mockAddressManager.On(
+		"GetStaticAddress", mock.Anything,
+	).Return((*script.StaticAddress)(nil), nil)
+
+	mockStore := new(mockStore)
+	var updateStates []fsm.StateType
+	mockStore.On(
+		"UpdateDeposit", mock.Anything, mock.Anything,
+	).Return(nil).Run(func(args mock.Arguments) {
+		updatedDeposit := args.Get(1).(*Deposit)
+		updateStates = append(updateStates, updatedDeposit.state)
+		if updatedDeposit.isInStateNoLock(Deposited) {
+			require.Zero(t, updatedDeposit.ConfirmationHeight)
+		}
+	})
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          mockStore,
+	})
+	manager.deposits[outpoint] = deposit
+
+	// Reconciliation should reactivate the existing record instead of
+	// creating a second deposit entry for the same outpoint.
+	require.NoError(t, manager.reconcileDeposits(ctx))
+	require.Equal(t, Deposited, deposit.GetState())
+	require.Zero(t, deposit.ConfirmationHeight)
+	require.Len(t, manager.activeDeposits, 1)
+	require.Equal(t, []fsm.StateType{Deposited}, updateStates)
+}
+
+// TestReconcileDepositsKeepsInactiveOnFSMStartFailure verifies that a failed
+// reactivation does not leave memory saying a deposit is active without an FSM.
+func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
+	ctx := context.Background()
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{11},
+		Index: 5,
+	}
+
+	deposit := &Deposit{
+		OutPoint:           outpoint,
+		Value:              btcutil.Amount(100_000),
+		ConfirmationHeight: 77,
+	}
+	deposit.SetState(Deposited)
+
+	utxo := &lnwallet.Utxo{
+		OutPoint:      outpoint,
+		Value:         deposit.Value,
+		Confirmations: 0,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{utxo}, nil)
+	mockAddressManager.On(
+		"GetStaticAddressParameters", mock.Anything,
+	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+
+	var (
+		updateStates  []fsm.StateType
+		updateHeights []int64
+	)
+	mockStore := new(mockStore)
+	mockStore.On(
+		"UpdateDeposit", mock.Anything, mock.Anything,
+	).Return(nil).Run(func(args mock.Arguments) {
+		updatedDeposit := args.Get(1).(*Deposit)
+		updateStates = append(updateStates, updatedDeposit.state)
+		updateHeights = append(
+			updateHeights, updatedDeposit.ConfirmationHeight,
+		)
+	})
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          mockStore,
+	})
+	manager.deposits[outpoint] = deposit
+
+	err := manager.reconcileDeposits(ctx)
+	require.ErrorContains(t, err, "unable to sync active deposits")
+	require.Equal(t, Deposited, deposit.GetState())
+	require.Zero(t, deposit.ConfirmationHeight)
+	require.Empty(t, manager.activeDeposits)
+	require.Equal(t, []fsm.StateType{Deposited}, updateStates)
+	require.EqualValues(t, []int64{0}, updateHeights)
+}
+
+// TestReconcileDepositsDeactivatesBeforeActivationFailure verifies that a
+// failed reactivation of one visible deposit does not leave another vanished
+// deposit in the live active set.
+func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
+	ctx := context.Background()
+	visibleOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{21},
+		Index: 5,
+	}
+	vanishedOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{22},
+		Index: 6,
+	}
+
+	visibleDeposit := &Deposit{
+		OutPoint: visibleOutpoint,
+		Value:    btcutil.Amount(100_000),
+	}
+	visibleDeposit.SetState(Deposited)
+
+	vanishedDeposit := &Deposit{
+		OutPoint: vanishedOutpoint,
+		Value:    btcutil.Amount(100_000),
+	}
+	vanishedDeposit.SetState(Deposited)
+
+	utxo := &lnwallet.Utxo{
+		OutPoint:      visibleOutpoint,
+		Value:         visibleDeposit.Value,
+		Confirmations: 0,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{utxo}, nil)
+	mockAddressManager.On(
+		"GetStaticAddressParameters", mock.Anything,
+	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          new(mockStore),
+	})
+	manager.deposits[visibleOutpoint] = visibleDeposit
+	manager.deposits[vanishedOutpoint] = vanishedDeposit
+
+	vanishedFsm := &FSM{
+		deposit:  vanishedDeposit,
+		stopChan: make(chan struct{}),
+		quitChan: make(chan struct{}),
+	}
+	go func() {
+		<-vanishedFsm.stopChan
+		close(vanishedFsm.quitChan)
+	}()
+	manager.activeDeposits[vanishedOutpoint] = vanishedFsm
+
+	err := manager.reconcileDeposits(ctx)
+	require.ErrorContains(t, err, "unable to sync active deposits")
+	require.Empty(t, manager.activeDeposits)
+
+	select {
+	case <-vanishedFsm.quitChan:
+
+	case <-time.After(time.Second):
+		t.Fatal("vanished deposit fsm did not stop")
 	}
 }
 
