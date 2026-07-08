@@ -367,6 +367,97 @@ func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock verifies that daemon
+// shutdown exits the monitor action without treating the swap as failed.
+func TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	runCtx, stop := context.WithCancel(ctx)
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{1, 2, 4}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now().Add(-time.Hour),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(runCtx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	stop()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.NoError(t, f.LastActionError)
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		t.Fatalf("deposit transition on shutdown: %v", transition)
+
+	default:
+	}
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled on shutdown: %v", hash)
+
+	default:
+	}
+}
+
 // TestInitHtlcActionPreservesRouteHints asserts that static-address loop-in
 // propagates explicit route hints into the encoded swap invoice sent to the
 // server.
@@ -574,10 +665,10 @@ func testValidateLoopInContract(_ int32, _ int32) error {
 	return nil
 }
 
-// TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted verifies that the
-// payment timeout does not start until the server notifies us that confirmation
-// risk was accepted.
-func TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted(t *testing.T) {
+// TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline verifies that the
+// payment timeout starts on risk acceptance and keeps confirmed HTLC deposits
+// locked for timeout sweeping.
+func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
@@ -651,7 +742,19 @@ func TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted(t *testing.T) {
 		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
 	}()
 
-	waitForMonitorSubscriptions(t, ctx, mockLnd)
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	var confRegistration *test.ConfRegistration
+	select {
+	case confRegistration = <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+	confRegistration.ConfChan <- nil
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -685,11 +788,12 @@ func TestMonitorInvoiceAndHtlcTxStartsDeadlineOnRiskAccepted(t *testing.T) {
 		require.Equal(t, []*deposit.Deposit{
 			loopIn.Deposits[0],
 		}, transition.deposits)
-		require.Equal(t, fsm.OnError, transition.event)
-		require.Equal(t, deposit.Deposited, transition.state)
+		require.Equal(t, deposit.OnSweepingHtlcTimeout, transition.event)
+		require.Equal(t, deposit.SweepHtlcTimeout, transition.state)
 
 	case <-ctx.Done():
-		t.Fatalf("deposits were not unlocked: %v", ctx.Err())
+		t.Fatalf("deposits were not locked for timeout sweeping: %v",
+			ctx.Err())
 	}
 
 	cancel()

@@ -132,6 +132,12 @@ func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
 }
 
+// IsInStateNoLock returns whether the deposit is in the given state without
+// acquiring the deposit lock.
+func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+	return d.isInStateNoLock(state)
+}
+
 // GetConfirmationHeight returns the deposit confirmation height.
 func (d *Deposit) GetConfirmationHeight() int64 {
 	d.Lock()

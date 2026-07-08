@@ -900,6 +900,32 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		}
 	}()
 
+	depositsInState := func(state fsm.StateType) bool {
+		if len(f.loopIn.Deposits) == 0 {
+			return false
+		}
+
+		for _, d := range f.loopIn.Deposits {
+			if d == nil {
+				return false
+			}
+
+			d.Lock()
+			inState := d.IsInStateNoLock(state)
+			d.Unlock()
+			if !inState {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	invoiceCanceledForNonPayment := invoice.State == invoices.ContractCanceled
+	depositsLockedForHtlcTimeout := depositsInState(
+		deposit.SweepHtlcTimeout,
+	)
+
 	startPaymentDeadline := func(reason string) {
 		if deadlineStarted || invoice.State == invoices.ContractCanceled {
 			return
@@ -911,6 +937,30 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		deadlineTimer = time.NewTimer(timeout)
 		deadlineChan = deadlineTimer.C
 		deadlineStarted = true
+	}
+
+	transitionDepositsToHtlcTimeout := func(reason string) {
+		if depositsLockedForHtlcTimeout ||
+			depositsInState(deposit.SweepHtlcTimeout) {
+
+			depositsLockedForHtlcTimeout = true
+			return
+		}
+
+		err = f.cfg.DepositManager.TransitionDeposits(
+			ctx, f.loopIn.Deposits,
+			deposit.OnSweepingHtlcTimeout,
+			deposit.SweepHtlcTimeout,
+		)
+		if err != nil {
+			f.Errorf("unable to transition deposits to the htlc "+
+				"timeout sweeping state after %s: %v",
+				reason, err)
+
+			return
+		}
+
+		depositsLockedForHtlcTimeout = true
 	}
 
 	if invoice.State == invoices.ContractCanceled {
@@ -929,6 +979,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		// Reuse the same helper as InitHtlcAction so timeout cleanup
 		// follows the same detached-context path as early-init cleanup.
 		f.cancelSwapInvoice()
+		invoice.State = invoices.ContractCanceled
+		invoiceCanceledForNonPayment = true
 	}
 
 	htlcConfirmed := false
@@ -938,6 +990,11 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			f.Infof("htlc tx confirmed")
 
 			htlcConfirmed = true
+			if invoiceCanceledForNonPayment {
+				transitionDepositsToHtlcTimeout(
+					"htlc confirmation after invoice cancellation",
+				)
+			}
 
 		case err = <-htlcErrConfChan:
 			if ctx.Err() != nil {
@@ -985,11 +1042,14 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		case <-deadlineChan:
 			deadlineChan = nil
 
-			// If the server didn't pay the invoice on time, we
-			// cancel the invoice and keep monitoring the htlc tx
-			// confirmation. We also need to unlock the deposits to
-			// re-enable them for loop-ins and withdrawals.
+			// If the server didn't pay the invoice on time, we cancel
+			// it and keep monitoring the htlc tx. Confirmed HTLC
+			// deposits remain locked for timeout sweeping.
 			cancelInvoice()
+			if htlcConfirmed {
+				transitionDepositsToHtlcTimeout("payment deadline")
+				continue
+			}
 
 			err = f.unlockDeposits(ctx)
 			if err != nil {
@@ -1095,25 +1155,21 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				// If the htlc hasn't confirmed but the timeout
 				// path opened up, and we didn't receive the
 				// swap payment, we consider the swap attempt to
-				// be failed. We cancelled the invoice, but
-				// don't need to unlock the deposits because
-				// that happened when the payment deadline was
-				// reached.
+				// be failed. Now that the HTLC can no longer
+				// confirm, the deposits can be made available
+				// again.
+				err = f.unlockDeposits(ctx)
+				if err != nil {
+					f.Errorf("unable to unlock deposits "+
+						"after htlc timeout: %v", err)
+				}
+
 				return OnSwapTimedOut
 			}
 
 			// If the htlc has confirmed and the timeout path has
 			// opened up we sweep the funds back to us.
-			err = f.cfg.DepositManager.TransitionDeposits(
-				ctx, f.loopIn.Deposits,
-				deposit.OnSweepingHtlcTimeout,
-				deposit.SweepHtlcTimeout,
-			)
-			if err != nil {
-				log.Errorf("unable to transition "+
-					"deposits to the htlc timeout "+
-					"sweeping state: %v", err)
-			}
+			transitionDepositsToHtlcTimeout("htlc timeout")
 
 			return OnSweepHtlcTimeout
 
