@@ -136,6 +136,14 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	err = m.reconcileDeposits(ctx)
 	if err != nil {
 		log.Errorf("unable to reconcile deposits: %v", err)
+	} else {
+		// The startup height was consumed before recovered deposit FSMs
+		// existed. Replay it so already-expired recovered deposits can act
+		// immediately, but only after their wallet view is fresh.
+		err = m.notifyActiveDeposits(ctx, startupHeight)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Start the deposit notifier.
