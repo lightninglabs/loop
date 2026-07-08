@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -103,6 +104,15 @@ type QuoteGetter interface {
 		pubKey route.Vertex, lastHop *route.Vertex,
 		routeHints [][]zpay32.HopHint, initiator string,
 		numDeposits uint32, fast bool) (*loop.LoopInQuote, error)
+}
+
+// TxOutChecker checks whether outpoints are still available in the chain
+// backend's UTXO view.
+type TxOutChecker interface {
+	// GetTxOuts returns entries for the requested outpoints that are
+	// available and unspent. Missing entries are unavailable or spent.
+	GetTxOuts(ctx context.Context, outpoints []wire.OutPoint) (
+		map[wire.OutPoint]*wire.TxOut, error)
 }
 
 type NotificationManager interface {

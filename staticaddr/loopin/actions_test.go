@@ -3,6 +3,7 @@ package loopin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,84 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+// TestHandleInvoiceUpdate verifies that invoice state updates map to the
+// monitor events expected by the static address loop-in FSM.
+func TestHandleInvoiceUpdate(t *testing.T) {
+	t.Parallel()
+
+	swapHash := lntypes.Hash{1, 2, 3}
+	tests := []struct {
+		name      string
+		state     invoices.ContractState
+		event     fsm.EventType
+		done      bool
+		errString string
+	}{
+		{
+			name:  "open",
+			state: invoices.ContractOpen,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "accepted",
+			state: invoices.ContractAccepted,
+			event: fsm.NoOp,
+		},
+		{
+			name:  "settled",
+			state: invoices.ContractSettled,
+			event: OnPaymentReceived,
+			done:  true,
+		},
+		{
+			name:  "canceled",
+			state: invoices.ContractCanceled,
+			event: fsm.NoOp,
+		},
+		{
+			name:      "unexpected",
+			state:     invoices.ContractState(99),
+			event:     fsm.OnError,
+			done:      true,
+			errString: "unexpected invoice state",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				loopIn: &StaticAddressLoopIn{
+					SwapHash: swapHash,
+				},
+			}
+
+			event, done := f.handleInvoiceUpdate(
+				lndclient.InvoiceUpdate{
+					Invoice: lndclient.Invoice{
+						State: test.state,
+					},
+				},
+			)
+			require.Equal(t, test.event, event)
+			require.Equal(t, test.done, done)
+
+			if test.errString == "" {
+				require.Nil(t, f.LastActionError)
+			} else {
+				require.ErrorContains(
+					t, f.LastActionError, test.errString,
+				)
+				require.ErrorContains(
+					t, f.LastActionError, fmt.Sprint(swapHash),
+				)
+			}
+		})
+	}
+}
 
 // TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr ensures that an error from
 // the HTLC confirmation subscription triggers a re-registration. Without the
@@ -128,6 +207,166 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceAndHtlcTxNoOpOnShutdown ensures that a shutdown while the
+// client is monitoring an HTLC-signed loop-in keeps the swap resumable instead
+// of entering the generic unlock path.
+func TestMonitorInvoiceAndHtlcTxNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	runCtx, stop := context.WithCancel(ctx)
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 6}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.Invoices[swapHash] = &lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	}
+
+	depositMgr := &recordingDepositManager{}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(runCtx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	stop()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Nil(t, f.LastActionError)
+	require.Empty(t, depositMgr.transitions)
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice canceled on shutdown: %v", hash)
+
+	default:
+	}
+}
+
+// TestSweepHtlcTimeoutActionNoOpOnShutdown ensures that a shutdown during
+// timeout sweep publication keeps the FSM in the same state so it can resume
+// after restart.
+func TestSweepHtlcTimeoutActionNoOpOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	mockLnd := test.NewMockLnd()
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			LndClient: mockLnd.Client,
+			WalletKit: mockLnd.WalletKit,
+		},
+		loopIn: &StaticAddressLoopIn{},
+	}
+
+	event := f.SweepHtlcTimeoutAction(ctx, nil)
+	require.Equal(t, fsm.NoOp, event)
+	require.Nil(t, f.LastActionError)
+}
+
+// TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown ensures that a shutdown
+// while waiting for the timeout sweep confirmation keeps the FSM resumable.
+func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	sweepAddr, err := mockLnd.WalletKit.NextAddr(ctx, "", 0, false)
+	require.NoError(t, err)
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			ChainNotifier: mockLnd.ChainNotifier,
+		},
+		loopIn: &StaticAddressLoopIn{
+			HtlcTimeoutSweepAddress: sweepAddr,
+			InitiationHeight:        uint32(mockLnd.Height),
+		},
+	}
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorHtlcTimeoutSweepAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("timeout sweep conf registration not received: %v",
+			ctx.Err())
+	}
+
+	cancel()
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+		require.Nil(t, f.LastActionError)
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout sweep monitor did not return")
+	}
+}
+
 // TestInitHtlcActionPreservesRouteHints asserts that static-address loop-in
 // propagates explicit route hints into the encoded swap invoice sent to the
 // server.
@@ -189,6 +428,72 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.NoError(t, err)
 
 	test.RequireRouteHintsEqual(t, loopIn.RouteHints, routeHints)
+}
+
+func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x77},
+			Index: 2,
+		},
+		Value: 200_000,
+	}
+	checker := &recordingTxOutChecker{}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			AddressManager: &mockAddressManager{
+				params: &script.Parameters{
+					ProtocolVersion: version.ProtocolVersion_V0,
+				},
+			},
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits:         []*deposit.Deposit{dep},
+			DepositOutpoints: []string{dep.OutPoint.String()},
+		},
+	}
+
+	event := f.SignHtlcTxAction(t.Context(), nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, f.LastActionError, "deposit "+
+			dep.OutPoint.String()+" is no longer available",
+	)
+	require.Equal(t, [][]wire.OutPoint{{dep.OutPoint}}, checker.outpoints)
+}
+
+func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
+	t *testing.T) {
+
+	currentOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x89},
+		Index: 1,
+	}
+	snapshotOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{0x88},
+		Index: 0,
+	}
+	checker := &recordingTxOutChecker{}
+
+	f := &FSM{
+		cfg: &Config{
+			TxOutChecker: checker,
+		},
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{{
+				OutPoint: currentOutpoint,
+				Value:    200_000,
+			}},
+			DepositOutpoints: []string{snapshotOutpoint.String()},
+		},
+	}
+
+	err := f.checkDepositsAvailable(t.Context())
+	require.ErrorContains(t, err, "deposit outpoint snapshot mismatch")
+	require.Empty(t, checker.outpoints)
 }
 
 // mockStaticAddressServer captures static-address loop-in requests in tests.
@@ -539,6 +844,26 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	})
 
 	return r.err
+}
+
+type recordingTxOutChecker struct {
+	outpoints [][]wire.OutPoint
+	txOuts    map[wire.OutPoint]*wire.TxOut
+	err       error
+}
+
+// GetTxOuts records the request and returns the configured available outputs.
+func (r *recordingTxOutChecker) GetTxOuts(_ context.Context,
+	outpoints []wire.OutPoint) (map[wire.OutPoint]*wire.TxOut, error) {
+
+	r.outpoints = append(
+		r.outpoints, append([]wire.OutPoint(nil), outpoints...),
+	)
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	return r.txOuts, nil
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server

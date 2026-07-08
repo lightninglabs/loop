@@ -56,6 +56,10 @@ type Config struct {
 	// LndClient is used to add invoices and select hop hints.
 	LndClient lndclient.LightningClient
 
+	// TxOutChecker checks that selected deposits are still available before
+	// the client gives the server HTLC signatures.
+	TxOutChecker TxOutChecker
+
 	// InvoicesClient is used to subscribe to invoice settlements and
 	// cancel invoices.
 	InvoicesClient lndclient.InvoicesClient
@@ -533,17 +537,15 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 	for _, loopIn := range pendingLoopIns {
 		log.Debugf("Recovering loopIn %x", loopIn.SwapHash[:])
 
-		// Retrieve all deposits regardless of deposit state. If any of
-		// the deposits is not active in the in-mem map of the deposits
-		// manager we log it, but continue to recover the loop-in.
-		var allActive bool
-		loopIn.Deposits, allActive =
-			m.cfg.DepositManager.AllStringOutpointsActiveDeposits(
-				loopIn.DepositOutpoints, fsm.EmptyState,
-			)
-
+		// Retrieve all deposits regardless of deposit state. If all
+		// deposits are active in the in-mem map of the deposits manager,
+		// use those active instances. Otherwise, keep the store's
+		// swap_hash/deposit-id reconstruction and continue recovery.
+		activeDeposits, allActive := m.activeDepositsForLoopIn(loopIn)
 		if !allActive {
 			log.Errorf("one or more deposits are not active")
+		} else {
+			loopIn.Deposits = activeDeposits
 		}
 
 		loopIn.AddressParams, err =
@@ -754,8 +756,12 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
-		SelectedAmount:        req.SelectedAmount,
-		DepositOutpoints:      selectedOutpoints,
+		SelectedAmount: req.SelectedAmount,
+		// Copy into a nil slice so the swap owns a stable snapshot
+		// instead of aliasing the caller's selectedOutpoints slice.
+		DepositOutpoints: append(
+			[]string(nil), selectedOutpoints...,
+		),
 		Deposits:              selectedDeposits,
 		Label:                 req.Label,
 		Initiator:             req.Initiator,
@@ -814,35 +820,29 @@ func (m *Manager) startLoopInFsm(ctx context.Context,
 func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 	error) {
 
-	swaps, err := m.cfg.Store.GetStaticAddressLoopInSwapsByStates(
+	return m.cfg.Store.GetStaticAddressLoopInSwapsByStates(
 		ctx, AllStates,
 	)
-	if err != nil {
-		return nil, err
-	}
+}
 
-	allDeposits, err := m.cfg.DepositManager.GetAllDeposits(ctx)
-	if err != nil {
-		return nil, err
-	}
+// activeDepositsForLoopIn returns the active deposit instances for a loop-in
+// using the current deposit outpoints reconstructed by the store. The stored
+// deposit outpoint snapshots remain the original swap inputs and are not the
+// source of truth for current deposit rows.
+func (m *Manager) activeDepositsForLoopIn(loopIn *StaticAddressLoopIn) (
+	[]*deposit.Deposit, bool) {
 
-	var depositLookup = make(map[string]*deposit.Deposit)
-	for i, d := range allDeposits {
-		depositLookup[d.OutPoint.String()] = allDeposits[i]
-	}
-
-	for i, s := range swaps {
-		var deposits []*deposit.Deposit
-		for _, outpoint := range s.DepositOutpoints {
-			if d, ok := depositLookup[outpoint]; ok {
-				deposits = append(deposits, d)
-			}
+	outpoints := loopIn.DepositOutpoints
+	if len(loopIn.Deposits) > 0 {
+		outpoints = make([]string, 0, len(loopIn.Deposits))
+		for _, d := range loopIn.Deposits {
+			outpoints = append(outpoints, d.OutPoint.String())
 		}
-
-		swaps[i].Deposits = deposits
 	}
 
-	return swaps, nil
+	return m.cfg.DepositManager.AllStringOutpointsActiveDeposits(
+		outpoints, fsm.EmptyState,
+	)
 }
 
 // SelectDeposits sorts the deposits by amount in descending order, then by
@@ -857,8 +857,9 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// Filter out deposits that are too close to expiry to be swapped.
 	var deposits []*deposit.Deposit
 	for _, d := range unfilteredDeposits {
+		confirmationHeight := d.GetConfirmationHeight()
 		if !IsSwappable(
-			uint32(d.ConfirmationHeight), blockHeight, csvExpiry,
+			uint32(confirmationHeight), blockHeight, csvExpiry,
 		) {
 
 			log.Debugf("Skipping deposit %s as it expires before "+
@@ -874,9 +875,9 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// blocks-until-expiry in ascending order.
 	sort.Slice(deposits, func(i, j int) bool {
 		if deposits[i].Value == deposits[j].Value {
-			iExp := uint32(deposits[i].ConfirmationHeight) +
+			iExp := uint32(deposits[i].GetConfirmationHeight()) +
 				csvExpiry - blockHeight
-			jExp := uint32(deposits[j].ConfirmationHeight) +
+			jExp := uint32(deposits[j].GetConfirmationHeight()) +
 				csvExpiry - blockHeight
 
 			return iExp < jExp

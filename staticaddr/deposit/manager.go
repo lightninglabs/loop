@@ -58,11 +58,20 @@ type ManagerConfig struct {
 }
 
 // Manager manages the address state machines.
+//
+// Lock order: if both Manager.mu and a Deposit lock are needed, acquire
+// Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
+// Deposit lock. Multiple deposits must be locked with lockDeposits, which
+// canonicalizes lock order by outpoint.
 type Manager struct {
 	cfg *ManagerConfig
 
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
+
+	// reconcileMu serializes deposit reconciliation so new deposits are
+	// discovered and retained exactly once per outpoint.
+	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
@@ -123,32 +132,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			// Inform all active deposits about a new block arrival.
-			m.mu.Lock()
-			activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
-			for _, fsm := range m.activeDeposits {
-				activeDeposits = append(activeDeposits, fsm)
-			}
-			m.mu.Unlock()
-
-			for _, fsm := range activeDeposits {
-				select {
-				case fsm.blockNtfnChan <- uint32(height):
-
-				case <-fsm.quitChan:
-					continue
-
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			err := m.notifyActiveDeposits(ctx, uint32(height))
+			if err != nil {
+				return err
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
 			// If deposits notify us about their finalization, flush
 			// the finalized deposit from memory.
-			m.mu.Lock()
-			delete(m.activeDeposits, outpoint)
-			m.mu.Unlock()
+			m.removeActiveDeposit(outpoint)
 
 		case err = <-newBlockErrChan:
 			return err
@@ -157,6 +149,33 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// notifyActiveDeposits informs all active deposit FSMs about a new block
+// height.
+func (m *Manager) notifyActiveDeposits(ctx context.Context,
+	height uint32) error {
+
+	m.mu.Lock()
+	activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
+	for _, fsm := range m.activeDeposits {
+		activeDeposits = append(activeDeposits, fsm)
+	}
+	m.mu.Unlock()
+
+	for _, fsm := range activeDeposits {
+		select {
+		case fsm.blockNtfnChan <- height:
+
+		case <-fsm.quitChan:
+			continue
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 // recoverDeposits recovers static address parameters, previous deposits and
@@ -236,6 +255,9 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 // far. It picks the newly identified deposits and starts a state machine per
 // deposit to track its progress.
 func (m *Manager) reconcileDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Tracef("Reconciling new deposits...")
 
 	utxos, err := m.cfg.AddressManager.ListUnspent(
@@ -412,12 +434,12 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 		deposits = append(deposits, fsm.deposit)
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
 
 	filteredDeposits := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
-		if !d.IsInStateNoLock(stateFilter) {
+		if !d.isInStateNoLock(stateFilter) {
 			continue
 		}
 
@@ -425,8 +447,8 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	}
 
 	sort.Slice(filteredDeposits, func(i, j int) bool {
-		return filteredDeposits[i].ConfirmationHeight <
-			filteredDeposits[j].ConfirmationHeight
+		return filteredDeposits[i].GetConfirmationHeightNoLock() <
+			filteredDeposits[j].GetConfirmationHeightNoLock()
 	})
 
 	return filteredDeposits, nil
@@ -438,6 +460,10 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 // their state. Each existent deposit is locked during the check.
 func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	targetState fsm.StateType) ([]*Deposit, bool) {
+
+	if CheckDuplicates(outpoints) != nil {
+		return nil, false
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -453,10 +479,10 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 		return deposits, true
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
 	for _, d := range deposits {
-		if !d.IsInStateNoLock(targetState) {
+		if !d.isInStateNoLock(targetState) {
 			return nil, false
 		}
 	}
@@ -495,7 +521,14 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 
 	outpoints := make([]wire.OutPoint, len(deposits))
 	for i, d := range deposits {
+		if d == nil {
+			return fmt.Errorf("nil deposit at index %d", i)
+		}
+
 		outpoints[i] = d.OutPoint
+	}
+	if err := CheckDuplicates(outpoints); err != nil {
+		return fmt.Errorf("duplicate deposit outpoint: %w", err)
 	}
 
 	m.mu.Lock()
@@ -506,8 +539,16 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 		return fmt.Errorf("deposits not found in active deposits")
 	}
 
-	lockDeposits(deposits)
-	defer unlockDeposits(deposits)
+	lockedDeposits := lockDeposits(deposits)
+	defer unlockDeposits(lockedDeposits)
+	for _, deposit := range deposits {
+		if deposit.isInFinalStateNoLock() {
+			return fmt.Errorf("deposit %v is no longer active in "+
+				"state %v", deposit.OutPoint,
+				deposit.getStateNoLock())
+		}
+	}
+
 	for _, sm := range stateMachines {
 		err := sm.SendEvent(ctx, event, nil)
 		if err != nil {
@@ -525,15 +566,41 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	return nil
 }
 
-func lockDeposits(deposits []*Deposit) {
-	for _, d := range deposits {
+// lockDeposits locks deposits in canonical outpoint order and returns the
+// ordered slice that must be passed to unlockDeposits.
+func lockDeposits(deposits []*Deposit) []*Deposit {
+	lockedDeposits := append([]*Deposit(nil), deposits...)
+	sort.Slice(lockedDeposits, func(i, j int) bool {
+		return lockedDeposits[i].OutPoint.String() <
+			lockedDeposits[j].OutPoint.String()
+	})
+
+	for _, d := range lockedDeposits {
 		d.Lock()
+	}
+
+	return lockedDeposits
+}
+
+// unlockDeposits unlocks deposits in reverse lock order.
+func unlockDeposits(deposits []*Deposit) {
+	for i := len(deposits) - 1; i >= 0; i-- {
+		d := deposits[i]
+		d.Unlock()
 	}
 }
 
-func unlockDeposits(deposits []*Deposit) {
-	for _, d := range deposits {
-		d.Unlock()
+// removeActiveDeposit removes and stops the FSM for an active outpoint.
+func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
+	m.mu.Lock()
+	fsm, ok := m.activeDeposits[outpoint]
+	if ok {
+		delete(m.activeDeposits, outpoint)
+	}
+	m.mu.Unlock()
+
+	if ok {
+		fsm.Stop()
 	}
 }
 
@@ -544,6 +611,9 @@ func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
 func (m *Manager) UpdateDeposit(ctx context.Context, d *Deposit) error {
+	d.Lock()
+	defer d.Unlock()
+
 	return m.cfg.Store.UpdateDeposit(ctx, d)
 }
 

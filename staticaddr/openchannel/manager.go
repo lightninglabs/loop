@@ -284,13 +284,8 @@ func (m *Manager) OpenChannel(ctx context.Context,
 		// Check for duplicate outpoints which would lead to fee
 		// miscalculation and an invalid PSBT with the same input
 		// listed twice.
-		seen := make(map[wire.OutPoint]struct{}, len(outpoints))
-		for _, op := range outpoints {
-			if _, ok := seen[op]; ok {
-				return nil, fmt.Errorf("duplicate outpoint "+
-					"%v in request", op)
-			}
-			seen[op] = struct{}{}
+		if err := deposit.CheckDuplicates(outpoints); err != nil {
+			return nil, fmt.Errorf("%w in request", err)
 		}
 
 		deposits, allActive =
@@ -620,7 +615,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 					"address: %w", err)
 			}
 
-			//nolint:ll
+			//nolint:lll
 			signedTx, unsignedPsbt, err := m.cfg.WithdrawalManager.CreateFinalizedWithdrawalTx(
 				ctx, deposits, channelFundingAddress, feeRate,
 				fundingAmount, req.CommitmentType,

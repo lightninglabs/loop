@@ -507,9 +507,12 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		}
 	}
 
-	depositOutpoints := strings.Split(
-		swap.DepositOutpoints, OutpointSeparator,
-	)
+	var depositOutpoints []string
+	if swap.DepositOutpoints != "" {
+		depositOutpoints = strings.Split(
+			swap.DepositOutpoints, OutpointSeparator,
+		)
+	}
 
 	timeoutAddressString := swap.HtlcTimeoutSweepAddress
 	var timeoutAddress btcutil.Address
@@ -555,6 +558,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 
 		depositList = append(depositList, deposit)
 	}
+	depositList = orderDepositsBySnapshot(depositList, depositOutpoints)
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
@@ -595,4 +599,38 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	}
 
 	return loopIn, nil
+}
+
+// orderDepositsBySnapshot returns deposits ordered by the stored outpoint
+// snapshot when the current deposit rows still match that snapshot. If any
+// snapshot outpoint no longer maps to a current deposit row, recovery keeps the
+// store reconstruction untouched so callers can handle the divergence.
+func orderDepositsBySnapshot(deposits []*deposit.Deposit,
+	depositOutpoints []string) []*deposit.Deposit {
+
+	if len(deposits) != len(depositOutpoints) {
+		return deposits
+	}
+
+	byOutpoint := make(map[string]*deposit.Deposit, len(deposits))
+	for _, d := range deposits {
+		outpoint := d.OutPoint.String()
+		if _, ok := byOutpoint[outpoint]; ok {
+			return deposits
+		}
+
+		byOutpoint[outpoint] = d
+	}
+
+	orderedDeposits := make([]*deposit.Deposit, len(depositOutpoints))
+	for i, outpoint := range depositOutpoints {
+		d, ok := byOutpoint[outpoint]
+		if !ok {
+			return deposits
+		}
+
+		orderedDeposits[i] = d
+	}
+
+	return orderedDeposits
 }
