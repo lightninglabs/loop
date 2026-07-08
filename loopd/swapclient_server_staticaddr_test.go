@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -13,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,6 +62,33 @@ func (s *staticAddrDepositStore) AllDeposits(context.Context) (
 	return s.allDeposits, nil
 }
 
+type staticAddrTestAddressManager struct{}
+
+func (s *staticAddrTestAddressManager) GetStaticAddressParameters(
+	context.Context) (*script.Parameters, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) GetStaticAddress(
+	context.Context) (*script.StaticAddress, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) ListUnspent(context.Context,
+	int32, int32) ([]*lnwallet.Utxo, error) {
+
+	return nil, nil
+}
+
+func (s *staticAddrTestAddressManager) GetTaprootAddress(
+	*btcec.PublicKey, *btcec.PublicKey, int64) (*btcutil.AddressTaproot,
+	error) {
+
+	return nil, nil
+}
+
 // newTestDepositManager creates a deposit manager backed by seeded deposits.
 func newTestDepositManager(
 	deposits ...*deposit.Deposit) *deposit.Manager {
@@ -70,6 +99,7 @@ func newTestDepositManager(
 	}
 
 	return deposit.NewManager(&deposit.ManagerConfig{
+		AddressManager: &staticAddrTestAddressManager{},
 		Store: &staticAddrDepositStore{
 			allDeposits: deposits,
 			byOutpoint:  byOutpoint,

@@ -946,6 +946,12 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	// number of deposits to quote for.
 	numDeposits := 0
 	if autoSelectDeposits {
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		deposits, err := s.depositManager.GetActiveDepositsInState(
 			deposit.Deposited,
 		)
@@ -980,6 +986,12 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 		numDeposits = len(selectedDeposits)
 	} else if len(req.DepositOutpoints) > 0 {
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		// If deposits are selected, we need to retrieve them to
 		// calculate the total value which we request a quote for.
 		depositList, err := s.ListStaticAddressDeposits(
@@ -1798,6 +1810,12 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		return nil, fmt.Errorf("must select either all or some utxos")
 
 	case isAllSelected:
+		err = s.depositManager.EnsureDepositsFresh(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to refresh deposits: %w",
+				err)
+		}
+
 		deposits, err := s.depositManager.GetActiveDepositsInState(
 			deposit.Deposited,
 		)

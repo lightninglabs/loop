@@ -630,6 +630,11 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		selectedDeposits  []*deposit.Deposit
 	)
 
+	err = m.cfg.DepositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to refresh deposits: %w", err)
+	}
+
 	// Determine which deposits to use for the loop-in swap. If none are
 	// selected by the client, we will coin-select them based on the amount.
 	switch {
@@ -876,8 +881,8 @@ func SelectDeposits(targetAmount btcutil.Amount,
 	// prefers deposits the server can accept immediately. Within each group
 	// we prefer larger deposits, then earlier expiries.
 	sort.Slice(deposits, func(i, j int) bool {
-		iConfirmationHeight := uint32(deposits[i].GetConfirmationHeight())
-		jConfirmationHeight := uint32(deposits[j].GetConfirmationHeight())
+		iConfirmationHeight := deposits[i].GetConfirmationHeight()
+		jConfirmationHeight := deposits[j].GetConfirmationHeight()
 		iConfirmed := iConfirmationHeight > 0
 		jConfirmed := jConfirmationHeight > 0
 		if iConfirmed != jConfirmed {
@@ -886,10 +891,12 @@ func SelectDeposits(targetAmount btcutil.Amount,
 
 		if deposits[i].Value == deposits[j].Value {
 			iExp := blocksUntilDepositExpiry(
-				iConfirmationHeight, blockHeight, csvExpiry,
+				uint32(iConfirmationHeight), blockHeight,
+				csvExpiry,
 			)
 			jExp := blocksUntilDepositExpiry(
-				jConfirmationHeight, blockHeight, csvExpiry,
+				uint32(jConfirmationHeight), blockHeight,
+				csvExpiry,
 			)
 
 			return iExp < jExp
