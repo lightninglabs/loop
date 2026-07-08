@@ -222,3 +222,9 @@ require (
 	go.augendre.info/fatcontext v0.9.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 )
+
+// The go.augendre.info vanity import endpoints are currently unavailable,
+// but these tags still declare the original module paths.
+replace go.augendre.info/arangolint => github.com/Crocmagnon/arangolint v0.4.0
+
+replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0

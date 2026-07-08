@@ -238,4 +238,10 @@ replace gonum.org/v1/plot => github.com/gonum/plot v0.10.1
 // checking later if the domain reappears and replace can be removed.
 replace dario.cat/mergo => github.com/darccio/mergo v1.0.1
 
+// The go.augendre.info vanity import endpoints are currently unavailable,
+// but these tags still declare the original module paths.
+replace go.augendre.info/arangolint => github.com/Crocmagnon/arangolint v0.4.0
+
+replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0
+
 go 1.25.10
