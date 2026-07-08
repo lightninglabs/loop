@@ -133,6 +133,9 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
 
 	args := m.Called(ctx, minConfs, maxConfs)
+	if listUnspent, ok := args.Get(0).(func() []*lnwallet.Utxo); ok {
+		return listUnspent(), args.Error(1)
+	}
 
 	return args.Get(0).([]*lnwallet.Utxo),
 		args.Error(1)
@@ -236,6 +239,10 @@ func TestManager(t *testing.T) {
 	go func() {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
+
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
 
 	// Ensure that the manager has been initialized.
 	select {
@@ -366,6 +373,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"UpdateDeposit", mock.Anything, mock.Anything,
 	).Return(nil)
 
+	var manager *Manager
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
 	).Return(&script.Parameters{
@@ -374,7 +382,19 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
-	).Return([]*lnwallet.Utxo{utxo}, nil)
+	).Return(func() []*lnwallet.Utxo {
+		currentUtxo := *utxo
+		currentHeight := manager.currentHeight.Load()
+		if currentHeight < defaultDepositConfirmations {
+			currentUtxo.Confirmations = 0
+		} else {
+			currentUtxo.Confirmations = int64(
+				currentHeight - defaultDepositConfirmations + 1,
+			)
+		}
+
+		return []*lnwallet.Utxo{&currentUtxo}
+	}, nil)
 
 	// Define the expected return values for the mocks.
 	mockChainNotifier.On(
@@ -394,7 +414,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		Signer:         mockLnd.Signer,
 	}
 
-	manager := NewManager(cfg)
+	manager = NewManager(cfg)
 
 	testContext := &ManagerTestContext{
 		manager:                 manager,
