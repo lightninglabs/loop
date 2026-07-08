@@ -1,6 +1,7 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -389,6 +390,119 @@ func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
 	}
 }
 
+// selectedDepositConfirmationHeights returns current confirmation heights for
+// the original deposit outpoints selected by this loop-in.
+func selectedDepositConfirmationHeights(
+	loopIn *StaticAddressLoopIn) map[string]int64 {
+
+	confirmations := make(map[string]int64, len(loopIn.Deposits))
+	outpoints := make(map[string]struct{}, len(loopIn.DepositOutpoints))
+	for _, outpoint := range loopIn.DepositOutpoints {
+		outpoints[outpoint] = struct{}{}
+	}
+
+	for _, d := range loopIn.Deposits {
+		if d == nil {
+			continue
+		}
+
+		outpoint := d.OutPoint.String()
+		confirmationHeight := d.GetConfirmationHeight()
+
+		if _, ok := outpoints[outpoint]; !ok {
+			continue
+		}
+
+		confirmations[outpoint] = confirmationHeight
+	}
+
+	return confirmations
+}
+
+// refreshSelectedDeposits reloads the loop-in's selected deposits from the
+// deposit manager/store so recovery does not rely on stale deposit snapshots.
+func (f *FSM) refreshSelectedDeposits(ctx context.Context) error {
+	if f.cfg.DepositManager == nil || len(f.loopIn.DepositOutpoints) == 0 {
+		return nil
+	}
+
+	err := f.cfg.DepositManager.EnsureDepositsFresh(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to refresh deposit wallet view: %w", err)
+	}
+
+	const ignoreUnknownOutpoints = false
+	deposits, err := f.cfg.DepositManager.DepositsForOutpoints(
+		ctx, f.loopIn.DepositOutpoints, ignoreUnknownOutpoints,
+	)
+	if err != nil {
+		return err
+	}
+
+	if len(deposits) != len(f.loopIn.DepositOutpoints) {
+		return fmt.Errorf("expected %d selected deposits, got %d",
+			len(f.loopIn.DepositOutpoints), len(deposits))
+	}
+
+	f.loopIn.Deposits = deposits
+
+	return nil
+}
+
+// legacyMinConfsReached returns true once every original deposit is confirmed
+// and the youngest original deposit has reached the legacy confirmation target.
+func legacyMinConfsReached(outpoints []string,
+	confirmationHeights map[string]int64, currentHeight int32) bool {
+
+	if currentHeight <= 0 || len(outpoints) == 0 {
+		return false
+	}
+
+	youngestConfirmation := int64(0)
+	for _, outpoint := range outpoints {
+		confirmationHeight, ok := confirmationHeights[outpoint]
+		if !ok || confirmationHeight <= 0 {
+			return false
+		}
+
+		if confirmationHeight > youngestConfirmation {
+			youngestConfirmation = confirmationHeight
+		}
+	}
+
+	return int64(currentHeight) >= youngestConfirmation+deposit.MinConfs-1
+}
+
+// shouldStartLegacyConfirmationFallback reports whether the local MinConfs
+// payment deadline fallback should be armed at the current block height.
+//
+// The primary path starts the deadline from a server risk-accepted notification.
+// This fallback preserves the legacy client-side MinConfs behavior when no risk
+// decision has been observed locally: once every original deposit reaches
+// MinConfs, the client treats that as enough confirmation-risk clearance to
+// start the payment window. The selected deposits are refreshed first so
+// recovered swaps do not depend on stale in-memory deposit snapshots.
+func (f *FSM) shouldStartLegacyConfirmationFallback(ctx context.Context,
+	currentHeight int32) bool {
+
+	err := f.refreshSelectedDeposits(ctx)
+	if err != nil {
+		f.Warnf("unable to refresh selected deposits for legacy "+
+			"confirmation fallback: %v", err)
+
+		return false
+	}
+
+	depositConfirmationHeights := selectedDepositConfirmationHeights(
+		f.loopIn,
+	)
+
+	return legacyMinConfsReached(
+		f.loopIn.DepositOutpoints, depositConfirmationHeights,
+		currentHeight,
+	)
+}
+
 // originalDepositOutpointUnavailable checks the original selected deposit
 // outpoints against the chain backend's UTXO view.
 func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
@@ -737,6 +851,27 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	var (
+		riskAcceptedChan <-chan *swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification
+		riskRejectedChan <-chan *swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification
+		cancelRiskNotificationSubscriptions = func() {}
+	)
+	if f.cfg.NotificationManager != nil {
+		notificationCtx, cancel := context.WithCancel(ctx)
+		cancelRiskNotificationSubscriptions = cancel
+		riskAcceptedChan = f.cfg.NotificationManager.
+			SubscribeStaticLoopInRiskAccepted(
+				notificationCtx, f.loopIn.SwapHash,
+			)
+		riskRejectedChan = f.cfg.NotificationManager.
+			SubscribeStaticLoopInRiskRejected(
+				notificationCtx, f.loopIn.SwapHash,
+			)
+	}
+	defer cancelRiskNotificationSubscriptions()
+
 	// Look up the current invoice state after registering subscriptions so
 	// recovery can resume the payment deadline from the latest known state.
 	invoice, err := f.cfg.LndClient.LookupInvoice(ctx, f.loopIn.SwapHash)
@@ -751,30 +886,34 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	// Create the swap payment timeout timer. If it runs out we cancel the
-	// invoice, but keep monitoring the htlc confirmation.
-	// If the invoice was canceled, e.g. before a restart, we don't need to
-	// set a new deadline.
-	var deadlineChan <-chan time.Time
-	if invoice.State != invoices.ContractCanceled {
-		// If the invoice is still live we set the timeout to the
-		// remaining payment time. If too much time has elapsed, e.g.
-		// after a restart, we cancel the invoice immediately and keep
-		// monitoring the HTLC until it can no longer confirm.
-		remainingTimeSeconds := f.loopIn.RemainingPaymentTimeSeconds()
+	// Create the swap payment timeout timer after the server confirms
+	// confirmation risk was accepted. If a server does not support risk
+	// notifications, fall back after the legacy deposit confirmation depth.
+	var (
+		deadlineChan    <-chan time.Time
+		deadlineTimer   *time.Timer
+		deadlineStarted bool
+	)
+	defer func() {
+		if deadlineTimer != nil {
+			deadlineTimer.Stop()
+		}
+	}()
 
-		// If the invoice isn't cancelled yet and the payment timeout
-		// elapsed, we set the timeout to 0 to cancel the invoice and
-		// unlock the deposits immediately. Otherwise, we start the
-		// timer with the remaining seconds to timeout.
-		timeout := time.Duration(0) * time.Second
-		if remainingTimeSeconds > 0 {
-			timeout = time.Duration(remainingTimeSeconds) *
-				time.Second
+	startPaymentDeadline := func(reason string) {
+		if deadlineStarted || invoice.State == invoices.ContractCanceled {
+			return
 		}
 
-		deadlineChan = time.NewTimer(timeout).C
-	} else {
+		timeout := f.loopIn.PaymentTimeoutDuration()
+
+		f.Infof("starting payment deadline after %s", reason)
+		deadlineTimer = time.NewTimer(timeout)
+		deadlineChan = deadlineTimer.C
+		deadlineStarted = true
+	}
+
+	if invoice.State == invoices.ContractCanceled {
 		// If the invoice was canceled previously we end our
 		// subscription to invoice updates.
 		cancelInvoiceSubscription()
@@ -844,6 +983,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			}
 
 		case <-deadlineChan:
+			deadlineChan = nil
+
 			// If the server didn't pay the invoice on time, we
 			// cancel the invoice and keep monitoring the htlc tx
 			// confirmation. We also need to unlock the deposits to
@@ -856,7 +997,76 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 					"payment deadline: %v", err)
 			}
 
+		case riskAccepted, ok := <-riskAcceptedChan:
+			if !ok {
+				riskAcceptedChan = nil
+				continue
+			}
+
+			if !bytes.Equal(
+				riskAccepted.SwapHash, f.loopIn.SwapHash[:],
+			) {
+
+				continue
+			}
+
+			startPaymentDeadline("risk accepted notification")
+
+		case riskRejected, ok := <-riskRejectedChan:
+			if !ok {
+				riskRejectedChan = nil
+				continue
+			}
+
+			if !bytes.Equal(
+				riskRejected.SwapHash, f.loopIn.SwapHash[:],
+			) {
+
+				continue
+			}
+
+			cancelInvoiceSubscription()
+			f.cancelSwapInvoice()
+
+			return f.HandleError(errors.New(
+				"server rejected confirmation risk wait",
+			))
+
 		case currentHeight := <-blockChan:
+			if !deadlineStarted &&
+				invoice.State != invoices.ContractCanceled {
+
+				err = f.refreshSelectedDeposits(ctx)
+				if err != nil {
+					f.Warnf("unable to refresh selected "+
+						"deposits for legacy confirmation "+
+						"fallback: %v", err)
+				} else {
+					depositConfirmationHeights :=
+						selectedDepositConfirmationHeights(
+							f.loopIn,
+						)
+
+					if legacyMinConfsReached(
+						f.loopIn.DepositOutpoints,
+						depositConfirmationHeights,
+						currentHeight,
+					) {
+
+						// This fallback is a compatibility path for
+						// servers that do not send confirmation-risk
+						// notifications. Reaching legacy MinConfs is
+						// treated as synthetic risk acceptance, so the
+						// payment window starts here just as it would
+						// when a modern server sends an acceptance
+						// notification.
+						startPaymentDeadline(
+							"legacy confirmation fallback",
+						)
+					}
+				}
+			}
+
 			// If the htlc is confirmed but blockChan fires before
 			// htlcConfChan, we would wrongfully assume that the
 			// htlc tx was not confirmed which would lead to
