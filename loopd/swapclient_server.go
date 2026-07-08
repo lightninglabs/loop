@@ -1805,8 +1805,9 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 			return nil, err
 		}
 
-		for _, d := range deposits {
-			outpoints = append(outpoints, d.OutPoint)
+		outpoints, err = withdrawAllDepositOutpoints(deposits)
+		if err != nil {
+			return nil, err
 		}
 
 	case isUtxoSelected:
@@ -1827,6 +1828,25 @@ func (s *swapClientServer) WithdrawDeposits(ctx context.Context,
 		WithdrawalTxHash: txhash,
 		Address:          address,
 	}, err
+}
+
+// withdrawAllDepositOutpoints returns all deposit outpoints for an `all`
+// withdrawal request. The request must fail if any deposited output is still
+// unconfirmed because `all` should not silently downgrade to a subset.
+func withdrawAllDepositOutpoints(deposits []*deposit.Deposit) ([]wire.OutPoint,
+	error) {
+
+	outpoints := make([]wire.OutPoint, 0, len(deposits))
+	for _, d := range deposits {
+		if d.GetConfirmationHeight() <= 0 {
+			return nil, fmt.Errorf("can't withdraw all deposits while " +
+				"some deposits are unconfirmed")
+		}
+
+		outpoints = append(outpoints, d.OutPoint)
+	}
+
+	return outpoints, nil
 }
 
 // ListStaticAddressDeposits returns a list of all sufficiently confirmed
