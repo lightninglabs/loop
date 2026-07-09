@@ -3061,7 +3061,11 @@
         },
         "state": {
           "$ref": "#/definitions/looprpcSwapState",
-          "description": "State the swap is currently in, see State enum."
+          "description": "Generic loop-in/loop-out state for swaps."
+        },
+        "static_loop_in_state": {
+          "$ref": "#/definitions/looprpcStaticAddressLoopInSwapState",
+          "description": "Static address loop-in FSM state when type is STATIC_LOOP_IN."
         },
         "failure_reason": {
           "$ref": "#/definitions/looprpcFailureReason",
@@ -3131,10 +3135,11 @@
       "type": "string",
       "enum": [
         "LOOP_OUT",
-        "LOOP_IN"
+        "LOOP_IN",
+        "STATIC_LOOP_IN"
       ],
       "default": "LOOP_OUT",
-      "title": "- LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)"
+      "description": " - LOOP_OUT: LOOP_OUT indicates an loop out swap (off-chain to on-chain)\n - LOOP_IN: LOOP_IN indicates a loop in swap (on-chain to off-chain)\n - STATIC_LOOP_IN: STATIC_LOOP_IN indicates a static address loop in swap."
     },
     "looprpcSweepHtlcRequest": {
       "type": "object",

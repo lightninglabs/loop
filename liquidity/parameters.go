@@ -400,9 +400,16 @@ func rpcToFee(req *clientrpc.LiquidityParameters) (FeeLimit, error) {
 
 // rpcToRule switches on rpc rule type to convert to our rule interface.
 func rpcToRule(rule *clientrpc.LiquidityRule) (*SwapRule, error) {
-	swapType := swap.TypeOut
-	if rule.SwapType == clientrpc.SwapType_LOOP_IN {
+	var swapType swap.Type
+	switch rule.SwapType {
+	case clientrpc.SwapType_LOOP_OUT:
+		swapType = swap.TypeOut
+
+	case clientrpc.SwapType_LOOP_IN:
 		swapType = swap.TypeIn
+
+	default:
+		return nil, fmt.Errorf("unknown swap type: %v", rule.SwapType)
 	}
 
 	switch rule.Type {
