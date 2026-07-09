@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
@@ -476,8 +477,12 @@ type SwapInfoKit struct {
 	LastUpdateTime time.Time
 }
 
-// SwapInfo exposes common info fields for loop in and loop out swaps.
+// SwapInfo exposes common info fields for traditional swaps and static address
+// loop-ins.
 type SwapInfo struct {
+	// SwapStateData.State is authoritative for swap.TypeIn and swap.TypeOut.
+	// For swap.TypeStaticAddressLoopIn, StaticAddressLoopInState is
+	// authoritative and State remains its zero value, loopdb.StateInitiated.
 	loopdb.SwapStateData
 
 	loopdb.SwapContract
@@ -488,8 +493,13 @@ type SwapInfo struct {
 	// SwapHash stores the swap preimage hash.
 	SwapHash lntypes.Hash
 
-	// SwapType describes whether this is a loop in or loop out swap.
+	// SwapType describes the kind of swap.
 	SwapType swap.Type
+
+	// StaticAddressLoopInState stores the precise static address loop-in FSM
+	// state when SwapType is swap.TypeStaticAddressLoopIn. For traditional
+	// swaps, it remains the fsm.StateType zero value, fsm.EmptyState.
+	StaticAddressLoopInState fsm.StateType
 
 	// HtlcAddressP2WSH stores the address of the P2WSH (native segwit)
 	// swap htlc. This is used for both loop-in and loop-out.

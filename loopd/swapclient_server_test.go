@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -25,6 +26,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -499,6 +501,222 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
 	)
+}
+
+// TestStaticAddressLoopInMarshallUsesStaticTypeAndP2WSH protects the RPC
+// mapping invariant that static loop-ins expose their static type, static
+// state, and P2WSH HTLC address without leaking a taproot HTLC address.
+func TestStaticAddressLoopInMarshallUsesStaticTypeAndP2WSH(t *testing.T) {
+	server := &swapClientServer{}
+	loopSwap := &loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+		},
+		SwapContract: loopdb.SwapContract{
+			InitiationTime: time.Now(),
+		},
+		LastUpdate:               time.Now(),
+		SwapHash:                 lntypes.Hash{1},
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		StaticAddressLoopInState: loopin.SignHtlcTx,
+		HtlcAddressP2WSH:         testnetAddr,
+	}
+
+	rpcSwap, err := server.marshallSwap(t.Context(), loopSwap)
+	require.NoError(t, err)
+	require.Equal(t, looprpc.SwapType_STATIC_LOOP_IN, rpcSwap.Type)
+	require.Equal(
+		t, looprpc.StaticAddressLoopInSwapState_SIGN_HTLC_TX,
+		rpcSwap.GetStaticLoopInState(),
+	)
+	require.Equal(t, looprpc.SwapState_INITIATED, rpcSwap.State)
+	require.Equal(t, testnetAddr.EncodeAddress(), rpcSwap.HtlcAddressP2Wsh)
+	require.Empty(t, rpcSwap.HtlcAddressP2Tr)
+}
+
+// TestStaticAddressLoopInMarshallFailuresLeaveLegacyFieldsDefault asserts that
+// static loop-in failures keep default legacy fields while preserving the
+// precise static state.
+func TestStaticAddressLoopInMarshallFailuresLeaveLegacyFieldsDefault(
+	t *testing.T) {
+
+	tests := []struct {
+		name            string
+		state           fsm.StateType
+		wantStaticState looprpc.StaticAddressLoopInSwapState
+	}{
+		{
+			name:  "failed",
+			state: loopin.Failed,
+			wantStaticState: looprpc.
+				StaticAddressLoopInSwapState_FAILED_STATIC_ADDRESS_SWAP,
+		},
+		{
+			name:  "succeeded transitioning failed",
+			state: loopin.SucceededTransitioningFailed,
+			wantStaticState: looprpc.
+				StaticAddressLoopInSwapState_SUCCEEDED_TRANSITIONING_FAILED,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, staticLoopIn := newGenericStaticLoopInServer(t)
+			staticLoopIn.SetState(test.state)
+			loopSwap, err := server.staticAddressLoopInSwapInfo(
+				t.Context(), staticLoopIn,
+			)
+			require.NoError(t, err)
+
+			rpcSwap, err := server.marshallSwap(t.Context(), loopSwap)
+
+			require.NoError(t, err)
+			require.Equal(t, looprpc.SwapState_INITIATED, rpcSwap.State)
+			require.Equal(
+				t, looprpc.FailureReason_FAILURE_REASON_NONE,
+				rpcSwap.FailureReason,
+			)
+			require.Equal(
+				t, test.wantStaticState,
+				rpcSwap.GetStaticLoopInState(),
+			)
+		})
+	}
+}
+
+// TestStaticAddressLoopInMarshallRejectsMissingHtlcAddress protects the
+// fail-closed HTLC-address invariant for static loop-ins missing the P2WSH
+// address required by the client-facing RPC representation.
+func TestStaticAddressLoopInMarshallRejectsMissingHtlcAddress(t *testing.T) {
+	_, taprootAddress := newTestStaticAddressParams(t)
+	server := &swapClientServer{}
+	loopSwap := &loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			State: loopdb.StateInitiated,
+		},
+		SwapContract: loopdb.SwapContract{
+			InitiationTime: time.Now(),
+		},
+		LastUpdate:               time.Now(),
+		SwapHash:                 lntypes.Hash{1},
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		StaticAddressLoopInState: loopin.SignHtlcTx,
+		HtlcAddressP2TR:          taprootAddress,
+	}
+
+	_, err := server.marshallSwap(t.Context(), loopSwap)
+	require.ErrorContains(t, err, "missing static address loop-in P2WSH HTLC address")
+}
+
+// TestStaticAddressLoopInSwapInfoFailsClosedWhenHtlcKeysMissing protects the
+// HTLC-address construction invariant that missing cooperative keys must not
+// produce monitorable swap info.
+func TestStaticAddressLoopInSwapInfoFailsClosedWhenHtlcKeysMissing(t *testing.T) {
+	server, staticLoopIn := newGenericStaticLoopInServer(t)
+	staticLoopIn.ClientPubkey = nil
+
+	_, err := server.staticAddressLoopInSwapInfo(t.Context(), staticLoopIn)
+	require.ErrorContains(
+		t, err, "missing static address loop-in client HTLC key",
+	)
+}
+
+func newGenericStaticLoopInServer(t *testing.T) (*swapClientServer,
+	*loopin.StaticAddressLoopIn) {
+
+	server, staticLoopIn, _ := newGenericStaticLoopInServerWithStore(t)
+
+	return server, staticLoopIn
+}
+
+func newTestStaticAddressParams(t *testing.T) (*script.Parameters,
+	*btcutil.AddressTaproot) {
+
+	t.Helper()
+
+	const staticAddressExpiry = uint32(25)
+
+	_, staticClientPubkey := mock_lnd.CreateKey(12)
+	_, staticServerPubkey := mock_lnd.CreateKey(13)
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(staticAddressExpiry),
+		staticClientPubkey, staticServerPubkey,
+	)
+	require.NoError(t, err)
+
+	staticPkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	taprootAddress, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(staticAddress.TaprootKey),
+		&chaincfg.TestNet3Params,
+	)
+	require.NoError(t, err)
+
+	return &script.Parameters{
+		ClientPubkey: staticClientPubkey,
+		ServerPubkey: staticServerPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     staticPkScript,
+	}, taprootAddress
+}
+
+func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
+	*loopin.StaticAddressLoopIn, *mockStaticAddressLoopInStore) {
+
+	t.Helper()
+
+	_, clientPubkey := mock_lnd.CreateKey(10)
+	_, serverPubkey := mock_lnd.CreateKey(11)
+	addressParams, _ := newTestStaticAddressParams(t)
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{12, 13, 14},
+		Index: 2,
+	}
+	staticDeposit := &deposit.Deposit{
+		OutPoint: depositOutpoint,
+		Value:    51_000,
+	}
+	lastHop := route.Vertex{7, 8, 9}
+
+	staticLoopIn := &loopin.StaticAddressLoopIn{
+		SwapHash:         lntypes.Hash{1, 2, 3},
+		HtlcCltvExpiry:   700,
+		InitiationTime:   time.Unix(100, 0).UTC(),
+		LastUpdateTime:   time.Unix(200, 0).UTC(),
+		Label:            "static-loop-in",
+		ClientPubkey:     clientPubkey,
+		ServerPubkey:     serverPubkey,
+		LastHop:          lastHop[:],
+		QuotedSwapFee:    1_111,
+		SelectedAmount:   50_000,
+		DepositOutpoints: []string{depositOutpoint.String()},
+		Deposits:         []*deposit.Deposit{staticDeposit},
+		AddressParams:    addressParams,
+	}
+	staticLoopIn.SetState(loopin.PaymentReceived)
+
+	depositStore := &mockDepositStore{
+		byOutpoint: map[string]*deposit.Deposit{
+			depositOutpoint.String(): staticDeposit,
+		},
+	}
+	loopInStore := &mockStaticAddressLoopInStore{
+		swaps: []*loopin.StaticAddressLoopIn{staticLoopIn},
+	}
+	staticLoopInManager, err := loopin.NewManager(&loopin.Config{
+		Store: loopInStore,
+		DepositManager: deposit.NewManager(&deposit.ManagerConfig{
+			Store: depositStore,
+		}),
+	}, 1)
+	require.NoError(t, err)
+
+	return &swapClientServer{
+		network:             lndclient.NetworkTestnet,
+		swaps:               make(map[lntypes.Hash]loop.SwapInfo),
+		staticLoopInManager: staticLoopInManager,
+	}, staticLoopIn, loopInStore
 }
 
 // mockStaticAddressLoopInStore is a minimal in-memory loop-in store for RPC
