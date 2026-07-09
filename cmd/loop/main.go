@@ -560,10 +560,7 @@ func parseAmt(text string) (btcutil.Amount, error) {
 
 func logSwap(swap *looprpc.SwapStatus) {
 	// If our swap failed, we add our failure reason to the state.
-	swapState := fmt.Sprintf("%v", swap.State)
-	if swap.State == looprpc.SwapState_FAILED {
-		swapState = fmt.Sprintf("%v (%v)", swapState, swap.FailureReason)
-	}
+	swapState := monitorSwapState(swap)
 
 	if swap.Type == looprpc.SwapType_LOOP_OUT {
 		fmt.Printf("%v %v %v %v - %v",
@@ -585,16 +582,70 @@ func logSwap(swap *looprpc.SwapStatus) {
 		}
 	}
 
-	if swap.State != looprpc.SwapState_INITIATED &&
-		swap.State != looprpc.SwapState_HTLC_PUBLISHED &&
-		swap.State != looprpc.SwapState_PREIMAGE_REVEALED {
+	showCost := shouldShowSwapCost(swap.GetState())
+	if swap.Type == looprpc.SwapType_STATIC_LOOP_IN {
+		staticState := swap.GetStaticLoopInState()
+		// Static loop-ins key cost visibility off the dedicated FSM state, not
+		// the generic SwapState lifecycle used by traditional swaps.
+		switch staticState {
+		case looprpc.StaticAddressLoopInSwapState_INIT_HTLC,
+			looprpc.StaticAddressLoopInSwapState_SIGN_HTLC_TX,
+			looprpc.StaticAddressLoopInSwapState_MONITOR_INVOICE_HTLC_TX,
+			looprpc.StaticAddressLoopInSwapState_SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT,
+			looprpc.StaticAddressLoopInSwapState_MONITOR_HTLC_TIMEOUT_SWEEP,
+			looprpc.StaticAddressLoopInSwapState_UNLOCK_DEPOSITS:
 
+			showCost = false
+
+		case looprpc.StaticAddressLoopInSwapState_PAYMENT_RECEIVED,
+			looprpc.StaticAddressLoopInSwapState_HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT,
+			looprpc.StaticAddressLoopInSwapState_SUCCEEDED,
+			looprpc.StaticAddressLoopInSwapState_SUCCEEDED_TRANSITIONING_FAILED,
+			looprpc.StaticAddressLoopInSwapState_FAILED_STATIC_ADDRESS_SWAP:
+
+			showCost = true
+		}
+	}
+
+	if showCost {
 		fmt.Printf(" (cost: server %v, onchain %v, offchain %v)",
 			swap.CostServer, swap.CostOnchain, swap.CostOffchain,
 		)
 	}
 
 	fmt.Println()
+}
+
+// monitorSwapState returns the static loop-in FSM label for static swaps and
+// the shared swap-state label for all others.
+func monitorSwapState(swap *looprpc.SwapStatus) string {
+	if swap.Type == looprpc.SwapType_STATIC_LOOP_IN {
+		return swap.GetStaticLoopInState().String()
+	}
+
+	return genericMonitorSwapState(swap)
+}
+
+// shouldShowSwapCost reports whether a swap's generic state is terminal enough
+// to include the persisted cost summary in monitor output.
+func shouldShowSwapCost(loopState looprpc.SwapState) bool {
+	return loopState != looprpc.SwapState_INITIATED &&
+		loopState != looprpc.SwapState_HTLC_PUBLISHED &&
+		loopState != looprpc.SwapState_PREIMAGE_REVEALED
+}
+
+// genericMonitorSwapState formats the shared swap-state label and failure
+// reason used by non-static swaps.
+func genericMonitorSwapState(swap *looprpc.SwapStatus) string {
+	loopState := swap.GetState()
+	swapState := fmt.Sprintf("%v", loopState)
+	if loopState == looprpc.SwapState_FAILED {
+		swapState = fmt.Sprintf(
+			"%v (%v)", swapState, swap.FailureReason,
+		)
+	}
+
+	return swapState
 }
 
 // getClientConn dials the loopd gRPC server with TLS and macaroon auth.

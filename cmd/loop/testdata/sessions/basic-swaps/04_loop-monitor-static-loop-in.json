@@ -1,0 +1,267 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "monitor",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit= commit_hash=",
+    "run_error": "recv: rpc error: code = Canceled desc = context canceled",
+    "duration": 25407490958,
+    "clock_start_unix": 1784150305
+  },
+  "events": [
+    {
+      "time_ms": 13,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "send",
+        "message_type": "looprpc.MonitorRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 13,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "Note: offchain cost may report as 0 after loopd restart during swap\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 16479,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "recv",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "bec3777d45337f652d96136e5714ed90a5d4f7cda87b5842110ecc38c9a65826",
+          "id_bytes": "vsN3fUUzf2UtlhNuVxTtkKXU982oe1hCEQ7MOMmmWCY=",
+          "type": "STATIC_LOOP_IN",
+          "state": "INITIATED",
+          "static_loop_in_state": "INIT_HTLC",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1784150320647961000",
+          "last_update_time": "1784150321494895000",
+          "htlc_address": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2wsh": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2tr": "",
+          "cost_server": "0",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 16479,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "2026-07-15T18:18:41-03:00 STATIC_LOOP_IN INIT_HTLC 0.00500000 BTC - P2WSH: bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 16482,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "recv",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "bec3777d45337f652d96136e5714ed90a5d4f7cda87b5842110ecc38c9a65826",
+          "id_bytes": "vsN3fUUzf2UtlhNuVxTtkKXU982oe1hCEQ7MOMmmWCY=",
+          "type": "STATIC_LOOP_IN",
+          "state": "INITIATED",
+          "static_loop_in_state": "SIGN_HTLC_TX",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1784150320647961000",
+          "last_update_time": "1784150321499639000",
+          "htlc_address": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2wsh": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2tr": "",
+          "cost_server": "0",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 16482,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "2026-07-15T18:18:41-03:00 STATIC_LOOP_IN SIGN_HTLC_TX 0.00500000 BTC - P2WSH: bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 16530,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "recv",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "bec3777d45337f652d96136e5714ed90a5d4f7cda87b5842110ecc38c9a65826",
+          "id_bytes": "vsN3fUUzf2UtlhNuVxTtkKXU982oe1hCEQ7MOMmmWCY=",
+          "type": "STATIC_LOOP_IN",
+          "state": "INITIATED",
+          "static_loop_in_state": "MONITOR_INVOICE_HTLC_TX",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1784150320647961000",
+          "last_update_time": "1784150321548450000",
+          "htlc_address": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2wsh": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2tr": "",
+          "cost_server": "0",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 16530,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "2026-07-15T18:18:41-03:00 STATIC_LOOP_IN MONITOR_INVOICE_HTLC_TX 0.00500000 BTC - P2WSH: bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 17027,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "recv",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "bec3777d45337f652d96136e5714ed90a5d4f7cda87b5842110ecc38c9a65826",
+          "id_bytes": "vsN3fUUzf2UtlhNuVxTtkKXU982oe1hCEQ7MOMmmWCY=",
+          "type": "STATIC_LOOP_IN",
+          "state": "INITIATED",
+          "static_loop_in_state": "PAYMENT_RECEIVED",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1784150320647961000",
+          "last_update_time": "1784150322044521000",
+          "htlc_address": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2wsh": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2tr": "",
+          "cost_server": "1828",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 17027,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "2026-07-15T18:18:42-03:00 STATIC_LOOP_IN PAYMENT_RECEIVED 0.00500000 BTC - P2WSH: bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv (cost: server 1828, onchain 0, offchain 0)\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 17036,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "recv",
+        "message_type": "looprpc.SwapStatus",
+        "payload": {
+          "amt": "500000",
+          "id": "bec3777d45337f652d96136e5714ed90a5d4f7cda87b5842110ecc38c9a65826",
+          "id_bytes": "vsN3fUUzf2UtlhNuVxTtkKXU982oe1hCEQ7MOMmmWCY=",
+          "type": "STATIC_LOOP_IN",
+          "state": "INITIATED",
+          "static_loop_in_state": "SUCCEEDED",
+          "failure_reason": "FAILURE_REASON_NONE",
+          "initiation_time": "1784150320647961000",
+          "last_update_time": "1784150322052572000",
+          "htlc_address": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2wsh": "bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv",
+          "htlc_address_p2tr": "",
+          "cost_server": "1828",
+          "cost_onchain": "0",
+          "cost_offchain": "0",
+          "last_hop": "",
+          "outgoing_chan_set": [],
+          "label": "",
+          "asset_info": null
+        }
+      }
+    },
+    {
+      "time_ms": 17036,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "2026-07-15T18:18:42-03:00 STATIC_LOOP_IN SUCCEEDED 0.00500000 BTC - P2WSH: bcrt1qjsl6tmv2vf3p5wwv28jh6xwettds934k02c3l5w6zyjsyrsd3lfskgdjmv (cost: server 1828, onchain 0, offchain 0)\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 25406,
+      "kind": "signal",
+      "data": {
+        "signal": "interrupt"
+      }
+    },
+    {
+      "time_ms": 25407,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/Monitor",
+        "event": "error",
+        "error": "rpc error: code = Canceled desc = context canceled",
+        "status": {
+          "code": 1,
+          "message": "context canceled"
+        }
+      }
+    },
+    {
+      "time_ms": 25407,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] recv: rpc error: code = Canceled desc = context canceled\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 25407,
+      "kind": "exit",
+      "data": {
+        "run_error": "recv: rpc error: code = Canceled desc = context canceled"
+      }
+    }
+  ]
+}
