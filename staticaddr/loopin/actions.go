@@ -1,7 +1,6 @@
 package loopin
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -40,6 +39,8 @@ const (
 	DefaultPaymentTimeoutSeconds = 60
 
 	defaultInvoiceCleanupTimeout = 5 * time.Second
+
+	monitorRetryDelay = time.Second
 )
 
 var (
@@ -70,7 +71,10 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			return
 		}
 
-		f.cancelSwapInvoice()
+		if err := f.cancelSwapInvoice(); err != nil {
+			f.Warnf("unable to clean up invoice for swap %v: %v",
+				f.loopIn.SwapHash, err)
+		}
 	}()
 
 	returnError := func(err error) fsm.EventType {
@@ -342,11 +346,12 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	return event
 }
 
-// cancelSwapInvoice best-effort cancels the current swap invoice using a
-// detached timeout-limited context.
-func (f *FSM) cancelSwapInvoice() {
+// cancelSwapInvoice cancels the current swap invoice using a detached,
+// timeout-limited context. Callers that must not proceed while the invoice may
+// still be payable can use the returned error to retry.
+func (f *FSM) cancelSwapInvoice() error {
 	if f.loopIn.SwapHash == (lntypes.Hash{}) {
-		return
+		return nil
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(
@@ -355,10 +360,7 @@ func (f *FSM) cancelSwapInvoice() {
 	defer cancel()
 
 	err := f.cfg.InvoicesClient.CancelInvoice(cleanupCtx, f.loopIn.SwapHash)
-	if err != nil {
-		f.Warnf("unable to cancel invoice for swap %v: %v",
-			f.loopIn.SwapHash, err)
-	}
+	return err
 }
 
 // handleInvoiceUpdate applies the monitor state's invoice-update semantics and
@@ -384,9 +386,13 @@ func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
 		return fsm.NoOp, false
 
 	default:
-		err := fmt.Errorf("unexpected invoice state %v for swap hash %v "+
-			"canceled", update.State, f.loopIn.SwapHash)
-		return f.HandleError(err), true
+		// An unknown state is not evidence that the invoice can no longer
+		// settle. Keep monitoring rather than leaving the deposits available
+		// for reuse.
+		f.Warnf("unexpected invoice state %v for swap hash %v",
+			update.State, f.loopIn.SwapHash)
+
+		return fsm.NoOp, false
 	}
 }
 
@@ -556,7 +562,10 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	if outpointUnavailable {
 		err = errors.New("original deposit outpoint no longer available")
 		f.Warnf("%v, canceling swap invoice", err)
-		f.cancelSwapInvoice()
+		if cancelErr := f.cancelSwapInvoice(); cancelErr != nil {
+			f.Warnf("unable to cancel invoice for swap %v: %v",
+				f.loopIn.SwapHash, cancelErr)
+		}
 
 		return f.HandleError(err)
 	}
@@ -782,6 +791,25 @@ func (f *FSM) cleanUpSessions(ctx context.Context,
 func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	retryMonitor := func(err error) fsm.EventType {
+		f.Errorf("monitoring failed: %v, retrying", err)
+
+		invoice, lookupErr := f.cfg.LndClient.LookupInvoice(
+			ctx, f.loopIn.SwapHash,
+		)
+		if lookupErr == nil && invoice.State == invoices.ContractSettled {
+			return OnPaymentReceived
+		}
+
+		select {
+		case <-time.After(monitorRetryDelay):
+			return OnRecover
+
+		case <-ctx.Done():
+			return fsm.NoOp
+		}
+	}
+
 	// Subscribe to the state of the swap invoice. If upon restart recovery,
 	// we land here and observe that the invoice is already canceled, it can
 	// only be the case where a user-provided payment timeout was hit, the
@@ -804,18 +832,20 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		err = fmt.Errorf("unable to subscribe to swap "+
 			"invoice: %w", err)
 
-		return f.HandleError(err)
+		return retryMonitor(err)
 	}
 
 	htlc, err := f.loopIn.getHtlc(f.cfg.ChainParams)
 	if err != nil {
 		err = fmt.Errorf("unable to get htlc: %w", err)
 
-		return f.HandleError(err)
+		return retryMonitor(err)
 	}
 
 	// Subscribe to htlc tx confirmation.
 	reorgChan := make(chan struct{}, 1)
+	// registerHtlcConf registers for the HTLC transaction confirmation using
+	// the current reorg channel.
 	registerHtlcConf := func() (chan *chainntnfs.TxConfirmation, chan error,
 		error) {
 
@@ -835,7 +865,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		err = fmt.Errorf("unable to monitor htlc tx confirmation: %w",
 			err)
 
-		return f.HandleError(err)
+		return retryMonitor(err)
 	}
 
 	// Subscribe to new blocks.
@@ -848,28 +878,16 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 		err = fmt.Errorf("unable to subscribe to new blocks: %w", err)
 
-		return f.HandleError(err)
+		return retryMonitor(err)
 	}
 
-	var (
-		riskAcceptedChan <-chan *swapserverrpc.
-					ServerStaticLoopInRiskAcceptedNotification
-		riskRejectedChan <-chan *swapserverrpc.
-					ServerStaticLoopInRiskRejectedNotification
-		cancelRiskNotificationSubscriptions = func() {}
+	// The watcher keeps notification normalization and timestamp restoration
+	// outside of the swap-state handling below.
+	riskWatcher := newConfirmationRiskWatcher(
+		f.cfg, f.loopIn.SwapHash, f.Warnf,
 	)
-	if f.cfg.NotificationManager != nil {
-		notificationCtx, cancel := context.WithCancel(ctx)
-		cancelRiskNotificationSubscriptions = cancel
-		riskAcceptedChan = f.cfg.NotificationManager.
-			SubscribeStaticLoopInRiskAccepted(
-				notificationCtx, f.loopIn.SwapHash,
-			)
-		riskRejectedChan = f.cfg.NotificationManager.
-			SubscribeStaticLoopInRiskRejected(
-				notificationCtx, f.loopIn.SwapHash,
-			)
-	}
+	riskUpdateChan, cancelRiskNotificationSubscriptions :=
+		riskWatcher.subscribe(ctx)
 	defer cancelRiskNotificationSubscriptions()
 
 	// Look up the current invoice state after registering subscriptions so
@@ -880,10 +898,24 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return fsm.NoOp
 		}
 
-		err = fmt.Errorf("unable to look up invoice by swap hash: %w",
-			err)
+		// A failed lookup leaves the invoice state unknown. The active
+		// subscription can still provide an authoritative update, so keep
+		// monitoring and, most importantly, keep the deposits locked.
+		f.Warnf("unable to look up invoice by swap hash: %v", err)
+		invoice = &lndclient.Invoice{}
+	}
 
-		return f.HandleError(err)
+	// A settled invoice always takes precedence over a recovered risk
+	// rejection or an elapsed payment deadline.
+	if invoice.State == invoices.ContractSettled {
+		return OnPaymentReceived
+	}
+
+	invoiceCanceledForNonPayment := invoice.State == invoices.ContractCanceled
+	if invoiceCanceledForNonPayment {
+		// If the invoice was canceled previously we end our
+		// subscription to invoice updates.
+		cancelInvoiceSubscription()
 	}
 
 	// Create the swap payment timeout timer after the server confirms
@@ -894,12 +926,15 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		deadlineTimer   *time.Timer
 		deadlineStarted bool
 	)
+	// Stop the payment deadline timer when leaving the monitor action.
 	defer func() {
 		if deadlineTimer != nil {
 			deadlineTimer.Stop()
 		}
 	}()
 
+	// depositsInState reports whether all selected deposits are currently
+	// in the requested state.
 	depositsInState := func(state fsm.StateType) bool {
 		if len(f.loopIn.Deposits) == 0 {
 			return false
@@ -910,10 +945,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				return false
 			}
 
-			d.Lock()
-			inState := d.IsInStateNoLock(state)
-			d.Unlock()
-			if !inState {
+			if !d.IsInState(state) {
 				return false
 			}
 		}
@@ -921,11 +953,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return true
 	}
 
-	invoiceCanceledForNonPayment := invoice.State == invoices.ContractCanceled
-	depositsLockedForHtlcTimeout := depositsInState(
-		deposit.SweepHtlcTimeout,
-	)
-
+	// startPaymentDeadline arms the server payment timeout from the decision
+	// time when one is available.
 	startPaymentDeadline := func(reason string, startedAt time.Time) {
 		if deadlineStarted || invoice.State == invoices.ContractCanceled {
 			return
@@ -945,6 +974,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		deadlineStarted = true
 	}
 
+	depositsLockedForHtlcTimeout := depositsInState(
+		deposit.SweepHtlcTimeout,
+	)
+
+	// transitionDepositsToHtlcTimeout locks deposits into timeout sweeping once
+	// the HTLC is confirmed and the invoice cannot be paid.
 	transitionDepositsToHtlcTimeout := func(reason string) {
 		if depositsLockedForHtlcTimeout ||
 			depositsInState(deposit.SweepHtlcTimeout) {
@@ -969,111 +1004,64 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		depositsLockedForHtlcTimeout = true
 	}
 
+	// startLegacyFallback starts the payment deadline once the old local
+	// minimum-confirmation rule has been satisfied.
 	startLegacyFallback := func(reason string, currentHeight int32) {
-		if deadlineStarted || invoice.State == invoices.ContractCanceled {
+		if deadlineStarted || invoice.State == invoices.ContractCanceled ||
+			f.loopIn.ConfirmationRiskDecision !=
+				ConfirmationRiskDecisionNone {
+
 			return
 		}
 
 		if f.shouldStartLegacyConfirmationFallback(ctx, currentHeight) {
-			startPaymentDeadline(reason, time.Time{})
+			decisionTime, ok := riskWatcher.durableDecisionTime(
+				ctx, ConfirmationRiskDecisionAccepted,
+			)
+			if !ok {
+				return
+			}
+
+			f.loopIn.ConfirmationRiskDecision =
+				ConfirmationRiskDecisionAccepted
+			f.loopIn.ConfirmationRiskDecisionTime = decisionTime
+			startPaymentDeadline(reason, decisionTime)
 		}
 	}
 
-	if invoice.State == invoices.ContractCanceled {
-		// If the invoice was canceled previously we end our
-		// subscription to invoice updates.
+	// cancelInvoice only marks the invoice canceled after lnd acknowledges
+	// the request or the lookup/subscription already observed that state.
+	// Failures recover the monitor state without releasing deposits.
+	cancelInvoice := func(reason string) (fsm.EventType, bool) {
+		if invoice.State != invoices.ContractCanceled {
+			f.Errorf("%s, canceling invoice", reason)
+			if err := f.cancelSwapInvoice(); err != nil {
+				return retryMonitor(err), false
+			}
+		}
+
 		cancelInvoiceSubscription()
-	}
-
-	cancelInvoice := func() {
-		f.Errorf("timeout waiting for invoice to be " +
-			"paid, canceling invoice")
-
-		// Cancel the lndclient invoice subscription.
-		cancelInvoiceSubscription()
-
-		// Reuse the same helper as InitHtlcAction so timeout cleanup
-		// follows the same detached-context path as early-init cleanup.
-		f.cancelSwapInvoice()
 		invoice.State = invoices.ContractCanceled
 		invoiceCanceledForNonPayment = true
+
+		return fsm.NoOp, true
 	}
 
-	riskDecisionTime := func(decision ConfirmationRiskDecision) time.Time {
-		now := time.Now()
-		if f.cfg.Store == nil {
-			return now
-		}
+	// handleRiskRejected records a server rejection and only exits through
+	// the generic error path once the invoice can no longer settle.
+	handleRiskRejected := func(reason string,
+		decisionTime time.Time) fsm.EventType {
 
-		storedLoopIn, err := f.cfg.Store.GetLoopInByHash(
-			ctx, f.loopIn.SwapHash,
-		)
-		if err != nil {
-			f.Warnf("unable to reload persisted risk decision for "+
-				"swap %v: %v", f.loopIn.SwapHash, err)
-
-			return now
-		}
-
-		if storedLoopIn == nil {
-			return now
-		}
-
-		hasPersistedDecision :=
-			storedLoopIn.ConfirmationRiskDecision == decision &&
-				!storedLoopIn.ConfirmationRiskDecisionTime.IsZero()
-
-		if !hasPersistedDecision {
-			err = f.cfg.Store.RecordStaticAddressRiskDecision(
-				ctx, f.loopIn.SwapHash, decision,
-			)
-			if err != nil {
-				f.Warnf("unable to persist replayed risk "+
-					"decision for swap %v: %v",
-					f.loopIn.SwapHash, err)
-
-				return now
-			}
-
-			storedLoopIn, err = f.cfg.Store.GetLoopInByHash(
-				ctx, f.loopIn.SwapHash,
-			)
-			if err != nil {
-				f.Warnf("unable to reload persisted risk "+
-					"decision for swap %v: %v",
-					f.loopIn.SwapHash, err)
-
-				return now
-			}
-			if storedLoopIn == nil ||
-				storedLoopIn.ConfirmationRiskDecision != decision ||
-				storedLoopIn.ConfirmationRiskDecisionTime.IsZero() {
-
-				return now
-			}
-		}
-
-		f.loopIn.ConfirmationRiskDecision =
-			storedLoopIn.ConfirmationRiskDecision
-		f.loopIn.ConfirmationRiskDecisionTime =
-			storedLoopIn.ConfirmationRiskDecisionTime
-
-		return storedLoopIn.ConfirmationRiskDecisionTime
-	}
-
-	handleRiskRejected := func(reason string) fsm.EventType {
-		cancelInvoiceSubscription()
-		f.cancelSwapInvoice()
-		invoice.State = invoices.ContractCanceled
-		invoiceCanceledForNonPayment = true
-		decisionTime := riskDecisionTime(
-			ConfirmationRiskDecisionRejected,
-		)
 		f.loopIn.ConfirmationRiskDecision =
 			ConfirmationRiskDecisionRejected
 		f.loopIn.ConfirmationRiskDecisionTime = decisionTime
-		riskAcceptedChan = nil
-		riskRejectedChan = nil
+
+		event, canceled := cancelInvoice(
+			"server rejected confirmation risk wait after " + reason,
+		)
+		if !canceled {
+			return event
+		}
 
 		return f.HandleError(fmt.Errorf(
 			"server rejected confirmation risk wait after %s", reason,
@@ -1088,7 +1076,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		)
 
 	case ConfirmationRiskDecisionRejected:
-		return handleRiskRejected("recovered risk rejection")
+		decisionTime := riskWatcher.decisionTime(
+			ctx, ConfirmationRiskDecisionRejected,
+		)
+
+		return handleRiskRejected(
+			"recovered risk rejection", decisionTime,
+		)
 	}
 
 	info, err := f.cfg.LndClient.GetInfo(ctx)
@@ -1136,7 +1130,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				err = fmt.Errorf("unable to re-register for "+
 					"htlc tx confirmation: %w", err)
 
-				return f.HandleError(err)
+				return retryMonitor(err)
 			}
 
 		case <-reorgChan:
@@ -1154,7 +1148,7 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				err = fmt.Errorf("unable to monitor htlc tx "+
 					"confirmation: %v", err)
 
-				return f.HandleError(err)
+				return retryMonitor(err)
 			}
 
 		case <-deadlineChan:
@@ -1163,7 +1157,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// If the server didn't pay the invoice on time, we cancel
 			// it and keep monitoring the htlc tx. Confirmed HTLC
 			// deposits remain locked for timeout sweeping.
-			cancelInvoice()
+			event, canceled := cancelInvoice(
+				"timeout waiting for invoice to be paid",
+			)
+			if !canceled {
+				return event
+			}
 			if htlcConfirmed {
 				transitionDepositsToHtlcTimeout("payment deadline")
 				continue
@@ -1175,44 +1174,30 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 					"payment deadline: %v", err)
 			}
 
-		case riskAccepted, ok := <-riskAcceptedChan:
+		case riskUpdate, ok := <-riskUpdateChan:
 			if !ok {
-				riskAcceptedChan = nil
+				riskUpdateChan = nil
 				continue
 			}
 
-			if !bytes.Equal(
-				riskAccepted.SwapHash, f.loopIn.SwapHash[:],
-			) {
-
-				continue
-			}
-
-			startedAt := riskDecisionTime(
-				ConfirmationRiskDecisionAccepted,
+			decisionTime := riskWatcher.decisionTime(
+				ctx, riskUpdate.decision,
 			)
-			f.loopIn.ConfirmationRiskDecision =
-				ConfirmationRiskDecisionAccepted
-			f.loopIn.ConfirmationRiskDecisionTime = startedAt
-			startPaymentDeadline(
-				"risk accepted notification",
-				f.loopIn.ConfirmationRiskDecisionTime,
-			)
+			f.loopIn.ConfirmationRiskDecision = riskUpdate.decision
+			f.loopIn.ConfirmationRiskDecisionTime = decisionTime
 
-		case riskRejected, ok := <-riskRejectedChan:
-			if !ok {
-				riskRejectedChan = nil
-				continue
+			switch riskUpdate.decision {
+			case ConfirmationRiskDecisionAccepted:
+				startPaymentDeadline(
+					riskUpdate.reason,
+					f.loopIn.ConfirmationRiskDecisionTime,
+				)
+
+			case ConfirmationRiskDecisionRejected:
+				return handleRiskRejected(
+					riskUpdate.reason, decisionTime,
+				)
 			}
-
-			if !bytes.Equal(
-				riskRejected.SwapHash, f.loopIn.SwapHash[:],
-			) {
-
-				continue
-			}
-
-			return handleRiskRejected("risk rejection")
 
 		case currentHeight := <-blockChan:
 			startLegacyFallback(
@@ -1236,10 +1221,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			f.Infof("htlc timed out at block height %v",
 				currentHeight)
-
-			// If the timeout path opened up we consider the swap
-			// failed and cancel the invoice.
-			cancelInvoice()
+			event, canceled := cancelInvoice("htlc timed out")
+			if !canceled {
+				return event
+			}
 
 			if !htlcConfirmed {
 				f.Infof("swap timed out, htlc not confirmed")
@@ -1247,13 +1232,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				// If the htlc hasn't confirmed but the timeout
 				// path opened up, and we didn't receive the
 				// swap payment, we consider the swap attempt to
-				// be failed. Now that the HTLC can no longer
-				// confirm, the deposits can be made available
-				// again.
+				// be failed. Now that the invoice is canceled and
+				// the HTLC can no longer confirm, its deposits can be
+				// made available again.
 				err = f.unlockDeposits(ctx)
 				if err != nil {
-					f.Errorf("unable to unlock deposits "+
-						"after htlc timeout: %v", err)
+					f.Errorf("unable to unlock deposits after "+
+						"htlc timeout: %v", err)
 				}
 
 				return OnSwapTimedOut
@@ -1272,10 +1257,16 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			f.Errorf("block subscription error: %v", err)
 
-			return f.HandleError(err)
+			return retryMonitor(err)
 
 		case update, ok := <-invoiceUpdateChan:
 			if !ok {
+				if !invoiceCanceledForNonPayment {
+					return retryMonitor(errors.New(
+						"invoice update subscription closed",
+					))
+				}
+
 				invoiceUpdateChan = nil
 				continue
 			}
@@ -1284,13 +1275,30 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				return event
 			}
 
+			invoice.State = update.State
+			if update.State == invoices.ContractCanceled {
+				invoiceCanceledForNonPayment = true
+			}
+
 		case err, ok := <-invoiceErrChan:
 			if !ok {
+				if !invoiceCanceledForNonPayment {
+					return retryMonitor(errors.New(
+						"invoice error subscription closed",
+					))
+				}
+
 				invoiceErrChan = nil
 				continue
 			}
 
-			f.Errorf("invoice subscription error: %v", err)
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
+			return retryMonitor(fmt.Errorf(
+				"invoice subscription error: %w", err,
+			))
 
 		case <-ctx.Done():
 			return fsm.NoOp
@@ -1425,7 +1433,10 @@ func (f *FSM) PaymentReceivedAction(ctx context.Context,
 func (f *FSM) UnlockDepositsAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	f.cancelSwapInvoice()
+	if err := f.cancelSwapInvoice(); err != nil {
+		f.Warnf("unable to cancel invoice for swap %v: %v",
+			f.loopIn.SwapHash, err)
+	}
 
 	err := f.unlockDeposits(ctx)
 	if err != nil {

@@ -126,14 +126,16 @@ func (w *confirmationRiskWatcher) subscribe(ctx context.Context) (
 	return riskUpdates, cancel
 }
 
-// decisionTime returns the durable decision timestamp, recording the decision
-// first if the notification was replayed before it could be persisted.
-func (w *confirmationRiskWatcher) decisionTime(ctx context.Context,
-	decision ConfirmationRiskDecision) time.Time {
+// durableDecisionTime returns the durable decision timestamp, recording the
+// decision first if the notification was replayed before it could be persisted.
+// The bool is false when a configured store could not durably record or reload
+// the decision.
+func (w *confirmationRiskWatcher) durableDecisionTime(ctx context.Context,
+	decision ConfirmationRiskDecision) (time.Time, bool) {
 
 	now := time.Now()
 	if w.store == nil {
-		return now
+		return now, true
 	}
 
 	storedLoopIn, err := w.store.GetLoopInByHash(ctx, w.swapHash)
@@ -141,11 +143,11 @@ func (w *confirmationRiskWatcher) decisionTime(ctx context.Context,
 		w.warnf("unable to reload persisted risk decision for swap %v: %v",
 			w.swapHash, err)
 
-		return now
+		return time.Time{}, false
 	}
 
 	if storedLoopIn == nil {
-		return now
+		return time.Time{}, false
 	}
 
 	hasPersistedDecision :=
@@ -160,7 +162,7 @@ func (w *confirmationRiskWatcher) decisionTime(ctx context.Context,
 			w.warnf("unable to persist replayed risk decision for "+
 				"swap %v: %v", w.swapHash, err)
 
-			return now
+			return time.Time{}, false
 		}
 
 		storedLoopIn, err = w.store.GetLoopInByHash(ctx, w.swapHash)
@@ -168,15 +170,27 @@ func (w *confirmationRiskWatcher) decisionTime(ctx context.Context,
 			w.warnf("unable to reload persisted risk decision for "+
 				"swap %v: %v", w.swapHash, err)
 
-			return now
+			return time.Time{}, false
 		}
 		if storedLoopIn == nil ||
 			storedLoopIn.ConfirmationRiskDecision != decision ||
 			storedLoopIn.ConfirmationRiskDecisionTime.IsZero() {
 
-			return now
+			return time.Time{}, false
 		}
 	}
 
-	return storedLoopIn.ConfirmationRiskDecisionTime
+	return storedLoopIn.ConfirmationRiskDecisionTime, true
+}
+
+// decisionTime retains the best-effort behavior used for server notifications.
+func (w *confirmationRiskWatcher) decisionTime(ctx context.Context,
+	decision ConfirmationRiskDecision) time.Time {
+
+	decisionTime, ok := w.durableDecisionTime(ctx, decision)
+	if !ok {
+		return time.Now()
+	}
+
+	return decisionTime
 }

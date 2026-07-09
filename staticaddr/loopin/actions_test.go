@@ -25,6 +25,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+const testTimeout = 5 * time.Second
+
 // TestHandleInvoiceUpdate verifies that invoice state updates map to the
 // monitor events expected by the static address loop-in FSM.
 func TestHandleInvoiceUpdate(t *testing.T) {
@@ -60,11 +62,9 @@ func TestHandleInvoiceUpdate(t *testing.T) {
 			event: fsm.NoOp,
 		},
 		{
-			name:      "unexpected",
-			state:     invoices.ContractState(99),
-			event:     fsm.OnError,
-			done:      true,
-			errString: "unexpected invoice state",
+			name:  "unexpected",
+			state: invoices.ContractState(99),
+			event: fsm.NoOp,
 		},
 	}
 
@@ -103,12 +103,304 @@ func TestHandleInvoiceUpdate(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceSettledWinsOverRecoveredRiskRejection verifies that an
+// authoritative settled state takes precedence over a persisted server risk
+// rejection during recovery.
+func TestMonitorInvoiceSettledWinsOverRecoveredRiskRejection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{1, 2, 5}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractSettled,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionRejected,
+		mockLnd.LndServices.Invoices,
+	)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnPaymentReceived, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Empty(t, depositMgr.transitions)
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("settled invoice was canceled: %v", hash)
+
+	default:
+	}
+}
+
+// TestMonitorInvoiceCancelErrorKeepsMonitoring verifies that cancellation
+// failures neither unlock deposits nor stop invoice monitoring. Recovery
+// rechecks the authoritative invoice state, and a later settlement wins.
+func TestMonitorInvoiceCancelErrorKeepsMonitoring(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{1, 2, 6}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	cancelCalls := make(chan lntypes.Hash, 2)
+	releaseCancel := make(chan struct{})
+	invoicesClient := &failingCancelInvoices{
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		cancelCalls:    cancelCalls,
+		release:        releaseCancel,
+		err:            errors.New("invoice backend unavailable"),
+	}
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionRejected,
+		invoicesClient,
+	)
+	f.ActionEntryFunc = nil
+
+	resultChan := make(chan error, 1)
+	go func() {
+		resultChan <- f.SendEvent(ctx, OnRecover, nil)
+	}()
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case hash := <-cancelCalls:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("cancellation attempt not received: %v", ctx.Err())
+	}
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		t.Fatalf("deposits unlocked after cancellation error: %v",
+			transition)
+
+	default:
+	}
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractSettled,
+	})
+	close(releaseCancel)
+
+	select {
+	case err := <-resultChan:
+		require.NoError(t, err)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Equal(t, []fsm.StateType{deposit.LoopedIn}, depositMgr.states)
+}
+
+// TestMonitorInvoiceUnknownStateKeepsMonitoring verifies that a failed lookup
+// and an unknown subscription state do not release deposits. A subsequent
+// authoritative settlement still completes the swap.
+func TestMonitorInvoiceUnknownStateKeepsMonitoring(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{1, 2, 7}
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	var invoiceSub *test.SingleInvoiceSubscription
+	select {
+	case invoiceSub = <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	invoiceSub.Update <- lndclient.InvoiceUpdate{
+		Invoice: lndclient.Invoice{
+			Hash:  swapHash,
+			State: invoices.ContractState(99),
+		},
+	}
+
+	select {
+	case event := <-resultChan:
+		t.Fatalf("unknown invoice state ended monitor with %v", event)
+
+	case transition := <-depositMgr.transitionChan:
+		t.Fatalf("unknown invoice state unlocked deposits: %v", transition)
+
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	invoiceSub.Update <- lndclient.InvoiceUpdate{
+		Invoice: lndclient.Invoice{
+			Hash:  swapHash,
+			State: invoices.ContractSettled,
+		},
+	}
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnPaymentReceived, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Empty(t, depositMgr.transitions)
+}
+
+// TestMonitorInvoiceSetupFailureRecoversSettledInvoice verifies that a
+// transient subscription failure cannot route an already-settled swap through
+// deposit cleanup before the authoritative invoice lookup runs.
+func TestMonitorInvoiceSetupFailureRecoversSettledInvoice(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{1, 2, 8}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractSettled,
+	})
+	invoicesClient := &flakySubscribeInvoices{
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		err:            errors.New("invoice backend unavailable"),
+	}
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionRejected,
+		invoicesClient,
+	)
+	f.ActionEntryFunc = nil
+
+	resultChan := make(chan error, 1)
+	go func() {
+		resultChan <- f.SendEvent(ctx, OnRecover, nil)
+	}()
+
+	select {
+	case err := <-resultChan:
+		require.NoError(t, err)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor did not recover: %v", ctx.Err())
+	}
+
+	require.Equal(t, 1, invoicesClient.subscribeCalls)
+	require.Equal(t, []fsm.StateType{deposit.LoopedIn}, depositMgr.states)
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("settled invoice was canceled: %v", hash)
+
+	default:
+	}
+}
+
+// TestMonitorInvoiceStreamErrorRecoversSettlement verifies that a dead invoice
+// stream checks the latest invoice state before entering recovery.
+func TestMonitorInvoiceStreamErrorRecoversSettlement(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{1, 2, 9}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	lookupStarted := make(chan struct{})
+	releaseLookup := make(chan struct{})
+	f.cfg.LndClient = &firstLookupBarrier{
+		LightningClient: mockLnd.Client,
+		lookupStarted:   lookupStarted,
+		release:         releaseLookup,
+	}
+	f.ActionEntryFunc = nil
+
+	resultChan := make(chan error, 1)
+	go func() {
+		resultChan <- f.SendEvent(ctx, OnRecover, nil)
+	}()
+
+	var invoiceSub *test.SingleInvoiceSubscription
+	select {
+	case invoiceSub = <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+	select {
+	case <-lookupStarted:
+	case <-ctx.Done():
+		t.Fatalf("initial invoice lookup not received: %v", ctx.Err())
+	}
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractSettled,
+	})
+	close(releaseLookup)
+	select {
+	case invoiceSub.Err <- errors.New("invoice stream failed"):
+	case <-ctx.Done():
+		t.Fatalf("invoice stream error was not consumed: %v", ctx.Err())
+	}
+
+	select {
+	case err := <-resultChan:
+		require.NoError(t, err)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor did not recover: %v", ctx.Err())
+	}
+
+	require.Equal(t, []fsm.StateType{deposit.LoopedIn}, depositMgr.states)
+}
+
 // TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr ensures that an error from
 // the HTLC confirmation subscription triggers a re-registration. Without the
 // regression fix, only the initial registration would be performed and the
 // test would time out waiting for the second one.
 func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -211,7 +503,7 @@ func TestMonitorInvoiceAndHtlcTxReRegistersOnConfErr(t *testing.T) {
 // client is monitoring an HTLC-signed loop-in keeps the swap resumable instead
 // of entering the generic unlock path.
 func TestMonitorInvoiceAndHtlcTxNoOpOnShutdown(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	runCtx, stop := context.WithCancel(ctx)
@@ -325,7 +617,7 @@ func TestSweepHtlcTimeoutActionNoOpOnShutdown(t *testing.T) {
 // TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown ensures that a shutdown
 // while waiting for the timeout sweep confirmation keeps the FSM resumable.
 func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -362,7 +654,7 @@ func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
 		require.Equal(t, fsm.NoOp, event)
 		require.Nil(t, f.LastActionError)
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(testTimeout):
 		t.Fatal("timeout sweep monitor did not return")
 	}
 }
@@ -370,7 +662,7 @@ func TestMonitorHtlcTimeoutSweepActionNoOpOnShutdown(t *testing.T) {
 // TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock verifies that daemon
 // shutdown exits the monitor action without treating the swap as failed.
 func TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	runCtx, stop := context.WithCancel(ctx)
@@ -669,7 +961,7 @@ func testValidateLoopInContract(_ int32, _ int32) error {
 // payment timeout starts on risk acceptance and keeps confirmed HTLC deposits
 // locked for timeout sweeping.
 func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -806,11 +1098,149 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 	}
 }
 
+// TestMonitorInvoiceAndHtlcTxIgnoresWrongHashRiskNotifications verifies that
+// risk notifications for another swap do not start the payment deadline or
+// persist a decision through the monitor action.
+func TestMonitorInvoiceAndHtlcTxIgnoresWrongHashRiskNotifications(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{4, 5, 8}
+	otherHash := lntypes.Hash{8, 5, 4}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{9},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		HtlcCltvExpiry:        2_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	notificationMgr := &mockNotificationManager{
+		riskAccepted: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskAcceptedNotification, 2,
+		),
+		riskRejected: make(
+			chan *swapserverrpc.
+				ServerStaticLoopInRiskRejectedNotification, 1,
+		),
+	}
+	store := &recordingRiskStore{
+		mockStore: &mockStore{
+			loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+				swapHash: {},
+			},
+		},
+		decisions: make(chan ConfirmationRiskDecision, 1),
+	}
+
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:       mockLnd.ChainNotifier,
+		DepositManager:      &noopDepositManager{},
+		InvoicesClient:      mockLnd.LndServices.Invoices,
+		LndClient:           mockLnd.Client,
+		ChainParams:         mockLnd.ChainParams,
+		NotificationManager: notificationMgr,
+		Store:               store,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	notificationMgr.riskAccepted <- &swapserverrpc.
+		ServerStaticLoopInRiskAcceptedNotification{
+		SwapHash: otherHash[:],
+	}
+	notificationMgr.riskRejected <- &swapserverrpc.
+		ServerStaticLoopInRiskRejectedNotification{
+		SwapHash: otherHash[:],
+	}
+
+	select {
+	case decision := <-store.decisions:
+		t.Fatalf("persisted wrong-hash risk decision: %v", decision)
+
+	case hash := <-mockLnd.FailInvoiceChannel:
+		t.Fatalf("canceled invoice for wrong-hash risk decision: %v", hash)
+
+	case event := <-resultChan:
+		t.Fatalf("monitor action exited after wrong-hash risk decision: %v",
+			event)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	notificationMgr.riskAccepted <- &swapserverrpc.
+		ServerStaticLoopInRiskAcceptedNotification{
+		SwapHash: swapHash[:],
+	}
+
+	select {
+	case decision := <-store.decisions:
+		require.Equal(t, ConfirmationRiskDecisionAccepted, decision)
+
+	case <-ctx.Done():
+		t.Fatalf("risk decision was not persisted: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
 // TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime verifies that live
 // risk notifications use the durable receipt time, not the local channel
 // receive time, when reconstructing the payment deadline.
 func TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -925,7 +1355,7 @@ func TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime(t *testing.T) {
 // TestMonitorInvoiceAndHtlcTxPersistsReplayedRiskAccepted verifies that a risk
 // notification replayed after the swap row exists is written back to the store.
 func TestMonitorInvoiceAndHtlcTxPersistsReplayedRiskAccepted(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1038,7 +1468,7 @@ func TestMonitorInvoiceAndHtlcTxPersistsReplayedRiskAccepted(t *testing.T) {
 // confirmation risk rejection is persisted and exits through the generic error
 // path so the FSM unlocks deposits.
 func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1161,7 +1591,7 @@ func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
 // persisted risk acceptance restarts the payment deadline with elapsed time
 // preserved after restart.
 func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1262,7 +1692,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
 // persisted risk rejection still cancels after restart and exits through the
 // generic error path so the FSM unlocks deposits.
 func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1360,7 +1790,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
 func TestMonitorInvoiceAndHtlcTxDoesNotCancelWhenOriginalOutpointVanishes(
 	t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1452,7 +1882,7 @@ func TestMonitorInvoiceAndHtlcTxDoesNotCancelWhenOriginalOutpointVanishes(
 func TestMonitorInvoiceAndHtlcTxDoesNotCancelAcceptedInvoiceForMissingOutpoint(
 	t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1537,7 +1967,7 @@ func TestMonitorInvoiceAndHtlcTxDoesNotCancelAcceptedInvoiceForMissingOutpoint(
 // monitor action preserves the legacy payment deadline fallback when no risk
 // decision has been observed locally.
 func TestMonitorInvoiceAndHtlcTxStartsDeadlineAtLegacyMinConfs(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1649,7 +2079,7 @@ func TestMonitorInvoiceAndHtlcTxStartsDeadlineAtLegacyMinConfs(t *testing.T) {
 func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackWithNotificationManager(
 	t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1761,7 +2191,7 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackWithNotificationManager(
 func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 	t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -1805,6 +2235,14 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 		Hash:  swapHash,
 		State: invoices.ContractOpen,
 	})
+	store := &recordingRiskStore{
+		mockStore: &mockStore{
+			loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+				swapHash: {},
+			},
+		},
+		decisions: make(chan ConfirmationRiskDecision, 1),
+	}
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -1823,6 +2261,7 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 		InvoicesClient: mockLnd.LndServices.Invoices,
 		LndClient:      mockLnd.Client,
 		ChainParams:    mockLnd.ChainParams,
+		Store:          store,
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, false)
@@ -1834,6 +2273,19 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 	}()
 
 	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case decision := <-store.decisions:
+		require.Equal(t, ConfirmationRiskDecisionAccepted, decision)
+
+	case <-ctx.Done():
+		t.Fatalf("legacy fallback decision was not persisted: %v",
+			ctx.Err())
+	}
+	require.Equal(t, ConfirmationRiskDecisionAccepted,
+		store.loopIns[swapHash].ConfirmationRiskDecision)
+	require.False(t,
+		store.loopIns[swapHash].ConfirmationRiskDecisionTime.IsZero())
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -1864,7 +2316,7 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 // recovered monitor state does not rely on stale selected-deposit snapshots when
 // deciding whether the legacy payment deadline fallback has opened.
 func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2033,7 +2485,7 @@ func TestLegacyConfirmationFallbackStopsOnFreshnessFailure(t *testing.T) {
 func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 	t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2139,6 +2591,140 @@ func waitForMonitorSubscriptions(t *testing.T, ctx context.Context,
 	}
 }
 
+// newInvoiceMonitorTestFSM creates the minimal monitor-state setup shared by
+// invoice precedence and cancellation tests.
+func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
+	mockLnd *test.LndMockServices, swapHash lntypes.Hash,
+	decision ConfirmationRiskDecision,
+	invoicesClient lndclient.InvoicesClient) (*FSM, *recordingDepositManager) {
+
+	t.Helper()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                     swapHash,
+		HtlcCltvExpiry:               mockLnd.Height + 1_000,
+		InitiationHeight:             uint32(mockLnd.Height),
+		InitiationTime:               time.Now(),
+		ProtocolVersion:              version.ProtocolVersion_V0,
+		ClientPubkey:                 clientKey.PubKey(),
+		ServerPubkey:                 serverKey.PubKey(),
+		PaymentTimeoutSeconds:        3_600,
+		ConfirmationRiskDecision:     decision,
+		ConfirmationRiskDecisionTime: time.Now(),
+		Deposits: []*deposit.Deposit{{
+			Value: 200_000,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	depositMgr := &recordingDepositManager{
+		transitionChan: make(chan depositTransition, 1),
+	}
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: invoicesClient,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, true)
+	require.NoError(t, err)
+
+	return f, depositMgr
+}
+
+// failingCancelInvoices records cancellation attempts and returns a configured
+// error after its release channel is closed.
+type failingCancelInvoices struct {
+	lndclient.InvoicesClient
+
+	cancelCalls chan lntypes.Hash
+	release     chan struct{}
+	err         error
+}
+
+// flakySubscribeInvoices counts subscription attempts and returns a configured
+// subscription error.
+type flakySubscribeInvoices struct {
+	lndclient.InvoicesClient
+
+	subscribeCalls int
+	err            error
+}
+
+// firstLookupBarrier blocks the first invoice lookup until its release channel
+// is closed.
+type firstLookupBarrier struct {
+	lndclient.LightningClient
+
+	lookupStarted chan struct{}
+	release       chan struct{}
+	firstLookup   bool
+}
+
+func (f *firstLookupBarrier) LookupInvoice(ctx context.Context,
+	hash lntypes.Hash) (*lndclient.Invoice, error) {
+
+	invoice, err := f.LightningClient.LookupInvoice(ctx, hash)
+	if f.firstLookup {
+		return invoice, err
+	}
+
+	f.firstLookup = true
+	close(f.lookupStarted)
+	select {
+	case <-f.release:
+		return invoice, err
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (f *flakySubscribeInvoices) SubscribeSingleInvoice(ctx context.Context,
+	hash lntypes.Hash) (<-chan lndclient.InvoiceUpdate, <-chan error, error) {
+
+	f.subscribeCalls++
+	if f.subscribeCalls == 1 {
+		return nil, nil, f.err
+	}
+
+	return f.InvoicesClient.SubscribeSingleInvoice(ctx, hash)
+}
+
+func (f *failingCancelInvoices) CancelInvoice(ctx context.Context,
+	hash lntypes.Hash) error {
+
+	select {
+	case f.cancelCalls <- hash:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return f.err
+}
+
 // TestOriginalDepositOutpointUnavailableRequiresMissingTxOut verifies that a
 // present txout does not trigger the RBF cancellation path.
 func TestOriginalDepositOutpointUnavailableRequiresMissingTxOut(t *testing.T) {
@@ -2172,7 +2758,7 @@ func TestOriginalDepositOutpointUnavailableRequiresMissingTxOut(t *testing.T) {
 // pending loop-in is canceled before HTLC signing if GetTxOuts reports that
 // one of the originally selected outpoints is gone.
 func TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2223,7 +2809,7 @@ func TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable(t *testing.T) {
 // failures are treated as errors, but do not cancel the invoice. The invoice is
 // only canceled when GetTxOuts omits an original outpoint.
 func TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2271,7 +2857,7 @@ func TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError(t *testing.T) {
 // TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
 // created before a server-side rejection is canceled immediately.
 func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2321,7 +2907,7 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 // TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
 // fee guard also cancels the pre-created invoice before returning an error.
 func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
@@ -2389,7 +2975,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 // TestUnlockDepositsActionCancelsInvoice verifies that stored swaps that enter
 // the generic error unlock path also clean up their swap invoice.
 func TestUnlockDepositsActionCancelsInvoice(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
