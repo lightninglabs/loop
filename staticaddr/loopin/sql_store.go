@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -22,6 +23,12 @@ import (
 )
 
 const OutpointSeparator = ";"
+
+// sqlStoreUpdateTime returns the PostgreSQL-compatible timestamp precision used
+// for persisted loop-in update metadata.
+func sqlStoreUpdateTime(clock clock.Clock) time.Time {
+	return clock.Now().Truncate(time.Microsecond)
+}
 
 var (
 	// ErrInvalidOutpoint is returned when an outpoint contains the outpoint
@@ -288,13 +295,14 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		Fast:                    loopIn.Fast,
 	}
 
+	updateTime := sqlStoreUpdateTime(s.clock)
 	updateArgs := sqlc.InsertStaticAddressMetaUpdateParams{
 		SwapHash:        loopIn.SwapHash[:],
-		UpdateTimestamp: s.clock.Now(),
+		UpdateTimestamp: updateTime,
 		UpdateState:     string(loopIn.GetState()),
 	}
 
-	return s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
+	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			err := q.InsertSwap(ctx, swapArgs)
 			if err != nil {
@@ -331,6 +339,13 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 			return q.InsertStaticAddressMetaUpdate(ctx, updateArgs)
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	loopIn.LastUpdateTime = updateTime
+
+	return nil
 }
 
 // UpdateLoopIn updates the loop-in in the database.
@@ -351,13 +366,14 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 		},
 	}
 
+	updateTime := sqlStoreUpdateTime(s.clock)
 	updateArgs := sqlc.InsertStaticAddressMetaUpdateParams{
 		SwapHash:        loopIn.SwapHash[:],
 		UpdateState:     string(loopIn.GetState()),
-		UpdateTimestamp: s.clock.Now(),
+		UpdateTimestamp: updateTime,
 	}
 
-	return s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
+	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			err := q.UpdateStaticAddressLoopIn(ctx, updateParams)
 			if err != nil {
@@ -367,6 +383,13 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 			return q.InsertStaticAddressMetaUpdate(ctx, updateArgs)
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	loopIn.LastUpdateTime = updateTime
+
+	return nil
 }
 
 // RecordStaticAddressRiskDecision stores the server's confirmation-risk
