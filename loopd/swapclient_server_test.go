@@ -661,6 +661,26 @@ func TestMonitorSnapshotIncludesFinalStaticAddressLoopIns(t *testing.T) {
 	require.Len(t, completedSwaps, 1)
 }
 
+// TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress protects the live-update
+// invariant that static loop-in status events derive the HTLC address from the
+// swap, not from reusable static address parameters.
+func TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress(t *testing.T) {
+	ctx := t.Context()
+	_, staticLoopIn := newGenericStaticLoopInServer(t)
+	staticLoopIn.AddressParams = nil
+	statusChan := make(chan loop.SwapInfo, 1)
+	updater := &staticLoopInStatusUpdater{
+		statusChan:  statusChan,
+		mainCtx:     ctx,
+		chainParams: &chaincfg.TestNet3Params,
+	}
+
+	err := updater.sendUpdate(ctx, staticLoopIn)
+	require.NoError(t, err)
+	swapInfo := <-statusChan
+	assertStaticLoopInUsesSwapHtlcAddress(t, staticLoopIn, swapInfo)
+}
+
 // TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate protects the
 // monitor race invariant that live static loop-in updates arriving during the
 // initial snapshot are deduplicated without dropping newer progress.

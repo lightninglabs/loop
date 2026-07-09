@@ -245,6 +245,45 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
 }
 
+// TestUpdateLoopInSendsUpdateAfterSuccessfulStoreUpdate protects the
+// notification contract: after a successful database update, the manager must
+// publish the stored loop-in state to listeners.
+func TestUpdateLoopInSendsUpdateAfterSuccessfulStoreUpdate(t *testing.T) {
+	ctx := t.Context()
+	swapHash := lntypes.Hash{1, 2, 3}
+	updates := make(chan *StaticAddressLoopIn, 1)
+	loopIn := &StaticAddressLoopIn{SwapHash: swapHash}
+	loopIn.SetState(SignHtlcTx)
+
+	loopInFsm := &FSM{
+		cfg: &Config{
+			Store: &mockStore{stored: true},
+			SendUpdate: func(_ context.Context,
+				updated *StaticAddressLoopIn) error {
+
+				updates <- updated
+
+				return nil
+			},
+		},
+		loopIn: loopIn,
+	}
+
+	loopInFsm.updateLoopIn(ctx, fsm.Notification{
+		PreviousState: SignHtlcTx,
+		NextState:     MonitorInvoiceAndHtlcTx,
+	})
+
+	select {
+	case updated := <-updates:
+		require.Equal(t, swapHash, updated.SwapHash)
+		require.Equal(t, MonitorInvoiceAndHtlcTx, updated.GetState())
+
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 // TestHandleLoopInSweepReqRejectsInvalidServerNonce ensures that a malformed
 // MuSig2 nonce returned by the server is rejected before it reaches the signer.
 func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
@@ -501,6 +540,7 @@ type mockStore struct {
 	swaps   []*StaticAddressLoopIn
 	loopIns map[lntypes.Hash]*StaticAddressLoopIn
 	mapIDs  map[lntypes.Hash][]deposit.ID
+	stored  bool
 }
 
 func (s *mockStore) CreateLoopIn(_ context.Context,
@@ -521,7 +561,7 @@ func (s *mockStore) GetStaticAddressLoopInSwapsByStates(_ context.Context,
 	return s.swaps, nil
 }
 func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
-	return false, nil
+	return s.stored, nil
 }
 
 // RecordStaticAddressRiskDecision implements Store for manager tests.

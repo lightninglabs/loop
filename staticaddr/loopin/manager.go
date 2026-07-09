@@ -98,6 +98,9 @@ type Config struct {
 	// request.
 	ValidateLoopInContract ValidateLoopInContract
 
+	// SendUpdate publishes a loop-in status update after it is persisted.
+	SendUpdate func(context.Context, *StaticAddressLoopIn) error
+
 	// MaxStaticAddrHtlcFeePercentage is the percentage of the swap amount
 	// that we allow the server to charge for the htlc transaction.
 	// Although highly unlikely, this is a defense against the server
