@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/backup"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -104,6 +105,7 @@ type swapClientServer struct {
 	staticLoopInManager  *loopin.Manager
 	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
+	backupService        *backup.Service
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- any
 	statusChan           chan loop.SwapInfo
@@ -1717,6 +1719,17 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.backupService != nil {
+		backupFile, backupErr := s.backupService.WriteBackup(ctx)
+		if backupErr != nil {
+			warnf("Unable to write loop backup after static address "+
+				"request: %v", backupErr)
+		} else if backupFile != "" {
+			infof("Wrote encrypted loop backup to %s after static "+
+				"address request", backupFile)
+		}
 	}
 
 	sendCoinsResp, err := s.sendCoinsToStaticAddress(

@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/backup"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -618,6 +619,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		withdrawalManager    *withdraw.Manager
 		openChannelManager   *openchannel.Manager
 		staticLoopInManager  *loopin.Manager
+		backupService        *backup.Service
 	)
 
 	// Static address manager setup.
@@ -725,6 +727,25 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
 	}
 
+	backupService = backup.NewService(
+		d.cfg.DataDir, d.cfg.Network, d.lnd.Signer, staticAddressManager,
+	)
+
+	_, err = staticAddressManager.EnsureStaticAddressSeed(d.mainCtx)
+	if err != nil {
+		warnf("Unable to initialize static address seed during "+
+			"startup: %v", err)
+	}
+
+	backupFile, err := backupService.WriteBackup(d.mainCtx)
+	if err != nil {
+		warnf("Unable to write startup loop backup: %v", err)
+	}
+	if backupFile != "" {
+		infof("Wrote encrypted loop backup to %s after initializing "+
+			"the current L402 generation", backupFile)
+	}
+
 	var (
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
@@ -793,6 +814,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager:  staticLoopInManager,
 		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
+		backupService:        backupService,
 		stopDaemon:           d.Stop,
 	}
 

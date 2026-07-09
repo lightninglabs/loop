@@ -148,16 +148,16 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 		return showCommandHelp(ctx, cmd)
 	}
 
-	err := displayNewAddressWarning()
-	if err != nil {
-		return err
-	}
-
 	client, cleanup, err := getClient(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	err = maybeDisplayNewAddressWarning(ctx, client)
+	if err != nil {
+		return err
+	}
 
 	resp, err := client.NewStaticAddress(
 		ctx, &looprpc.NewStaticAddressRequest{},
@@ -1134,7 +1134,7 @@ func maybeDisplayNewAddressWarning(ctx context.Context,
 }
 
 func displayNewAddressWarning() error {
-	fmt.Printf("\nWARNING: Be aware that loosing your l402.token file in " +
+	fmt.Printf("\nWARNING: Be aware that losing your l402.token file in " +
 		".loop under your home directory will take your ability to " +
 		"spend funds sent to the static address via loop-ins or " +
 		"withdrawals. You will have to wait until the deposit " +

@@ -7,7 +7,7 @@ import (
 )
 
 // TestStaticAddressKeyFamiliesAreDisjoint documents the key-family split used
-// by static-address HTLC, receive and change key derivation.
+// by static-address backups and HTLC, receive and change key derivation.
 func TestStaticAddressKeyFamiliesAreDisjoint(t *testing.T) {
 	families := map[int32]string{
 		KeyFamily:                    "swap htlc",
