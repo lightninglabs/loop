@@ -94,6 +94,11 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
 	return m, nil
 }
 
+// CurrentHeight returns the manager's latest observed block height.
+func (m *Manager) CurrentHeight() int32 {
+	return m.currentHeight.Load()
+}
+
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	newBlockChan, newBlockErrChan, err :=
