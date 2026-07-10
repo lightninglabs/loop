@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
@@ -94,6 +95,35 @@ func DepositClientPubkeys(deposits []*deposit.Deposit) (
 	}
 
 	return clientPubkeys, nil
+}
+
+// ChangeOutput converts a locally generated static address into the RPC change
+// descriptor sent to the server. The descriptor binds the expected script,
+// amount and client key so the server can derive and verify the same address.
+func ChangeOutput(params *address.Parameters,
+	amount btcutil.Amount) (*swapserverrpc.StaticAddressChangeOutput, error) {
+
+	if amount <= 0 {
+		return nil, nil
+	}
+	if params == nil {
+		return nil, fmt.Errorf("missing static address change parameters")
+	}
+	if params.ClientPubkey == nil {
+		return nil, fmt.Errorf("missing static address change client " +
+			"pubkey")
+	}
+	if len(params.PkScript) == 0 {
+		return nil, fmt.Errorf("missing static address change pkscript")
+	}
+
+	return &swapserverrpc.StaticAddressChangeOutput{
+		StaticAddress: &swapserverrpc.StaticAddressDescriptor{
+			Pubkey:   params.ClientPubkey.SerializeCompressed(),
+			PkScript: params.PkScript,
+		},
+		Amount: int64(amount),
+	}, nil
 }
 
 // CreateMusig2Sessions creates a musig2 session for a number of deposits.

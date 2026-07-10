@@ -539,6 +539,70 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 	require.Equal(t, d1.ID, storedSwap.Deposits[1].ID)
 }
 
+func TestUpdateLoopInPersistsConfirmedHtlcOutpoint(t *testing.T) {
+	ctxb := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Index: 0,
+		},
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
+
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctxb, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x4, 0x2, 0x3, 0x5}
+	swap := StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x4, 0x2, 0x3, 0x5},
+		DepositOutpoints:        []string{d.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	swap.SetState(MonitorInvoiceAndHtlcTx)
+	require.NoError(t, swapStore.CreateLoopIn(ctxb, &swap))
+
+	confirmedHtlcTxHash := chainhash.Hash{0x55}
+	swap.HtlcTxHash = &confirmedHtlcTxHash
+	swap.HtlcOutputIndex = 2
+	swap.HtlcOutputValue = 88_000
+	require.NoError(t, swapStore.UpdateLoopIn(ctxb, &swap))
+
+	storedSwap, err := swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.NotNil(t, storedSwap.HtlcTxHash)
+	require.Equal(t, confirmedHtlcTxHash, *storedSwap.HtlcTxHash)
+	require.EqualValues(t, 2, storedSwap.HtlcOutputIndex)
+	require.EqualValues(t, 88_000, storedSwap.HtlcOutputValue)
+	require.Equal(t, MonitorInvoiceAndHtlcTx, storedSwap.GetState())
+}
+
 // TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins
 // keep the original outpoint snapshot stored when the swap was created.
 func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
