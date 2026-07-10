@@ -373,8 +373,18 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		map[string]*swapserverrpc.ClientSweeplessSigningInfo,
 		len(req.DepositToNonces),
 	)
+	depositMap := make(map[string]*deposit.Deposit, len(loopIn.Deposits))
+	for _, d := range loopIn.Deposits {
+		depositMap[d.String()] = d
+	}
 
 	for depositOutpoint, nonce := range req.DepositToNonces {
+		d, ok := depositMap[depositOutpoint]
+		if !ok {
+			return fmt.Errorf("deposit %v not found in loop-in",
+				depositOutpoint)
+		}
+
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
 			sigHashes, txscript.SigHashDefault,
 			sweepPacket.UnsignedTx,
@@ -393,7 +403,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
+			ctx, m.cfg.Signer, d,
 		)
 		if err != nil {
 			return err

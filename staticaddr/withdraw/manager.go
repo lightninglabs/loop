@@ -536,32 +536,27 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	selectedWithdrawalAmount int64,
 	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
-	// Create a musig2 session for each deposit.
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	// Create a musig2 session for each deposit. Each selected deposit carries
+	// the address parameters that produced the output, so withdrawals can
+	// spend inputs from multiple static addresses in one transaction.
 	sessions, clientNonces, idx, err := staticutil.CreateMusig2SessionsPerDeposit(
-		ctx, m.cfg.Signer, deposits, addrParams, staticAddress,
+		ctx, m.cfg.Signer, deposits,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("couldn't get confirmation "+
-			"height for deposit, %w", err)
-	}
+	defer func() {
+		err := staticutil.CleanupMusig2Sessions(
+			ctx, m.cfg.Signer, sessions,
+		)
+		if err != nil {
+			log.Warnf("Unable to clean up withdrawal MuSig2 "+
+				"sessions: %v", err)
+		}
+	}()
 
 	outpoints := toOutpoints(deposits)
-	prevOuts, err := staticutil.ToPrevOuts(deposits, params.PkScript)
+	prevOuts, err := staticutil.ToPrevOuts(deposits)
 	if err != nil {
 		return nil, nil, err
 	}

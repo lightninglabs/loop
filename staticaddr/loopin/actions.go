@@ -596,8 +596,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	// rates.
 	createSession := staticutil.CreateMusig2Sessions
 	htlcSessions, clientHtlcNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to create musig2 sessions: %w", err)
@@ -607,8 +606,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessions)
 
 	htlcSessionsHighFee, highFeeNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -616,8 +614,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessionsHighFee)
 
 	htlcSessionsExtremelyHighFee, extremelyHighNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)
