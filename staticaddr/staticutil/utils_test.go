@@ -141,6 +141,102 @@ func TestToPrevOutsMissingAddressParams(t *testing.T) {
 	require.ErrorContains(t, err, "missing static address parameters")
 }
 
+func TestDepositClientPubkeys(t *testing.T) {
+	clientKey1, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	clientKey2, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	d1 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "4444444444444444444444444444444444444444444444444444444444444444"),
+			Index: 0,
+		},
+		AddressParams: &address.Parameters{
+			ClientPubkey: clientKey1.PubKey(),
+			PkScript:     []byte{0x51, 0x20, 0x01},
+		},
+	}
+	d2 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "5555555555555555555555555555555555555555555555555555555555555555"),
+			Index: 1,
+		},
+		AddressParams: &address.Parameters{
+			ClientPubkey: clientKey2.PubKey(),
+			PkScript:     []byte{0x51, 0x20, 0x02},
+		},
+	}
+
+	proofs, err := DepositClientPubkeys([]*deposit.Deposit{d1, d2})
+	require.NoError(t, err)
+	require.Equal(
+		t, clientKey1.PubKey().SerializeCompressed(),
+		proofs[d1.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, d1.AddressParams.PkScript,
+		proofs[d1.String()].GetPkScript(),
+	)
+	require.Equal(
+		t, clientKey2.PubKey().SerializeCompressed(),
+		proofs[d2.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, d2.AddressParams.PkScript,
+		proofs[d2.String()].GetPkScript(),
+	)
+}
+
+func TestDepositClientPubkeysRejectsInvalidDeposits(t *testing.T) {
+	t.Run("missing params", func(t *testing.T) {
+		d := &deposit.Deposit{OutPoint: wire.OutPoint{Index: 1}}
+		_, err := DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address parameters")
+	})
+
+	t.Run("missing client key", func(t *testing.T) {
+		d := &deposit.Deposit{
+			OutPoint:      wire.OutPoint{Index: 1},
+			AddressParams: &address.Parameters{},
+		}
+		_, err := DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address client pubkey")
+	})
+
+	t.Run("duplicate outpoint", func(t *testing.T) {
+		clientKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			OutPoint: wire.OutPoint{
+				Hash:  mustHash(t, "6666666666666666666666666666666666666666666666666666666666666666"),
+				Index: 1,
+			},
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				PkScript:     []byte{0x51, 0x20, 0x03},
+			},
+		}
+		_, err = DepositClientPubkeys([]*deposit.Deposit{d, d})
+		require.ErrorContains(t, err, "duplicate outpoint")
+	})
+
+	t.Run("missing pkscript", func(t *testing.T) {
+		clientKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			OutPoint: wire.OutPoint{Index: 1},
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+			},
+		}
+		_, err = DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address pkscript")
+	})
+}
+
 func TestGetPrevoutInfo_ConversionAndSorting(t *testing.T) {
 	// Helper to create a hash from string.
 	must := func(s string) chainhash.Hash {
