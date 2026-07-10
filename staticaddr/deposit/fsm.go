@@ -181,13 +181,13 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
+	if deposit.AddressParams == nil {
+		return nil, fmt.Errorf("missing deposit static address " +
+			"parameters")
 	}
+	params := deposit.AddressParams
 
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}
@@ -535,10 +535,10 @@ func (f *FSM) Errorf(format string, args ...any) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
+func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 	error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, err
 	}
@@ -546,10 +546,10 @@ func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.params.ClientPubkey,
+			PubKey: f.deposit.AddressParams.ClientPubkey,
 		},
 		Output: wire.NewTxOut(
-			int64(f.deposit.Value), f.params.PkScript,
+			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
 		),
 		HashType:   txscript.SigHashDefault,
 		InputIndex: 0,
