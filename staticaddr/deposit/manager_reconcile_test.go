@@ -2,7 +2,6 @@ package deposit
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,7 +41,7 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
+		"GetParameters", utxo.PkScript,
 	).Return(&script.Parameters{
 		ID:              1,
 		ClientPubkey:    defaultServerPubkey,
@@ -49,10 +49,7 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		Expiry:          defaultExpiry,
 		PkScript:        utxo.PkScript,
 		ProtocolVersion: 999,
-	}, nil)
-	mockAddressManager.On(
-		"GetStaticAddress", mock.Anything,
-	).Return((*script.StaticAddress)(nil), errors.New("fsm init failed"))
+	})
 
 	mockStore := new(mockStore)
 	var createCalls atomic.Int32
@@ -147,7 +144,7 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
+		"GetParameters", utxo.PkScript,
 	).Return(&script.Parameters{
 		ID:              1,
 		ClientPubkey:    defaultServerPubkey,
@@ -155,10 +152,7 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 		Expiry:          defaultExpiry,
 		PkScript:        utxo.PkScript,
 		ProtocolVersion: 999,
-	}, nil)
-	mockAddressManager.On(
-		"GetStaticAddress", mock.Anything,
-	).Return((*script.StaticAddress)(nil), errors.New("fsm init failed"))
+	})
 
 	mockStore := new(mockStore)
 	mockStore.On(
@@ -180,6 +174,99 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 
 	err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to start new deposit FSM")
+}
+
+// TestCreateNewDepositBindsOwningAddress verifies that each wallet UTXO is
+// persisted with the parameters of the static address matching its script.
+func TestCreateNewDepositBindsOwningAddress(t *testing.T) {
+	ctx := t.Context()
+	mockLnd := test.NewMockLnd()
+
+	firstUtxo := &lnwallet.Utxo{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{31},
+			Index: 1,
+		},
+		Value:    btcutil.Amount(100_000),
+		PkScript: []byte{0x51, 0x01},
+	}
+	secondUtxo := &lnwallet.Utxo{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{32},
+			Index: 2,
+		},
+		Value:    btcutil.Amount(200_000),
+		PkScript: []byte{0x51, 0x02},
+	}
+
+	firstParams := &script.Parameters{
+		ID:           11,
+		PkScript:     firstUtxo.PkScript,
+		KeyLocator:   keychain.KeyLocator{Index: 11},
+		ClientPubkey: defaultServerPubkey,
+		ServerPubkey: defaultServerPubkey,
+	}
+	secondParams := &script.Parameters{
+		ID:           22,
+		PkScript:     secondUtxo.PkScript,
+		KeyLocator:   keychain.KeyLocator{Index: 22},
+		ClientPubkey: defaultServerPubkey,
+		ServerPubkey: defaultServerPubkey,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"GetParameters", firstUtxo.PkScript,
+	).Return(firstParams).Once()
+	mockAddressManager.On(
+		"GetParameters", secondUtxo.PkScript,
+	).Return(secondParams).Once()
+
+	created := make(map[wire.OutPoint]*Deposit)
+	mockStore := new(mockStore)
+	mockStore.On(
+		"CreateDeposit", mock.Anything, mock.Anything,
+	).Return(nil).Run(func(args mock.Arguments) {
+		deposit := args.Get(1).(*Deposit)
+		created[deposit.OutPoint] = deposit
+	}).Times(2)
+
+	manager := NewManager(&ManagerConfig{
+		AddressManager: mockAddressManager,
+		Store:          mockStore,
+		WalletKit:      mockLnd.WalletKit,
+	})
+
+	firstDeposit, err := manager.createNewDeposit(ctx, firstUtxo, 0)
+	require.NoError(t, err)
+	secondDeposit, err := manager.createNewDeposit(ctx, secondUtxo, 0)
+	require.NoError(t, err)
+
+	require.Same(t, firstParams, firstDeposit.AddressParams)
+	require.Same(t, secondParams, secondDeposit.AddressParams)
+	require.Same(t, firstDeposit, created[firstUtxo.OutPoint])
+	require.Same(t, secondDeposit, created[secondUtxo.OutPoint])
+	require.EqualValues(t, 11, firstDeposit.AddressParams.KeyLocator.Index)
+	require.EqualValues(t, 22, secondDeposit.AddressParams.KeyLocator.Index)
+
+	unknownUtxo := &lnwallet.Utxo{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{33},
+			Index: 3,
+		},
+		PkScript: []byte{0x51, 0x03},
+	}
+	mockAddressManager.On(
+		"GetParameters", unknownUtxo.PkScript,
+	).Return((*script.Parameters)(nil)).Once()
+
+	_, err = manager.createNewDeposit(ctx, unknownUtxo, 0)
+	require.ErrorContains(t, err, "missing static address parameters")
+	_, ok := manager.deposits[unknownUtxo.OutPoint]
+	require.False(t, ok)
+
+	mockAddressManager.AssertExpectations(t)
+	mockStore.AssertExpectations(t)
 }
 
 // TestUpdateDepositConfirmationsResetsReorgedDeposit verifies that a deposit
@@ -493,6 +580,12 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 		OutPoint:           outpoint,
 		Value:              btcutil.Amount(100_000),
 		ConfirmationHeight: 77,
+		AddressParams: &script.Parameters{
+			ClientPubkey:    defaultServerPubkey,
+			ServerPubkey:    defaultServerPubkey,
+			Expiry:          defaultExpiry,
+			ProtocolVersion: version.ProtocolVersion_V0,
+		},
 	}
 	deposit.SetState(Deposited)
 
@@ -506,16 +599,6 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		ID:              1,
-		ProtocolVersion: version.ProtocolVersion_V0,
-	}, nil)
-	mockAddressManager.On(
-		"GetStaticAddress", mock.Anything,
-	).Return((*script.StaticAddress)(nil), nil)
-
 	mockStore := new(mockStore)
 	var updateStates []fsm.StateType
 	mockStore.On(
@@ -569,10 +652,6 @@ func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
-
 	var (
 		updateStates  []fsm.StateType
 		updateHeights []int64
@@ -639,10 +718,6 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
-
 	manager := NewManager(&ManagerConfig{
 		AddressManager: mockAddressManager,
 		Store:          new(mockStore),
@@ -709,14 +784,15 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
+		"GetParameters", utxo.PkScript,
 	).Return(&script.Parameters{
 		ID:              1,
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
 		ProtocolVersion: version.ProtocolVersion_V0,
-	}, nil)
-	mockAddressManager.On(
-		"GetStaticAddress", mock.Anything,
-	).Return((*script.StaticAddress)(nil), nil)
+	})
 
 	mockStore := new(mockStore)
 	var createdDeposit *Deposit

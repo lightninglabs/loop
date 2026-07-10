@@ -39,6 +39,10 @@ type AddressManager interface {
 	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
 		error)
 
+	// GetParameters returns active static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *script.Parameters
+
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
 	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
