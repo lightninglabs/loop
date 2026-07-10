@@ -22,6 +22,7 @@ type Deposit struct {
 	SwapHash              []byte
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
+	StaticAddressID       sql.NullInt32
 }
 
 type DepositUpdate struct {

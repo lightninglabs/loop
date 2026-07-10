@@ -1,8 +1,13 @@
 -- name: AllStaticAddresses :many
-SELECT * FROM static_addresses;
+SELECT * FROM static_addresses
+ORDER BY id ASC;
 
 -- name: GetStaticAddress :one
 SELECT * FROM static_addresses
+WHERE pkscript=$1;
+
+-- name: GetStaticAddressID :one
+SELECT id FROM static_addresses
 WHERE pkscript=$1;
 
 -- name: CreateStaticAddress :exec
@@ -25,3 +30,8 @@ INSERT INTO static_addresses (
              $7,
              $8
          );
+
+-- name: GetLegacyAddress :one
+SELECT * FROM static_addresses
+ORDER BY id ASC
+LIMIT 1;
