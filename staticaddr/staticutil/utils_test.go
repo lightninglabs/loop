@@ -174,7 +174,7 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &script.Parameters{
+	params := &address.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       10,
@@ -203,7 +203,7 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &script.Parameters{
+	params := &address.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       12,

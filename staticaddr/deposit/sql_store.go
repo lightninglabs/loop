@@ -15,7 +15,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
-	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -439,7 +439,7 @@ func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 			return nil, err
 		}
 
-		deposit.AddressParams = &script.Parameters{
+		deposit.AddressParams = &address.Parameters{
 			ID:           row.StaticAddressID.Int32,
 			ClientPubkey: clientPubkey,
 			ServerPubkey: serverPubkey,
