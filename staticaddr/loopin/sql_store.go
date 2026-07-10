@@ -576,7 +576,7 @@ func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
 			return nil, err
 		}
 
-		sqlcDeposit := sqlc.Deposit{
+		sqlcDeposit := sqlc.AllDepositsRow{
 			DepositID:             id[:],
 			TxHash:                d.TxHash,
 			Amount:                d.Amount,
@@ -587,6 +587,16 @@ func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
 			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
 			OnchainCost:           d.OnchainCost,
 			OnchainCostKnown:      d.OnchainCostKnown,
+			SwapHash:              d.SwapHash,
+			StaticAddressID:       d.StaticAddressID,
+			ClientPubkey:          d.ClientPubkey,
+			ServerPubkey:          d.ServerPubkey,
+			Expiry:                d.Expiry,
+			ClientKeyFamily:       d.ClientKeyFamily,
+			ClientKeyIndex:        d.ClientKeyIndex,
+			Pkscript:              d.Pkscript,
+			ProtocolVersion:       d.ProtocolVersion,
+			InitiationHeight:      d.InitiationHeight,
 		}
 
 		sqlcDepositUpdate := sqlc.DepositUpdate{
