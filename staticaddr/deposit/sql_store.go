@@ -6,14 +6,19 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -49,6 +54,17 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+		StaticAddressID:      sql.NullInt32{},
+	}
+	if deposit.AddressParams != nil {
+		if deposit.AddressParams.ID <= 0 {
+			return fmt.Errorf("static address ID must be set")
+		}
+
+		createArgs.StaticAddressID = sql.NullInt32{
+			Int32: deposit.AddressParams.ID,
+			Valid: true,
+		}
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -147,7 +163,9 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			deposit, err = toDeposit(
+				depositRowFromGet(row), latestUpdate,
+			)
 			if err != nil {
 				return err
 			}
@@ -193,7 +211,9 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			deposit, err = toDeposit(
+				depositRowFromOutpoint(row), latestUpdate,
+			)
 			if err != nil {
 				return err
 			}
@@ -245,8 +265,105 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return allDeposits, nil
 }
 
-// ToDeposit converts an sql deposit to a deposit.
-func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
+// ToDeposit converts an sql deposit row with joined static address metadata to
+// a deposit.
+func ToDeposit(row sqlc.AllDepositsRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
+	error) {
+
+	return toDeposit(depositRowFromAll(row), lastUpdate)
+}
+
+type depositRow struct {
+	DepositID             []byte
+	TxHash                []byte
+	OutIndex              int32
+	Amount                int64
+	ConfirmationHeight    int64
+	TimeoutSweepPkScript  []byte
+	ExpirySweepTxid       []byte
+	FinalizedWithdrawalTx sql.NullString
+	SwapHash              []byte
+	StaticAddressID       sql.NullInt32
+	ClientPubkey          []byte
+	ServerPubkey          []byte
+	Expiry                sql.NullInt32
+	ClientKeyFamily       sql.NullInt32
+	ClientKeyIndex        sql.NullInt32
+	Pkscript              []byte
+	ProtocolVersion       sql.NullInt32
+	InitiationHeight      sql.NullInt32
+}
+
+func depositRowFromAll(row sqlc.AllDepositsRow) depositRow {
+	return depositRow{
+		DepositID:             row.DepositID,
+		TxHash:                row.TxHash,
+		OutIndex:              row.OutIndex,
+		Amount:                row.Amount,
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       row.ExpirySweepTxid,
+		FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+		SwapHash:              row.SwapHash,
+		StaticAddressID:       row.StaticAddressID,
+		ClientPubkey:          row.ClientPubkey,
+		ServerPubkey:          row.ServerPubkey,
+		Expiry:                row.Expiry,
+		ClientKeyFamily:       row.ClientKeyFamily,
+		ClientKeyIndex:        row.ClientKeyIndex,
+		Pkscript:              row.Pkscript,
+		ProtocolVersion:       row.ProtocolVersion,
+		InitiationHeight:      row.InitiationHeight,
+	}
+}
+
+func depositRowFromGet(row sqlc.GetDepositRow) depositRow {
+	return depositRow{
+		DepositID:             row.DepositID,
+		TxHash:                row.TxHash,
+		OutIndex:              row.OutIndex,
+		Amount:                row.Amount,
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       row.ExpirySweepTxid,
+		FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+		SwapHash:              row.SwapHash,
+		StaticAddressID:       row.StaticAddressID,
+		ClientPubkey:          row.ClientPubkey,
+		ServerPubkey:          row.ServerPubkey,
+		Expiry:                row.Expiry,
+		ClientKeyFamily:       row.ClientKeyFamily,
+		ClientKeyIndex:        row.ClientKeyIndex,
+		Pkscript:              row.Pkscript,
+		ProtocolVersion:       row.ProtocolVersion,
+		InitiationHeight:      row.InitiationHeight,
+	}
+}
+
+func depositRowFromOutpoint(row sqlc.DepositForOutpointRow) depositRow {
+	return depositRow{
+		DepositID:             row.DepositID,
+		TxHash:                row.TxHash,
+		OutIndex:              row.OutIndex,
+		Amount:                row.Amount,
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       row.ExpirySweepTxid,
+		FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+		SwapHash:              row.SwapHash,
+		StaticAddressID:       row.StaticAddressID,
+		ClientPubkey:          row.ClientPubkey,
+		ServerPubkey:          row.ServerPubkey,
+		Expiry:                row.Expiry,
+		ClientKeyFamily:       row.ClientKeyFamily,
+		ClientKeyIndex:        row.ClientKeyIndex,
+		Pkscript:              row.Pkscript,
+		ProtocolVersion:       row.ProtocolVersion,
+		InitiationHeight:      row.InitiationHeight,
+	}
+}
+
+func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 	error) {
 
 	id := ID{}
@@ -296,7 +413,7 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		swapHash = &hash
 	}
 
-	return &Deposit{
+	deposit := &Deposit{
 		ID:    id,
 		state: fsm.StateType(lastUpdate.UpdateState),
 		OutPoint: wire.OutPoint{
@@ -309,5 +426,57 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		ExpirySweepTxid:       expirySweepTxid,
 		SwapHash:              swapHash,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
-	}, nil
+	}
+
+	if row.StaticAddressID.Valid {
+		clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
+		if err != nil {
+			return nil, err
+		}
+
+		serverPubkey, err := btcec.ParsePubKey(row.ServerPubkey)
+		if err != nil {
+			return nil, err
+		}
+
+		deposit.AddressParams = &script.Parameters{
+			ID:           row.StaticAddressID.Int32,
+			ClientPubkey: clientPubkey,
+			ServerPubkey: serverPubkey,
+			Expiry:       uint32(row.Expiry.Int32),
+			PkScript:     row.Pkscript,
+			KeyLocator: keychain.KeyLocator{
+				Family: keychain.KeyFamily(
+					row.ClientKeyFamily.Int32,
+				),
+				Index: uint32(row.ClientKeyIndex.Int32),
+			},
+			ProtocolVersion: version.AddressProtocolVersion(
+				row.ProtocolVersion.Int32,
+			),
+			InitiationHeight: row.InitiationHeight.Int32,
+		}
+	}
+
+	return deposit, nil
+}
+
+// BatchSetStaticAddressID sets the static address id for all deposits that
+// predate the deposit-to-address schema link.
+func (s *SqlStore) BatchSetStaticAddressID(ctx context.Context,
+	staticAddressID int32) error {
+
+	if staticAddressID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
+	return s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
+		func(q *sqlc.Queries) error {
+			return q.SetAllNullDepositsStaticAddressID(
+				ctx, sql.NullInt32{
+					Int32: staticAddressID,
+					Valid: true,
+				},
+			)
+		})
 }
