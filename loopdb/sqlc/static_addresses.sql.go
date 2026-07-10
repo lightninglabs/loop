@@ -11,6 +11,7 @@ import (
 
 const allStaticAddresses = `-- name: AllStaticAddresses :many
 SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+ORDER BY id ASC
 `
 
 func (q *Queries) AllStaticAddresses(ctx context.Context) ([]StaticAddress, error) {
@@ -93,6 +94,29 @@ func (q *Queries) CreateStaticAddress(ctx context.Context, arg CreateStaticAddre
 	return err
 }
 
+const getLegacyAddress = `-- name: GetLegacyAddress :one
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+ORDER BY id ASC
+LIMIT 1
+`
+
+func (q *Queries) GetLegacyAddress(ctx context.Context) (StaticAddress, error) {
+	row := q.db.QueryRowContext(ctx, getLegacyAddress)
+	var i StaticAddress
+	err := row.Scan(
+		&i.ID,
+		&i.ClientPubkey,
+		&i.ServerPubkey,
+		&i.Expiry,
+		&i.ClientKeyFamily,
+		&i.ClientKeyIndex,
+		&i.Pkscript,
+		&i.ProtocolVersion,
+		&i.InitiationHeight,
+	)
+	return i, err
+}
+
 const getStaticAddress = `-- name: GetStaticAddress :one
 SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
 WHERE pkscript=$1
@@ -113,4 +137,16 @@ func (q *Queries) GetStaticAddress(ctx context.Context, pkscript []byte) (Static
 		&i.InitiationHeight,
 	)
 	return i, err
+}
+
+const getStaticAddressID = `-- name: GetStaticAddressID :one
+SELECT id FROM static_addresses
+WHERE pkscript=$1
+`
+
+func (q *Queries) GetStaticAddressID(ctx context.Context, pkscript []byte) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getStaticAddressID, pkscript)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }
