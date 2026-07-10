@@ -13,11 +13,11 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/mock"
@@ -119,6 +119,17 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 
 	return args.Get(0).(*script.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *script.Parameters {
+
+	args := m.Called(pkScript)
+	if args.Get(0) == nil {
+		return nil
+	}
+
+	return args.Get(0).(*script.Parameters)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
@@ -586,6 +597,13 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	blockErrChan := make(chan error)
 
 	ID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
+		context.Background(), swap.StaticAddressKeyFamily,
+	)
+	require.NoError(t, err)
+
 	utxo := &lnwallet.Utxo{
 		AddressType:   lnwallet.TaprootPubkey,
 		Value:         btcutil.Amount(100000),
@@ -596,7 +614,15 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Index: 0xffffffff,
 		},
 	}
-	require.NoError(t, err)
+	addrParams := &script.Parameters{
+		ID:              1,
+		ClientPubkey:    keyDescriptor.PubKey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		KeyLocator:      keyDescriptor.KeyLocator,
+		ProtocolVersion: version.ProtocolVersion_V0,
+	}
 	storedDeposits := []*Deposit{
 		{
 			ID:                   ID,
@@ -605,6 +631,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Value:                utxo.Value,
 			ConfirmationHeight:   3,
 			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+			AddressParams:        addrParams,
 		},
 	}
 
@@ -617,12 +644,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	).Return(nil)
 
 	var manager *Manager
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		Expiry: defaultExpiry,
-	}, nil)
-
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
 	).Return(func() []*lnwallet.Utxo {
@@ -680,29 +701,5 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		blockErrChan:            blockErrChan,
 	}
 
-	staticAddress := generateStaticAddress(
-		context.Background(), testContext,
-	)
-	mockAddressManager.On(
-		"GetStaticAddress", mock.Anything,
-	).Return(staticAddress, nil)
-
 	return testContext
-}
-
-func generateStaticAddress(ctx context.Context,
-	t *ManagerTestContext) *script.StaticAddress {
-
-	keyDescriptor, err := t.mockLnd.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
-	)
-	require.NoError(t.context.T, err)
-
-	staticAddress, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(defaultExpiry),
-		keyDescriptor.PubKey, defaultServerPubkey,
-	)
-	require.NoError(t.context.T, err)
-
-	return staticAddress
 }

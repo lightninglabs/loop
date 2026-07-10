@@ -454,6 +454,16 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		return nil, err
 	}
 
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+	if addressParams.ID <= 0 {
+		return nil, fmt.Errorf("missing static address ID for deposit %v",
+			utxo.OutPoint)
+	}
+
 	// Get the sweep pk script.
 	addr, err := m.cfg.WalletKit.NextAddr(
 		ctx, lnwallet.DefaultAccountName,
@@ -471,21 +481,6 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	id, err := GetRandomDepositID()
 	if err != nil {
 		return nil, err
-	}
-
-	addressParams, err := m.cfg.AddressManager.
-		GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address parameters: %w",
-			err)
-	}
-	if addressParams == nil {
-		return nil, fmt.Errorf("missing static address parameters for deposit %v",
-			utxo.OutPoint)
-	}
-	if addressParams.ID <= 0 {
-		return nil, fmt.Errorf("missing static address ID for deposit %v",
-			utxo.OutPoint)
 	}
 
 	deposit := &Deposit{
