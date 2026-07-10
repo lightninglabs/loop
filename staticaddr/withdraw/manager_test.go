@@ -3,23 +3,53 @@ package withdraw
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btclog/v2"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
+
+type withdrawalCleanupSigner struct {
+	lndclient.SignerClient
+
+	cleaned       [][32]byte
+	cleanupCtxErr []error
+}
+
+func (s *withdrawalCleanupSigner) MuSig2CreateSession(context.Context,
+	input.MuSig2Version, *keychain.KeyLocator, [][]byte,
+	...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+
+	return &input.MuSig2SessionInfo{SessionID: [32]byte{1}}, nil
+}
+
+func (s *withdrawalCleanupSigner) MuSig2Cleanup(ctx context.Context,
+	sessionID [32]byte) error {
+
+	s.cleaned = append(s.cleaned, sessionID)
+	s.cleanupCtxErr = append(s.cleanupCtxErr, ctx.Err())
+
+	return nil
+}
 
 // TestNewManagerHeightValidation ensures the constructor rejects zero heights.
 func TestNewManagerHeightValidation(t *testing.T) {
@@ -33,6 +63,202 @@ func TestNewManagerHeightValidation(t *testing.T) {
 	manager, err := NewManager(cfg, 1)
 	require.NoError(t, err)
 	require.NotNil(t, manager)
+}
+
+func TestWithdrawalChangePkScript(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, withdrawalChangePkScript(nil))
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: []byte{0x01},
+	})
+	require.Nil(t, withdrawalChangePkScript(tx))
+
+	tx.AddTxOut(&wire.TxOut{
+		Value:    500,
+		PkScript: []byte{0x02},
+	})
+	require.Equal(t, []byte{0x02}, withdrawalChangePkScript(tx))
+}
+
+// TestValidateConfirmedWithdrawalInputs verifies that a replacement
+// transaction must preserve the complete withdrawal deposit set. Additional
+// inputs are allowed because they do not change which deposits are withdrawn.
+func TestValidateConfirmedWithdrawalInputs(t *testing.T) {
+	t.Parallel()
+
+	first := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}, Index: 1},
+	}
+	second := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{2}, Index: 2},
+	}
+	deposits := []*deposit.Deposit{first, second}
+
+	partialSpend := wire.NewMsgTx(2)
+	partialSpend.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: first.OutPoint,
+	})
+	err := validateConfirmedWithdrawalInputs(partialSpend, deposits)
+	require.ErrorContains(t, err, second.OutPoint.String())
+
+	replacement := wire.NewMsgTx(2)
+	replacement.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: first.OutPoint,
+	})
+	replacement.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: second.OutPoint,
+	})
+	replacement.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{3}, Index: 3,
+		},
+	})
+	require.NoError(
+		t, validateConfirmedWithdrawalInputs(replacement, deposits),
+	)
+}
+
+func TestCreateFinalizedWithdrawalTxCleansUpSessionsOnError(t *testing.T) {
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	signer := &withdrawalCleanupSigner{}
+	manager := &Manager{cfg: &ManagerConfig{Signer: signer}}
+	deposits := []*deposit.Deposit{
+		{
+			OutPoint: wire.OutPoint{Index: 1},
+			Value:    100_000,
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				ServerPubkey: serverKey.PubKey(),
+				Expiry:       144,
+				PkScript:     []byte{0x51},
+				KeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err = manager.CreateFinalizedWithdrawalTx(
+		ctx, deposits, nil, 1_000, 0,
+		lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
+	)
+	require.ErrorContains(
+		t, err, "either address or commitment type must be specified",
+	)
+	require.Equal(t, [][32]byte{{1}}, signer.cleaned)
+	require.Equal(t, []error{nil}, signer.cleanupCtxErr)
+}
+
+type withdrawalConfRegistration struct {
+	txID       *chainhash.Hash
+	pkScript   []byte
+	numConfs   int32
+	heightHint int32
+}
+
+type withdrawalTestNotifier struct {
+	lndclient.ChainNotifierClient
+
+	spendChan chan *chainntnfs.SpendDetail
+	spendErr  chan error
+	confChan  chan *chainntnfs.TxConfirmation
+	confErr   chan error
+	confReq   chan withdrawalConfRegistration
+}
+
+func newWithdrawalTestNotifier() *withdrawalTestNotifier {
+	return &withdrawalTestNotifier{
+		spendChan: make(chan *chainntnfs.SpendDetail, 1),
+		spendErr:  make(chan error, 1),
+		confChan:  make(chan *chainntnfs.TxConfirmation, 1),
+		confErr:   make(chan error, 1),
+		confReq:   make(chan withdrawalConfRegistration, 1),
+	}
+}
+
+func (n *withdrawalTestNotifier) RegisterSpendNtfn(context.Context,
+	*wire.OutPoint, []byte, int32, ...lndclient.NotifierOption) (
+	chan *chainntnfs.SpendDetail, chan error, error) {
+
+	return n.spendChan, n.spendErr, nil
+}
+
+func (n *withdrawalTestNotifier) RegisterConfirmationsNtfn(_ context.Context,
+	txid *chainhash.Hash, pkScript []byte, numConfs, heightHint int32,
+	_ ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
+	chan error, error) {
+
+	n.confReq <- withdrawalConfRegistration{
+		txID:       txid,
+		pkScript:   pkScript,
+		numConfs:   numConfs,
+		heightHint: heightHint,
+	}
+
+	return n.confChan, n.confErr, nil
+}
+
+func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	UseLogger(btclog.Disabled)
+
+	notifier := newWithdrawalTestNotifier()
+	manager, err := NewManager(&ManagerConfig{
+		ChainNotifier: notifier,
+	}, 123)
+	require.NoError(t, err)
+
+	originalTxHash := chainhash.Hash{1}
+	replacementTxHash := chainhash.Hash{2}
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 0,
+		},
+		ConfirmationHeight: 42,
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x51},
+		},
+	}
+	manager.finalizedWithdrawalTxns[originalTxHash] = wire.NewMsgTx(2)
+	withdrawalPkScript := []byte{0x51}
+
+	err = manager.handleWithdrawal(
+		ctx, []*deposit.Deposit{dep}, originalTxHash,
+		withdrawalPkScript,
+	)
+	require.NoError(t, err)
+
+	notifier.spendChan <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &replacementTxHash,
+		SpendingTx:     wire.NewMsgTx(2),
+		SpendingHeight: 50,
+	}
+
+	select {
+	case req := <-notifier.confReq:
+		require.NotNil(t, req.txID)
+		require.Equal(t, replacementTxHash, *req.txID)
+		require.Equal(t, withdrawalPkScript, req.pkScript)
+		require.Equal(t, MinConfs, req.numConfs)
+		require.EqualValues(t, 123, req.heightHint)
+
+	case <-ctx.Done():
+		t.Fatalf("confirmation registration not received: %v", ctx.Err())
+	}
 }
 
 // TestSignMusig2Tx_MissingSigningInfo tests that signMusig2Tx should error
