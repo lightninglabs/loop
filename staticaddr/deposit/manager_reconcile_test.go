@@ -42,7 +42,17 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+	).Return(&script.Parameters{
+		ID:              1,
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	}, nil)
+	mockAddressManager.On(
+		"GetStaticAddress", mock.Anything,
+	).Return((*script.StaticAddress)(nil), errors.New("fsm init failed"))
 
 	mockStore := new(mockStore)
 	var createCalls atomic.Int32
@@ -138,7 +148,17 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+	).Return(&script.Parameters{
+		ID:              1,
+		ClientPubkey:    defaultServerPubkey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        utxo.PkScript,
+		ProtocolVersion: 999,
+	}, nil)
+	mockAddressManager.On(
+		"GetStaticAddress", mock.Anything,
+	).Return((*script.StaticAddress)(nil), errors.New("fsm init failed"))
 
 	mockStore := new(mockStore)
 	mockStore.On(
@@ -146,6 +166,8 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 	).Return(nil).Run(func(args mock.Arguments) {
 		createdDeposit := args.Get(1).(*Deposit)
 		require.EqualValues(t, 98, createdDeposit.ConfirmationHeight)
+		require.NotNil(t, createdDeposit.AddressParams)
+		require.EqualValues(t, 1, createdDeposit.AddressParams.ID)
 	})
 
 	manager := NewManager(&ManagerConfig{
@@ -487,6 +509,7 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
 	).Return(&script.Parameters{
+		ID:              1,
 		ProtocolVersion: version.ProtocolVersion_V0,
 	}, nil)
 	mockAddressManager.On(
@@ -688,6 +711,7 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
 	).Return(&script.Parameters{
+		ID:              1,
 		ProtocolVersion: version.ProtocolVersion_V0,
 	}, nil)
 	mockAddressManager.On(
@@ -725,6 +749,8 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 	require.Equal(t, newOutpoint, replacement.OutPoint)
 	require.Equal(t, Deposited, replacement.GetState())
 	require.Zero(t, replacement.ConfirmationHeight)
+	require.NotNil(t, replacement.AddressParams)
+	require.EqualValues(t, 1, replacement.AddressParams.ID)
 
 	require.Same(t, fsm, manager.activeDeposits[oldOutpoint])
 	require.NotSame(t, fsm, manager.activeDeposits[newOutpoint])
