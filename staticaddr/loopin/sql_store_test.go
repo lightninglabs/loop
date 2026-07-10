@@ -10,12 +10,113 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
+
+// TestLoopInDepositAddressOwnershipRoundTrip asserts that deposits restored as
+// part of a loop-in retain the static address parameters needed for signing.
+func TestLoopInDepositAddressOwnershipRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	testDB := loopdb.NewTestDB(t)
+	defer testDB.Close()
+
+	testClock := clock.NewTestClock(time.Now())
+	depositStore := deposit.NewSqlStore(testDB.BaseDB)
+	loopInStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDB), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+	addressStore := address.NewSqlStore(testDB.BaseDB)
+
+	_, addressClientPubkey := test.CreateKey(1)
+	_, addressServerPubkey := test.CreateKey(2)
+	addressParams := &script.Parameters{
+		ClientPubkey: addressClientPubkey,
+		ServerPubkey: addressServerPubkey,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: 123,
+			Index:  456,
+		},
+		PkScript:         []byte{0x51, 0x20, 0x02},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 789,
+	}
+	require.NoError(t, addressStore.CreateStaticAddress(ctx, addressParams))
+
+	var err error
+	addressParams.ID, err = addressStore.GetStaticAddressID(
+		ctx, addressParams.PkScript,
+	)
+	require.NoError(t, err)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+	ownedDeposit := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  wire.NewMsgTx(2).TxHash(),
+			Index: 3,
+		},
+		Value:                100_000,
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x03},
+		AddressParams:        addressParams,
+	}
+	ownedDeposit.SetState(deposit.Deposited)
+	require.NoError(t, depositStore.CreateDeposit(ctx, ownedDeposit))
+
+	ownedDeposit.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctx, ownedDeposit))
+
+	_, swapClientPubkey := test.CreateKey(3)
+	_, swapServerPubkey := test.CreateKey(4)
+	timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x01, 0x02, 0x03, 0x04}
+	swap := &StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x05, 0x06, 0x07, 0x08},
+		DepositOutpoints:        []string{ownedDeposit.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{ownedDeposit},
+		ClientPubkey:            swapClientPubkey,
+		ServerPubkey:            swapServerPubkey,
+		HtlcTimeoutSweepAddress: timeoutAddress,
+	}
+	swap.SetState(SignHtlcTx)
+	require.NoError(t, loopInStore.CreateLoopIn(ctx, swap))
+
+	restoredSwap, err := loopInStore.GetLoopInByHash(ctx, swapHash)
+	require.NoError(t, err)
+	require.Len(t, restoredSwap.Deposits, 1)
+
+	restoredParams := restoredSwap.Deposits[0].AddressParams
+	require.NotNil(t, restoredParams)
+	require.Equal(t, addressParams.ID, restoredParams.ID)
+	require.Equal(
+		t, addressParams.ClientPubkey.SerializeCompressed(),
+		restoredParams.ClientPubkey.SerializeCompressed(),
+	)
+	require.Equal(
+		t, addressParams.ServerPubkey.SerializeCompressed(),
+		restoredParams.ServerPubkey.SerializeCompressed(),
+	)
+	require.Equal(t, addressParams.Expiry, restoredParams.Expiry)
+	require.Equal(t, addressParams.KeyLocator, restoredParams.KeyLocator)
+	require.Equal(t, addressParams.PkScript, restoredParams.PkScript)
+	require.Equal(t, addressParams.ProtocolVersion,
+		restoredParams.ProtocolVersion)
+	require.Equal(t, addressParams.InitiationHeight,
+		restoredParams.InitiationHeight)
+}
 
 // TestGetStaticAddressLoopInSwapsByStates tests that we can retrieve
 // StaticAddressLoopIn swaps by their states and that the deposits
