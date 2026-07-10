@@ -561,6 +561,12 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 		return nil, nil, err
 	}
 
+	depositDescriptors, err := staticutil.DepositAddressDescriptors(deposits)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to prepare static address "+
+			"input proofs: %w", err)
+	}
+
 	withdrawalTx, unsignedPsbt, err := m.createWithdrawalTx(
 		ctx, outpoints, deposits, prevOuts,
 		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
@@ -579,8 +585,9 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	// nolint:lll
 	sigResp, err := m.cfg.StaticAddressServerClient.ServerPsbtWithdrawDeposits(
 		ctx, &staticaddressrpc.ServerPsbtWithdrawRequest{
-			WithdrawalPsbt:  unsignedPsbt,
-			DepositToNonces: clientNonces,
+			WithdrawalPsbt:         unsignedPsbt,
+			DepositToNonces:        clientNonces,
+			DepositToClientPubkeys: depositDescriptors,
 		},
 	)
 	if err != nil {
