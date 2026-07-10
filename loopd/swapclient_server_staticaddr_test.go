@@ -62,12 +62,44 @@ func (s *staticAddrDepositStore) AllDeposits(context.Context) (
 	return s.allDeposits, nil
 }
 
-type staticAddrTestAddressManager struct{}
+type staticAddrTestAddressManager struct {
+	params *address.Parameters
+}
+
+func newStaticAddrTestAddressManager() *staticAddrTestAddressManager {
+	_, client := mock_lnd.CreateKey(1)
+	_, server := mock_lnd.CreateKey(2)
+
+	return &staticAddrTestAddressManager{
+		params: &address.Parameters{
+			ID:           1,
+			ClientPubkey: client,
+			ServerPubkey: server,
+			Expiry:       10,
+			PkScript:     []byte("pkscript"),
+		},
+	}
+}
 
 func (s *staticAddrTestAddressManager) GetStaticAddressParameters(
 	context.Context) (*script.Parameters, error) {
 
-	return nil, nil
+	return s.params, nil
+}
+
+func (s *staticAddrTestAddressManager) GetStaticAddressID(
+	context.Context, []byte) (int32, error) {
+
+	return s.params.ID, nil
+}
+
+func (s *staticAddrTestAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	params := *s.params
+	params.PkScript = pkScript
+
+	return &params
 }
 
 func (s *staticAddrTestAddressManager) GetStaticAddress(
@@ -99,7 +131,7 @@ func newTestDepositManager(
 	}
 
 	return deposit.NewManager(&deposit.ManagerConfig{
-		AddressManager: &staticAddrTestAddressManager{},
+		AddressManager: newStaticAddrTestAddressManager(),
 		Store: &staticAddrDepositStore{
 			allDeposits: deposits,
 			byOutpoint:  byOutpoint,
