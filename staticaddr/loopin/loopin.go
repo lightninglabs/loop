@@ -204,9 +204,7 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := staticutil.ToPrevOuts(
-		l.Deposits, l.AddressParams.PkScript,
-	)
+	prevOuts, err := staticutil.ToPrevOuts(l.Deposits)
 	if err != nil {
 		return nil, err
 	}
