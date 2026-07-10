@@ -45,11 +45,20 @@ func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([
 
 const depositsForSwapHash = `-- name: DepositsForSwapHash :many
 SELECT
-    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash,
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.static_address_id,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height,
     u.update_state,
     u.update_timestamp
 FROM
     deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
         LEFT JOIN
     deposit_updates u ON u.id = (
         SELECT id
@@ -73,6 +82,15 @@ type DepositsForSwapHashRow struct {
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
 	SwapHash              []byte
+	StaticAddressID       sql.NullInt32
+	ClientPubkey          []byte
+	ServerPubkey          []byte
+	Expiry                sql.NullInt32
+	ClientKeyFamily       sql.NullInt32
+	ClientKeyIndex        sql.NullInt32
+	Pkscript              []byte
+	ProtocolVersion       sql.NullInt32
+	InitiationHeight      sql.NullInt32
 	UpdateState           sql.NullString
 	UpdateTimestamp       sql.NullTime
 }
@@ -97,6 +115,15 @@ func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]D
 			&i.ExpirySweepTxid,
 			&i.FinalizedWithdrawalTx,
 			&i.SwapHash,
+			&i.StaticAddressID,
+			&i.ClientPubkey,
+			&i.ServerPubkey,
+			&i.Expiry,
+			&i.ClientKeyFamily,
+			&i.ClientKeyIndex,
+			&i.Pkscript,
+			&i.ProtocolVersion,
+			&i.InitiationHeight,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {
