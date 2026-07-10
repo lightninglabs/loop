@@ -132,6 +132,20 @@ func TestManager(t *testing.T) {
 
 	// The expiry has to match.
 	require.EqualValues(t, defaultExpiry, expiry)
+
+	storedParams, err := testContext.manager.GetStaticAddressParameters(ctxb)
+	require.NoError(t, err)
+	require.EqualValues(
+		t, swap.StaticAddressKeyFamily, storedParams.KeyLocator.Family,
+	)
+
+	addresses, err := testContext.manager.GetAllAddresses(ctxb)
+	require.NoError(t, err)
+	require.Len(t, addresses, 2)
+	require.EqualValues(
+		t, swap.StaticMultiAddressKeyFamily,
+		addresses[1].KeyLocator.Family,
+	)
 }
 
 // TestNewAddressValidatesServerResponse tests that the untrusted
@@ -233,12 +247,12 @@ func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
 func GenerateExpectedTaprootAddress(t *ManagerTestContext) (
 	*btcutil.AddressTaproot, error) {
 
-	keyIndex := int32(0)
+	keyIndex := int32(1)
 	_, pubKey := test.CreateKey(keyIndex)
 
 	keyDescriptor := &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
-			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Family: keychain.KeyFamily(swap.StaticMultiAddressKeyFamily),
 			Index:  uint32(keyIndex),
 		},
 		PubKey: pubKey,
