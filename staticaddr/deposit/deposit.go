@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -76,7 +77,7 @@ type Deposit struct {
 	// AddressParams are the static address parameters that produced this
 	// deposit's pkScript. Spending code must use these per-deposit
 	// parameters rather than assuming all deposits belong to one address.
-	AddressParams *script.Parameters
+	AddressParams *address.Parameters
 }
 
 // IsInFinalState returns true if the deposit is final.
