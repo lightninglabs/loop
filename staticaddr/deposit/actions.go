@@ -27,9 +27,15 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	msgTx := wire.NewMsgTx(2)
 
-	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if f.deposit.AddressParams == nil {
+		return f.HandleError(fmt.Errorf("missing static address " +
+			"parameters"))
+	}
+	params := f.deposit.AddressParams
+
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
-		return fsm.OnError
+		return f.HandleError(err)
 	}
 
 	// Add the deposit outpoint as input to the transaction.
@@ -92,11 +98,6 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 	rawSigs, err := f.cfg.Signer.SignOutputRaw(
 		ctx, msgTx, []*lndclient.SignDescriptor{signDesc}, prevOut,
 	)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
 	if err != nil {
 		return f.HandleError(err)
 	}
