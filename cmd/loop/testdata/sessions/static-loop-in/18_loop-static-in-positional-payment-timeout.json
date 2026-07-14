@@ -98,6 +98,37 @@
       "time_ms": 500,
       "kind": "grpc",
       "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 500,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressSummaryResponse",
+        "payload": {
+          "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "relative_expiry_blocks": "14400",
+          "total_num_deposits": 1,
+          "value_unconfirmed_satoshis": "0",
+          "value_deposited_satoshis": "500000",
+          "value_expired_satoshis": "0",
+          "value_withdrawn_satoshis": "0",
+          "value_looped_in_satoshis": "0",
+          "value_htlc_timeout_sweeps_satoshis": "0",
+          "value_channels_opened": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 500,
+      "kind": "grpc",
+      "data": {
         "method": "/looprpc.SwapClient/StaticAddressLoopIn",
         "event": "request",
         "message_type": "looprpc.StaticAddressLoopInRequest",
@@ -178,6 +209,7 @@
           "            \"id\": \"8fbd6da2f945de2905aa7fa93860744d9387d3464484360e96e467a51de3bc9d\",\n",
           "            \"outpoint\": \"9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0\",\n",
           "            \"state\": \"LOOPING_IN\",\n",
+          "            \"static_address\": \"\",\n",
           "            \"swap_hash\": \"\",\n",
           "            \"value\": \"500000\"\n",
           "        }\n",

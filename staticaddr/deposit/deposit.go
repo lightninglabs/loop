@@ -9,6 +9,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -52,7 +55,8 @@ type Deposit struct {
 	Value btcutil.Amount
 
 	// ConfirmationHeight is the absolute height at which the deposit was
-	// first confirmed.
+	// first confirmed. A value of zero means the deposit is still
+	// unconfirmed.
 	ConfirmationHeight int64
 
 	// TimeOutSweepPkScript is the pk script that is used to sweep the
@@ -69,6 +73,11 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// AddressParams are the static address parameters that produced this
+	// deposit's pkScript. Spending code must use these per-deposit
+	// parameters rather than assuming all deposits belong to one address.
+	AddressParams *address.Parameters
 }
 
 // IsInFinalState returns true if the deposit is final.
@@ -90,6 +99,10 @@ func (d *Deposit) isInFinalStateNoLock() bool {
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
+
+	if d.ConfirmationHeight <= 0 {
+		return false
+	}
 
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
@@ -127,6 +140,12 @@ func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
 }
 
+// IsInStateNoLock returns whether the deposit is in the given state without
+// acquiring the deposit lock.
+func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+	return d.isInStateNoLock(state)
+}
+
 // GetConfirmationHeight returns the deposit confirmation height.
 func (d *Deposit) GetConfirmationHeight() int64 {
 	d.Lock()
@@ -139,6 +158,19 @@ func (d *Deposit) GetConfirmationHeight() int64 {
 // acquiring the deposit lock.
 func (d *Deposit) GetConfirmationHeightNoLock() int64 {
 	return d.ConfirmationHeight
+}
+
+// GetStaticAddressScript reconstructs the static address script for this
+// deposit's matched address parameters.
+func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
+	if d.AddressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters")
+	}
+
+	return script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(d.AddressParams.Expiry),
+		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
+	)
 }
 
 // GetRandomDepositID generates a random deposit ID.

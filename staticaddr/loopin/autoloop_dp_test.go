@@ -80,6 +80,28 @@ func TestSelectNoChangeDepositsWithMemoryBudget(t *testing.T) {
 	}
 }
 
+// TestSelectNoChangeDepositsPrefersConfirmedTie verifies unconfirmed deposits
+// are not treated as earlier-expiring than confirmed deposits. Their CSV timer
+// has not started yet, so a same-value confirmed deposit should win the expiry
+// tie-break.
+func TestSelectNoChangeDepositsPrefersConfirmedTie(t *testing.T) {
+	t.Parallel()
+
+	unconfirmed := makeDeposit(34, 0, 5_000, 0)
+	confirmed := makeDeposit(35, 0, 5_000, 200)
+
+	deposits, err := selectNoChangeDeposits(
+		5_000, 5_000, []*deposit.Deposit{
+			unconfirmed, confirmed,
+		}, 1_000, 100, nil,
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t, []string{confirmed.OutPoint.String()},
+		depositOutpoints(deposits),
+	)
+}
+
 // TestAutoloopDPSizing verifies the bucket sizing math. These cases are easier
 // to understand directly than by inferring the step from a larger selector
 // behavior test.

@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -111,6 +113,16 @@ type mockAddressManager struct {
 	mock.Mock
 }
 
+func (m *mockAddressManager) hasExpectation(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 	*script.Parameters, error) {
 
@@ -118,6 +130,39 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 
 	return args.Get(0).(*script.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetStaticAddressID(ctx context.Context,
+	pkScript []byte) (int32, error) {
+
+	if !m.hasExpectation("GetStaticAddressID") {
+		return 1, nil
+	}
+
+	args := m.Called(ctx, pkScript)
+
+	return int32(args.Int(0)), args.Error(1)
+}
+
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	if !m.hasExpectation("GetParameters") {
+		return &address.Parameters{
+			ID:           1,
+			ClientPubkey: defaultServerPubkey,
+			ServerPubkey: defaultServerPubkey,
+			Expiry:       defaultExpiry,
+			PkScript:     pkScript,
+		}
+	}
+
+	args := m.Called(pkScript)
+	if args.Get(0) == nil {
+		return nil
+	}
+
+	return args.Get(0).(*address.Parameters)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
@@ -133,9 +178,28 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
 
 	args := m.Called(ctx, minConfs, maxConfs)
+	if listUnspent, ok := args.Get(0).(func() []*lnwallet.Utxo); ok {
+		return listUnspent(), args.Error(1)
+	}
 
 	return args.Get(0).([]*lnwallet.Utxo),
 		args.Error(1)
+}
+
+// listUnspentOverride delegates all address-manager methods except
+// ListUnspent to another implementation.
+type listUnspentOverride struct {
+	AddressManager
+
+	listUnspent func(context.Context, int32, int32) ([]*lnwallet.Utxo,
+		error)
+}
+
+// ListUnspent calls the override's ListUnspent implementation.
+func (l *listUnspentOverride) ListUnspent(ctx context.Context,
+	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
+
+	return l.listUnspent(ctx, minConfs, maxConfs)
 }
 
 func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
@@ -237,6 +301,10 @@ func TestManager(t *testing.T) {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	select {
 	case <-initChan:
@@ -307,6 +375,246 @@ func TestManager(t *testing.T) {
 	}
 }
 
+// TestManagerReplaysStartupBlockToRecoveredDeposits verifies that the initial
+// block epoch consumed during startup is delivered to recovered deposit FSMs.
+func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const defaultTimeout = 30 * time.Second
+
+	testContext := newManagerTestContext(t)
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	// Send only the startup block at the recovered deposit's expiry height.
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive sign request")
+	}
+
+	select {
+	case <-testContext.mockLnd.TxPublishChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive published expiry tx")
+	}
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager did not stop")
+	}
+}
+
+// TestManagerSkipsExpiryNotificationOnReconcileFailure verifies that deposit
+// FSMs cannot make an expiry decision from stale confirmation data when wallet
+// reconciliation fails at startup or while processing a later block.
+func TestManagerSkipsExpiryNotificationOnReconcileFailure(t *testing.T) {
+	testCases := []struct {
+		name          string
+		startupHeight int32
+		blockHeight   int32
+	}{
+		{
+			name: "startup",
+			startupHeight: int32(
+				defaultDepositConfirmations + defaultExpiry,
+			),
+		},
+		{
+			name:          "block",
+			startupHeight: int32(defaultDepositConfirmations),
+			blockHeight: int32(
+				defaultDepositConfirmations + defaultExpiry,
+			),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			testContext := newManagerTestContext(t)
+			baseAddressManager := testContext.mockAddressManager
+			var listUnspentCalls int
+			testContext.manager.cfg.AddressManager =
+				&listUnspentOverride{
+					AddressManager: baseAddressManager,
+					listUnspent: func(ctx context.Context,
+						minConfs, maxConfs int32) (
+						[]*lnwallet.Utxo, error) {
+
+						listUnspentCalls++
+						if testCase.blockHeight != 0 &&
+							listUnspentCalls == 1 {
+
+							return baseAddressManager.ListUnspent(
+								ctx, minConfs, maxConfs,
+							)
+						}
+
+						return nil, errors.New(
+							"injected reconciliation failure",
+						)
+					},
+				}
+
+			initChan := make(chan struct{})
+			runErrChan := make(chan error, 1)
+			go func() {
+				runErrChan <- testContext.manager.Run(ctx, initChan)
+			}()
+
+			testContext.blockChan <- testCase.startupHeight
+
+			select {
+			case <-initChan:
+
+			case err := <-runErrChan:
+				require.NoError(t, err, "manager failed to start")
+
+			case <-time.After(time.Second):
+				t.Fatal("manager timed out starting")
+			}
+
+			if testCase.blockHeight != 0 {
+				testContext.blockChan <- testCase.blockHeight
+			}
+
+			select {
+			case <-testContext.mockLnd.SignOutputRawChannel:
+				t.Fatal("expiry sweep signed with stale deposit data")
+
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			cancel()
+			select {
+			case err := <-runErrChan:
+				require.ErrorIs(t, err, context.Canceled)
+
+			case <-time.After(time.Second):
+				t.Fatal("manager did not stop")
+			}
+		})
+	}
+}
+
+func TestRecoverDepositsKeepsSpentWithdrawing(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 2,
+		},
+		state:              Withdrawing,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+
+	deposits, err := testContext.manager.GetActiveDepositsInState(Withdrawing)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, storedDeposit.OutPoint, deposits[0].OutPoint)
+}
+
+func TestRecoverDepositsHydratesLegacyAddressParams(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 3,
+		},
+		state:                Deposited,
+		Value:                btcutil.Amount(100000),
+		ConfirmationHeight:   42,
+		TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	storedDeposit.AddressParams = nil
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, storedDeposit.AddressParams)
+	require.NotZero(t, storedDeposit.AddressParams.ID)
+}
+
+func TestGetAllDepositsHydratesLegacyAddressParams(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID: id,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 4,
+		},
+		state:              Withdrawn,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	storedDeposit.AddressParams = nil
+
+	deposits, err := testContext.manager.GetAllDeposits(ctx)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.NotNil(t, deposits[0].AddressParams)
+	require.NotZero(t, deposits[0].AddressParams.ID)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -323,6 +631,39 @@ type ManagerTestContext struct {
 
 // newManagerTestContext creates a new test context for the reservation manager.
 func newManagerTestContext(t *testing.T) *ManagerTestContext {
+	ID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	utxo := &lnwallet.Utxo{
+		AddressType:   lnwallet.TaprootPubkey,
+		Value:         btcutil.Amount(100000),
+		Confirmations: int64(defaultDepositConfirmations),
+		PkScript:      []byte("pkscript"),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{},
+			Index: 0xffffffff,
+		},
+	}
+
+	storedDeposits := []*Deposit{
+		{
+			ID:                   ID,
+			state:                Deposited,
+			OutPoint:             utxo.OutPoint,
+			Value:                utxo.Value,
+			ConfirmationHeight:   3,
+			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+		},
+	}
+
+	return newManagerTestContextWithStoredDeposits(
+		t, storedDeposits, []*lnwallet.Utxo{utxo},
+	)
+}
+
+func newManagerTestContextWithStoredDeposits(t *testing.T,
+	storedDeposits []*Deposit, utxos []*lnwallet.Utxo) *ManagerTestContext {
+
 	mockLnd := test.NewMockLnd()
 	lndContext := test.NewContext(t, mockLnd)
 
@@ -335,29 +676,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	blockChan := make(chan int32)
 	blockErrChan := make(chan error)
 
-	ID, err := GetRandomDepositID()
-	utxo := &lnwallet.Utxo{
-		AddressType:   lnwallet.TaprootPubkey,
-		Value:         btcutil.Amount(100000),
-		Confirmations: int64(defaultDepositConfirmations),
-		PkScript:      []byte("pkscript"),
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{},
-			Index: 0xffffffff,
-		},
-	}
-	require.NoError(t, err)
-	storedDeposits := []*Deposit{
-		{
-			ID:                   ID,
-			state:                Deposited,
-			OutPoint:             utxo.OutPoint,
-			Value:                utxo.Value,
-			ConfirmationHeight:   3,
-			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
-		},
-	}
-
 	mockStore.On(
 		"AllDeposits", mock.Anything,
 	).Return(storedDeposits, nil)
@@ -366,15 +684,40 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"UpdateDeposit", mock.Anything, mock.Anything,
 	).Return(nil)
 
+	staticAddress, addrParams := generateStaticAddress(
+		context.Background(), mockLnd, lndContext.T,
+	)
+	for _, storedDeposit := range storedDeposits {
+		if storedDeposit.AddressParams == nil {
+			storedDeposit.AddressParams = addrParams
+		}
+	}
+
+	var manager *Manager
+
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		Expiry: defaultExpiry,
-	}, nil)
+	).Return(addrParams, nil)
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
-	).Return([]*lnwallet.Utxo{utxo}, nil)
+	).Return(func() []*lnwallet.Utxo {
+		if len(utxos) != 1 {
+			return utxos
+		}
+
+		currentUtxo := *utxos[0]
+		currentHeight := manager.currentHeight.Load()
+		if currentHeight < defaultDepositConfirmations {
+			currentUtxo.Confirmations = 0
+		} else {
+			currentUtxo.Confirmations = int64(
+				currentHeight - defaultDepositConfirmations + 1,
+			)
+		}
+
+		return []*lnwallet.Utxo{&currentUtxo}
+	}, nil)
 
 	// Define the expected return values for the mocks.
 	mockChainNotifier.On(
@@ -394,7 +737,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		Signer:         mockLnd.Signer,
 	}
 
-	manager := NewManager(cfg)
+	manager = NewManager(cfg)
 
 	testContext := &ManagerTestContext{
 		manager:                 manager,
@@ -408,9 +751,6 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		blockErrChan:            blockErrChan,
 	}
 
-	staticAddress := generateStaticAddress(
-		context.Background(), testContext,
-	)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return(staticAddress, nil)
@@ -418,19 +758,30 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	return testContext
 }
 
-func generateStaticAddress(ctx context.Context,
-	t *ManagerTestContext) *script.StaticAddress {
+func generateStaticAddress(ctx context.Context, mockLnd *test.LndMockServices,
+	t *testing.T) (*script.StaticAddress, *address.Parameters) {
 
-	keyDescriptor, err := t.mockLnd.WalletKit.DeriveNextKey(
+	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, int64(defaultExpiry),
 		keyDescriptor.PubKey, defaultServerPubkey,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
-	return staticAddress
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	return staticAddress, &address.Parameters{
+		ID:              1,
+		ClientPubkey:    keyDescriptor.PubKey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        pkScript,
+		KeyLocator:      keyDescriptor.KeyLocator,
+		ProtocolVersion: 0,
+	}
 }

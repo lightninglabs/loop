@@ -42,8 +42,8 @@ var (
 
 // States.
 var (
-	// Deposited signals that funds at a static address have reached the
-	// confirmation height.
+	// Deposited signals that funds at a static address have been detected
+	// and are available to the client.
 	Deposited = fsm.StateType("Deposited")
 
 	// Withdrawing signals that the withdrawal transaction has been
@@ -93,8 +93,8 @@ var (
 // Events.
 var (
 	// OnStart is sent to the fsm once the deposit outpoint has been
-	// sufficiently confirmed. It transitions the fsm into the Deposited
-	// state from where we can trigger a withdrawal, a loopin or an expiry.
+	// detected. It transitions the fsm into the Deposited state from where
+	// we can trigger a withdrawal, a loopin or an expiry.
 	OnStart = fsm.EventType("OnStart")
 
 	// OnWithdrawInitiated is sent to the fsm when a withdrawal has been
@@ -181,13 +181,13 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
+	if deposit.AddressParams == nil {
+		return nil, fmt.Errorf("missing deposit static address " +
+			"parameters")
 	}
+	params := deposit.AddressParams
 
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}
@@ -535,10 +535,10 @@ func (f *FSM) Errorf(format string, args ...any) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
+func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 	error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, err
 	}
@@ -546,10 +546,10 @@ func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.params.ClientPubkey,
+			PubKey: f.deposit.AddressParams.ClientPubkey,
 		},
 		Output: wire.NewTxOut(
-			int64(f.deposit.Value), f.params.PkScript,
+			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
 		),
 		HashType:   txscript.SigHashDefault,
 		InputIndex: 0,

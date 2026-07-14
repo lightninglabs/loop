@@ -6,20 +6,21 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 const (
-	// MinConfs is the minimum number of confirmations we require for a
-	// deposit to be considered available for loop-ins, coop-spends and
-	// timeouts.
+	// MinConfs is the legacy minimum confirmation target deposits had to
+	// reach before they were considered ready to be used for swaps.
 	MinConfs = 6
 
 	// MaxConfs is unset since we don't require a max number of
@@ -69,8 +70,8 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
-	// discovered and retained exactly once per outpoint.
+	// reconcileMu serializes startup recovery and deposit reconciliation so
+	// new deposits are discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
@@ -86,6 +87,9 @@ type Manager struct {
 	// been finalized. The manager will adjust its internal state and flush
 	// finalized deposits from its memory.
 	finalizedDepositChan chan wire.OutPoint
+
+	// currentHeight stores the currently best known block height.
+	currentHeight atomic.Uint32
 }
 
 // NewManager creates a new deposit manager.
@@ -107,6 +111,19 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
+	var startupHeight uint32
+	select {
+	case height := <-newBlockChan:
+		startupHeight = uint32(height)
+		m.currentHeight.Store(startupHeight)
+
+	case err = <-newBlockErrChan:
+		return err
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	// Recover previous deposits and static address parameters from the DB.
 	err = m.recoverDeposits(ctx)
 	if err != nil {
@@ -120,6 +137,14 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	err = m.reconcileDeposits(ctx)
 	if err != nil {
 		log.Errorf("unable to reconcile deposits: %v", err)
+	} else {
+		// The startup height was consumed before recovered deposit FSMs
+		// existed. Replay it so already-expired recovered deposits can act
+		// immediately, but only after their wallet view is fresh.
+		err = m.notifyActiveDeposits(ctx, startupHeight)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Start the deposit notifier.
@@ -132,7 +157,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case height := <-newBlockChan:
-			err := m.notifyActiveDeposits(ctx, uint32(height))
+			m.currentHeight.Store(uint32(height))
+
+			err := m.reconcileDeposits(ctx)
+			if err != nil {
+				log.Errorf("unable to reconcile deposits: %v", err)
+				continue
+			}
+
+			err = m.notifyActiveDeposits(ctx, uint32(height))
 			if err != nil {
 				return err
 			}
@@ -181,6 +214,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -190,6 +226,11 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	}
 
 	for i, d := range deposits {
+		err = m.hydrateLegacyDepositAddressParams(ctx, d)
+		if err != nil {
+			return err
+		}
+
 		m.deposits[d.OutPoint] = deposits[i]
 
 		// If the current deposit is final it wasn't active when we
@@ -226,8 +267,70 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	return nil
 }
 
-// pollDeposits polls new deposits to our static address and notifies the
-// manager's event loop about them.
+// hydrateLegacyDepositAddressParams fills in address parameters for deposits
+// that predate the durable deposit-to-static-address link. Those deposits all
+// belonged to the legacy/root static address, so the legacy address manager
+// lookup preserves the behavior that existed before multi-address support.
+func (m *Manager) hydrateLegacyDepositAddressParams(ctx context.Context,
+	deposits ...*Deposit) error {
+
+	needsHydration := false
+	for _, d := range deposits {
+		if d != nil && d.AddressParams == nil {
+			needsHydration = true
+			break
+		}
+	}
+	if !needsHydration {
+		return nil
+	}
+
+	if m.cfg == nil || m.cfg.AddressManager == nil {
+		return nil
+	}
+
+	var legacyParams *address.Parameters
+	for _, d := range deposits {
+		if d == nil || d.AddressParams != nil {
+			continue
+		}
+
+		if legacyParams == nil {
+			params, err := m.cfg.AddressManager.
+				GetStaticAddressParameters(ctx)
+			if err != nil {
+				return fmt.Errorf("unable to load legacy "+
+					"static address parameters for deposit %v: %w",
+					d.OutPoint, err)
+			}
+			if params == nil {
+				return fmt.Errorf("missing legacy static address "+
+					"parameters for deposit %v", d.OutPoint)
+			}
+
+			if params.ID <= 0 {
+				params.ID, err = m.cfg.AddressManager.
+					GetStaticAddressID(ctx, params.PkScript)
+				if err != nil {
+					return fmt.Errorf("unable to load legacy "+
+						"static address ID for deposit %v: %w",
+						d.OutPoint, err)
+				}
+			}
+
+			legacyParams = params
+		}
+
+		d.AddressParams = legacyParams
+	}
+
+	return nil
+}
+
+// pollDeposits periodically polls for new deposits to our static address. This
+// complements the block-driven reconciliation in the main event loop: while new
+// blocks trigger reconcileDeposits to promptly detect confirmations, the ticker
+// here catches deposits that appear in the mempool between blocks.
 func (m *Manager) pollDeposits(ctx context.Context) {
 	log.Debugf("Waiting for new static address deposits...")
 
@@ -250,6 +353,15 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 	}()
 }
 
+// EnsureDepositsFresh reconciles the cached active deposit set with lnd's
+// current wallet view. Spending paths call this before selecting deposits so
+// stale persisted records are not treated as live funds. This can happen when
+// an unconfirmed funding transaction is replaced, a confirmed deposit is
+// reorged out, or the output was spent outside the active manager path.
+func (m *Manager) EnsureDepositsFresh(ctx context.Context) error {
+	return m.reconcileDeposits(ctx)
+}
+
 // reconcileDeposits fetches all spends to our static addresses from our lnd
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
@@ -261,10 +373,22 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	log.Tracef("Reconciling new deposits...")
 
 	utxos, err := m.cfg.AddressManager.ListUnspent(
-		ctx, MinConfs, MaxConfs,
+		ctx, 0, MaxConfs,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to list new deposits: %w", err)
+	}
+
+	currentHeight := m.currentHeight.Load()
+	err = m.updateDepositConfirmations(ctx, utxos, currentHeight)
+	if err != nil {
+		return fmt.Errorf("unable to update deposit "+
+			"confirmations: %w", err)
+	}
+
+	err = m.syncActiveDeposits(ctx, utxos)
+	if err != nil {
+		return fmt.Errorf("unable to sync active deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
@@ -274,7 +398,7 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 	}
 
 	for _, utxo := range newDeposits {
-		deposit, err := m.createNewDeposit(ctx, utxo)
+		deposit, err := m.createNewDeposit(ctx, utxo, currentHeight)
 		if err != nil {
 			return fmt.Errorf("unable to retain new deposit: %w",
 				err)
@@ -294,9 +418,11 @@ func (m *Manager) reconcileDeposits(ctx context.Context) error {
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
 func (m *Manager) createNewDeposit(ctx context.Context,
-	utxo *lnwallet.Utxo) (*Deposit, error) {
+	utxo *lnwallet.Utxo, currentHeight uint32) (*Deposit, error) {
 
-	blockHeight, err := m.getBlockHeight(ctx, utxo)
+	confirmationHeight, err := confirmationHeightForUtxo(
+		currentHeight, utxo,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -319,13 +445,25 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+	if addressParams.ID <= 0 {
+		return nil, fmt.Errorf("missing static address ID for deposit %v",
+			utxo.OutPoint)
+	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
 		OutPoint:             utxo.OutPoint,
 		Value:                utxo.Value,
-		ConfirmationHeight:   int64(blockHeight),
+		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -340,37 +478,167 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	return deposit, nil
 }
 
-// getBlockHeight retrieves the block height of a given utxo.
-func (m *Manager) getBlockHeight(ctx context.Context,
-	utxo *lnwallet.Utxo) (uint32, error) {
+// confirmationHeightForUtxo derives the first confirmation height of a wallet
+// UTXO from the manager's current block height. Unconfirmed UTXOs return 0.
+func confirmationHeightForUtxo(currentHeight uint32,
+	utxo *lnwallet.Utxo) (int64, error) {
 
-	addressParams, err := m.cfg.AddressManager.GetStaticAddressParameters(
-		ctx,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("couldn't get confirmation height for "+
-			"deposit, %w", err)
+	if utxo.Confirmations <= 0 {
+		return 0, nil
 	}
 
-	notifChan, errChan, err :=
-		m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, &utxo.OutPoint.Hash, addressParams.PkScript,
-			MinConfs, addressParams.InitiationHeight,
+	if currentHeight == 0 {
+		return 0, errors.New("current block height unavailable")
+	}
+
+	firstConfirmationHeight := int64(currentHeight) - utxo.Confirmations + 1
+	if firstConfirmationHeight <= 0 {
+		return 0, fmt.Errorf("invalid confirmation height %d for %v "+
+			"with current height %d and %d confirmations",
+			firstConfirmationHeight, utxo.OutPoint, currentHeight,
+			utxo.Confirmations)
+	}
+
+	return firstConfirmationHeight, nil
+}
+
+// updateDepositConfirmations syncs first confirmation heights for deposits that
+// are visible in lnd's wallet view.
+func (m *Manager) updateDepositConfirmations(ctx context.Context,
+	utxos []*lnwallet.Utxo, currentHeight uint32) error {
+
+	for _, utxo := range utxos {
+		m.mu.Lock()
+		deposit, ok := m.deposits[utxo.OutPoint]
+		m.mu.Unlock()
+		if !ok {
+			continue
+		}
+
+		err := func() error {
+			deposit.Lock()
+			defer deposit.Unlock()
+
+			previousConfirmationHeight := deposit.ConfirmationHeight
+
+			confirmationHeight, err := confirmationHeightForUtxo(
+				currentHeight, utxo,
+			)
+			if err != nil {
+				return err
+			}
+
+			if deposit.ConfirmationHeight == confirmationHeight {
+				return nil
+			}
+
+			deposit.ConfirmationHeight = confirmationHeight
+
+			err = m.cfg.Store.UpdateDeposit(ctx, deposit)
+			if err != nil {
+				deposit.ConfirmationHeight = previousConfirmationHeight
+
+				return err
+			}
+
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// syncActiveDeposits reconciles the live active set with lnd's current wallet
+// view. Known Deposited records that are visible but inactive become active
+// again, and active Deposited records that are no longer wallet-visible are
+// removed from the live set. The DB record is left untouched as historical
+// evidence that the outpoint was once detected.
+func (m *Manager) syncActiveDeposits(ctx context.Context,
+	utxos []*lnwallet.Utxo) error {
+
+	currentUtxos := make(map[wire.OutPoint]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		currentUtxos[utxo.OutPoint] = struct{}{}
+	}
+
+	type deactivatedDeposit struct {
+		outpoint wire.OutPoint
+		fsm      *FSM
+	}
+
+	toActivate := make([]*Deposit, 0, len(utxos))
+	var toDeactivate []deactivatedDeposit
+	func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		toDeactivate = make(
+			[]deactivatedDeposit, 0, len(m.activeDeposits),
 		)
-	if err != nil {
-		return 0, err
+
+		for _, utxo := range utxos {
+			deposit, ok := m.deposits[utxo.OutPoint]
+			if !ok {
+				continue
+			}
+
+			if _, active := m.activeDeposits[utxo.OutPoint]; active {
+				continue
+			}
+
+			if !deposit.IsInState(Deposited) {
+				continue
+			}
+
+			toActivate = append(toActivate, deposit)
+		}
+
+		for outpoint, fsm := range m.activeDeposits {
+			if _, ok := currentUtxos[outpoint]; ok {
+				continue
+			}
+
+			if fsm == nil || fsm.deposit == nil {
+				continue
+			}
+
+			if !fsm.deposit.IsInState(Deposited) {
+				continue
+			}
+
+			delete(m.activeDeposits, outpoint)
+			toDeactivate = append(toDeactivate, deactivatedDeposit{
+				outpoint: outpoint,
+				fsm:      fsm,
+			})
+		}
+	}()
+
+	for _, deactivated := range toDeactivate {
+		deactivated.fsm.Stop()
+
+		log.Infof("Removed vanished deposit %v from active set",
+			deactivated.outpoint)
 	}
 
-	select {
-	case tx := <-notifChan:
-		return tx.BlockHeight, nil
+	for _, deposit := range toActivate {
+		if !deposit.IsInState(Deposited) {
+			continue
+		}
 
-	case err := <-errChan:
-		return 0, err
+		err := m.startDepositFsm(ctx, deposit)
+		if err != nil {
+			m.removeActiveDeposit(deposit.OutPoint)
 
-	case <-ctx.Done():
-		return 0, ctx.Err()
+			return err
+		}
+
+		log.Infof("Reactivated visible deposit %v", deposit.OutPoint)
 	}
+
+	return nil
 }
 
 // filterNewDeposits filters the given utxos for new deposits that we haven't
@@ -604,9 +872,54 @@ func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
 	}
 }
 
-// GetAllDeposits returns all active deposits.
+// GetAllDeposits returns all known deposits from the database.
 func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
-	return m.cfg.Store.AllDeposits(ctx)
+	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.hydrateLegacyDepositAddressParams(ctx, deposits...)
+	if err != nil {
+		return nil, err
+	}
+
+	return deposits, nil
+}
+
+// GetVisibleDeposits returns deposits that should be exposed through normal
+// user-facing views. The database can contain historical Deposited rows whose
+// outpoints are no longer present in lnd's current wallet view, for example
+// after replacement or reorg. Once the manager has recovered its live cache,
+// plain Deposited records are only visible while their outpoint is in the
+// active set.
+func (m *Manager) GetVisibleDeposits(ctx context.Context) ([]*Deposit, error) {
+	deposits, err := m.cfg.Store.AllDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.hydrateLegacyDepositAddressParams(ctx, deposits...)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	liveCacheReady := len(m.deposits) > 0
+	filtered := make([]*Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if liveCacheReady && d.IsInState(Deposited) {
+			if _, ok := m.activeDeposits[d.OutPoint]; !ok {
+				continue
+			}
+		}
+
+		filtered = append(filtered, d)
+	}
+
+	return filtered, nil
 }
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
@@ -664,6 +977,11 @@ func (m *Manager) DepositsForOutpoints(ctx context.Context,
 			if ignoreUnknown && errors.Is(err, ErrDepositNotFound) {
 				continue
 			}
+			return nil, err
+		}
+
+		err = m.hydrateLegacyDepositAddressParams(ctx, deposit)
+		if err != nil {
 			return nil, err
 		}
 

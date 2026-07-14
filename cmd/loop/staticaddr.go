@@ -4,16 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
 
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 )
 
 func init() {
@@ -26,6 +33,7 @@ var staticAddressCommands = &cli.Command{
 	Usage:   "perform on-chain to off-chain swaps using static addresses.",
 	Commands: []*cli.Command{
 		newStaticAddressCommand,
+		depositStaticAddressCommand,
 		listUnspentCommand,
 		listDepositsCommand,
 		listWithdrawalsCommand,
@@ -42,23 +50,102 @@ var newStaticAddressCommand = &cli.Command{
 	Aliases: []string{"n"},
 	Usage:   "Create a new static loop in address.",
 	Description: `
-	Requests a new static loop in address from the server. Funds that are
-	sent to this address will be locked by a 2:2 multisig between us and the
-	loop server, or a timeout path that we can sweep once it opens up. The 
-	funds can either be cooperatively spent with a signature from the server
-	or looped in.
+	Creates a new static loop in address. On a fresh installation loopd
+	initializes the static-address generation during startup. Funds sent to the
+	address will be locked by a 2:2 multisig between us and the loop server, or
+	a timeout path that we can sweep once it opens up. The funds can either be
+	cooperatively spent with a signature from the server or looped in.
 	`,
 	Action: newStaticAddress,
 }
 
+var depositStaticAddressCommand = &cli.Command{
+	Name:  "deposit",
+	Usage: "Create and fund a new static loop in address.",
+	Description: `
+	Creates a new static loop in address and initiates a deposit by calling
+	lnd's SendCoins API with the newly created address as the destination.
+	`,
+	Flags: []cli.Flag{
+		&cli.Int64Flag{
+			Name: "amt",
+			Usage: "the number of bitcoin denominated in satoshis " +
+				"to send to the new static address",
+		},
+		&cli.BoolFlag{
+			Name: "sweepall",
+			Usage: "if set, then the amount field should be " +
+				"unset. This indicates that the wallet will " +
+				"attempt to sweep all outputs within the " +
+				"wallet or all funds in selected utxos (when " +
+				"supplied) to the new static address",
+		},
+		&cli.Int64Flag{
+			Name: "conf_target",
+			Usage: "(optional) the number of blocks that the " +
+				"funding transaction should confirm in, will " +
+				"be used for fee estimation",
+		},
+		&cli.Int64Flag{
+			Name:   "sat_per_byte",
+			Usage:  "Deprecated, use sat_per_vbyte instead.",
+			Hidden: true,
+		},
+		&cli.Uint64Flag{
+			Name: "sat_per_vbyte",
+			Usage: "(optional) a manual fee expressed in " +
+				"sat/vbyte that should be used when crafting " +
+				"the funding transaction",
+		},
+		&cli.Uint64Flag{
+			Name: "min_confs",
+			Usage: "(optional) the minimum number of confirmations " +
+				"each one of your outputs used for the funding " +
+				"transaction must satisfy",
+			Value: defaultUtxoMinConf,
+		},
+		&cli.BoolFlag{
+			Name: "force, f",
+			Usage: "if set, the funding transaction will be " +
+				"broadcast without asking for confirmation",
+		},
+		staticAddressCoinSelectionStrategyFlag,
+		&cli.StringSliceFlag{
+			Name: "utxo",
+			Usage: "a utxo specified as outpoint(tx:idx) which " +
+				"will be used as input for the funding " +
+				"transaction. This flag can be repeatedly used " +
+				"to specify multiple utxos as inputs. The " +
+				"selected utxos can either be entirely spent " +
+				"by specifying the sweepall flag or a specified " +
+				"amount can be spent in the utxos through " +
+				"the amt flag",
+		},
+		staticAddressFundingLabelFlag,
+	},
+	Action: depositStaticAddress,
+}
+
+var (
+	staticAddressCoinSelectionStrategyFlag = &cli.StringFlag{
+		Name: "coin_selection_strategy",
+		Usage: "(optional) the strategy to use for selecting coins. " +
+			"Possible values are 'largest', 'random', or " +
+			"'global-config'. If either 'largest' or 'random' is " +
+			"specified, it will override the globally configured " +
+			"strategy in lnd.conf",
+		Value: "global-config",
+	}
+
+	staticAddressFundingLabelFlag = &cli.StringFlag{
+		Name:  "label",
+		Usage: "(optional) a label for the funding transaction",
+	}
+)
+
 func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() > 0 {
 		return showCommandHelp(ctx, cmd)
-	}
-
-	err := displayNewAddressWarning()
-	if err != nil {
-		return err
 	}
 
 	client, cleanup, err := getClient(cmd)
@@ -66,6 +153,11 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
+
+	err = maybeDisplayNewAddressWarning(ctx, client)
+	if err != nil {
+		return err
+	}
 
 	resp, err := client.NewStaticAddress(
 		ctx, &looprpc.NewStaticAddressRequest{},
@@ -77,6 +169,186 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	printRespJSON(resp)
 
 	return nil
+}
+
+func depositStaticAddress(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
+	}
+
+	client, cleanup, err := getClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	req, err := staticAddressDepositRequest(cmd, "")
+	if err != nil {
+		return err
+	}
+
+	err = maybeDisplayNewAddressWarning(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	addrResp, err := client.NewStaticAddress(
+		ctx, &looprpc.NewStaticAddressRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	req.GetSendCoinsRequest().Addr = addrResp.Address
+
+	if !(cmd.Bool("force") || cmd.Bool("f")) &&
+		term.IsTerminal(int(os.Stdout.Fd())) {
+
+		if !confirmStaticAddressDeposit(req, addrResp.Address) {
+			return nil
+		}
+	}
+
+	resp, err := client.NewStaticAddress(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+func staticAddressDepositRequest(
+	cmd *cli.Command, addr string) (*looprpc.NewStaticAddressRequest, error) {
+
+	if !cmd.IsSet("amt") && !cmd.Bool("sweepall") {
+		return nil, errors.New("amount argument missing")
+	}
+
+	amount := cmd.Int64("amt")
+	if cmd.IsSet("amt") && amount <= 0 {
+		return nil, errors.New("amount must be positive")
+	}
+
+	if amount != 0 && cmd.Bool("sweepall") {
+		return nil, errors.New("amount cannot be set if " +
+			"attempting to sweep all coins out of the wallet")
+	}
+
+	feeRateFlag, err := checkNotBothSet(
+		cmd, "sat_per_vbyte", "sat_per_byte",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := checkNotBothSet(
+		cmd, feeRateFlag, "conf_target",
+	); err != nil {
+		return nil, err
+	}
+
+	var satPerByte int64
+	if cmd.IsSet("sat_per_byte") {
+		satPerByte = cmd.Int64("sat_per_byte")
+		if satPerByte < 0 {
+			return nil, fmt.Errorf("sat_per_byte must be " +
+				"non-negative")
+		}
+	}
+
+	confTarget := cmd.Int64("conf_target")
+	if confTarget < 0 {
+		return nil, fmt.Errorf("conf_target must be non-negative")
+	}
+	if confTarget > math.MaxInt32 {
+		return nil, fmt.Errorf("conf_target exceeds maximum " +
+			"int32 value")
+	}
+
+	minConfs := cmd.Uint64("min_confs")
+	if minConfs > math.MaxInt32 {
+		return nil, fmt.Errorf("min_confs exceeds maximum " +
+			"int32 value")
+	}
+
+	var outpoints []*lnrpc.OutPoint
+	utxos := cmd.StringSlice("utxo")
+	if len(utxos) > 0 {
+		outpoints, err = lnd.UtxosToOutpoints(utxos)
+		if err != nil {
+			return nil, fmt.Errorf("unable to decode utxos: %w", err)
+		}
+	}
+
+	coinSelectionStrategy, err := parseStaticAddressCoinSelectionStrategy(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.NewStaticAddressRequest{
+		SendCoinsRequest: &lnrpc.SendCoinsRequest{
+			Addr:        addr,
+			Amount:      amount,
+			TargetConf:  int32(confTarget),
+			SatPerVbyte: cmd.Uint64("sat_per_vbyte"),
+			SatPerByte:  satPerByte,
+			SendAll:     cmd.Bool("sweepall"),
+			Label: cmd.String(
+				staticAddressFundingLabelFlag.Name,
+			),
+			MinConfs:              int32(minConfs),
+			SpendUnconfirmed:      minConfs == 0,
+			CoinSelectionStrategy: coinSelectionStrategy,
+			Outpoints:             outpoints,
+		},
+	}, nil
+}
+
+func parseStaticAddressCoinSelectionStrategy(cmd *cli.Command) (
+	lnrpc.CoinSelectionStrategy, error) {
+
+	if !cmd.IsSet(staticAddressCoinSelectionStrategyFlag.Name) {
+		return lnrpc.CoinSelectionStrategy_STRATEGY_USE_GLOBAL_CONFIG,
+			nil
+	}
+
+	switch strategy := cmd.String(
+		staticAddressCoinSelectionStrategyFlag.Name); strategy {
+	case "global-config":
+		return lnrpc.CoinSelectionStrategy_STRATEGY_USE_GLOBAL_CONFIG,
+			nil
+
+	case "largest":
+		return lnrpc.CoinSelectionStrategy_STRATEGY_LARGEST, nil
+
+	case "random":
+		return lnrpc.CoinSelectionStrategy_STRATEGY_RANDOM, nil
+
+	default:
+		return 0, fmt.Errorf("unknown coin selection strategy %v",
+			strategy)
+	}
+}
+
+func confirmStaticAddressDeposit(req *looprpc.NewStaticAddressRequest,
+	addr string) bool {
+
+	sendCoinsReq := req.GetSendCoinsRequest()
+	if sendCoinsReq.GetSendAll() {
+		fmt.Println("Amount: sweep all eligible wallet funds")
+	} else {
+		fmt.Printf("Amount: %d\n", sendCoinsReq.GetAmount())
+	}
+
+	fmt.Printf("Destination address: %s\n", addr)
+	fmt.Printf("Confirm funding transaction (yes/no): ")
+
+	var answer string
+	fmt.Scanln(&answer)
+
+	return answer == "yes" || answer == "y"
 }
 
 var listUnspentCommand = &cli.Command{
@@ -553,11 +825,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	allDeposits := depositList.FilteredDeposits
 
 	if len(allDeposits) == 0 {
-		errString := fmt.Sprintf("no confirmed deposits available, "+
-			"deposits need at least %v confirmations",
-			deposit.MinConfs)
-
-		return errors.New(errString)
+		return errors.New("no deposited outputs available")
 	}
 
 	var depositOutpoints []string
@@ -612,6 +880,28 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	// Warn the user if any selected deposits have fewer than 6
+	// confirmations, as the swap payment won't be received immediately
+	// for those.
+	summary, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{},
+	)
+	if err != nil {
+		return err
+	}
+
+	depositsToCheck := warningDepositOutpoints(
+		allDeposits, depositOutpoints, autoSelectDepositsForQuote,
+		quoteReq.Amt,
+	)
+	warning := lowConfDepositWarning(
+		allDeposits, depositsToCheck,
+		int64(summary.RelativeExpiryBlocks),
+	)
+	if warning != "" {
+		fmt.Println(warning)
 	}
 
 	if !(cmd.Bool("force") || cmd.Bool("f")) {
@@ -669,8 +959,182 @@ func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
 	return outpoints
 }
 
+var warningSelectionDustLimit = int64(lnwallet.DustLimitForSize(input.P2TRSize))
+
+// warningDepositOutpoints returns the deposit outpoints to check for
+// low-confirmation warnings.
+func warningDepositOutpoints(allDeposits []*looprpc.Deposit,
+	selectedOutpoints []string, autoSelect bool, targetAmount int64) []string {
+
+	if !autoSelect {
+		return selectedOutpoints
+	}
+
+	return autoSelectedWarningOutpoints(allDeposits, targetAmount)
+}
+
+// autoSelectedWarningOutpoints returns the outpoints selected by the same
+// ordering used for automatic static loop-in deposit selection.
+func autoSelectedWarningOutpoints(allDeposits []*looprpc.Deposit,
+	targetAmount int64) []string {
+
+	if targetAmount <= 0 {
+		return nil
+	}
+
+	// KEEP IN SYNC with staticaddr/loopin.SelectDeposits.
+	deposits := filterSwappableWarningDeposits(allDeposits)
+	sort.Slice(deposits, func(i, j int) bool {
+		iConfirmed := deposits[i].ConfirmationHeight > 0
+		jConfirmed := deposits[j].ConfirmationHeight > 0
+		if iConfirmed != jConfirmed {
+			return iConfirmed
+		}
+
+		if deposits[i].Value == deposits[j].Value {
+			return deposits[i].BlocksUntilExpiry <
+				deposits[j].BlocksUntilExpiry
+		}
+
+		return deposits[i].Value > deposits[j].Value
+	})
+
+	selectedOutpoints := make([]string, 0, len(deposits))
+	var selectedAmount int64
+	for _, deposit := range deposits {
+		selectedOutpoints = append(selectedOutpoints, deposit.Outpoint)
+		selectedAmount += deposit.Value
+		if selectedAmount == targetAmount {
+			return selectedOutpoints
+		}
+
+		if selectedAmount > targetAmount &&
+			selectedAmount-targetAmount >= warningSelectionDustLimit {
+
+			return selectedOutpoints
+		}
+	}
+
+	return nil
+}
+
+// filterSwappableWarningDeposits filters deposits for CLI warning selection.
+func filterSwappableWarningDeposits(
+	allDeposits []*looprpc.Deposit) []*looprpc.Deposit {
+
+	swappable := make([]*looprpc.Deposit, 0, len(allDeposits))
+	minBlocksUntilExpiry := int64(
+		loopin.DefaultLoopInOnChainCltvDelta + loopin.DepositHtlcDelta,
+	)
+	for _, deposit := range allDeposits {
+		// Unconfirmed deposits remain swappable because their CSV timeout has
+		// not started yet. This mirrors loopin.IsSwappable.
+		if deposit.ConfirmationHeight > 0 &&
+			deposit.BlocksUntilExpiry < minBlocksUntilExpiry {
+
+			continue
+		}
+
+		swappable = append(swappable, deposit)
+	}
+
+	return swappable
+}
+
+// conservativeWarningConfs is the highest default confirmation tier used by
+// the server's dynamic confirmation-risk policy.
+//
+// The CLI does not currently know the server's exact policy, so we use this
+// conservative threshold for warnings without promising immediate execution.
+const conservativeWarningConfs = 6
+
+// lowConfDepositWarning checks the selected deposits against a conservative
+// confirmation threshold and returns a warning string if any are found.
+func lowConfDepositWarning(allDeposits []*looprpc.Deposit,
+	selectedOutpoints []string, csvExpiry int64) string {
+
+	depositMap := make(map[string]*looprpc.Deposit, len(allDeposits))
+	for _, d := range allDeposits {
+		depositMap[d.Outpoint] = d
+	}
+
+	var lowConfEntries []string
+	for _, op := range selectedOutpoints {
+		d, ok := depositMap[op]
+		if !ok {
+			continue
+		}
+
+		var confs int64
+		switch {
+		case d.ConfirmationHeight <= 0:
+			confs = 0
+
+		case csvExpiry > 0:
+			// For confirmed deposits we can compute
+			// confirmations as CSVExpiry - BlocksUntilExpiry + 1.
+			confs = csvExpiry - d.BlocksUntilExpiry + 1
+
+		default:
+			// Can't determine confirmations without the CSV expiry.
+			continue
+		}
+
+		if confs >= conservativeWarningConfs {
+			continue
+		}
+
+		if confs == 0 {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf("  - %s (unconfirmed)", op),
+			)
+		} else {
+			lowConfEntries = append(
+				lowConfEntries,
+				fmt.Sprintf(
+					"  - %s (%d confirmations)", op,
+					confs,
+				),
+			)
+		}
+	}
+
+	if len(lowConfEntries) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"\nWARNING: The following deposits are below the "+
+			"conservative %d-confirmation threshold:\n%s\n"+
+			"The swap payment for these deposits may wait for "+
+			"more confirmations depending on the server's "+
+			"confirmation-risk policy.\n",
+		conservativeWarningConfs,
+		strings.Join(lowConfEntries, "\n"),
+	)
+}
+
+func maybeDisplayNewAddressWarning(ctx context.Context,
+	client looprpc.SwapClientClient) error {
+
+	_, err := client.GetStaticAddressSummary(
+		ctx, &looprpc.StaticAddressSummaryRequest{},
+	)
+	switch {
+	case err == nil:
+		return nil
+
+	case strings.Contains(err.Error(), address.ErrNoStaticAddress.Error()):
+		return displayNewAddressWarning()
+
+	default:
+		return nil
+	}
+}
+
 func displayNewAddressWarning() error {
-	fmt.Printf("\nWARNING: Be aware that loosing your l402.token file in " +
+	fmt.Printf("\nWARNING: Be aware that losing your l402.token file in " +
 		".loop under your home directory will take your ability to " +
 		"spend funds sent to the static address via loop-ins or " +
 		"withdrawals. You will have to wait until the deposit " +

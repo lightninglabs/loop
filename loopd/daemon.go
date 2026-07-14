@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/backup"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -555,10 +556,30 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	// Static address loop-in store setup is needed by the notification
+	// manager so confirmation-risk decisions are durable before fan-out.
+	staticAddressLoopInStore := loopin.NewSqlStore(
+		loopdb.NewTypedStore[loopin.Querier](baseDb),
+		clock.NewDefaultClock(), d.lnd.ChainParams,
+	)
+
 	// Start the notification manager.
 	notificationCfg := &notifications.Config{
 		Client:       loop_swaprpc.NewSwapServerClient(swapClient.Conn),
 		CurrentToken: swapClient.L402Store.CurrentToken,
+		PersistStaticLoopInRiskDecision: func(ctx context.Context,
+			swapHash lntypes.Hash, accepted bool) error {
+
+			decision := loopin.ConfirmationRiskDecisionRejected
+			if accepted {
+				decision = loopin.ConfirmationRiskDecisionAccepted
+			}
+
+			return staticAddressLoopInStore.
+				RecordStaticAddressRiskDecision(
+					ctx, swapHash, decision,
+				)
+		},
 	}
 	notificationManager := notifications.NewManager(notificationCfg)
 
@@ -598,6 +619,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		withdrawalManager    *withdraw.Manager
 		openChannelManager   *openchannel.Manager
 		staticLoopInManager  *loopin.Manager
+		backupService        *backup.Service
 	)
 
 	// Static address manager setup.
@@ -662,12 +684,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 	openChannelManager = openchannel.NewManager(openChannelCfg)
 
-	// Static address loop-in manager setup.
-	staticAddressLoopInStore := loopin.NewSqlStore(
-		loopdb.NewTypedStore[loopin.Querier](baseDb),
-		clock.NewDefaultClock(), d.lnd.ChainParams,
-	)
-
 	// Run the deposit swap hash migration.
 	err = loopin.MigrateDepositSwapHash(
 		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
@@ -709,6 +725,25 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}, blockHeight)
 	if err != nil {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
+	}
+
+	backupService = backup.NewService(
+		d.cfg.DataDir, d.cfg.Network, d.lnd.Signer, staticAddressManager,
+	)
+
+	_, err = staticAddressManager.EnsureStaticAddressSeed(d.mainCtx)
+	if err != nil {
+		warnf("Unable to initialize static address seed during "+
+			"startup: %v", err)
+	}
+
+	backupFile, err := backupService.WriteBackup(d.mainCtx)
+	if err != nil {
+		warnf("Unable to write startup loop backup: %v", err)
+	}
+	if backupFile != "" {
+		infof("Wrote encrypted loop backup to %s after initializing "+
+			"the current L402 generation", backupFile)
 	}
 
 	var (
@@ -779,6 +814,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager:  staticLoopInManager,
 		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
+		backupService:        backupService,
 		stopDaemon:           d.Stop,
 	}
 

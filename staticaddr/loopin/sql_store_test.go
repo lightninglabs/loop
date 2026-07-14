@@ -349,6 +349,83 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
 		swap.DepositOutpoints)
 	require.Equal(t, SignHtlcTx, swap.GetState())
+	require.Equal(
+		t, ConfirmationRiskDecisionNone,
+		swap.ConfirmationRiskDecision,
+	)
+
+	decisionTime := time.Unix(123, 0).UTC()
+	testClock.SetTime(decisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionAccepted,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+
+	// Replaying the same decision must retain its original deadline anchor.
+	laterDecisionTime := decisionTime.Add(time.Hour)
+	testClock.SetTime(laterDecisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionAccepted,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+
+	// A different decision is a new event and receives a new timestamp.
+	rejectedDecisionTime := laterDecisionTime.Add(time.Hour)
+	testClock.SetTime(rejectedDecisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionRejected,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionRejected,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(
+		rejectedDecisionTime,
+	))
+
+	// Rejected is terminal: a racing synthetic acceptance must not replace
+	// the server's rejection or move its deadline anchor.
+	testClock.SetTime(rejectedDecisionTime.Add(time.Hour))
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionRejected,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(
+		rejectedDecisionTime,
+	))
+
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, lntypes.Hash{0x9, 0x9, 0x9},
+		ConfirmationRiskDecisionRejected,
+	)
+	require.ErrorIs(t, err, ErrLoopInNotFound)
 
 	require.Len(t, swap.Deposits, 2)
 
@@ -460,6 +537,70 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 	require.Len(t, storedSwap.Deposits, 2)
 	require.Equal(t, d2.ID, storedSwap.Deposits[0].ID)
 	require.Equal(t, d1.ID, storedSwap.Deposits[1].ID)
+}
+
+func TestUpdateLoopInPersistsConfirmedHtlcOutpoint(t *testing.T) {
+	ctxb := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Index: 0,
+		},
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
+
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctxb, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x4, 0x2, 0x3, 0x5}
+	swap := StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x4, 0x2, 0x3, 0x5},
+		DepositOutpoints:        []string{d.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	swap.SetState(MonitorInvoiceAndHtlcTx)
+	require.NoError(t, swapStore.CreateLoopIn(ctxb, &swap))
+
+	confirmedHtlcTxHash := chainhash.Hash{0x55}
+	swap.HtlcTxHash = &confirmedHtlcTxHash
+	swap.HtlcOutputIndex = 2
+	swap.HtlcOutputValue = 88_000
+	require.NoError(t, swapStore.UpdateLoopIn(ctxb, &swap))
+
+	storedSwap, err := swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.NotNil(t, storedSwap.HtlcTxHash)
+	require.Equal(t, confirmedHtlcTxHash, *storedSwap.HtlcTxHash)
+	require.EqualValues(t, 2, storedSwap.HtlcOutputIndex)
+	require.EqualValues(t, 88_000, storedSwap.HtlcOutputValue)
+	require.Equal(t, MonitorInvoiceAndHtlcTx, storedSwap.GetState())
 }
 
 // TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins
