@@ -785,10 +785,13 @@ func (s *swapClientServer) SwapInfo(ctx context.Context,
 
 	// Just return the server's in-memory cache here too as we also want to
 	// return temporary failures to the client.
+	s.swapsLock.Lock()
 	swp, ok := s.swaps[swapHash]
+	s.swapsLock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
 	}
+
 	return s.marshallSwap(ctx, &swp)
 }
 
