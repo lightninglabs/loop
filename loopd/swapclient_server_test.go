@@ -34,6 +34,7 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -621,6 +622,231 @@ func TestStaticAddressLoopInSwapInfoFailsClosedWhenHtlcKeysMissing(t *testing.T)
 	)
 }
 
+// TestMonitorSnapshotIncludesStaticAddressLoopIns protects the monitor snapshot
+// invariant that pending static loop-ins are included alongside cached generic
+// swaps with their static state and swap-specific HTLC address.
+func TestMonitorSnapshotIncludesStaticAddressLoopIns(t *testing.T) {
+	ctx := t.Context()
+	server, staticLoopIn := newGenericStaticLoopInServer(t)
+
+	pendingSwaps, completedSwaps := server.monitorCachedSwaps()
+	err := server.appendStaticAddressLoopInMonitorSnapshot(
+		ctx, &pendingSwaps, &completedSwaps,
+	)
+	require.NoError(t, err)
+	require.Empty(t, completedSwaps)
+	require.Len(t, pendingSwaps, 1)
+	require.Equal(t, staticLoopIn.SwapHash, pendingSwaps[0].SwapHash)
+	require.Equal(t, swap.TypeStaticAddressLoopIn, pendingSwaps[0].SwapType)
+	require.Equal(
+		t, staticLoopIn.GetState(),
+		pendingSwaps[0].StaticAddressLoopInState,
+	)
+	assertStaticLoopInUsesSwapHtlcAddress(t, staticLoopIn, pendingSwaps[0])
+}
+
+// TestMonitorSnapshotIncludesFinalStaticAddressLoopIns protects the monitor
+// snapshot invariant that exact final static loop-in states are completed swaps.
+func TestMonitorSnapshotIncludesFinalStaticAddressLoopIns(t *testing.T) {
+	server, staticLoopIn := newGenericStaticLoopInServer(t)
+	staticLoopIn.SetState(loopin.Succeeded)
+
+	pendingSwaps, completedSwaps := server.monitorCachedSwaps()
+	err := server.appendStaticAddressLoopInMonitorSnapshot(
+		t.Context(), &pendingSwaps, &completedSwaps,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, pendingSwaps)
+	require.Len(t, completedSwaps, 1)
+}
+
+// TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate protects the
+// monitor race invariant that live static loop-in updates arriving during the
+// initial snapshot are deduplicated without dropping newer progress.
+func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T) {
+	logger := btclog.NewSLogger(
+		btclog.NewDefaultHandler(os.Stdout),
+	)
+	setLogger(logger.SubSystem(Subsystem))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	mainCtx, mainCancel := context.WithCancel(t.Context())
+	defer mainCancel()
+	server, staticLoopIn, store := newGenericStaticLoopInServerWithStore(t)
+	server.statusChan = make(chan loop.SwapInfo)
+	server.subscribers = make(map[int]chan<- any)
+	server.mainCtx = mainCtx
+
+	snapshotStarted := make(chan struct{}, 1)
+	releaseSnapshot := make(chan struct{})
+	store.beforeGet = func() {
+		select {
+		case snapshotStarted <- struct{}{}:
+		default:
+		}
+	}
+	store.waitGet = releaseSnapshot
+
+	go server.processStatusUpdates(mainCtx)
+
+	monitorServer := &testMonitorServer{
+		ctx:  ctx,
+		sent: make(chan *looprpc.SwapStatus, 3),
+	}
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- server.Monitor(&looprpc.MonitorRequest{}, monitorServer)
+	}()
+
+	select {
+	case <-snapshotStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	staticUpdate, err := server.staticAddressLoopInSwapInfo(ctx, staticLoopIn)
+	require.NoError(t, err)
+	staleUpdate := *staticUpdate
+	staleUpdate.State = loopdb.StateInitiated
+	staleUpdate.LastUpdate = staticUpdate.LastUpdate.Add(-time.Second)
+	server.statusChan <- staleUpdate
+
+	server.statusChan <- *staticUpdate
+	close(releaseSnapshot)
+
+	first := receiveMonitorUpdate(t, ctx, monitorServer.sent)
+	require.Equal(t, staticLoopIn.SwapHash[:], first.IdBytes)
+	require.Equal(t, looprpc.SwapType_STATIC_LOOP_IN, first.Type)
+	require.Equal(
+		t, looprpc.StaticAddressLoopInSwapState_PAYMENT_RECEIVED,
+		first.GetStaticLoopInState(),
+	)
+
+	nextUpdate := *staticUpdate
+	nextUpdate.State = loopdb.StateSuccess
+	nextUpdate.StaticAddressLoopInState = loopin.Succeeded
+	nextUpdate.LastUpdate = staticUpdate.LastUpdate.Add(time.Second)
+	server.statusChan <- nextUpdate
+
+	second := receiveMonitorUpdate(t, ctx, monitorServer.sent)
+	require.Equal(t, staticLoopIn.SwapHash[:], second.IdBytes)
+	require.Equal(t, looprpc.SwapType_STATIC_LOOP_IN, second.Type)
+	require.Equal(
+		t, looprpc.StaticAddressLoopInSwapState_SUCCEEDED,
+		second.GetStaticLoopInState(),
+	)
+
+	cancel()
+	require.NoError(t, <-errChan)
+}
+
+// TestStaticAddressLoopInHighWaterSuppressesExactDuplicate protects the
+// high-water dedup invariant that an initial live update identical to the
+// snapshot is treated as stale.
+func TestStaticAddressLoopInHighWaterSuppressesExactDuplicate(t *testing.T) {
+	swapHash := lntypes.Hash{1, 2, 3}
+	lastUpdate := time.Unix(100, 0).UTC()
+	snapshot := loop.SwapInfo{
+		SwapHash:                 swapHash,
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		LastUpdate:               lastUpdate,
+		StaticAddressLoopInState: loopin.PaymentReceived,
+	}
+	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
+		snapshot,
+	})
+
+	isStale := isInitialStaticAddressLoopInStale(highWater, snapshot)
+
+	require.True(t, isStale)
+}
+
+// TestStaticAddressLoopInHighWaterKeepsSameTimeDifferentState protects the
+// high-water timing invariant that equal timestamps do not hide a distinct
+// static loop-in state transition.
+func TestStaticAddressLoopInHighWaterKeepsSameTimeDifferentState(t *testing.T) {
+	swapHash := lntypes.Hash{1, 2, 3}
+	lastUpdate := time.Unix(100, 0).UTC()
+	snapshot := loop.SwapInfo{
+		SwapHash:                 swapHash,
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		LastUpdate:               lastUpdate,
+		StaticAddressLoopInState: loopin.PaymentReceived,
+	}
+	liveUpdate := snapshot
+	liveUpdate.StaticAddressLoopInState = loopin.Succeeded
+	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
+		snapshot,
+	})
+
+	isStale := isInitialStaticAddressLoopInStale(highWater, liveUpdate)
+
+	require.False(t, isStale)
+}
+
+// TestStaticAddressLoopInHighWaterSuppressesOlderStaticOnly protects the
+// high-water cache invariant that stale suppression applies only to static
+// loop-ins and cannot filter generic swap updates.
+func TestStaticAddressLoopInHighWaterSuppressesOlderStaticOnly(t *testing.T) {
+	swapHash := lntypes.Hash{1, 2, 3}
+	lastUpdate := time.Unix(100, 0).UTC()
+	snapshot := loop.SwapInfo{
+		SwapHash:                 swapHash,
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		LastUpdate:               lastUpdate,
+		StaticAddressLoopInState: loopin.PaymentReceived,
+	}
+	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
+		snapshot,
+	})
+	olderStatic := snapshot
+	olderStatic.LastUpdate = lastUpdate.Add(-time.Second)
+	olderStatic.StaticAddressLoopInState = loopin.Succeeded
+	nonStatic := olderStatic
+	nonStatic.SwapType = swap.TypeOut
+
+	staticStale := isInitialStaticAddressLoopInStale(highWater, olderStatic)
+	nonStaticStale := isInitialStaticAddressLoopInStale(
+		highWater, nonStatic,
+	)
+
+	require.True(t, staticStale)
+	require.False(t, nonStaticStale)
+}
+
+// TestStaticAddressLoopInStatusUpdateDoesNotEnterGenericSwapCache protects the
+// cache isolation invariant that static loop-in live updates reach subscribers
+// without entering the generic swap cache.
+func TestStaticAddressLoopInStatusUpdateDoesNotEnterGenericSwapCache(t *testing.T) {
+	ctx := t.Context()
+	server, staticLoopIn := newGenericStaticLoopInServer(t)
+	server.statusChan = make(chan loop.SwapInfo)
+	updates := make(chan any, 1)
+	server.subscribers = map[int]chan<- any{0: updates}
+	mainCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go server.processStatusUpdates(mainCtx)
+
+	staticUpdate, err := server.staticAddressLoopInSwapInfo(ctx, staticLoopIn)
+	require.NoError(t, err)
+	server.statusChan <- *staticUpdate
+
+	select {
+	case update := <-updates:
+		require.Equal(t, staticLoopIn.SwapHash, update.(loop.SwapInfo).SwapHash)
+
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	server.swapsLock.Lock()
+	_, cached := server.swaps[staticLoopIn.SwapHash]
+	server.swapsLock.Unlock()
+	require.False(t, cached)
+}
+
 func newGenericStaticLoopInServer(t *testing.T) (*swapClientServer,
 	*loopin.StaticAddressLoopIn) {
 
@@ -719,10 +945,93 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 	}, staticLoopIn, loopInStore
 }
 
+// assertStaticLoopInUsesSwapHtlcAddress verifies the static loop-in uses the
+// swap HTLC P2WSH address expected by the fixture.
+func assertStaticLoopInUsesSwapHtlcAddress(t *testing.T,
+	staticLoopIn *loopin.StaticAddressLoopIn, swapInfo loop.SwapInfo) {
+
+	t.Helper()
+
+	expectedAddress, err := staticAddressLoopInHtlcAddress(
+		staticLoopIn, &chaincfg.TestNet3Params,
+	)
+	require.NoError(t, err)
+	require.Nil(t, swapInfo.HtlcAddressP2TR)
+	require.NotNil(t, swapInfo.HtlcAddressP2WSH)
+	require.Equal(
+		t, expectedAddress.EncodeAddress(),
+		swapInfo.HtlcAddressP2WSH.EncodeAddress(),
+	)
+}
+
+// testMonitorServer implements the monitor stream interface for tests.
+type testMonitorServer struct {
+	ctx  context.Context
+	sent chan *looprpc.SwapStatus
+}
+
+// Send forwards monitor updates to the test channel until the context is canceled.
+func (s *testMonitorServer) Send(swapStatus *looprpc.SwapStatus) error {
+	select {
+	case s.sent <- swapStatus:
+		return nil
+
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+// SetHeader is a no-op stub that satisfies the monitor stream interface in tests.
+func (s *testMonitorServer) SetHeader(metadata.MD) error {
+	return nil
+}
+
+// SendHeader is a no-op stub that satisfies the monitor stream interface in tests.
+func (s *testMonitorServer) SendHeader(metadata.MD) error {
+	return nil
+}
+
+// SetTrailer is a no-op stub that satisfies the monitor stream interface in tests.
+func (s *testMonitorServer) SetTrailer(metadata.MD) {}
+
+// Context returns the stream context used by the test monitor server.
+func (s *testMonitorServer) Context() context.Context {
+	return s.ctx
+}
+
+// SendMsg is a no-op stub that satisfies the monitor stream interface in tests.
+func (s *testMonitorServer) SendMsg(any) error {
+	return nil
+}
+
+// RecvMsg is a no-op stub that satisfies the monitor stream interface in tests.
+func (s *testMonitorServer) RecvMsg(any) error {
+	return nil
+}
+
+// receiveMonitorUpdate waits for a monitor update or fails if the context is canceled.
+func receiveMonitorUpdate(t *testing.T, ctx context.Context,
+	updates <-chan *looprpc.SwapStatus) *looprpc.SwapStatus {
+
+	t.Helper()
+
+	select {
+	case update := <-updates:
+		return update
+
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	return nil
+}
+
 // mockStaticAddressLoopInStore is a minimal in-memory loop-in store for RPC
 // response mapping tests.
 type mockStaticAddressLoopInStore struct {
-	swaps []*loopin.StaticAddressLoopIn
+	swaps     []*loopin.StaticAddressLoopIn
+	beforeGet func()
+	waitGet   <-chan struct{}
 }
 
 // CreateLoopIn satisfies the static loop-in store interface.
@@ -741,8 +1050,19 @@ func (s *mockStaticAddressLoopInStore) UpdateLoopIn(_ context.Context,
 
 // GetStaticAddressLoopInSwapsByStates returns the configured loop-ins.
 func (s *mockStaticAddressLoopInStore) GetStaticAddressLoopInSwapsByStates(
-	_ context.Context, _ []fsm.StateType) ([]*loopin.StaticAddressLoopIn,
+	ctx context.Context, _ []fsm.StateType) ([]*loopin.StaticAddressLoopIn,
 	error) {
+
+	if s.beforeGet != nil {
+		s.beforeGet()
+	}
+	if s.waitGet != nil {
+		select {
+		case <-s.waitGet:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 
 	return s.swaps, nil
 }
