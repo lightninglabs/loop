@@ -792,6 +792,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	retryMonitor := func(err error) fsm.EventType {
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
 		f.Errorf("monitoring failed: %v, retrying", err)
 
 		invoice, lookupErr := f.cfg.LndClient.LookupInvoice(
@@ -980,28 +984,60 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	// transitionDepositsToHtlcTimeout locks deposits into timeout sweeping once
 	// the HTLC is confirmed and the invoice cannot be paid.
-	transitionDepositsToHtlcTimeout := func(reason string) {
+	transitionDepositsToHtlcTimeout := func(reason string) error {
 		if depositsLockedForHtlcTimeout ||
 			depositsInState(deposit.SweepHtlcTimeout) {
 
 			depositsLockedForHtlcTimeout = true
-			return
+			return nil
 		}
 
-		err = f.cfg.DepositManager.TransitionDeposits(
-			ctx, f.loopIn.Deposits,
+		depositsToTransition := make(
+			[]*deposit.Deposit, 0, len(f.loopIn.Deposits),
+		)
+		for _, d := range f.loopIn.Deposits {
+			if d != nil && d.IsInState(deposit.SweepHtlcTimeout) {
+				continue
+			}
+
+			depositsToTransition = append(depositsToTransition, d)
+		}
+
+		transitionErr := f.cfg.DepositManager.TransitionDeposits(
+			ctx, depositsToTransition,
 			deposit.OnSweepingHtlcTimeout,
 			deposit.SweepHtlcTimeout,
 		)
-		if err != nil {
-			f.Errorf("unable to transition deposits to the htlc "+
-				"timeout sweeping state after %s: %v",
-				reason, err)
+		if transitionErr != nil {
+			// WaitForState can report cancellation after the deposit FSMs
+			// already reached the target state. Do not turn that shutdown
+			// error into success: the monitor must return NoOp and remain
+			// recoverable instead of advancing the loop-in FSM.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 
-			return
+			// The transition can return an error after every deposit
+			// already reached the target state. Treat that as
+			// success, but never advance with a partial transition.
+			if depositsInState(deposit.SweepHtlcTimeout) {
+				depositsLockedForHtlcTimeout = true
+
+				return nil
+			}
+
+			return fmt.Errorf("unable to transition deposits to the htlc "+
+				"timeout sweeping state after %s: %w",
+				reason, transitionErr)
+		}
+		if !depositsInState(deposit.SweepHtlcTimeout) {
+			return fmt.Errorf("not all deposits reached the htlc timeout "+
+				"sweeping state after %s", reason)
 		}
 
 		depositsLockedForHtlcTimeout = true
+
+		return nil
 	}
 
 	// startLegacyFallback starts the payment deadline once the old local
@@ -1103,9 +1139,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			htlcConfirmed = true
 			if invoiceCanceledForNonPayment {
-				transitionDepositsToHtlcTimeout(
+				err = transitionDepositsToHtlcTimeout(
 					"htlc confirmation after invoice cancellation",
 				)
+				if err != nil {
+					return retryMonitor(err)
+				}
 			}
 
 		case err = <-htlcErrConfChan:
@@ -1164,14 +1203,20 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				return event
 			}
 			if htlcConfirmed {
-				transitionDepositsToHtlcTimeout("payment deadline")
+				err = transitionDepositsToHtlcTimeout(
+					"payment deadline",
+				)
+				if err != nil {
+					return retryMonitor(err)
+				}
+
 				continue
 			}
 
 			err = f.unlockDeposits(ctx)
 			if err != nil {
-				f.Errorf("unable to unlock deposits after "+
-					"payment deadline: %v", err)
+				return retryMonitor(fmt.Errorf("unable to unlock deposits "+
+					"after payment deadline: %w", err))
 			}
 
 		case riskUpdate, ok := <-riskUpdateChan:
@@ -1237,8 +1282,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				// made available again.
 				err = f.unlockDeposits(ctx)
 				if err != nil {
-					f.Errorf("unable to unlock deposits after "+
-						"htlc timeout: %v", err)
+					return retryMonitor(fmt.Errorf("unable to unlock "+
+						"deposits after htlc timeout: %w", err))
 				}
 
 				return OnSwapTimedOut
@@ -1246,7 +1291,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 			// If the htlc has confirmed and the timeout path has
 			// opened up we sweep the funds back to us.
-			transitionDepositsToHtlcTimeout("htlc timeout")
+			err = transitionDepositsToHtlcTimeout("htlc timeout")
+			if err != nil {
+				return retryMonitor(err)
+			}
 
 			return OnSweepHtlcTimeout
 

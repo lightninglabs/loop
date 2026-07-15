@@ -2572,6 +2572,225 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 	require.Equal(t, []fsm.StateType{deposit.Deposited}, depositMgr.states)
 }
 
+// TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails
+// verifies that a failed deposit timeout transition keeps the loop-in in its
+// recoverable monitor state.
+func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{20, 21, 22}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractCanceled,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	f.loopIn.HtlcCltvExpiry = mockLnd.Height
+	depositMgr.err = errors.New("transition failed")
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	var confRegistration *test.ConfRegistration
+	select {
+	case confRegistration = <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	confRegistration.ConfChan <- nil
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		require.Equal(t, deposit.OnSweepingHtlcTimeout, transition.event)
+		require.Equal(t, deposit.SweepHtlcTimeout, transition.state)
+
+	case <-ctx.Done():
+		t.Fatalf("deposit timeout transition was not attempted: %v",
+			ctx.Err())
+	}
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnRecover, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+}
+
+// TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits verifies that a
+// retry after a partial timeout transition skips deposits that already reached
+// the target state.
+func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{26, 27, 28}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractCanceled,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	f.loopIn.HtlcCltvExpiry = mockLnd.Height
+
+	firstDeposit := f.loopIn.Deposits[0]
+	secondDeposit := &deposit.Deposit{Value: 300_000}
+	firstDeposit.SetState(deposit.LoopingIn)
+	secondDeposit.SetState(deposit.LoopingIn)
+	f.loopIn.Deposits = append(f.loopIn.Deposits, secondDeposit)
+
+	attempts := 0
+	depositMgr.transition = func(deposits []*deposit.Deposit,
+		_ fsm.EventType, state fsm.StateType) error {
+
+		attempts++
+		if attempts == 1 {
+			deposits[0].SetState(state)
+
+			return errors.New("partial transition")
+		}
+		for _, d := range deposits {
+			d.SetState(state)
+		}
+
+		return nil
+	}
+	depositMgr.transitionChan = make(chan depositTransition, 2)
+
+	runMonitor := func(runCtx context.Context) chan fsm.EventType {
+		resultChan := make(chan fsm.EventType, 1)
+		go func() {
+			resultChan <- f.MonitorInvoiceAndHtlcTxAction(runCtx, nil)
+		}()
+
+		select {
+		case <-mockLnd.SingleInvoiceSubcribeChannel:
+		case <-runCtx.Done():
+			t.Fatalf("invoice subscription not registered: %v",
+				runCtx.Err())
+		}
+
+		var confRegistration *test.ConfRegistration
+		select {
+		case confRegistration = <-mockLnd.RegisterConfChannel:
+		case <-runCtx.Done():
+			t.Fatalf("htlc conf registration not received: %v",
+				runCtx.Err())
+		}
+		confRegistration.ConfChan <- nil
+
+		return resultChan
+	}
+
+	firstCtx, cancelFirst := context.WithCancel(ctx)
+	firstResult := runMonitor(firstCtx)
+	select {
+	case event := <-firstResult:
+		require.Equal(t, OnRecover, event)
+	case <-ctx.Done():
+		t.Fatalf("first monitor attempt did not exit: %v", ctx.Err())
+	}
+	cancelFirst()
+	firstTransition := <-depositMgr.transitionChan
+
+	require.True(t, firstDeposit.IsInState(deposit.SweepHtlcTimeout))
+	require.True(t, secondDeposit.IsInState(deposit.LoopingIn))
+
+	secondCtx, cancelSecond := context.WithCancel(ctx)
+	defer cancelSecond()
+	secondResult := runMonitor(secondCtx)
+	secondTransition := <-depositMgr.transitionChan
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case event := <-secondResult:
+		require.Equal(t, OnSweepHtlcTimeout, event)
+	case <-ctx.Done():
+		t.Fatalf("second monitor attempt did not exit: %v", ctx.Err())
+	}
+
+	require.Equal(t, []*deposit.Deposit{
+		firstDeposit, secondDeposit,
+	}, firstTransition.deposits)
+	require.Equal(t, []*deposit.Deposit{
+		secondDeposit,
+	}, secondTransition.deposits)
+	require.True(t, firstDeposit.IsInState(deposit.SweepHtlcTimeout))
+	require.True(t, secondDeposit.IsInState(deposit.SweepHtlcTimeout))
+}
+
+// TestMonitorInvoiceAndHtlcTxDoesNotFailWhenTimeoutUnlockFails verifies that a
+// failed unlock does not make the loop-in terminal while deposits remain
+// locked.
+func TestMonitorInvoiceAndHtlcTxDoesNotFailWhenTimeoutUnlockFails(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{23, 24, 25}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	f.loopIn.HtlcCltvExpiry = mockLnd.Height
+	depositMgr.err = errors.New("transition failed")
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnRecover, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Equal(t, []fsm.EventType{fsm.OnError}, depositMgr.events)
+	require.Equal(t, []fsm.StateType{deposit.Deposited}, depositMgr.states)
+}
+
 // waitForMonitorSubscriptions waits until invoice and HTLC watchers are active.
 func waitForMonitorSubscriptions(t *testing.T, ctx context.Context,
 	mockLnd *test.LndMockServices) {
@@ -3123,6 +3342,7 @@ type recordingDepositManager struct {
 
 	err         error
 	errs        []error
+	transition  func([]*deposit.Deposit, fsm.EventType, fsm.StateType) error
 	transitions []depositTransition
 
 	transitionChan chan depositTransition
@@ -3148,15 +3368,30 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	if r.transitionChan != nil {
 		r.transitionChan <- transition
 	}
+	switch {
+	case r.transition != nil:
+		if err := r.transition(deposits, event, state); err != nil {
+			return err
+		}
 
-	if len(r.errs) > 0 {
+	case len(r.errs) > 0:
 		err := r.errs[0]
 		r.errs = r.errs[1:]
+		if err != nil {
+			return err
+		}
 
-		return err
+	case r.err != nil:
+		return r.err
 	}
 
-	return r.err
+	for _, d := range deposits {
+		if d != nil {
+			d.SetState(state)
+		}
+	}
+
+	return nil
 }
 
 type recordingRiskStore struct {
