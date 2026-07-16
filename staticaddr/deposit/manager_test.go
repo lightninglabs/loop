@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"testing"
 	"time"
 
@@ -133,9 +134,28 @@ func (m *mockAddressManager) ListUnspent(ctx context.Context,
 	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
 
 	args := m.Called(ctx, minConfs, maxConfs)
+	if listUnspent, ok := args.Get(0).(func() []*lnwallet.Utxo); ok {
+		return listUnspent(), args.Error(1)
+	}
 
 	return args.Get(0).([]*lnwallet.Utxo),
 		args.Error(1)
+}
+
+// listUnspentOverride delegates all address-manager methods except
+// ListUnspent to another implementation.
+type listUnspentOverride struct {
+	AddressManager
+
+	listUnspent func(context.Context, int32, int32) ([]*lnwallet.Utxo,
+		error)
+}
+
+// ListUnspent calls the override's ListUnspent implementation.
+func (l *listUnspentOverride) ListUnspent(ctx context.Context,
+	minConfs, maxConfs int32) ([]*lnwallet.Utxo, error) {
+
+	return l.listUnspent(ctx, minConfs, maxConfs)
 }
 
 func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
@@ -237,6 +257,10 @@ func TestManager(t *testing.T) {
 		runErrChan <- testContext.manager.Run(ctx, initChan)
 	}()
 
+	// Send an initial block so the manager can proceed past its startup
+	// block wait.
+	testContext.blockChan <- int32(defaultDepositConfirmations)
+
 	// Ensure that the manager has been initialized.
 	select {
 	case <-initChan:
@@ -307,6 +331,156 @@ func TestManager(t *testing.T) {
 	}
 }
 
+// TestManagerReplaysStartupBlockToRecoveredDeposits verifies that the initial
+// block epoch consumed during startup is delivered to recovered deposit FSMs.
+func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const defaultTimeout = 30 * time.Second
+
+	testContext := newManagerTestContext(t)
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	// Send only the startup block at the recovered deposit's expiry height.
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive sign request")
+	}
+
+	select {
+	case <-testContext.mockLnd.TxPublishChannel:
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("did not receive published expiry tx")
+	}
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("manager did not stop")
+	}
+}
+
+// TestManagerSkipsExpiryNotificationOnReconcileFailure verifies that deposit
+// FSMs cannot make an expiry decision from stale confirmation data when wallet
+// reconciliation fails at startup or while processing a later block.
+func TestManagerSkipsExpiryNotificationOnReconcileFailure(t *testing.T) {
+	testCases := []struct {
+		name          string
+		startupHeight int32
+		blockHeight   int32
+	}{
+		{
+			name: "startup",
+			startupHeight: int32(
+				defaultDepositConfirmations + defaultExpiry,
+			),
+		},
+		{
+			name:          "block",
+			startupHeight: int32(defaultDepositConfirmations),
+			blockHeight: int32(
+				defaultDepositConfirmations + defaultExpiry,
+			),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			testContext := newManagerTestContext(t)
+			baseAddressManager := testContext.mockAddressManager
+			var listUnspentCalls int
+			testContext.manager.cfg.AddressManager =
+				&listUnspentOverride{
+					AddressManager: baseAddressManager,
+					listUnspent: func(ctx context.Context,
+						minConfs, maxConfs int32) (
+						[]*lnwallet.Utxo, error) {
+
+						listUnspentCalls++
+						if testCase.blockHeight != 0 &&
+							listUnspentCalls == 1 {
+
+							return baseAddressManager.ListUnspent(
+								ctx, minConfs, maxConfs,
+							)
+						}
+
+						return nil, errors.New(
+							"injected reconciliation failure",
+						)
+					},
+				}
+
+			initChan := make(chan struct{})
+			runErrChan := make(chan error, 1)
+			go func() {
+				runErrChan <- testContext.manager.Run(ctx, initChan)
+			}()
+
+			testContext.blockChan <- testCase.startupHeight
+
+			select {
+			case <-initChan:
+
+			case err := <-runErrChan:
+				require.NoError(t, err, "manager failed to start")
+
+			case <-time.After(time.Second):
+				t.Fatal("manager timed out starting")
+			}
+
+			if testCase.blockHeight != 0 {
+				testContext.blockChan <- testCase.blockHeight
+			}
+
+			select {
+			case <-testContext.mockLnd.SignOutputRawChannel:
+				t.Fatal("expiry sweep signed with stale deposit data")
+
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			cancel()
+			select {
+			case err := <-runErrChan:
+				require.ErrorIs(t, err, context.Canceled)
+
+			case <-time.After(time.Second):
+				t.Fatal("manager did not stop")
+			}
+		})
+	}
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -366,6 +540,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"UpdateDeposit", mock.Anything, mock.Anything,
 	).Return(nil)
 
+	var manager *Manager
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
 	).Return(&script.Parameters{
@@ -374,7 +549,19 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
-	).Return([]*lnwallet.Utxo{utxo}, nil)
+	).Return(func() []*lnwallet.Utxo {
+		currentUtxo := *utxo
+		currentHeight := manager.currentHeight.Load()
+		if currentHeight < defaultDepositConfirmations {
+			currentUtxo.Confirmations = 0
+		} else {
+			currentUtxo.Confirmations = int64(
+				currentHeight - defaultDepositConfirmations + 1,
+			)
+		}
+
+		return []*lnwallet.Utxo{&currentUtxo}
+	}, nil)
 
 	// Define the expected return values for the mocks.
 	mockChainNotifier.On(
@@ -394,7 +581,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		Signer:         mockLnd.Signer,
 	}
 
-	manager := NewManager(cfg)
+	manager = NewManager(cfg)
 
 	testContext := &ManagerTestContext{
 		manager:                 manager,

@@ -6,7 +6,8 @@
       "in",
       "--amt",
       "500000",
-      "--all",
+      "--utxo",
+      "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
       "--network",
       "regtest"
     ],
@@ -44,7 +45,7 @@
               "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
               "value": "2500000",
               "confirmation_height": "131",
-              "blocks_until_expiry": "14395",
+              "blocks_until_expiry": "14396",
               "swap_hash": ""
             }
           ]
@@ -127,11 +128,42 @@
       "kind": "stdout",
       "data": {
         "lines": [
+          "\n",
+          "WARNING: The following deposits are below the conservative 6-confirmation threshold:\n",
+          "  - 188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0 (5 confirmations)\n",
+          "The swap payment for these deposits may wait for more confirmations depending on the server's confirmation-risk policy.\n",
+          "\n",
           "Previously deposited on-chain:             500000 sat\n",
           "Receive off-chain:                         498176 sat\n",
           "Estimated total fee:                         1824 sat\n",
           "\n",
-          "CONTINUE SWAP? (y/n): "
+          "CONTINUE SWAP? (y/n): {\n",
+          "    \"amount\": \"2500000\",\n",
+          "    \"change\": \"2000000\",\n",
+          "    \"fast\": false,\n",
+          "    \"htlc_cltv\": 1136,\n",
+          "    \"initiation_height\": 136,\n",
+          "    \"initiator\": \"loop-cli\",\n",
+          "    \"label\": \"\",\n",
+          "    \"max_swap_fee_satoshis\": \"1824\",\n",
+          "    \"payment_timeout_seconds\": 60,\n",
+          "    \"protocol_version\": \"V0\",\n",
+          "    \"quoted_swap_fee_satoshis\": \"1824\",\n",
+          "    \"state\": \"SignHtlcTx\",\n",
+          "    \"swap_amount\": \"500000\",\n",
+          "    \"swap_hash\": \"9f19fb5042a5de6da2f1ce183c5e224fd7802db408e9afdd598ee8174b2bce3f\",\n",
+          "    \"used_deposits\": [\n",
+          "        {\n",
+          "            \"blocks_until_expiry\": \"14396\",\n",
+          "            \"confirmation_height\": \"131\",\n",
+          "            \"id\": \"ea6abbf0571c0ba82117ae9f2086614eacea8b2913dc0544b70c00de78353e71\",\n",
+          "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
+          "            \"state\": \"LOOPING_IN\",\n",
+          "            \"swap_hash\": \"\",\n",
+          "            \"value\": \"2500000\"\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
         ]
       }
     },
@@ -191,7 +223,7 @@
               "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
               "value": "2500000",
               "confirmation_height": "131",
-              "blocks_until_expiry": "14395",
+              "blocks_until_expiry": "14396",
               "swap_hash": ""
             }
           ],
@@ -199,41 +231,6 @@
           "change": "2000000",
           "fast": false
         }
-      }
-    },
-    {
-      "time_ms": 2825,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "{\n",
-          "    \"amount\": \"2500000\",\n",
-          "    \"change\": \"2000000\",\n",
-          "    \"fast\": false,\n",
-          "    \"htlc_cltv\": 1136,\n",
-          "    \"initiation_height\": 136,\n",
-          "    \"initiator\": \"loop-cli\",\n",
-          "    \"label\": \"\",\n",
-          "    \"max_swap_fee_satoshis\": \"1824\",\n",
-          "    \"payment_timeout_seconds\": 60,\n",
-          "    \"protocol_version\": \"V0\",\n",
-          "    \"quoted_swap_fee_satoshis\": \"1824\",\n",
-          "    \"state\": \"SignHtlcTx\",\n",
-          "    \"swap_amount\": \"500000\",\n",
-          "    \"swap_hash\": \"9f19fb5042a5de6da2f1ce183c5e224fd7802db408e9afdd598ee8174b2bce3f\",\n",
-          "    \"used_deposits\": [\n",
-          "        {\n",
-          "            \"blocks_until_expiry\": \"14395\",\n",
-          "            \"confirmation_height\": \"131\",\n",
-          "            \"id\": \"ea6abbf0571c0ba82117ae9f2086614eacea8b2913dc0544b70c00de78353e71\",\n",
-          "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
-          "            \"state\": \"LOOPING_IN\",\n",
-          "            \"swap_hash\": \"\",\n",
-          "            \"value\": \"2500000\"\n",
-          "        }\n",
-          "    ]\n",
-          "}\n"
-        ]
       }
     },
     {

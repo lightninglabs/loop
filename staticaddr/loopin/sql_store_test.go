@@ -349,6 +349,83 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
 		swap.DepositOutpoints)
 	require.Equal(t, SignHtlcTx, swap.GetState())
+	require.Equal(
+		t, ConfirmationRiskDecisionNone,
+		swap.ConfirmationRiskDecision,
+	)
+
+	decisionTime := time.Unix(123, 0).UTC()
+	testClock.SetTime(decisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionAccepted,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+
+	// Replaying the same decision must retain its original deadline anchor.
+	laterDecisionTime := decisionTime.Add(time.Hour)
+	testClock.SetTime(laterDecisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionAccepted,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(decisionTime))
+
+	// A different decision is a new event and receives a new timestamp.
+	rejectedDecisionTime := laterDecisionTime.Add(time.Hour)
+	testClock.SetTime(rejectedDecisionTime)
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionRejected,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionRejected,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(
+		rejectedDecisionTime,
+	))
+
+	// Rejected is terminal: a racing synthetic acceptance must not replace
+	// the server's rejection or move its deadline anchor.
+	testClock.SetTime(rejectedDecisionTime.Add(time.Hour))
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, swapHashPending, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
+	require.NoError(t, err)
+	require.Equal(
+		t, ConfirmationRiskDecisionRejected,
+		swap.ConfirmationRiskDecision,
+	)
+	require.True(t, swap.ConfirmationRiskDecisionTime.Equal(
+		rejectedDecisionTime,
+	))
+
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, lntypes.Hash{0x9, 0x9, 0x9},
+		ConfirmationRiskDecisionRejected,
+	)
+	require.ErrorIs(t, err, ErrLoopInNotFound)
 
 	require.Len(t, swap.Deposits, 2)
 

@@ -33,6 +33,22 @@ SET
 WHERE
     swap_hash = $1;
 
+-- name: RecordStaticAddressRiskDecision :exec
+UPDATE static_address_swaps
+SET
+    confirmation_risk_decision = $2,
+    confirmation_risk_decision_time = CASE
+        WHEN confirmation_risk_decision = $2 THEN
+            COALESCE(confirmation_risk_decision_time, $3)
+        ELSE $3
+    END
+WHERE
+    swap_hash = $1
+    AND NOT (
+        confirmation_risk_decision = 'rejected'
+        AND $2 = 'accepted'
+    );
+
 -- name: InsertStaticAddressMetaUpdate :exec
 INSERT INTO static_address_swap_updates (
     swap_hash,
@@ -145,9 +161,5 @@ FROM
     )
 WHERE
     d.swap_hash = $1;
-
-
-
-
 
 

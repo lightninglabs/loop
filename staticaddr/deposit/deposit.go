@@ -52,7 +52,8 @@ type Deposit struct {
 	Value btcutil.Amount
 
 	// ConfirmationHeight is the absolute height at which the deposit was
-	// first confirmed.
+	// first confirmed. A value of zero means the deposit is still
+	// unconfirmed.
 	ConfirmationHeight int64
 
 	// TimeOutSweepPkScript is the pk script that is used to sweep the
@@ -91,6 +92,10 @@ func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.ConfirmationHeight <= 0 {
+		return false
+	}
+
 	return currentHeight >= uint32(d.ConfirmationHeight)+expiry
 }
 
@@ -125,6 +130,12 @@ func (d *Deposit) IsInState(state fsm.StateType) bool {
 
 func (d *Deposit) isInStateNoLock(state fsm.StateType) bool {
 	return d.state == state
+}
+
+// IsInStateNoLock returns whether the deposit is in the given state without
+// acquiring the deposit lock.
+func (d *Deposit) IsInStateNoLock(state fsm.StateType) bool {
+	return d.isInStateNoLock(state)
 }
 
 // GetConfirmationHeight returns the deposit confirmation height.

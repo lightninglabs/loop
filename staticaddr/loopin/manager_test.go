@@ -82,6 +82,27 @@ func TestSelectDeposits(t *testing.T) {
 			expectedErr: "",
 		},
 		{
+			name: "prefer confirmed deposit over larger unconfirmed one",
+			deposits: []*deposit.Deposit{
+				{
+					Value:              2_000_000,
+					ConfirmationHeight: 0,
+				},
+				{
+					Value:              1_500_000,
+					ConfirmationHeight: 5_004,
+				},
+			},
+			targetValue: 1_000_000,
+			expected: []*deposit.Deposit{
+				{
+					Value:              1_500_000,
+					ConfirmationHeight: 5_004,
+				},
+			},
+			expectedErr: "",
+		},
+		{
 			name:        "single deposit insufficient by 1",
 			deposits:    []*deposit.Deposit{d1},
 			targetValue: 1_000_001,
@@ -357,6 +378,12 @@ func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
 	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
 }
 
+// TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered
+// swappable because its CSV timeout has not started yet.
+func TestIsSwappableUnconfirmed(t *testing.T) {
+	require.True(t, IsSwappable(0, 5000, 1000))
+}
+
 // mockDepositManager implements DepositManager for tests.
 type mockDepositManager struct {
 	// activeDeposits is the set returned by GetActiveDepositsInState.
@@ -364,6 +391,10 @@ type mockDepositManager struct {
 
 	// byOutpoint maps outpoint strings to deposits for direct lookups.
 	byOutpoint map[string]*deposit.Deposit
+}
+
+func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
+	return nil
 }
 
 func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
@@ -491,6 +522,13 @@ func (s *mockStore) GetStaticAddressLoopInSwapsByStates(_ context.Context,
 }
 func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return false, nil
+}
+
+// RecordStaticAddressRiskDecision implements Store for manager tests.
+func (s *mockStore) RecordStaticAddressRiskDecision(context.Context,
+	lntypes.Hash, ConfirmationRiskDecision) error {
+
+	return nil
 }
 
 func (s *mockStore) GetLoopInByHash(_ context.Context,
