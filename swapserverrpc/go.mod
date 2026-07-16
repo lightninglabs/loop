@@ -7,9 +7,9 @@ require (
 
 require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 )
 
@@ -17,4 +17,4 @@ require (
 // "go mod check" failures in CI.
 replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
-go 1.25.5
+go 1.25.12

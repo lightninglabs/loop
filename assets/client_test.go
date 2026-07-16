@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -8,6 +9,21 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
+
+// TestDefaultTapdConfig tests that the default tapd connection paths match
+// tapd's mainnet defaults.
+func TestDefaultTapdConfig(t *testing.T) {
+	defaultTapdDir := btcutil.AppDataDir("tapd", false)
+	config := DefaultTapdConfig()
+
+	require.Equal(
+		t, filepath.Join(defaultTapdDir, "mainnet", "admin.macaroon"),
+		config.MacaroonPath,
+	)
+	require.Equal(
+		t, filepath.Join(defaultTapdDir, "tls.cert"), config.TLSPath,
+	)
+}
 
 func TestGetPaymentMaxAmount(t *testing.T) {
 	tests := []struct {
