@@ -3,18 +3,17 @@
     "args": [
       "loop",
       "static",
-      "listunspent",
-      "--network",
-      "regtest"
+      "l",
+      "--network=regtest"
     ],
     "env": {},
-    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
-    "duration": 20894580,
-    "clock_start_unix": 1769407086
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 12108417,
+    "clock_start_unix": 1784236626
   },
   "events": [
     {
-      "time_ms": 3,
+      "time_ms": 0,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/ListUnspentDeposits",
@@ -27,7 +26,7 @@
       }
     },
     {
-      "time_ms": 20,
+      "time_ms": 11,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/ListUnspentDeposits",
@@ -36,18 +35,18 @@
         "payload": {
           "utxos": [
             {
-              "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+              "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
               "amount_sat": "2500000",
               "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
-              "confirmations": "1",
-              "label": ""
+              "confirmations": "6",
+              "label": "treasury"
             }
           ]
         }
       }
     },
     {
-      "time_ms": 20,
+      "time_ms": 12,
       "kind": "stdout",
       "data": {
         "lines": [
@@ -55,10 +54,10 @@
           "    \"utxos\": [\n",
           "        {\n",
           "            \"amount_sat\": \"2500000\",\n",
-          "            \"confirmations\": \"1\",\n",
-          "            \"label\": \"\",\n",
+          "            \"confirmations\": \"6\",\n",
+          "            \"label\": \"treasury\",\n",
           "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
-          "            \"static_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\"\n",
+          "            \"static_address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\"\n",
           "        }\n",
           "    ]\n",
           "}\n"
@@ -66,7 +65,7 @@
       }
     },
     {
-      "time_ms": 20,
+      "time_ms": 12,
       "kind": "exit",
       "data": {}
     }
