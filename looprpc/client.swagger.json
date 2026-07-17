@@ -953,6 +953,13 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "skip_funding_tx_labels",
+            "description": "Skips looking up the funding transaction label of each deposit in lnd.\nCallers that only need outpoints or values can set this to avoid one\nwallet lookup per funding transaction. When set, funding_tx_label is empty.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -994,6 +1001,39 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/label": {
+      "post": {
+        "summary": "loop: `static updatelabel`\nUpdateStaticAddressLabel updates the local label for a static address.",
+        "operationId": "SwapClient_UpdateStaticAddressLabel",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcUpdateStaticAddressLabelResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcUpdateStaticAddressLabelRequest"
+            }
           }
         ],
         "tags": [
@@ -1376,6 +1416,14 @@
         "static_address": {
           "type": "string",
           "description": "The static address that the deposit was sent to."
+        },
+        "address_label": {
+          "type": "string",
+          "description": "The local label of the static address that the deposit was sent to. Empty\nstring means no label."
+        },
+        "funding_tx_label": {
+          "type": "string",
+          "description": "The lnd wallet label of the transaction that funded the deposit, as lnd\nreports it. lnd labels transactions sent through its API without a label\nas \"external\". Empty string means the transaction has no label in this\nlnd wallet, for example when another wallet funded the deposit, or that\nthe label could not be looked up in lnd."
         }
       }
     },
@@ -2273,6 +2321,10 @@
           "type": "string",
           "format": "byte",
           "description": "The client's public key for the 2-of-2 MuSig2 taproot static address."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label for this static address. Empty string means no label."
         }
       }
     },
@@ -2287,6 +2339,10 @@
           "type": "integer",
           "format": "int64",
           "description": "The CSV expiry of the static address in blocks."
+        },
+        "label": {
+          "type": "string",
+          "description": "The label for this static address. Empty string means no label."
         }
       }
     },
@@ -3018,6 +3074,32 @@
         }
       }
     },
+    "looprpcUpdateStaticAddressLabelRequest": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address whose label should be updated."
+        },
+        "label": {
+          "type": "string",
+          "description": "The updated label for the static address. Empty string means no label."
+        }
+      }
+    },
+    "looprpcUpdateStaticAddressLabelResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address whose label was updated."
+        },
+        "label": {
+          "type": "string",
+          "description": "The updated label for the static address. Empty string means no label."
+        }
+      }
+    },
     "looprpcUtxo": {
       "type": "object",
       "properties": {
@@ -3038,6 +3120,10 @@
           "type": "string",
           "format": "int64",
           "description": "The number of confirmations for the Utxo."
+        },
+        "address_label": {
+          "type": "string",
+          "description": "The local label of the static address that owns this Utxo. Empty string\nmeans no label."
         }
       }
     },
