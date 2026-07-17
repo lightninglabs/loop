@@ -21,7 +21,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
@@ -49,6 +50,7 @@ type AllDepositsRow struct {
 	Pkscript              []byte
 	ProtocolVersion       sql.NullInt32
 	InitiationHeight      sql.NullInt32
+	Label                 sql.NullString
 }
 
 func (q *Queries) AllDeposits(ctx context.Context) ([]AllDepositsRow, error) {
@@ -80,6 +82,7 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]AllDepositsRow, error) {
 			&i.Pkscript,
 			&i.ProtocolVersion,
 			&i.InitiationHeight,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +158,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
@@ -190,6 +194,7 @@ type DepositForOutpointRow struct {
 	Pkscript              []byte
 	ProtocolVersion       sql.NullInt32
 	InitiationHeight      sql.NullInt32
+	Label                 sql.NullString
 }
 
 func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (DepositForOutpointRow, error) {
@@ -215,6 +220,7 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 		&i.Pkscript,
 		&i.ProtocolVersion,
 		&i.InitiationHeight,
+		&i.Label,
 	)
 	return i, err
 }
@@ -229,7 +235,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
@@ -257,6 +264,7 @@ type GetDepositRow struct {
 	Pkscript              []byte
 	ProtocolVersion       sql.NullInt32
 	InitiationHeight      sql.NullInt32
+	Label                 sql.NullString
 }
 
 func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (GetDepositRow, error) {
@@ -282,6 +290,7 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (GetDepositR
 		&i.Pkscript,
 		&i.ProtocolVersion,
 		&i.InitiationHeight,
+		&i.Label,
 	)
 	return i, err
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const allStaticAddresses = `-- name: AllStaticAddresses :many
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height, label FROM static_addresses
 ORDER BY id ASC
 `
 
@@ -33,6 +33,7 @@ func (q *Queries) AllStaticAddresses(ctx context.Context) ([]StaticAddress, erro
 			&i.Pkscript,
 			&i.ProtocolVersion,
 			&i.InitiationHeight,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -56,7 +57,8 @@ INSERT INTO static_addresses (
     client_key_index,
     pkscript,
     protocol_version,
-    initiation_height
+    initiation_height,
+    label
 ) VALUES (
              $1,
              $2,
@@ -65,7 +67,8 @@ INSERT INTO static_addresses (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9
          )
 `
 
@@ -78,6 +81,7 @@ type CreateStaticAddressParams struct {
 	Pkscript         []byte
 	ProtocolVersion  int32
 	InitiationHeight int32
+	Label            string
 }
 
 func (q *Queries) CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error {
@@ -90,12 +94,13 @@ func (q *Queries) CreateStaticAddress(ctx context.Context, arg CreateStaticAddre
 		arg.Pkscript,
 		arg.ProtocolVersion,
 		arg.InitiationHeight,
+		arg.Label,
 	)
 	return err
 }
 
 const getLegacyAddress = `-- name: GetLegacyAddress :one
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height, label FROM static_addresses
 ORDER BY id ASC
 LIMIT 1
 `
@@ -113,6 +118,7 @@ func (q *Queries) GetLegacyAddress(ctx context.Context) (StaticAddress, error) {
 		&i.Pkscript,
 		&i.ProtocolVersion,
 		&i.InitiationHeight,
+		&i.Label,
 	)
 	return i, err
 }
@@ -133,7 +139,7 @@ func (q *Queries) GetMaxStaticAddressHtlcKeyIndex(ctx context.Context, clientKey
 }
 
 const getStaticAddress = `-- name: GetStaticAddress :one
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height, label FROM static_addresses
 WHERE pkscript=$1
 `
 
@@ -150,6 +156,7 @@ func (q *Queries) GetStaticAddress(ctx context.Context, pkscript []byte) (Static
 		&i.Pkscript,
 		&i.ProtocolVersion,
 		&i.InitiationHeight,
+		&i.Label,
 	)
 	return i, err
 }
@@ -167,7 +174,7 @@ func (q *Queries) GetStaticAddressID(ctx context.Context, pkscript []byte) (int3
 }
 
 const listStaticAddresses = `-- name: ListStaticAddresses :many
-SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height, label FROM static_addresses
 WHERE id > $1
 ORDER BY id ASC
 LIMIT $2
@@ -197,6 +204,7 @@ func (q *Queries) ListStaticAddresses(ctx context.Context, arg ListStaticAddress
 			&i.Pkscript,
 			&i.ProtocolVersion,
 			&i.InitiationHeight,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -209,4 +217,23 @@ func (q *Queries) ListStaticAddresses(ctx context.Context, arg ListStaticAddress
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateStaticAddressLabel = `-- name: UpdateStaticAddressLabel :execrows
+UPDATE static_addresses
+SET label = $2
+WHERE pkscript = $1
+`
+
+type UpdateStaticAddressLabelParams struct {
+	Pkscript []byte
+	Label    string
+}
+
+func (q *Queries) UpdateStaticAddressLabel(ctx context.Context, arg UpdateStaticAddressLabelParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateStaticAddressLabel, arg.Pkscript, arg.Label)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
