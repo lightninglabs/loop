@@ -292,6 +292,7 @@ type depositRow struct {
 	Pkscript              []byte
 	ProtocolVersion       sql.NullInt32
 	InitiationHeight      sql.NullInt32
+	Label                 sql.NullString
 }
 
 func depositRowFromAll(row sqlc.AllDepositsRow) depositRow {
@@ -314,6 +315,7 @@ func depositRowFromAll(row sqlc.AllDepositsRow) depositRow {
 		Pkscript:              row.Pkscript,
 		ProtocolVersion:       row.ProtocolVersion,
 		InitiationHeight:      row.InitiationHeight,
+		Label:                 row.Label,
 	}
 }
 
@@ -337,6 +339,7 @@ func depositRowFromGet(row sqlc.GetDepositRow) depositRow {
 		Pkscript:              row.Pkscript,
 		ProtocolVersion:       row.ProtocolVersion,
 		InitiationHeight:      row.InitiationHeight,
+		Label:                 row.Label,
 	}
 }
 
@@ -360,6 +363,7 @@ func depositRowFromOutpoint(row sqlc.DepositForOutpointRow) depositRow {
 		Pkscript:              row.Pkscript,
 		ProtocolVersion:       row.ProtocolVersion,
 		InitiationHeight:      row.InitiationHeight,
+		Label:                 row.Label,
 	}
 }
 
@@ -459,6 +463,7 @@ func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 			row.ProtocolVersion.Int32,
 		),
 		InitiationHeight: row.InitiationHeight.Int32,
+		Label:            row.Label.String,
 	}
 
 	return deposit, nil

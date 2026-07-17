@@ -1917,7 +1917,9 @@ func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
 	if p.ID == 0 {
 		p.ID = int32(len(s.params) + 1)
 	}
-	s.params = append(s.params, p)
+	storedParams := *p
+	s.params = append(s.params, &storedParams)
+
 	return nil
 }
 
@@ -1950,7 +1952,10 @@ func (s *mockAddressStore) ListStaticAddresses(_ context.Context,
 	var page []*address.AddressParameters
 	for i, p := range s.params {
 		if p.ID == 0 {
-			p.ID = int32(i + 1)
+			updated := *p
+			updated.ID = int32(i + 1)
+			s.params[i] = &updated
+			p = &updated
 		}
 		if p.ID > afterID {
 			page = append(page, p)
@@ -1984,6 +1989,23 @@ func (s *mockAddressStore) GetMaxStaticAddressHtlcKeyIndex(_ context.Context,
 	_ keychain.KeyFamily) (uint32, bool, error) {
 
 	return 0, false, nil
+}
+
+// UpdateStaticAddressLabel replaces the stored record without mutating cached
+// address parameters that the manager may have already published.
+func (s *mockAddressStore) UpdateStaticAddressLabel(_ context.Context,
+	pkScript []byte, label string) error {
+
+	for i, params := range s.params {
+		if bytes.Equal(params.PkScript, pkScript) {
+			updated := *params
+			updated.Label = label
+			s.params[i] = &updated
+			return nil
+		}
+	}
+
+	return address.ErrStaticAddressNotFound
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
