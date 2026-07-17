@@ -74,6 +74,7 @@ type Querier interface {
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
+	UpdateStaticAddressLabel(ctx context.Context, arg UpdateStaticAddressLabelParams) (int64, error)
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
 	UpdateWithdrawal(ctx context.Context, arg UpdateWithdrawalParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
