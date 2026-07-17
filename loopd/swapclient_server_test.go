@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -1975,6 +1976,33 @@ func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
 	}
 
 	return s.params[0], nil
+}
+
+// UpdateStaticAddressLabel mutates only the matched local record so RPC tests
+// prove relabeling has no server/protocol side effect.
+func (s *mockAddressStore) UpdateStaticAddressLabel(_ context.Context,
+	pkScript []byte, label string) error {
+
+	params := s.staticAddress(pkScript)
+	if params == nil {
+		return errors.New("static address not found")
+	}
+
+	params.Label = label
+
+	return nil
+}
+
+// staticAddress finds a record by pkScript to mirror the real store's update
+// key and catch attempts to relabel an unknown static address.
+func (s *mockAddressStore) staticAddress(pkScript []byte) *script.Parameters {
+	for _, params := range s.params {
+		if string(params.PkScript) == string(pkScript) {
+			return params
+		}
+	}
+
+	return nil
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
