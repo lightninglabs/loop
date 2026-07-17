@@ -1,6 +1,10 @@
 package assets
 
 import (
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -8,6 +12,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/macaroon.v2"
 )
 
 // TestDefaultTapdConfig tests that the default tapd connection paths match
@@ -16,10 +21,62 @@ func TestDefaultTapdConfig(t *testing.T) {
 	defaultTapdDir := btcutil.AppDataDir("tapd", false)
 	config := DefaultTapdConfig()
 
+	require.Equal(t, filepath.Join(
+		defaultTapdDir, "data", "mainnet", "admin.macaroon",
+	), config.MacaroonPath)
 	require.Equal(
-		t, filepath.Join(defaultTapdDir, "mainnet", "admin.macaroon"),
-		config.MacaroonPath,
+		t, filepath.Join(defaultTapdDir, "tls.cert"), config.TLSPath,
 	)
+}
+
+// TestTapdConfigClientConn tests that the default tapd file layout can be used
+// to construct a client connection.
+func TestTapdConfigClientConn(t *testing.T) {
+	// Use an isolated tapd root so the test never reads from or writes to a
+	// user's real tapd data directory.
+	defaultTapdDir := t.TempDir()
+	network := "regtest"
+	macaroonPath := filepath.Join(
+		defaultTapdDir, "data", network, "admin.macaroon",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Dir(macaroonPath), 0o700))
+
+	// NewTapdClient parses the configured TLS certificate before creating
+	// its gRPC client. An httptest server provides a valid certificate
+	// without requiring a running tapd instance.
+	tlsServer := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(tlsServer.Close)
+	cert := tlsServer.Certificate()
+	certBytes := pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: cert.Raw,
+	})
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultTapdDir, "tls.cert"), certBytes, 0o600,
+	))
+
+	// Store a valid serialized macaroon at tapd's production path. This
+	// ensures connection setup tests the path itself rather than failing on
+	// malformed credentials.
+	mac, err := macaroon.New(
+		[]byte("root-key"), []byte("id"), "tapd",
+		macaroon.LatestVersion,
+	)
+	require.NoError(t, err)
+	macBytes, err := mac.MarshalBinary()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(macaroonPath, macBytes, 0o600))
+
+	// grpc.NewClient connects lazily, so constructing the tapd client verifies
+	// that both credentials can be loaded and parsed without needing a live
+	// tapd server.
+	config := DefaultTapdConfigForNetwork(defaultTapdDir, network)
+	client, err := NewTapdClient(config)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, client.cc.Close())
+	})
+
+	require.Equal(t, macaroonPath, config.MacaroonPath)
 	require.Equal(
 		t, filepath.Join(defaultTapdDir, "tls.cert"), config.TLSPath,
 	)
