@@ -542,9 +542,29 @@ $ loop [GLOBAL FLAGS] static new [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name            | Description | Type | Default value |
-|-----------------|-------------|------|:-------------:|
-| `--help` (`-h`) | show help   | bool |    `false`    |
+| Name            | Description                                                                                                             | Type   | Default value |
+|-----------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--label="…"`   | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
+| `--help` (`-h`) | show help                                                                                                               | bool   |    `false`    |
+
+### `static updatelabel` subcommand
+
+Update the label for a static address.
+
+Updates the local label for a static address. Use --clear to remove the label without relying on shell-specific empty-string arguments.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static updatelabel [COMMAND FLAGS] <static_address> <label> | <static_address> --clear
+```
+
+The following flags are supported:
+
+| Name            | Description                    | Type | Default value |
+|-----------------|--------------------------------|------|:-------------:|
+| `--clear`       | clear the static address label | bool |    `false`    |
+| `--help` (`-h`) | show help                      | bool |    `false`    |
 
 ### `static listunspent` subcommand (aliases: `l`)
 
