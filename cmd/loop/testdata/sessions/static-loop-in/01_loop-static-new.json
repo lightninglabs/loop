@@ -40,7 +40,8 @@
         "event": "request",
         "message_type": "looprpc.NewStaticAddressRequest",
         "payload": {
-          "client_key": ""
+          "client_key": "",
+          "label": ""
         }
       }
     },
@@ -53,7 +54,8 @@
         "message_type": "looprpc.NewStaticAddressResponse",
         "payload": {
           "address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
-          "expiry": 14400
+          "expiry": 14400,
+          "label": ""
         }
       }
     },
@@ -64,7 +66,8 @@
         "lines": [
           "{\n",
           "    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
-          "    \"expiry\": 14400\n",
+          "    \"expiry\": 14400,\n",
+          "    \"label\": \"\"\n",
           "}\n"
         ]
       }
