@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
@@ -439,19 +440,57 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
-	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
-	if err != nil {
-		return "", "", err
-	}
-
-	if !published {
-		return "", "", nil
-	}
-
 	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
 	if err != nil {
 		return "", "", fmt.Errorf("could not get withdrawal "+
 			"pkscript: %w", err)
+	}
+
+	// Attach the finalized withdrawal transaction before transitioning the
+	// deposits. The state transition persists it, allowing recovery to
+	// republish the transaction if publishing blocks or the client restarts.
+	previousWithdrawalTxns := make([]*wire.MsgTx, len(deposits))
+	for i, d := range deposits {
+		d.Lock()
+		previousWithdrawalTxns[i] = d.FinalizedWithdrawalTx
+		d.FinalizedWithdrawalTx = finalizedTx
+		d.Unlock()
+	}
+
+	// Transition before publishing so wallet reconciliation can't remove a
+	// spent deposit from the active set while publication is in progress.
+	err = m.cfg.DepositManager.TransitionDeposits(
+		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
+	)
+	if err != nil {
+		m.restoreWithdrawalTxns(deposits, previousWithdrawalTxns)
+
+		return "", "", fmt.Errorf("failed to transition deposits %w",
+			err)
+	}
+
+	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
+	if err != nil {
+		rollbackErr := m.rollbackWithdrawalPreparation(
+			ctx, deposits, previousWithdrawalTxns, allDeposited,
+		)
+
+		if rollbackErr != nil {
+			return "", "", errors.Join(err, rollbackErr)
+		}
+
+		return "", "", err
+	}
+
+	if !published {
+		err = m.rollbackWithdrawalPreparation(
+			ctx, deposits, previousWithdrawalTxns, allDeposited,
+		)
+		if err != nil {
+			return "", "", err
+		}
+
+		return "", "", nil
 	}
 
 	// If this is the first time this cluster of deposits is withdrawn, we
@@ -479,9 +518,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	// If a previous withdrawal existed across the selected deposits, and
 	// it isn't the same as the new withdrawal, we remove it from the
 	// finalized withdrawals to stop republishing it on block arrivals.
-	deposits[0].Lock()
-	prevTx := deposits[0].FinalizedWithdrawalTx
-	deposits[0].Unlock()
+	prevTx := previousWithdrawalTxns[0]
 
 	if prevTx != nil && prevTx.TxHash() != finalizedTx.TxHash() {
 		m.mu.Lock()
@@ -489,31 +526,11 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		m.mu.Unlock()
 	}
 
-	// Attach the finalized withdrawal tx to the deposits. After a client
-	// restart we can use this address as an indicator to republish the
-	// withdrawal tx and continue the withdrawal.
-	// Deposits with the same withdrawal tx are part of the same withdrawal.
-	for _, d := range deposits {
-		d.Lock()
-		d.FinalizedWithdrawalTx = finalizedTx
-		d.Unlock()
-	}
-
 	// Add the new withdrawal tx to the finalized withdrawals to republish
 	// it on block arrivals.
 	m.mu.Lock()
 	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
 	m.mu.Unlock()
-
-	// Transition the deposits to the withdrawing state. If the user fee
-	// bumped a withdrawal this results in a NOOP transition.
-	err = m.cfg.DepositManager.TransitionDeposits(
-		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to transition deposits %w",
-			err)
-	}
 
 	// Update the deposits in the database.
 	for _, d := range deposits {
@@ -525,6 +542,53 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	}
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
+}
+
+// restoreWithdrawalTxns restores the finalized withdrawal transactions that
+// were attached to deposits before a withdrawal publication attempt.
+func (m *Manager) restoreWithdrawalTxns(deposits []*deposit.Deposit,
+	previousWithdrawalTxns []*wire.MsgTx) {
+
+	for i, d := range deposits {
+		d.Lock()
+		d.FinalizedWithdrawalTx = previousWithdrawalTxns[i]
+		d.Unlock()
+	}
+}
+
+// rollbackWithdrawalPreparation rolls back the state prepared before a
+// withdrawal publication attempt failed.
+func (m *Manager) rollbackWithdrawalPreparation(ctx context.Context,
+	deposits []*deposit.Deposit, previousWithdrawalTxns []*wire.MsgTx,
+	allDeposited bool) error {
+
+	var transitionErr error
+	if allDeposited {
+		transitionErr = m.cfg.DepositManager.TransitionDeposits(
+			ctx, deposits, fsm.OnError, deposit.Deposited,
+		)
+	}
+
+	m.restoreWithdrawalTxns(deposits, previousWithdrawalTxns)
+
+	var updateErr error
+	for _, d := range deposits {
+		err := m.cfg.DepositManager.UpdateDeposit(ctx, d)
+		if err != nil {
+			updateErr = errors.Join(updateErr, err)
+		}
+	}
+
+	if transitionErr != nil {
+		transitionErr = fmt.Errorf("failed to roll back deposit state: %w",
+			transitionErr)
+	}
+	if updateErr != nil {
+		updateErr = fmt.Errorf("failed to restore withdrawal tx: %w",
+			updateErr)
+	}
+
+	return errors.Join(transitionErr, updateErr)
 }
 
 // CreateFinalizedWithdrawalTx creates and signs a finalized withdrawal
