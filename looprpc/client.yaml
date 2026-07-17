@@ -53,6 +53,9 @@ http:
     - selector: looprpc.SwapClient.NewStaticAddress
       post: "/v1/staticaddr"
       body: "*"
+    - selector: looprpc.SwapClient.UpdateStaticAddressLabel
+      post: "/v1/staticaddr/label"
+      body: "*"
     - selector: looprpc.SwapClient.ListUnspentDeposits
       get: "/v1/staticaddr/deposits/unspent"
     - selector: looprpc.SwapClient.WithdrawDeposits
