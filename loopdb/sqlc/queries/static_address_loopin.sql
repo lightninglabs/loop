@@ -77,7 +77,8 @@ SELECT
     change_address.client_key_index  change_client_key_index,
     change_address.pkscript          change_pkscript,
     change_address.protocol_version  change_protocol_version,
-    change_address.initiation_height change_initiation_height
+    change_address.initiation_height change_initiation_height,
+    change_address.label             change_label
 FROM
     swaps
         JOIN
@@ -102,7 +103,8 @@ SELECT
     change_address.client_key_index  change_client_key_index,
     change_address.pkscript          change_pkscript,
     change_address.protocol_version  change_protocol_version,
-    change_address.initiation_height change_initiation_height
+    change_address.initiation_height change_initiation_height,
+    change_address.label             change_label
 FROM
     swaps
         JOIN
@@ -204,6 +206,7 @@ SELECT
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
     sa.initiation_height initiation_height,
+    sa.label             AS label,
     u.update_state,
     u.update_timestamp
 FROM
