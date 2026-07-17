@@ -177,6 +177,12 @@ service SwapClient {
     rpc FundStaticAddress (FundStaticAddressRequest)
         returns (FundStaticAddressResponse);
 
+    /* loop: `static updatelabel`
+    UpdateStaticAddressLabel updates the local label for a static address.
+    */
+    rpc UpdateStaticAddressLabel (UpdateStaticAddressLabelRequest)
+        returns (UpdateStaticAddressLabelResponse);
+
     /* loop: `static listunspentdeposits`
     ListUnspentDeposits returns a list of utxos deposited at a static address.
     */
@@ -1808,6 +1814,11 @@ message NewStaticAddressRequest {
     // Reserved for the funding field from the unreleased combined RPC.
     reserved 2;
     reserved "send_coins_request";
+
+    /*
+    An optional label for this static address. Empty string means no label.
+    */
+    string label = 3;
 }
 
 message NewStaticAddressResponse {
@@ -1820,6 +1831,11 @@ message NewStaticAddressResponse {
     // Reserved for the funding field from the unreleased combined RPC.
     reserved 3;
     reserved "send_coins_response";
+
+    /*
+    The label for this static address. Empty string means no label.
+    */
+    string label = 4;
 }
 
 message FundStaticAddressRequest {
@@ -1841,6 +1857,30 @@ message FundStaticAddressResponse {
 
     // The response from lnd's SendCoins API for the funding transaction.
     lnrpc.SendCoinsResponse send_coins_response = 3;
+}
+
+message UpdateStaticAddressLabelRequest {
+    /*
+    The static address whose label should be updated.
+    */
+    string static_address = 1;
+
+    /*
+    The updated label for the static address. Empty string means no label.
+    */
+    string label = 2;
+}
+
+message UpdateStaticAddressLabelResponse {
+    /*
+    The static address whose label was updated.
+    */
+    string static_address = 1;
+
+    /*
+    The updated label for the static address. Empty string means no label.
+    */
+    string label = 2;
 }
 
 message ListUnspentDepositsRequest {
@@ -1883,6 +1923,12 @@ message Utxo {
     The number of confirmations for the Utxo.
     */
     int64 confirmations = 4;
+
+    /*
+    The local label of the static address that owns this Utxo. Empty string
+    means no label.
+    */
+    string address_label = 5;
 }
 
 message WithdrawDepositsRequest {
@@ -2147,6 +2193,18 @@ message Deposit {
     The static address that the deposit was sent to.
     */
     string static_address = 8;
+
+    /*
+    The local label of the static address that the deposit was sent to. Empty
+    string means no label.
+    */
+    string address_label = 9;
+
+    /*
+    The lnd wallet label of the transaction that funded the deposit. Empty
+    string means no label, or that the label could not be looked up in lnd.
+    */
+    string funding_tx_label = 10;
 }
 
 message StaticAddressWithdrawal {
