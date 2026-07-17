@@ -650,6 +650,79 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	)
 }
 
+// TestListStaticAddressDepositsIncludesLabels verifies deposit listings carry
+// the current address label and the lnd label of the funding transaction.
+func TestListStaticAddressDepositsIncludesLabels(t *testing.T) {
+	t.Parallel()
+	setLogger(btclog.Disabled)
+
+	ctx := context.Background()
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	addresses, err := addrMgr.GetAllAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	// Relabel after the deposit captured its address parameters, so the
+	// listing must read the label from the manager's active snapshot.
+	params := addresses[0]
+	err = addrMgr.UpdateStaticAddressLabel(ctx, params.PkScript, "treasury")
+	require.NoError(t, err)
+
+	fundingTx := wire.NewMsgTx(2)
+	fundingTx.AddTxOut(wire.NewTxOut(100_000, params.PkScript))
+	lnd.Transactions = append(lnd.Transactions, lndclient.Transaction{
+		Tx:    fundingTx,
+		Label: "September top-up",
+	})
+
+	labeled := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  fundingTx.TxHash(),
+			Index: 0,
+		},
+		AddressParams: params,
+	}
+	labeled.SetState(deposit.Deposited)
+
+	// lnd doesn't know this deposit's transaction, so its funding label
+	// stays empty without failing the listing.
+	unknown := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 1,
+		},
+		AddressParams: params,
+	}
+	unknown.SetState(deposit.Deposited)
+
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(labeled, unknown),
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	resp, err := server.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.FilteredDeposits, 2)
+
+	byOutpoint := make(map[string]*looprpc.Deposit)
+	for _, d := range resp.FilteredDeposits {
+		byOutpoint[d.Outpoint] = d
+	}
+
+	got := byOutpoint[labeled.OutPoint.String()]
+	require.NotNil(t, got)
+	require.Equal(t, "treasury", got.AddressLabel)
+	require.Equal(t, "September top-up", got.FundingTxLabel)
+
+	got = byOutpoint[unknown.OutPoint.String()]
+	require.NotNil(t, got)
+	require.Equal(t, "treasury", got.AddressLabel)
+	require.Empty(t, got.FundingTxLabel)
+}
+
 // TestStaticAddressWithdrawalIncludesDepositAddress verifies withdrawal
 // listings use the common deposit conversion path, including the address that
 // received each deposit.
