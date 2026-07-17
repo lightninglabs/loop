@@ -2515,6 +2515,220 @@ func (s *mockAddressStore) UpdateStaticAddressLabel(_ context.Context,
 	return address.ErrStaticAddressNotFound
 }
 
+const testNewStaticAddressLabel = "new label"
+
+// newStaticAddressLabelTestServer builds the smallest real RPC handler stack
+// needed to prove labels round-trip as local static-address metadata.
+func newStaticAddressLabelTestServer(t *testing.T, label string) (
+	*swapClientServer, *mockAddressStore, string) {
+
+	t.Helper()
+
+	lnd := mock_lnd.NewMockLnd()
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
+		ChainParams: lnd.ChainParams,
+	}, 1)
+	require.NoError(t, err)
+
+	staticAddress, err := addrMgr.GetTaprootAddress(
+		clientPubkey, serverPubkey, 10,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := txscript.PayToAddrScript(staticAddress)
+	require.NoError(t, err)
+
+	addrStore := &mockAddressStore{}
+	err = addrStore.CreateStaticAddress(
+		context.Background(), &script.Parameters{
+			ClientPubkey: clientPubkey,
+			ServerPubkey: serverPubkey,
+			Expiry:       10,
+			PkScript:     pkScript,
+			Label:        label,
+		},
+	)
+	require.NoError(t, err)
+
+	addrMgr, err = address.NewManager(&address.ManagerConfig{
+		Store:       addrStore,
+		WalletKit:   lnd.WalletKit,
+		ChainParams: lnd.ChainParams,
+	}, 1)
+	require.NoError(t, err)
+	_, err = addrMgr.EnsureStaticAddressRoot(t.Context())
+	require.NoError(t, err)
+
+	depositMgr := deposit.NewManager(&deposit.ManagerConfig{
+		Store: &mockDepositStore{
+			byOutpoint: make(map[string]*deposit.Deposit),
+		},
+	})
+
+	return &swapClientServer{
+		lnd:                  &lnd.LndServices,
+		staticAddressManager: addrMgr,
+		depositManager:       depositMgr,
+	}, addrStore, staticAddress.String()
+}
+
+// TestStaticAddressLabels covers the RPC boundary for local operator metadata:
+// creation returns stored labels, updates mutate only local storage, and invalid
+// labels are rejected before persistence changes.
+func TestStaticAddressLabels(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("new static address stores its own label", func(t *testing.T) {
+		server, store, _ := newStaticAddressLabelTestServer(
+			t, "stored label",
+		)
+
+		resp, err := server.NewStaticAddress(
+			ctx, &looprpc.NewStaticAddressRequest{Label: "requested"},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, "requested", resp.Label)
+		require.Len(t, store.params, 2)
+		require.Equal(t, "stored label", store.params[0].Label)
+		require.Equal(t, "requested", store.params[1].Label)
+		require.NotEqual(t, store.params[0].PkScript,
+			store.params[1].PkScript)
+	})
+
+	t.Run("new static address rejects invalid label", func(t *testing.T) {
+		server, store, _ := newStaticAddressLabelTestServer(
+			t, "stored label",
+		)
+
+		_, err := server.NewStaticAddress(
+			ctx, &looprpc.NewStaticAddressRequest{
+				Label: labels.Reserved + " static",
+			},
+		)
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid static address label")
+		require.Len(t, store.params, 1)
+		require.Equal(t, "stored label", store.params[0].Label)
+	})
+
+	t.Run("summary reports legacy address", func(t *testing.T) {
+		server, _, legacyAddress := newStaticAddressLabelTestServer(
+			t, "legacy label",
+		)
+		_, err := server.NewStaticAddress(ctx,
+			&looprpc.NewStaticAddressRequest{Label: "receive label"})
+		require.NoError(t, err)
+
+		resp, err := server.GetStaticAddressSummary(
+			ctx, &looprpc.StaticAddressSummaryRequest{},
+		)
+
+		require.NoError(t, err)
+		// Field 1 retains the legacy address for wire compatibility.
+		summary := resp.ProtoReflect()
+		legacyField := summary.Descriptor().Fields().ByNumber(1)
+		require.Equal(t, legacyAddress, summary.Get(legacyField).String())
+	})
+
+	t.Run("update changes stored label", func(t *testing.T) {
+		server, store, staticAddress := newStaticAddressLabelTestServer(
+			t, "old label",
+		)
+
+		resp, err := server.UpdateStaticAddressLabel(
+			ctx, &looprpc.UpdateStaticAddressLabelRequest{
+				StaticAddress: staticAddress,
+				Label:         testNewStaticAddressLabel,
+			},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, staticAddress, resp.StaticAddress)
+		require.Equal(t, testNewStaticAddressLabel, resp.Label)
+		require.Len(t, store.params, 1)
+		require.Equal(t, testNewStaticAddressLabel, store.params[0].Label)
+		require.Equal(t, testNewStaticAddressLabel,
+			server.staticAddressManager.GetParameters(
+				store.params[0].PkScript).Label)
+	})
+
+	t.Run("update clears stored label", func(t *testing.T) {
+		server, store, staticAddress := newStaticAddressLabelTestServer(
+			t, "old label",
+		)
+
+		resp, err := server.UpdateStaticAddressLabel(
+			ctx, &looprpc.UpdateStaticAddressLabelRequest{
+				StaticAddress: staticAddress,
+				Label:         "",
+			},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, staticAddress, resp.StaticAddress)
+		require.Empty(t, resp.Label)
+		require.Len(t, store.params, 1)
+		require.Empty(t, store.params[0].Label)
+		require.Empty(t, server.staticAddressManager.GetParameters(
+			store.params[0].PkScript).Label)
+	})
+
+	t.Run("update unknown static address fails", func(t *testing.T) {
+		server, _, _ := newStaticAddressLabelTestServer(t, "old label")
+
+		unknownAddress, err := btcutil.NewAddressScriptHash(
+			[]byte{1}, server.lnd.ChainParams,
+		)
+		require.NoError(t, err)
+
+		_, err = server.UpdateStaticAddressLabel(
+			ctx, &looprpc.UpdateStaticAddressLabelRequest{
+				StaticAddress: unknownAddress.String(),
+				Label:         testNewStaticAddressLabel,
+			},
+		)
+
+		require.Equal(t, codes.NotFound, status.Code(err))
+	})
+
+	t.Run("update foreign static address fails", func(t *testing.T) {
+		server, _, _ := newStaticAddressLabelTestServer(t, "old label")
+
+		_, err := server.UpdateStaticAddressLabel(
+			ctx, &looprpc.UpdateStaticAddressLabelRequest{
+				StaticAddress: mainnetAddr.String(),
+				Label:         testNewStaticAddressLabel,
+			},
+		)
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "decode static address")
+	})
+
+	t.Run("update rejects invalid label", func(t *testing.T) {
+		server, store, staticAddress := newStaticAddressLabelTestServer(
+			t, "old label",
+		)
+
+		_, err := server.UpdateStaticAddressLabel(
+			ctx, &looprpc.UpdateStaticAddressLabelRequest{
+				StaticAddress: staticAddress,
+				Label:         labels.Reserved + " static",
+			},
+		)
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid static address label")
+		require.Len(t, store.params, 1)
+		require.Equal(t, "old label", store.params[0].Label)
+	})
+}
+
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
 type mockDepositStore struct {
 	byOutpoint map[string]*deposit.Deposit
@@ -2696,6 +2910,12 @@ func TestListUnspentDeposits(t *testing.T) {
 	require.NoError(t, err)
 	pkScript, err := staticAddress.StaticAddressScript()
 	require.NoError(t, err)
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
+		ChainParams: mock.ChainParams,
+	}, 1)
+	require.NoError(t, err)
+	encodedAddress, err := addrMgr.GetTaprootAddress(client, server, 10)
+	require.NoError(t, err)
 	addrParams := &script.Parameters{
 		ClientPubkey: client,
 		ServerPubkey: server,
@@ -2703,10 +2923,13 @@ func TestListUnspentDeposits(t *testing.T) {
 		PkScript:     pkScript,
 	}
 
-	addrStore := &mockAddressStore{params: []*script.Parameters{addrParams}}
+	addrStore := &mockAddressStore{
+		params: []*script.Parameters{addrParams},
+	}
+	addrParams.Label = "list label"
 
 	// Build an address manager using our mock lnd and fake address store.
-	addrMgr, err := address.NewManager(&address.ManagerConfig{
+	addrMgr, err = address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
 		WalletKit:   mock.WalletKit,
 		ChainParams: mock.ChainParams,
@@ -2787,6 +3010,7 @@ func TestListUnspentDeposits(t *testing.T) {
 				// Confirm address string is non-empty and the
 				// same across utxos.
 				require.NotEmpty(t, u.StaticAddress)
+				require.Equal(t, "list label", u.AddressLabel)
 			}
 			_, ok := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok)
@@ -2823,6 +3047,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			got := map[string]struct{}{}
 			for _, u := range resp.Utxos {
 				got[u.Outpoint] = struct{}{}
+				require.Equal(t, "list label", u.AddressLabel)
 			}
 			_, ok := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok)
@@ -2909,5 +3134,125 @@ func TestListUnspentDeposits(t *testing.T) {
 			t, utxoConfirmedUnknown.OutPoint.String(),
 			resp.Utxos[0].Outpoint,
 		)
+		require.NotEmpty(t, resp.Utxos[0].StaticAddress)
+		require.Equal(t, "list label", resp.Utxos[0].AddressLabel)
+	})
+
+	t.Run("responses retain per address metadata", func(t *testing.T) {
+		secondAddress, _, err := addrMgr.NewAddress(ctx, "second label")
+		require.NoError(t, err)
+
+		secondPkScript, err := txscript.PayToAddrScript(secondAddress)
+		require.NoError(t, err)
+
+		secondUtxo := &lnwallet.Utxo{
+			AddressType:   lnwallet.TaprootPubkey,
+			Value:         250_001,
+			Confirmations: 1,
+			PkScript:      secondPkScript,
+			Hash:          chainhash.Hash{9},
+			Index:         9,
+		}
+		mock.SetListUnspent([]*lnwallet.Utxo{
+			utxoDeposited, secondUtxo,
+		})
+
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+			secondUtxo.OutPoint:    deposit.Deposited,
+		})
+		server := &swapClientServer{
+			network:              lndclient.NetworkTestnet,
+			staticAddressManager: addrMgr,
+			depositManager:       depMgr,
+		}
+
+		resp, err := server.ListUnspentDeposits(
+			ctx, &looprpc.ListUnspentDepositsRequest{},
+		)
+		require.NoError(t, err)
+		require.Len(t, resp.Utxos, 2)
+
+		got := make(map[string]*looprpc.Utxo, len(resp.Utxos))
+		for _, utxo := range resp.Utxos {
+			got[utxo.Outpoint] = utxo
+		}
+		require.Equal(
+			t, encodedAddress.String(),
+			got[utxoDeposited.OutPoint.String()].StaticAddress,
+		)
+		require.Equal(
+			t, "list label", got[utxoDeposited.OutPoint.String()].AddressLabel,
+		)
+		require.Equal(
+			t, secondAddress.String(),
+			got[secondUtxo.OutPoint.String()].StaticAddress,
+		)
+		require.Equal(
+			t, "second label", got[secondUtxo.OutPoint.String()].AddressLabel,
+		)
+	})
+
+	for _, tc := range []struct {
+		name  string
+		label string
+	}{
+		{name: "updated label is visible", label: "renamed"},
+		{name: "cleared label is visible", label: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+			depMgr := buildDepositMgr(
+				map[wire.OutPoint]fsm.StateType{
+					utxoDeposited.OutPoint: deposit.Deposited,
+				},
+			)
+			server := &swapClientServer{
+				network:              lndclient.NetworkTestnet,
+				staticAddressManager: addrMgr,
+				depositManager:       depMgr,
+				lnd:                  &mock.LndServices,
+			}
+
+			_, err := server.UpdateStaticAddressLabel(
+				ctx, &looprpc.UpdateStaticAddressLabelRequest{
+					StaticAddress: encodedAddress.String(),
+					Label:         tc.label,
+				},
+			)
+			require.NoError(t, err)
+
+			resp, err := server.ListUnspentDeposits(
+				ctx, &looprpc.ListUnspentDepositsRequest{},
+			)
+			require.NoError(t, err)
+			require.Len(t, resp.Utxos, 1)
+			require.Equal(t, tc.label, resp.Utxos[0].AddressLabel)
+		})
+	}
+
+	t.Run("no static address returns an empty result", func(t *testing.T) {
+		addrStore := &mockAddressStore{}
+		addrMgr, err := address.NewManager(&address.ManagerConfig{
+			Store:       addrStore,
+			WalletKit:   mock.WalletKit,
+			ChainParams: mock.ChainParams,
+		}, 1)
+		require.NoError(t, err)
+
+		depMgr := &listUnspentDepositManager{}
+		server := &swapClientServer{
+			network:              lndclient.NetworkTestnet,
+			staticAddressManager: addrMgr,
+			depositManager:       depMgr,
+		}
+
+		resp, err := server.ListUnspentDeposits(
+			ctx, &looprpc.ListUnspentDepositsRequest{},
+		)
+
+		require.NoError(t, err)
+		require.Empty(t, resp.Utxos)
+		require.Equal(t, 1, depMgr.ensureDepositsFreshCalls)
 	})
 }

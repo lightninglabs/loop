@@ -258,7 +258,7 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new static address.
-	taprootAddress, expiry, err := testContext.manager.NewAddress(ctxb)
+	taprootAddress, expiry, err := testContext.manager.NewAddress(ctxb, "")
 	require.NoError(t, err)
 
 	// The addresses have to match.
@@ -300,7 +300,7 @@ func TestAddressIssuanceDoesNotBlockAddressReads(t *testing.T) {
 
 	issuanceDone := make(chan error, 1)
 	go func() {
-		_, err := testContext.manager.NewReceiveAddress(t.Context())
+		_, err := testContext.manager.NewReceiveAddress(t.Context(), "")
 		issuanceDone <- err
 	}()
 
@@ -537,7 +537,7 @@ func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 func TestMultiAddressRestartRecovery(t *testing.T) {
 	testContext := NewAddressManagerTestContext(t)
 
-	_, _, err := testContext.manager.NewAddress(t.Context())
+	_, _, err := testContext.manager.NewAddress(t.Context(), "")
 	require.NoError(t, err)
 	changeParams, err := testContext.manager.NewChangeAddress(t.Context())
 	require.NoError(t, err)
@@ -742,7 +742,7 @@ func TestNewAddressValidatesServerResponse(t *testing.T) {
 				t, test.resp,
 			)
 
-			_, _, err := testContext.manager.NewAddress(t.Context())
+			_, _, err := testContext.manager.NewAddress(t.Context(), "")
 			require.ErrorContains(t, err, test.expected)
 		})
 	}
@@ -754,7 +754,7 @@ func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
 		t, newServerNewAddressResponse(maxStaticAddressCSVExpiry),
 	)
 
-	_, expiry, err := testContext.manager.NewAddress(t.Context())
+	_, expiry, err := testContext.manager.NewAddress(t.Context(), "")
 	require.NoError(t, err)
 	require.EqualValues(t, maxStaticAddressCSVExpiry, expiry)
 }
