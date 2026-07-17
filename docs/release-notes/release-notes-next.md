@@ -11,6 +11,11 @@
 
 #### Bug Fixes
 
+* Retain active static-address deposits while a withdrawal publishes and
+  records its result, preventing wallet reconciliation from removing spent
+  inputs before a slow Neutrino publication returns. Defer new expiry checks
+  for these inputs until publication finishes.
+
 * A sweep batch that cannot construct its transaction now logs the failure and
   retries without stopping `loopd`. New sweeps use another batch until the
   failing one constructs a transaction.
