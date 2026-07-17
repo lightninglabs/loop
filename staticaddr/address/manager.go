@@ -42,6 +42,10 @@ var (
 	// ErrNoStaticAddress is returned when no static address parameters are
 	// present in the store.
 	ErrNoStaticAddress = errors.New("no static address parameters found")
+
+	// ErrStaticAddressNotFound is returned when a static address to update
+	// is not in the store.
+	ErrStaticAddressNotFound = errors.New("static address not found")
 )
 
 // ManagerConfig holds the configuration for the address manager.

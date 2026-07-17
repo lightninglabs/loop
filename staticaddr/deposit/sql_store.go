@@ -359,6 +359,7 @@ func ToDeposit(row sqlc.AllDepositsRow, lastUpdate sqlc.DepositUpdate) (*Deposit
 		ClientKeyIndex:   row.ClientKeyIndex.Int32,
 		ProtocolVersion:  row.ProtocolVersion.Int32,
 		InitiationHeight: row.InitiationHeight.Int32,
+		Label:            row.Label.String,
 	})
 	if err != nil {
 		return nil, err
