@@ -18,6 +18,8 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
@@ -1871,11 +1873,20 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 }
 
 // NewStaticAddress creates a fresh static receive address without funding it.
+// Its label is local operator metadata and is validated before address creation.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	_ *looprpc.NewStaticAddressRequest) (*looprpc.NewStaticAddressResponse,
-	error) {
+	req *looprpc.NewStaticAddressRequest) (
+	*looprpc.NewStaticAddressResponse, error) {
 
-	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	label := req.GetLabel()
+	if err := labels.Validate(label); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid static address label: %v", err)
+	}
+
+	staticAddress, expiry, err := s.staticAddressManager.NewAddress(
+		ctx, label,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1883,6 +1894,60 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	return &looprpc.NewStaticAddressResponse{
 		Address: staticAddress.String(),
 		Expiry:  uint32(expiry),
+		Label:   label,
+	}, nil
+}
+
+// UpdateStaticAddressLabel updates the local label for a static address so
+// operators can rename it without changing the address script or contacting the
+// Loop server.
+func (s *swapClientServer) UpdateStaticAddressLabel(ctx context.Context,
+	req *looprpc.UpdateStaticAddressLabelRequest) (
+	*looprpc.UpdateStaticAddressLabelResponse, error) {
+
+	label := req.GetLabel()
+	if err := labels.Validate(label); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid static address label: %v", err)
+	}
+
+	staticAddress, err := btcutil.DecodeAddress(
+		req.GetStaticAddress(), s.lnd.ChainParams,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"decode static address: %v", err)
+	}
+
+	// DecodeAddress accepts SegWit addresses with any known network prefix,
+	// and the script lookup below drops that prefix. Reject other networks
+	// so a mainnet address can't relabel a testnet record, or vice versa.
+	if !staticAddress.IsForNet(s.lnd.ChainParams) {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"static address %v is not for network %v",
+			req.GetStaticAddress(), s.lnd.ChainParams.Name)
+	}
+
+	pkScript, err := txscript.PayToAddrScript(staticAddress)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"static address pkScript: %v", err)
+	}
+
+	err = s.staticAddressManager.UpdateStaticAddressLabel(
+		ctx, pkScript, label,
+	)
+	if errors.Is(err, address.ErrStaticAddressNotFound) {
+		return nil, status.Errorf(codes.NotFound, "static address %v "+
+			"not found", staticAddress)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update static address label: %w", err)
+	}
+
+	return &looprpc.UpdateStaticAddressLabelResponse{
+		StaticAddress: staticAddress.String(),
+		Label:         label,
 	}, nil
 }
 
@@ -1949,6 +2014,7 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 			AmountSat:     int64(u.Value),
 			Confirmations: u.Confirmations,
 			Outpoint:      u.OutPoint.String(),
+			AddressLabel:  params.Label,
 		}
 		respUtxos = append(respUtxos, utxo)
 	}
@@ -2087,6 +2153,9 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	if err != nil {
 		infof("Failed to populate blocks until expiry: %v", err)
 	}
+	if !req.SkipFundingTxLabels {
+		s.populateFundingTxLabels(ctx, filteredDeposits)
+	}
 
 	return &looprpc.ListStaticAddressDepositsResponse{
 		FilteredDeposits: filteredDeposits,
@@ -2111,6 +2180,7 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 	clientWithdrawals := make(
 		[]*looprpc.StaticAddressWithdrawal, 0, len(withdrawals),
 	)
+	var deposits []*looprpc.Deposit
 	for _, w := range withdrawals {
 		withdrawal, err := s.rpcStaticAddressWithdrawal(w)
 		if err != nil {
@@ -2118,7 +2188,9 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 		}
 
 		clientWithdrawals = append(clientWithdrawals, withdrawal)
+		deposits = append(deposits, withdrawal.Deposits...)
 	}
+	s.populateFundingTxLabels(ctx, deposits)
 
 	return &looprpc.ListStaticAddressWithdrawalResponse{
 		Withdrawals: clientWithdrawals,
@@ -2203,7 +2275,10 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		)
 	}
 
-	var clientSwaps []*looprpc.StaticAddressLoopInSwap
+	var (
+		clientSwaps []*looprpc.StaticAddressLoopInSwap
+		deposits    []*looprpc.Deposit
+	)
 	for _, swp := range swaps {
 		if swp == nil {
 			continue
@@ -2275,7 +2350,9 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		}
 
 		clientSwaps = append(clientSwaps, swap)
+		deposits = append(deposits, protoDeposits...)
 	}
+	s.populateFundingTxLabels(ctx, deposits)
 
 	return &looprpc.ListStaticAddressSwapsResponse{
 		Swaps: clientSwaps,
@@ -2645,6 +2722,7 @@ func (s *swapClientServer) rpcStaticAddressLoopInResponse(ctx context.Context,
 	if err != nil {
 		infof("Failed to populate blocks until expiry: %v", err)
 	}
+	s.populateFundingTxLabels(ctx, usedDeposits)
 
 	// Determine the actual swap amount and change based on the selected
 	// amount and the total value of the selected deposits.
@@ -2828,7 +2906,52 @@ func (s *swapClientServer) rpcDeposit(d *deposit.Deposit) (
 	}
 	deposit.StaticAddress = staticAddress.String()
 
+	// Deposits read from the database carry the current label, but active
+	// deposits held in memory keep the label from when they were loaded.
+	// Prefer the address manager's copy, which relabeling updates.
+	deposit.AddressLabel = d.AddressParams.Label
+	if s.staticAddressManager != nil {
+		params := s.staticAddressManager.GetParameters(
+			d.AddressParams.PkScript,
+		)
+		if params != nil {
+			deposit.AddressLabel = params.Label
+		}
+	}
+
 	return deposit, nil
+}
+
+// populateFundingTxLabels sets the lnd wallet label of each deposit's funding
+// transaction. The lookup is best-effort: deposits whose transaction lnd can't
+// return keep an empty label.
+func (s *swapClientServer) populateFundingTxLabels(ctx context.Context,
+	deposits []*looprpc.Deposit) {
+
+	labelByTxid := make(map[chainhash.Hash]string)
+	for _, d := range deposits {
+		outpoint, err := wire.NewOutPointFromString(d.Outpoint)
+		if err != nil {
+			warnf("Invalid deposit outpoint %v: %v", d.Outpoint, err)
+			continue
+		}
+
+		txid := outpoint.Hash
+		if _, ok := labelByTxid[txid]; !ok {
+			tx, err := s.lnd.WalletKit.GetTransaction(ctx, txid)
+			if err != nil {
+				debugf("Unable to look up funding transaction "+
+					"%v: %v", txid, err)
+			}
+
+			// Several deposits can share a funding transaction.
+			// On error tx is empty, so we cache an empty label and
+			// don't query lnd again for the same txid.
+			labelByTxid[txid] = tx.Label
+		}
+
+		d.FundingTxLabel = labelByTxid[txid]
+	}
 }
 
 func toClientDepositState(state fsm.StateType) looprpc.DepositState {

@@ -269,7 +269,7 @@ func TestPreparedChangeAddressesAllowInterleavedIssuance(t *testing.T) {
 
 	first, err := h.manager.PrepareChangeAddress(ctx)
 	require.NoError(t, err)
-	receive, err := h.manager.NewReceiveAddress(ctx)
+	receive, err := h.manager.NewReceiveAddress(ctx, "")
 	require.NoError(t, err)
 	second, err := h.manager.PrepareChangeAddress(ctx)
 	require.NoError(t, err)
