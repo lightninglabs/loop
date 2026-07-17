@@ -1174,13 +1174,17 @@ func (s *loopInSwap) setStateAbandoned(ctx context.Context) error {
 		return err
 	}
 
-	// If the invoice is already settled or canceled, this is a nop.
-	_ = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+	// Cancel the invoice so the server can no longer settle it. If the
+	// invoice is already settled we ignore the error, matching the
+	// behaviour of the timeout path. Any other unexpected error is logged
+	// but does not prevent the abandon from completing.
+	err = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+	if err != nil && err != invpkg.ErrInvoiceAlreadySettled {
+		s.log.Warnf("Failed to cancel invoice for abandoned swap: %v",
+			err)
+	}
 
-	return fmt.Errorf("swap hash "+
-		"abandoned by client, "+
-		"swap ID: %v, %v",
-		s.hash, err)
+	return fmt.Errorf("swap hash abandoned by client, swap ID: %v", s.hash)
 }
 
 // persistAndAnnounceState updates the swap state on disk and sends out an
