@@ -2313,8 +2313,9 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 }
 
 // TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback verifies that a
-// recovered monitor state does not rely on stale selected-deposit snapshots when
-// deciding whether the legacy payment deadline fallback has opened.
+// recovered monitor state uses the deposit manager's canonical live deposits,
+// rather than stale database snapshots, when deciding whether the legacy
+// payment deadline fallback has opened.
 func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
@@ -2340,11 +2341,11 @@ func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T)
 		OutPoint:           depositOutpoint,
 		ConfirmationHeight: confirmationHeight,
 	}
-	type depositLookup struct {
-		outpoints     []string
-		ignoreUnknown bool
+	type activeDepositLookup struct {
+		outpoints []string
+		state     fsm.StateType
 	}
-	depositLookups := make(chan depositLookup, 1)
+	activeDepositLookups := make(chan activeDepositLookup, 1)
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
 		HtlcCltvExpiry:        2_000,
@@ -2376,16 +2377,17 @@ func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T)
 		},
 		ChainNotifier: mockLnd.ChainNotifier,
 		DepositManager: &noopDepositManager{
-			deposits: []*deposit.Deposit{freshDeposit},
-			depositsForOutpoints: func(outpoints []string,
-				ignoreUnknown bool) {
+			deposits:       []*deposit.Deposit{staleDeposit},
+			activeDeposits: []*deposit.Deposit{freshDeposit},
+			activeDepositsForOutpoints: func(outpoints []string,
+				state fsm.StateType) {
 
 				select {
-				case depositLookups <- depositLookup{
+				case activeDepositLookups <- activeDepositLookup{
 					outpoints: append(
 						[]string(nil), outpoints...,
 					),
-					ignoreUnknown: ignoreUnknown,
+					state: state,
 				}:
 				default:
 				}
@@ -2417,11 +2419,11 @@ func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T)
 	}
 
 	select {
-	case lookup := <-depositLookups:
+	case lookup := <-activeDepositLookups:
 		require.Equal(t, []string{
 			depositOutpoint.String(),
 		}, lookup.outpoints)
-		require.False(t, lookup.ignoreUnknown)
+		require.Equal(t, fsm.EmptyState, lookup.state)
 
 	case <-ctx.Done():
 		t.Fatalf("deposit refresh was not called: %v", ctx.Err())
@@ -2459,7 +2461,7 @@ func TestLegacyConfirmationFallbackStopsOnFreshnessFailure(t *testing.T) {
 			ConfirmationHeight: 1,
 		}},
 		ensureFreshErr: errors.New("wallet unavailable"),
-		depositsForOutpoints: func([]string, bool) {
+		activeDepositsForOutpoints: func([]string, fsm.StateType) {
 			lookupCalled = true
 		},
 	}
@@ -3281,10 +3283,10 @@ func (m *mockAddressManager) GetStaticAddress(_ context.Context) (
 
 // noopDepositManager is a stub DepositManager used to satisfy FSM config.
 type noopDepositManager struct {
-	deposits             []*deposit.Deposit
-	depositsForOutpoints func([]string, bool)
-	depositErr           error
-	ensureFreshErr       error
+	deposits                   []*deposit.Deposit
+	activeDeposits             []*deposit.Deposit
+	activeDepositsForOutpoints func([]string, fsm.StateType)
+	ensureFreshErr             error
 }
 
 // EnsureDepositsFresh implements DepositManager with a no-op.
@@ -3301,9 +3303,31 @@ func (n *noopDepositManager) GetAllDeposits(_ context.Context) (
 
 // AllStringOutpointsActiveDeposits implements DepositManager with a no-op.
 func (n *noopDepositManager) AllStringOutpointsActiveDeposits(
-	_ []string, _ fsm.StateType) ([]*deposit.Deposit, bool) {
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
 
-	return nil, false
+	if n.activeDepositsForOutpoints != nil {
+		n.activeDepositsForOutpoints(outpoints, state)
+	}
+
+	deposits := n.activeDeposits
+	if deposits == nil {
+		deposits = n.deposits
+	}
+	if len(deposits) != len(outpoints) {
+		return nil, false
+	}
+
+	for i, d := range deposits {
+		if d == nil || d.OutPoint.String() != outpoints[i] {
+			return nil, false
+		}
+
+		if state != fsm.EmptyState && !d.IsInState(state) {
+			return nil, false
+		}
+	}
+
+	return deposits, true
 }
 
 // TransitionDeposits implements DepositManager with a no-op.
@@ -3315,13 +3339,9 @@ func (n *noopDepositManager) TransitionDeposits(context.Context,
 
 // DepositsForOutpoints implements DepositManager with a no-op.
 func (n *noopDepositManager) DepositsForOutpoints(_ context.Context,
-	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
+	_ []string, _ bool) ([]*deposit.Deposit, error) {
 
-	if n.depositsForOutpoints != nil {
-		n.depositsForOutpoints(outpoints, ignoreUnknown)
-	}
-
-	return n.deposits, n.depositErr
+	return n.deposits, nil
 }
 
 // GetActiveDepositsInState implements DepositManager with a no-op.

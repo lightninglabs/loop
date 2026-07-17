@@ -426,7 +426,8 @@ func selectedDepositConfirmationHeights(
 }
 
 // refreshSelectedDeposits reloads the loop-in's selected deposits from the
-// deposit manager/store so recovery does not rely on stale deposit snapshots.
+// deposit manager's active set so recovery does not rely on stale deposit
+// snapshots.
 func (f *FSM) refreshSelectedDeposits(ctx context.Context) error {
 	if f.cfg.DepositManager == nil || len(f.loopIn.DepositOutpoints) == 0 {
 		return nil
@@ -437,12 +438,12 @@ func (f *FSM) refreshSelectedDeposits(ctx context.Context) error {
 		return fmt.Errorf("unable to refresh deposit wallet view: %w", err)
 	}
 
-	const ignoreUnknownOutpoints = false
-	deposits, err := f.cfg.DepositManager.DepositsForOutpoints(
-		ctx, f.loopIn.DepositOutpoints, ignoreUnknownOutpoints,
-	)
-	if err != nil {
-		return err
+	deposits, allActive := f.cfg.DepositManager.
+		AllStringOutpointsActiveDeposits(
+			f.loopIn.DepositOutpoints, fsm.EmptyState,
+		)
+	if !allActive {
+		return fmt.Errorf("one or more selected deposits are not active")
 	}
 
 	if len(deposits) != len(f.loopIn.DepositOutpoints) {
