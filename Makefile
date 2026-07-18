@@ -198,7 +198,7 @@ fsm:
 FSM_FILES := \
 	fsm/example_fsm.md \
 	instantout/fsm.md \
-	instantout/reservation/reservation_fsm.md \
+	instantout/reservation/fsm.md \
 	staticaddr/deposit/fsm.md \
 	staticaddr/loopin/fsm.md
 
