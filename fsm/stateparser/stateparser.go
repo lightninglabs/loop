@@ -86,8 +86,11 @@ func writeMermaidFile(filename string, states fsm.States) error {
 			state = "[*]"
 		}
 		// write transitions
-		for edge, target := range edges.Transitions {
-			fmt.Fprintf(&b, "%s --> %s: %s\n", state, target, edge)
+		for _, edge := range sortedTransitionKeys(edges.Transitions) {
+			fmt.Fprintf(
+				&b, "%s --> %s: %s\n", state,
+				edges.Transitions[fsm.EventType(edge)], edge,
+			)
 		}
 	}
 
@@ -101,6 +104,17 @@ func writeMermaidFile(filename string, states fsm.States) error {
 }
 
 func sortedKeys(m fsm.States) []string {
+	keys := make([]string, len(m))
+	i := 0
+	for k := range m {
+		keys[i] = string(k)
+		i++
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedTransitionKeys(m fsm.Transitions) []string {
 	keys := make([]string, len(m))
 	i := 0
 	for k := range m {
