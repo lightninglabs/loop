@@ -14,6 +14,8 @@ import (
 	"github.com/lightninglabs/loop/instantout/reservation"
 )
 
+var errInvalidFSMSelector = errors.New("missing or unknown fsm selector")
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err)
@@ -35,35 +37,34 @@ func run() error {
 		return err
 	}
 
-	switch *stateMachine {
+	states, err := getStates(*stateMachine)
+	if err != nil {
+		return err
+	}
+
+	return writeMermaidFile(fp, states)
+}
+
+func getStates(stateMachine string) (fsm.States, error) {
+	switch stateMachine {
 	case "example":
 		exampleFSM := &fsm.ExampleFSM{}
-		err = writeMermaidFile(fp, exampleFSM.GetStates())
-		if err != nil {
-			return err
-		}
+		return exampleFSM.GetStates(), nil
 
 	case "reservation":
 		reservationFSM := &reservation.FSM{}
-		err = writeMermaidFile(fp, reservationFSM.GetServerInitiatedReservationStates())
-		if err != nil {
-			return err
-		}
+		return reservationFSM.GetServerInitiatedReservationStates(), nil
 
 	case "instantout":
-		instantout := &instantout.FSM{}
-		err = writeMermaidFile(fp, instantout.GetV1ReservationStates())
-		if err != nil {
-			return err
-		}
+		instantOutFSM := &instantout.FSM{}
+		return instantOutFSM.GetV1ReservationStates(), nil
 
 	default:
-		fmt.Println("Missing or wrong argument: fsm must be one of:")
-		fmt.Println("\treservations")
-		fmt.Println("\texample")
+		return nil, fmt.Errorf(
+			"%w %q; supported selectors: example, instantout, reservation",
+			errInvalidFSMSelector, stateMachine,
+		)
 	}
-
-	return nil
 }
 
 func writeMermaidFile(filename string, states fsm.States) error {
