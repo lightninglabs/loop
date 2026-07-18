@@ -12,6 +12,8 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 )
 
 var errInvalidFSMSelector = errors.New("missing or unknown fsm selector")
@@ -59,9 +61,18 @@ func getStates(stateMachine string) (fsm.States, error) {
 		instantOutFSM := &instantout.FSM{}
 		return instantOutFSM.GetV1ReservationStates(), nil
 
+	case "staticaddr-deposit":
+		depositFSM := &deposit.FSM{}
+		return depositFSM.DepositStatesV0(), nil
+
+	case "staticaddr-loopin":
+		loopInFSM := &loopin.FSM{}
+		return loopInFSM.LoopInStatesV0(), nil
+
 	default:
 		return nil, fmt.Errorf(
-			"%w %q; supported selectors: example, instantout, reservation",
+			"%w %q; supported selectors: example, instantout, "+
+				"reservation, staticaddr-deposit, staticaddr-loopin",
 			errInvalidFSMSelector, stateMachine,
 		)
 	}
