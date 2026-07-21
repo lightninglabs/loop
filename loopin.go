@@ -27,6 +27,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -57,6 +59,25 @@ var (
 	// a final state.
 	ErrSwapFinalized = errors.New("swap is in a final state")
 )
+
+// isInvoiceAlreadySettledError reports whether err indicates that an invoice
+// cancellation failed because the invoice was already settled. If lnd returns
+// the sentinel from an RPC handler, gRPC transports it as an Unknown status
+// with the sentinel's error text.
+func isInvoiceAlreadySettledError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, invpkg.ErrInvoiceAlreadySettled) {
+		return true
+	}
+
+	rpcStatus, ok := status.FromError(err)
+	return ok &&
+		rpcStatus.Code() == codes.Unknown &&
+		rpcStatus.Message() == invpkg.ErrInvoiceAlreadySettled.Error()
+}
 
 // loopInSwap contains all the in-memory state related to a pending loop in
 // swap.
@@ -1087,7 +1108,7 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		// already settled. This means that the server didn't succeed in
 		// sweeping the htlc after paying the invoice.
 		err := s.lnd.Invoices.CancelInvoice(ctx, s.hash)
-		if err != nil && err != invpkg.ErrInvoiceAlreadySettled {
+		if err != nil && !isInvoiceAlreadySettledError(err) {
 			return err
 		}
 	}
@@ -1174,13 +1195,17 @@ func (s *loopInSwap) setStateAbandoned(ctx context.Context) error {
 		return err
 	}
 
-	// If the invoice is already settled or canceled, this is a nop.
-	_ = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+	// Cancel the invoice so the server can no longer settle it. If the
+	// invoice is already settled we ignore the error, matching the
+	// behaviour of the timeout path. Any other unexpected error is logged
+	// but does not prevent the abandon from completing.
+	err = s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+	if err != nil && !isInvoiceAlreadySettledError(err) {
+		s.log.Warnf("Failed to cancel invoice for abandoned swap: %v",
+			err)
+	}
 
-	return fmt.Errorf("swap hash "+
-		"abandoned by client, "+
-		"swap ID: %v, %v",
-		s.hash, err)
+	return fmt.Errorf("swap hash abandoned by client, swap ID: %v", s.hash)
 }
 
 // persistAndAnnounceState updates the swap state on disk and sends out an

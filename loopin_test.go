@@ -20,6 +20,8 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -42,6 +44,142 @@ type probeInvoicesMock struct {
 	cancelCalled chan struct{}
 	cancelBlock  chan struct{}
 	cancelCtxErr chan error
+}
+
+// cancelErrorInvoicesMock is an InvoicesClient that returns a configured
+// cancellation error.
+type cancelErrorInvoicesMock struct {
+	lndclient.InvoicesClient
+
+	err error
+}
+
+// CancelInvoice returns the cancellation error configured on the mock.
+func (c *cancelErrorInvoicesMock) CancelInvoice(context.Context,
+	lntypes.Hash) error {
+
+	return c.err
+}
+
+// TestIsInvoiceAlreadySettledError verifies the local and gRPC error forms
+// recognized by the already-settled classifier.
+func TestIsInvoiceAlreadySettledError(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "sentinel",
+			err:      invpkg.ErrInvoiceAlreadySettled,
+			expected: true,
+		},
+		{
+			name: "wrapped sentinel",
+			err: fmt.Errorf(
+				"cancel invoice: %w",
+				invpkg.ErrInvoiceAlreadySettled,
+			),
+			expected: true,
+		},
+		{
+			name: "grpc representation",
+			err: status.Error(
+				codes.Unknown,
+				invpkg.ErrInvoiceAlreadySettled.Error(),
+			),
+			expected: true,
+		},
+		{
+			name: "different grpc status",
+			err: status.Error(
+				codes.FailedPrecondition,
+				invpkg.ErrInvoiceAlreadySettled.Error(),
+			),
+		},
+		{
+			name: "different error",
+			err:  fmt.Errorf("cancel invoice failed"),
+		},
+		{
+			name: "nil",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			require.Equal(
+				t, testCase.expected,
+				isInvoiceAlreadySettledError(testCase.err),
+			)
+		})
+	}
+}
+
+// TestProcessHtlcSpendIgnoresGRPCAlreadySettled verifies that the timeout path
+// completes normally when invoice cancellation reports an already-settled
+// invoice.
+func TestProcessHtlcSpendIgnoresGRPCAlreadySettled(t *testing.T) {
+	defer test.Guard(t)()
+
+	// Initialize a loop-in so the test uses the same contract and HTLC
+	// scripts as the production flow.
+	testCtx := newLoopInTestContext(t)
+	cfg := newSwapConfig(
+		&testCtx.lnd.LndServices, testCtx.store, testCtx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
+
+	initResult, err := newLoopInSwap(
+		context.Background(), cfg, 600, &testLoopInRequest,
+	)
+	require.NoError(t, err)
+	testCtx.store.AssertLoopInStored()
+
+	// Return the gRPC status observed when lnd transports its
+	// ErrInvoiceAlreadySettled sentinel across the RPC boundary.
+	cfg.lnd.Invoices = &cancelErrorInvoicesMock{
+		err: status.Error(
+			codes.Unknown,
+			invpkg.ErrInvoiceAlreadySettled.Error(),
+		),
+	}
+
+	// Confirmation processing normally selects the HTLC version that was
+	// found on chain. Select the initialized version explicitly because this
+	// test calls processHtlcSpend directly.
+	if initResult.swap.htlcP2TR != nil {
+		initResult.swap.htlc = initResult.swap.htlcP2TR
+	} else {
+		initResult.swap.htlc = initResult.swap.htlcP2WSH
+	}
+	require.NotNil(t, initResult.swap.htlc)
+
+	// Construct a timeout spend so processHtlcSpend takes the invoice
+	// cancellation branch.
+	timeoutWitness, err := initResult.swap.htlc.GenTimeoutWitness([]byte{1})
+	require.NoError(t, err)
+
+	timeoutTx := &wire.MsgTx{
+		TxIn: []*wire.TxIn{
+			{
+				Witness: timeoutWitness,
+			},
+		},
+	}
+
+	// The already-settled status must be suppressed while the swap still
+	// transitions to its terminal timeout state.
+	err = initResult.swap.processHtlcSpend(
+		context.Background(), &chainntnfs.SpendDetail{
+			SpendingTx:        timeoutTx,
+			SpenderInputIndex: 0,
+		}, 100,
+	)
+	require.NoError(t, err)
+	require.Equal(t, loopdb.StateFailTimeout, initResult.swap.state)
 }
 
 // SubscribeSingleInvoice returns the mock's preconfigured channels.
