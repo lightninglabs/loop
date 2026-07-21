@@ -158,11 +158,11 @@ var openChannelCommand = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name: "memo",
-			Usage: `(optional) a note-to-self containing some useful
-				information about the channel. This is stored
-				locally only, and is purely for reference. It
-				has no bearing on the channel's operation. Max
-				allowed length is 500 characters`,
+			Usage: "(optional) a note-to-self containing some useful " +
+				"information about the channel. This is stored " +
+				"locally only, and is purely for reference. It " +
+				"has no bearing on the channel's operation. Max " +
+				"allowed length is 500 characters",
 		},
 		&cli.BoolFlag{
 			Name: "fundmax",

@@ -335,6 +335,14 @@ func Validate(cfg *Config) error {
 		)
 	}
 
+	// If the user doesn't specify Tapd.MacaroonPath, reassemble it with
+	// the configured Bitcoin network.
+	if cfg.Tapd.MacaroonPath == assets.DefaultTapdConfig().MacaroonPath {
+		cfg.Tapd.MacaroonPath = assets.DefaultTapdConfigForNetwork(
+			btcutil.AppDataDir("tapd", false), cfg.Network,
+		).MacaroonPath
+	}
+
 	// We'll also update the database file location as well, if it wasn't
 	// set.
 	if cfg.Sqlite.DatabaseFileName == defaultSqliteDatabasePath {

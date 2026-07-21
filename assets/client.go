@@ -5,13 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightninglabs/taproot-assets/rpcutils"
-	"github.com/lightninglabs/taproot-assets/tapcfg"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -49,13 +49,24 @@ type TapdConfig struct {
 // DefaultTapdConfig returns a default configuration to connect to a taproot
 // assets daemon.
 func DefaultTapdConfig() *TapdConfig {
-	defaultConf := tapcfg.DefaultConfig()
+	return DefaultTapdConfigForNetwork(
+		btcutil.AppDataDir("tapd", false), "mainnet",
+	)
+}
+
+// DefaultTapdConfigForNetwork returns the default tapd configuration rooted in
+// defaultTapdDir for the given Bitcoin network. Passing the directory
+// explicitly keeps path construction testable without accessing the user's
+// real tapd data.
+func DefaultTapdConfigForNetwork(defaultTapdDir, network string) *TapdConfig {
 	return &TapdConfig{
-		Activate:     false,
-		Host:         "localhost:10029",
-		MacaroonPath: defaultConf.RpcConf.MacaroonPath,
-		TLSPath:      defaultConf.RpcConf.TLSCertPath,
-		RFQtimeout:   defaultRfqTimeout,
+		Activate: false,
+		Host:     "localhost:10029",
+		MacaroonPath: filepath.Join(
+			defaultTapdDir, "data", network, "admin.macaroon",
+		),
+		TLSPath:    filepath.Join(defaultTapdDir, "tls.cert"),
+		RFQtimeout: defaultRfqTimeout,
 	}
 }
 
