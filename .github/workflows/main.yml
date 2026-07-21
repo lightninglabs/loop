@@ -124,6 +124,9 @@ jobs:
       - name: check
         run: make docs-check
 
+      - name: check generated FSM diagrams
+        run: make fsm-check
+
   ########################
   # run unit-test sqlite3 race
   ########################

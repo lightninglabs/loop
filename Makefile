@@ -194,4 +194,20 @@ docs-check: docs
 fsm:
 	@$(call print, "Generating state machine docs")
 	./scripts/fsm-generate.sh;
-.PHONY: fsm
+
+FSM_FILES := \
+	fsm/example_fsm.md \
+	instantout/fsm.md \
+	instantout/reservation/fsm.md \
+	staticaddr/deposit/fsm.md \
+	staticaddr/loopin/fsm.md
+
+fsm-check: fsm
+	@$(call print, "Verifying generated state machine docs")
+	if test -n "$$(git status --porcelain -- $(FSM_FILES))"; then \
+		echo "Generated FSM diagrams are not up-to-date!"; \
+		git status --porcelain -- $(FSM_FILES); \
+		git diff -- $(FSM_FILES); \
+		exit 1; \
+	fi
+.PHONY: fsm fsm-check

@@ -2,35 +2,41 @@
 stateDiagram-v2
 [*] --> Init: OnStart
 BuildHtlc
+BuildHtlc --> InstantOutFailed: OnError
 BuildHtlc --> PushPreimage: OnHtlcSigReceived
-BuildHtlc --> InstantFailedOutFailed: OnError
-BuildHtlc --> InstantFailedOutFailed: OnRecover
+BuildHtlc --> InstantOutFailed: OnRecover
 FailedHtlcSweep
+FailedHtlcSweep --> PublishHtlcSweep: OnRecover
+FinishedHtlcPreimageSweep
 FinishedSweeplessSweep
 Init
+Init --> InstantOutFailed: OnError
 Init --> SendPaymentAndPollAccepted: OnInit
-Init --> InstantFailedOutFailed: OnError
-Init --> InstantFailedOutFailed: OnRecover
-InstantFailedOutFailed
+Init --> InstantOutFailed: OnRecover
+InstantOutFailed
 PublishHtlc
 PublishHtlc --> FailedHtlcSweep: OnError
+PublishHtlc --> PublishHtlcSweep: OnHtlcPublished
 PublishHtlc --> PublishHtlc: OnRecover
-PublishHtlc --> WaitForHtlcSweepConfirmed: OnHtlcBroadcasted
+PublishHtlcSweep
+PublishHtlcSweep --> FailedHtlcSweep: OnError
+PublishHtlcSweep --> WaitForHtlcSweepConfirmed: OnHtlcSweepPublished
+PublishHtlcSweep --> PublishHtlcSweep: OnRecover
 PushPreimage
+PushPreimage --> InstantOutFailed: OnError
+PushPreimage --> PublishHtlc: OnErrorPublishHtlc
 PushPreimage --> PushPreimage: OnRecover
 PushPreimage --> WaitForSweeplessSweepConfirmed: OnSweeplessSweepPublished
-PushPreimage --> InstantFailedOutFailed: OnError
-PushPreimage --> PublishHtlc: OnErrorPublishHtlc
 SendPaymentAndPollAccepted
+SendPaymentAndPollAccepted --> InstantOutFailed: OnError
 SendPaymentAndPollAccepted --> BuildHtlc: OnPaymentAccepted
-SendPaymentAndPollAccepted --> InstantFailedOutFailed: OnError
-SendPaymentAndPollAccepted --> InstantFailedOutFailed: OnRecover
+SendPaymentAndPollAccepted --> InstantOutFailed: OnRecover
 WaitForHtlcSweepConfirmed
+WaitForHtlcSweepConfirmed --> FailedHtlcSweep: OnError
 WaitForHtlcSweepConfirmed --> FinishedHtlcPreimageSweep: OnHtlcSwept
 WaitForHtlcSweepConfirmed --> WaitForHtlcSweepConfirmed: OnRecover
-WaitForHtlcSweepConfirmed --> FailedHtlcSweep: OnError
 WaitForSweeplessSweepConfirmed
-WaitForSweeplessSweepConfirmed --> FinishedSweeplessSweep: OnSweeplessSweepConfirmed
-WaitForSweeplessSweepConfirmed --> WaitForSweeplessSweepConfirmed: OnRecover
 WaitForSweeplessSweepConfirmed --> PublishHtlc: OnError
+WaitForSweeplessSweepConfirmed --> WaitForSweeplessSweepConfirmed: OnRecover
+WaitForSweeplessSweepConfirmed --> FinishedSweeplessSweep: OnSweeplessSweepConfirmed
 ```
