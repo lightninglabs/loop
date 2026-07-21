@@ -2779,7 +2779,9 @@ func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
 		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
 	}
 
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- invoiceMonitorHtlcConfirmation(
+		t, f, mockLnd,
+	)
 
 	select {
 	case transition := <-depositMgr.transitionChan:
@@ -2866,7 +2868,9 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 			t.Fatalf("htlc conf registration not received: %v",
 				runCtx.Err())
 		}
-		confRegistration.ConfChan <- nil
+		confRegistration.ConfChan <- invoiceMonitorHtlcConfirmation(
+			t, f, mockLnd,
+		)
 
 		return resultChan
 	}
@@ -3023,12 +3027,32 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 		InvoicesClient: invoicesClient,
 		LndClient:      mockLnd.Client,
 		ChainParams:    mockLnd.ChainParams,
+		Store:          &recordingLoopInStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, true)
 	require.NoError(t, err)
 
 	return f, depositMgr
+}
+
+// invoiceMonitorHtlcConfirmation returns a confirmation containing the HTLC
+// output expected by the invoice monitor.
+func invoiceMonitorHtlcConfirmation(t *testing.T, f *FSM,
+	mockLnd *test.LndMockServices) *chainntnfs.TxConfirmation {
+
+	t.Helper()
+
+	htlc, err := f.loopIn.getHtlc(mockLnd.ChainParams)
+	require.NoError(t, err)
+
+	htlcTx := wire.NewMsgTx(2)
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    int64(f.loopIn.TotalDepositAmount()),
+		PkScript: htlc.PkScript,
+	})
+
+	return &chainntnfs.TxConfirmation{Tx: htlcTx}
 }
 
 // failingCancelInvoices records cancellation attempts and returns a configured
