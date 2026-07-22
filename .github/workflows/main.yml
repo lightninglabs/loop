@@ -25,6 +25,37 @@ env:
 
 jobs:
   ########################
+  # commit message lint
+  ########################
+  commit-message:
+    name: Commit Message
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint commit messages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          elif [ "$EVENT_NAME" = "push" ] &&
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            range="$BEFORE_SHA..$GITHUB_SHA"
+          else
+            range="$(git rev-parse HEAD^ 2>/dev/null)..HEAD"
+          fi
+
+          make commitmsg-lint range="$range"
+
+  ########################
   # RPC compile and check
   ########################
   rpc-check:

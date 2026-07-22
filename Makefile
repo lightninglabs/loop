@@ -174,6 +174,43 @@ endif
 	cd tools/ && GOPROXY=direct $(GOMOD) tidy
 	if test -n "$$(git status --porcelain)"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
+commitmsg-lint:
+	@$(call print, "Linting commit message(s).")
+	@if [ -n "$(range)" ]; then \
+		./scripts/commit_message.py lint --range "$(range)"; \
+	elif [ -n "$(commit)" ]; then \
+		./scripts/commit_message.py lint --commit "$(commit)"; \
+	elif [ -n "$(file)" ]; then \
+		./scripts/commit_message.py lint --file "$(file)"; \
+	else \
+		./scripts/commit_message.py lint --commit HEAD; \
+	fi
+
+commitmsg-fmt:
+	@$(call print, "Formatting commit message.")
+	@if [ -n "$(file)" ]; then \
+		if [ "$(inplace)" = "1" ]; then \
+			./scripts/commit_message.py fmt --file "$(file)" --in-place \
+				$(if $(filter 1,$(decode)),--decode-escaped-newlines,); \
+		else \
+			./scripts/commit_message.py fmt --file "$(file)" \
+				$(if $(filter 1,$(decode)),--decode-escaped-newlines,); \
+		fi; \
+	elif [ -n "$(commit)" ]; then \
+		./scripts/commit_message.py fmt --commit "$(commit)" \
+			$(if $(filter 1,$(decode)),--decode-escaped-newlines,); \
+	else \
+		echo "Error: provide file=<path> or commit=<rev>"; \
+		exit 1; \
+	fi
+
+commitmsg-reword:
+	@$(call print, "Rewording commit with formatted message.")
+	@./scripts/commit_message.py reword \
+		--commit "$(if $(commit),$(commit),HEAD)" \
+		$(if $(filter 1,$(decode)),--decode-escaped-newlines,) \
+		$(if $(filter 1,$(dryrun)),--dry-run,)
+
 sqlc:
 	@$(call print, "Generating sql models and queries in Go")
 	./scripts/gen_sqlc_docker.sh
