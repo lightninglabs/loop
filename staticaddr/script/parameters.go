@@ -33,4 +33,8 @@ type Parameters struct {
 
 	// InitiationHeight is the height at which the address was initiated.
 	InitiationHeight int32
+
+	// Label is local operator metadata for the static address. It is persisted for
+	// display and filtering only, and is not part of the script or server protocol.
+	Label string
 }

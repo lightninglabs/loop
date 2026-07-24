@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -124,7 +125,7 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new static address.
-	taprootAddress, expiry, err := testContext.manager.NewAddress(ctxb)
+	taprootAddress, expiry, _, err := testContext.manager.NewAddress(ctxb, "")
 	require.NoError(t, err)
 
 	// The addresses have to match.
@@ -132,6 +133,41 @@ func TestManager(t *testing.T) {
 
 	// The expiry has to match.
 	require.EqualValues(t, defaultExpiry, expiry)
+}
+
+// TestNewAddressPreservesExistingLabelWhenDifferentLabelRequested ensures that
+// an existing static address keeps its stored label when callers request a
+// different label.
+func TestNewAddressPreservesExistingLabelWhenDifferentLabelRequested(t *testing.T) {
+	ctx := t.Context()
+	testContext := NewAddressManagerTestContext(t)
+	_, _, _, err := testContext.manager.NewAddress(ctx, "stored")
+	require.NoError(t, err)
+
+	_, _, label, err := testContext.manager.NewAddress(ctx, "treasury")
+
+	require.NoError(t, err)
+	require.Equal(t, "stored", label)
+
+	params, err := testContext.manager.GetStaticAddressParameters(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "stored", params.Label)
+}
+
+func TestNewAddressPreservesExistingLabelWhenNoLabelRequested(t *testing.T) {
+	ctx := t.Context()
+	testContext := NewAddressManagerTestContext(t)
+	_, _, _, err := testContext.manager.NewAddress(ctx, "treasury")
+	require.NoError(t, err)
+
+	_, _, label, err := testContext.manager.NewAddress(ctx, "")
+
+	require.NoError(t, err)
+	require.Equal(t, "treasury", label)
+
+	params, err := testContext.manager.GetStaticAddressParameters(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "treasury", params.Label)
 }
 
 // TestNewAddressValidatesServerResponse tests that the untrusted
@@ -211,7 +247,7 @@ func TestNewAddressValidatesServerResponse(t *testing.T) {
 				t, test.resp,
 			)
 
-			_, _, err := testContext.manager.NewAddress(t.Context())
+			_, _, _, err := testContext.manager.NewAddress(t.Context(), "")
 			require.ErrorContains(t, err, test.expected)
 		})
 	}
@@ -223,9 +259,82 @@ func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
 		t, newServerNewAddressResponse(maxStaticAddressCSVExpiry),
 	)
 
-	_, expiry, err := testContext.manager.NewAddress(t.Context())
+	_, expiry, _, err := testContext.manager.NewAddress(t.Context(), "")
 	require.NoError(t, err)
 	require.EqualValues(t, maxStaticAddressCSVExpiry, expiry)
+}
+
+// TestListUnspentSupportsMultipleStaticAddresses verifies that UTXOs retain the
+// correct metadata and address association across multiple static addresses.
+func TestListUnspentSupportsMultipleStaticAddresses(t *testing.T) {
+	ctx := t.Context()
+	testContext := NewAddressManagerTestContext(t)
+	firstAddress, _, _, err := testContext.manager.NewAddress(ctx, "first")
+	require.NoError(t, err)
+
+	firstParams, err := testContext.manager.GetStaticAddressParameters(ctx)
+	require.NoError(t, err)
+
+	secondParams := testAddressParams(t)
+	secondParams.Label = "second"
+	err = testContext.manager.cfg.Store.CreateStaticAddress(ctx, secondParams)
+	require.NoError(t, err)
+	secondAddress, err := testContext.manager.GetTaprootAddress(
+		secondParams.ClientPubkey, secondParams.ServerPubkey,
+		int64(secondParams.Expiry),
+	)
+	require.NoError(t, err)
+
+	firstUtxo := &lnwallet.Utxo{
+		PkScript: firstParams.PkScript,
+		OutPoint: wire.OutPoint{Index: 1},
+	}
+	secondUtxo := &lnwallet.Utxo{
+		PkScript: secondParams.PkScript,
+		OutPoint: wire.OutPoint{Index: 2},
+	}
+	unknownUtxo := &lnwallet.Utxo{
+		PkScript: []byte("unknown"),
+		OutPoint: wire.OutPoint{Index: 3},
+	}
+	testContext.mockLnd.SetListUnspent([]*lnwallet.Utxo{
+		firstUtxo, secondUtxo, unknownUtxo,
+	})
+
+	associatedUtxos, err := testContext.manager.ListUnspentRaw(ctx, 0, 0)
+
+	require.NoError(t, err)
+	require.Len(t, associatedUtxos, 2)
+
+	gotAssociations := make(map[wire.OutPoint]StaticAddressUtxo,
+		len(associatedUtxos))
+	for _, associatedUtxo := range associatedUtxos {
+		gotAssociations[associatedUtxo.Utxo.OutPoint] = associatedUtxo
+		require.Equal(
+			t, string(associatedUtxo.Utxo.PkScript),
+			string(associatedUtxo.Parameters.PkScript),
+		)
+	}
+	require.Equal(t, firstParams, gotAssociations[firstUtxo.OutPoint].Parameters)
+	require.Equal(t, firstAddress, gotAssociations[firstUtxo.OutPoint].Address)
+	require.Equal(t, secondParams, gotAssociations[secondUtxo.OutPoint].Parameters)
+	require.Equal(t, secondAddress, gotAssociations[secondUtxo.OutPoint].Address)
+	_, ok := gotAssociations[unknownUtxo.OutPoint]
+	require.False(t, ok)
+
+	utxos, err := testContext.manager.ListUnspent(ctx, 0, 0)
+
+	require.NoError(t, err)
+	require.Len(t, utxos, 2)
+
+	got := make(map[wire.OutPoint]*lnwallet.Utxo, len(utxos))
+	for _, utxo := range utxos {
+		got[utxo.OutPoint] = utxo
+	}
+	require.Equal(t, firstUtxo, got[firstUtxo.OutPoint])
+	require.Equal(t, secondUtxo, got[secondUtxo.OutPoint])
+	_, ok = got[unknownUtxo.OutPoint]
+	require.False(t, ok)
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that

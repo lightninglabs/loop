@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "updatelabel",
+      "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+      "treasury",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 37383750,
+    "clock_start_unix": 1784236626
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/UpdateStaticAddressLabel",
+        "event": "request",
+        "message_type": "looprpc.UpdateStaticAddressLabelRequest",
+        "payload": {
+          "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+          "label": "treasury"
+        }
+      }
+    },
+    {
+      "time_ms": 37,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/UpdateStaticAddressLabel",
+        "event": "response",
+        "message_type": "looprpc.UpdateStaticAddressLabelResponse",
+        "payload": {
+          "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+          "label": "treasury"
+        }
+      }
+    },
+    {
+      "time_ms": 37,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"label\": \"treasury\",\n",
+          "    \"static_address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\"\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 37,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

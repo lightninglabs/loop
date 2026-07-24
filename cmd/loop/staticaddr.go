@@ -29,6 +29,7 @@ var staticAddressCommands = &cli.Command{
 	Usage:   "perform on-chain to off-chain swaps using static addresses.",
 	Commands: []*cli.Command{
 		newStaticAddressCommand,
+		updateStaticAddressLabelCommand,
 		listUnspentCommand,
 		listDepositsCommand,
 		listWithdrawalsCommand,
@@ -40,6 +41,8 @@ var staticAddressCommands = &cli.Command{
 	},
 }
 
+// newStaticAddressCommand creates a static address and lets operators
+// optionally set a local label at creation time.
 var newStaticAddressCommand = &cli.Command{
 	Name:    "new",
 	Aliases: []string{"n"},
@@ -51,12 +54,22 @@ var newStaticAddressCommand = &cli.Command{
 	funds can either be cooperatively spent with a signature from the server
 	or looped in.
 	`,
+	Flags: []cli.Flag{
+		labelFlag,
+	},
 	Action: newStaticAddress,
 }
 
+// newStaticAddress requests a new static address while keeping the label as
+// local operator metadata.
 func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() > 0 {
 		return showCommandHelp(ctx, cmd)
+	}
+
+	label := cmd.String(labelFlag.Name)
+	if err := labels.Validate(label); err != nil {
+		return err
 	}
 
 	err := displayNewAddressWarning()
@@ -71,7 +84,78 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	resp, err := client.NewStaticAddress(
-		ctx, &looprpc.NewStaticAddressRequest{},
+		ctx, &looprpc.NewStaticAddressRequest{
+			Label: label,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+// updateStaticAddressLabelCommand updates local metadata for an existing static
+// address so operators can relabel it without affecting the address script or
+// Loop server protocol state.
+var updateStaticAddressLabelCommand = &cli.Command{
+	Name:      "updatelabel",
+	Usage:     "Update the label for a static address.",
+	ArgsUsage: "<static_address> <label> | <static_address> --clear",
+	Description: "Updates the local label for a static address. Use --clear to " +
+		"remove the label without relying on shell-specific empty-string " +
+		"arguments.",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "clear",
+			Usage: "clear the static address label",
+		},
+	},
+	Action: updateStaticAddressLabel,
+}
+
+// updateStaticAddressLabel updates the local label for a static address while
+// leaving the underlying address and swap protocol data unchanged.
+func updateStaticAddressLabel(ctx context.Context, cmd *cli.Command) error {
+	clearLabel := cmd.Bool("clear")
+	staticAddress := cmd.Args().Get(0)
+	label := ""
+
+	switch cmd.NArg() {
+	case 1:
+		if !clearLabel {
+			return errors.New("label is required; use --clear to remove it")
+		}
+	case 2:
+		if clearLabel {
+			return errors.New("cannot specify both label and --clear")
+		}
+
+		label = cmd.Args().Get(1)
+		if label == "" {
+			return errors.New("empty label argument requires --clear")
+		}
+	default:
+		return showCommandHelp(ctx, cmd)
+	}
+
+	if err := labels.Validate(label); err != nil {
+		return err
+	}
+
+	client, cleanup, err := getClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.UpdateStaticAddressLabel(
+		ctx, &looprpc.UpdateStaticAddressLabelRequest{
+			StaticAddress: staticAddress,
+			Label:         label,
+		},
 	)
 	if err != nil {
 		return err

@@ -1001,6 +1001,39 @@
         ]
       }
     },
+    "/v1/staticaddr/label": {
+      "post": {
+        "summary": "loop: `static updatelabel`\nUpdateStaticAddressLabel updates the local label for a static address.",
+        "operationId": "SwapClient_UpdateStaticAddressLabel",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcUpdateStaticAddressLabelResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcUpdateStaticAddressLabelRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/staticaddr/loopin": {
       "post": {
         "summary": "loop:`static in`\nStaticAddressLoopIn initiates a static address loop-in swap.",
@@ -2515,6 +2548,10 @@
           "type": "string",
           "format": "byte",
           "description": "The client's public key for the 2-of-2 MuSig2 taproot static address."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional label for this static address. Empty string means no label."
         }
       }
     },
@@ -2529,6 +2566,10 @@
           "type": "integer",
           "format": "int64",
           "description": "The CSV expiry of the static address."
+        },
+        "label": {
+          "type": "string",
+          "description": "The label for this static address. Empty string means no label."
         }
       }
     },
@@ -2906,6 +2947,10 @@
           "type": "string",
           "format": "int64",
           "description": "The total value of all deposits that have been used for channel openings."
+        },
+        "label": {
+          "type": "string",
+          "description": "The label for this static address. Empty string means no label."
         }
       }
     },
@@ -3206,6 +3251,32 @@
         }
       }
     },
+    "looprpcUpdateStaticAddressLabelRequest": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address whose label should be updated."
+        },
+        "label": {
+          "type": "string",
+          "description": "The updated label for the static address. Empty string means no label."
+        }
+      }
+    },
+    "looprpcUpdateStaticAddressLabelResponse": {
+      "type": "object",
+      "properties": {
+        "static_address": {
+          "type": "string",
+          "description": "The static address whose label was updated."
+        },
+        "label": {
+          "type": "string",
+          "description": "The updated label for the static address. Empty string means no label."
+        }
+      }
+    },
     "looprpcUtxo": {
       "type": "object",
       "properties": {
@@ -3226,6 +3297,10 @@
           "type": "string",
           "format": "int64",
           "description": "The number of confirmations for the Utxo."
+        },
+        "label": {
+          "type": "string",
+          "description": "The label for the static address that owns this Utxo. Empty string means no\nlabel."
         }
       }
     },

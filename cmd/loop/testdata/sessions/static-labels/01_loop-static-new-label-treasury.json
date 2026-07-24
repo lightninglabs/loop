@@ -4,17 +4,25 @@
       "loop",
       "static",
       "new",
-      "--network",
-      "regtest"
+      "--label",
+      "treasury",
+      "--network=regtest"
     ],
     "env": {},
-    "version": "0.31.7-beta commit=vbump-lndclient-70-g352a68cd43f1976a937faaf76041bc078fdd16f6 commit_hash=352a68cd43f1976a937faaf76041bc078fdd16f6",
-    "duration": 2871791649,
-    "clock_start_unix": 1769407086
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 5017708500,
+    "clock_start_unix": 1784236590
   },
   "events": [
     {
-      "time_ms": 1,
+      "time_ms": 0,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 0,
       "kind": "stdout",
       "data": {
         "lines": [
@@ -26,14 +34,7 @@
       }
     },
     {
-      "time_ms": 2685,
-      "kind": "stdin",
-      "data": {
-        "text": "y\n"
-      }
-    },
-    {
-      "time_ms": 2686,
+      "time_ms": 0,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/NewStaticAddress",
@@ -41,39 +42,39 @@
         "message_type": "looprpc.NewStaticAddressRequest",
         "payload": {
           "client_key": "",
-          "label": ""
+          "label": "treasury"
         }
       }
     },
     {
-      "time_ms": 2868,
+      "time_ms": 5017,
       "kind": "grpc",
       "data": {
         "method": "/looprpc.SwapClient/NewStaticAddress",
         "event": "response",
         "message_type": "looprpc.NewStaticAddressResponse",
         "payload": {
-          "address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
+          "address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
           "expiry": 14400,
-          "label": ""
+          "label": "treasury"
         }
       }
     },
     {
-      "time_ms": 2869,
+      "time_ms": 5017,
       "kind": "stdout",
       "data": {
         "lines": [
           "{\n",
-          "    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
+          "    \"address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\",\n",
           "    \"expiry\": 14400,\n",
-          "    \"label\": \"\"\n",
+          "    \"label\": \"treasury\"\n",
           "}\n"
         ]
       }
     },
     {
-      "time_ms": 2871,
+      "time_ms": 5017,
       "kind": "exit",
       "data": {}
     }

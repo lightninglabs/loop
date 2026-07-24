@@ -14,7 +14,8 @@ INSERT INTO static_addresses (
     client_key_index,
     pkscript,
     protocol_version,
-    initiation_height
+    initiation_height,
+    label
 ) VALUES (
              $1,
              $2,
@@ -23,5 +24,11 @@ INSERT INTO static_addresses (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9
          );
+
+-- name: UpdateStaticAddressLabel :execrows
+UPDATE static_addresses
+SET label = $2
+WHERE pkscript = $1;

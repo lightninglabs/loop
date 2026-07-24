@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
@@ -1708,12 +1709,19 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 }
 
 // NewStaticAddress is the rpc endpoint for loop clients to request a new static
-// address.
+// address. The optional label is validated here because it is local operator
+// metadata, not data the static-address server should interpret.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	_ *looprpc.NewStaticAddressRequest) (
+	req *looprpc.NewStaticAddressRequest) (
 	*looprpc.NewStaticAddressResponse, error) {
 
-	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	label := req.GetLabel()
+	if err := labels.Validate(label); err != nil {
+		return nil, fmt.Errorf("invalid static address label: %w", err)
+	}
+
+	staticAddress, expiry, storedLabel, err :=
+		s.staticAddressManager.NewAddress(ctx, label)
 	if err != nil {
 		return nil, err
 	}
@@ -1721,6 +1729,43 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	return &looprpc.NewStaticAddressResponse{
 		Address: staticAddress.String(),
 		Expiry:  uint32(expiry),
+		Label:   storedLabel,
+	}, nil
+}
+
+// UpdateStaticAddressLabel updates the local label for a static address so
+// operators can rename it without changing the address script or contacting the
+// Loop server.
+func (s *swapClientServer) UpdateStaticAddressLabel(ctx context.Context,
+	req *looprpc.UpdateStaticAddressLabelRequest) (
+	*looprpc.UpdateStaticAddressLabelResponse, error) {
+
+	label := req.GetLabel()
+	if err := labels.Validate(label); err != nil {
+		return nil, fmt.Errorf("invalid static address label: %w", err)
+	}
+
+	staticAddress, err := btcutil.DecodeAddress(
+		req.GetStaticAddress(), s.lnd.ChainParams,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("decode static address: %w", err)
+	}
+
+	pkScript, err := txscript.PayToAddrScript(staticAddress)
+	if err != nil {
+		return nil, fmt.Errorf("static address pkScript: %w", err)
+	}
+
+	if err := s.staticAddressManager.UpdateStaticAddressLabel(
+		ctx, pkScript, label,
+	); err != nil {
+		return nil, fmt.Errorf("update static address label: %w", err)
+	}
+
+	return &looprpc.UpdateStaticAddressLabelResponse{
+		StaticAddress: staticAddress.String(),
+		Label:         label,
 	}, nil
 }
 
@@ -1731,11 +1776,15 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
-	staticAddress, utxos, err := s.staticAddressManager.ListUnspentRaw(
+	associatedUtxos, err := s.staticAddressManager.ListUnspentRaw(
 		ctx, req.MinConfs, req.MaxConfs,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if associatedUtxos == nil {
+		return &looprpc.ListUnspentDepositsResponse{}, nil
 	}
 
 	// ListUnspentRaw returns the unspent wallet view of the backing lnd
@@ -1747,8 +1796,8 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		isUnspent = make(map[wire.OutPoint]struct{})
 	)
 
-	for _, utxo := range utxos {
-		outpoints = append(outpoints, utxo.OutPoint.String())
+	for _, associatedUtxo := range associatedUtxos {
+		outpoints = append(outpoints, associatedUtxo.Utxo.OutPoint.String())
 	}
 
 	err = s.depositManager.EnsureDepositsFresh(ctx)
@@ -1777,18 +1826,20 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 
 	// Prepare the list of unspent deposits for the rpc response.
 	var respUtxos []*looprpc.Utxo
-	for _, u := range utxos {
-		if _, ok := isUnspent[u.OutPoint]; !ok {
+	for _, associatedUtxo := range associatedUtxos {
+		utxo := associatedUtxo.Utxo
+		if _, ok := isUnspent[utxo.OutPoint]; !ok {
 			continue
 		}
 
-		utxo := &looprpc.Utxo{
-			StaticAddress: staticAddress.String(),
-			AmountSat:     int64(u.Value),
-			Confirmations: u.Confirmations,
-			Outpoint:      u.OutPoint.String(),
+		respUtxo := &looprpc.Utxo{
+			StaticAddress: associatedUtxo.Address.String(),
+			AmountSat:     int64(utxo.Value),
+			Confirmations: utxo.Confirmations,
+			Outpoint:      utxo.OutPoint.String(),
+			Label:         associatedUtxo.Parameters.Label,
 		}
-		respUtxos = append(respUtxos, utxo)
+		respUtxos = append(respUtxos, respUtxo)
 	}
 
 	return &looprpc.ListUnspentDepositsResponse{Utxos: respUtxos}, nil
@@ -2188,6 +2239,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 		ValueLoopedInSatoshis:          valueLoopedIn,
 		ValueChannelsOpened:            valueChannelsOpened,
 		ValueHtlcTimeoutSweepsSatoshis: htlcTimeoutSwept,
+		Label:                          params.Label,
 	}, nil
 }
 

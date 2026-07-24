@@ -134,6 +134,7 @@ type StaticAddress struct {
 	Pkscript         []byte
 	ProtocolVersion  int32
 	InitiationHeight int32
+	Label            string
 }
 
 type StaticAddressSwap struct {

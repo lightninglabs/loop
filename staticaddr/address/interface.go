@@ -17,4 +17,10 @@ type Store interface {
 	// GetAllStaticAddresses retrieves all static addresses from the store.
 	GetAllStaticAddresses(ctx context.Context) ([]*script.Parameters,
 		error)
+
+	// UpdateStaticAddressLabel updates the local label for a static address by
+	// its pkScript so metadata changes never alter address scripts or server
+	// state.
+	UpdateStaticAddressLabel(ctx context.Context, pkScript []byte,
+		label string) error
 }

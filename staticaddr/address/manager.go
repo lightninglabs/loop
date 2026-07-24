@@ -1,7 +1,6 @@
 package address
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -64,6 +63,13 @@ type Manager struct {
 	currentHeight atomic.Int32
 }
 
+// StaticAddressUtxo associates a wallet UTXO with its static address metadata.
+type StaticAddressUtxo struct {
+	Utxo       *lnwallet.Utxo
+	Parameters *script.Parameters
+	Address    *btcutil.AddressTaproot
+}
+
 // NewManager creates a new address manager.
 func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
 	if currentHeight <= 0 {
@@ -107,10 +113,11 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	}
 }
 
-// NewAddress creates a new static address with the server or returns an
-// existing one.
-func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
-	int64, error) {
+// NewAddress creates a new static address with the server while carrying the
+// label only as local operator metadata; the label is stored for display and is
+// never sent to the Loop server or used in the address script.
+func (m *Manager) NewAddress(ctx context.Context, label string) (
+	*btcutil.AddressTaproot, int64, string, error) {
 
 	// If there's already a static address in the database, we can return
 	// it.
@@ -119,23 +126,26 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	if err != nil {
 		m.Unlock()
 
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	if len(addresses) > 0 {
-		clientPubKey := addresses[0].ClientPubkey
-		serverPubKey := addresses[0].ServerPubkey
-		expiry := int64(addresses[0].Expiry)
-
 		defer m.Unlock()
+
+		// TODO: When multi-address support lands, resolve an existing address
+		// by label or create a new one when no matching label exists.
+		params := addresses[0]
+		clientPubKey := params.ClientPubkey
+		serverPubKey := params.ServerPubkey
+		expiry := int64(params.Expiry)
 
 		address, err := m.GetTaprootAddress(
 			clientPubKey, serverPubKey, expiry,
 		)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, "", err
 		}
 
-		return address, expiry, nil
+		return address, expiry, params.Label, nil
 	}
 	m.Unlock()
 
@@ -143,14 +153,14 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	// address per L402 token allowed.
 	err = m.cfg.FetchL402(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	// Send our clientPubKey to the server and wait for the server to
@@ -163,21 +173,21 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		},
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	if resp == nil {
-		return nil, 0, fmt.Errorf("missing server new address response")
+		return nil, 0, "", fmt.Errorf("missing server new address response")
 	}
 
 	serverParams := resp.GetParams()
 	if err := validateServerAddressParams(serverParams); err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	serverPubKey, err := btcec.ParsePubKey(serverParams.GetServerKey())
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	staticAddress, err := script.NewStaticAddress(
@@ -185,12 +195,12 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		clientPubKey.PubKey, serverPubKey,
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	pkScript, err := staticAddress.StaticAddressScript()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	// Create the static address from the parameters the server provided and
@@ -208,10 +218,11 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 			protocolVersion,
 		),
 		InitiationHeight: m.currentHeight.Load(),
+		Label:            label,
 	}
 	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	// Import the static address tapscript into our lnd wallet, so we can
@@ -221,7 +232,7 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	)
 	addr, err := m.cfg.WalletKit.ImportTaprootScript(ctx, tapScript)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	log.Infof("Imported static address taproot script to lnd wallet: %v",
@@ -231,10 +242,10 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 		clientPubKey.PubKey, serverPubKey, int64(serverParams.Expiry),
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
-	return address, int64(serverParams.Expiry), nil
+	return address, int64(serverParams.Expiry), label, nil
 }
 
 // validateServerAddressParams validates the server-controlled static address
@@ -290,23 +301,17 @@ func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
 	)
 }
 
-// ListUnspentRaw returns a list of utxos at the static address.
+// ListUnspentRaw returns wallet UTXOs with their matching static address data.
 func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
-	maxConfs int32) (*btcutil.AddressTaproot, []*lnwallet.Utxo, error) {
+	maxConfs int32) ([]StaticAddressUtxo, error) {
 
 	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
-	switch {
-	case err != nil:
-		return nil, nil, err
-
-	case len(addresses) == 0:
-		return nil, nil, nil
-
-	case len(addresses) > 1:
-		return nil, nil, fmt.Errorf("more than one address found")
+	if err != nil {
+		return nil, err
 	}
-
-	staticAddress := addresses[0]
+	if len(addresses) == 0 {
+		return nil, nil
+	}
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
@@ -314,27 +319,45 @@ func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
 		ctx, minConfs, maxConfs,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Filter the list of lnd's unspent utxos for the pkScript of our static
-	// address.
-	var filteredUtxos []*lnwallet.Utxo
+	paramsByPkScript := make(map[string]*script.Parameters, len(addresses))
+	for _, params := range addresses {
+		paramsByPkScript[string(params.PkScript)] = params
+	}
+
+	addressByPkScript := make(map[string]*btcutil.AddressTaproot)
+	associatedUtxos := make([]StaticAddressUtxo, 0, len(utxos))
 	for _, utxo := range utxos {
-		if bytes.Equal(utxo.PkScript, staticAddress.PkScript) {
-			filteredUtxos = append(filteredUtxos, utxo)
+		pkScript := string(utxo.PkScript)
+		params, ok := paramsByPkScript[pkScript]
+		if !ok {
+			continue
 		}
+
+		taprootAddress, ok := addressByPkScript[pkScript]
+		if !ok {
+			var err error
+			taprootAddress, err = m.GetTaprootAddress(
+				params.ClientPubkey, params.ServerPubkey,
+				int64(params.Expiry),
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			addressByPkScript[pkScript] = taprootAddress
+		}
+
+		associatedUtxos = append(associatedUtxos, StaticAddressUtxo{
+			Utxo:       utxo,
+			Parameters: params,
+			Address:    taprootAddress,
+		})
 	}
 
-	taprootAddress, err := m.GetTaprootAddress(
-		staticAddress.ClientPubkey, staticAddress.ServerPubkey,
-		int64(staticAddress.Expiry),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return taprootAddress, filteredUtxos, nil
+	return associatedUtxos, nil
 }
 
 // GetStaticAddressParameters returns the parameters of the static address.
@@ -351,6 +374,15 @@ func (m *Manager) GetStaticAddressParameters(ctx context.Context) (
 	}
 
 	return params[0], nil
+}
+
+// UpdateStaticAddressLabel updates only the local label for the static address
+// pkScript so operators can rename their reusable address without changing its
+// script, deposits, or Loop server protocol state.
+func (m *Manager) UpdateStaticAddressLabel(ctx context.Context,
+	pkScript []byte, label string) error {
+
+	return m.cfg.Store.UpdateStaticAddressLabel(ctx, pkScript, label)
 }
 
 // GetStaticAddress returns a taproot address for the given client and server
@@ -378,9 +410,14 @@ func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
 func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
-	_, utxos, err := m.ListUnspentRaw(ctx, minConfs, maxConfs)
+	associatedUtxos, err := m.ListUnspentRaw(ctx, minConfs, maxConfs)
 	if err != nil {
 		return nil, err
+	}
+
+	utxos := make([]*lnwallet.Utxo, 0, len(associatedUtxos))
+	for _, associatedUtxo := range associatedUtxos {
+		utxos = append(utxos, associatedUtxo.Utxo)
 	}
 
 	return utxos, nil

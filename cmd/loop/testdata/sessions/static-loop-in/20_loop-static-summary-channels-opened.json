@@ -36,6 +36,7 @@
         "event": "response",
         "message_type": "looprpc.StaticAddressSummaryResponse",
         "payload": {
+          "label": "",
           "static_address": "bcrt1p604kzzh28764kkw45yps48weergwljggamhhe7tqfglzjzang6cs43f2m2",
           "relative_expiry_blocks": "14400",
           "total_num_deposits": 3,
@@ -55,6 +56,7 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"label\": \"\",\n",
           "    \"relative_expiry_blocks\": \"14400\",\n",
           "    \"static_address\": \"bcrt1p604kzzh28764kkw45yps48weergwljggamhhe7tqfglzjzang6cs43f2m2\",\n",
           "    \"total_num_deposits\": 3,\n",
