@@ -235,9 +235,9 @@ The following flags are supported:
 
 ### `listswaps` command
 
-list all swaps in the local database.
+list traditional Loop In and Loop Out swaps.
 
-Allows the user to get a list of all swaps that are currently stored in the database.
+Lists traditional Loop In and Loop Out swaps that are currently stored in the database. Static address loop-ins are not included; use `loop static listswaps` to view them.
 
 Usage:
 
@@ -261,9 +261,9 @@ The following flags are supported:
 
 ### `swapinfo` command
 
-show the status of a swap.
+show the status of a traditional swap.
 
-Allows the user to get the status of a single swap currently stored in the database.
+Shows the status of a traditional Loop In or Loop Out swap currently stored in the database. Static address loop-ins must be viewed with `loop static listswaps`; there is no generic per-swap static lookup command.
 
 Usage:
 

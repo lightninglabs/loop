@@ -878,6 +878,68 @@ func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
 	require.Empty(t, checker.outpoints)
 }
 
+// TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence protects the
+// persistence-first invariant: once the loop-in is stored, a later status
+// update failure must not roll back the action or state transition.
+func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
+	mockLnd := test.NewMockLnd()
+	_, serverKey := test.CreateKey(22)
+
+	server := &mockStaticAddressServer{
+		response: testStaticAddressLoopInResponse(
+			serverKey.SerializeCompressed(),
+		),
+	}
+
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 0,
+		},
+		Value: 500_000,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		Deposits:              []*deposit.Deposit{dep},
+		DepositOutpoints:      []string{dep.OutPoint.String()},
+		SelectedAmount:        dep.Value,
+		QuotedSwapFee:         1_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: 3_600,
+	}
+
+	sendUpdateErr := errors.New("status channel blocked")
+	sendUpdateCalled := false
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			Server:                               server,
+			DepositManager:                       &noopDepositManager{},
+			LndClient:                            mockLnd.Client,
+			WalletKit:                            mockLnd.WalletKit,
+			ChainParams:                          mockLnd.ChainParams,
+			Store:                                &mockStore{},
+			ValidateLoopInContract:               testValidateLoopInContract,
+			MaxStaticAddrHtlcFeePercentage:       1,
+			MaxStaticAddrHtlcBackupFeePercentage: 1,
+			SendUpdate: func(context.Context,
+				*StaticAddressLoopIn) error {
+
+				sendUpdateCalled = true
+
+				return sendUpdateErr
+			},
+		},
+		loopIn: loopIn,
+	}
+
+	event := f.InitHtlcAction(t.Context(), nil)
+	require.Equal(t, OnHtlcInitiated, event)
+	require.Nil(t, f.LastActionError)
+	require.True(t, sendUpdateCalled)
+}
+
 // mockStaticAddressServer captures static-address loop-in requests in tests.
 type mockStaticAddressServer struct {
 	swapserverrpc.StaticAddressServerClient

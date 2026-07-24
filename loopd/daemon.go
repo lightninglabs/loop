@@ -110,6 +110,10 @@ type Daemon struct {
 	macaroonService *lndclient.MacaroonService
 }
 
+// staticLoopInStatusChanBuffer keeps the shared swap-status fanout from
+// stalling static loop-in FSM progress during transient subscriber gaps.
+const staticLoopInStatusChanBuffer = 20
+
 // New creates a new instance of the loop client daemon.
 func New(config *Config, lisCfg *ListenerCfg) *Daemon {
 	return &Daemon{
@@ -681,6 +685,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		LightningClient:   d.lnd.Client,
 	}
 	openChannelManager = openchannel.NewManager(openChannelCfg)
+	statusChan := make(chan loop.SwapInfo, staticLoopInStatusChanBuffer)
 
 	// Run the deposit swap hash migration.
 	err = loopin.MigrateDepositSwapHash(
@@ -701,6 +706,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		return err
 	}
+	statusUpdater := &staticLoopInStatusUpdater{
+		statusChan:  statusChan,
+		mainCtx:     d.mainCtx,
+		chainParams: d.lnd.ChainParams,
+	}
 
 	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,
@@ -718,6 +728,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		ChainParams:                          d.lnd.ChainParams,
 		Signer:                               d.lnd.Signer,
 		ValidateLoopInContract:               loop.ValidateLoopInContract,
+		SendUpdate:                           statusUpdater.sendUpdate,
 		MaxStaticAddrHtlcFeePercentage:       d.cfg.MaxStaticAddrHtlcFeePercentage,
 		MaxStaticAddrHtlcBackupFeePercentage: d.cfg.MaxStaticAddrHtlcBackupFeePercentage,
 	}, blockHeight)
@@ -783,7 +794,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		lnd:                  &d.lnd.LndServices,
 		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
 		subscribers:          make(map[int]chan<- any),
-		statusChan:           make(chan loop.SwapInfo),
+		statusChan:           statusChan,
 		mainCtx:              d.mainCtx,
 		reservationManager:   reservationManager,
 		instantOutManager:    instantOutManager,

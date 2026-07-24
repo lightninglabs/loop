@@ -411,6 +411,8 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 	}
 
 	var swapType looprpc.SwapType
+	staticLoopInState := looprpc.
+		StaticAddressLoopInSwapState_UNKNOWN_STATIC_ADDRESS_SWAP_STATE
 	var (
 		htlcAddress      string
 		htlcAddressP2TR  string
@@ -432,6 +434,27 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 				loopSwap.HtlcAddressP2WSH.EncodeAddress()
 			htlcAddress = htlcAddressP2WSH
 		}
+
+		if loopSwap.LastHop != nil {
+			lastHop = loopSwap.LastHop[:]
+		}
+
+	case swap.TypeStaticAddressLoopIn:
+		// Static loop-ins surface their precise FSM state through the
+		// optional oneof and keep the reconstructed HTLC P2WSH address,
+		// not the reusable static address.
+		swapType = looprpc.SwapType_STATIC_LOOP_IN
+		staticLoopInState = toClientStaticAddressLoopInState(
+			loopSwap.StaticAddressLoopInState,
+		)
+
+		if loopSwap.HtlcAddressP2WSH == nil {
+			return nil, errors.New(
+				"missing static address loop-in P2WSH HTLC address",
+			)
+		}
+		htlcAddressP2WSH = loopSwap.HtlcAddressP2WSH.EncodeAddress()
+		htlcAddress = htlcAddressP2WSH
 
 		if loopSwap.LastHop != nil {
 			lastHop = loopSwap.LastHop[:]
@@ -478,7 +501,7 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 		return nil, errors.New("unknown swap type")
 	}
 
-	return &looprpc.SwapStatus{
+	rpcSwap := &looprpc.SwapStatus{
 		Amt:              int64(loopSwap.AmountRequested),
 		Id:               loopSwap.SwapHash.String(),
 		IdBytes:          loopSwap.SwapHash[:],
@@ -497,7 +520,15 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 		LastHop:          lastHop,
 		OutgoingChanSet:  outGoingChanSet,
 		AssetInfo:        assetInfo,
-	}, nil
+	}
+	if swapType == looprpc.SwapType_STATIC_LOOP_IN {
+		rpcSwap.StaticLoopInStateOptional =
+			&looprpc.SwapStatus_StaticLoopInState{
+				StaticLoopInState: staticLoopInState,
+			}
+	}
+
+	return rpcSwap, nil
 }
 
 // Monitor will return a stream of swap updates for currently active swaps.
@@ -518,26 +549,27 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 	// Start a notification queue for this subscriber.
 	queue := queue.NewConcurrentQueue(20)
 	queue.Start()
+	ctx := server.Context()
 
-	// Add this subscriber to the global subscriber list. Also create a
-	// snapshot of all pending and completed swaps within the lock, to
-	// prevent subscribers from receiving duplicate updates.
 	s.swapsLock.Lock()
 
 	id := s.nextSubscriberID
 	s.nextSubscriberID++
 	s.subscribers[id] = queue.ChanIn()
-
-	var pendingSwaps, completedSwaps []loop.SwapInfo
-	for _, swap := range s.swaps {
-		if swap.State.Type() == loopdb.StateTypePending {
-			pendingSwaps = append(pendingSwaps, swap)
-		} else {
-			completedSwaps = append(completedSwaps, swap)
-		}
-	}
-
+	pendingSwaps, completedSwaps := s.monitorCachedSwaps()
 	s.swapsLock.Unlock()
+
+	err := s.appendStaticAddressLoopInMonitorSnapshot(
+		ctx, &pendingSwaps, &completedSwaps,
+	)
+	if err != nil {
+		s.swapsLock.Lock()
+		delete(s.subscribers, id)
+		s.swapsLock.Unlock()
+		queue.Stop()
+
+		return err
+	}
 
 	defer func() {
 		s.swapsLock.Lock()
@@ -568,6 +600,13 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 		)
 	})
 
+	// Static-address loop-in updates can arrive from both the initial snapshot
+	// and the live queue. Build a high-water mark from the snapshot so we can
+	// suppress stale duplicate snapshot items without dropping newer live ones.
+	staticSnapshotHighWater := staticAddressLoopInMonitorHighWater(
+		filteredSwaps,
+	)
+
 	// Return swaps to caller.
 	for _, swap := range filteredSwaps {
 		if err := send(swap); err != nil {
@@ -585,6 +624,13 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 			}
 
 			swap := queueItem.(loop.SwapInfo)
+			if isInitialStaticAddressLoopInStale(
+				staticSnapshotHighWater, swap,
+			) {
+
+				continue
+			}
+
 			if err := send(swap); err != nil {
 				return err
 			}
@@ -598,6 +644,102 @@ func (s *swapClientServer) Monitor(in *looprpc.MonitorRequest,
 			return fmt.Errorf("server is shutting down")
 		}
 	}
+}
+
+// staticAddressLoopInMonitorHighWater records the latest snapshot item for each
+// static-address loop-in swap hash.
+func staticAddressLoopInMonitorHighWater(
+	swaps []loop.SwapInfo) map[lntypes.Hash]staticAddressLoopInHighWater {
+
+	highWater := make(map[lntypes.Hash]staticAddressLoopInHighWater)
+	for _, swp := range swaps {
+		if swp.SwapType != swap.TypeStaticAddressLoopIn {
+			continue
+		}
+
+		current, ok := highWater[swp.SwapHash]
+		if !ok || swp.LastUpdate.After(current.lastUpdate) {
+			highWater[swp.SwapHash] = staticAddressLoopInHighWater{
+				lastUpdate:  swp.LastUpdate,
+				staticState: swp.StaticAddressLoopInState,
+			}
+		}
+	}
+
+	return highWater
+}
+
+// staticAddressLoopInHighWater stores the most recent snapshot timestamp and
+// state for one static-address loop-in swap.
+type staticAddressLoopInHighWater struct {
+	lastUpdate  time.Time
+	staticState fsm.StateType
+}
+
+// isInitialStaticAddressLoopInStale reports whether a live static-address
+// loop-in update is older than the snapshot copy already sent, or equal to it
+// with the same static FSM state.
+func isInitialStaticAddressLoopInStale(
+	highWater map[lntypes.Hash]staticAddressLoopInHighWater,
+	swp loop.SwapInfo) bool {
+
+	if swp.SwapType != swap.TypeStaticAddressLoopIn {
+		return false
+	}
+	current, ok := highWater[swp.SwapHash]
+	if !ok {
+		return false
+	}
+
+	if swp.LastUpdate.Before(current.lastUpdate) {
+		return true
+	}
+	if swp.LastUpdate.After(current.lastUpdate) {
+		return false
+	}
+
+	// Equal timestamps can race the initial DB snapshot, so match state too.
+	return swp.StaticAddressLoopInState == current.staticState
+}
+
+// monitorCachedSwaps returns the current in-memory swaps split into pending and
+// completed slices for monitor snapshot construction.
+func (s *swapClientServer) monitorCachedSwaps() ([]loop.SwapInfo,
+	[]loop.SwapInfo) {
+
+	var pendingSwaps, completedSwaps []loop.SwapInfo
+	for _, swap := range s.swaps {
+		if swap.State.Type() == loopdb.StateTypePending {
+			pendingSwaps = append(pendingSwaps, swap)
+		} else {
+			completedSwaps = append(completedSwaps, swap)
+		}
+	}
+
+	return pendingSwaps, completedSwaps
+}
+
+// appendStaticAddressLoopInMonitorSnapshot appends the current static-address
+// loop-in swaps to the monitor snapshot.
+func (s *swapClientServer) appendStaticAddressLoopInMonitorSnapshot(
+	ctx context.Context, pendingSwaps, completedSwaps *[]loop.SwapInfo) error {
+
+	staticSwaps, err := s.staticAddressLoopInSwapInfos(ctx)
+	if err != nil {
+		return err
+	}
+	for _, swap := range staticSwaps {
+		if slices.Contains(
+			loopin.FinalStates, swap.StaticAddressLoopInState,
+		) {
+
+			*completedSwaps = append(*completedSwaps, *swap)
+		} else {
+			*pendingSwaps = append(*pendingSwaps, *swap)
+		}
+	}
+
+	return nil
 }
 
 // ListSwaps returns a list of all currently known swaps and their current
@@ -754,10 +896,13 @@ func (s *swapClientServer) SwapInfo(ctx context.Context,
 
 	// Just return the server's in-memory cache here too as we also want to
 	// return temporary failures to the client.
+	s.swapsLock.Lock()
 	swp, ok := s.swaps[swapHash]
+	s.swapsLock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("swap with hash %s not found", req.Id)
 	}
+
 	return s.marshallSwap(ctx, &swp)
 }
 
@@ -2089,6 +2234,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 	}, nil
 }
 
+// staticAddressLoopInTimestamp converts a non-zero timestamp to Unix nano
+// form and preserves zero timestamps as zero.
 func staticAddressLoopInTimestamp(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
@@ -2112,6 +2259,141 @@ func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
 	default:
 		return 0
 	}
+}
+
+// staticAddressLoopInSwapInfos loads the static-address loop-in manager swaps
+// and converts them to client-facing swap info records.
+func (s *swapClientServer) staticAddressLoopInSwapInfos(
+	ctx context.Context) ([]*loop.SwapInfo, error) {
+
+	if s.staticLoopInManager == nil {
+		return nil, nil
+	}
+
+	staticSwaps, err := s.staticLoopInManager.GetAllSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	swapInfos := make([]*loop.SwapInfo, 0, len(staticSwaps))
+	for _, swp := range staticSwaps {
+		if swp == nil {
+			continue
+		}
+
+		swapInfo, err := s.staticAddressLoopInSwapInfo(ctx, swp)
+		if err != nil {
+			return nil, err
+		}
+		swapInfos = append(swapInfos, swapInfo)
+	}
+
+	return swapInfos, nil
+}
+
+// staticAddressLoopInSwapInfo converts one static-address loop-in into swap
+// info using the daemon's current chain parameters.
+func (s *swapClientServer) staticAddressLoopInSwapInfo(_ context.Context,
+	swp *loopin.StaticAddressLoopIn) (*loop.SwapInfo, error) {
+
+	chainParams, err := s.network.ChainParams()
+	if err != nil {
+		return nil, fmt.Errorf("error getting chain params")
+	}
+
+	return staticAddressLoopInSwapInfoWithChainParams(swp, chainParams)
+}
+
+// staticAddressLoopInSwapInfoWithChainParams converts one static-address
+// loop-in into swap info, including its reconstructed V2 P2WSH HTLC address.
+func staticAddressLoopInSwapInfoWithChainParams(
+	swp *loopin.StaticAddressLoopIn,
+	chainParams *chaincfg.Params) (*loop.SwapInfo, error) {
+
+	htlcAddress, err := staticAddressLoopInHtlcAddress(swp, chainParams)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastHop *route.Vertex
+	if len(swp.LastHop) > 0 {
+		vertex, err := route.NewVertexFromBytes(swp.LastHop)
+		if err != nil {
+			return nil, err
+		}
+		lastHop = &vertex
+	}
+
+	amount := swp.TotalDepositAmount()
+	if swp.SelectedAmount > 0 {
+		amount = swp.SelectedAmount
+	}
+
+	lastUpdate := swp.LastUpdateTime
+	if lastUpdate.IsZero() {
+		lastUpdate = swp.InitiationTime
+	}
+
+	return &loop.SwapInfo{
+		SwapStateData: loopdb.SwapStateData{
+			// Mirror ListStaticAddressSwaps by reporting only the persisted
+			// client-visible server cost. On-chain and off-chain costs stay
+			// zero until static loop-ins persist real fee data.
+			Cost: loopdb.SwapCost{
+				Server: btcutil.Amount(
+					staticAddressLoopInSwapServerCost(swp),
+				),
+			},
+		},
+		SwapContract: loopdb.SwapContract{
+			AmountRequested: amount,
+			CltvExpiry:      swp.HtlcCltvExpiry,
+			MaxSwapFee:      swp.MaxSwapFee,
+			InitiationTime:  swp.InitiationTime,
+			Label:           swp.Label,
+			ProtocolVersion: loopdb.ProtocolVersion(
+				swp.ProtocolVersion,
+			),
+		},
+		LastUpdate:               lastUpdate,
+		SwapHash:                 swp.SwapHash,
+		SwapType:                 swap.TypeStaticAddressLoopIn,
+		StaticAddressLoopInState: swp.GetState(),
+		HtlcAddressP2WSH:         htlcAddress,
+		LastHop:                  lastHop,
+	}, nil
+}
+
+// staticAddressLoopInHtlcAddress reconstructs the V2 P2WSH HTLC address from
+// the static-address loop-in's client and server keys.
+func staticAddressLoopInHtlcAddress(swp *loopin.StaticAddressLoopIn,
+	chainParams *chaincfg.Params) (btcutil.Address, error) {
+
+	if swp.ClientPubkey == nil {
+		return nil, errors.New("missing static address loop-in client HTLC key")
+	}
+	if swp.ServerPubkey == nil {
+		return nil, errors.New("missing static address loop-in server HTLC key")
+	}
+
+	htlc, err := swap.NewHtlcV2(
+		swp.HtlcCltvExpiry, pubkeyTo33ByteSlice(swp.ClientPubkey),
+		pubkeyTo33ByteSlice(swp.ServerPubkey), swp.SwapHash, chainParams,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("construct static address loop-in HTLC: %w", err)
+	}
+
+	return htlc.Address, nil
+}
+
+// pubkeyTo33ByteSlice converts a compressed public key to a fixed 33-byte
+// array.
+func pubkeyTo33ByteSlice(pubkey *btcec.PublicKey) [33]byte {
+	var pubkeyBytes [33]byte
+	copy(pubkeyBytes[:], pubkey.SerializeCompressed())
+
+	return pubkeyBytes
 }
 
 // GetStaticAddressSummary returns a summary of static address-related
@@ -2420,6 +2702,8 @@ func toClientDepositState(state fsm.StateType) looprpc.DepositState {
 	}
 }
 
+// toClientStaticAddressLoopInState maps the static-address loop-in FSM state
+// to the RPC enum exposed to clients.
 func toClientStaticAddressLoopInState(
 	state fsm.StateType) looprpc.StaticAddressLoopInSwapState {
 
@@ -2572,7 +2856,12 @@ func (s *swapClientServer) processStatusUpdates(mainCtx context.Context) {
 		// subscribers about the changes.
 		case swp := <-s.statusChan:
 			s.swapsLock.Lock()
-			s.swaps[swp.SwapHash] = swp
+			// Static loop-ins are broadcast to monitor subscribers, but they
+			// stay out of the legacy swap cache so ListSwaps and SwapInfo remain
+			// traditional-swap views.
+			if swp.SwapType != swap.TypeStaticAddressLoopIn {
+				s.swaps[swp.SwapHash] = swp
+			}
 
 			for _, subscriber := range s.subscribers {
 				select {

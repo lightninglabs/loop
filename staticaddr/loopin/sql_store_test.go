@@ -252,7 +252,9 @@ func TestCreateLoopIn(t *testing.T) {
 	// Set up test context objects.
 	ctx := t.Context()
 	testDb := loopdb.NewTestDB(t)
-	testClock := clock.NewTestClock(time.Now())
+	createTime := time.Unix(1_717_171_717, 123_456_789).UTC()
+	expectedCreateTime := createTime.Truncate(time.Microsecond)
+	testClock := clock.NewTestClock(createTime)
 	defer testDb.Close()
 
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
@@ -325,6 +327,7 @@ func TestCreateLoopIn(t *testing.T) {
 
 	err = swapStore.CreateLoopIn(ctx, &swapPending)
 	require.NoError(t, err)
+	require.Equal(t, expectedCreateTime, swapPending.LastUpdateTime)
 
 	depositIDs, err := swapStore.DepositIDsForSwapHash(
 		ctx, swapHashPending,
@@ -349,6 +352,7 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Equal(t, []string{d1.OutPoint.String(), d2.OutPoint.String()},
 		swap.DepositOutpoints)
 	require.Equal(t, SignHtlcTx, swap.GetState())
+	require.Equal(t, swapPending.LastUpdateTime, swap.LastUpdateTime)
 	require.Equal(
 		t, ConfirmationRiskDecisionNone,
 		swap.ConfirmationRiskDecision,
@@ -445,14 +449,15 @@ func TestCreateLoopIn(t *testing.T) {
 
 	err = swapStore.UpdateLoopIn(ctx, &swapPending)
 	require.NoError(t, err)
+	require.Equal(
+		t, updateTime.Truncate(time.Microsecond),
+		swapPending.LastUpdateTime,
+	)
 
 	swap, err = swapStore.GetLoopInByHash(ctx, swapHashPending)
 	require.NoError(t, err)
 	require.Equal(t, Succeeded, swap.GetState())
-	require.WithinDuration(
-		t, updateTime.UTC(), swap.LastUpdateTime.UTC(),
-		time.Microsecond,
-	)
+	require.Equal(t, swapPending.LastUpdateTime, swap.LastUpdateTime)
 }
 
 // TestGetLoopInByHashOrdersDepositsBySnapshot ensures recovered deposits are

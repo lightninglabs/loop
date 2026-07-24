@@ -273,6 +273,22 @@ func (f *FSM) updateLoopIn(ctx context.Context, notification fsm.Notification) {
 
 		return
 	}
+
+	err = f.sendUpdate(ctx)
+	if err != nil {
+		f.Errorf("Error sending loop-in update: %v", err)
+	}
+}
+
+// sendUpdate publishes the latest loop-in state after it has been persisted.
+// The callback must remain lightweight because it runs synchronously with FSM
+// state transitions.
+func (f *FSM) sendUpdate(ctx context.Context) error {
+	if f.cfg.SendUpdate == nil {
+		return nil
+	}
+
+	return f.cfg.SendUpdate(ctx, f.loopIn)
 }
 
 // isUpdateSkipped returns true if the loop-in should not be updated for the

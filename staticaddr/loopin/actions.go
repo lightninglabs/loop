@@ -341,6 +341,11 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// Once the swap is stored, restart/recovery code owns invoice lifecycle.
 	invoiceNeedsCleanup = false
 
+	err = f.sendUpdate(ctx)
+	if err != nil {
+		f.Errorf("Error sending loop-in update: %v", err)
+	}
+
 	event = OnHtlcInitiated
 
 	return event

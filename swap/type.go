@@ -9,10 +9,13 @@ const (
 
 	// TypeOut is a loop out swap.
 	TypeOut
+
+	// TypeStaticAddressLoopIn is a static-address loop-in swap.
+	TypeStaticAddressLoopIn
 )
 
-// IsOut returns true if the swap is a loop out swap, false if it is a loop in
-// swap.
+// IsOut returns true only if the swap is TypeOut; TypeIn and
+// TypeStaticAddressLoopIn both return false.
 func (t Type) IsOut() bool {
 	return t == TypeOut
 }
@@ -23,6 +26,8 @@ func (t Type) String() string {
 		return "In"
 	case TypeOut:
 		return "Out"
+	case TypeStaticAddressLoopIn:
+		return "StaticAddressLoopIn"
 	default:
 		return "Unknown"
 	}

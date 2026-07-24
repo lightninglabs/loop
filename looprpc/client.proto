@@ -546,9 +546,16 @@ message SwapStatus {
     SwapType type = 3;
 
     /*
-    State the swap is currently in, see State enum.
+    Generic loop-in/loop-out state for swaps.
     */
     SwapState state = 4;
+
+    oneof static_loop_in_state_optional {
+        /*
+        Static address loop-in FSM state when type is STATIC_LOOP_IN.
+        */
+        StaticAddressLoopInSwapState static_loop_in_state = 20;
+    }
 
     /*
     A failure reason for the swap, only set if the swap has failed.
@@ -608,6 +615,9 @@ enum SwapType {
 
     // LOOP_IN indicates a loop in swap (on-chain to off-chain)
     LOOP_IN = 1;
+
+    // STATIC_LOOP_IN indicates a static address loop in swap.
+    STATIC_LOOP_IN = 2;
 }
 
 enum SwapState {

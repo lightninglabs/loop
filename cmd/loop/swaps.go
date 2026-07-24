@@ -15,9 +15,10 @@ import (
 
 var listSwapsCommand = &cli.Command{
 	Name:  "listswaps",
-	Usage: "list all swaps in the local database",
-	Description: "Allows the user to get a list of all swaps that are " +
-		"currently stored in the database",
+	Usage: "list traditional Loop In and Loop Out swaps",
+	Description: "Lists traditional Loop In and Loop Out swaps that are " +
+		"currently stored in the database. Static address loop-ins are not " +
+		"included; use `loop static listswaps` to view them.",
 	Action: listSwaps,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -128,10 +129,12 @@ func listSwaps(ctx context.Context, cmd *cli.Command) error {
 
 var swapInfoCommand = &cli.Command{
 	Name:      "swapinfo",
-	Usage:     "show the status of a swap",
+	Usage:     "show the status of a traditional swap",
 	ArgsUsage: "id",
-	Description: "Allows the user to get the status of a single swap " +
-		"currently stored in the database",
+	Description: "Shows the status of a traditional Loop In or Loop Out " +
+		"swap currently stored in the database. Static address loop-ins " +
+		"must be viewed with `loop static listswaps`; there is no generic " +
+		"per-swap static lookup command.",
 	Flags: []cli.Flag{
 		&cli.Uint64Flag{
 			Name:  "id",
