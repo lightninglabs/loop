@@ -3,14 +3,16 @@ package staticutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	looptest "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
@@ -20,6 +22,37 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
+
+type sessionCleanupSigner struct {
+	lndclient.SignerClient
+
+	createCalls   int
+	failCreateAt  int
+	cleaned       [][32]byte
+	cleanupCtxErr []error
+}
+
+func (s *sessionCleanupSigner) MuSig2CreateSession(context.Context,
+	input.MuSig2Version, *keychain.KeyLocator, [][]byte,
+	...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+
+	s.createCalls++
+	if s.createCalls == s.failCreateAt {
+		return nil, errors.New("session creation failed")
+	}
+
+	sessionID := [32]byte{byte(s.createCalls)}
+	return &input.MuSig2SessionInfo{SessionID: sessionID}, nil
+}
+
+func (s *sessionCleanupSigner) MuSig2Cleanup(ctx context.Context,
+	sessionID [32]byte) error {
+
+	s.cleaned = append(s.cleaned, sessionID)
+	s.cleanupCtxErr = append(s.cleanupCtxErr, ctx.Err())
+
+	return nil
+}
 
 // mustHash converts a hex string to a chainhash.Hash and panics on error.
 func mustHash(t *testing.T, s string) chainhash.Hash {
@@ -36,7 +69,8 @@ func TestToPrevOuts_Success(t *testing.T) {
 			Hash:  mustHash(t, "0000000000000000000000000000000000000000000000000000000000000001"),
 			Index: 0,
 		},
-		Value: btcutil.Amount(12345),
+		Value:         btcutil.Amount(12345),
+		AddressParams: &address.Parameters{PkScript: []byte{0x51}},
 	}
 
 	d2 := &deposit.Deposit{
@@ -44,12 +78,11 @@ func TestToPrevOuts_Success(t *testing.T) {
 			Hash:  mustHash(t, "1111111111111111111111111111111111111111111111111111111111111111"),
 			Index: 7,
 		},
-		Value: btcutil.Amount(987654321),
+		Value:         btcutil.Amount(987654321),
+		AddressParams: &address.Parameters{PkScript: []byte{0x52}},
 	}
 
-	pkScript := []byte{0x51, 0x21, 0x02, 0x52} // arbitrary bytes
-
-	prevOuts, err := ToPrevOuts([]*deposit.Deposit{d1, d2}, pkScript)
+	prevOuts, err := ToPrevOuts([]*deposit.Deposit{d1, d2})
 	require.NoError(t, err)
 
 	// We expect two entries.
@@ -59,13 +92,13 @@ func TestToPrevOuts_Success(t *testing.T) {
 	txOut1, ok := prevOuts[d1.OutPoint]
 	require.True(t, ok, "expected outpoint d1 to be present")
 	require.EqualValues(t, int64(d1.Value), txOut1.Value)
-	require.Equal(t, pkScript, txOut1.PkScript)
+	require.Equal(t, d1.AddressParams.PkScript, txOut1.PkScript)
 
 	// Check the second outpoint mapping.
 	txOut2, ok := prevOuts[d2.OutPoint]
 	require.True(t, ok, "expected outpoint d2 to be present")
 	require.EqualValues(t, int64(d2.Value), txOut2.Value)
-	require.Equal(t, pkScript, txOut2.PkScript)
+	require.Equal(t, d2.AddressParams.PkScript, txOut2.PkScript)
 
 	// Ensure the keys in the map are exactly the outpoints we provided.
 	for op := range prevOuts {
@@ -80,11 +113,167 @@ func TestToPrevOuts_DuplicateOutpoint(t *testing.T) {
 		Index: 2,
 	}
 
-	d1 := &deposit.Deposit{OutPoint: shared, Value: btcutil.Amount(100)}
-	d2 := &deposit.Deposit{OutPoint: shared, Value: btcutil.Amount(200)}
+	d1 := &deposit.Deposit{
+		OutPoint:      shared,
+		Value:         btcutil.Amount(100),
+		AddressParams: &address.Parameters{PkScript: []byte{0x00}},
+	}
+	d2 := &deposit.Deposit{
+		OutPoint:      shared,
+		Value:         btcutil.Amount(200),
+		AddressParams: &address.Parameters{PkScript: []byte{0x01}},
+	}
 
-	_, err := ToPrevOuts([]*deposit.Deposit{d1, d2}, []byte{0x00})
+	_, err := ToPrevOuts([]*deposit.Deposit{d1, d2})
 	require.Error(t, err)
+}
+
+func TestToPrevOutsMissingAddressParams(t *testing.T) {
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "3333333333333333333333333333333333333333333333333333333333333333"),
+			Index: 3,
+		},
+		Value: btcutil.Amount(100),
+	}
+
+	_, err := ToPrevOuts([]*deposit.Deposit{d})
+	require.ErrorContains(t, err, "missing static address parameters")
+}
+
+func TestDepositClientPubkeys(t *testing.T) {
+	clientKey1, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	clientKey2, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	d1 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "4444444444444444444444444444444444444444444444444444444444444444"),
+			Index: 0,
+		},
+		AddressParams: &address.Parameters{
+			ClientPubkey: clientKey1.PubKey(),
+			PkScript:     []byte{0x51, 0x20, 0x01},
+		},
+	}
+	d2 := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  mustHash(t, "5555555555555555555555555555555555555555555555555555555555555555"),
+			Index: 1,
+		},
+		AddressParams: &address.Parameters{
+			ClientPubkey: clientKey2.PubKey(),
+			PkScript:     []byte{0x51, 0x20, 0x02},
+		},
+	}
+
+	proofs, err := DepositClientPubkeys([]*deposit.Deposit{d1, d2})
+	require.NoError(t, err)
+	require.Equal(
+		t, clientKey1.PubKey().SerializeCompressed(),
+		proofs[d1.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, d1.AddressParams.PkScript,
+		proofs[d1.String()].GetPkScript(),
+	)
+	require.Equal(
+		t, clientKey2.PubKey().SerializeCompressed(),
+		proofs[d2.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, d2.AddressParams.PkScript,
+		proofs[d2.String()].GetPkScript(),
+	)
+}
+
+func TestDepositClientPubkeysRejectsInvalidDeposits(t *testing.T) {
+	t.Run("missing params", func(t *testing.T) {
+		d := &deposit.Deposit{OutPoint: wire.OutPoint{Index: 1}}
+		_, err := DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address parameters")
+	})
+
+	t.Run("missing client key", func(t *testing.T) {
+		d := &deposit.Deposit{
+			OutPoint:      wire.OutPoint{Index: 1},
+			AddressParams: &address.Parameters{},
+		}
+		_, err := DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address client pubkey")
+	})
+
+	t.Run("duplicate outpoint", func(t *testing.T) {
+		clientKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			OutPoint: wire.OutPoint{
+				Hash:  mustHash(t, "6666666666666666666666666666666666666666666666666666666666666666"),
+				Index: 1,
+			},
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				PkScript:     []byte{0x51, 0x20, 0x03},
+			},
+		}
+		_, err = DepositClientPubkeys([]*deposit.Deposit{d, d})
+		require.ErrorContains(t, err, "duplicate outpoint")
+	})
+
+	t.Run("missing pkscript", func(t *testing.T) {
+		clientKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			OutPoint: wire.OutPoint{Index: 1},
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+			},
+		}
+		_, err = DepositClientPubkeys([]*deposit.Deposit{d})
+		require.ErrorContains(t, err, "missing static address pkscript")
+	})
+}
+
+func TestChangeOutput(t *testing.T) {
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	params := &address.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+		PkScript:     []byte{0x51, 0x20, 0x01},
+	}
+	amount := btcutil.Amount(12345)
+
+	changeOutput, err := ChangeOutput(params, amount)
+	require.NoError(t, err)
+	require.Equal(
+		t, clientKey.PubKey().SerializeCompressed(),
+		changeOutput.StaticAddress.GetPubkey(),
+	)
+	require.Equal(t, params.PkScript, changeOutput.StaticAddress.GetPkScript())
+	require.EqualValues(t, amount, changeOutput.Amount)
+
+	changeOutput, err = ChangeOutput(params, 0)
+	require.NoError(t, err)
+	require.Nil(t, changeOutput)
+}
+
+func TestChangeOutputRejectsInvalidParams(t *testing.T) {
+	_, err := ChangeOutput(nil, 100)
+	require.ErrorContains(t, err, "missing static address change parameters")
+
+	_, err = ChangeOutput(&address.Parameters{}, 100)
+	require.ErrorContains(t, err, "missing static address change client pubkey")
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	_, err = ChangeOutput(&address.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+	}, 100)
+	require.ErrorContains(t, err, "missing static address change pkscript")
 }
 
 func TestGetPrevoutInfo_ConversionAndSorting(t *testing.T) {
@@ -174,7 +363,7 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &script.Parameters{
+	params := &address.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       10,
@@ -182,13 +371,8 @@ func TestCreateMusig2Session_Success(t *testing.T) {
 		KeyLocator:   keychain.KeyLocator{Family: 1, Index: 2},
 	}
 
-	// Build a static address for tweak options.
-	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
-	)
-	require.NoError(t, err)
-
-	sess, err := CreateMusig2Session(context.Background(), signer, params, staticAddr)
+	d := &deposit.Deposit{AddressParams: params}
+	sess, err := CreateMusig2Session(context.Background(), signer, d)
 	require.NoError(t, err)
 	require.NotNil(t, sess)
 }
@@ -203,7 +387,7 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	params := &script.Parameters{
+	params := &address.Parameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		Expiry:       12,
@@ -211,20 +395,15 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 		KeyLocator:   keychain.KeyLocator{Family: 9, Index: 8},
 	}
 
-	staticAddr, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(params.Expiry), params.ClientPubkey, params.ServerPubkey,
-	)
-	require.NoError(t, err)
-
 	// Prepare N deposits; only the length matters for session count.
 	deposits := []*deposit.Deposit{
-		{OutPoint: wire.OutPoint{Index: 0}},
-		{OutPoint: wire.OutPoint{Index: 1}},
-		{OutPoint: wire.OutPoint{Index: 2}},
+		{OutPoint: wire.OutPoint{Index: 0}, AddressParams: params},
+		{OutPoint: wire.OutPoint{Index: 1}, AddressParams: params},
+		{OutPoint: wire.OutPoint{Index: 2}, AddressParams: params},
 	}
 
 	sessions, nonces, err := CreateMusig2Sessions(
-		context.Background(), signer, deposits, params, staticAddr,
+		context.Background(), signer, deposits,
 	)
 	require.NoError(t, err)
 	require.Len(t, sessions, len(deposits))
@@ -235,6 +414,43 @@ func TestCreateMusig2Sessions_Multiple(t *testing.T) {
 		require.NotNil(t, sessions[i])
 		require.True(t, bytes.Equal(nonces[i], sessions[i].PublicNonce[:]))
 	}
+}
+
+func TestCreateMusig2SessionsPerDepositCleansUpPartialFailure(
+	t *testing.T) {
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	params := &address.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+		ServerPubkey: serverKey.PubKey(),
+		Expiry:       12,
+		KeyLocator:   keychain.KeyLocator{Family: 9, Index: 8},
+	}
+	deposits := []*deposit.Deposit{
+		{
+			OutPoint:      wire.OutPoint{Index: 1},
+			AddressParams: params,
+		},
+		{
+			OutPoint:      wire.OutPoint{Index: 2},
+			AddressParams: params,
+		},
+	}
+
+	signer := &sessionCleanupSigner{failCreateAt: 2}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, _, _, err = CreateMusig2SessionsPerDeposit(
+		ctx, signer, deposits,
+	)
+	require.ErrorContains(t, err, "session creation failed")
+	require.Equal(t, [][32]byte{{1}}, signer.cleaned)
+	require.Equal(t, []error{nil}, signer.cleanupCtxErr)
 }
 
 // makeDeposit creates a deposit with the given value for testing.

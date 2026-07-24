@@ -1,7 +1,9 @@
 package loopd
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -411,6 +414,17 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	staticAddressParams := &script.Parameters{
+		ID:           1,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     []byte("pkscript"),
+	}
+	testDeposit.AddressParams = staticAddressParams
+
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
 	staticLoopIn := &loopin.StaticAddressLoopIn{
@@ -441,15 +455,8 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrStore := &mockAddressStore{
-		params: []*script.Parameters{{
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       staticAddressExpiry,
-			PkScript:     []byte("pkscript"),
-		}},
+		params: []*script.Parameters{staticAddressParams},
 	}
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
@@ -1281,8 +1288,23 @@ type mockAddressStore struct {
 func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
 	p *script.Parameters) error {
 
+	if p.ID == 0 {
+		p.ID = int32(len(s.params) + 1)
+	}
 	s.params = append(s.params, p)
 	return nil
+}
+
+func (s *mockAddressStore) GetStaticAddressID(_ context.Context,
+	pkScript []byte) (int32, error) {
+
+	for _, p := range s.params {
+		if bytes.Equal(p.PkScript, pkScript) {
+			return p.ID, nil
+		}
+	}
+
+	return 0, sql.ErrNoRows
 }
 
 func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
@@ -1299,6 +1321,16 @@ func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	[]*script.Parameters, error) {
 
 	return s.params, nil
+}
+
+func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
+	*address.Parameters, error) {
+
+	if len(s.params) == 0 {
+		return nil, sql.ErrNoRows
+	}
+
+	return s.params[0], nil
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
@@ -1436,7 +1468,12 @@ func TestListUnspentDeposits(t *testing.T) {
 	// Prepare a single static address parameter set.
 	_, client := mock_lnd.CreateKey(1)
 	_, server := mock_lnd.CreateKey(2)
-	pkScript := []byte("pkscript")
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 10, client, server,
+	)
+	require.NoError(t, err)
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
 	addrParams := &script.Parameters{
 		ClientPubkey: client,
 		ServerPubkey: server,
@@ -1453,6 +1490,8 @@ func TestListUnspentDeposits(t *testing.T) {
 		ChainParams: mock.ChainParams,
 		// ChainNotifier and AddressClient are not needed for this test.
 	}, 1)
+	require.NoError(t, err)
+	_, err = addrMgr.EnsureStaticAddressSeed(ctx)
 	require.NoError(t, err)
 
 	// Construct several UTXOs with different confirmation counts.

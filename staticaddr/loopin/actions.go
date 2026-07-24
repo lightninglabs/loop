@@ -1,6 +1,7 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -109,6 +110,29 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
+	var changeOutput *swapserverrpc.StaticAddressChangeOutput
+	if hasChange {
+		changeAmount := f.loopIn.ExpectedChangeAmount()
+		f.loopIn.ChangeAddressParams, err =
+			f.cfg.AddressManager.NewChangeAddress(ctx)
+		if err != nil {
+			err = fmt.Errorf("unable to create static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+
+		changeOutput, err = staticutil.ChangeOutput(
+			f.loopIn.ChangeAddressParams, changeAmount,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to prepare static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+	}
+
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage
 	if _, err = rand.Read(swapPreimage[:]); err != nil {
@@ -158,16 +182,28 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		version.CurrentRPCProtocolVersion(),
 	)
 
+	depositClientPubkeys, err := staticutil.DepositClientPubkeys(
+		f.loopIn.Deposits,
+	)
+	if err != nil {
+		err = fmt.Errorf("unable to prepare static address input "+
+			"proofs: %w", err)
+
+		return returnError(err)
+	}
+
 	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
-		SwapHash:              f.loopIn.SwapHash[:],
-		DepositOutpoints:      f.loopIn.DepositOutpoints,
-		Amount:                uint64(f.loopIn.SelectedAmount),
-		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
-		SwapInvoice:           f.loopIn.SwapInvoice,
-		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
-		UserAgent:             loop.UserAgent(f.loopIn.Initiator),
-		PaymentTimeoutSeconds: f.loopIn.PaymentTimeoutSeconds,
-		Fast:                  f.loopIn.Fast,
+		SwapHash:               f.loopIn.SwapHash[:],
+		DepositOutpoints:       f.loopIn.DepositOutpoints,
+		Amount:                 uint64(f.loopIn.SelectedAmount),
+		HtlcClientPubKey:       f.loopIn.ClientPubkey.SerializeCompressed(),
+		SwapInvoice:            f.loopIn.SwapInvoice,
+		ProtocolVersion:        version.CurrentRPCProtocolVersion(),
+		UserAgent:              loop.UserAgent(f.loopIn.Initiator),
+		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
+		Fast:                   f.loopIn.Fast,
+		DepositToClientPubkeys: depositClientPubkeys,
+		ChangeOutput:           changeOutput,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
@@ -596,8 +632,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	// rates.
 	createSession := staticutil.CreateMusig2Sessions
 	htlcSessions, clientHtlcNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to create musig2 sessions: %w", err)
@@ -607,8 +642,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessions)
 
 	htlcSessionsHighFee, highFeeNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -616,8 +650,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessionsHighFee)
 
 	htlcSessionsExtremelyHighFee, extremelyHighNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)
@@ -1134,8 +1167,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	htlcConfirmed := false
 	for {
 		select {
-		case <-htlcConfChan:
+		case conf := <-htlcConfChan:
 			f.Infof("htlc tx confirmed")
+
+			err = f.recordConfirmedHtlc(ctx, conf, htlc.PkScript)
+			if err != nil {
+				return f.HandleError(err)
+			}
 
 			htlcConfirmed = true
 			if invoiceCanceledForNonPayment {
@@ -1177,6 +1215,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// confirmation and re-register for the next
 			// confirmation.
 			htlcConfirmed = false
+			err = f.clearConfirmedHtlc(ctx)
+			if err != nil {
+				return f.HandleError(err)
+			}
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
@@ -1352,6 +1394,51 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return fsm.NoOp
 		}
 	}
+}
+
+func (f *FSM) recordConfirmedHtlc(ctx context.Context,
+	conf *chainntnfs.TxConfirmation, htlcPkScript []byte) error {
+
+	if conf == nil || conf.Tx == nil {
+		return errors.New("htlc confirmation missing transaction")
+	}
+	if f.cfg.Store == nil {
+		return errors.New("missing static address loop-in store")
+	}
+
+	tx := conf.Tx
+	txHash := tx.TxHash()
+	for idx, txOut := range tx.TxOut {
+		if !bytes.Equal(txOut.PkScript, htlcPkScript) {
+			continue
+		}
+
+		f.loopIn.HtlcTxHash = &txHash
+		f.loopIn.HtlcOutputIndex = uint32(idx)
+		f.loopIn.HtlcOutputValue = btcutil.Amount(txOut.Value)
+
+		return f.cfg.Store.UpdateLoopIn(ctx, f.loopIn)
+	}
+
+	return fmt.Errorf("confirmed htlc tx %v missing expected htlc "+
+		"output", txHash)
+}
+
+func (f *FSM) clearConfirmedHtlc(ctx context.Context) error {
+	if f.loopIn.HtlcTxHash == nil && f.loopIn.HtlcOutputIndex == 0 &&
+		f.loopIn.HtlcOutputValue == 0 {
+
+		return nil
+	}
+	if f.cfg.Store == nil {
+		return errors.New("missing static address loop-in store")
+	}
+
+	f.loopIn.HtlcTxHash = nil
+	f.loopIn.HtlcOutputIndex = 0
+	f.loopIn.HtlcOutputValue = 0
+
+	return f.cfg.Store.UpdateLoopIn(ctx, f.loopIn)
 }
 
 // htlcTimeoutSweepRetryDelay is the delay between retries when publishing the

@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -8,9 +9,20 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCreateDepositRejectsUnpersistedAddress(t *testing.T) {
+	store := NewSqlStore(nil)
+	deposit := &Deposit{
+		AddressParams: &script.Parameters{},
+	}
+
+	err := store.CreateDeposit(context.Background(), deposit)
+	require.ErrorContains(t, err, "static address ID must be set")
+}
 
 func TestToDeposit(t *testing.T) {
 	depositID, err := GetRandomDepositID()
@@ -24,13 +36,13 @@ func TestToDeposit(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		row        sqlc.Deposit
+		row        sqlc.AllDepositsRow
 		lastUpdate sqlc.DepositUpdate
 		expectErr  bool
 	}{
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,
@@ -44,7 +56,7 @@ func TestToDeposit(t *testing.T) {
 		},
 		{
 			name: "fully valid data",
-			row: sqlc.Deposit{
+			row: sqlc.AllDepositsRow{
 				DepositID:          depositID[:],
 				TxHash:             txHash[:],
 				Amount:             100000000,

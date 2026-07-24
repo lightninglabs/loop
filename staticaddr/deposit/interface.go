@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -38,6 +39,14 @@ type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.
 	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
 		error)
+
+	// GetStaticAddressID returns the database ID for the static address
+	// behind the given pkScript.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
+	// GetParameters returns active static address parameters for the given
+	// pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
 
 	// GetStaticAddress returns the deposit address for the given
 	// client and server public keys.
