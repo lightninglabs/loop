@@ -133,4 +133,4 @@ go install ./...
 ## Reproducible builds
 
 If you want to build release files yourself, follow
-[the guide](./docs/release.md).
+[the guide](./docs/reproducible_release.md).
