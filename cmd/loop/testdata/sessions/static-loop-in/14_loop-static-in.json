@@ -19,136 +19,42 @@
       "kind": "stdout",
       "data": {
         "lines": [
-          "NAME:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "   loop static in - Loop in funds from static address deposits."
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "NAME:\n",
+          "   loop static in - Loop in funds from static address deposits.\n",
           "\n",
-          "\n",
-          "USAGE:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "USAGE:\n",
           "   loop static in [options] [amt] [--all | --utxo xxx:xx]\n",
           "\n",
           "DESCRIPTION:\n",
-          "   "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "\n",
+          "   \n",
           "     Requests a loop-in swap based on static address deposits. After the\n",
           "     creation of a static address funds can be sent to it. Once the funds are\n",
-          "   "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "  confirmed on-chain they can be swapped instantaneously. If deposited\n",
+          "     confirmed on-chain they can be swapped instantaneously. If deposited\n",
           "     funds are not needed they can we withdrawn back to the local lnd wallet.\n",
           "     \n",
           "\n",
-          "OPTIONS:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "OPTIONS:\n",
           "   --utxo string [ --utxo string ]                specify the utxos of deposits as outpoints(tx:idx) that should be looped in.\n",
           "   --all                                          loop in all static address deposits. (default: false)\n",
-          "   --payment_timeout duration                "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "     the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out. (default: 0s)\n",
+          "   --min_expiry_blocks uint                       minimum remaining blocks required for confirmed deposits selected by --all. (default: 1050)\n",
+          "   --payment_timeout duration                     the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out. (default: 0s)\n",
           "   --amt uint, --amount uint                      the number of satoshis that should be swapped from the selected deposits. If thereis change it is sent back to the static address. (default: 0)\n",
           "   --fast                                         Usage: complete the swap faster by paying a higher fee, so the change output is available sooner (default: false)\n",
           "   --max_swap_fee_sat uint                        the maximum swap fee in satoshis. If set, the swap is rejected when the quoted fee exceeds this cap. The maximum allowed value is 10000000. On-chain fees for creating static deposits are unaffected. (default: 0)\n",
           "   --max_swap_fee_ppm uint                        the maximum swap fee expressed in parts per million of the swap amount. If set together with --max_swap_fee_sat the tighter cap is used. (default: 0)\n",
           "   --last_hop string                              the pubkey of the last hop to use for this swap\n",
           "   --label string                                 an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].\n",
-          "   --route_hints string [ --route_hints string ]"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "  route hints that can each be individually used to assist in reaching the invoice's destination\n",
+          "   --route_hints string [ --route_hints string ]  route hints that can each be individually used to assist in reaching the invoice's destination\n",
           "   --private                                      generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n",
           "   --force                                        Assumes yes during confirmation. Using this option will result in an immediate swap (default: false)\n",
           "   --verbose, -v                                  show expanded details (default: false)\n",
           "   --help, -h                                     show help\n",
-          "\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "\n",
           "GLOBAL OPTIONS:\n",
-          "   --rpcserver string           "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "loopd daemon address host:port (default: \"localhost:11010\") [$LOOPCLI_RPCSERVER]\n",
+          "   --rpcserver string           loopd daemon address host:port (default: \"localhost:11010\") [$LOOPCLI_RPCSERVER]\n",
           "   --network string, -n string  the network loop is running on e.g. mainnet, testnet, etc. (default: \"mainnet\") [$LOOPCLI_NETWORK]\n",
           "   --loopdir string             path to loop's base directory (default: ~/.loop) [$LOOPCLI_LOOPDIR]\n",
-          "   --tlscertpath string"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "         path to loop's TLS certificate (default: ~/.loop/mainnet/tls.cert) [$LOOPCLI_TLSCERTPATH]\n",
+          "   --tlscertpath string         path to loop's TLS certificate (default: ~/.loop/mainnet/tls.cert) [$LOOPCLI_TLSCERTPATH]\n",
           "   --macaroonpath string        path to macaroon file (default: ~/.loop/mainnet/loop.macaroon) [$LOOPCLI_MACAROONPATH]\n"
         ]
       }
