@@ -1115,7 +1115,7 @@
     },
     "/v1/staticaddr/withdrawals": {
       "get": {
-        "summary": "loop:`listwithdrawals`\nListStaticAddressWithdrawals returns a list of static address withdrawals.",
+        "summary": "loop:`listwithdrawals`\nListStaticAddressWithdrawals returns a list of static address withdrawals,\nincluding pending withdrawals that have not yet been confirmed.",
         "operationId": "SwapClient_ListStaticAddressWithdrawals",
         "responses": {
           "200": {
@@ -2914,7 +2914,7 @@
       "properties": {
         "tx_id": {
           "type": "string",
-          "description": "The transaction id of the withdrawal transaction."
+          "description": "The transaction id of the withdrawal transaction. It is empty until the\nconfirmed transaction is persisted."
         },
         "deposits": {
           "type": "array",
@@ -2932,17 +2932,17 @@
         "withdrawn_amount_satoshis": {
           "type": "string",
           "format": "int64",
-          "description": "The actual amount that was withdrawn from the selected deposits. This value\nrepresents the sum of selected deposit values minus tx fees minus optional\nchange output."
+          "description": "The actual amount that was withdrawn from the selected deposits. This value\nrepresents the sum of selected deposit values minus tx fees minus optional\nchange output. It is zero until the confirmed transaction is persisted."
         },
         "change_amount_satoshis": {
           "type": "string",
           "format": "int64",
-          "description": "An optional change."
+          "description": "An optional change. It is zero until the confirmed transaction is\npersisted."
         },
         "confirmation_height": {
           "type": "integer",
           "format": "int64",
-          "description": "The confirmation block height of the withdrawal transaction."
+          "description": "The confirmation block height of the withdrawal transaction. It is zero\nuntil the withdrawal is confirmed."
         }
       }
     },

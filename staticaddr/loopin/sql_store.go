@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/utils/chainhashutil"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -566,13 +568,20 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	}
 
 	var htlcTimeoutSweepTxHash *chainhash.Hash
-	if swap.HtlcTimeoutSweepTxID.Valid {
-		htlcTimeoutSweepTxHash, err = chainhash.NewHashFromStr(
+	// Loop never writes empty timeout sweep txids, but tolerate them on read
+	// so a malformed row does not prevent swap recovery.
+	if swap.HtlcTimeoutSweepTxID.Valid &&
+		swap.HtlcTimeoutSweepTxID.String != "" {
+
+		hash, err := chainhashutil.NewHashFromStrExact(
 			swap.HtlcTimeoutSweepTxID.String,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid htlc timeout sweep txid %q: %w",
+				swap.HtlcTimeoutSweepTxID.String, err)
 		}
+
+		htlcTimeoutSweepTxHash = &hash
 	}
 
 	var depositOutpoints []string
