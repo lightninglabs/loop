@@ -1,13 +1,19 @@
 # Loop Client Release Notes
 
+- **Release date:** 2026-07-23
+- **Release page:**
+  [v0.34.0-beta](https://github.com/lightninglabs/loop/releases/tag/v0.34.0-beta)
+- **Previous release:** [v0.33.3-beta](release-notes-0.33.3.md)
+- **Next release:** [Next release](release-notes-next.md)
+
 #### New Features
 
 * Static address deposits are now tracked and shown as soon as they appear in
-  the wallet, including while they are still in the mempool. Static loop-ins
-  can select low-confirmation deposits, with a CLI warning that payment may
-  wait for more confirmations under the server's confirmation-risk policy.
-  Withdrawals and channel opens continue to require confirmed deposits. The
-  selected risk decision and payment deadline are persisted across restarts.
+  the wallet, including while they are still in the mempool. Static loop-ins can
+  select low-confirmation deposits, with a CLI warning that payment may wait for
+  more confirmations under the server's confirmation-risk policy. Withdrawals
+  and channel opens continue to require confirmed deposits. The selected risk
+  decision and payment deadline are persisted across restarts.
   [PR #1141](https://github.com/lightninglabs/loop/pull/1141)
 * `loop openchannel` now supports LND's production `TAPROOT` commitment type
   while retaining explicit support for the legacy `SIMPLE_TAPROOT` type.
@@ -67,3 +73,10 @@
 * FSM diagram generation is now deterministic. Static address deposit and
   loop-in diagrams are generated and checked in CI to prevent stale diagrams.
   [PR #1179](https://github.com/lightninglabs/loop/pull/1179)
+
+#### Contributors (Alphabetical Order)
+
+- Boris Nagaev
+- Chanda Chewe
+- Gustavo Stingelin
+- Slyghtning
