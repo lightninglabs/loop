@@ -1,6 +1,8 @@
 package assets
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/pem"
 	"math"
 	"net/http"
@@ -12,10 +14,37 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"gopkg.in/macaroon.v2"
 )
+
+type blockingUniverseClient struct {
+	universerpc.UniverseClient
+
+	queryStarted chan struct{}
+	releaseQuery chan struct{}
+}
+
+func (b *blockingUniverseClient) QueryAssetStats(context.Context,
+	*universerpc.AssetStatsQuery, ...grpc.CallOption) (
+	*universerpc.UniverseAssetStats, error) {
+
+	close(b.queryStarted)
+	<-b.releaseQuery
+
+	return &universerpc.UniverseAssetStats{
+		AssetStats: []*universerpc.AssetStatsSnapshot{
+			{
+				Asset: &universerpc.AssetStatsAsset{
+					AssetName: "queried asset",
+				},
+			},
+		},
+	}, nil
+}
 
 // TestDefaultTapdConfig tests that the default tapd connection paths match
 // tapd's mainnet defaults.
@@ -82,6 +111,61 @@ func TestTapdConfigClientConn(t *testing.T) {
 	require.Equal(
 		t, filepath.Join(defaultTapdDir, "tls.cert"), config.TLSPath,
 	)
+}
+
+// TestGetAssetNameCachedLookupNotBlocked verifies that a slow universe query
+// for one asset does not prevent another caller from reading a cached name.
+func TestGetAssetNameCachedLookupNotBlocked(t *testing.T) {
+	const cachedName = "cached asset"
+
+	cachedAssetID := []byte{1}
+	queryStarted := make(chan struct{})
+	releaseQuery := make(chan struct{})
+	client := &TapdClient{
+		UniverseClient: &blockingUniverseClient{
+			queryStarted: queryStarted,
+			releaseQuery: releaseQuery,
+		},
+		assetNameCache: map[string]string{
+			hex.EncodeToString(cachedAssetID): cachedName,
+		},
+	}
+
+	queryResult := make(chan error, 1)
+	go func() {
+		_, err := client.GetAssetName(context.Background(), []byte{2})
+		queryResult <- err
+	}()
+
+	select {
+	case <-queryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("universe query did not start")
+	}
+
+	type nameResult struct {
+		name string
+		err  error
+	}
+	cachedResult := make(chan nameResult, 1)
+	go func() {
+		name, err := client.GetAssetName(
+			context.Background(), cachedAssetID,
+		)
+		cachedResult <- nameResult{name: name, err: err}
+	}()
+
+	select {
+	case result := <-cachedResult:
+		require.NoError(t, result.err)
+		require.Equal(t, cachedName, result.name)
+	case <-time.After(time.Second):
+		close(releaseQuery)
+		t.Fatal("cached lookup blocked behind universe query")
+	}
+
+	close(releaseQuery)
+	require.NoError(t, <-queryResult)
 }
 
 func TestGetPaymentMaxAmount(t *testing.T) {

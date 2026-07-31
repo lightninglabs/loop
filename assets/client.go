@@ -81,7 +81,7 @@ type TapdClient struct {
 
 	rfqTimeoutSeconds uint32
 	assetNameCache    map[string]string
-	assetNameMutex    sync.Mutex
+	assetNameMutex    sync.RWMutex
 	cc                *grpc.ClientConn
 }
 
@@ -169,10 +169,8 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 func (c *TapdClient) GetAssetName(ctx context.Context,
 	assetId []byte) (string, error) {
 
-	c.assetNameMutex.Lock()
-	defer c.assetNameMutex.Unlock()
 	assetIdStr := hex.EncodeToString(assetId)
-	if name, ok := c.assetNameCache[assetIdStr]; ok {
+	if name, ok := c.getCachedAssetName(assetIdStr); ok {
 		return name, nil
 	}
 
@@ -198,9 +196,26 @@ func (c *TapdClient) GetAssetName(ctx context.Context,
 		assetName = assetStats.AssetStats[0].Asset.AssetName
 	}
 
-	c.assetNameCache[assetIdStr] = assetName
+	c.cacheAssetName(assetIdStr, assetName)
 
 	return assetName, nil
+}
+
+// getCachedAssetName returns an asset name from the cache.
+func (c *TapdClient) getCachedAssetName(assetID string) (string, bool) {
+	c.assetNameMutex.RLock()
+	defer c.assetNameMutex.RUnlock()
+
+	name, ok := c.assetNameCache[assetID]
+	return name, ok
+}
+
+// cacheAssetName adds an asset name to the cache.
+func (c *TapdClient) cacheAssetName(assetID, name string) {
+	c.assetNameMutex.Lock()
+	defer c.assetNameMutex.Unlock()
+
+	c.assetNameCache[assetID] = name
 }
 
 // GetAssetPrice returns the price of an asset in satoshis. NOTE: this currently
