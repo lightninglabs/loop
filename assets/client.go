@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
-	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -275,7 +275,7 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 	btcutil.Amount, error) {
 
-	rateFP, err := rpcutils.UnmarshalRfqFixedPoint(assetRate)
+	rateFP, err := unmarshalAssetRate(assetRate)
 	if err != nil {
 		return 0, fmt.Errorf("cannot unmarshal asset rate: %w", err)
 	}
@@ -285,6 +285,33 @@ func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 	msatAmt := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
 
 	return msatAmt.ToSatoshis(), nil
+}
+
+// unmarshalAssetRate validates and converts an RPC asset rate to the fixed
+// point representation used for RFQ arithmetic.
+func unmarshalAssetRate(assetRate *rfqrpc.FixedPoint) (
+	*rfqmath.BigIntFixedPoint, error) {
+
+	if assetRate == nil {
+		return nil, fmt.Errorf("asset rate cannot be nil")
+	}
+	if assetRate.Scale > math.MaxUint8 {
+		return nil, fmt.Errorf("scale value overflow: %v", assetRate.Scale)
+	}
+
+	coefficient, ok := new(big.Int).SetString(assetRate.Coefficient, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid asset rate coefficient: %q",
+			assetRate.Coefficient)
+	}
+	if coefficient.Sign() <= 0 {
+		return nil, fmt.Errorf("asset rate coefficient must be positive")
+	}
+
+	return &rfqmath.BigIntFixedPoint{
+		Coefficient: rfqmath.NewBigInt(coefficient),
+		Scale:       uint8(assetRate.Scale),
+	}, nil
 }
 
 // getPaymentMaxAmount returns the milisat amount we are willing to pay for the

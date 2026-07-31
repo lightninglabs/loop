@@ -308,6 +308,39 @@ func TestGetSatsFromAssetAmt(t *testing.T) {
 			expected:    btcutil.Amount(0),
 			expectError: false,
 		},
+		{
+			assetAmt:    1000,
+			assetRate:   nil,
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "not-a-number", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "0", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "-1", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 256,
+			},
+			expectError: true,
+		},
 	}
 
 	for _, test := range tests {
