@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -78,14 +79,19 @@ type TapdClient struct {
 	rfqrpc.RfqClient
 	universerpc.UniverseClient
 
-	cfg            *TapdConfig
-	assetNameCache map[string]string
-	assetNameMutex sync.Mutex
-	cc             *grpc.ClientConn
+	rfqTimeoutSeconds uint32
+	assetNameCache    map[string]string
+	assetNameMutex    sync.Mutex
+	cc                *grpc.ClientConn
 }
 
 // NewTapdClient returns a new taproot assets client.
 func NewTapdClient(config *TapdConfig) (*TapdClient, error) {
+	rfqTimeoutSeconds, err := getRfqTimeoutSeconds(config.RFQtimeout)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create the client connection to the server.
 	conn, err := getClientConn(config)
 	if err != nil {
@@ -96,7 +102,7 @@ func NewTapdClient(config *TapdConfig) (*TapdClient, error) {
 	client := &TapdClient{
 		assetNameCache:             make(map[string]string),
 		cc:                         conn,
-		cfg:                        config,
+		rfqTimeoutSeconds:          rfqTimeoutSeconds,
 		TaprootAssetsClient:        taprpc.NewTaprootAssetsClient(conn),
 		TaprootAssetChannelsClient: tapchannelrpc.NewTaprootAssetChannelsClient(conn),
 		PriceOracleClient:          priceoraclerpc.NewPriceOracleClient(conn),
@@ -139,7 +145,7 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 			PeerPubKey:     peerPubkey,
 			PaymentMaxAmt:  uint64(paymentMaxAmt),
 			Expiry:         uint64(expiry),
-			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
+			TimeoutSeconds: c.rfqTimeoutSeconds,
 		})
 	if err != nil {
 		return nil, err
@@ -220,7 +226,7 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 			},
 			PaymentMaxAmt:  uint64(msatAmt),
 			Expiry:         uint64(rfqExpiry),
-			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
+			TimeoutSeconds: c.rfqTimeoutSeconds,
 			PeerPubKey:     peerPubkey,
 		})
 	if err != nil {
@@ -286,6 +292,26 @@ func getPaymentMaxAmount(satAmount btcutil.Amount, feeLimitMultiplier float64) (
 	return lnrpc.UnmarshallAmt(
 		int64(satAmount.MulF64(feeLimitMultiplier)), 0,
 	)
+}
+
+// getRfqTimeoutSeconds converts the configured RFQ timeout to the whole
+// seconds accepted by tapd. Fractional seconds are rounded up so tapd's
+// timeout is never shorter than the configured duration.
+func getRfqTimeoutSeconds(timeout time.Duration) (uint32, error) {
+	if timeout <= 0 {
+		return 0, fmt.Errorf("RFQ timeout must be greater than zero")
+	}
+
+	seconds := timeout / time.Second
+	if timeout%time.Second != 0 {
+		seconds++
+	}
+	if seconds > time.Duration(math.MaxUint32) {
+		return 0, fmt.Errorf("RFQ timeout exceeds maximum of %v seconds",
+			uint64(math.MaxUint32))
+	}
+
+	return uint32(seconds), nil
 }
 
 func getClientConn(config *TapdConfig) (*grpc.ClientConn, error) {

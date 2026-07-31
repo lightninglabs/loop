@@ -2,11 +2,13 @@ package assets
 
 import (
 	"encoding/pem"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -138,6 +140,62 @@ func TestGetPaymentMaxAmount(t *testing.T) {
 					test.expectedAmount, result)
 			}
 		}
+	}
+}
+
+// TestGetRfqTimeoutSeconds verifies that configured durations are safely
+// converted to tapd's whole-second timeout field.
+func TestGetRfqTimeoutSeconds(t *testing.T) {
+	tests := []struct {
+		name            string
+		timeout         time.Duration
+		expectedSeconds uint32
+		expectError     bool
+	}{
+		{
+			name:            "whole seconds",
+			timeout:         60 * time.Second,
+			expectedSeconds: 60,
+		},
+		{
+			name:            "sub-second rounded up",
+			timeout:         time.Millisecond,
+			expectedSeconds: 1,
+		},
+		{
+			name:            "fractional second rounded up",
+			timeout:         time.Second + time.Nanosecond,
+			expectedSeconds: 2,
+		},
+		{
+			name:        "zero",
+			timeout:     0,
+			expectError: true,
+		},
+		{
+			name:        "negative",
+			timeout:     -time.Second,
+			expectError: true,
+		},
+		{
+			name: "overflow",
+			timeout: time.Duration(math.MaxUint32)*time.Second +
+				time.Nanosecond,
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			seconds, err := getRfqTimeoutSeconds(test.timeout)
+			if test.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.expectedSeconds, seconds)
+		})
 	}
 }
 
