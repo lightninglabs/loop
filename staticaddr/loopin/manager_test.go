@@ -4,20 +4,25 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -243,6 +248,112 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	require.ErrorIs(t, err, quoteErr)
 	require.NotContains(t, err.Error(), labels.ErrReservedPrefix.Error())
 	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
+// TestWithdrawalExcludesConcurrentLoopIn verifies that a withdrawal keeps its
+// deposits unavailable to a loop-in while it is still being prepared. Without
+// the deposit use registry, both operations observe the deposit as Deposited
+// and the loop-in reaches its quote request.
+func TestWithdrawalExcludesConcurrentLoopIn(t *testing.T) {
+	ctx := t.Context()
+
+	// Use one deposited output and share a real deposit-use registry between
+	// the withdrawal and loop-in managers.
+	selectedDeposit := makeDeposit(3, 0, 9_000, 100)
+	selectedDeposit.SetState(deposit.Deposited)
+	selectedOutpoint := selectedDeposit.OutPoint.String()
+	depositManager := &conflictDepositManager{
+		mockDepositManager: &mockDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				selectedOutpoint: selectedDeposit,
+			},
+		},
+		useRegistry: deposit.NewManager(&deposit.ManagerConfig{}),
+	}
+
+	// Block destination address creation. Withdrawal registers the deposit
+	// before this point, but has not yet changed its persisted state, which
+	// creates the precise overlap this test needs.
+	withdrawalStarted := make(chan struct{}, 1)
+	releaseWithdrawal := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseWithdrawal)
+		})
+	}
+	defer release()
+
+	withdrawalErr := errors.New("stop withdrawal after registration")
+	walletKit := &blockingNextAddrWallet{
+		started: withdrawalStarted,
+		release: releaseWithdrawal,
+		err:     withdrawalErr,
+	}
+	withdrawalManager, err := withdraw.NewManager(
+		&withdraw.ManagerConfig{
+			DepositManager: depositManager,
+			WalletKit:      walletKit,
+		}, 200,
+	)
+	require.NoError(t, err)
+
+	// Start the withdrawal asynchronously so the test can attempt a loop-in
+	// while withdrawal preparation is paused.
+	withdrawalDone := make(chan error, 1)
+	go func() {
+		_, _, err := withdrawalManager.WithdrawDeposits(
+			ctx, []wire.OutPoint{selectedDeposit.OutPoint}, "", 1, 0,
+		)
+		withdrawalDone <- err
+	}()
+
+	// Reaching NextAddr proves the withdrawal has already registered its use
+	// of the deposit.
+	select {
+	case <-withdrawalStarted:
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("withdrawal did not reach destination address request")
+	}
+
+	// A sentinel quote error makes it clear if the concurrent loop-in gets
+	// past the registry check, as it would without the fix.
+	quoteErr := errors.New("loop-in reached quote request")
+	loopInManager, err := NewManager(&Config{
+		DepositManager: depositManager,
+		QuoteGetter: &mockQuoteGetter{
+			err: quoteErr,
+		},
+		NodePubkey: route.Vertex{2},
+	}, 200)
+	require.NoError(t, err)
+
+	request := &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: []string{selectedOutpoint},
+		SelectedAmount:   selectedDeposit.Value,
+		MaxSwapFee:       1_000,
+	}
+
+	// The loop-in must fail on local deposit ownership before requesting a
+	// quote or starting any swap work.
+	_, err = loopInManager.initiateLoopIn(ctx, request)
+	require.ErrorContains(t, err, "deposit already in use")
+	require.NotErrorIs(t, err, quoteErr)
+
+	// Let the withdrawal fail before signing and verify its registration is
+	// cleaned up. A subsequent loop-in must reach the quote request.
+	release()
+	select {
+	case err = <-withdrawalDone:
+		require.ErrorIs(t, err, withdrawalErr)
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("withdrawal did not release its deposit use")
+	}
+
+	_, err = loopInManager.initiateLoopIn(ctx, request)
+	require.ErrorIs(t, err, quoteErr)
 }
 
 // TestUpdateLoopInSendsUpdateAfterSuccessfulStoreUpdate protects the
@@ -496,6 +607,101 @@ func (m *mockDepositManager) GetActiveDepositsInState(_ fsm.StateType) (
 	[]*deposit.Deposit, error) {
 
 	return m.activeDeposits, nil
+}
+
+// depositUseRegistrar describes the production registration method exercised
+// by this regression test. The local interface keeps the test buildable when
+// the implementation under test is reverted.
+type depositUseRegistrar interface {
+	// RegisterDepositUse claims the requested deposits until the returned
+	// cleanup function is called.
+	RegisterDepositUse([]*deposit.Deposit) (func(), error)
+}
+
+// conflictDepositManager supplies both loop-in and withdrawal test methods
+// while delegating deposit-use coordination to a real deposit manager.
+type conflictDepositManager struct {
+	// mockDepositManager supplies the standard loop-in deposit lookups.
+	*mockDepositManager
+
+	// useRegistry owns the production registry shared by both operations.
+	useRegistry *deposit.Manager
+}
+
+// RegisterDepositUse delegates registration to the production deposit
+// manager when the method is available.
+func (m *conflictDepositManager) RegisterDepositUse(
+	deposits []*deposit.Deposit) (func(), error) {
+
+	registrar, ok := any(m.useRegistry).(depositUseRegistrar)
+	if !ok {
+		return nil, errors.New("deposit use registry unavailable")
+	}
+
+	unregister, err := registrar.RegisterDepositUse(deposits)
+	if err != nil {
+		return nil, err
+	}
+
+	return unregister, nil
+}
+
+// AllOutpointsActiveDeposits adapts withdrawal's wire outpoints to the string
+// outpoint lookup supplied by mockDepositManager.
+func (m *conflictDepositManager) AllOutpointsActiveDeposits(
+	outpoints []wire.OutPoint, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	stringOutpoints := make([]string, len(outpoints))
+	for i, outpoint := range outpoints {
+		stringOutpoints[i] = outpoint.String()
+	}
+
+	return m.AllStringOutpointsActiveDeposits(stringOutpoints, state)
+}
+
+// UpdateDeposit implements withdraw.DepositManager without persisting state
+// because the test stops withdrawal before a deposit update is needed.
+func (m *conflictDepositManager) UpdateDeposit(context.Context,
+	*deposit.Deposit) error {
+
+	return nil
+}
+
+// blockingNextAddrWallet pauses withdrawal at destination address creation so
+// the test can start a concurrent loop-in at a deterministic point.
+type blockingNextAddrWallet struct {
+	// WalletKitClient supplies methods not exercised by this test.
+	lndclient.WalletKitClient
+
+	// started signals that withdrawal reached destination address creation.
+	started chan<- struct{}
+
+	// release unblocks the destination address request.
+	release <-chan struct{}
+
+	// err is returned after the destination address request is released.
+	err error
+}
+
+// NextAddr signals that withdrawal reached address creation, waits for the
+// test to release it, and then returns the configured error.
+func (w *blockingNextAddrWallet) NextAddr(ctx context.Context, _ string,
+	_ walletrpc.AddressType, _ bool) (btcutil.Address, error) {
+
+	select {
+	case w.started <- struct{}{}:
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	select {
+	case <-w.release:
+		return nil, w.err
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // mockQuoteGetter records the inputs to quote requests and returns a fixed
