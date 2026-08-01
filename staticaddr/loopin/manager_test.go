@@ -436,6 +436,14 @@ func (m *mockDepositManager) EnsureDepositsFresh(context.Context) error {
 	return nil
 }
 
+// RegisterDepositUse implements DepositManager by accepting all requested
+// deposits without tracking their use.
+func (m *mockDepositManager) RegisterDepositUse(
+	[]*deposit.Deposit) (func(), error) {
+
+	return func() {}, nil
+}
+
 func (m *mockDepositManager) GetAllDeposits(_ context.Context) (
 	[]*deposit.Deposit, error) {
 

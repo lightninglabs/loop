@@ -111,3 +111,9 @@ then be swapped for an off-chain Lightning payment.
     HTLC transaction, which then follows a standard Loop-In flow. When the
     client gets the LN payment, they cooperate with the server to sweep the
     deposit directly to the server's wallet instead of publishing the HTLC tx.
+
+-   **Concurrent Use:** The client keeps an in-memory registry while a deposit
+    is being prepared for a Loop-In or withdrawal. This prevents overlapping
+    operations before the deposit reaches its persisted FSM state. The registry
+    starts empty after a restart, leaving recovery to persisted deposit state
+    and wallet reconciliation.

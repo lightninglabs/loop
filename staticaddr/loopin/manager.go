@@ -694,6 +694,14 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		}
 	}
 
+	unregister, err := m.cfg.DepositManager.RegisterDepositUse(
+		selectedDeposits,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to register deposit use: %w", err)
+	}
+	defer unregister()
+
 	// Calculate the total deposit amount and check if the selected amount
 	// would leave a dust output.
 	swapAmount, err := DeduceSwapAmount(
