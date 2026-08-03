@@ -13,4 +13,7 @@
 
 #### Maintenance
 
+* Added a CI gate and repository agent guidance requiring every pull request to
+  include a non-empty entry in the next release notes.
+
 #### Contributors (Alphabetical Order)
