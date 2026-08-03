@@ -44,6 +44,7 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 		if err != nil {
 			return err
 		}
+		defer assetClient.Close()
 	}
 
 	swapClient, cleanup, err := getClient(

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
-	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -78,14 +79,19 @@ type TapdClient struct {
 	rfqrpc.RfqClient
 	universerpc.UniverseClient
 
-	cfg            *TapdConfig
-	assetNameCache map[string]string
-	assetNameMutex sync.Mutex
-	cc             *grpc.ClientConn
+	rfqTimeoutSeconds uint32
+	assetNameCache    map[string]string
+	assetNameMutex    sync.RWMutex
+	cc                *grpc.ClientConn
 }
 
 // NewTapdClient returns a new taproot assets client.
 func NewTapdClient(config *TapdConfig) (*TapdClient, error) {
+	rfqTimeoutSeconds, err := getRfqTimeoutSeconds(config.RFQtimeout)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create the client connection to the server.
 	conn, err := getClientConn(config)
 	if err != nil {
@@ -96,7 +102,7 @@ func NewTapdClient(config *TapdConfig) (*TapdClient, error) {
 	client := &TapdClient{
 		assetNameCache:             make(map[string]string),
 		cc:                         conn,
-		cfg:                        config,
+		rfqTimeoutSeconds:          rfqTimeoutSeconds,
 		TaprootAssetsClient:        taprpc.NewTaprootAssetsClient(conn),
 		TaprootAssetChannelsClient: tapchannelrpc.NewTaprootAssetChannelsClient(conn),
 		PriceOracleClient:          priceoraclerpc.NewPriceOracleClient(conn),
@@ -139,7 +145,7 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 			PeerPubKey:     peerPubkey,
 			PaymentMaxAmt:  uint64(paymentMaxAmt),
 			Expiry:         uint64(expiry),
-			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
+			TimeoutSeconds: c.rfqTimeoutSeconds,
 		})
 	if err != nil {
 		return nil, err
@@ -152,21 +158,26 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 			rfq.GetRejectedQuote())
 	}
 
-	if rfq.GetAcceptedQuote() != nil {
-		return rfq.GetAcceptedQuote(), nil
+	acceptedQuote := rfq.GetAcceptedQuote()
+	if acceptedQuote == nil {
+		return nil, fmt.Errorf("no accepted quote")
 	}
 
-	return nil, fmt.Errorf("no accepted quote")
+	_, err = unmarshalAssetRate(acceptedQuote.BidAssetRate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid accepted quote asset rate: %w",
+			err)
+	}
+
+	return acceptedQuote, nil
 }
 
 // GetAssetName returns the human-readable name of the asset.
 func (c *TapdClient) GetAssetName(ctx context.Context,
 	assetId []byte) (string, error) {
 
-	c.assetNameMutex.Lock()
-	defer c.assetNameMutex.Unlock()
 	assetIdStr := hex.EncodeToString(assetId)
-	if name, ok := c.assetNameCache[assetIdStr]; ok {
+	if name, ok := c.getCachedAssetName(assetIdStr); ok {
 		return name, nil
 	}
 
@@ -192,9 +203,26 @@ func (c *TapdClient) GetAssetName(ctx context.Context,
 		assetName = assetStats.AssetStats[0].Asset.AssetName
 	}
 
-	c.assetNameCache[assetIdStr] = assetName
+	c.cacheAssetName(assetIdStr, assetName)
 
 	return assetName, nil
+}
+
+// getCachedAssetName returns an asset name from the cache.
+func (c *TapdClient) getCachedAssetName(assetID string) (string, bool) {
+	c.assetNameMutex.RLock()
+	defer c.assetNameMutex.RUnlock()
+
+	name, ok := c.assetNameCache[assetID]
+	return name, ok
+}
+
+// cacheAssetName adds an asset name to the cache.
+func (c *TapdClient) cacheAssetName(assetID, name string) {
+	c.assetNameMutex.Lock()
+	defer c.assetNameMutex.Unlock()
+
+	c.assetNameCache[assetID] = name
 }
 
 // GetAssetPrice returns the price of an asset in satoshis. NOTE: this currently
@@ -220,7 +248,7 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 			},
 			PaymentMaxAmt:  uint64(msatAmt),
 			Expiry:         uint64(rfqExpiry),
-			TimeoutSeconds: uint32(c.cfg.RFQtimeout.Seconds()),
+			TimeoutSeconds: c.rfqTimeoutSeconds,
 			PeerPubKey:     peerPubkey,
 		})
 	if err != nil {
@@ -254,7 +282,7 @@ func (c *TapdClient) GetAssetPrice(ctx context.Context, assetID string,
 func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 	btcutil.Amount, error) {
 
-	rateFP, err := rpcutils.UnmarshalRfqFixedPoint(assetRate)
+	rateFP, err := unmarshalAssetRate(assetRate)
 	if err != nil {
 		return 0, fmt.Errorf("cannot unmarshal asset rate: %w", err)
 	}
@@ -264,6 +292,33 @@ func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 	msatAmt := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
 
 	return msatAmt.ToSatoshis(), nil
+}
+
+// unmarshalAssetRate validates and converts an RPC asset rate to the fixed
+// point representation used for RFQ arithmetic.
+func unmarshalAssetRate(assetRate *rfqrpc.FixedPoint) (
+	*rfqmath.BigIntFixedPoint, error) {
+
+	if assetRate == nil {
+		return nil, fmt.Errorf("asset rate cannot be nil")
+	}
+	if assetRate.Scale > math.MaxUint8 {
+		return nil, fmt.Errorf("scale value overflow: %v", assetRate.Scale)
+	}
+
+	coefficient, ok := new(big.Int).SetString(assetRate.Coefficient, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid asset rate coefficient: %q",
+			assetRate.Coefficient)
+	}
+	if coefficient.Sign() <= 0 {
+		return nil, fmt.Errorf("asset rate coefficient must be positive")
+	}
+
+	return &rfqmath.BigIntFixedPoint{
+		Coefficient: rfqmath.NewBigInt(coefficient),
+		Scale:       uint8(assetRate.Scale),
+	}, nil
 }
 
 // getPaymentMaxAmount returns the milisat amount we are willing to pay for the
@@ -286,6 +341,26 @@ func getPaymentMaxAmount(satAmount btcutil.Amount, feeLimitMultiplier float64) (
 	return lnrpc.UnmarshallAmt(
 		int64(satAmount.MulF64(feeLimitMultiplier)), 0,
 	)
+}
+
+// getRfqTimeoutSeconds converts the configured RFQ timeout to the whole
+// seconds accepted by tapd. Fractional seconds are rounded up so tapd's
+// timeout is never shorter than the configured duration.
+func getRfqTimeoutSeconds(timeout time.Duration) (uint32, error) {
+	if timeout <= 0 {
+		return 0, fmt.Errorf("RFQ timeout must be greater than zero")
+	}
+
+	seconds := timeout / time.Second
+	if timeout%time.Second != 0 {
+		seconds++
+	}
+	if seconds > time.Duration(math.MaxUint32) {
+		return 0, fmt.Errorf("RFQ timeout exceeds maximum of %v seconds",
+			uint64(math.MaxUint32))
+	}
+
+	return uint32(seconds), nil
 }
 
 func getClientConn(config *TapdConfig) (*grpc.ClientConn, error) {

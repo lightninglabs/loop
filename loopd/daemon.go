@@ -158,6 +158,15 @@ func (d *Daemon) Start() error {
 		if err != nil {
 			return err
 		}
+
+		defer func() {
+			if err == nil || d.assetClient == nil {
+				return
+			}
+
+			d.assetClient.Close()
+			d.assetClient = nil
+		}()
 	}
 
 	// With lnd connected, initialize everything else, such as the swap
@@ -178,15 +187,15 @@ func (d *Daemon) Start() error {
 
 	// If we get here, we already have started several goroutines. So if
 	// anything goes wrong now, we need to cleanly shut down again.
-	startErr := d.startWebServers()
-	if startErr != nil {
-		errorf("Error while starting daemon: %v", startErr)
+	err = d.startWebServers()
+	if err != nil {
+		errorf("Error while starting daemon: %v", err)
 		d.Stop()
 		stopErr := <-d.ErrChan
 		if stopErr != nil {
 			errorf("Error while stopping daemon: %v", stopErr)
 		}
-		return startErr
+		return err
 	}
 
 	return nil
@@ -1144,6 +1153,10 @@ func (d *Daemon) stop() {
 	}
 	if d.clientCleanup != nil {
 		d.clientCleanup()
+	}
+	if d.assetClient != nil {
+		d.assetClient.Close()
+		d.assetClient = nil
 	}
 
 	// Everything should be shutting down now, wait for completion.

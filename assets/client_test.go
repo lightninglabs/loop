@@ -1,19 +1,63 @@
 package assets
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/pem"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"gopkg.in/macaroon.v2"
 )
+
+type blockingUniverseClient struct {
+	universerpc.UniverseClient
+
+	queryStarted chan struct{}
+	releaseQuery chan struct{}
+}
+
+func (b *blockingUniverseClient) QueryAssetStats(context.Context,
+	*universerpc.AssetStatsQuery, ...grpc.CallOption) (
+	*universerpc.UniverseAssetStats, error) {
+
+	close(b.queryStarted)
+	<-b.releaseQuery
+
+	return &universerpc.UniverseAssetStats{
+		AssetStats: []*universerpc.AssetStatsSnapshot{
+			{
+				Asset: &universerpc.AssetStatsAsset{
+					AssetName: "queried asset",
+				},
+			},
+		},
+	}, nil
+}
+
+type staticRfqClient struct {
+	rfqrpc.RfqClient
+
+	response *rfqrpc.AddAssetSellOrderResponse
+}
+
+func (s *staticRfqClient) AddAssetSellOrder(context.Context,
+	*rfqrpc.AddAssetSellOrderRequest, ...grpc.CallOption) (
+	*rfqrpc.AddAssetSellOrderResponse, error) {
+
+	return s.response, nil
+}
 
 // TestDefaultTapdConfig tests that the default tapd connection paths match
 // tapd's mainnet defaults.
@@ -82,6 +126,144 @@ func TestTapdConfigClientConn(t *testing.T) {
 	)
 }
 
+// TestGetAssetNameCachedLookupNotBlocked verifies that a slow universe query
+// for one asset does not prevent another caller from reading a cached name.
+func TestGetAssetNameCachedLookupNotBlocked(t *testing.T) {
+	const cachedName = "cached asset"
+
+	cachedAssetID := []byte{1}
+	queryStarted := make(chan struct{})
+	releaseQuery := make(chan struct{})
+	client := &TapdClient{
+		UniverseClient: &blockingUniverseClient{
+			queryStarted: queryStarted,
+			releaseQuery: releaseQuery,
+		},
+		assetNameCache: map[string]string{
+			hex.EncodeToString(cachedAssetID): cachedName,
+		},
+	}
+
+	queryResult := make(chan error, 1)
+	go func() {
+		_, err := client.GetAssetName(context.Background(), []byte{2})
+		queryResult <- err
+	}()
+
+	select {
+	case <-queryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("universe query did not start")
+	}
+
+	type nameResult struct {
+		name string
+		err  error
+	}
+	cachedResult := make(chan nameResult, 1)
+	go func() {
+		name, err := client.GetAssetName(
+			context.Background(), cachedAssetID,
+		)
+		cachedResult <- nameResult{name: name, err: err}
+	}()
+
+	select {
+	case result := <-cachedResult:
+		require.NoError(t, result.err)
+		require.Equal(t, cachedName, result.name)
+	case <-time.After(time.Second):
+		close(releaseQuery)
+		t.Fatal("cached lookup blocked behind universe query")
+	}
+
+	close(releaseQuery)
+	require.NoError(t, <-queryResult)
+}
+
+// TestGetRfqForAssetValidatesRate verifies that malformed accepted quote rates
+// are rejected before they reach downstream RFQ arithmetic.
+func TestGetRfqForAssetValidatesRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		assetRate   *rfqrpc.FixedPoint
+		expectError bool
+	}{
+		{
+			name: "valid",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "100000", Scale: 0,
+			},
+		},
+		{
+			name:        "nil",
+			assetRate:   nil,
+			expectError: true,
+		},
+		{
+			name: "malformed coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "not-a-number", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "zero coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "0", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "negative coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "-1", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "scale overflow",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 256,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			acceptedQuote := &rfqrpc.PeerAcceptedSellQuote{
+				BidAssetRate: test.assetRate,
+			}
+			acceptedResponse :=
+				&rfqrpc.AddAssetSellOrderResponse_AcceptedQuote{
+					AcceptedQuote: acceptedQuote,
+				}
+			client := &TapdClient{
+				RfqClient: &staticRfqClient{
+					response: &rfqrpc.AddAssetSellOrderResponse{
+						Response: acceptedResponse,
+					},
+				},
+				rfqTimeoutSeconds: 60,
+			}
+
+			quote, err := client.GetRfqForAsset(
+				context.Background(), 1000, []byte{1}, []byte{2},
+				time.Now().Add(time.Minute).Unix(), 1,
+			)
+			if test.expectError {
+				require.Error(t, err)
+				require.Nil(t, quote)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Same(t, acceptedQuote, quote)
+		})
+	}
+}
+
 func TestGetPaymentMaxAmount(t *testing.T) {
 	tests := []struct {
 		satAmount          btcutil.Amount
@@ -141,6 +323,62 @@ func TestGetPaymentMaxAmount(t *testing.T) {
 	}
 }
 
+// TestGetRfqTimeoutSeconds verifies that configured durations are safely
+// converted to tapd's whole-second timeout field.
+func TestGetRfqTimeoutSeconds(t *testing.T) {
+	tests := []struct {
+		name            string
+		timeout         time.Duration
+		expectedSeconds uint32
+		expectError     bool
+	}{
+		{
+			name:            "whole seconds",
+			timeout:         60 * time.Second,
+			expectedSeconds: 60,
+		},
+		{
+			name:            "sub-second rounded up",
+			timeout:         time.Millisecond,
+			expectedSeconds: 1,
+		},
+		{
+			name:            "fractional second rounded up",
+			timeout:         time.Second + time.Nanosecond,
+			expectedSeconds: 2,
+		},
+		{
+			name:        "zero",
+			timeout:     0,
+			expectError: true,
+		},
+		{
+			name:        "negative",
+			timeout:     -time.Second,
+			expectError: true,
+		},
+		{
+			name: "overflow",
+			timeout: time.Duration(math.MaxUint32)*time.Second +
+				time.Nanosecond,
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			seconds, err := getRfqTimeoutSeconds(test.timeout)
+			if test.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.expectedSeconds, seconds)
+		})
+	}
+}
+
 func TestGetSatsFromAssetAmt(t *testing.T) {
 	tests := []struct {
 		assetAmt    uint64
@@ -165,6 +403,39 @@ func TestGetSatsFromAssetAmt(t *testing.T) {
 			assetRate:   &rfqrpc.FixedPoint{Coefficient: "100000000", Scale: 0},
 			expected:    btcutil.Amount(0),
 			expectError: false,
+		},
+		{
+			assetAmt:    1000,
+			assetRate:   nil,
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "not-a-number", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "0", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "-1", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: 1000,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 256,
+			},
+			expectError: true,
 		},
 	}
 
