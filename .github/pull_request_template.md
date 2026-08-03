@@ -1,3 +1,3 @@
 #### Pull Request Checklist
-- [ ] Update `docs/release-notes/release-notes-next.md` if your PR contains
-  major features, breaking changes or bugfixes
+- [ ] Add an entry to `docs/release-notes/release-notes-next.md` (required by
+  CI)
