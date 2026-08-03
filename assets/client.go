@@ -158,11 +158,18 @@ func (c *TapdClient) GetRfqForAsset(ctx context.Context,
 			rfq.GetRejectedQuote())
 	}
 
-	if rfq.GetAcceptedQuote() != nil {
-		return rfq.GetAcceptedQuote(), nil
+	acceptedQuote := rfq.GetAcceptedQuote()
+	if acceptedQuote == nil {
+		return nil, fmt.Errorf("no accepted quote")
 	}
 
-	return nil, fmt.Errorf("no accepted quote")
+	_, err = unmarshalAssetRate(acceptedQuote.BidAssetRate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid accepted quote asset rate: %w",
+			err)
+	}
+
+	return acceptedQuote, nil
 }
 
 // GetAssetName returns the human-readable name of the asset.

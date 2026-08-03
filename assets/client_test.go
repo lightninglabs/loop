@@ -46,6 +46,19 @@ func (b *blockingUniverseClient) QueryAssetStats(context.Context,
 	}, nil
 }
 
+type staticRfqClient struct {
+	rfqrpc.RfqClient
+
+	response *rfqrpc.AddAssetSellOrderResponse
+}
+
+func (s *staticRfqClient) AddAssetSellOrder(context.Context,
+	*rfqrpc.AddAssetSellOrderRequest, ...grpc.CallOption) (
+	*rfqrpc.AddAssetSellOrderResponse, error) {
+
+	return s.response, nil
+}
+
 // TestDefaultTapdConfig tests that the default tapd connection paths match
 // tapd's mainnet defaults.
 func TestDefaultTapdConfig(t *testing.T) {
@@ -166,6 +179,89 @@ func TestGetAssetNameCachedLookupNotBlocked(t *testing.T) {
 
 	close(releaseQuery)
 	require.NoError(t, <-queryResult)
+}
+
+// TestGetRfqForAssetValidatesRate verifies that malformed accepted quote rates
+// are rejected before they reach downstream RFQ arithmetic.
+func TestGetRfqForAssetValidatesRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		assetRate   *rfqrpc.FixedPoint
+		expectError bool
+	}{
+		{
+			name: "valid",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "100000", Scale: 0,
+			},
+		},
+		{
+			name:        "nil",
+			assetRate:   nil,
+			expectError: true,
+		},
+		{
+			name: "malformed coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "not-a-number", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "zero coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "0", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "negative coefficient",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "-1", Scale: 0,
+			},
+			expectError: true,
+		},
+		{
+			name: "scale overflow",
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 256,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			acceptedQuote := &rfqrpc.PeerAcceptedSellQuote{
+				BidAssetRate: test.assetRate,
+			}
+			acceptedResponse :=
+				&rfqrpc.AddAssetSellOrderResponse_AcceptedQuote{
+					AcceptedQuote: acceptedQuote,
+				}
+			client := &TapdClient{
+				RfqClient: &staticRfqClient{
+					response: &rfqrpc.AddAssetSellOrderResponse{
+						Response: acceptedResponse,
+					},
+				},
+				rfqTimeoutSeconds: 60,
+			}
+
+			quote, err := client.GetRfqForAsset(
+				context.Background(), 1000, []byte{1}, []byte{2},
+				time.Now().Add(time.Minute).Unix(), 1,
+			)
+			if test.expectError {
+				require.Error(t, err)
+				require.Nil(t, quote)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Same(t, acceptedQuote, quote)
+		})
+	}
 }
 
 func TestGetPaymentMaxAmount(t *testing.T) {
