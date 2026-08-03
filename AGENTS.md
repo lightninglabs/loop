@@ -72,3 +72,12 @@ the binding dependencies are the asset loop-out fields
 `routerrpc.SendPaymentRequest.first_hop_custom_records` and
 `lnrpc.Route.custom_channel_data` (lnd v0.18.4-beta), plus the sweep-batcher fee
 floor `walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw` (lnd v0.18.3-beta).
+
+**6. Pull Request Release Notes:**
+
+Every pull request must add at least one non-empty line to
+`docs/release-notes/release-notes-next.md`. Before finishing any change intended
+for a pull request, add a concise entry under the appropriate section (`New
+Features`, `Breaking Changes`, `Bug Fixes`, or `Maintenance`). This applies to
+all pull requests, including internal maintenance and documentation changes, and
+is enforced by CI.
