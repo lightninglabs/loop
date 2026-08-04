@@ -14,6 +14,7 @@
 #### Maintenance
 
 * Added a CI gate and repository agent guidance requiring every pull request to
-  include a non-empty entry in the next release notes.
+  include a non-empty entry in the next release notes unless it carries the
+  `no-changelog` label.
 
 #### Contributors (Alphabetical Order)
