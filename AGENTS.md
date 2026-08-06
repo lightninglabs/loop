@@ -75,9 +75,9 @@ floor `walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw` (lnd v0.18.3-beta
 
 **6. Pull Request Release Notes:**
 
-Every pull request must add at least one non-empty line to
-`docs/release-notes/release-notes-next.md`. Before finishing any change intended
-for a pull request, add a concise entry under the appropriate section (`New
-Features`, `Breaking Changes`, `Bug Fixes`, or `Maintenance`). This applies to
-all pull requests, including internal maintenance and documentation changes, and
-is enforced by CI.
+Every pull request must either add at least one non-empty line to
+`docs/release-notes/release-notes-next.md` or carry the `no-changelog` label.
+Before finishing any change intended for a pull request, add a concise entry
+under the appropriate section (`New Features`, `Breaking Changes`, `Bug Fixes`,
+or `Maintenance`). For a change that does not warrant a release note, ensure the
+pull request uses the `no-changelog` label instead. This is enforced by CI.

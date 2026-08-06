@@ -1,0 +1,58 @@
+name: Release Notes
+
+on:
+  pull_request:
+    branches:
+      - "*"
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release-notes:
+    name: Release Notes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip release notes check
+        if: contains(github.event.pull_request.labels.*.name, 'no-changelog')
+        run: echo "Release notes check skipped by the no-changelog label."
+
+      - name: git checkout
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for a release note
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_NOTES_FILE: docs/release-notes/release-notes-next.md
+        run: |
+          if git diff --unified=0 "$BASE_SHA...$HEAD_SHA" -- \
+              "$RELEASE_NOTES_FILE" |
+              awk '
+                /^@@/ { in_hunk = 1; next }
+                in_hunk && /^\+/ {
+                  line = substr($0, 2)
+                  if (line ~ /[^[:space:]]/) found = 1
+                }
+                END { exit found ? 0 : 1 }
+              '
+          then
+            exit 0
+          fi
+
+          echo "::error file=$RELEASE_NOTES_FILE::Add a release note or apply the no-changelog label."
+          exit 1
