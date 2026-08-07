@@ -2,6 +2,12 @@
 
 #### New Features
 
+* Static Address now derives fresh receive and change addresses while retaining
+  per-deposit address ownership across restarts for discovery, recovery, and
+  signing. The new `loop static deposit` command can create and fund an address
+  directly from the lnd wallet, and deposit listings identify the receiving
+  address. [PR #1139](https://github.com/lightninglabs/loop/pull/1139)
+
 #### Breaking Changes
 
 #### Bug Fixes
